@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { collectCandidates } from "../src/candidates"
+import { collectCandidates, collectMeta } from "../src/candidates"
 import { parseOptions } from "../src/scorecard"
 
 const cfg = {
@@ -47,14 +47,34 @@ describe("collectCandidates", () => {
   })
 
   test("marks disabled providers", () => {
-    const list = collectCandidates(cfg, options({ providers: ["ollama-local"], models: {} }))
-    // ollama-local has no models in cfg, so nothing to collect; use cloud instead
-    expect(list.length).toBe(0)
+    const cfgWithLocal = {
+      ...cfg,
+      provider: {
+        ...cfg.provider,
+        "ollama-local": { models: { "llama3.1:8b": { name: "Llama 3.1 8B" } } },
+      },
+    }
+    const list = collectCandidates(cfgWithLocal, options({ providers: ["ollama-cloud", "ollama-local"] }))
+    const local = list.find((c) => c.key === "ollama-local/llama3.1:8b")
+    expect(local).toBeDefined()
+    expect(local?.providerDisabled).toBe(true)
+    const cloud = list.find((c) => c.key === "ollama-cloud/gpt-oss:20b")
+    expect(cloud?.providerDisabled).toBe(false)
   })
 
   test("defaults to providers whose id starts with ollama", () => {
     const list = collectCandidates(cfg, options({ providers: undefined }))
     expect(list.every((c) => c.providerID.startsWith("ollama"))).toBe(true)
     expect(list.find((c) => c.key === "openai/gpt-5")).toBeUndefined()
+  })
+
+  test("collectMeta extracts name, context, and capability flags", () => {
+    const meta = collectMeta(cfg, options())
+    const hit = meta.get("ollama-cloud/glm-5.3-flash:cloud")
+    expect(hit?.name).toBe("GLM 5.3 Flash")
+    expect(hit?.context).toBe(1000000)
+    expect(hit?.toolCall).toBe(true)
+    expect(hit?.reasoning).toBe(false)
+    expect(hit?.providerDisabled).toBe(false)
   })
 })
