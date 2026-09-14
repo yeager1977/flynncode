@@ -57,6 +57,22 @@ describe("assignAgents", () => {
     expect((cfg.agent.build as any).model).toBeUndefined()
   })
 
+  test("skips hidden agents", () => {
+    const cfg = cfgBase()
+    cfg.agent = { build: { hidden: true } as any }
+    const { assignments } = assignAgents(cfg, makeOptions())
+    expect(assignments.build).toBeUndefined()
+    expect((cfg.agent.build as any).model).toBeUndefined()
+  })
+
+  test("skips and warns for unknown non-builtin agents", () => {
+    const cfg = cfgBase()
+    const { assignments, warnings } = assignAgents(cfg, makeOptions({ agentTasks: { planner: "coding" } }))
+    expect(assignments.planner).toBeUndefined()
+    expect(cfg.agent.planner).toBeUndefined()
+    expect(warnings.some((w) => w.includes("planner"))).toBe(true)
+  })
+
   test("reports agents it cannot route without throwing", () => {
     const cfg = { provider: { "ollama-cloud": { models: {} } }, agent: {} }
     const { assignments, warnings } = assignAgents(cfg, makeOptions())

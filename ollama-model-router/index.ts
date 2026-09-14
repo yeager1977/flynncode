@@ -1,6 +1,6 @@
 import type { Hooks, PluginInput, PluginOptions } from "@opencode-ai/plugin"
 import { assignAgents } from "./src/assign"
-import { TASK_NAMES, parseOptions } from "./src/scorecard"
+import { parseOptions } from "./src/scorecard"
 import { createTools } from "./src/tools"
 import type { RouterOptions } from "./src/types"
 
@@ -13,6 +13,7 @@ export default {
     let currentOptions: RouterOptions | undefined
     let currentConfig: any
     let assignments: Record<string, string> = {}
+    const optionsError = parsed.ok ? undefined : parsed.errors
 
     if (parsed.ok) {
       currentOptions = parsed.options
@@ -24,6 +25,7 @@ export default {
     }
 
     const getOptions = () => currentOptions
+    const getOptionsError = () => optionsError
     const getConfig = () => currentConfig
     const getAssignments = () => assignments
 
@@ -48,7 +50,14 @@ export default {
           currentOptions = undefined
         }
       },
-      tool: createTools({ client: input.client, directory: input.directory, getOptions, getConfig, getAssignments }),
+      tool: createTools({
+        client: input.client,
+        directory: input.directory,
+        getOptions,
+        getOptionsError,
+        getConfig,
+        getAssignments,
+      }),
     }
   },
 }

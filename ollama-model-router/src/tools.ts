@@ -1,8 +1,8 @@
 import { tool } from "@opencode-ai/plugin"
 import type { Hooks, PluginInput } from "@opencode-ai/plugin"
-import { collectCandidates, collectMeta } from "./candidates"
+import { collectCandidates, collectMeta, findUnmatchedScorecardKeys } from "./candidates"
 import { rankModels } from "./rank"
-import { TASK_NAMES } from "./scorecard"
+import { TASK_NAMES, isTaskName } from "./scorecard"
 import type { ModelMeta, RankResult, RouterOptions } from "./types"
 
 function metaLine(meta: Map<string, ModelMeta> | undefined, key: string): string {
@@ -38,8 +38,14 @@ type Deps = {
   client: PluginInput["client"]
   directory: string
   getOptions: () => RouterOptions | undefined
+  getOptionsError: () => string[] | undefined
   getConfig: () => any
   getAssignments: () => Record<string, string>
+}
+
+function disabledMessage(errors: string[] | undefined): string {
+  const lines = errors && errors.length > 0 ? errors : ["options failed to parse; check opencode logs"]
+  return `Model router disabled: invalid options:\n- ${lines.join("\n- ")}`
 }
 
 export function createTools(deps: Deps): Hooks["tool"] {
@@ -53,20 +59,24 @@ export function createTools(deps: Deps): Hooks["tool"] {
       },
       async execute(args) {
         const options = deps.getOptions()
-        if (!options) return "Model router is disabled: options failed to parse. Check opencode logs."
+        if (!options) return disabledMessage(deps.getOptionsError())
         const cfg = deps.getConfig()
         const candidates = collectCandidates(cfg, options)
         const meta = collectMeta(cfg, options)
         const tasks = args.task ? [args.task] : TASK_NAMES
         const blocks: string[] = []
         for (const task of tasks) {
-          if (!(TASK_NAMES as string[]).includes(task)) {
+          if (!isTaskName(task)) {
             return `Unknown task "${task}". Valid tasks: ${TASK_NAMES.join(", ")}`
           }
-          const result = rankModels(candidates, task as any, options.taskWeights[task as any], {
+          const result = rankModels(candidates, task, options.taskWeights[task], {
             allowUnscored: options.allowUnscored,
           })
           blocks.push(formatRankTable(result, 10, meta))
+        }
+        const unmatched = findUnmatchedScorecardKeys(cfg, options)
+        if (unmatched.length > 0) {
+          blocks.push("", "Scorecard entries with no matching model (check for typos):", ...unmatched.map((k) => `- ${k}`))
         }
         const assignments = deps.getAssignments()
         if (Object.keys(assignments).length > 0) {
@@ -87,14 +97,14 @@ export function createTools(deps: Deps): Hooks["tool"] {
       },
       async execute(args, ctx) {
         const options = deps.getOptions()
-        if (!options) return "Model router is disabled: options failed to parse. Check opencode logs."
-        if (!(TASK_NAMES as string[]).includes(args.task)) {
+        if (!options) return disabledMessage(deps.getOptionsError())
+        if (!isTaskName(args.task)) {
           return `Unknown task "${args.task}". Valid tasks: ${TASK_NAMES.join(", ")}`
         }
         const cfg = deps.getConfig()
         const candidates = collectCandidates(cfg, options)
         const meta = collectMeta(cfg, options)
-        const result = rankModels(candidates, args.task as any, options.taskWeights[args.task as any], {
+        const result = rankModels(candidates, args.task, options.taskWeights[args.task], {
           allowUnscored: options.allowUnscored,
         })
         if (result.ranked.length === 0) {

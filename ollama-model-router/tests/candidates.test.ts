@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { collectCandidates, collectMeta } from "../src/candidates"
+import { collectCandidates, collectMeta, findUnmatchedScorecardKeys } from "../src/candidates"
 import { parseOptions } from "../src/scorecard"
 
 const cfg = {
@@ -66,6 +66,12 @@ describe("collectCandidates", () => {
     const list = collectCandidates(cfg, options({ providers: undefined }))
     expect(list.every((c) => c.providerID.startsWith("ollama"))).toBe(true)
     expect(list.find((c) => c.key === "openai/gpt-5")).toBeUndefined()
+  })
+
+  test("findUnmatchedScorecardKeys reports scorecard keys with no live model", () => {
+    const opts = options({ models: { "ollama-cloud/nope": { price: 1, capability: 1, speed: 1 }, "ollama-cloud/gpt-oss:20b": { price: 2, capability: 2, speed: 2 } } })
+    const unmatched = findUnmatchedScorecardKeys(cfg, opts)
+    expect(unmatched).toEqual(["ollama-cloud/nope"])
   })
 
   test("collectMeta extracts name, context, and capability flags", () => {

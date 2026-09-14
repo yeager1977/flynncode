@@ -45,6 +45,11 @@ export function collectMeta(cfg: ConfigLike, options: RouterOptions): Map<string
   return meta
 }
 
+export function findUnmatchedScorecardKeys(cfg: ConfigLike, options: RouterOptions): string[] {
+  const known = new Set(collectCandidates(cfg, options).map((c) => c.key))
+  return Object.keys(options.models).filter((key) => !known.has(key))
+}
+
 export function collectCandidates(cfg: ConfigLike, options: RouterOptions): Candidate[] {
   const disabled = new Set(cfg.disabled_providers ?? [])
   const selected = (providerID: string) => {

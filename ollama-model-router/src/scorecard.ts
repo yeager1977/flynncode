@@ -31,7 +31,7 @@ export function parseModelKey(key: string): { providerID: string; modelID: strin
   return { providerID: key.slice(0, idx), modelID: key.slice(idx + 1) }
 }
 
-function isTaskName(value: unknown): value is TaskName {
+export function isTaskName(value: unknown): value is TaskName {
   return typeof value === "string" && (TASK_NAMES as string[]).includes(value)
 }
 

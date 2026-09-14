@@ -82,6 +82,7 @@ test("route_task caps concurrent executions per session", async () => {
     client,
     directory: "/tmp",
     getOptions: () => options,
+    getOptionsError: () => undefined,
     getConfig: () => ({ provider: { p: { models: { a: {} } } } }),
     getAssignments: () => ({}),
   })
@@ -92,4 +93,40 @@ test("route_task caps concurrent executions per session", async () => {
   release()
   await first
   expect(calls).toEqual(["create"])
+})
+
+test("rank_models reports unmatched scorecard keys", async () => {
+  const options = {
+    autoRoute: false, allowUnscored: false, overrideExplicit: false, providers: ["p"],
+    agentTasks: {}, taskWeights: { coding: { capability: 1, price: 1, speed: 1 } },
+    models: { "p/a": { price: 1, capability: 5, speed: 5 }, "p/ghost": { price: 1, capability: 5, speed: 5 } },
+  } as any
+  const tools = createTools({
+    client: {} as any, directory: "/tmp",
+    getOptions: () => options,
+    getOptionsError: () => undefined,
+    getConfig: () => ({ provider: { p: { models: { a: {} } } } }),
+    getAssignments: () => ({}),
+  })
+  const out = await tools!.rank_models.execute({ task: "coding" } as any, { sessionID: "s" } as any)
+  expect(String(out)).toContain("p/ghost")
+  expect(String(out)).toContain("no matching model")
+})
+
+test("tools report parse errors when options are invalid", async () => {
+  const tools = createTools({
+    client: {} as any,
+    directory: "/tmp",
+    getOptions: () => undefined,
+    getOptionsError: () => ["models.bad must be an integer 1-10", "provider missing"],
+    getConfig: () => ({ provider: {} }),
+    getAssignments: () => ({}),
+  })
+  const rank = await tools!.rank_models.execute({} as any, { sessionID: "s" } as any)
+  expect(String(rank)).toBe(
+    "Model router disabled: invalid options:\n- models.bad must be an integer 1-10\n- provider missing",
+  )
+  const route = await tools!.route_task.execute({ task: "coding", prompt: "x" } as any, { sessionID: "s" } as any)
+  expect(String(route)).toContain("Model router disabled: invalid options:")
+  expect(String(route)).toContain("models.bad must be an integer 1-10")
 })
