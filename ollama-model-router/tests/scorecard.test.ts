@@ -44,6 +44,27 @@ describe("parseOptions", () => {
     const result = parseOptions({ models: { "glm-5.3": { price: 3, capability: 8, speed: 9 } } })
     expect(result.ok).toBe(false)
   })
+
+  test("never throws on symbol values", () => {
+    const result = parseOptions({ taskWeights: { coding: { capability: Symbol("x"), price: 1, speed: 1 } } })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.errors.length).toBeGreaterThan(0)
+  })
+
+  test("never throws on throwing getters", () => {
+    const hostile: Record<string, unknown> = {}
+    Object.defineProperty(hostile, "p/a", {
+      enumerable: true,
+      get() {
+        throw new Error("boom")
+      },
+    })
+    const result = parseOptions({ models: hostile })
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.errors.length).toBeGreaterThan(0)
+  })
 })
 
 describe("parseModelKey", () => {
