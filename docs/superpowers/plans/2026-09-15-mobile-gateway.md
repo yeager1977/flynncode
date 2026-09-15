@@ -18,7 +18,7 @@
 - Upstream credentials always come from the gateway environment: username `OPENCODE_SERVER_USERNAME` (default `opencode`), password `OPENCODE_SERVER_PASSWORD`.
 - Session cookie: `HttpOnly`, `SameSite=Lax`, `Path=/`, `Max-Age=2592000`. Tokens in memory only; lost on restart.
 - Cookie name `oc_mobile_session`.
-- Requests without a valid cookie never reach upstream, even with a Basic header present.
+- A request reaches upstream only when it presents a valid session cookie, or presents Basic credentials that match the gateway's own environment. Anything else is rejected with 401 before any upstream call.
 - Proxy must strip `content-encoding`, `content-length`, and `transfer-encoding` from forwarded responses (matches `packages/opencode/src/server/shared/ui.ts:30-38`).
 - SSE streams must be forwarded unbuffered, including `cache-control: no-cache, no-transform` and `x-accel-buffering: no` when upstream sends them.
 - No new runtime dependencies. Dev deps only, from catalog: `@tsconfig/bun`, `@types/bun`, `@typescript/native-preview`, `typescript`.
@@ -784,10 +784,10 @@ git commit -m "feat(mobile-gateway): add proxy response transformation"
 
 Auth decision, in order:
 1. If the request carries a valid `SESSION_COOKIE`, proxy it.
-2. If it carries `Authorization: Basic <base64(username:password)>` matching `options`, run `Upstream.probe`; on success issue a token, return 200 with `Set-Cookie` and a JSON body; on failure return 401.
+2. If it carries `Authorization: Basic <base64(username:password)>` matching `options`, run `Upstream.probe`; on success issue a token, proxy the request upstream, and attach `Set-Cookie` to the proxied response. On failure return 401.
 3. Otherwise return 401 with `WWW-Authenticate`.
 
-The `Set-Cookie` handshake response must not be proxied upstream.
+The successful Basic request must still be proxied, not answered with a JSON body, because the browser sends its credentials on the page load itself. Returning a JSON stub there would show `{"status":"authorized"}` instead of the app.
 
 Request bodies are buffered with `await request.arrayBuffer()` before forwarding. SSE streaming is response-side, so buffering small JSON prompt bodies does not affect stream behaviour.
 
@@ -874,11 +874,14 @@ describe("createGateway", () => {
     expect(upstreamRequests).toEqual([])
   })
 
-  test("accepts a correct password and issues a session cookie", async () => {
+  test("accepts a correct password, proxies the request, and issues a session cookie", async () => {
+    upstreamRequests = []
     const response = await gateway()(
       new Request("http://gateway/api/session", { headers: { authorization: basic("opencode", "secret") } }),
     )
     expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ data: [{ id: "ses_1" }] })
+    expect(upstreamRequests).toContain("GET /api/session")
     const cookie = response.headers.get("set-cookie")
     expect(cookie).toContain(`${SESSION_COOKIE}=`)
     expect(cookie).toContain("HttpOnly")
@@ -900,10 +903,10 @@ describe("createGateway", () => {
     )
     const cookie = first.headers.get("set-cookie")!.split(";")[0]
     upstreamRequests = []
-    const response = await handle(new Request("http://gateway/api/session", { headers: { cookie } }))
+    const response = await handle(new Request("http://gateway/api/session?limit=1", { headers: { cookie } }))
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ data: [{ id: "ses_1" }] })
-    expect(upstreamRequests).toEqual(["GET /api/session"])
+    expect(upstreamRequests).toEqual(["GET /api/session?limit=1"])
   })
 
   test("streams SSE without buffering", async () => {
@@ -994,18 +997,15 @@ export function createGateway(input: { options: GatewayOptions }) {
 
   return async function handle(request: Request): Promise<Response> {
     const token = readCookie(request.headers.get("cookie"), SESSION_COOKIE)
-    const proxied = token !== undefined && sessions.verify(token)
+    const cookieValid = token !== undefined && sessions.verify(token)
 
-    if (!proxied) {
+    let issued: string | undefined
+    if (!cookieValid) {
       const credentials = decodeBasic(request.headers.get("authorization"))
       if (!credentials) return unauthorized()
       if (!matchesEnv(credentials)) return unauthorized()
       if (!(await Upstream.probe({ base: options.upstream, authorization }))) return unauthorized()
-      const issued = sessions.issue()
-      return Response.json(
-        { data: { status: "authorized" } },
-        { headers: { "set-cookie": sessionCookie(issued) } },
-      )
+      issued = sessions.issue()
     }
 
     const target = upstreamUrl(options.upstream, request.url)
@@ -1024,7 +1024,9 @@ export function createGateway(input: { options: GatewayOptions }) {
       return new Response("Upstream unavailable", { status: 502 })
     }
 
-    return streamThrough(upstream)
+    const response = streamThrough(upstream)
+    if (issued !== undefined) response.headers.set("set-cookie", sessionCookie(issued))
+    return response
   }
 }
 
