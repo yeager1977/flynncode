@@ -78,7 +78,9 @@ export function createGateway(input: { options: GatewayOptions }) {
 export async function startGateway(input: { options: GatewayOptions; port?: number }): Promise<Gateway> {
   if (running) {
     running.refs += 1
-    return { port: running.server.port ?? 0, stop: release }
+    const state = running
+    const released = { value: false }
+    return { port: state.server.port ?? 0, stop: () => release(state, released) }
   }
   const handle = createGateway({ options: input.options })
   const server = Bun.serve({
@@ -91,19 +93,25 @@ export async function startGateway(input: { options: GatewayOptions; port?: numb
     refs: 1,
     stop: () => {
       server.stop(true)
-      running = undefined
+      if (running?.server === server) running = undefined
     },
   }
-  return { port: server.port ?? 0, stop: release }
+  const state = running
+  const released = { value: false }
+  return { port: server.port ?? 0, stop: () => release(state, released) }
 }
 
 // The plugin hook is created once per opened directory, so the gateway is
-// reference-counted. The last disposer closes the listener.
-function release() {
-  if (!running) return
-  running.refs -= 1
-  if (running.refs > 0) return
-  running.stop()
+// reference-counted. The last disposer closes the listener. Each handle
+// releases at most once and is bound to the server instance it was created
+// for, so a stale handle after a restart cannot decrement the new server.
+function release(state: { server: ReturnType<typeof Bun.serve>; refs: number; stop: () => void }, released: { value: boolean }) {
+  if (released.value) return
+  released.value = true
+  if (state.refs <= 0) return
+  state.refs -= 1
+  if (state.refs > 0) return
+  state.stop()
 }
 
 export function stopGateway() {
