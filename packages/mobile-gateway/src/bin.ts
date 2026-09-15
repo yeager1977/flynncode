@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
-import { resolveOptions } from "./config"
-import { startGateway } from "./gateway"
+import { resolveOptions } from "./config.ts"
+import { startGateway } from "./gateway.ts"
 
 const resolved = resolveOptions(process.env)
 if (!resolved.ok) {

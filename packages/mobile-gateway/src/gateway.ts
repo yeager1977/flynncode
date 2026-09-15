@@ -1,11 +1,11 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import { Readable } from "node:stream"
 import { pipeline } from "node:stream/promises"
-import { SESSION_COOKIE, readCookie, sessionCookie } from "./cookies"
-import { envAuthHeader, type GatewayOptions } from "./config"
-import { streamThrough } from "./proxy"
-import { createSessionStore } from "./session"
-import { Upstream, upstreamHeaders, upstreamUrl } from "./upstream"
+import { SESSION_COOKIE, readCookie, sessionCookie } from "./cookies.ts"
+import { envAuthHeader, type GatewayOptions } from "./config.ts"
+import { streamThrough } from "./proxy.ts"
+import { createSessionStore } from "./session.ts"
+import { Upstream, upstreamHeaders, upstreamUrl } from "./upstream.ts"
 
 const UNAUTHORIZED = 'Basic realm="opencode-mobile"'
 
