@@ -17,6 +17,7 @@ describe("emptyForm", () => {
     expect(form).toEqual({
       autoRoute: true,
       allowUnscored: false,
+      overrideExplicit: false,
       providers: [],
       agentTasks: [
         { agent: "build", task: "coding" },
@@ -80,6 +81,11 @@ describe("formFromConfig", () => {
     expect(form).toEqual(emptyForm())
   })
 
+  test("overrideExplicit preserves true", () => {
+    const form = formFromConfig({ overrideExplicit: true })
+    expect(form.overrideExplicit).toBe(true)
+  })
+
   test("invalid model entries keep the key with fallback scores", () => {
     const form = formFromConfig({
       models: { "ollama/bad": { price: 22, capability: "high", tags: ["nonsense"] }, "no-slash": 5 },
@@ -93,6 +99,7 @@ describe("serializeForm", () => {
     expect(serializeForm(emptyForm())).toEqual({
       autoRoute: true,
       allowUnscored: false,
+      overrideExplicit: false,
       providers: [],
       agentTasks: DEFAULT_AGENT_TASKS,
       taskWeights: DEFAULT_TASK_WEIGHTS,
@@ -111,6 +118,7 @@ describe("serializeForm", () => {
     expect(serializeForm(form)).toEqual({
       autoRoute: true,
       allowUnscored: false,
+      overrideExplicit: false,
       providers: [],
       agentTasks: DEFAULT_AGENT_TASKS,
       taskWeights: DEFAULT_TASK_WEIGHTS,
@@ -124,6 +132,11 @@ describe("serializeForm", () => {
       models: [{ key: "ollama/llama3.1", tags: [], price: 4, capability: 9, speed: 3 }],
     }
     expect(serializeForm(form).models).toEqual({ "ollama/llama3.1": { price: 4, capability: 9, speed: 3 } })
+  })
+
+  test("emits overrideExplicit when true", () => {
+    const form: ModelRouterFormState = { ...emptyForm(), overrideExplicit: true }
+    expect(serializeForm(form).overrideExplicit).toBe(true)
   })
 })
 
@@ -157,7 +170,7 @@ describe("validateForm", () => {
         ...emptyForm(),
         models: [{ key: "ollama/x", tags: [], price, capability: 5, speed: 5 }],
       }
-      expect(validateForm(form)).toEqual({ ok: false, errors: [`models.ollama/x.${price === 0 ? "price" : "price"}`] })
+      expect(validateForm(form)).toEqual({ ok: false, errors: ["models.ollama/x.price"] })
     }
   })
 
@@ -167,6 +180,14 @@ describe("validateForm", () => {
       models: [{ key: "ollama/x", tags: [], price: 5.5, capability: 5, speed: 5 }],
     }
     expect(validateForm(form)).toEqual({ ok: false, errors: ["models.ollama/x.price"] })
+  })
+
+  test("capability out of range rejected", () => {
+    const form: ModelRouterFormState = {
+      ...emptyForm(),
+      models: [{ key: "ollama/x", tags: [], price: 5, capability: 11, speed: 5 }],
+    }
+    expect(validateForm(form)).toEqual({ ok: false, errors: ["models.ollama/x.capability"] })
   })
 
   test("unknown task name in agent rows rejected", () => {
@@ -236,6 +257,7 @@ describe("round trip", () => {
     const form: ModelRouterFormState = {
       autoRoute: false,
       allowUnscored: true,
+      overrideExplicit: true,
       providers: ["ollama", "openai"],
       agentTasks: [{ agent: "build", task: "review" }],
       taskWeights: { ...DEFAULT_TASK_WEIGHTS, coding: { capability: 0.8, price: 0.1, speed: 0.1 } },

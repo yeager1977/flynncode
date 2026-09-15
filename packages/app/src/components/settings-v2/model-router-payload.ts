@@ -40,6 +40,7 @@ export type ModelScoreRow = { key: string; tags: TaskName[]; price: number; capa
 export type ModelRouterFormState = {
   autoRoute: boolean
   allowUnscored: boolean
+  overrideExplicit: boolean
   providers: string[]
   agentTasks: AgentTaskRow[]
   taskWeights: TaskWeights
@@ -50,6 +51,7 @@ export function emptyForm(): ModelRouterFormState {
   return {
     autoRoute: true,
     allowUnscored: false,
+    overrideExplicit: false,
     providers: [],
     agentTasks: Object.entries(DEFAULT_AGENT_TASKS).map(([agent, task]) => ({ agent, task })),
     taskWeights: structuredClone(DEFAULT_TASK_WEIGHTS),
@@ -62,6 +64,7 @@ export function formFromConfig(config: Record<string, unknown> | undefined): Mod
   return {
     autoRoute: typeof raw.autoRoute === "boolean" ? raw.autoRoute : true,
     allowUnscored: typeof raw.allowUnscored === "boolean" ? raw.allowUnscored : false,
+    overrideExplicit: typeof raw.overrideExplicit === "boolean" ? raw.overrideExplicit : false,
     providers: providersFrom(raw.providers),
     agentTasks: agentTasksFrom(raw.agentTasks),
     taskWeights: weightsFrom(raw.taskWeights),
@@ -73,6 +76,7 @@ export function serializeForm(form: ModelRouterFormState): Record<string, unknow
   const payload: Record<string, unknown> = {
     autoRoute: form.autoRoute,
     allowUnscored: form.allowUnscored,
+    overrideExplicit: form.overrideExplicit,
     providers: [...form.providers],
     agentTasks: Object.fromEntries(form.agentTasks.map((row) => [row.agent, row.task])),
     taskWeights: Object.fromEntries(TASK_NAMES.map((task) => [task, { ...form.taskWeights[task] }])),
