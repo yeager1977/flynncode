@@ -158,3 +158,7 @@ means a real domain or a local CA — explicitly out of scope.
 - **Exposure if the password is weak or shared.** The gateway is reachable by
   anyone on the LAN who knows it. The design keeps the surface read/write to the
   agent and defers stronger pairing to a future revision.
+- **Passive capture over plain LAN HTTP.** Anyone on the network can observe
+  traffic and record credentials or session cookies without knowing the
+  password, so the shared-password model offers no protection against a
+  passive eavesdropper.

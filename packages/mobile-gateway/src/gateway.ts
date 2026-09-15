@@ -50,10 +50,10 @@ export function createGateway(input: { options: GatewayOptions }) {
       if (!credentials) return unauthorized()
       if (!matchesEnv(credentials)) return unauthorized()
       const probe = await Upstream.probe({ base: options.upstream, authorization })
-      if (probe.ok === false && probe.reason === "unreachable") {
+      if (!probe.ok && probe.reason === "unreachable") {
         return new Response("Upstream server unreachable", { status: 503 })
       }
-      if (probe.ok === false) return unauthorized()
+      if (!probe.ok) return unauthorized()
       issued = sessions.issue()
     }
 

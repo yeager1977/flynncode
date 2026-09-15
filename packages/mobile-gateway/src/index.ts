@@ -1,6 +1,6 @@
 import type { Hooks, PluginInput, PluginOptions } from "@opencode-ai/plugin"
 import { resolveOptions } from "./config"
-import { startGateway, stopGateway } from "./gateway"
+import { startGateway } from "./gateway"
 
 const id = "@flynncode/mobile-gateway"
 

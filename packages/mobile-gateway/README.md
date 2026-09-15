@@ -50,9 +50,35 @@ Environment:
 Live updates arrive while the app is open. Push notifications are unavailable
 because iOS requires HTTPS for them; plain LAN HTTP does not qualify.
 
+## Security
+
+- Anyone on the local network who knows `OPENCODE_SERVER_PASSWORD` gets full
+  control of the agent through the gateway, including approving shell-command
+  permissions. The gateway is exactly as strong as that password; use a long,
+  unique one.
+- The gateway binds `0.0.0.0` by default, so it is reachable from the whole LAN.
+  Set `OPENCODE_MOBILE_HOST=127.0.0.1` to restrict it to the machine itself.
+- Traffic is plain HTTP. There is no TLS, so anyone who can passively observe
+  the network can capture the session cookie or the Basic credential handshake
+  without knowing the password. Do not use this on untrusted networks (public
+  Wi-Fi, shared/hotel/corporate networks).
+- The session cookie is deliberately not marked `Secure` because that attribute
+  requires HTTPS, which plain-LAN HTTP cannot provide.
+- There is no rate limiting or lockout on credential attempts.
+- Push notifications and a service worker are unavailable because iOS requires
+  HTTPS for both; see "On the phone" above.
+
 ## Troubleshooting auth failures
 
 If credentials are right but you still get a 401, the upstream opencode server
 itself rejected the credential probe. If the upstream is not running at all,
 the gateway answers 503 instead — a 401 with a fresh, correct password usually
 means the upstream password does not match `OPENCODE_SERVER_PASSWORD`.
+
+If the opencode server goes down after a valid session is established, the
+gateway returns 502 for proxied requests until the upstream is running again.
+
+The PTY terminal is not available through the gateway (it does not proxy
+WebSocket upgrades), so the terminal panel in the web UI will not work from the
+phone. Everything else — sessions, messages, prompts, abort, permissions, and
+questions — does work.

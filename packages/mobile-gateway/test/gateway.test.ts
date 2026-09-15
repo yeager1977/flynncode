@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { createGateway, startGateway, stopGateway } from "../src/gateway"
-import { SESSION_COOKIE, sessionCookie } from "../src/cookies"
+import { SESSION_COOKIE } from "../src/cookies"
 import type { GatewayOptions } from "../src/config"
 
 const options: GatewayOptions = {
