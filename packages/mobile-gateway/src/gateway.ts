@@ -49,7 +49,11 @@ export function createGateway(input: { options: GatewayOptions }) {
       const credentials = decodeBasic(request.headers.get("authorization"))
       if (!credentials) return unauthorized()
       if (!matchesEnv(credentials)) return unauthorized()
-      if (!(await Upstream.probe({ base: options.upstream, authorization }))) return unauthorized()
+      const probe = await Upstream.probe({ base: options.upstream, authorization })
+      if (probe.ok === false && probe.reason === "unreachable") {
+        return new Response("Upstream server unreachable", { status: 503 })
+      }
+      if (probe.ok === false) return unauthorized()
       issued = sessions.issue()
     }
 

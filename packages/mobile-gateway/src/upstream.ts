@@ -37,7 +37,9 @@ export function upstreamHeaders(input: {
   return headers
 }
 
-async function probe(input: { base: string; authorization: string }) {
+type ProbeResult = { ok: true } | { ok: false; reason: "unauthorized" | "unreachable" }
+
+async function probe(input: { base: string; authorization: string }): Promise<ProbeResult> {
   const url = upstreamUrl(input.base, "http://gateway/api/session?limit=1")
   try {
     const response = await fetch(url, {
@@ -45,9 +47,11 @@ async function probe(input: { base: string; authorization: string }) {
       signal: AbortSignal.timeout(5000),
       redirect: "error",
     })
-    return response.ok
+    if (response.ok) return { ok: true }
+    if (response.status === 401) return { ok: false, reason: "unauthorized" }
+    return { ok: false, reason: "unreachable" }
   } catch {
-    return false
+    return { ok: false, reason: "unreachable" }
   }
 }
 

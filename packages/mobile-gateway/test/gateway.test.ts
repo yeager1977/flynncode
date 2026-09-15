@@ -133,6 +133,49 @@ describe("createGateway", () => {
     await handle(new Request("http://gateway/api/session?auth_token=leak&limit=1", { headers: { cookie } }))
     expect(upstreamRequests).toEqual(["GET /api/session?limit=1"])
   })
+
+  test("responds 503 without a cookie when the upstream answers 503", async () => {
+    const upstream = Bun.serve({
+      port: 0,
+      fetch: () => new Response("unavailable", { status: 503 }),
+    })
+    const handle = createGateway({
+      options: { ...options, upstream: `http://127.0.0.1:${upstream.port}` },
+    })
+    const response = await handle(new Request("http://gateway/api/session", { headers: { authorization: basic("opencode", "secret") } }))
+    upstream.stop(true)
+    expect(response.status).toBe(503)
+    expect(response.headers.get("www-authenticate")).toBeNull()
+    expect(response.headers.get("set-cookie")).toBeNull()
+    const rejected = await handle(new Request("http://gateway/api/session", { headers: { cookie: `${SESSION_COOKIE}=whatever` } }))
+    expect(rejected.status).toBe(401)
+  })
+
+  test("responds 401 with www-authenticate when the upstream rejects the credentials", async () => {
+    const upstream = Bun.serve({
+      port: 0,
+      fetch: () => new Response("nope", { status: 401 }),
+    })
+    const handle = createGateway({
+      options: { ...options, upstream: `http://127.0.0.1:${upstream.port}` },
+    })
+    const response = await handle(new Request("http://gateway/api/session", { headers: { authorization: basic("opencode", "secret") } }))
+    upstream.stop(true)
+    expect(response.status).toBe(401)
+    expect(response.headers.get("www-authenticate")).toContain("Basic")
+  })
+
+  test("responds 503 rather than hanging when the upstream port is closed", async () => {
+    const closed = Bun.serve({ port: 0, fetch: () => new Response("unused") })
+    const closedPort = closed.port
+    closed.stop(true)
+    const handle = createGateway({
+      options: { ...options, upstream: `http://127.0.0.1:${closedPort}` },
+    })
+    const response = await handle(new Request("http://gateway/api/session", { headers: { authorization: basic("opencode", "secret") } }))
+    expect(response.status).toBe(503)
+    expect(response.headers.get("www-authenticate")).toBeNull()
+  })
 })
 
 describe("startGateway", () => {

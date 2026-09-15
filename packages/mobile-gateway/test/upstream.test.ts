@@ -46,52 +46,52 @@ describe("upstreamHeaders", () => {
 })
 
 describe("Upstream.probe", () => {
-  test("returns false on 401", async () => {
+  test("classifies 401 as unauthorized", async () => {
     const server = Bun.serve({
       port: 0,
       fetch: () => new Response("nope", { status: 401 }),
     })
-    const ok = await Upstream.probe({ base: `http://127.0.0.1:${server.port}`, authorization: "Basic wrong" })
+    const result = await Upstream.probe({ base: `http://127.0.0.1:${server.port}`, authorization: "Basic wrong" })
     server.stop(true)
-    expect(ok).toBe(false)
+    expect(result).toEqual({ ok: false, reason: "unauthorized" })
   })
 
-  test("returns true on 200", async () => {
+  test("returns ok on 200", async () => {
     const server = Bun.serve({
       port: 0,
       fetch: () => Response.json({ data: [] }),
     })
-    const ok = await Upstream.probe({ base: `http://127.0.0.1:${server.port}`, authorization: "Basic right" })
+    const result = await Upstream.probe({ base: `http://127.0.0.1:${server.port}`, authorization: "Basic right" })
     server.stop(true)
-    expect(ok).toBe(true)
+    expect(result).toEqual({ ok: true })
   })
 
-  test("returns false when upstream is unreachable", async () => {
-    const ok = await Upstream.probe({ base: "http://127.0.0.1:1", authorization: "Basic right" })
-    expect(ok).toBe(false)
+  test("classifies an unreachable upstream as unreachable", async () => {
+    const result = await Upstream.probe({ base: "http://127.0.0.1:1", authorization: "Basic right" })
+    expect(result).toEqual({ ok: false, reason: "unreachable" })
   })
 
-  test("returns false when a redirect is refused", async () => {
+  test("classifies a refused redirect as unreachable", async () => {
     const server = Bun.serve({
       port: 0,
       fetch: () => new Response("nope", { status: 302 }),
     })
-    const ok = await Upstream.probe({ base: `http://127.0.0.1:${server.port}`, authorization: "Basic right" })
+    const result = await Upstream.probe({ base: `http://127.0.0.1:${server.port}`, authorization: "Basic right" })
     server.stop(true)
-    expect(ok).toBe(false)
+    expect(result).toEqual({ ok: false, reason: "unreachable" })
   })
 
-  test("returns false on non-2xx status", async () => {
+  test("classifies a non-2xx status as unreachable", async () => {
     const server = Bun.serve({
       port: 0,
       fetch: () => new Response("unavailable", { status: 503 }),
     })
-    const ok = await Upstream.probe({ base: `http://127.0.0.1:${server.port}`, authorization: "Basic right" })
+    const result = await Upstream.probe({ base: `http://127.0.0.1:${server.port}`, authorization: "Basic right" })
     server.stop(true)
-    expect(ok).toBe(false)
+    expect(result).toEqual({ ok: false, reason: "unreachable" })
   })
 
-  test("returns false on redirect to a 200 page", async () => {
+  test("classifies a redirect to a 200 page as unreachable", async () => {
     const server = Bun.serve({
       port: 0,
       fetch: (request) => {
@@ -101,8 +101,8 @@ describe("Upstream.probe", () => {
         return Response.json({ data: [] })
       },
     })
-    const ok = await Upstream.probe({ base: `http://127.0.0.1:${server.port}`, authorization: "Basic right" })
+    const result = await Upstream.probe({ base: `http://127.0.0.1:${server.port}`, authorization: "Basic right" })
     server.stop(true)
-    expect(ok).toBe(false)
+    expect(result).toEqual({ ok: false, reason: "unreachable" })
   })
 })
