@@ -13,6 +13,7 @@ import { useLanguage } from "@/context/language"
 import { usePermission } from "@/context/permission"
 import { usePlatform, type DisplayBackend } from "@/context/platform"
 import { useServerSync } from "@/context/server-sync"
+import { useSDK } from "@/context/sdk"
 import { useServerSDK } from "@/context/server-sdk"
 import { useUpdaterAction } from "./updater-action"
 import {
@@ -94,30 +95,17 @@ export const SettingsGeneral: Component = () => {
   const updater = useUpdaterAction()
 
   const linux = createMemo(() => platform.platform === "desktop" && platform.os === "linux")
-  const dir = createMemo(() => decode64(params.dir))
   const accepting = createMemo(() => {
     const value = dir()
     if (!value) return false
-    if (!params.id) return permission.isAutoAcceptingDirectory(value)
-    return permission.isAutoAccepting(params.id, value)
+    return permission.isAutoAcceptingDirectory(value)
   })
 
   const toggleAccept = (checked: boolean) => {
     const value = dir()
     if (!value) return
-
-    if (!params.id) {
-      if (permission.isAutoAcceptingDirectory(value) === checked) return
-      permission.toggleAutoAcceptDirectory(value)
-      return
-    }
-
-    if (checked) {
-      permission.enableAutoAccept(params.id, value)
-      return
-    }
-
-    permission.disableAutoAccept(params.id, value)
+    if (permission.isAutoAcceptingDirectory(value) === checked) return
+    permission.toggleAutoAcceptDirectory(value)
   }
   const desktop = createMemo(() => platform.platform === "desktop")
 
@@ -125,6 +113,9 @@ export const SettingsGeneral: Component = () => {
 
   const serverSync = useServerSync()
   const serverSdk = useServerSDK()
+
+  const sdk = useSDK()
+  const dir = createMemo(() => decode64(params.dir) ?? sdk().directory)
 
   const [shells] = createResource(
     async () => {

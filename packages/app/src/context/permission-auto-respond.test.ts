@@ -104,7 +104,46 @@ describe("autoRespondsPermission", () => {
 
     expect(autoRespondsPermission(autoAccept, sessions, permission("child"), directory)).toBe(true)
   })
+  test("keys from different directories do not collide", () => {
+    const directoryA = "/tmp/project-a"
+    const directoryB = "/tmp/project-b"
+    const sessions = [session({ id: "root" })]
+    const autoAccept = {
+      [`${base64Encode(directoryA)}/*`]: true,
+      [`${base64Encode(directoryB)}/*`]: false,
+      [`${base64Encode(directoryA)}/root`]: true,
+      [`${base64Encode(directoryB)}/root`]: false,
+    }
+
+    expect(autoRespondsPermission(autoAccept, sessions, permission("root"), directoryA)).toBe(true)
+    expect(autoRespondsPermission(autoAccept, sessions, permission("root"), directoryB)).toBe(false)
+  })
+
+  test("a session false overrides an inherited directory true", () => {
+    const directory = "/tmp/project"
+    const sessions = [session({ id: "root" })]
+    const autoAccept = {
+      [`${base64Encode(directory)}/*`]: true,
+      [`${base64Encode(directory)}/root`]: false,
+    }
+
+    expect(isDirectoryAutoAccepting(autoAccept, directory)).toBe(true)
+    expect(autoRespondsPermission(autoAccept, sessions, permission("root"), directory)).toBe(false)
+  })
+
+  test("a session true overrides an inherited directory false", () => {
+    const directory = "/tmp/project"
+    const sessions = [session({ id: "root" })]
+    const autoAccept = {
+      [`${base64Encode(directory)}/*`]: false,
+      [`${base64Encode(directory)}/root`]: true,
+    }
+
+    expect(isDirectoryAutoAccepting(autoAccept, directory)).toBe(false)
+    expect(autoRespondsPermission(autoAccept, sessions, permission("root"), directory)).toBe(true)
+  })
 })
+
 
 describe("isDirectoryAutoAccepting", () => {
   test("returns true when directory key is set", () => {
