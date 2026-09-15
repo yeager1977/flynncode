@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@flynncode/mobile-gateway",
+  "version": "0.1.0",
+  "description": "LAN gateway for reaching opencode sessions from a phone",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "flynncode-mobile": "./src/bin.ts"
+  },
+  "exports": {
+    ".": "./src/config.ts",
+    "./server": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "engines": {
+    "opencode": ">=1.18.0"
+  },
+  "scripts": {
+    "test": "bun test --timeout 30000",
+    "typecheck": "tsgo --noEmit"
+  },
+  "devDependencies": {
+    "@tsconfig/bun": "catalog:",
+    "@types/bun": "catalog:",
+    "@typescript/native-preview": "catalog:",
+    "typescript": "catalog:"
+  }
+}
