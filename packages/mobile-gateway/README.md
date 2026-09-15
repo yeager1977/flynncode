@@ -37,8 +37,13 @@ bin instead.
 ## Run in the desktop app
 
 The Flynncode desktop app loads this package as a plugin and the gateway starts
-with the app. The packaged app must include this package; when running the app
-from source, use `bun run dev` from the repository root.
+with the app. Plugins are dynamic-imported at runtime by path, so the app can
+load this package's source directly from disk — no rebuild or bundling required.
+
+The gateway uses only `node:http` and `node:stream`. Under the desktop's
+Electron Node runtime there is no `Bun` global; the same code runs under both
+Bun and Electron's Node, which the package's Node runtime test proves by
+serving a real request through Electron with `ELECTRON_RUN_AS_NODE=1`.
 
 The desktop app binds the opencode server to a random port each launch and
 rotates `OPENCODE_SERVER_PASSWORD`, so leave `OPENCODE_MOBILE_UPSTREAM` unset and
