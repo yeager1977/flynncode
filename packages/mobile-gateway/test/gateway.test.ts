@@ -329,14 +329,39 @@ describe("startGateway", () => {
     upstream.stop(true)
   })
 
-  test("returns 500 rather than crashing when the handler throws", async () => {
+  test("responds 503 when the upstream is unreachable", async () => {
     const running = await startGateway({
       options: { host: "127.0.0.1", port: 0, upstream: "http://127.0.0.1:1", username: "opencode", password: "secret" },
     })
     const response = await fetch(`http://127.0.0.1:${running.port}/api/health`, {
       headers: { authorization: basic("opencode", "secret") },
     })
-    expect([500, 503]).toContain(response.status)
+    expect(response.status).toBe(503)
+    stopGateway()
+  })
+
+  test("survives a malformed Host header without crashing", async () => {
+    const running = await startGateway({
+      options: { host: "127.0.0.1", port: 0, upstream: "http://127.0.0.1:1", username: "opencode", password: "secret" },
+    })
+    const { connect } = await import("node:net")
+    const response = await new Promise<string>((resolve, reject) => {
+      let data = ""
+      const socket = connect(running.port, "127.0.0.1")
+      socket.on("connect", () => {
+        socket.write("GET /api/health HTTP/1.1\r\nHost: exa mple\r\nConnection: close\r\n\r\n")
+      })
+      socket.on("data", (chunk) => {
+        data += chunk.toString()
+      })
+      socket.on("end", () => resolve(data))
+      socket.on("error", reject)
+      setTimeout(() => reject(new Error("timeout waiting for response")), 10000)
+    })
+    expect(response).toContain("HTTP/1.1")
+    expect(response).toMatch(/HTTP\/1\.1 (400|500)/)
+    const after = await fetch(`http://127.0.0.1:${running.port}/api/health`).catch(() => undefined)
+    expect(after?.status).toBe(401)
     stopGateway()
   })
 })

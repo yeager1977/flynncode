@@ -93,7 +93,8 @@ export async function startGateway(input: { options: GatewayOptions; port?: numb
   }
   const handle = createGateway({ options: input.options })
   const server = createServer((request, response) => {
-    Promise.resolve(requestFromNode(request))
+    Promise.resolve()
+      .then(() => requestFromNode(request))
       .then(handle)
       .then((result) => writeToNode(response, result))
       .catch(() => {
