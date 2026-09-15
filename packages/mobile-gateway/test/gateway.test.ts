@@ -9,6 +9,7 @@ const options: GatewayOptions = {
   upstream: "",
   username: "opencode",
   password: "secret",
+  upstreamPassword: "secret",
 }
 
 const basic = (username: string, password: string) => `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`
@@ -248,7 +249,7 @@ describe("startGateway", () => {
       },
     })
     const handle = startGateway({
-      options: { host: "127.0.0.1", port: 0, upstream: `http://127.0.0.1:${echo.port}`, username: "opencode", password: "secret" },
+      options: { host: "127.0.0.1", port: 0, upstream: `http://127.0.0.1:${echo.port}`, username: "opencode", password: "secret", upstreamPassword: "secret" },
     })
     const running = await handle
     const auth = basic("opencode", "secret")
@@ -276,7 +277,7 @@ describe("startGateway", () => {
       },
     })
     const running = await startGateway({
-      options: { host: "127.0.0.1", port: 0, upstream: `http://127.0.0.1:${upstream.port}`, username: "opencode", password: "secret" },
+      options: { host: "127.0.0.1", port: 0, upstream: `http://127.0.0.1:${upstream.port}`, username: "opencode", password: "secret", upstreamPassword: "secret" },
     })
     const first = await fetch(`http://127.0.0.1:${running.port}/api/health`, {
       headers: { authorization: basic("opencode", "secret") },
@@ -309,7 +310,7 @@ describe("startGateway", () => {
         ),
     })
     const running = await startGateway({
-      options: { host: "127.0.0.1", port: 0, upstream: `http://127.0.0.1:${upstream.port}`, username: "opencode", password: "secret" },
+      options: { host: "127.0.0.1", port: 0, upstream: `http://127.0.0.1:${upstream.port}`, username: "opencode", password: "secret", upstreamPassword: "secret" },
     })
     const first = await fetch(`http://127.0.0.1:${running.port}/api/health`, {
       headers: { authorization: basic("opencode", "secret") },
@@ -331,7 +332,7 @@ describe("startGateway", () => {
 
   test("responds 503 when the upstream is unreachable", async () => {
     const running = await startGateway({
-      options: { host: "127.0.0.1", port: 0, upstream: "http://127.0.0.1:1", username: "opencode", password: "secret" },
+      options: { host: "127.0.0.1", port: 0, upstream: "http://127.0.0.1:1", username: "opencode", password: "secret", upstreamPassword: "secret" },
     })
     const response = await fetch(`http://127.0.0.1:${running.port}/api/health`, {
       headers: { authorization: basic("opencode", "secret") },
@@ -342,7 +343,7 @@ describe("startGateway", () => {
 
   test("survives a malformed Host header without crashing", async () => {
     const running = await startGateway({
-      options: { host: "127.0.0.1", port: 0, upstream: "http://127.0.0.1:1", username: "opencode", password: "secret" },
+      options: { host: "127.0.0.1", port: 0, upstream: "http://127.0.0.1:1", username: "opencode", password: "secret", upstreamPassword: "secret" },
     })
     const { connect } = await import("node:net")
     const response = await new Promise<string>((resolve, reject) => {

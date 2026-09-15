@@ -4,6 +4,7 @@ export type GatewayOptions = {
   upstream: string
   username: string
   password: string
+  upstreamPassword: string
 }
 
 export type ResolveResult = { ok: true; value: GatewayOptions } | { ok: false; reason: string }
@@ -30,16 +31,20 @@ function normalizeUpstream(raw: string): string | undefined {
   }
 }
 
-export function resolveOptions(env: Record<string, string | undefined>): ResolveResult {
-  const password = env.OPENCODE_SERVER_PASSWORD ?? ""
-  if (!password) {
+export function resolveOptions(
+  env: Record<string, string | undefined>,
+  fallbackUpstream?: string,
+): ResolveResult {
+  const upstreamPassword = env.OPENCODE_SERVER_PASSWORD ?? ""
+  if (!upstreamPassword) {
     return { ok: false, reason: "OPENCODE_SERVER_PASSWORD must be set and non-empty to start the mobile gateway" }
   }
+  const mobilePassword = env.OPENCODE_MOBILE_PASSWORD ?? ""
 
   const port = readPort(env.OPENCODE_MOBILE_PORT)
   if (port === "invalid") return { ok: false, reason: `OPENCODE_MOBILE_PORT is not a valid port` }
 
-  const upstream = normalizeUpstream(env.OPENCODE_MOBILE_UPSTREAM ?? DEFAULT_UPSTREAM)
+  const upstream = normalizeUpstream(env.OPENCODE_MOBILE_UPSTREAM ?? fallbackUpstream ?? DEFAULT_UPSTREAM)
   if (!upstream) return { ok: false, reason: "OPENCODE_MOBILE_UPSTREAM is not a valid http(s) URL" }
 
   return {
@@ -49,11 +54,12 @@ export function resolveOptions(env: Record<string, string | undefined>): Resolve
       port: port ?? DEFAULT_PORT,
       upstream,
       username: env.OPENCODE_SERVER_USERNAME ?? DEFAULT_USERNAME,
-      password,
+      password: mobilePassword || upstreamPassword,
+      upstreamPassword,
     },
   }
 }
 
 export function envAuthHeader(options: GatewayOptions): string {
-  return `Basic ${Buffer.from(`${options.username}:${options.password}`).toString("base64")}`
+  return `Basic ${Buffer.from(`${options.username}:${options.upstreamPassword}`).toString("base64")}`
 }
