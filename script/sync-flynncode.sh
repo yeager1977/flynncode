@@ -53,7 +53,8 @@ else
   CURRENT_BRANCH="$(git branch --show-current)"
 
   if [ "$CURRENT_BRANCH" = "$BRANCH" ]; then
-    [ -n "$(git status --porcelain)" ] && fail "uncommitted changes in $REPO; skipping sync"
+    [ -n "$(git status --porcelain --untracked-files=no)" ] &&
+      fail "uncommitted tracked changes in $REPO; skipping sync"
     WORK_DIR="$REPO"
     WORKTREE="$REPO"
   else
