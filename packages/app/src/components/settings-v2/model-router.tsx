@@ -70,7 +70,25 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
     return Array.from(new Set(Object.keys(serverSync().data.provider.all))).filter((id) => !chosen.has(id))
   })
 
+  const invalidRaw = createMemo(() =>
+    Object.entries(raw).filter(([key, value]) => {
+      const [scope, , dim] = key.split(":")
+      if (dim === undefined) return false
+      const trimmed = value.trim()
+      if (trimmed === "") return true
+      const parsed = Number(trimmed)
+      if (!Number.isFinite(parsed)) return true
+      if (scope === "m") return !Number.isInteger(parsed) || parsed < 1 || parsed > 10
+      return parsed < 0
+    }),
+  )
+
   const save = async () => {
+    const badRaw = invalidRaw()
+    if (badRaw.length > 0) {
+      showToast({ variant: "error", description: language.t("settings.modelRouter.invalid") })
+      return
+    }
     const result = validateForm(form)
     if (!result.ok) {
       setErrors(result.errors)
@@ -81,13 +99,14 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
     setSaving(true)
     try {
       await serverSync().updateConfig({ model_router: result.value })
+      setRaw({})
+      setErrors([])
       showToast({
         variant: "success",
         icon: "circle-check",
         title: language.t("settings.modelRouter.saved"),
         description: language.t("settings.modelRouter.appliesOnRestart"),
       })
-      reset()
     } catch (error) {
       showToast({
         title: language.t("common.requestFailed"),
@@ -118,6 +137,7 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
           draft.models.push({ key, tags: [], price: 5, capability: 5, speed: 5 })
         }),
       )
+      setRaw({})
       dialog.close()
     }
     dialog.push(() => (
@@ -187,6 +207,7 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
                   draft.models.splice(index, 1)
                 }),
               )
+              setRaw({})
               dialog.close()
             }}
           >
