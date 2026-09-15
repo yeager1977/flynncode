@@ -32,4 +32,11 @@ if (unauthorized.status !== 401) throw new Error(`expected 401, got ${unauthoriz
 if (authorized.status !== 200) throw new Error(`expected 200, got ${authorized.status}`)
 if (body !== "upstream-ok") throw new Error(`unexpected body: ${body}`)
 if (!cookie.includes("oc_mobile_session=")) throw new Error("missing session cookie")
+
+const plugin = await import("../../src/index.ts")
+const entry = plugin.default
+if (!entry || entry.id !== "@flynncode/mobile-gateway" || typeof entry.server !== "function") {
+  throw new Error("plugin entry did not load under node")
+}
+
 console.log("NODE_RUNTIME_OK")
