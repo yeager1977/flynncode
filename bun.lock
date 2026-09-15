@@ -567,6 +567,7 @@
         "flynncode-mobile": "./src/bin.ts",
       },
       "devDependencies": {
+        "@opencode-ai/plugin": "workspace:*",
         "@tsconfig/bun": "catalog:",
         "@types/bun": "catalog:",
         "@typescript/native-preview": "catalog:",
