@@ -71,10 +71,20 @@ describe("Upstream.probe", () => {
     expect(ok).toBe(false)
   })
 
-  test("returns false on non-2xx success-shaped status", async () => {
+  test("returns false when a redirect is refused", async () => {
     const server = Bun.serve({
       port: 0,
       fetch: () => new Response("nope", { status: 302 }),
+    })
+    const ok = await Upstream.probe({ base: `http://127.0.0.1:${server.port}`, authorization: "Basic right" })
+    server.stop(true)
+    expect(ok).toBe(false)
+  })
+
+  test("returns false on non-2xx status", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch: () => new Response("unavailable", { status: 503 }),
     })
     const ok = await Upstream.probe({ base: `http://127.0.0.1:${server.port}`, authorization: "Basic right" })
     server.stop(true)
