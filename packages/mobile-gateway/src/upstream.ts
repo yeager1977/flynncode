@@ -29,7 +29,8 @@ export function upstreamHeaders(input: {
 }) {
   const headers: Record<string, string> = {}
   for (const [key, value] of Object.entries(input.incoming ?? {})) {
-    if (HOP_BY_HOP.has(key.toLowerCase())) continue
+    const lower = key.toLowerCase()
+    if (HOP_BY_HOP.has(lower) || lower === "authorization") continue
     headers[key] = value
   }
   headers.authorization = input.authorization
@@ -42,8 +43,9 @@ async function probe(input: { base: string; authorization: string }) {
     const response = await fetch(url, {
       headers: { authorization: input.authorization },
       signal: AbortSignal.timeout(5000),
+      redirect: "error",
     })
-    return response.status !== 401
+    return response.ok
   } catch {
     return false
   }

@@ -33,6 +33,16 @@ describe("upstreamHeaders", () => {
     expect(headers.host).toBeUndefined()
     expect(headers.cookie).toBeUndefined()
   })
+
+  test("drops a mixed-case authorization from incoming", () => {
+    const headers = upstreamHeaders({
+      base: "http://127.0.0.1:4096",
+      authorization: "Basic env",
+      incoming: { Authorization: "Bearer stale", accept: "application/json" },
+    })
+    expect(Object.keys(headers).sort()).toEqual(["accept", "authorization"])
+    expect(headers.authorization).toBe("Basic env")
+  })
 })
 
 describe("Upstream.probe", () => {
@@ -58,6 +68,31 @@ describe("Upstream.probe", () => {
 
   test("returns false when upstream is unreachable", async () => {
     const ok = await Upstream.probe({ base: "http://127.0.0.1:1", authorization: "Basic right" })
+    expect(ok).toBe(false)
+  })
+
+  test("returns false on non-2xx success-shaped status", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch: () => new Response("nope", { status: 302 }),
+    })
+    const ok = await Upstream.probe({ base: `http://127.0.0.1:${server.port}`, authorization: "Basic right" })
+    server.stop(true)
+    expect(ok).toBe(false)
+  })
+
+  test("returns false on redirect to a 200 page", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch: (request) => {
+        if (new URL(request.url).pathname === "/api/session") {
+          return new Response(null, { status: 302, headers: { location: "/login" } })
+        }
+        return Response.json({ data: [] })
+      },
+    })
+    const ok = await Upstream.probe({ base: `http://127.0.0.1:${server.port}`, authorization: "Basic right" })
+    server.stop(true)
     expect(ok).toBe(false)
   })
 })
