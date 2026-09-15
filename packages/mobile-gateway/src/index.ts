@@ -4,13 +4,14 @@ import { startGateway } from "./gateway.ts"
 
 const id = "@flynncode/mobile-gateway"
 
-async function server(_input: PluginInput, _options?: PluginOptions): Promise<Hooks> {
-  const resolved = resolveOptions(process.env)
+async function server(input: PluginInput, options?: PluginOptions): Promise<Hooks> {
+  const env = { ...process.env }
+  if (typeof options?.password === "string" && options.password) env.OPENCODE_MOBILE_PASSWORD = options.password
+  const resolved = resolveOptions(env, input.serverUrl?.toString())
   if (!resolved.ok) {
     console.log(`[mobile-gateway] disabled: ${resolved.reason}`)
     return {}
   }
-
   try {
     const gateway = await startGateway({ options: resolved.value })
     console.log(`[mobile-gateway] listening on http://${resolved.value.host}:${gateway.port}`)

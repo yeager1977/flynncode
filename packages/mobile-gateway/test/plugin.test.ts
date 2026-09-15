@@ -71,4 +71,46 @@ describe("plugin entry", () => {
     expect(hooks).toEqual({})
     blocker.stop(true)
   })
+
+  test("uses the provided serverUrl as the upstream fallback", async () => {
+    const upstream = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => new Response("from-serve-url", { headers: { "content-type": "text/plain" } }),
+    })
+    const previousPassword = process.env.OPENCODE_SERVER_PASSWORD
+    const previousMobile = process.env.OPENCODE_MOBILE_PASSWORD
+    const previousUpstream = process.env.OPENCODE_MOBILE_UPSTREAM
+    const previousHost = process.env.OPENCODE_MOBILE_HOST
+    const previousPort = process.env.OPENCODE_MOBILE_PORT
+
+    process.env.OPENCODE_SERVER_PASSWORD = "secret"
+    process.env.OPENCODE_MOBILE_PASSWORD = "phone"
+    process.env.OPENCODE_MOBILE_HOST = "127.0.0.1"
+    process.env.OPENCODE_MOBILE_PORT = "0"
+    delete process.env.OPENCODE_MOBILE_UPSTREAM
+
+    const hooks = await mobileGateway.server({
+      ...input,
+      serverUrl: new URL(`http://127.0.0.1:${upstream.port}`),
+    })
+    expect(hooks.dispose).toBeInstanceOf(Function)
+
+    const restore = () => {
+      if (previousPassword === undefined) delete process.env.OPENCODE_SERVER_PASSWORD
+      else process.env.OPENCODE_SERVER_PASSWORD = previousPassword
+      if (previousMobile === undefined) delete process.env.OPENCODE_MOBILE_PASSWORD
+      else process.env.OPENCODE_MOBILE_PASSWORD = previousMobile
+      if (previousUpstream === undefined) delete process.env.OPENCODE_MOBILE_UPSTREAM
+      else process.env.OPENCODE_MOBILE_UPSTREAM = previousUpstream
+      if (previousHost === undefined) delete process.env.OPENCODE_MOBILE_HOST
+      else process.env.OPENCODE_MOBILE_HOST = previousHost
+      if (previousPort === undefined) delete process.env.OPENCODE_MOBILE_PORT
+      else process.env.OPENCODE_MOBILE_PORT = previousPort
+    }
+    restore()
+
+    await hooks.dispose?.()
+    upstream.stop(true)
+  })
 })
