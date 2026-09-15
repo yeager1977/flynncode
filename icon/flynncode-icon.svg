@@ -1,0 +1,149 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>flynncode</title>
+  <desc>Azure, a wolf passant argent, in chief three bezants; crest: a dexter hand erect couped holding a serpent, tail embowed, head to the sinister, all proper.</desc>
+  <defs>
+    <radialGradient id="badgeBg" cx="0.38" cy="0.3" r="0.95">
+      <stop offset="0" stop-color="#1B4270"/>
+      <stop offset="0.55" stop-color="#102C50"/>
+      <stop offset="1" stop-color="#081A33"/>
+    </radialGradient>
+    <linearGradient id="field" x1="0" y1="0" x2="0.7" y2="1">
+      <stop offset="0" stop-color="#1E5FA8"/>
+      <stop offset="1" stop-color="#0B2E5C"/>
+    </linearGradient>
+    <linearGradient id="silver" gradientUnits="userSpaceOnUse" x1="0" y1="300" x2="0" y2="410">
+      <stop offset="0" stop-color="#FBFCFD"/>
+      <stop offset="0.6" stop-color="#E4E9EF"/>
+      <stop offset="1" stop-color="#C2CAD5"/>
+    </linearGradient>
+    <linearGradient id="silverFar" gradientUnits="userSpaceOnUse" x1="0" y1="300" x2="0" y2="410">
+      <stop offset="0" stop-color="#C6CED8"/>
+      <stop offset="1" stop-color="#94A0AF"/>
+    </linearGradient>
+    <radialGradient id="gold" cx="0.35" cy="0.3" r="0.85">
+      <stop offset="0" stop-color="#F7D678"/>
+      <stop offset="0.55" stop-color="#E7B94C"/>
+      <stop offset="1" stop-color="#B9861F"/>
+    </radialGradient>
+    <linearGradient id="skin" gradientUnits="userSpaceOnUse" x1="0" y1="60" x2="0" y2="290">
+      <stop offset="0" stop-color="#F2CAA4"/>
+      <stop offset="0.5" stop-color="#E3B086"/>
+      <stop offset="1" stop-color="#C08055"/>
+    </linearGradient>
+    <linearGradient id="serpent" gradientUnits="userSpaceOnUse" x1="0" y1="60" x2="0" y2="260">
+      <stop offset="0" stop-color="#58B077"/>
+      <stop offset="0.5" stop-color="#2F8251"/>
+      <stop offset="1" stop-color="#1B4D30"/>
+    </linearGradient>
+    <linearGradient id="serpentBack" gradientUnits="userSpaceOnUse" x1="0" y1="200" x2="0" y2="265">
+      <stop offset="0" stop-color="#1E5E3A"/>
+      <stop offset="1" stop-color="#123A25"/>
+    </linearGradient>
+    <filter id="shieldShadow" x="-30%" y="-20%" width="160%" height="150%">
+      <feDropShadow dx="0" dy="7" stdDeviation="9" flood-color="#020B18" flood-opacity="0.45"/>
+    </filter>
+    <filter id="crestShadow" x="-40%" y="-30%" width="180%" height="160%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#020B18" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- badge -->
+  <circle cx="256" cy="256" r="248" fill="#0A1F3D"/>
+  <circle cx="256" cy="256" r="241" fill="none" stroke="#D4A947" stroke-width="3.5"/>
+  <circle cx="256" cy="256" r="238.5" fill="url(#badgeBg)"/>
+
+  <!-- crest: dexter hand couped holding serpent -->
+  <g filter="url(#crestShadow)">
+    <!-- serpent: back coil behind wrist -->
+    <path d="M226 234 C222 216 258 212 266 230" fill="none" stroke="url(#serpentBack)" stroke-width="18" stroke-linecap="round"/>
+
+    <!-- forearm, couped and disappearing behind shield -->
+    <path d="M234 292 L282 292 L278 186 L238 186 Z" fill="url(#skin)"/>
+    <!-- wrist crease -->
+    <path d="M240 258 C252 254 266 254 278 258" fill="none" stroke="#B07A54" stroke-width="2" opacity="0.45" stroke-linecap="round"/>
+
+    <!-- palm -->
+    <path d="M228 190 C225 172 226 156 229 140 L289 140 C292 156 293 172 290 190 Z" fill="url(#skin)"/>
+    <!-- knuckle shading -->
+    <path d="M232 142 C248 137 270 137 286 142" fill="none" stroke="#D19A70" stroke-width="2.4" opacity="0.55" stroke-linecap="round"/>
+
+    <!-- fingers -->
+    <rect x="231" y="84" width="15" height="60" rx="7.5" fill="url(#skin)"/>
+    <rect x="248" y="76" width="15" height="68" rx="7.5" fill="url(#skin)"/>
+    <rect x="265" y="84" width="15" height="60" rx="7.5" fill="url(#skin)"/>
+    <rect x="281" y="100" width="13" height="44" rx="6.5" fill="url(#skin)"/>
+    <!-- finger creases -->
+    <path d="M247 100 L247 136 M264 100 L264 136 M279 112 L279 136" stroke="#B07A54" stroke-width="1.7" opacity="0.4" stroke-linecap="round"/>
+
+    <!-- thumb, angled up and dexter -->
+    <path d="M231 176 C224 164 214 150 205 140 C198 133 189 131 185 136 C181 142 185 150 192 158 C202 168 212 178 221 190 Z" fill="url(#skin)"/>
+    <path d="M189 140 C194 146 200 154 206 161" fill="none" stroke="#C98F66" stroke-width="1.8" opacity="0.5" stroke-linecap="round"/>
+
+    <!-- serpent: front coil across wrist -->
+    <path d="M226 234 C218 252 272 256 268 236" fill="none" stroke="url(#serpent)" stroke-width="18" stroke-linecap="round"/>
+    <path d="M228 234 C223 245 246 252 258 249" fill="none" stroke="#93CBA0" stroke-width="4" opacity="0.7" stroke-linecap="round"/>
+
+    <!-- serpent: body rising to sinister -->
+    <path d="M264 234 C284 220 293 196 295 170 C297 148 303 128 315 113 L331 124 C320 138 314 158 312 178 C309 206 297 230 278 248 Z" fill="url(#serpent)"/>
+    <path d="M269 238 C287 225 294 202 296 176 C297 158 302 140 312 126" fill="none" stroke="#93CBA0" stroke-width="3.2" opacity="0.45" stroke-linecap="round"/>
+
+    <!-- serpent head to sinister, jaw open -->
+    <path d="M315 113 C323 100 339 93 351 98 C359 101 360 109 353 114 C343 121 329 122 319 118 Z" fill="url(#serpent)"/>
+    <path d="M353 99 C361 95 369 94 374 97 C376 99 374 102 370 104 C364 106 357 107 353 105 Z" fill="#1B4D30"/>
+    <circle cx="334" cy="105" r="2.9" fill="#0A1F3D"/>
+    <path d="M369 108 C374 110 377 114 377 118" fill="none" stroke="#B3402F" stroke-width="2.4" stroke-linecap="round"/>
+    <path d="M357 100 C363 98 369 98 372 100" fill="none" stroke="#93CBA0" stroke-width="2" opacity="0.5" stroke-linecap="round"/>
+  </g>
+
+  <!-- shield -->
+  <g filter="url(#shieldShadow)">
+    <path d="M150 252 L362 252 L362 322 C362 390 318 430 256 456 C194 430 150 390 150 322 Z" fill="url(#field)" stroke="#071731" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M163 264 L349 264 L349 322 C349 382 311 416 256 440 C201 416 163 382 163 322 Z" fill="none" stroke="#D4A947" stroke-width="2" opacity="0.3" stroke-linejoin="round"/>
+
+    <!-- three bezants in chief -->
+    <g>
+      <circle cx="200" cy="293" r="16" fill="url(#gold)" stroke="#8F6612" stroke-width="1.4"/>
+      <ellipse cx="194.6" cy="286.8" rx="4.8" ry="3.2" fill="#FBE7AD" opacity="0.85"/>
+      <circle cx="256" cy="293" r="16" fill="url(#gold)" stroke="#8F6612" stroke-width="1.4"/>
+      <ellipse cx="250.6" cy="286.8" rx="4.8" ry="3.2" fill="#FBE7AD" opacity="0.85"/>
+      <circle cx="312" cy="293" r="16" fill="url(#gold)" stroke="#8F6612" stroke-width="1.4"/>
+      <ellipse cx="306.6" cy="286.8" rx="4.8" ry="3.2" fill="#FBE7AD" opacity="0.85"/>
+    </g>
+
+    <!-- wolf passant argent -->
+    <g transform="translate(180 306) scale(0.88)">
+      <!-- far legs -->
+      <path d="M74 60 L90 56 L94 94 L104 108 L106 114 L82 116 L78 96 Z" fill="url(#silverFar)"/>
+      <path d="M144 54 L158 50 L164 80 L176 100 L178 108 L156 110 L150 86 Z" fill="url(#silverFar)"/>
+
+      <!-- bushy tail -->
+      <path d="M148 26 C172 14 198 24 204 46 C208 62 196 74 186 62 C178 48 164 38 146 36 Z" fill="url(#silver)"/>
+      <path d="M158 32 C174 26 188 32 194 44" fill="none" stroke="#C2CAD5" stroke-width="2" opacity="0.7" stroke-linecap="round"/>
+
+      <!-- body -->
+      <path d="M54 30 C82 20 120 20 148 26 L168 42 L162 64 L122 74 C94 78 70 72 54 58 Z" fill="url(#silver)"/>
+
+      <!-- neck -->
+      <path d="M44 24 L74 38 L70 68 L42 56 Z" fill="url(#silver)"/>
+
+      <!-- head: long horizontal snout, upright pointed ears -->
+      <path d="M-8 40 L16 34 L24 28 L28 8 L42 24 L48 2 L60 22 L66 36 L66 48 L54 54 L24 54 L-4 48 Z" fill="url(#silver)"/>
+      <!-- lower jaw -->
+      <path d="M-4 46 C10 54 30 56 46 52 C34 60 12 60 -4 52 Z" fill="url(#silverFar)"/>
+      <!-- ear inners -->
+      <path d="M31 20 L34 12 L40 22 Z" fill="#94A0AF"/>
+      <path d="M49 16 L52 8 L58 20 Z" fill="#94A0AF"/>
+      <!-- nose, eye, mouth -->
+      <circle cx="-4" cy="42" r="3.4" fill="#0A1F3D"/>
+      <circle cx="24" cy="36" r="2.8" fill="#0A1F3D"/>
+      <path d="M4 50 C14 52 26 52 34 50" fill="none" stroke="#94A0AF" stroke-width="1.7" stroke-linecap="round"/>
+
+      <!-- raised dexter forepaw -->
+      <path d="M58 54 L74 50 L66 84 L48 98 L40 90 L54 78 Z" fill="url(#silver)"/>
+      <!-- standing foreleg -->
+      <path d="M84 58 L100 54 L104 90 L114 104 L116 110 L92 112 L88 92 Z" fill="url(#silver)"/>
+      <!-- near hindleg -->
+      <path d="M132 60 L150 56 L156 82 L166 100 L168 108 L146 110 L140 86 Z" fill="url(#silver)"/>
+    </g>
+  </g>
+</svg>

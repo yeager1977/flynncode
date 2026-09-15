@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>flynncode (small)</title>
+  <desc>Simplified flynncode mark for small sizes: flat colors, bolder ring, enlarged charges.</desc>
+  <defs>
+    <linearGradient id="fieldS" x1="0" y1="0" x2="0.7" y2="1">
+      <stop offset="0" stop-color="#1E5FA8"/>
+      <stop offset="1" stop-color="#0B2E5C"/>
+    </linearGradient>
+  </defs>
+
+  <circle cx="256" cy="256" r="248" fill="#0A1F3D"/>
+  <circle cx="256" cy="256" r="239" fill="none" stroke="#D4A947" stroke-width="6"/>
+  <circle cx="256" cy="256" r="235" fill="#102C50"/>
+
+  <!-- crest: hand + serpent, bold -->
+  <g>
+    <!-- forearm -->
+    <path d="M226 280 L290 280 L286 176 L230 176 Z" fill="#E8B287"/>
+    <!-- palm -->
+    <path d="M222 182 C219 162 220 144 224 126 L292 126 C296 144 297 162 294 182 Z" fill="#E8B287"/>
+    <!-- fingers, thick and short -->
+    <rect x="226" y="80" width="18" height="56" rx="9" fill="#E8B287"/>
+    <rect x="248" y="70" width="18" height="66" rx="9" fill="#E8B287"/>
+    <rect x="270" y="80" width="18" height="56" rx="9" fill="#E8B287"/>
+    <!-- thumb -->
+    <path d="M226 170 C218 156 206 140 196 130 C188 122 178 120 174 126 C170 132 174 142 182 150 C194 162 206 174 216 188 Z" fill="#E8B287"/>
+
+    <!-- serpent rising to sinister, bold -->
+    <path d="M262 232 C290 218 302 186 302 152 C302 130 310 114 326 104 L346 122 C334 132 328 146 328 164 C328 200 312 238 282 254 Z" fill="#2F8251"/>
+    <path d="M322 104 C334 88 358 82 374 90 C384 96 382 110 370 114 C352 120 332 118 324 110 Z" fill="#2F8251"/>
+    <path d="M368 92 C378 88 388 88 394 92 C396 95 393 99 388 101 C380 104 371 104 367 101 Z" fill="#1B4D30"/>
+    <circle cx="348" cy="100" r="6" fill="#0A1F3D"/>
+    <path d="M388 105 C394 107 398 112 398 117" fill="none" stroke="#B3402F" stroke-width="4" stroke-linecap="round"/>
+
+    <!-- two coils across wrist, bolder -->
+    <path d="M222 216 C214 200 258 194 266 210" fill="none" stroke="#1E5E3A" stroke-width="22" stroke-linecap="round"/>
+    <path d="M222 244 C212 264 278 268 272 242" fill="none" stroke="#2F8251" stroke-width="22" stroke-linecap="round"/>
+  </g>
+
+  <!-- shield -->
+  <path d="M150 252 L362 252 L362 326 C362 394 318 432 256 458 C194 432 150 394 150 326 Z" fill="url(#fieldS)" stroke="#071731" stroke-width="9" stroke-linejoin="round"/>
+
+  <!-- three bezants, enlarged -->
+  <circle cx="198" cy="296" r="20" fill="#E7B94C" stroke="#8F6612" stroke-width="2.5"/>
+  <circle cx="256" cy="296" r="20" fill="#E7B94C" stroke="#8F6612" stroke-width="2.5"/>
+  <circle cx="314" cy="296" r="20" fill="#E7B94C" stroke="#8F6612" stroke-width="2.5"/>
+
+  <!-- wolf passant, same proven path as master, bolder -->
+  <g transform="translate(176 300) scale(0.92)">
+    <path d="M74 60 L90 56 L94 94 L104 108 L106 114 L82 116 L78 96 Z" fill="#C6CED8"/>
+    <path d="M144 54 L158 50 L164 80 L176 100 L178 108 L156 110 L150 86 Z" fill="#C6CED8"/>
+    <path d="M148 26 C172 14 198 24 204 46 C208 62 196 74 186 62 C178 48 164 38 146 36 Z" fill="#FBFCFD"/>
+    <path d="M54 30 C82 20 120 20 148 26 L168 42 L162 64 L122 74 C94 78 70 72 54 58 Z" fill="#FBFCFD"/>
+    <path d="M44 24 L74 38 L70 68 L42 56 Z" fill="#FBFCFD"/>
+    <path d="M-8 40 L16 34 L24 28 L28 8 L42 24 L48 2 L60 22 L66 36 L66 48 L54 54 L24 54 L-4 48 Z" fill="#FBFCFD"/>
+    <path d="M31 20 L34 12 L40 22 Z" fill="#94A0AF"/>
+    <path d="M49 16 L52 8 L58 20 Z" fill="#94A0AF"/>
+    <circle cx="-4" cy="42" r="4" fill="#0A1F3D"/>
+    <circle cx="24" cy="36" r="3.4" fill="#0A1F3D"/>
+    <path d="M58 54 L74 50 L66 84 L48 98 L40 90 L54 78 Z" fill="#FBFCFD"/>
+    <path d="M84 58 L100 54 L104 90 L114 104 L116 110 L92 112 L88 92 Z" fill="#FBFCFD"/>
+    <path d="M132 60 L150 56 L156 82 L166 100 L168 108 L146 110 L140 86 Z" fill="#FBFCFD"/>
+    <path d="M84 108 L116 108 L116 112 L84 112 Z" fill="#FBFCFD"/>
+    <path d="M146 104 L168 104 L168 108 L146 110 Z" fill="#FBFCFD"/>
+  </g>
+</svg>
