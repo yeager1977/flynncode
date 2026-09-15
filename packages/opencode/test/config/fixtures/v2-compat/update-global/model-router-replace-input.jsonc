@@ -1,0 +1,17 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // The model_router subtree is replaced as a whole, so removed models disappear.
+  "username": "before",
+  "model_router": {
+    "autoRoute": true,
+    "models": {
+      "ollama-cloud/glm-5.3-flash": { "price": 3, "capability": 8, "speed": 9, "tags": ["coding"] },
+      "old/provider": { "price": 5, "capability": 5, "speed": 5 },
+    },
+  },
+  "providers": {
+    "example": {
+      "settings": { "apiKey": "fixture-secret" },
+    },
+  },
+}

@@ -158,7 +158,19 @@ function patchJsonc(input: string, patch: unknown, path: string[] = []): string 
     return applyEdits(input, edits)
   }
 
-  return Object.entries(patch).reduce((result, [key, value]) => patchJsonc(result, value, [...path, key]), input)
+  return Object.entries(patch).reduce((result, [key, value]) => {
+    // model_router is swapped as a whole subtree so removing nested keys (e.g. scorecard models) persists.
+    if (path.length === 0 && key === "model_router") {
+      const edits = modify(result, [key], value, {
+        formattingOptions: {
+          insertSpaces: true,
+          tabSize: 2,
+        },
+      })
+      return applyEdits(result, edits)
+    }
+    return patchJsonc(result, value, [...path, key])
+  }, input)
 }
 
 function writable(info: Info) {
@@ -663,7 +675,11 @@ const layer = Layer.effect(
       if (!file.endsWith(".jsonc")) {
         const existing = ConfigParse.jsonc(before, file)
         ConfigParse.schema(ConfigV1.Info, ConfigV2Compat.lower(normalizeLoadedConfig(existing), file).value, file)
-        const merged = mergeDeep(isRecord(existing) ? existing : {}, patch)
+        const base = isRecord(existing) ? existing : {}
+        // model_router is swapped as a whole subtree so removing nested keys (e.g. scorecard models) persists.
+        const merged = Object.hasOwn(patch, "model_router")
+          ? { ...mergeDeep(base, patch), model_router: patch.model_router }
+          : mergeDeep(base, patch)
         const serialized = JSON.stringify(merged, null, 2)
         next = yield* decodeConfig(merged, file)
         changed = serialized !== before

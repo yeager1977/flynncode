@@ -1,0 +1,8 @@
+{
+  "model_router": {
+    "autoRoute": false,
+    "models": {
+      "ollama-cloud/glm-5.3-flash": { "price": 3, "capability": 8, "speed": 9, "tags": ["coding"] }
+    }
+  }
+}
