@@ -93,7 +93,9 @@ Append to `packages/mobile-gateway/test/gateway.test.ts` inside the existing `de
     })
     expect(response.status).toBe(200)
     expect(await response.text()).toBe("echoed")
-    expect(seen).toEqual(['{"prompt":"hello"}'])
+    // The upstream probe is a GET with an empty body, so filter it out; the
+    // proxied POST is the only non-empty body the upstream sees.
+    expect(seen.filter((body) => body !== "")).toEqual(['{"prompt":"hello"}'])
     stopGateway()
     echo.stop(true)
   })
@@ -112,8 +114,15 @@ Append to `packages/mobile-gateway/test/gateway.test.ts` inside the existing `de
     const running = await startGateway({
       options: { host: "127.0.0.1", port: 0, upstream: `http://127.0.0.1:${upstream.port}`, username: "opencode", password: "secret" },
     })
-    const response = await fetch(`http://127.0.0.1:${running.port}/api/health`, {
+    // The Basic handshake replaces set-cookie with the gateway session cookie,
+    // so bootstrap a session first and exercise the cookie path, which passes
+    // upstream cookies through untransformed.
+    const first = await fetch(`http://127.0.0.1:${running.port}/api/health`, {
       headers: { authorization: basic("opencode", "secret") },
+    })
+    const cookie = first.headers.getSetCookie()[0].split(";")[0]
+    const response = await fetch(`http://127.0.0.1:${running.port}/api/health`, {
+      headers: { cookie },
     })
     expect(response.headers.getSetCookie()).toEqual(["a=1; Path=/", "b=2; Path=/"])
     stopGateway()
