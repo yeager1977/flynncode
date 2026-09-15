@@ -1,0 +1,246 @@
+import { describe, expect, test } from "bun:test"
+import {
+  DEFAULT_AGENT_TASKS,
+  DEFAULT_TASK_WEIGHTS,
+  type ModelRouterFormState,
+  TASK_NAMES,
+  type TaskName,
+  emptyForm,
+  formFromConfig,
+  serializeForm,
+  validateForm,
+} from "./model-router-payload"
+
+describe("emptyForm", () => {
+  test("matches plugin defaults", () => {
+    const form = emptyForm()
+    expect(form).toEqual({
+      autoRoute: true,
+      allowUnscored: false,
+      providers: [],
+      agentTasks: [
+        { agent: "build", task: "coding" },
+        { agent: "plan", task: "planning" },
+        { agent: "explore", task: "lookup" },
+        { agent: "general", task: "coding" },
+      ],
+      taskWeights: DEFAULT_TASK_WEIGHTS,
+      models: [],
+    } satisfies ModelRouterFormState)
+    expect(form.agentTasks.map((row) => [row.agent, row.task])).toEqual(Object.entries(DEFAULT_AGENT_TASKS))
+    expect(TASK_NAMES).toEqual(["coding", "planning", "review", "lookup", "writing", "long-context"])
+  })
+})
+
+describe("formFromConfig", () => {
+  test("empty object equals emptyForm", () => {
+    expect(formFromConfig({})).toEqual(emptyForm())
+  })
+
+  test("undefined equals emptyForm", () => {
+    expect(formFromConfig(undefined)).toEqual(emptyForm())
+  })
+
+  test("partial config preserves configured values and fills defaults", () => {
+    const form = formFromConfig({
+      autoRoute: false,
+      providers: ["ollama"],
+      models: { "ollama/llama3.1": { price: 7, capability: 8, speed: 6, tags: ["coding"] } },
+    })
+    expect(form.autoRoute).toBe(false)
+    expect(form.allowUnscored).toBe(false)
+    expect(form.providers).toEqual(["ollama"])
+    expect(form.agentTasks.map((row) => row.agent)).toEqual(Object.keys(DEFAULT_AGENT_TASKS))
+    expect(form.taskWeights).toEqual(DEFAULT_TASK_WEIGHTS)
+    expect(form.models).toEqual([
+      { key: "ollama/llama3.1", tags: ["coding"], price: 7, capability: 8, speed: 6 },
+    ])
+  })
+
+  test("agentTasks replaces the standard mappings", () => {
+    const form = formFromConfig({ agentTasks: { build: "review" } })
+    expect(form.agentTasks).toEqual([{ agent: "build", task: "review" }])
+  })
+
+  test("taskWeights merge over defaults", () => {
+    const form = formFromConfig({ taskWeights: { coding: { capability: 0.9, price: 0.05, speed: 0.05 } } })
+    expect(form.taskWeights.coding).toEqual({ capability: 0.9, price: 0.05, speed: 0.05 })
+    expect(form.taskWeights.planning).toEqual(DEFAULT_TASK_WEIGHTS.planning)
+  })
+
+  test("malformed values fall back to defaults", () => {
+    const form = formFromConfig({
+      autoRoute: "yes",
+      allowUnscored: 1,
+      providers: ["ollama", 42],
+      agentTasks: "nope",
+      taskWeights: { coding: "nope" },
+      models: ["nope"],
+    })
+    expect(form).toEqual(emptyForm())
+  })
+
+  test("invalid model entries keep the key with fallback scores", () => {
+    const form = formFromConfig({
+      models: { "ollama/bad": { price: 22, capability: "high", tags: ["nonsense"] }, "no-slash": 5 },
+    })
+    expect(form.models).toEqual([{ key: "ollama/bad", tags: [], price: 5, capability: 5, speed: 5 }])
+  })
+})
+
+describe("serializeForm", () => {
+  test("empty form serializes to the default object", () => {
+    expect(serializeForm(emptyForm())).toEqual({
+      autoRoute: true,
+      allowUnscored: false,
+      providers: [],
+      agentTasks: DEFAULT_AGENT_TASKS,
+      taskWeights: DEFAULT_TASK_WEIGHTS,
+    })
+  })
+
+  test("omits models when empty", () => {
+    expect("models" in serializeForm(emptyForm())).toBe(false)
+  })
+
+  test("includes models with tags when set", () => {
+    const form: ModelRouterFormState = {
+      ...emptyForm(),
+      models: [{ key: "ollama/llama3.1", tags: ["coding", "review"], price: 4, capability: 9, speed: 3 }],
+    }
+    expect(serializeForm(form)).toEqual({
+      autoRoute: true,
+      allowUnscored: false,
+      providers: [],
+      agentTasks: DEFAULT_AGENT_TASKS,
+      taskWeights: DEFAULT_TASK_WEIGHTS,
+      models: { "ollama/llama3.1": { price: 4, capability: 9, speed: 3, tags: ["coding", "review"] } },
+    })
+  })
+
+  test("omits empty tags from model entries", () => {
+    const form: ModelRouterFormState = {
+      ...emptyForm(),
+      models: [{ key: "ollama/llama3.1", tags: [], price: 4, capability: 9, speed: 3 }],
+    }
+    expect(serializeForm(form).models).toEqual({ "ollama/llama3.1": { price: 4, capability: 9, speed: 3 } })
+  })
+})
+
+describe("validateForm", () => {
+  test("empty form is valid", () => {
+    const result = validateForm(emptyForm())
+    expect(result).toEqual({ ok: true, value: serializeForm(emptyForm()) })
+  })
+
+  test("bad model key rejected", () => {
+    const form: ModelRouterFormState = {
+      ...emptyForm(),
+      models: [{ key: "noprovider", tags: [], price: 5, capability: 5, speed: 5 }],
+    }
+    expect(validateForm(form)).toEqual({ ok: false, errors: ["models.noprovider.key"] })
+  })
+
+  test("model key with empty sides rejected", () => {
+    for (const key of ["/model", "provider/", "/"]) {
+      const form: ModelRouterFormState = {
+        ...emptyForm(),
+        models: [{ key, tags: [], price: 5, capability: 5, speed: 5 }],
+      }
+      expect(validateForm(form).ok).toBe(false)
+    }
+  })
+
+  test("score out of range rejected", () => {
+    for (const price of [0, 11]) {
+      const form: ModelRouterFormState = {
+        ...emptyForm(),
+        models: [{ key: "ollama/x", tags: [], price, capability: 5, speed: 5 }],
+      }
+      expect(validateForm(form)).toEqual({ ok: false, errors: [`models.ollama/x.${price === 0 ? "price" : "price"}`] })
+    }
+  })
+
+  test("non-integer score rejected", () => {
+    const form: ModelRouterFormState = {
+      ...emptyForm(),
+      models: [{ key: "ollama/x", tags: [], price: 5.5, capability: 5, speed: 5 }],
+    }
+    expect(validateForm(form)).toEqual({ ok: false, errors: ["models.ollama/x.price"] })
+  })
+
+  test("unknown task name in agent rows rejected", () => {
+    const form: ModelRouterFormState = {
+      ...emptyForm(),
+      agentTasks: [{ agent: "build", task: "nonsense" as unknown as TaskName }],
+    }
+    expect(validateForm(form)).toEqual({ ok: false, errors: ["agentTasks.build.task"] })
+  })
+
+  test("unknown tag rejected", () => {
+    const form: ModelRouterFormState = {
+      ...emptyForm(),
+      models: [{ key: "ollama/x", tags: ["nonsense" as unknown as TaskName], price: 5, capability: 5, speed: 5 }],
+    }
+    expect(validateForm(form)).toEqual({ ok: false, errors: ["models.ollama/x.tags"] })
+  })
+
+  test("duplicate model keys rejected", () => {
+    const row = { key: "ollama/x", tags: [], price: 5, capability: 5, speed: 5 }
+    const form: ModelRouterFormState = { ...emptyForm(), models: [row, { ...row, price: 6 }] }
+    expect(validateForm(form)).toEqual({ ok: false, errors: ["models.duplicate"] })
+  })
+
+  test("empty agent name rejected", () => {
+    const form: ModelRouterFormState = {
+      ...emptyForm(),
+      agentTasks: [{ agent: "  ", task: "coding" }],
+    }
+    expect(validateForm(form)).toEqual({ ok: false, errors: ["agentTasks..agent"] })
+  })
+
+  test("whitespace agent name with unknown task rejected", () => {
+    const form: ModelRouterFormState = {
+      ...emptyForm(),
+      agentTasks: [{ agent: "  ", task: "nonsense" as unknown as TaskName }],
+    }
+    expect(validateForm(form)).toEqual({ ok: false, errors: ["agentTasks..agent", "agentTasks..task"] })
+  })
+
+  test("empty provider rejected", () => {
+    const form: ModelRouterFormState = { ...emptyForm(), providers: ["", "ollama"] }
+    expect(validateForm(form)).toEqual({ ok: false, errors: ["providers.0"] })
+  })
+
+  test("valid form passes and serializes", () => {
+    const form: ModelRouterFormState = {
+      ...emptyForm(),
+      models: [{ key: "ollama/llama3.1", tags: ["coding"], price: 3, capability: 10, speed: 2 }],
+    }
+    const result = validateForm(form)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.value.models).toEqual({
+        "ollama/llama3.1": { price: 3, capability: 10, speed: 2, tags: ["coding"] },
+      })
+    }
+  })
+})
+
+describe("round trip", () => {
+  test("formFromConfig(serializeForm(emptyForm())) equals emptyForm", () => {
+    expect(formFromConfig(serializeForm(emptyForm()) as Record<string, unknown>)).toEqual(emptyForm())
+  })
+
+  test("round-trips a populated form", () => {
+    const form: ModelRouterFormState = {
+      autoRoute: false,
+      allowUnscored: true,
+      providers: ["ollama", "openai"],
+      agentTasks: [{ agent: "build", task: "review" }],
+      taskWeights: { ...DEFAULT_TASK_WEIGHTS, coding: { capability: 0.8, price: 0.1, speed: 0.1 } },
+      models: [{ key: "ollama/qwen3", tags: ["writing"], price: 2, capability: 7, speed: 9 }],
+    }
+    expect(formFromConfig(serializeForm(form) as Record<string, unknown>)).toEqual(form)
+  })
+})
