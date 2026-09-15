@@ -72,12 +72,22 @@ describe("plugin entry", () => {
     blocker.stop(true)
   })
 
-  test("uses the provided serverUrl as the upstream fallback", async () => {
+  test("proxies to the serverUrl upstream when OPENCODE_MOBILE_UPSTREAM is unset", async () => {
+    // Pin a known-free port: bind ephemeral, read it, release it for the gateway.
+    const pin = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("pin") })
+    const gatewayPort = pin.port
+    pin.stop(true)
+
+    const requests: string[] = []
     const upstream = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
-      fetch: () => new Response("from-serve-url", { headers: { "content-type": "text/plain" } }),
+      fetch: (request) => {
+        requests.push(new URL(request.url).pathname)
+        return new Response("task-4-upstream-ok", { headers: { "content-type": "text/plain" } })
+      },
     })
+
     const previousPassword = process.env.OPENCODE_SERVER_PASSWORD
     const previousMobile = process.env.OPENCODE_MOBILE_PASSWORD
     const previousUpstream = process.env.OPENCODE_MOBILE_UPSTREAM
@@ -87,14 +97,13 @@ describe("plugin entry", () => {
     process.env.OPENCODE_SERVER_PASSWORD = "secret"
     process.env.OPENCODE_MOBILE_PASSWORD = "phone"
     process.env.OPENCODE_MOBILE_HOST = "127.0.0.1"
-    process.env.OPENCODE_MOBILE_PORT = "0"
+    process.env.OPENCODE_MOBILE_PORT = String(gatewayPort)
     delete process.env.OPENCODE_MOBILE_UPSTREAM
 
     const hooks = await mobileGateway.server({
       ...input,
       serverUrl: new URL(`http://127.0.0.1:${upstream.port}`),
     })
-    expect(hooks.dispose).toBeInstanceOf(Function)
 
     const restore = () => {
       if (previousPassword === undefined) delete process.env.OPENCODE_SERVER_PASSWORD
@@ -110,7 +119,17 @@ describe("plugin entry", () => {
     }
     restore()
 
+    const auth = `Basic ${Buffer.from("opencode:phone").toString("base64")}`
+    const response = await fetch(`http://127.0.0.1:${gatewayPort}/task-4-marker`, {
+      headers: { authorization: auth },
+    })
+
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe("task-4-upstream-ok")
+    expect(requests).toContain("/task-4-marker")
+
     await hooks.dispose?.()
+    stopGateway()
     upstream.stop(true)
   })
 })
