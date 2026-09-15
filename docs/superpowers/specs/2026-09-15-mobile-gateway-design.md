@@ -54,8 +54,9 @@ Non-goals:
 
 ### 1. Package layout
 
-A new installable package, `packages/mobile-gateway`, with two entrypoints that
-share one gateway module:
+A new installable package, `packages/mobile-gateway`, published in-repo as
+`@flynncode/mobile-gateway` with a `flynncode-mobile` bin, and two entrypoints
+that share one gateway module:
 
 ```
 packages/mobile-gateway/
@@ -109,12 +110,18 @@ The gateway is the only new attack surface, so it authenticates every request:
 - The phone presents the server password once using the browser's native Basic
   prompt. The gateway verifies it by making an upstream request with those
   credentials; only a successful upstream response issues a session cookie.
+- After verification, upstream requests always carry the Basic header derived
+  from `OPENCODE_SERVER_PASSWORD` in the gateway's own environment, not the
+  credentials presented by the phone. A valid cookie is sufficient thereafter;
+  the phone is never trusted to supply upstream credentials per request.
 - The cookie is `HttpOnly`, `SameSite=Lax`, `Path=/`, and carries a random
   token. Tokens live in memory only and are dropped on gateway restart.
 - The cookie is required in addition to Basic because `EventSource` cannot send
   custom headers, and same-origin cookies ride along automatically on SSE
   requests. Without a cookie the stream endpoints would be unreachable.
 - Verification failure returns 401 with `WWW-Authenticate` and issues no cookie.
+- Requests without a valid cookie never reach the upstream, whether or not they
+  carry a Basic header.
 - Credentials never appear in the served assets; the app picks up its origin
   automatically and does not need `?auth_token=`.
 
