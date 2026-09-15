@@ -10,6 +10,7 @@ import { SettingsProvidersV2 } from "./providers"
 import { SettingsModelsV2 } from "./models"
 import { SettingsPluginsV2 } from "./plugins"
 import { SettingsMcpV2 } from "./mcp"
+import { SettingsModelRouterV2 } from "./model-router"
 import "./settings-v2.css"
 import { SettingsServersV2 } from "./servers"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -77,6 +78,10 @@ export const DialogSettings: Component<{
                       <Icon name="server" />
                       {language.t("settings.tab.mcp")}
                     </TabsV2.Trigger>
+                    <TabsV2.Trigger value="model-router">
+                      <Icon name="models" />
+                      {language.t("settings.tab.modelRouter")}
+                    </TabsV2.Trigger>
                   </div>
                 </div>
 
@@ -127,6 +132,9 @@ export const DialogSettings: Component<{
         </Show>
         <TabsV2.Content value="mcp" class="settings-v2-panel">
           <SettingsMcpV2 directory={directory()} />
+        </TabsV2.Content>
+        <TabsV2.Content value="model-router" class="settings-v2-panel">
+          <SettingsModelRouterV2 directory={directory()} />
         </TabsV2.Content>
       </TabsV2>
     </Dialog>
