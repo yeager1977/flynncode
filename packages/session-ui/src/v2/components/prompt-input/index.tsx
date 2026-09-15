@@ -253,6 +253,32 @@ export function PromptInputV2(props: PromptInputV2Props) {
                 </Show>
               )}
             </Show>
+            <Show when={view.acceptAll} keyed>
+              {(control) => (
+                <TooltipV2
+                  placement="top"
+                  value={
+                    <>
+                      {control.title()}
+                      <KeybindV2 keys={control.keybind?.() ?? []} variant="neutral" />
+                    </>
+                  }
+                >
+                  <ButtonV2
+                    variant="ghost-muted"
+                    size="normal"
+                    class="shrink-0"
+                    aria-label={control.label()}
+                    aria-pressed={control.active()}
+                    data-action="prompt-accept-all"
+                    data-state={control.active() ? "pressed" : undefined}
+                    onClick={control.onToggle}
+                  >
+                    <Icon name="checklist" />
+                  </ButtonV2>
+                </TooltipV2>
+              )}
+            </Show>
           </div>
           <PromptInputV2SubmitButton
             mode={state.mode}

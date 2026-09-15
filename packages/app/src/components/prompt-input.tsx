@@ -1783,6 +1783,46 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     </Show>
                   </Show>
                 </Show>
+                <div data-component="prompt-accept-all-control">
+                  <TooltipKeybind
+                    placement="top"
+                    gutter={4}
+                    title={
+                      accepting()
+                        ? language.t("command.permissions.autoaccept.disable")
+                        : props.controls.session.id
+                          ? language.t("command.permissions.sessionOverride")
+                          : language.t("command.permissions.projectDefault")
+                    }
+                    keybind={command.keybind("permissions.autoaccept")}
+                  >
+                    <IconButtonV2
+                      type="button"
+                      variant="ghost-muted"
+                      size="normal"
+                      class="shrink-0"
+                      icon={<Icon name="checklist" />}
+                      state={accepting() ? "pressed" : undefined}
+                      aria-label={
+                        accepting()
+                          ? language.t("command.permissions.autoaccept.disable")
+                          : language.t("command.permissions.autoaccept.enable")
+                      }
+                      aria-pressed={accepting()}
+                      data-action="prompt-accept-all"
+                      style={control()}
+                      onClick={() => {
+                        const id = props.controls.session.id
+                        if (id) {
+                          permission.toggleAutoAccept(id, sdk().directory)
+                          return
+                        }
+                        permission.toggleAutoAcceptDirectory(sdk().directory)
+                        restoreFocus()
+                      }}
+                    />
+                  </TooltipKeybind>
+                </div>
               </div>
             </div>
           </div>

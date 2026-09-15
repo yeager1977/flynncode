@@ -400,6 +400,28 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
         onSelect: (value) => props.controls.model.selection.variant.set(value === "default" ? undefined : value),
         keybind: () => command.keybindParts("model.variant.cycle"),
       },
+      acceptAll: {
+        active: accepting,
+        title: () =>
+          accepting()
+            ? language.t("command.permissions.autoaccept.disable")
+            : props.controls.session.id
+              ? language.t("command.permissions.sessionOverride")
+              : language.t("command.permissions.projectDefault"),
+        label: () =>
+          accepting()
+            ? language.t("command.permissions.autoaccept.disable")
+            : language.t("command.permissions.autoaccept.enable"),
+        keybind: () => command.keybindParts("permissions.autoaccept"),
+        onToggle: () => {
+          const id = props.controls.session.id
+          if (id) {
+            permission.toggleAutoAccept(id, sdk().directory)
+            return
+          }
+          permission.toggleAutoAcceptDirectory(sdk().directory)
+        },
+      },
       submit: {
         stopping,
         working,
