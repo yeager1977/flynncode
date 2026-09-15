@@ -104,6 +104,9 @@ describe("plugin entry", () => {
       ...input,
       serverUrl: new URL(`http://127.0.0.1:${upstream.port}`),
     })
+    // A gateway that failed to bind the pinned port returns {} with no dispose;
+    // asserting this keeps a lost port race from silently false-passing below.
+    expect(hooks.dispose).toBeInstanceOf(Function)
 
     const restore = () => {
       if (previousPassword === undefined) delete process.env.OPENCODE_SERVER_PASSWORD

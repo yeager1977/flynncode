@@ -330,6 +330,65 @@ describe("startGateway", () => {
     upstream.stop(true)
   })
 
+  test("never forwards the phone credential to the upstream with distinct passwords", async () => {
+    const upstreamAuths: string[] = []
+    const upstream = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (request) => {
+        upstreamAuths.push(request.headers.get("authorization") ?? "")
+        if (request.headers.get("authorization") !== basic("opencode", "upstream-pass")) {
+          return new Response("nope", { status: 401 })
+        }
+        return new Response("ok", { headers: { "content-type": "text/plain" } })
+      },
+    })
+    const running = await startGateway({
+      options: {
+        host: "127.0.0.1",
+        port: 0,
+        upstream: `http://127.0.0.1:${upstream.port}`,
+        username: "opencode",
+        password: "phone-pass",
+        upstreamPassword: "upstream-pass",
+      },
+    })
+    const phoneAuth = basic("opencode", "phone-pass")
+    const upstreamAuthBase64 = Buffer.from("opencode:upstream-pass").toString("base64")
+
+    upstreamAuths.length = 0
+    const good = await fetch(`http://127.0.0.1:${running.port}/api/health`, {
+      headers: { authorization: phoneAuth },
+    })
+    expect(good.status).toBe(200)
+    expect(upstreamAuths).toEqual([`Basic ${upstreamAuthBase64}`, `Basic ${upstreamAuthBase64}`])
+    expect(upstreamAuths.join("\n")).not.toContain(phoneAuth)
+
+    upstreamAuths.length = 0
+    const leaked = await fetch(`http://127.0.0.1:${running.port}/api/health`, {
+      headers: { authorization: basic("opencode", "upstream-pass") },
+    })
+    expect(leaked.status).toBe(401)
+    expect(upstreamAuths).toEqual([])
+
+    upstreamAuths.length = 0
+    const anonymous = await fetch(`http://127.0.0.1:${running.port}/api/health`)
+    expect(anonymous.status).toBe(401)
+    expect(upstreamAuths).toEqual([])
+
+    const first = await fetch(`http://127.0.0.1:${running.port}/api/health`, {
+      headers: { authorization: basic("opencode", "phone-pass") },
+    })
+    const cookie = first.headers.getSetCookie()[0].split(";")[0]
+    upstreamAuths.length = 0
+    const cookieResponse = await fetch(`http://127.0.0.1:${running.port}/api/health`, { headers: { cookie } })
+    expect(cookieResponse.status).toBe(200)
+    expect(upstreamAuths).toEqual([`Basic ${upstreamAuthBase64}`])
+
+    stopGateway()
+    upstream.stop(true)
+  })
+
   test("responds 503 when the upstream is unreachable", async () => {
     const running = await startGateway({
       options: { host: "127.0.0.1", port: 0, upstream: "http://127.0.0.1:1", username: "opencode", password: "secret", upstreamPassword: "secret" },

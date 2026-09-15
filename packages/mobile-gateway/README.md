@@ -40,10 +40,12 @@ The Flynncode desktop app loads this package as a plugin and the gateway starts
 with the app. Plugins are dynamic-imported at runtime by path, so the app can
 load this package's source directly from disk — no rebuild or bundling required.
 
-The gateway uses only `node:http` and `node:stream`. Under the desktop's
-Electron Node runtime there is no `Bun` global; the same code runs under both
-Bun and Electron's Node, which the package's Node runtime test proves by
-serving a real request through Electron with `ELECTRON_RUN_AS_NODE=1`.
+The gateway uses only `node:http`, `node:stream`, and `node:stream/promises`.
+Under the desktop's Electron Node runtime there is no `Bun` global; the same
+code runs under both Bun and Electron's Node, which the package's Node runtime
+test verifies by serving a real request through Electron with
+`ELECTRON_RUN_AS_NODE=1`. The test is skipped when no Electron binary can be
+found on the machine.
 
 The desktop app binds the opencode server to a random port each launch and
 rotates `OPENCODE_SERVER_PASSWORD`, so leave `OPENCODE_MOBILE_UPSTREAM` unset and
