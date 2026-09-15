@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { DEFAULT_AGENT_TASKS, parseModelKey, parseOptions } from "../src/scorecard"
+import { DEFAULT_AGENT_TASKS, parseModelKey, parseOptions } from "../../../src/plugin/ollama-model-router/scorecard"
 
 describe("parseOptions", () => {
   test("applies defaults for empty options", () => {

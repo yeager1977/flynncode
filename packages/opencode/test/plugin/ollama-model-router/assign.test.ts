@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { assignAgents } from "../src/assign"
-import { parseOptions } from "../src/scorecard"
+import { assignAgents } from "../../../src/plugin/ollama-model-router/assign"
+import { parseOptions } from "../../../src/plugin/ollama-model-router/scorecard"
 
 function makeOptions(overrides: Record<string, unknown> = {}) {
   const result = parseOptions({
@@ -15,7 +15,7 @@ function makeOptions(overrides: Record<string, unknown> = {}) {
   return result.options
 }
 
-const cfgBase = () => ({
+const cfgBase = (): any => ({
   provider: {
     "ollama-cloud": {
       models: { big: { name: "Big" }, cheap: { name: "Cheap" } },

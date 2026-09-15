@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { formatRankTable } from "../src/tools"
+import { formatRankTable } from "../../../src/plugin/ollama-model-router/tools"
 
 describe("formatRankTable", () => {
   test("renders ranked rows with scores and reasons", () => {
@@ -52,7 +52,7 @@ describe("formatRankTable", () => {
   })
 })
 
-import { createTools } from "../src/tools"
+import { createTools } from "../../../src/plugin/ollama-model-router/tools"
 
 test("route_task caps concurrent executions per session", async () => {
   let release: () => void = () => {}

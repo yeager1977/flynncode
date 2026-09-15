@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { collectCandidates, collectMeta, findUnmatchedScorecardKeys } from "../src/candidates"
-import { parseOptions } from "../src/scorecard"
+import { collectCandidates, collectMeta, findUnmatchedScorecardKeys } from "../../../src/plugin/ollama-model-router/candidates"
+import { parseOptions } from "../../../src/plugin/ollama-model-router/scorecard"
 
 const cfg = {
   provider: {

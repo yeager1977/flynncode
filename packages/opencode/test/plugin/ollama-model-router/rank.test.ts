@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { normalizeWeights, rankModels, scoreModel } from "../src/rank"
+import { normalizeWeights, rankModels, scoreModel } from "../../../src/plugin/ollama-model-router/rank"
 
 const weights = { capability: 0.6, price: 0.25, speed: 0.15 }
 

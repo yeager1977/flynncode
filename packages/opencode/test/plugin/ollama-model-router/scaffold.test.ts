@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import plugin from "../index"
+import plugin from "../../../src/plugin/ollama-model-router"
 
 describe("scaffold", () => {
   test("exports the plugin shape the loader requires", () => {
