@@ -1,3 +1,6 @@
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
+import { Readable } from "node:stream"
+import { pipeline } from "node:stream/promises"
 import { SESSION_COOKIE, readCookie, sessionCookie } from "./cookies"
 import { envAuthHeader, type GatewayOptions } from "./config"
 import { streamThrough } from "./proxy"
@@ -11,7 +14,9 @@ export type Gateway = {
   stop(): void
 }
 
-let running: { server: ReturnType<typeof Bun.serve>; refs: number; stop: () => void } | undefined
+type RunningState = { server: Server; port: number; refs: number; stop: () => void }
+
+let running: RunningState | undefined
 
 function unauthorized() {
   return new Response("Authentication required", { status: 401, headers: { "www-authenticate": UNAUTHORIZED } })
@@ -84,32 +89,83 @@ export async function startGateway(input: { options: GatewayOptions; port?: numb
     running.refs += 1
     const state = running
     const released = { value: false }
-    return { port: state.server.port ?? 0, stop: () => release(state, released) }
+    return { port: state.port, stop: () => release(state, released) }
   }
   const handle = createGateway({ options: input.options })
-  const server = Bun.serve({
-    hostname: input.options.host,
-    port: input.port ?? input.options.port,
-    fetch: handle,
+  const server = createServer((request, response) => {
+    Promise.resolve(requestFromNode(request))
+      .then(handle)
+      .then((result) => writeToNode(response, result))
+      .catch(() => {
+        response.writeHead(500)
+        response.end("Internal error")
+      })
   })
+  const port = await listen(server, input.options.host, input.port ?? input.options.port)
   running = {
     server,
+    port,
     refs: 1,
     stop: () => {
-      server.stop(true)
+      server.closeAllConnections()
+      server.close()
       if (running?.server === server) running = undefined
     },
   }
   const state = running
   const released = { value: false }
-  return { port: server.port ?? 0, stop: () => release(state, released) }
+  return { port, stop: () => release(state, released) }
+}
+
+function listen(server: Server, host: string, port: number) {
+  return new Promise<number>((resolve, reject) => {
+    server.once("error", reject)
+    server.listen(port, host, () => {
+      server.removeListener("error", reject)
+      const address = server.address()
+      if (!address || typeof address === "string") {
+        reject(new Error("Unable to resolve gateway port"))
+        return
+      }
+      resolve(address.port)
+    })
+  })
+}
+
+function requestFromNode(request: IncomingMessage) {
+  const method = request.method ?? "GET"
+  const url = `http://${request.headers.host ?? "127.0.0.1"}${request.url ?? "/"}`
+  const body = method === "GET" || method === "HEAD" ? undefined : (Readable.toWeb(request) as unknown as BodyInit)
+  // RequestInit in the DOM lib lacks `duplex`, but Node's fetch requires it for streaming bodies.
+  return new Request(url, {
+    method,
+    headers: request.headers as Record<string, string>,
+    body,
+    duplex: "half",
+  } as RequestInit & { duplex: "half" }) as Request
+}
+
+async function writeToNode(response: ServerResponse, result: Response) {
+  const headers: Record<string, string | string[]> = {}
+  for (const [key, value] of result.headers.entries()) {
+    if (key.toLowerCase() === "set-cookie") continue
+    headers[key] = value
+  }
+  const cookies = result.headers.getSetCookie()
+  if (cookies.length) headers["set-cookie"] = cookies
+  response.writeHead(result.status, headers)
+  if (!result.body) {
+    response.end()
+    return
+  }
+  await pipeline(Readable.fromWeb(result.body as never), response).catch(() => response.end())
 }
 
 // The plugin hook is created once per opened directory, so the gateway is
 // reference-counted. The last disposer closes the listener. Each handle
 // releases at most once and is bound to the server instance it was created
 // for, so a stale handle after a restart cannot decrement the new server.
-function release(state: { server: ReturnType<typeof Bun.serve>; refs: number; stop: () => void }, released: { value: boolean }) {
+function release(state: RunningState, released: { value: boolean }) {
   if (released.value) return
   released.value = true
   if (state.refs <= 0) return

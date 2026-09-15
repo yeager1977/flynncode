@@ -236,4 +236,107 @@ describe("startGateway", () => {
     stopGateway()
     await expect(fetch(`http://127.0.0.1:${restarted.port}/api/session`)).rejects.toThrow()
   })
+
+  test("forwards a POST body through the node bridge", async () => {
+    const seen: string[] = []
+    const echo = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: async (request) => {
+        seen.push(await request.text())
+        return new Response("echoed", { headers: { "content-type": "text/plain" } })
+      },
+    })
+    const handle = startGateway({
+      options: { host: "127.0.0.1", port: 0, upstream: `http://127.0.0.1:${echo.port}`, username: "opencode", password: "secret" },
+    })
+    const running = await handle
+    const auth = basic("opencode", "secret")
+    const response = await fetch(`http://127.0.0.1:${running.port}/api/session`, {
+      method: "POST",
+      headers: { authorization: auth, "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "hello" }),
+    })
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe("echoed")
+    expect(seen.filter((body) => body !== "")).toEqual(['{"prompt":"hello"}'])
+    stopGateway()
+    echo.stop(true)
+  })
+
+  test("forwards multiple set-cookie headers", async () => {
+    const upstream = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => {
+        const headers = new Headers({ "content-type": "text/plain" })
+        headers.append("set-cookie", "a=1; Path=/")
+        headers.append("set-cookie", "b=2; Path=/")
+        return new Response("ok", { headers })
+      },
+    })
+    const running = await startGateway({
+      options: { host: "127.0.0.1", port: 0, upstream: `http://127.0.0.1:${upstream.port}`, username: "opencode", password: "secret" },
+    })
+    const first = await fetch(`http://127.0.0.1:${running.port}/api/health`, {
+      headers: { authorization: basic("opencode", "secret") },
+    })
+    const cookie = first.headers.getSetCookie()[0].split(";")[0]
+    const response = await fetch(`http://127.0.0.1:${running.port}/api/health`, {
+      headers: { cookie },
+    })
+    expect(response.headers.getSetCookie()).toEqual(["a=1; Path=/", "b=2; Path=/"])
+    stopGateway()
+    upstream.stop(true)
+  })
+
+  test("streams SSE incrementally through the node bridge", async () => {
+    const encoder = new TextEncoder()
+    const upstream = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            async start(controller) {
+              controller.enqueue(encoder.encode("data: one\n\n"))
+              await Bun.sleep(200)
+              controller.enqueue(encoder.encode("data: two\n\n"))
+              controller.close()
+            },
+          }),
+          { headers: { "content-type": "text/event-stream", "cache-control": "no-cache, no-transform" } },
+        ),
+    })
+    const running = await startGateway({
+      options: { host: "127.0.0.1", port: 0, upstream: `http://127.0.0.1:${upstream.port}`, username: "opencode", password: "secret" },
+    })
+    const first = await fetch(`http://127.0.0.1:${running.port}/api/health`, {
+      headers: { authorization: basic("opencode", "secret") },
+    })
+    const cookie = first.headers.getSetCookie()[0].split(";")[0]
+    const started = Date.now()
+    const response = await fetch(`http://127.0.0.1:${running.port}/api/event`, { headers: { cookie } })
+    expect(response.headers.get("content-type")).toBe("text/event-stream")
+
+    const reader = response.body!.getReader()
+    const firstChunkAt = Date.now()
+    const chunk = await reader.read()
+    expect(new TextDecoder().decode(chunk.value)).toBe("data: one\n\n")
+    expect(firstChunkAt - started).toBeLessThan(150)
+    while (!(await reader.read()).done) {}
+    stopGateway()
+    upstream.stop(true)
+  })
+
+  test("returns 500 rather than crashing when the handler throws", async () => {
+    const running = await startGateway({
+      options: { host: "127.0.0.1", port: 0, upstream: "http://127.0.0.1:1", username: "opencode", password: "secret" },
+    })
+    const response = await fetch(`http://127.0.0.1:${running.port}/api/health`, {
+      headers: { authorization: basic("opencode", "secret") },
+    })
+    expect([500, 503]).toContain(response.status)
+    stopGateway()
+  })
 })
