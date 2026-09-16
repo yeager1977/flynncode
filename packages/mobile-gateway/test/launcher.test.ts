@@ -258,6 +258,33 @@ describe("loadLauncher", () => {
     expect(result.data.groups[0].sessions.map((item) => item.id)).toEqual(["main"])
   })
 
+  test("drops archived sessions the way the app's home list does", async () => {
+    const upstream = upstreamWith((request) => {
+      const path = new URL(request.url).pathname
+      if (path === "/api/session") {
+        return Response.json({
+          data: [
+            { id: "visible", title: "Visible", location: { directory: "/a" }, time: { updated: 9 } },
+            {
+              id: "archived",
+              title: "Archived",
+              location: { directory: "/a" },
+              time: { updated: 99, archived: 1234 },
+            },
+          ],
+        })
+      }
+      return Response.json({ data: {} })
+    })
+
+    const result = await loadLauncher({ upstream: `http://127.0.0.1:${upstream.port}`, authorization: AUTH })
+    upstream.stop(true)
+
+    expect(result.kind).toBe("loaded")
+    if (result.kind !== "loaded") return
+    expect(result.data.groups[0].sessions.map((item) => item.id)).toEqual(["visible"])
+  })
+
   test("does not follow redirects", async () => {
     const upstream = upstreamWith(() => new Response(null, { status: 302, headers: { location: "http://elsewhere" } }))
     const result = await loadLauncher({ upstream: `http://127.0.0.1:${upstream.port}`, authorization: AUTH })

@@ -104,6 +104,20 @@ describe("renderLauncher", () => {
     expect(html).toContain("running")
   })
 
+  test("omits the timestamp for a placeholder session with no known update time", () => {
+    const html = renderLauncher({
+      now: NOW,
+      partial: true,
+      data: {
+        running: [{ id: "ses_orphan1", title: "ses_orphan1", directory: undefined, updated: 0, subagent: false }],
+        groups: [],
+      },
+    })
+    expect(html).not.toMatch(/\d+d ago/)
+    expect(html).not.toMatch(/\d+h ago/)
+    expect(html).toContain("running")
+  })
+
   test("does not label a main session as a subagent", () => {
     const html = renderLauncher({
       now: NOW,

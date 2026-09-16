@@ -159,6 +159,9 @@ function parseSessions(value: unknown): LauncherSession[] {
     if (typeof item.id !== "string" || !item.id) continue
     const location = isRecord(item.location) ? item.location : undefined
     const time = isRecord(item.time) ? item.time : undefined
+    // The app's own home list omits archived sessions too; matching that keeps the
+    // launcher from surfacing sessions the app itself would hide.
+    if (time && typeof time.archived === "number") continue
     sessions.push({
       id: item.id,
       title: typeof item.title === "string" && item.title.trim() ? item.title : item.id,

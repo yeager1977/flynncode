@@ -15,7 +15,10 @@ export function escapeHtml(value: string) {
 function row(session: LauncherSession, now: number, running: boolean) {
   const title = `<span class="title">${escapeHtml(session.title)}</span>`
   const badges = `${running ? ` &middot; ${RUNNING_BADGE}` : ""}${session.subagent ? ` &middot; ${SUBAGENT_BADGE}` : ""}`
-  const meta = `<span class="meta">${escapeHtml(projectLabel(session.directory))} &middot; ${escapeHtml(relativeTime(session.updated, now))}${badges}</span>`
+  // A placeholder session (running but outside the recent window) has no known update
+  // time; showing "20000d ago" would be worse than showing nothing.
+  const when = session.updated > 0 ? ` &middot; ${escapeHtml(relativeTime(session.updated, now))}` : ""
+  const meta = `<span class="meta">${escapeHtml(projectLabel(session.directory))}${when}${badges}</span>`
   if (session.directory === undefined) return `<div class="row">${title}${meta}</div>`
   const href = `/${sessionSlug(session.directory)}/session/${encodeURIComponent(session.id)}`
   return `<a class="row" href="${escapeHtml(href)}">${title}${meta}</a>`
