@@ -425,3 +425,206 @@ describe("startGateway", () => {
     stopGateway()
   })
 })
+
+describe("launcher route", () => {
+  const withUpstream = async () => {
+    const upstream = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (request) => {
+        const path = new URL(request.url).pathname
+        if (request.headers.get("authorization") !== basic("opencode", "secret")) {
+          return new Response("unauthorized", { status: 401 })
+        }
+        if (path === "/api/session/active") return Response.json({ data: {} })
+        if (path === "/api/session") {
+          return Response.json({
+            data: [
+              { id: "ses_launcher1", title: "Launcher target", location: { directory: "/work/a" }, time: { updated: 1000 } },
+            ],
+          })
+        }
+        return new Response("proxied", { status: 200 })
+      },
+    })
+    const running = await startGateway({
+      options: {
+        host: "127.0.0.1",
+        port: 0,
+        upstream: `http://127.0.0.1:${upstream.port}`,
+        username: "opencode",
+        password: "secret",
+        upstreamPassword: "secret",
+      },
+    })
+    return { upstream, running }
+  }
+
+  test("requires credentials", async () => {
+    const { upstream, running } = await withUpstream()
+    const response = await fetch(`http://127.0.0.1:${running.port}/m`)
+    expect(response.status).toBe(401)
+    expect(response.headers.get("www-authenticate")).toContain("Basic")
+    stopGateway()
+    upstream.stop(true)
+  })
+
+  test("serves the page for an authenticated request and issues a session cookie", async () => {
+    const { upstream, running } = await withUpstream()
+    const response = await fetch(`http://127.0.0.1:${running.port}/m`, {
+      headers: { authorization: basic("opencode", "secret") },
+    })
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toContain("text/html")
+    const html = await response.text()
+    expect(html).toContain("Launcher target")
+    expect(html).toContain("/L3dvcmsvYQ/session/ses_launcher1")
+    expect(response.headers.getSetCookie()[0]).toContain("oc_mobile_session=")
+    stopGateway()
+    upstream.stop(true)
+  })
+
+  test("treats /m/ the same as /m", async () => {
+    const { upstream, running } = await withUpstream()
+    const response = await fetch(`http://127.0.0.1:${running.port}/m/`, {
+      headers: { authorization: basic("opencode", "secret") },
+    })
+    expect(response.status).toBe(200)
+    expect(await response.text()).toContain("Sessions")
+    stopGateway()
+    upstream.stop(true)
+  })
+
+  test("serves the page for a valid session cookie without contacting the upstream for auth", async () => {
+    const { upstream, running } = await withUpstream()
+    const first = await fetch(`http://127.0.0.1:${running.port}/m`, {
+      headers: { authorization: basic("opencode", "secret") },
+    })
+    const cookie = first.headers.getSetCookie()[0].split(";")[0]
+    const response = await fetch(`http://127.0.0.1:${running.port}/m`, { headers: { cookie } })
+    expect(response.status).toBe(200)
+    expect(await response.text()).toContain("Launcher target")
+    stopGateway()
+    upstream.stop(true)
+  })
+
+  test("renders the unreachable page for a cookie holder when the upstream is down", async () => {
+    const { upstream, running } = await withUpstream()
+    // Establish a session while the upstream is healthy, then take the upstream away.
+    const first = await fetch(`http://127.0.0.1:${running.port}/m`, {
+      headers: { authorization: basic("opencode", "secret") },
+    })
+    expect(first.status).toBe(200)
+    const cookie = first.headers.getSetCookie()[0].split(";")[0]
+    upstream.stop(true)
+
+    const response = await fetch(`http://127.0.0.1:${running.port}/m`, { headers: { cookie } })
+    expect(response.status).toBe(200)
+    const html = await response.text()
+    expect(html).toContain("unreachable")
+    expect(html).toContain('href="/m"')
+    stopGateway()
+  })
+
+  test("rejects a first-time visitor with 503 when the upstream is down", async () => {
+    // Without a session cookie the credential probe cannot succeed, so the request
+    // never reaches the launcher. The distinct 503 (rather than 401) tells the user
+    // the server is down rather than that their password is wrong.
+    const running = await startGateway({
+      options: {
+        host: "127.0.0.1",
+        port: 0,
+        upstream: "http://127.0.0.1:1",
+        username: "opencode",
+        password: "secret",
+        upstreamPassword: "secret",
+      },
+    })
+    const response = await fetch(`http://127.0.0.1:${running.port}/m`, {
+      headers: { authorization: basic("opencode", "secret") },
+    })
+    expect(response.status).toBe(503)
+    expect(response.headers.get("www-authenticate")).toBeNull()
+    stopGateway()
+  })
+
+  test("renders the unauthorized page when the upstream rejects the gateway credential", async () => {
+    const upstream = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (request) => {
+        const url = new URL(request.url)
+        if (request.headers.get("authorization") !== basic("opencode", "secret")) {
+          return new Response("unauthorized", { status: 401 })
+        }
+        if (url.pathname === "/api/session" && url.searchParams.get("limit") === "1") {
+          return Response.json({ data: [] })
+        }
+        return new Response("unauthorized", { status: 401 })
+      },
+    })
+    const running = await startGateway({
+      options: {
+        host: "127.0.0.1",
+        port: 0,
+        upstream: `http://127.0.0.1:${upstream.port}`,
+        username: "opencode",
+        password: "secret",
+        upstreamPassword: "secret",
+      },
+    })
+    const response = await fetch(`http://127.0.0.1:${running.port}/m`, {
+      headers: { authorization: basic("opencode", "secret") },
+    })
+    expect(response.status).toBe(200)
+    const html = await response.text()
+    expect(html).toContain("rejected the gateway")
+    expect(html).not.toContain("unreachable")
+    expect(response.headers.get("www-authenticate")).toBeNull()
+    stopGateway()
+    upstream.stop(true)
+  })
+
+  test("still proxies other paths", async () => {
+    const { upstream, running } = await withUpstream()
+    const first = await fetch(`http://127.0.0.1:${running.port}/m`, {
+      headers: { authorization: basic("opencode", "secret") },
+    })
+    const cookie = first.headers.getSetCookie()[0].split(";")[0]
+    const response = await fetch(`http://127.0.0.1:${running.port}/api/health`, { headers: { cookie } })
+    expect(await response.text()).toBe("proxied")
+    stopGateway()
+    upstream.stop(true)
+  })
+
+  test("does not proxy the launcher path upstream", async () => {
+    const paths: string[] = []
+    const upstream = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (request) => {
+        const path = new URL(request.url).pathname
+        paths.push(path)
+        if (path === "/api/session/active") return Response.json({ data: {} })
+        if (path === "/api/session") return Response.json({ data: [] })
+        return new Response("proxied")
+      },
+    })
+    const running = await startGateway({
+      options: {
+        host: "127.0.0.1",
+        port: 0,
+        upstream: `http://127.0.0.1:${upstream.port}`,
+        username: "opencode",
+        password: "secret",
+        upstreamPassword: "secret",
+      },
+    })
+    await fetch(`http://127.0.0.1:${running.port}/m`, {
+      headers: { authorization: basic("opencode", "secret") },
+    })
+    expect(paths).not.toContain("/m")
+    stopGateway()
+    upstream.stop(true)
+  })
+})

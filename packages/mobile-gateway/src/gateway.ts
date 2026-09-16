@@ -6,6 +6,8 @@ import { envAuthHeader, type GatewayOptions } from "./config.ts"
 import { streamThrough } from "./proxy.ts"
 import { createSessionStore } from "./session.ts"
 import { Upstream, upstreamHeaders, upstreamUrl } from "./upstream.ts"
+import { loadLauncher } from "./launcher.ts"
+import { renderLauncher, renderUnauthorized, renderUnreachable } from "./launcher-html.ts"
 
 const UNAUTHORIZED = 'Basic realm="opencode-mobile"'
 
@@ -36,6 +38,11 @@ function decodeBasic(header: string | null) {
   }
 }
 
+function isLauncherPath(url: string) {
+  const pathname = new URL(url, "http://localhost").pathname
+  return pathname === "/m" || pathname === "/m/"
+}
+
 export function createGateway(input: { options: GatewayOptions }) {
   const options = input.options
   const authorization = envAuthHeader(options)
@@ -60,6 +67,22 @@ export function createGateway(input: { options: GatewayOptions }) {
       }
       if (!probe.ok) return unauthorized()
       issued = sessions.issue()
+    }
+
+    if (isLauncherPath(request.url)) {
+      const loaded = await loadLauncher({ upstream: options.upstream, authorization })
+      const page =
+        loaded.kind === "unreachable"
+          ? renderUnreachable()
+          : loaded.kind === "unauthorized"
+            ? renderUnauthorized()
+            : renderLauncher({ data: loaded.data, now: Date.now(), partial: loaded.partial })
+      const response = new Response(page, {
+        status: 200,
+        headers: { "content-type": "text/html; charset=utf-8" },
+      })
+      if (issued !== undefined) response.headers.set("set-cookie", sessionCookie(issued))
+      return response
     }
 
     const target = upstreamUrl(options.upstream, request.url)
