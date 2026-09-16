@@ -104,10 +104,19 @@ export function validateForm(
   form.providers.forEach((provider, index) => {
     if (provider.trim() === "") errors.push(`providers.${index}`)
   })
+  const agents = new Set<string>()
   for (const row of form.agentTasks) {
     const agent = row.agent.trim()
     if (agent === "") errors.push("agentTasks..agent")
     if (!isTaskName(row.task)) errors.push(`agentTasks.${agent}.task`)
+    if (agents.has(agent)) errors.push(`agentTasks.${agent}.duplicate`)
+    agents.add(agent)
+  }
+  for (const task of TASK_NAMES) {
+    for (const dim of ["capability", "price", "speed"] as const) {
+      const value = form.taskWeights[task][dim]
+      if (!Number.isFinite(value) || value < 0) errors.push(`taskWeights.${task}.${dim}`)
+    }
   }
   const seen = new Set<string>()
   for (const model of form.models) {

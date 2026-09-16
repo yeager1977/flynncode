@@ -141,6 +141,26 @@ describe("serializeForm", () => {
 })
 
 describe("validateForm", () => {
+  test("duplicate agent assignments cannot silently overwrite one another", () => {
+    const form = emptyForm()
+    form.agentTasks.push({ agent: "build", task: "review" })
+    expect(validateForm(form)).toEqual({ ok: false, errors: ["agentTasks.build.duplicate"] })
+  })
+
+  test("invalid task weights cannot reach the router config", () => {
+    for (const value of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const form = emptyForm()
+      form.taskWeights.coding.speed = value
+      expect(validateForm(form)).toEqual({ ok: false, errors: ["taskWeights.coding.speed"] })
+    }
+  })
+
+  test("zero weights remain valid for the router's equal-weight fallback", () => {
+    const form = emptyForm()
+    form.taskWeights.coding = { capability: 0, price: 0, speed: 0 }
+    expect(validateForm(form).ok).toBe(true)
+  })
+
   test("empty form is valid", () => {
     const result = validateForm(emptyForm())
     expect(result).toEqual({ ok: true, value: serializeForm(emptyForm()) })

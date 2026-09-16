@@ -9,6 +9,7 @@ import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { KeybindV2 } from "@opencode-ai/ui/v2/keybind-v2"
 import { MenuV2 } from "@opencode-ai/ui/v2/menu-v2"
+import { Switch } from "@opencode-ai/ui/v2/switch-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { AttachmentCardV2 } from "../attachment-card-v2"
 import { CommentCardV2 } from "../comment-card-v2"
@@ -264,18 +265,9 @@ export function PromptInputV2(props: PromptInputV2Props) {
                     </>
                   }
                 >
-                  <ButtonV2
-                    variant="ghost-muted"
-                    size="normal"
-                    class="shrink-0"
-                    aria-label={control.label()}
-                    aria-pressed={control.active()}
-                    data-action="prompt-accept-all"
-                    data-state={control.active() ? "pressed" : undefined}
-                    onClick={control.onToggle}
-                  >
-                    <Icon name="checklist" />
-                  </ButtonV2>
+                  <Switch class="h-7 shrink-0" checked={control.active()} data-action="prompt-accept-all" onChange={control.onToggle}>
+                    {control.label()}
+                  </Switch>
                 </TooltipV2>
               )}
             </Show>

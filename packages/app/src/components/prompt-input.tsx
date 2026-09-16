@@ -9,7 +9,6 @@ import {
   createMemo,
   createSignal,
   createResource,
-  Switch,
   Match,
   type JSX,
 } from "solid-js"
@@ -36,9 +35,9 @@ import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
-import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { KeybindV2 } from "@opencode-ai/ui/v2/keybind-v2"
 import { MenuV2 } from "@opencode-ai/ui/v2/menu-v2"
+import { Switch } from "@opencode-ai/ui/v2/switch-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Select } from "@opencode-ai/ui/select"
@@ -1796,22 +1795,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     }
                     keybind={command.keybind("permissions.autoaccept")}
                   >
-                    <IconButtonV2
-                      type="button"
-                      variant="ghost-muted"
-                      size="normal"
+                    <Switch
                       class="shrink-0"
-                      icon={<Icon name="checklist" />}
-                      state={accepting() ? "pressed" : undefined}
-                      aria-label={
-                        accepting()
-                          ? language.t("command.permissions.autoaccept.disable")
-                          : language.t("command.permissions.autoaccept.enable")
-                      }
-                      aria-pressed={accepting()}
+                      checked={accepting()}
                       data-action="prompt-accept-all"
                       style={control()}
-                      onClick={() => {
+                      onChange={() => {
                         const id = props.controls.session.id
                         if (id) {
                           permission.toggleAutoAccept(id, sdk().directory)
@@ -1820,7 +1809,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                         permission.toggleAutoAcceptDirectory(sdk().directory)
                         restoreFocus()
                       }}
-                    />
+                    >
+                      {language.t("command.permissions.autoaccept.enable")}
+                    </Switch>
                   </TooltipKeybind>
                 </div>
               </div>

@@ -408,10 +408,7 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
             : props.controls.session.id
               ? language.t("command.permissions.sessionOverride")
               : language.t("command.permissions.projectDefault"),
-        label: () =>
-          accepting()
-            ? language.t("command.permissions.autoaccept.disable")
-            : language.t("command.permissions.autoaccept.enable"),
+        label: () => language.t("command.permissions.autoaccept.enable"),
         keybind: () => command.keybindParts("permissions.autoaccept"),
         onToggle: () => {
           const id = props.controls.session.id
