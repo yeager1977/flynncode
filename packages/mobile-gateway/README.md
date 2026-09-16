@@ -92,6 +92,32 @@ track.
 Live updates arrive while the app is open. Push notifications are unavailable
 because iOS requires HTTPS for them; plain LAN HTTP does not qualify.
 
+## Session launcher
+
+The gateway serves a session launcher at `http://<machine-lan-ip>:4097/m`. It
+requires the same phone credential as every other gateway path. Add `/m` to the
+home screen instead of `/` and you get a two-tap flow: tap the icon, tap a
+session.
+
+The launcher lists running sessions first under "Running now", then recent
+sessions grouped by project. It shows the most recent 30 sessions; older ones
+remain reachable through the full app's own project picker. The launcher itself
+is a plain list — tapping a row opens that session in the full app, and all
+interaction happens there.
+
+When something is wrong the launcher says so:
+
+- **Server unreachable** — the page reports that the opencode server is
+  unreachable and offers a reload link.
+- **Credential rejected** — the page reports that the opencode server rejected
+  the gateway's password. Check that `OPENCODE_SERVER_PASSWORD` matches the
+  running server; the desktop app generates a new password each launch.
+- **Partial data** — one of the two data sources failed, but the page still
+  renders what it has and notes that some session data is unavailable.
+
+The launcher is rendered by the gateway itself: `/m` is never proxied upstream
+and requires the same authentication as every other path.
+
 ## Security
 
 - `OPENCODE_MOBILE_PASSWORD` is the phone's only credential and does not rotate.
