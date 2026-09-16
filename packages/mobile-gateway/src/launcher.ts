@@ -94,6 +94,7 @@ const RECENT_LIMIT = 30
 
 export type LauncherLoad =
   | { kind: "loaded"; data: LauncherData; partial: boolean }
+  | { kind: "unauthorized" }
   | { kind: "unreachable" }
 
 export async function loadLauncher(input: { upstream: string; authorization: string }): Promise<LauncherLoad> {
@@ -102,26 +103,36 @@ export async function loadLauncher(input: { upstream: string; authorization: str
     request(input, `http://gateway/api/session?limit=${RECENT_LIMIT}&order=desc`),
   ])
 
-  if (active === undefined && recent === undefined) return { kind: "unreachable" }
+  if (active.kind === "unauthorized" || recent.kind === "unauthorized") return { kind: "unauthorized" }
+  if (active.kind === "failed" && recent.kind === "failed") return { kind: "unreachable" }
 
   return {
     kind: "loaded",
-    partial: active === undefined || recent === undefined,
-    data: groupSessions({ sessions: parseSessions(recent), running: parseActive(active) }),
+    partial: active.kind === "failed" || recent.kind === "failed",
+    data: groupSessions({
+      sessions: parseSessions(recent.kind === "ok" ? recent.value : undefined),
+      running: parseActive(active.kind === "ok" ? active.value : undefined),
+    }),
   }
 }
 
-async function request(input: { upstream: string; authorization: string }, url: string) {
+type FetchOutcome =
+  | { kind: "ok"; value: unknown }
+  | { kind: "unauthorized" }
+  | { kind: "failed" }
+
+async function request(input: { upstream: string; authorization: string }, url: string): Promise<FetchOutcome> {
   try {
     const response = await fetch(upstreamUrl(input.upstream, url), {
       headers: { authorization: input.authorization },
       redirect: "error",
       signal: AbortSignal.timeout(TIMEOUT_MS),
     })
-    if (!response.ok) return
-    return (await response.json()) as unknown
+    if (response.status === 401 || response.status === 403) return { kind: "unauthorized" }
+    if (!response.ok) return { kind: "failed" }
+    return { kind: "ok", value: (await response.json()) as unknown }
   } catch {
-    return
+    return { kind: "failed" }
   }
 }
 

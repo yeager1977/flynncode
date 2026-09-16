@@ -231,4 +231,45 @@ describe("loadLauncher", () => {
 
     expect(seen).toEqual(["/base/api/session/active", "/base/api/session"])
   })
+
+  test("reports unauthorized when the session endpoint rejects the credential", async () => {
+    const upstream = upstreamWith((request) => {
+      const path = new URL(request.url).pathname
+      if (path === "/api/session") return new Response("no", { status: 401 })
+      return Response.json({ data: {} })
+    })
+
+    const result = await loadLauncher({ upstream: `http://127.0.0.1:${upstream.port}`, authorization: AUTH })
+    upstream.stop(true)
+
+    expect(result).toEqual({ kind: "unauthorized" })
+  })
+
+  test("reports unauthorized when only the active endpoint rejects the credential", async () => {
+    const upstream = upstreamWith((request) => {
+      const path = new URL(request.url).pathname
+      if (path === "/api/session/active") return new Response("no", { status: 401 })
+      return Response.json({ data: [] })
+    })
+
+    const result = await loadLauncher({ upstream: `http://127.0.0.1:${upstream.port}`, authorization: AUTH })
+    upstream.stop(true)
+
+    expect(result).toEqual({ kind: "unauthorized" })
+  })
+
+  test("keeps a server error on the session endpoint partial instead of unauthorized", async () => {
+    const upstream = upstreamWith((request) => {
+      const path = new URL(request.url).pathname
+      if (path === "/api/session") return new Response("boom", { status: 500 })
+      return Response.json({ data: {} })
+    })
+
+    const result = await loadLauncher({ upstream: `http://127.0.0.1:${upstream.port}`, authorization: AUTH })
+    upstream.stop(true)
+
+    expect(result.kind).toBe("loaded")
+    if (result.kind !== "loaded") return
+    expect(result.partial).toBe(true)
+  })
 })
