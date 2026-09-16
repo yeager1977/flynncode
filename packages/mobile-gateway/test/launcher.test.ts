@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { groupSessions, projectLabel, relativeTime, sessionSlug } from "../src/launcher.ts"
+import { groupSessions, loadLauncher, projectLabel, relativeTime, sessionSlug } from "../src/launcher.ts"
 
 const session = (id: string, directory: string | undefined, updated: number, title = id) => ({
   id,
@@ -106,5 +106,129 @@ describe("groupSessions", () => {
   test("returns empty results for no sessions", () => {
     const data = groupSessions({ sessions: [], running: [] })
     expect(data).toEqual({ running: [], groups: [] })
+  })
+})
+
+const upstreamWith = (fetch: (request: Request) => Response | Promise<Response>) =>
+  Bun.serve({ hostname: "127.0.0.1", port: 0, fetch })
+
+const AUTH = `Basic ${Buffer.from("opencode:secret").toString("base64")}`
+
+describe("loadLauncher", () => {
+  test("loads running and recent sessions", async () => {
+    const upstream = upstreamWith((request) => {
+      const path = new URL(request.url).pathname
+      if (request.headers.get("authorization") !== AUTH) return new Response("no", { status: 401 })
+      if (path === "/api/session/active") return Response.json({ data: { ses_1: { type: "running" } } })
+      if (path === "/api/session") {
+        return Response.json({
+          data: [
+            {
+              id: "ses_1",
+              title: "Running one",
+              location: { directory: "/work/a" },
+              time: { updated: 500 },
+            },
+            {
+              id: "ses_2",
+              title: "Recent one",
+              location: { directory: "/work/a" },
+              time: { updated: 400 },
+            },
+          ],
+        })
+      }
+      return new Response("not found", { status: 404 })
+    })
+
+    const result = await loadLauncher({ upstream: `http://127.0.0.1:${upstream.port}`, authorization: AUTH })
+    upstream.stop(true)
+
+    expect(result.kind).toBe("loaded")
+    if (result.kind !== "loaded") return
+    expect(result.partial).toBe(false)
+    expect(result.data.running.map((item) => item.id)).toEqual(["ses_1"])
+    expect(result.data.groups[0].sessions.map((item) => item.id)).toEqual(["ses_2"])
+  })
+
+  test("sends the limit and order query the endpoint expects", async () => {
+    const seen: string[] = []
+    const upstream = upstreamWith((request) => {
+      const url = new URL(request.url)
+      if (url.pathname === "/api/session") {
+        seen.push(url.search)
+        return Response.json({ data: [] })
+      }
+      return Response.json({ data: {} })
+    })
+
+    await loadLauncher({ upstream: `http://127.0.0.1:${upstream.port}`, authorization: AUTH })
+    upstream.stop(true)
+
+    expect(seen).toEqual(["?limit=30&order=desc"])
+  })
+
+  test("reports unreachable when both calls fail", async () => {
+    const result = await loadLauncher({ upstream: "http://127.0.0.1:1", authorization: AUTH })
+    expect(result).toEqual({ kind: "unreachable" })
+  })
+
+  test("reports partial when one call fails", async () => {
+    const upstream = upstreamWith((request) => {
+      const path = new URL(request.url).pathname
+      if (path === "/api/session/active") return new Response("boom", { status: 500 })
+      return Response.json({ data: [] })
+    })
+
+    const result = await loadLauncher({ upstream: `http://127.0.0.1:${upstream.port}`, authorization: AUTH })
+    upstream.stop(true)
+
+    expect(result.kind).toBe("loaded")
+    if (result.kind !== "loaded") return
+    expect(result.partial).toBe(true)
+  })
+
+  test("drops malformed session entries without throwing", async () => {
+    const upstream = upstreamWith((request) => {
+      const path = new URL(request.url).pathname
+      if (path === "/api/session") {
+        return Response.json({
+          data: [null, 42, { title: "no id" }, { id: "ok", time: { updated: "nope" } }],
+        })
+      }
+      return Response.json({ data: {} })
+    })
+
+    const result = await loadLauncher({ upstream: `http://127.0.0.1:${upstream.port}`, authorization: AUTH })
+    upstream.stop(true)
+
+    expect(result.kind).toBe("loaded")
+    if (result.kind !== "loaded") return
+    expect(result.data.groups[0].sessions).toHaveLength(1)
+    expect(result.data.groups[0].sessions[0].id).toBe("ok")
+    expect(result.data.groups[0].sessions[0].updated).toBe(0)
+    expect(result.data.groups[0].sessions[0].title).toBe("ok")
+  })
+
+  test("does not follow redirects", async () => {
+    const upstream = upstreamWith(() => new Response(null, { status: 302, headers: { location: "http://elsewhere" } }))
+    const result = await loadLauncher({ upstream: `http://127.0.0.1:${upstream.port}`, authorization: AUTH })
+    upstream.stop(true)
+    expect(result).toEqual({ kind: "unreachable" })
+  })
+
+  test("honors a base path prefix on the upstream", async () => {
+    const seen: string[] = []
+    const upstream = upstreamWith((request) => {
+      const url = new URL(request.url)
+      seen.push(url.pathname)
+      if (url.pathname.endsWith("/api/session/active")) return Response.json({ data: {} })
+      return Response.json({ data: [] })
+    })
+
+    await loadLauncher({ upstream: `http://127.0.0.1:${upstream.port}/base`, authorization: AUTH })
+    upstream.stop(true)
+
+    expect(seen).toEqual(["/base/api/session/active", "/base/api/session"])
   })
 })

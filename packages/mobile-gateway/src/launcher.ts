@@ -1,3 +1,5 @@
+import { upstreamUrl } from "./upstream.ts"
+
 export type LauncherSession = {
   id: string
   title: string
@@ -85,4 +87,67 @@ function placeholder(id: string) {
     directory: undefined,
     updated: 0,
   }
+}
+
+const TIMEOUT_MS = 5000
+const RECENT_LIMIT = 30
+
+export type LauncherLoad =
+  | { kind: "loaded"; data: LauncherData; partial: boolean }
+  | { kind: "unreachable" }
+
+export async function loadLauncher(input: { upstream: string; authorization: string }): Promise<LauncherLoad> {
+  const [active, recent] = await Promise.all([
+    request(input, "http://gateway/api/session/active"),
+    request(input, `http://gateway/api/session?limit=${RECENT_LIMIT}&order=desc`),
+  ])
+
+  if (active === undefined && recent === undefined) return { kind: "unreachable" }
+
+  return {
+    kind: "loaded",
+    partial: active === undefined || recent === undefined,
+    data: groupSessions({ sessions: parseSessions(recent), running: parseActive(active) }),
+  }
+}
+
+async function request(input: { upstream: string; authorization: string }, url: string) {
+  try {
+    const response = await fetch(upstreamUrl(input.upstream, url), {
+      headers: { authorization: input.authorization },
+      redirect: "error",
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    })
+    if (!response.ok) return
+    return (await response.json()) as unknown
+  } catch {
+    return
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function parseActive(value: unknown) {
+  if (!isRecord(value) || !isRecord(value.data)) return []
+  return Object.keys(value.data)
+}
+
+function parseSessions(value: unknown): LauncherSession[] {
+  if (!isRecord(value) || !Array.isArray(value.data)) return []
+  const sessions: LauncherSession[] = []
+  for (const item of value.data) {
+    if (!isRecord(item)) continue
+    if (typeof item.id !== "string" || !item.id) continue
+    const location = isRecord(item.location) ? item.location : undefined
+    const time = isRecord(item.time) ? item.time : undefined
+    sessions.push({
+      id: item.id,
+      title: typeof item.title === "string" && item.title.trim() ? item.title : item.id,
+      directory: location && typeof location.directory === "string" ? location.directory : undefined,
+      updated: time && typeof time.updated === "number" && Number.isFinite(time.updated) ? time.updated : 0,
+    })
+  }
+  return sessions
 }
