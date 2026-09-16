@@ -96,6 +96,14 @@ directly.
 Sessions already listed under "Running now" are excluded from "Recent sessions" so no
 session appears twice.
 
+Subagent sessions are excluded from "Recent sessions". The app identifies a subagent session
+by a non-empty `parentID` and refuses to prompt it ("Subagent sessions cannot be prompted"),
+so listing them would mostly produce dead ends: against a real desktop server they were 27 of
+the 30 most recent sessions. A subagent that is currently running still appears under
+"Running now" with a `subagent` badge, because there the purpose is seeing that work is in
+progress rather than prompting it. The fetch limit still counts subagents, so the number of
+visible recent rows can be below the limit.
+
 ### 3. Data flow
 
 ```

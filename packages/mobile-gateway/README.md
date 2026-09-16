@@ -100,10 +100,12 @@ home screen instead of `/` and you get a two-tap flow: tap the icon, tap a
 session.
 
 The launcher lists running sessions first under "Running now", then recent
-sessions grouped by project. It shows the most recent 30 sessions; older ones
-remain reachable through the full app's own project picker. The launcher itself
-is a plain list — tapping a row opens that session in the full app, and all
-interaction happens there.
+sessions grouped by project. It fetches the most recent 30 sessions and shows
+the ones you can prompt: subagent sessions are left out, because the app cannot
+prompt them, though a running subagent still appears under "Running now" so you
+can see that work is in progress. Older sessions remain reachable through the
+full app's own project picker. The launcher itself is a plain list — tapping a
+row opens that session in the full app, and all interaction happens there.
 
 When something is wrong the launcher says so:
 
