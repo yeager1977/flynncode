@@ -29,7 +29,7 @@ describe("renderLauncher", () => {
             directory: "/work/flynncode",
             label: "flynncode",
             sessions: [
-              { id: "ses_1", title: "<img src=x onerror=alert(1)>", directory: "/work/flynncode", updated: NOW - 60_000 },
+              { id: "ses_1", title: "<img src=x onerror=alert(1)>", directory: "/work/flynncode", updated: NOW - 60_000, subagent: false },
             ],
           },
         ],
@@ -48,7 +48,7 @@ describe("renderLauncher", () => {
       partial: false,
       data: {
         running: [
-          { id: "ses_run", title: "Working", directory: "/work/a", updated: NOW - 1_000 },
+          { id: "ses_run", title: "Working", directory: "/work/a", updated: NOW - 1_000, subagent: false },
         ],
         groups: [],
       },
@@ -73,7 +73,7 @@ describe("renderLauncher", () => {
       now: NOW,
       partial: false,
       data: {
-        running: [{ id: "ses_orphan123", title: "ses_orphan12", directory: undefined, updated: 0 }],
+        running: [{ id: "ses_orphan123", title: "ses_orphan12", directory: undefined, updated: 0, subagent: false }],
         groups: [],
       },
     })
@@ -89,6 +89,31 @@ describe("renderLauncher", () => {
   test("omits the warning when data is complete", () => {
     const html = renderLauncher({ now: NOW, partial: false, data: data() })
     expect(html).not.toContain("Some session data is unavailable")
+  })
+
+  test("labels a running subagent so the dead end is visible before tapping", () => {
+    const html = renderLauncher({
+      now: NOW,
+      partial: false,
+      data: {
+        running: [{ id: "ses_child1", title: "Child work", directory: "/work/a", updated: NOW - 1_000, subagent: true }],
+        groups: [],
+      },
+    })
+    expect(html).toContain("subagent")
+    expect(html).toContain("running")
+  })
+
+  test("does not label a main session as a subagent", () => {
+    const html = renderLauncher({
+      now: NOW,
+      partial: false,
+      data: {
+        running: [{ id: "ses_main1", title: "Main work", directory: "/work/a", updated: NOW - 1_000, subagent: false }],
+        groups: [],
+      },
+    })
+    expect(html).not.toContain("subagent")
   })
 
   test("declares mobile install metadata and no scripts", () => {

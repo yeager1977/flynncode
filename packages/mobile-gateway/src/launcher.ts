@@ -5,6 +5,7 @@ export type LauncherSession = {
   title: string
   directory: string | undefined
   updated: number
+  subagent: boolean
 }
 
 export type LauncherGroup = {
@@ -53,6 +54,10 @@ export function groupSessions(input: { sessions: LauncherSession[]; running: str
 
   for (const session of input.sessions) {
     if (active.has(session.id)) continue
+    // The app refuses to prompt a subagent session ("Subagent sessions cannot be
+    // prompted"), so listing them here would mostly produce dead ends. They stay
+    // visible while running, where the point is seeing activity rather than prompting.
+    if (session.subagent) continue
     const key = session.directory ?? ""
     const group = byDirectory.get(key)
     if (group) {
@@ -86,6 +91,7 @@ function placeholder(id: string) {
     title: id.slice(0, PLACEHOLDER_TITLE_LENGTH),
     directory: undefined,
     updated: 0,
+    subagent: false,
   }
 }
 
@@ -158,6 +164,7 @@ function parseSessions(value: unknown): LauncherSession[] {
       title: typeof item.title === "string" && item.title.trim() ? item.title : item.id,
       directory: location && typeof location.directory === "string" ? location.directory : undefined,
       updated: time && typeof time.updated === "number" && Number.isFinite(time.updated) ? time.updated : 0,
+      subagent: typeof item.parentID === "string" && item.parentID.length > 0,
     })
   }
   return sessions

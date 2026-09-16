@@ -1,6 +1,7 @@
 import { projectLabel, relativeTime, sessionSlug, type LauncherData, type LauncherSession } from "./launcher.ts"
 
 const RUNNING_BADGE = "running"
+const SUBAGENT_BADGE = "subagent"
 
 export function escapeHtml(value: string) {
   return value
@@ -13,7 +14,8 @@ export function escapeHtml(value: string) {
 
 function row(session: LauncherSession, now: number, running: boolean) {
   const title = `<span class="title">${escapeHtml(session.title)}</span>`
-  const meta = `<span class="meta">${escapeHtml(projectLabel(session.directory))} &middot; ${escapeHtml(relativeTime(session.updated, now))}${running ? ` &middot; ${RUNNING_BADGE}` : ""}</span>`
+  const badges = `${running ? ` &middot; ${RUNNING_BADGE}` : ""}${session.subagent ? ` &middot; ${SUBAGENT_BADGE}` : ""}`
+  const meta = `<span class="meta">${escapeHtml(projectLabel(session.directory))} &middot; ${escapeHtml(relativeTime(session.updated, now))}${badges}</span>`
   if (session.directory === undefined) return `<div class="row">${title}${meta}</div>`
   const href = `/${sessionSlug(session.directory)}/session/${encodeURIComponent(session.id)}`
   return `<a class="row" href="${escapeHtml(href)}">${title}${meta}</a>`

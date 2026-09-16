@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { groupSessions, loadLauncher, projectLabel, relativeTime, sessionSlug } from "../src/launcher.ts"
 
-const session = (id: string, directory: string | undefined, updated: number, title = id) => ({
+const session = (id: string, directory: string | undefined, updated: number, title = id, subagent = false) => ({
   id,
   title,
   directory,
   updated,
+  subagent,
 })
 
 describe("sessionSlug", () => {
@@ -106,6 +107,24 @@ describe("groupSessions", () => {
   test("returns empty results for no sessions", () => {
     const data = groupSessions({ sessions: [], running: [] })
     expect(data).toEqual({ running: [], groups: [] })
+  })
+
+  test("omits subagent sessions from recent groups", () => {
+    const data = groupSessions({
+      sessions: [session("main", "/a", 100), session("helper", "/a", 900, "helper", true)],
+      running: [],
+    })
+    expect(data.groups[0].sessions.map((item) => item.id)).toEqual(["main"])
+  })
+
+  test("still shows a running subagent so activity stays visible", () => {
+    const data = groupSessions({
+      sessions: [session("main", "/a", 100), session("helper", "/a", 900, "helper", true)],
+      running: ["helper"],
+    })
+    expect(data.running.map((item) => item.id)).toEqual(["helper"])
+    expect(data.running[0].subagent).toBe(true)
+    expect(data.groups[0].sessions.map((item) => item.id)).toEqual(["main"])
   })
 })
 
@@ -208,6 +227,35 @@ describe("loadLauncher", () => {
     expect(result.data.groups[0].sessions[0].id).toBe("ok")
     expect(result.data.groups[0].sessions[0].updated).toBe(0)
     expect(result.data.groups[0].sessions[0].title).toBe("ok")
+    expect(result.data.groups[0].sessions[0].subagent).toBe(false)
+  })
+
+  test("marks a session with a parentID as a subagent and filters it from groups", async () => {
+    const upstream = upstreamWith((request) => {
+      const path = new URL(request.url).pathname
+      if (path === "/api/session") {
+        return Response.json({
+          data: [
+            { id: "main", title: "Main", location: { directory: "/a" }, time: { updated: 5 } },
+            {
+              id: "child",
+              parentID: "main",
+              title: "Child",
+              location: { directory: "/a" },
+              time: { updated: 9 },
+            },
+          ],
+        })
+      }
+      return Response.json({ data: {} })
+    })
+
+    const result = await loadLauncher({ upstream: `http://127.0.0.1:${upstream.port}`, authorization: AUTH })
+    upstream.stop(true)
+
+    expect(result.kind).toBe("loaded")
+    if (result.kind !== "loaded") return
+    expect(result.data.groups[0].sessions.map((item) => item.id)).toEqual(["main"])
   })
 
   test("does not follow redirects", async () => {
