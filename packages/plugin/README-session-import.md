@@ -13,21 +13,34 @@ projection (the TUI), so it appears natively in both surfaces.
 
 ## Enable
 
-The plugin ships in the `@opencode-ai/plugin` package and exposes the
-`@opencode-ai/plugin/tui-import` entrypoint. Add it to the `plugin` array in
-your `opencode.json` (or `opencode.jsonc`) using a local package spec:
+The plugin must be loaded by the TUI plugin loader, which reads the module's
+**default export** and requires it to expose `tui()` (see
+`packages/opencode/src/plugin/shared.ts`, `readV1Plugin`). The
+`@opencode-ai/plugin` npm package's `./tui` export resolves to the plugin types
+module, which has no default export, and no `"tui-import"` options key is read
+by the loader — so the plugin must be enabled as a **file-based local plugin**
+pointing directly at `src/import/tui.tsx`.
+
+Add the file spec to the `plugin` array in your TUI config. TUI plugins are
+read from `tui.json` / `tui.jsonc` files (global config dir, `.opencode`
+directories, or `OPENCODE_TUI_CONFIG`), not from `opencode.json`:
 
 ```jsonc
+// <global config dir>/tui.json  (or <project>/.opencode/tui.json)
 {
-  "plugin": [
-    ["@opencode-ai/plugin", { "tui-import": "./src/import/tui.tsx" }]
-  ]
+  "plugin": ["file:///absolute/path/to/packages/plugin/src/import/tui.tsx"]
 }
 ```
 
-Refer to your existing plugin entries for the local-package spec form your
-setup uses. The TUI plugin loader accepts npm package names, absolute paths, and
-`file://` URLs.
+Notes:
+
+- Absolute paths work as well: `"/absolute/path/to/packages/plugin/src/import/tui.tsx"`.
+- The path must point at the `.tsx` file itself. A directory spec resolves to
+  its `index.ts`/`index.tsx`, and an npm spec for `@opencode-ai/plugin` would
+  resolve the `./tui` export to `src/tui.ts` (the types module, which has no
+  default export) — neither loads this plugin.
+- The loader requires the default export to be `{ id, tui }`; the named export
+  `ImportTuiPlugin` alone is not read.
 
 ## Use
 
@@ -47,8 +60,9 @@ The flow is:
    lists projects returned by the server. The chosen directory becomes the new
    session's `directory` and determines its `project_id`, exactly as if the
    session had been created normally.
-3. **Sessions** — a filterable multi-select. Space toggles, Enter imports. Each
-   row shows the title, message count, and original working directory.
+3. **Sessions** — a filterable multi-select. Enter on a row toggles it. Select
+   the `Import N selected` row at the top and press Enter to run. Each row
+   shows the title, message count, and original working directory.
    Already-imported sessions are shown but disabled.
 4. **Progress** — a summary toast reports `Imported N, failed M`.
    A failure on one session does not stop the others.
