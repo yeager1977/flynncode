@@ -283,11 +283,19 @@ const layer = Layer.effect(
         },
       ]
 
+      // StreamableHTTP and SSE are alternatives for the same endpoint, so the
+      // configured timeout is a budget for one connect rather than a
+      // per-transport allowance. Without a deadline an unreachable server costs
+      // the configured timeout once per transport, doubling how long instance
+      // bootstrap waits. Both transports are still attempted; the fallback runs
+      // on whatever time is left.
       const connectTimeout = mcp.timeout ?? DEFAULT_TIMEOUT
+      const deadline = Date.now() + connectTimeout
       let lastStatus: Status | undefined
 
       for (const { name, transport } of transports) {
-        const result = yield* connectTransport(transport, connectTimeout).pipe(
+        const remaining = Math.max(1, deadline - Date.now())
+        const result = yield* connectTransport(transport, remaining).pipe(
           Effect.map((client) => ({ client, transportName: name })),
           Effect.catch((error) => {
             const lastError = error instanceof Error ? error : new Error(String(error))

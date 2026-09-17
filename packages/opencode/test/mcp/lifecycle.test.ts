@@ -543,6 +543,22 @@ it.instance("remote timeout aborts both real HTTP transport attempts", () =>
   }),
 )
 
+it.instance("remote connect timeout is a shared budget across transport attempts", () =>
+  Effect.gen(function* () {
+    const server = yield* hangingLifecycleServer()
+    const mcp = yield* MCP.Service
+    const started = Date.now()
+    const result = yield* mcp.add("budget-remote", remote(server.url, 500))
+    const elapsed = Date.now() - started
+
+    expect(statusName(result.status, "budget-remote")).toBe("failed")
+    // StreamableHTTP and SSE are attempted sequentially. Handing each transport
+    // the full configured timeout makes an unreachable server cost 2x that value,
+    // which stalls directory bootstrap for twice as long as the user asked for.
+    expect(elapsed).toBeLessThan(750)
+  }),
+)
+
 it.live("McpOAuthCallback.cancelPending rejects the pending callback", () =>
   Effect.acquireUseRelease(
     Effect.sync(() => McpOAuthCallback.waitForCallback("abc123hexstate", "my-mcp-server")),
