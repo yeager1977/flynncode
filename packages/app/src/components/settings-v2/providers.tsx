@@ -8,9 +8,10 @@ import { createMemo, type Accessor, type Component, For, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useServerProtocol, useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
-import { canReplaceProviderApiKey } from "@/hooks/provider-catalog"
+import { canEditProvider, isConfigCustomProvider } from "@/hooks/provider-connection-edit"
 import { DialogConnectProvider, useProviderConnectController } from "../dialog-connect-provider"
 import { DialogCustomProvider } from "../dialog-custom-provider"
+import { DialogEditProvider } from "../dialog-edit-provider"
 import { SettingsListV2 } from "./parts/list"
 import "./settings-v2.css"
 
@@ -70,6 +71,17 @@ export const SettingsProvidersV2: Component<{
     return
   }
 
+  const edit = (item: ProviderItem) => {
+    dialog.show(() => (
+      <DialogEditProvider
+        providerID={item.id}
+        providerName={item.name}
+        source={source(item)}
+        onBack={dialog.close}
+      />
+    ))
+  }
+
   const type = (item: ProviderItem) => {
     const current = source(item)
     if (current === "env") return language.t("settings.providers.tag.environment")
@@ -87,13 +99,8 @@ export const SettingsProvidersV2: Component<{
 
   const note = (id: string) => PROVIDER_NOTES.find((item) => item.match(id))?.key
 
-  const isConfigCustom = (providerID: string) => {
-    const provider = serverSync().data.config.provider?.[providerID]
-    if (!provider) return false
-    if (provider.npm !== "@ai-sdk/openai-compatible") return false
-    if (!provider.models || Object.keys(provider.models).length === 0) return false
-    return true
-  }
+  const isConfigCustom = (providerID: string) =>
+    isConfigCustomProvider(serverSync().data.config.provider?.[providerID])
 
   const disableProvider = async (providerID: string, name: string) => {
     if (protocol() !== "v1") return
@@ -175,12 +182,12 @@ export const SettingsProvidersV2: Component<{
                       </div>
                     </div>
                     <div class="flex items-center gap-1">
-                      <Show when={canReplaceProviderApiKey(item.id)}>
+                      <Show when={canEditProvider(protocol() ?? "v2")}>
                         <ButtonV2
                           size="normal"
                           variant="ghost-muted"
-                          data-action="provider-replace-api-key"
-                          onClick={() => connect(item.id)}
+                          data-action="provider-edit"
+                          onClick={() => edit(item)}
                         >
                           {language.t("common.edit")}
                         </ButtonV2>
