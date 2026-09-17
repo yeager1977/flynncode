@@ -1,10 +1,12 @@
 import { dict as en } from "./en"
 import { modelRouterFallback } from "./model-router-fallback"
+import { providerEditFallback } from "./provider-edit-fallback"
 
 type Keys = keyof typeof en
 
 export const dict = {
   ...modelRouterFallback,
+  ...providerEditFallback,
   "command.category.suggested": "Vorgeschlagen",
   "command.category.view": "Ansicht",
   "command.category.project": "Projekt",

@@ -1,7 +1,9 @@
 import { modelRouterFallback } from "./model-router-fallback"
+import { providerEditFallback } from "./provider-edit-fallback"
 
 export const dict = {
   ...modelRouterFallback,
+  ...providerEditFallback,
   "desktop.menu.app": "OpenCode",
   "desktop.menu.file": "Fichier",
   "desktop.menu.edit": "Édition",

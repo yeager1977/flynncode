@@ -210,6 +210,13 @@ export const dict = {
   "provider.custom.error.required": "Required",
   "provider.custom.error.duplicate": "Duplicate",
 
+  "provider.edit.title": "Edit {{provider}}",
+  "provider.edit.auth.oauth": "Connected with OAuth",
+  "provider.edit.auth.useApiKey": "Use an API key instead",
+  "provider.edit.apiKey.description": "Leave empty to keep the current key.",
+  "provider.edit.toast.saved.title": "{{provider}} updated",
+  "provider.edit.toast.saved.description": "Your provider connection settings were saved.",
+
   "provider.disconnect.toast.disconnected.title": "{{provider}} disconnected",
   "provider.disconnect.toast.disconnected.description": "{{provider}} models are no longer available.",
 
