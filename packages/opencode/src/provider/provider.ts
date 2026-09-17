@@ -1123,7 +1123,8 @@ export function toPublicInfo(provider: Info): Info {
   return JSON.parse(
     JSON.stringify(
       {
-        ...provider,
+        ...omit(provider, ["key"]),
+        options: omit(provider.options, ["apiKey"]),
         models: Object.fromEntries(Object.entries(provider.models).filter(([, model]) => Schema.is(Model)(model))),
       },
       (_, value) => {
@@ -1133,6 +1134,12 @@ export function toPublicInfo(provider: Info): Info {
       },
     ),
   )
+}
+
+function effectiveApiKey(input: { source: Info["source"]; key?: string; configured: unknown }) {
+  if (input.source === "api" && input.key !== undefined) return input.key
+  if (typeof input.configured === "string") return input.configured
+  return input.key
 }
 
 export function defaultModelIDs<T extends { models: Record<string, { id: string }> }>(providers: Record<string, T>) {
@@ -1604,10 +1611,11 @@ const layer = Layer.effect(
           const storedAuth = yield* auth.get(id).pipe(Effect.orDie)
           yield* Effect.promise(async () => {
             try {
-              const key =
-                typeof provider.options?.apiKey === "string"
-                  ? provider.options.apiKey
-                  : (storedAuth?.type === "api" ? storedAuth.key : undefined)
+              const key = effectiveApiKey({
+                source: storedAuth?.type === "api" ? "api" : "config",
+                key: storedAuth?.type === "api" ? storedAuth.key : undefined,
+                configured: provider.options?.apiKey,
+              })
               const found = await ProviderDiscover.discover(baseURL, key)
               if (!found.length) return
               const next: Record<string, Model> = {}
@@ -1716,7 +1724,7 @@ const layer = Layer.effect(
         // load config - re-apply with updated data
         for (const [id, provider] of configProviders) {
           const providerID = ProviderV2.ID.make(id)
-          const partial: Partial<Info> = { source: "config" }
+          const partial: Partial<Info> = providers[providerID]?.source === "api" ? {} : { source: "config" }
           if (provider.env) partial.env = provider.env
           if (provider.name) partial.name = provider.name
           if (provider.options) partial.options = provider.options
@@ -1847,7 +1855,8 @@ const layer = Layer.effect(
         })
 
         if (baseURL !== undefined) options["baseURL"] = baseURL
-        if (options["apiKey"] === undefined && provider.key) options["apiKey"] = provider.key
+        const apiKey = effectiveApiKey({ source: provider.source, key: provider.key, configured: options["apiKey"] })
+        if (apiKey !== undefined) options["apiKey"] = apiKey
         if (model.headers)
           options["headers"] = {
             ...options["headers"],

@@ -2088,6 +2088,7 @@ it.effect("opencode loader keeps paid models when config apiKey is present", () 
 const discoveryModelsServer = {
   server: null as ReturnType<typeof Bun.serve> | null,
   url: "",
+  authorization: undefined as string | undefined,
   start() {
     if (this.server) return
     this.server = Bun.serve({
@@ -2095,6 +2096,7 @@ const discoveryModelsServer = {
       async fetch(req) {
         const url = new URL(req.url)
         if (url.pathname === "/v1/models") {
+          discoveryModelsServer.authorization = req.headers.get("authorization") ?? undefined
           return Response.json({
             object: "list",
             data: [
@@ -2104,12 +2106,17 @@ const discoveryModelsServer = {
             ],
           })
         }
+        if (url.pathname === "/v1/chat/completions") {
+          discoveryModelsServer.authorization = req.headers.get("authorization") ?? undefined
+          return new Response("data: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } })
+        }
         return new Response("not found", { status: 404 })
       },
     })
     this.url = `${this.server.url.origin}/v1`
   },
 }
+const discoveryAuthorization = (): string | undefined => discoveryModelsServer.authorization
 
 beforeAll(() => discoveryModelsServer.start())
 afterAll(() => discoveryModelsServer.server?.stop(true))
@@ -2138,6 +2145,44 @@ it.instance(
           npm: "@ai-sdk/openai-compatible",
           options: { apiKey: "test-key", baseURL: discoveryModelsServer.url },
           models: { "configured-but-gone": { name: "Gone" } },
+        },
+      },
+    }),
+  },
+)
+
+it.instance(
+  "saved API auth overrides a configured API key",
+  Effect.gen(function* () {
+    yield* setProcessEnv(
+      "OPENCODE_AUTH_CONTENT",
+      JSON.stringify({ "discovery-provider": { type: "api", key: "saved-key" } }),
+    )
+    discoveryModelsServer.authorization = undefined
+
+    const providers = yield* list
+    const provider = providers[ProviderV2.ID.make("discovery-provider")]
+    expect(provider.source).toBe("api")
+    expect(discoveryAuthorization()).toBe("Bearer saved-key")
+
+    const service = yield* Provider.Service
+    const model = yield* service.getModel(ProviderV2.ID.make("discovery-provider"), ModelV2.ID.make("server-model-a"))
+    const language = yield* service.getLanguage(model)
+    discoveryModelsServer.authorization = undefined
+    const result = yield* Effect.promise(() =>
+      language.doStream({ prompt: [{ role: "user", content: [{ type: "text", text: "hello" }] }] }),
+    )
+    yield* Effect.promise(() => result.stream.cancel())
+    expect(discoveryAuthorization()).toBe("Bearer saved-key")
+  }),
+  {
+    config: () => ({
+      provider: {
+        "discovery-provider": {
+          name: "Discovery Provider",
+          npm: "@ai-sdk/openai-compatible",
+          options: { apiKey: "stale-config-key", baseURL: discoveryModelsServer.url },
+          models: { "configured-model": { name: "Configured" } },
         },
       },
     }),

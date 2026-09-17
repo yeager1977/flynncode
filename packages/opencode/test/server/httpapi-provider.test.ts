@@ -397,6 +397,45 @@ describe("provider HttpApi", () => {
   )
 
   it.instance(
+    "omits provider API keys from public responses",
+    Effect.gen(function* () {
+      const directory = (yield* TestInstance).directory
+      yield* setEnvScoped(
+        "OPENCODE_AUTH_CONTENT",
+        JSON.stringify({ anthropic: { type: "api", key: "saved-provider-secret" } }),
+      )
+      const headers = { "x-opencode-directory": directory }
+      const providerResponse = yield* request("/provider", { headers })
+      const configResponse = yield* request("/config/providers", { headers })
+
+      expect(providerResponse.status).toBe(200)
+      expect(configResponse.status).toBe(200)
+
+      const providerBody = yield* providerResponse.json
+      const configBody = yield* configResponse.json
+      const provider = providerByID(providerBody, "all", "anthropic")
+      const configProvider = providerByID(configBody, "providers", "anthropic")
+      expect(provider).toBeDefined()
+      expect(configProvider).toBeDefined()
+      expect(isRecord(provider) && provider.source).toBe("api")
+      expect(isRecord(configProvider) && configProvider.source).toBe("api")
+      expect(isRecord(provider) && Object.hasOwn(provider, "key")).toBe(false)
+      expect(isRecord(configProvider) && Object.hasOwn(configProvider, "key")).toBe(false)
+      expect(JSON.stringify(providerBody)).not.toContain("saved-provider-secret")
+      expect(JSON.stringify(configBody)).not.toContain("saved-provider-secret")
+      expect(JSON.stringify(providerBody)).not.toContain("stale-config-secret")
+      expect(JSON.stringify(configBody)).not.toContain("stale-config-secret")
+    }),
+    {
+      config: {
+        formatter: false,
+        lsp: false,
+        provider: { anthropic: { options: { apiKey: "stale-config-secret" } } },
+      },
+    },
+  )
+
+  it.instance(
     "keeps provider.models hook input mutations out of provider state",
     Effect.gen(function* () {
       const directory = (yield* TestInstance).directory
