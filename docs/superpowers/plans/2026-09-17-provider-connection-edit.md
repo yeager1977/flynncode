@@ -464,7 +464,7 @@ describe("validateProviderEdit", () => {
       existing: customEntry,
     })
 
-    expect(result.result?.provider.options).toEqual({
+    expect(result.result?.provider?.options).toEqual({
       apiKey: "config-secret",
       baseURL: "https://api.example.com/v1",
     })
@@ -663,8 +663,9 @@ export function validateProviderEdit(input: {
 
   // Only persist a provider entry when there is a config entry to update or
   // something to write. Writing an empty entry for a built-in provider with no
-  // config would flip its effective source from `api` to `config`.
-  const hasSomething = Object.keys(existing).length > 0 || !!baseURL || !!key || Object.keys(headerConfig).length > 0
+  // config would flip its effective source from `api` to `config`, so a key-only
+  // save (which goes to the auth store) must not create one.
+  const hasSomething = Object.keys(existing).length > 0 || !!baseURL || Object.keys(headerConfig).length > 0
   if (!hasSomething) return { err, headers, models, result: { key } }
 
   return { err, headers, models, result: { key, provider } }
@@ -1222,6 +1223,8 @@ Add the `edit` function directly after the existing `source` function (it refere
   }
 ```
 
+`protocol()` is `Accessor<ServerProtocol | undefined>`, so the guard falls back to `"v2"` when the protocol is not yet detected, which keeps Edit hidden until v1 is confirmed.
+
 Replace the Edit button block:
 
 ```tsx
@@ -1240,7 +1243,7 @@ Replace the Edit button block:
 with:
 
 ```tsx
-                      <Show when={canEditProvider(protocol())}>
+                      <Show when={canEditProvider(protocol() ?? "v2")}>
                         <ButtonV2
                           size="normal"
                           variant="ghost-muted"
