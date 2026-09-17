@@ -1,5 +1,6 @@
 export * as SessionImport from "./import"
 
+import { createHash } from "crypto"
 import { eq } from "drizzle-orm"
 import { DateTime, Effect } from "effect"
 import { EventV2 } from "../event"
@@ -24,7 +25,14 @@ const importedAgent = "imported"
 const importedProviderID = ProviderV2.ID.make("import")
 const importedModelID = ModelV2.ID.make("import")
 
-const messageID = (ordinal: number) => SessionMessage.ID.make(`msg_import_${ordinal}`)
+// Message/part IDs are globally unique PKs, so they must include the target
+// session identity to keep re-imports deterministic yet collision-free across
+// sessions. The hash keeps IDs short and bounded; stable per (session, ordinal).
+const hash = (input: string) => createHash("sha256").update(`${input}`).digest("hex").slice(0, 32)
+const messageID = (sessionID: SessionSchema.ID, ordinal: number) =>
+  SessionMessage.ID.make(`msg_import_${hash(sessionID)}_${ordinal}`)
+const partID = (sessionID: SessionSchema.ID, index: number) =>
+  SessionV1.PartID.make(`prt_import_${hash(sessionID)}_${index}`)
 
 export const importTranscript = (
   events: EventV2.Interface,
@@ -34,7 +42,8 @@ export const importTranscript = (
     for (let index = 0; index < input.transcript.length; index++) {
       const item = input.transcript[index]
       if (!item) continue
-      const id = messageID(index)
+      const id = messageID(input.sessionID, index)
+      const textID = `text-import-${hash(input.sessionID)}_${index}`
       const timestamp = DateTime.makeUnsafe(item.time)
       if (item.role === "user") {
         yield* events.publish(SessionEvent.Prompted, {
@@ -59,7 +68,7 @@ export const importTranscript = (
           sessionID: input.sessionID,
           time: item.time,
           part: SessionV1.TextPart.make({
-            id: SessionV1.PartID.ascending(`prt_import_${index}`),
+            id: partID(input.sessionID, index),
             sessionID: input.sessionID,
             messageID: SessionV1.MessageID.ascending(id),
             type: "text",
@@ -81,13 +90,13 @@ export const importTranscript = (
         sessionID: input.sessionID,
         assistantMessageID: id,
         timestamp,
-        textID: `text-import-${index}`,
+        textID,
       })
       yield* events.publish(SessionEvent.Text.Ended, {
         sessionID: input.sessionID,
         assistantMessageID: id,
         timestamp,
-        textID: `text-import-${index}`,
+        textID,
         text: item.text,
       })
       yield* events.publish(SessionEvent.Step.Ended, {
@@ -105,7 +114,7 @@ export const importTranscript = (
           sessionID: input.sessionID,
           role: "assistant",
           time: { created: item.time, completed: item.time },
-          parentID: SessionV1.MessageID.ascending(messageID(index - 1)),
+          parentID: SessionV1.MessageID.ascending(messageID(input.sessionID, index - 1)),
           modelID: importedModelID,
           providerID: importedProviderID,
           mode: importedAgent,
@@ -120,7 +129,7 @@ export const importTranscript = (
         sessionID: input.sessionID,
         time: item.time,
         part: SessionV1.TextPart.make({
-          id: SessionV1.PartID.ascending(`prt_import_${index}`),
+          id: partID(input.sessionID, index),
           sessionID: input.sessionID,
           messageID: SessionV1.MessageID.ascending(id),
           type: "text",

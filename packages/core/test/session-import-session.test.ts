@@ -74,4 +74,66 @@ describe("importSession", () => {
       expect(row?.time_updated).toBe(5_000)
     }).pipe(Effect.provide(sessionsLayer)),
   )
+
+  it.effect("imports two sessions into one database without id collisions", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const sessions = yield* SessionV2.Service
+      const first = yield* importSession({
+        location: { directory: AbsolutePath.make("/project/imported") },
+        source: "claude-code",
+        sourceSessionID: "one",
+        sourcePath: "/tmp/one.jsonl",
+        title: "First",
+        transcript: [
+          { role: "user", text: "hello", time: 1 },
+          { role: "assistant", text: "hi", time: 2 },
+        ],
+      })
+      const second = yield* importSession({
+        location: { directory: AbsolutePath.make("/project/imported") },
+        source: "claude-code",
+        sourceSessionID: "two",
+        sourcePath: "/tmp/two.jsonl",
+        title: "Second",
+        transcript: [
+          { role: "user", text: "other", time: 3 },
+          { role: "assistant", text: "reply", time: 4 },
+          { role: "user", text: "more", time: 5 },
+        ],
+      })
+
+      const a = yield* sessions.messages({ sessionID: first.id, order: "asc" })
+      const b = yield* sessions.messages({ sessionID: second.id, order: "asc" })
+      expect(a.map((message) => message.type)).toEqual(["user", "assistant"])
+      expect(b.map((message) => message.type)).toEqual(["user", "assistant", "user"])
+      expect(a[0]).toMatchObject({ type: "user", text: "hello" })
+      expect(a[1]).toMatchObject({ type: "assistant", content: [{ type: "text", text: "hi" }] })
+      expect(b[0]).toMatchObject({ type: "user", text: "other" })
+      expect(b[1]).toMatchObject({ type: "assistant", content: [{ type: "text", text: "reply" }] })
+      expect(b[2]).toMatchObject({ type: "user", text: "more" })
+      expect(a[0]?.id).not.toBe(b[0]?.id)
+
+      const firstV1 = yield* db
+        .select()
+        .from(MessageTable)
+        .where(eq(MessageTable.session_id, first.id))
+        .all()
+        .pipe(Effect.orDie)
+      const secondV1 = yield* db
+        .select()
+        .from(MessageTable)
+        .where(eq(MessageTable.session_id, second.id))
+        .all()
+        .pipe(Effect.orDie)
+      expect(firstV1).toHaveLength(2)
+      expect(secondV1).toHaveLength(3)
+
+      const found = yield* findImported(db, { source: "claude-code", directory: "/project/imported" })
+      expect([...found].sort((x, y) => x.sourceSessionID.localeCompare(y.sourceSessionID))).toEqual([
+        { sourceSessionID: "one", sessionID: first.id },
+        { sourceSessionID: "two", sessionID: second.id },
+      ])
+    }).pipe(Effect.provide(sessionsLayer)),
+  )
 })
