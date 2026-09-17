@@ -5,12 +5,14 @@ import { TabsInfoPopup } from "@/components/help-button"
 import { Titlebar, type TitlebarUpdate } from "@/components/titlebar"
 import { usePlatform } from "@/context/platform"
 import { setV2Toast, ToastRegion } from "@/utils/toast"
+import { startupTrace } from "@/utils/startup-trace"
 
 export default function NewLayout(props: ParentProps) {
   const platform = usePlatform()
   const [state, setState] = createStore({ debugTools: true })
 
   createEffect(() => setV2Toast(true))
+  startupTrace.mark("layout:shell-mounted")
 
   const update: TitlebarUpdate = {
     version: () => {

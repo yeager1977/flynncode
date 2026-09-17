@@ -464,6 +464,12 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
   win.webContents.on("console-message", (_event, level, message, line, sourceId) => {
     if (message.toLowerCase().includes("terminal") || sourceId.toLowerCase().includes("terminal")) {
       writeLog("pty", "console", { window: name, level, message, line, sourceId })
+      return
+    }
+    // Startup timing is opt-in in the renderer; forward it so a slow launch can
+    // be diagnosed from the desktop log without attaching devtools.
+    if (message.startsWith("[startup]")) {
+      writeLog("startup", "mark", { window: name, message: message.slice("[startup]".length).trim() })
     }
   })
   win.webContents.on("preload-error", (_event, preloadPath, error) => {

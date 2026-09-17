@@ -24,6 +24,7 @@ import { createMediaQuery } from "@solid-primitives/media"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { debounce } from "@solid-primitives/scheduled"
 import { useLocal } from "@/context/local"
+import { startupTrace } from "@/utils/startup-trace"
 import { FileProvider, selectionFromLines, useFile, type FileSelection, type SelectedLineRange } from "@/context/file"
 import { createStore } from "solid-js/store"
 import type { SessionReviewLineComment } from "@opencode-ai/session-ui/session-review"
@@ -554,6 +555,15 @@ export default function Page() {
   const sessionSync = timeline.resource
   const userMessages = timeline.userMessages
   const visibleUserMessages = timeline.visibleUserMessages
+
+  // The timeline is the tab's visible content, so its readiness is what the
+  // blank window is waiting for when provider or MCP work is slow.
+  createEffect(
+    on(messagesReady, (ready) => {
+      if (!ready) return
+      startupTrace.mark("timeline:ready", { directory: sdk().directory })
+    }),
+  )
 
   createEffect(() => {
     const tab = activeFileTab()
