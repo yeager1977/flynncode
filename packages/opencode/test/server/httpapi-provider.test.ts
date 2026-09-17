@@ -379,6 +379,24 @@ describe("provider HttpApi", () => {
   )
 
   it.instance(
+    "keeps disabled providers available for reconnection",
+    Effect.gen(function* () {
+      const directory = (yield* TestInstance).directory
+      yield* setEnvScoped(
+        "OPENCODE_AUTH_CONTENT",
+        JSON.stringify({ "ollama-cloud": { type: "api", key: "disconnected-key" } }),
+      )
+      const response = yield* request("/provider", { headers: { "x-opencode-directory": directory } })
+
+      expect(response.status).toBe(200)
+      const body = yield* response.json
+      expect(providerByID(body, "all", "ollama-cloud")).toBeDefined()
+      expect(isRecord(body) && Array.isArray(body.connected) ? body.connected : []).not.toContain("ollama-cloud")
+    }),
+    { config: { formatter: false, lsp: false, disabled_providers: ["ollama-cloud"] } },
+  )
+
+  it.instance(
     "keeps provider.models hook input mutations out of provider state",
     Effect.gen(function* () {
       const directory = (yield* TestInstance).directory

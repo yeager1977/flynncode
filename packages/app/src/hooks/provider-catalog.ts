@@ -35,3 +35,21 @@ export function resolveDefaultModel(
   const [providerID, modelID] = legacy.split("/")
   return { providerID, modelID }
 }
+
+export async function completeProviderConnection(input: {
+  providerID: string
+  disabledProviders?: string[]
+  updateConfig: (config: { disabled_providers: string[] }) => Promise<unknown>
+  refreshProviders: () => Promise<unknown>
+}) {
+  try {
+    const disabled = input.disabledProviders ?? []
+    if (disabled.includes(input.providerID)) {
+      await input.updateConfig({ disabled_providers: disabled.filter((id) => id !== input.providerID) })
+    }
+    await input.refreshProviders()
+    return { ok: true as const }
+  } catch (error) {
+    return { ok: false as const, error }
+  }
+}

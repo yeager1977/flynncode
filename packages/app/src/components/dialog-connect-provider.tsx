@@ -36,6 +36,7 @@ import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
 import { popularProviders, useProviders } from "@/hooks/use-providers"
+import { completeProviderConnection } from "@/hooks/provider-catalog"
 import { CustomProviderForm } from "./dialog-custom-provider"
 import { decode64 } from "@/utils/base64"
 
@@ -716,9 +717,16 @@ function ProviderConnection(props: {
   })
 
   async function complete() {
-    await serverSync()
-      .refreshProviders()
-      .catch(() => undefined)
+    const result = await completeProviderConnection({
+      providerID: props.provider,
+      disabledProviders: serverSync().data.config.disabled_providers,
+      updateConfig: serverSync().updateConfig,
+      refreshProviders: () => serverSync().refreshProviders().catch(() => undefined),
+    })
+    if (!result.ok) {
+      dispatch({ type: "auth.error", error: formatError(result.error, language.t("common.requestFailed")) })
+      return
+    }
     dialog.close()
     showToast({
       variant: "success",
