@@ -2,7 +2,7 @@ import { Location } from "@opencode-ai/schema/location"
 import { Session } from "@opencode-ai/schema/session"
 import { NonNegativeInt } from "@opencode-ai/schema/schema"
 import { Context, Schema } from "effect"
-import { HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { InvalidRequestError, SessionNotFoundError } from "../errors"
 
 const ImportSource = Schema.Literals(["claude-code", "codex"])
@@ -26,7 +26,7 @@ export type ImportedMessage = typeof ImportedMessage.Type
 
 const root = "/api/import"
 
-export const makeImportGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLocationMiddleware: Context.Key<I, S>) =>
+export const makeImportGroup = () =>
   HttpApiGroup.make("server.import")
     .add(
       HttpApiEndpoint.post("import.session", `${root}/session`, {
@@ -40,8 +40,7 @@ export const makeImportGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLoc
         }),
         success: Schema.Struct({ data: Session.Info }),
         error: [InvalidRequestError, SessionNotFoundError],
-      })
-        .middleware(sessionLocationMiddleware)
+        })
         .annotateMerge(
           OpenApi.annotations({
             identifier: "v2.import.session",
