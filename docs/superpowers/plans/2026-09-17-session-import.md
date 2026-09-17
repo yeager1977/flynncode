@@ -201,7 +201,7 @@ describe("importTranscript", () => {
         .where(eq(SessionMessageTable.session_id, sessionID))
         .all()
         .pipe(Effect.orDie)
-      expect(rows.map((row) => row.seq)).toEqual([0, 1, 2])
+      expect(rows.map((row) => row.seq)).toEqual([0, 1])
     }),
   )
 })
