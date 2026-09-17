@@ -37,6 +37,10 @@ import type {
   SessionsInterruptOutput,
   SessionsMessageInput,
   SessionsMessageOutput,
+  ImportsSessionInput,
+  ImportsSessionOutput,
+  ImportsImportedInput,
+  ImportsImportedOutput,
   MessagesListInput,
   MessagesListOutput,
   ModelsListInput,
@@ -488,6 +492,39 @@ export function make(options: ClientOptions) {
             path: `/api/session/${encodeURIComponent(input.sessionID)}/message/${encodeURIComponent(input.messageID)}`,
             successStatus: 200,
             declaredStatuses: [404, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
+    },
+    imports: {
+      session: (input: ImportsSessionInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: ImportsSessionOutput }>(
+          {
+            method: "POST",
+            path: `/api/import/session`,
+            body: {
+              source: input["source"],
+              sourceSessionID: input["sourceSessionID"],
+              sourcePath: input["sourcePath"],
+              title: input["title"],
+              location: input["location"],
+              transcript: input["transcript"],
+            },
+            successStatus: 200,
+            declaredStatuses: [400, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
+      imported: (input: ImportsImportedInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: ImportsImportedOutput }>(
+          {
+            method: "GET",
+            path: `/api/import/imported`,
+            query: { source: input["source"], directory: input["directory"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
             empty: false,
           },
           requestOptions,

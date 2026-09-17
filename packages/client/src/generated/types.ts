@@ -1753,6 +1753,118 @@ export type SessionsMessageOutput = {
       }
 }["data"]
 
+export type ImportsSessionInput = {
+  readonly source: {
+    readonly source: "claude-code" | "codex"
+    readonly sourceSessionID: string
+    readonly sourcePath: string
+    readonly title: string
+    readonly location: { readonly directory: string; readonly workspaceID?: string }
+    readonly transcript: ReadonlyArray<
+      | { readonly role: "user"; readonly text: string; readonly time: number }
+      | { readonly role: "assistant"; readonly text: string; readonly time: number }
+    >
+  }["source"]
+  readonly sourceSessionID: {
+    readonly source: "claude-code" | "codex"
+    readonly sourceSessionID: string
+    readonly sourcePath: string
+    readonly title: string
+    readonly location: { readonly directory: string; readonly workspaceID?: string }
+    readonly transcript: ReadonlyArray<
+      | { readonly role: "user"; readonly text: string; readonly time: number }
+      | { readonly role: "assistant"; readonly text: string; readonly time: number }
+    >
+  }["sourceSessionID"]
+  readonly sourcePath: {
+    readonly source: "claude-code" | "codex"
+    readonly sourceSessionID: string
+    readonly sourcePath: string
+    readonly title: string
+    readonly location: { readonly directory: string; readonly workspaceID?: string }
+    readonly transcript: ReadonlyArray<
+      | { readonly role: "user"; readonly text: string; readonly time: number }
+      | { readonly role: "assistant"; readonly text: string; readonly time: number }
+    >
+  }["sourcePath"]
+  readonly title: {
+    readonly source: "claude-code" | "codex"
+    readonly sourceSessionID: string
+    readonly sourcePath: string
+    readonly title: string
+    readonly location: { readonly directory: string; readonly workspaceID?: string }
+    readonly transcript: ReadonlyArray<
+      | { readonly role: "user"; readonly text: string; readonly time: number }
+      | { readonly role: "assistant"; readonly text: string; readonly time: number }
+    >
+  }["title"]
+  readonly location: {
+    readonly source: "claude-code" | "codex"
+    readonly sourceSessionID: string
+    readonly sourcePath: string
+    readonly title: string
+    readonly location: { readonly directory: string; readonly workspaceID?: string }
+    readonly transcript: ReadonlyArray<
+      | { readonly role: "user"; readonly text: string; readonly time: number }
+      | { readonly role: "assistant"; readonly text: string; readonly time: number }
+    >
+  }["location"]
+  readonly transcript: {
+    readonly source: "claude-code" | "codex"
+    readonly sourceSessionID: string
+    readonly sourcePath: string
+    readonly title: string
+    readonly location: { readonly directory: string; readonly workspaceID?: string }
+    readonly transcript: ReadonlyArray<
+      | { readonly role: "user"; readonly text: string; readonly time: number }
+      | { readonly role: "assistant"; readonly text: string; readonly time: number }
+    >
+  }["transcript"]
+}
+
+export type ImportsSessionOutput = {
+  readonly data: {
+    readonly id: string
+    readonly parentID?: string
+    readonly projectID: string
+    readonly agent?: string
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly cost: number
+    readonly tokens: {
+      readonly input: number
+      readonly output: number
+      readonly reasoning: number
+      readonly cache: { readonly read: number; readonly write: number }
+    }
+    readonly time: { readonly created: number; readonly updated: number; readonly archived?: number }
+    readonly title: string
+    readonly location: { readonly directory: string; readonly workspaceID?: string }
+    readonly subpath?: string
+    readonly revert?: {
+      readonly messageID: string
+      readonly partID?: string
+      readonly snapshot?: string
+      readonly diff?: string
+      readonly files?: ReadonlyArray<{
+        readonly path: string
+        readonly status: "added" | "modified" | "deleted"
+        readonly additions: number
+        readonly deletions: number
+        readonly patch: string
+      }>
+    }
+  }
+}["data"]
+
+export type ImportsImportedInput = {
+  readonly source: { readonly source: "claude-code" | "codex"; readonly directory: string }["source"]
+  readonly directory: { readonly source: "claude-code" | "codex"; readonly directory: string }["directory"]
+}
+
+export type ImportsImportedOutput = {
+  readonly data: ReadonlyArray<{ readonly sourceSessionID: string; readonly sessionID: string }>
+}["data"]
+
 export type MessagesListInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
   readonly limit?: {

@@ -88,6 +88,7 @@ import type {
   GlobalHealthResponses,
   GlobalUpgradeErrors,
   GlobalUpgradeResponses,
+  ImportedMessage,
   InstanceDisposeErrors,
   InstanceDisposeResponses,
   LocationRef,
@@ -281,6 +282,10 @@ import type {
   V2FsReadResponses,
   V2HealthGetErrors,
   V2HealthGetResponses,
+  V2ImportImportedErrors,
+  V2ImportImportedResponses,
+  V2ImportSessionErrors,
+  V2ImportSessionResponses,
   V2IntegrationAttemptCancelErrors,
   V2IntegrationAttemptCancelResponses,
   V2IntegrationAttemptCompleteErrors,
@@ -5873,6 +5878,81 @@ export class Session3 extends HeyApiClient {
   }
 }
 
+export class Import extends HeyApiClient {
+  /**
+   * Import session
+   *
+   * Create a session at the requested location and append an imported transcript to it.
+   */
+  public session<ThrowOnError extends boolean = false>(
+    parameters?: {
+      source?: "claude-code" | "codex"
+      sourceSessionID?: string
+      sourcePath?: string
+      title?: string
+      location?: LocationRef
+      transcript?: Array<ImportedMessage>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "source" },
+            { in: "body", key: "sourceSessionID" },
+            { in: "body", key: "sourcePath" },
+            { in: "body", key: "title" },
+            { in: "body", key: "location" },
+            { in: "body", key: "transcript" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2ImportSessionResponses, V2ImportSessionErrors, ThrowOnError>({
+      url: "/api/import/session",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * List imported sessions
+   *
+   * List source session IDs already imported into the given directory.
+   */
+  public imported<ThrowOnError extends boolean = false>(
+    parameters: {
+      source: "claude-code" | "codex"
+      directory: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "source" },
+            { in: "query", key: "directory" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<V2ImportImportedResponses, V2ImportImportedErrors, ThrowOnError>({
+      url: "/api/import/imported",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Model extends HeyApiClient {
   /**
    * List models
@@ -7006,6 +7086,11 @@ export class V2 extends HeyApiClient {
   private _session?: Session3
   get session(): Session3 {
     return (this._session ??= new Session3({ client: this.client }))
+  }
+
+  private _import?: Import
+  get import(): Import {
+    return (this._import ??= new Import({ client: this.client }))
   }
 
   private _model?: Model

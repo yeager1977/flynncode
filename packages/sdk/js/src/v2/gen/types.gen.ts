@@ -2779,6 +2779,18 @@ export type SessionHistory = {
 
 export type SessionDurableEventStream = string
 
+export type ImportedMessage =
+  | {
+      role: "user"
+      text: string
+      time: number
+    }
+  | {
+      role: "assistant"
+      text: string
+      time: number
+    }
+
 export type SessionMessagesResponse = {
   data: Array<SessionMessage>
   cursor: {
@@ -11990,6 +12002,85 @@ export type V2SessionMessageResponses = {
 }
 
 export type V2SessionMessageResponse = V2SessionMessageResponses[keyof V2SessionMessageResponses]
+
+export type V2ImportSessionData = {
+  body: {
+    source: "claude-code" | "codex"
+    sourceSessionID: string
+    sourcePath: string
+    title: string
+    location: LocationRef
+    transcript: Array<ImportedMessage>
+  }
+  path?: never
+  query?: never
+  url: "/api/import/session"
+}
+
+export type V2ImportSessionErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2ImportSessionError = V2ImportSessionErrors[keyof V2ImportSessionErrors]
+
+export type V2ImportSessionResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: SessionV2Info
+  }
+}
+
+export type V2ImportSessionResponse = V2ImportSessionResponses[keyof V2ImportSessionResponses]
+
+export type V2ImportImportedData = {
+  body?: never
+  path?: never
+  query: {
+    source: "claude-code" | "codex"
+    directory: string
+  }
+  url: "/api/import/imported"
+}
+
+export type V2ImportImportedErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2ImportImportedError = V2ImportImportedErrors[keyof V2ImportImportedErrors]
+
+export type V2ImportImportedResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: Array<{
+      sourceSessionID: string
+      sessionID: string
+    }>
+  }
+}
+
+export type V2ImportImportedResponse = V2ImportImportedResponses[keyof V2ImportImportedResponses]
 
 export type V2SessionMessagesData = {
   body?: never
