@@ -15,6 +15,8 @@ const sourceLabel = (source: ImportSource) => (source === "claude-code" ? "Claud
 const hasErrorCode = (error: unknown, code: string) =>
   typeof error === "object" && error !== null && "code" in error && error.code === code
 
+const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error))
+
 async function listDir(dir: string) {
   try {
     const entries = await readdir(dir, { withFileTypes: true })
@@ -51,12 +53,14 @@ function ImportFlow(props: { api: TuiPluginApi }) {
     setStatus("Scanning…")
     void Promise.all([
       discover({ source: current, home: os.homedir(), read: readFile, list: listDir }),
-      props.api.client.v2.import.imported({ source: current, directory }).catch(() => undefined),
+      props.api.client.v2.import.imported({ source: current, directory }, { throwOnError: true }).catch(() => undefined),
     ]).then(([found, response]) => {
       setImported(new Set(response?.data?.data?.map((item) => item.sourceSessionID) ?? []))
       setCandidates(found)
       setSelected(new Set<string>())
       setStatus(`${found.length} sessions found`)
+    }).catch((error) => {
+      setStatus(`Scan failed: ${errorMessage(error)}`)
     })
   })
 
@@ -75,14 +79,17 @@ function ImportFlow(props: { api: TuiPluginApi }) {
       const parsed: ParsedSession =
         item.source === "claude-code" ? parseClaudeCode({ path: item.path, text }) : parseCodex({ path: item.path, text })
       try {
-        await props.api.client.v2.import.session({
-          source: item.source,
-          sourceSessionID: item.sourceSessionID,
-          sourcePath: item.path,
-          title: item.title,
-          location: { directory },
-          transcript: [...parsed.messages],
-        })
+        await props.api.client.v2.import.session(
+          {
+            source: item.source,
+            sourceSessionID: item.sourceSessionID,
+            sourcePath: item.path,
+            title: item.title,
+            location: { directory },
+            transcript: [...parsed.messages],
+          },
+          { throwOnError: true },
+        )
         ok += 1
       } catch {
         failed += 1
@@ -199,3 +206,5 @@ export const ImportTuiPlugin: TuiPluginModule = {
   id: "opencode-session-import",
   tui,
 }
+
+export default ImportTuiPlugin
