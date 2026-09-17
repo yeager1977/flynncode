@@ -1,4 +1,5 @@
 import { DESKTOP_NATIVE_KEYS } from "./desktop-native"
+import { modelRouterFallback } from "./model-router-fallback"
 
 const desktop = [
   "OpenCode",
@@ -94,6 +95,7 @@ const desktop = [
 ]
 
 export const dict = {
+  ...modelRouterFallback,
   ...Object.fromEntries(DESKTOP_NATIVE_KEYS.map((key, index) => [key, desktop[index]])),
   "command.category.suggested": "Siūloma",
   "command.category.view": "Rodinys",

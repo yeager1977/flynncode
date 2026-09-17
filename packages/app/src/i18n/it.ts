@@ -1,4 +1,7 @@
+import { modelRouterFallback } from "./model-router-fallback"
+
 export const dict = {
+  ...modelRouterFallback,
   "command.category.suggested": "Suggeriti",
   "command.category.view": "Visualizzazione",
   "command.category.project": "Progetto",

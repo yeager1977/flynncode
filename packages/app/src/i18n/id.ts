@@ -1,4 +1,7 @@
+import { modelRouterFallback } from "./model-router-fallback"
+
 export const dict = {
+  ...modelRouterFallback,
   "desktop.menu.app": "OpenCode",
   "desktop.menu.file": "Berkas",
   "desktop.menu.edit": "Sunting",

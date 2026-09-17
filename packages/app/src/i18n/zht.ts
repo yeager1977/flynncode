@@ -1,8 +1,10 @@
 import { dict as en } from "./en"
+import { modelRouterFallback } from "./model-router-fallback"
 
 type Keys = keyof typeof en
 
 export const dict = {
+  ...modelRouterFallback,
   "desktop.menu.app": "OpenCode",
   "desktop.menu.file": "檔案",
   "desktop.menu.edit": "編輯",
