@@ -1,7 +1,7 @@
 import { Location } from "@opencode-ai/schema/location"
 import { Session } from "@opencode-ai/schema/session"
 import { NonNegativeInt } from "@opencode-ai/schema/schema"
-import { Context, Schema } from "effect"
+import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { InvalidRequestError, SessionNotFoundError } from "../errors"
 
