@@ -1,0 +1,12 @@
+{
+  "provider": {
+    "example": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Example",
+      "options": {
+        "apiKey": "fixture-secret",
+        "baseURL": "https://new.example.com/v1"
+      }
+    }
+  }
+}

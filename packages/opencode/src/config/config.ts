@@ -147,6 +147,21 @@ function globalConfigFile() {
   return candidates[0]
 }
 
+function mergeWholeSubtrees(base: Record<string, unknown>, patch: Record<string, unknown>) {
+  const merged = mergeDeep(base, patch) as Record<string, unknown>
+  // model_router is swapped as a whole subtree so removing nested keys (e.g. scorecard models) persists.
+  if (Object.hasOwn(patch, "model_router")) merged.model_router = patch.model_router
+  // A provider entry is swapped as a whole subtree so removed headers, models,
+  // and a cleared base URL persist, while sibling providers stay untouched.
+  if (isRecord(patch.provider)) {
+    merged.provider = {
+      ...(isRecord(base.provider) ? base.provider : {}),
+      ...patch.provider,
+    }
+  }
+  return merged
+}
+
 function patchJsonc(input: string, patch: unknown, path: string[] = []): string {
   if (!isRecord(patch)) {
     const edits = modify(input, path, patch, {
@@ -168,6 +183,19 @@ function patchJsonc(input: string, patch: unknown, path: string[] = []): string 
         },
       })
       return applyEdits(result, edits)
+    }
+    // A provider entry is swapped as a whole subtree so removed headers, models,
+    // and a cleared base URL persist, while sibling providers stay untouched.
+    if (path.length === 0 && key === "provider" && isRecord(value)) {
+      return Object.entries(value).reduce((current, [id, entry]) => {
+        const edits = modify(current, [key, id], entry, {
+          formattingOptions: {
+            insertSpaces: true,
+            tabSize: 2,
+          },
+        })
+        return applyEdits(current, edits)
+      }, result)
     }
     return patchJsonc(result, value, [...path, key])
   }, input)
@@ -676,10 +704,7 @@ const layer = Layer.effect(
         const existing = ConfigParse.jsonc(before, file)
         ConfigParse.schema(ConfigV1.Info, ConfigV2Compat.lower(normalizeLoadedConfig(existing), file).value, file)
         const base = isRecord(existing) ? existing : {}
-        // model_router is swapped as a whole subtree so removing nested keys (e.g. scorecard models) persists.
-        const merged = Object.hasOwn(patch, "model_router")
-          ? { ...mergeDeep(base, patch), model_router: patch.model_router }
-          : mergeDeep(base, patch)
+        const merged = mergeWholeSubtrees(base, patch)
         const serialized = JSON.stringify(merged, null, 2)
         next = yield* decodeConfig(merged, file)
         changed = serialized !== before
