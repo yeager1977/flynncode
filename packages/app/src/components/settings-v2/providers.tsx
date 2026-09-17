@@ -8,6 +8,7 @@ import { createMemo, type Accessor, type Component, For, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useServerProtocol, useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
+import { canReplaceProviderApiKey } from "@/hooks/provider-catalog"
 import { DialogConnectProvider, useProviderConnectController } from "../dialog-connect-provider"
 import { DialogCustomProvider } from "../dialog-custom-provider"
 import { SettingsListV2 } from "./parts/list"
@@ -173,18 +174,34 @@ export const SettingsProvidersV2: Component<{
                         <Tag>{type(item)}</Tag>
                       </div>
                     </div>
-                    <Show
-                      when={canDisconnect(item)}
-                      fallback={
-                        <span class="settings-v2-provider-env-hint">
-                          {language.t("settings.providers.connected.environmentDescription")}
-                        </span>
-                      }
-                    >
-                      <ButtonV2 size="normal" variant="ghost-muted" onClick={() => void disconnect(item.id, item.name)}>
-                        {language.t("common.disconnect")}
-                      </ButtonV2>
-                    </Show>
+                    <div class="flex items-center gap-1">
+                      <Show when={canReplaceProviderApiKey(item.id)}>
+                        <ButtonV2
+                          size="normal"
+                          variant="ghost-muted"
+                          data-action="provider-replace-api-key"
+                          onClick={() => connect(item.id)}
+                        >
+                          {language.t("common.edit")}
+                        </ButtonV2>
+                      </Show>
+                      <Show
+                        when={canDisconnect(item)}
+                        fallback={
+                          <span class="settings-v2-provider-env-hint">
+                            {language.t("settings.providers.connected.environmentDescription")}
+                          </span>
+                        }
+                      >
+                        <ButtonV2
+                          size="normal"
+                          variant="ghost-muted"
+                          onClick={() => void disconnect(item.id, item.name)}
+                        >
+                          {language.t("common.disconnect")}
+                        </ButtonV2>
+                      </Show>
+                    </div>
                   </div>
                 )}
               </For>

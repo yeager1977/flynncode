@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test"
 import type { NormalizedProviderListResponse } from "@opencode-ai/session-ui/context"
-import { completeProviderConnection, resolveDefaultModel, selectProviderCatalog } from "./provider-catalog"
+import {
+  canReplaceProviderApiKey,
+  completeProviderConnection,
+  resolveDefaultModel,
+  selectProviderCatalog,
+} from "./provider-catalog"
 
 const catalog = (id: string): NormalizedProviderListResponse => ({
   all: new Map([[id, { id, name: id, source: "api", env: [], options: {}, models: {} }]]),
@@ -76,6 +81,12 @@ test("uses config for legacy servers", () => {
   })
 })
 
+test("only Ollama Cloud exposes API key replacement", () => {
+  expect(canReplaceProviderApiKey("ollama-cloud")).toBe(true)
+  expect(canReplaceProviderApiKey("ollama-local")).toBe(false)
+  expect(canReplaceProviderApiKey("openai")).toBe(false)
+})
+
 test("reenables a disabled provider before refreshing the catalog", async () => {
   const events: Array<{ type: "update"; disabled: string[] } | { type: "refresh" }> = []
   const result = await completeProviderConnection({
@@ -110,4 +121,18 @@ test("reports a provider reenable failure without refreshing", async () => {
 
   expect(result).toEqual({ ok: false, error: failure })
   expect(refreshed).toBe(false)
+})
+
+test("reports a provider refresh failure", async () => {
+  const failure = new Error("provider refresh failed")
+
+  const result = await completeProviderConnection({
+    providerID: "ollama-cloud",
+    refreshProviders: async () => {
+      throw failure
+    },
+    updateConfig: async () => {},
+  })
+
+  expect(result).toEqual({ ok: false, error: failure })
 })

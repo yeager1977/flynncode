@@ -721,7 +721,7 @@ function ProviderConnection(props: {
       providerID: props.provider,
       disabledProviders: serverSync().data.config.disabled_providers,
       updateConfig: serverSync().updateConfig,
-      refreshProviders: () => serverSync().refreshProviders().catch(() => undefined),
+      refreshProviders: serverSync().refreshProviders,
     })
     if (!result.ok) {
       dispatch({ type: "auth.error", error: formatError(result.error, language.t("common.requestFailed")) })
@@ -874,6 +874,7 @@ function ProviderConnection(props: {
                 class="!w-full"
                 name="apiKey"
                 data-input="provider-api-key"
+                type="password"
                 placeholder={language.t("provider.connect.apiKey.placeholder")}
                 value={formStore.value}
                 invalid={formStore.error !== undefined}
@@ -923,7 +924,7 @@ function ProviderConnection(props: {
           <TextField
             autofocus={!newLayout()}
             ref={apiKey}
-            type="text"
+            type="password"
             label={language.t("provider.connect.apiKey.label", { provider: provider().name })}
             placeholder={language.t("provider.connect.apiKey.placeholder")}
             name="apiKey"

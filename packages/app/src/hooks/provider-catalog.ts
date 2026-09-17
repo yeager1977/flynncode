@@ -36,6 +36,10 @@ export function resolveDefaultModel(
   return { providerID, modelID }
 }
 
+export function canReplaceProviderApiKey(providerID: string) {
+  return providerID === "ollama-cloud"
+}
+
 export async function completeProviderConnection(input: {
   providerID: string
   disabledProviders?: string[]
