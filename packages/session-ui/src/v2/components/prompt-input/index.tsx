@@ -196,9 +196,9 @@ export function PromptInputV2(props: PromptInputV2Props) {
           </Show>
         </div>
 
-        <div class="flex h-11 items-center px-2">
+        <div class="flex min-h-11 items-center px-2 py-2">
           <div
-            class="flex min-w-0 flex-1 items-center gap-1"
+            class="flex min-w-0 flex-1 flex-wrap items-center gap-1"
             aria-hidden={state.mode === "shell"}
             inert={state.mode === "shell" ? true : undefined}
             style={buttons()}
@@ -265,7 +265,12 @@ export function PromptInputV2(props: PromptInputV2Props) {
                     </>
                   }
                 >
-                  <Switch class="h-7 shrink-0" checked={control.active()} data-action="prompt-accept-all" onChange={control.onToggle}>
+                  <Switch
+                    class="h-7 shrink-0"
+                    checked={control.active()}
+                    data-action="prompt-accept-all"
+                    onChange={control.onToggle}
+                  >
                     {control.label()}
                   </Switch>
                 </TooltipV2>

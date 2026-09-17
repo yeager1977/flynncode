@@ -1644,7 +1644,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   {language.t("common.cancel")}
                 </Button>
               </div>
-              <div class="flex items-center gap-1.5 min-w-0 flex-1 h-7">
+              <div class="flex flex-wrap items-center gap-1.5 min-w-0 flex-1 min-h-7">
                 <Show when={!agentsLoading()}>
                   <div
                     data-component="prompt-agent-control"
