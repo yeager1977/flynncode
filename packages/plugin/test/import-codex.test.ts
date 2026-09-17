@@ -10,9 +10,10 @@ const fixture = [
   }),
   line({ type: "event_msg", payload: { type: "user_message", message: "Do the thing" } }),
   line({ type: "response_item", payload: { type: "reasoning", summary: "thinking" } }),
-  line({ type: "event_msg", payload: { type: "agent_message", phase: "final", message: "Done." } }),
+  line({ type: "event_msg", payload: { type: "agent_message", phase: "commentary", message: "Done." } }),
   line({ type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "Done." }] } }),
   line({ type: "event_msg", payload: { type: "token_count", info: {} } }),
+  line({ type: "event_msg", payload: { type: "agent_message", phase: "final_answer", message: "Done." } }),
 ].join("\n")
 
 describe("parseCodex", () => {
@@ -28,9 +29,10 @@ describe("parseCodex", () => {
     expect(parsed.messages[0]?.text).toBe("Do the thing")
   })
 
-  it("dedupes assistant text mirrored across event_msg and response_item", () => {
+  it("imports each assistant message exactly once from response_item", () => {
     const parsed = parseCodex({ path: "/tmp/rollout-1.jsonl", text: fixture })
-    expect(parsed.messages).toHaveLength(2)
+    expect(parsed.messages.filter((message) => message.role === "assistant")).toHaveLength(1)
+    expect(parsed.messages[1]?.role).toBe("assistant")
     expect(parsed.messages[1]?.text).toBe("Done.")
   })
 

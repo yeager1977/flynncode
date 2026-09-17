@@ -22,19 +22,12 @@ function responseText(content: unknown): string | undefined {
 }
 
 const TITLE_LIMIT = 80
-const normalize = (value: string) => value.replace(/\s+/g, " ").trim()
 
 export function parseCodex(input: { readonly path: string; readonly text: string }): ParsedSession {
   let sessionID = ""
   let cwd = ""
   let time = 0
   const messages: ImportedMessage[] = []
-
-  const push = (role: ImportedMessage["role"], text: string) => {
-    const previous = messages.at(-1)
-    if (role === "assistant" && previous?.role === "assistant" && normalize(previous.text) === normalize(text)) return
-    messages.push({ role, text, time })
-  }
 
   for (const raw of input.text.split("\n")) {
     if (!raw.trim()) continue
@@ -61,13 +54,7 @@ export function parseCodex(input: { readonly path: string; readonly text: string
     if (record.type === "event_msg") {
       if (payload.type === "user_message") {
         const text = asString(payload.message)
-        if (text?.trim()) push("user", text)
-        continue
-      }
-      if (payload.type === "agent_message" && payload.phase === "final") {
-        const text = asString(payload.message)
-        if (text?.trim()) push("assistant", text)
-        continue
+        if (text?.trim()) messages.push({ role: "user", text, time })
       }
       continue
     }
@@ -77,7 +64,7 @@ export function parseCodex(input: { readonly path: string; readonly text: string
       if (role !== "user" && role !== "assistant") continue
       const text = responseText(payload.content)
       if (!text) continue
-      push(role, text)
+      messages.push({ role, text, time })
     }
   }
 
