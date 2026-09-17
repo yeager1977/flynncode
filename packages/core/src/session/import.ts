@@ -1,11 +1,17 @@
 export * as SessionImport from "./import"
 
+import { eq } from "drizzle-orm"
 import { DateTime, Effect } from "effect"
-import type { EventV2 } from "../event"
+import { EventV2 } from "../event"
+import { Database } from "../database/database"
+import { Location } from "../location"
 import { SessionEvent } from "./event"
 import { Prompt } from "./prompt"
 import { SessionMessage } from "./message"
 import type { SessionSchema } from "./schema"
+import { SessionImportRegistry } from "./import-registry"
+import { SessionTable } from "./sql"
+import { SessionV2 } from "../session"
 import { SessionV1 } from "../v1/session"
 import { ProviderV2 } from "../provider"
 import { ModelV2 } from "../model"
@@ -122,4 +128,52 @@ export const importTranscript = (
         }),
       })
     }
+  })
+
+export const importSession = (input: {
+  readonly location: Location.Ref
+  readonly source: "claude-code" | "codex"
+  readonly sourceSessionID: string
+  readonly sourcePath: string
+  readonly title: string
+  readonly transcript: ReadonlyArray<ImportedMessage>
+}) =>
+  Effect.gen(function* () {
+    const sessions = yield* SessionV2.Service
+    const events = yield* EventV2.Service
+    const { db } = yield* Database.Service
+
+    const bounds = input.transcript.reduce(
+      (acc, item) => ({
+        created: Math.min(acc.created, item.time),
+        updated: Math.max(acc.updated, item.time),
+      }),
+      { created: Number.POSITIVE_INFINITY, updated: 0 },
+    )
+    const now = Date.now()
+
+    const session = yield* sessions.create({
+      location: input.location,
+      metadata: SessionImportRegistry.encodeProvenance({
+        source: input.source,
+        sourceSessionID: input.sourceSessionID,
+        sourcePath: input.sourcePath,
+        importedAt: now,
+      }),
+    })
+
+    yield* importTranscript(events, { sessionID: session.id, transcript: input.transcript })
+
+    // A single update: drizzle's $onUpdate hook would stamp wall-clock now over
+    // time_updated if this column were omitted from any separate title update.
+    const created = Number.isFinite(bounds.created) ? bounds.created : now
+    const updated = bounds.updated > 0 ? bounds.updated : now
+    yield* db
+      .update(SessionTable)
+      .set({ title: input.title, time_created: created, time_updated: updated })
+      .where(eq(SessionTable.id, session.id))
+      .run()
+      .pipe(Effect.orDie)
+
+    return yield* sessions.get(session.id)
   })
