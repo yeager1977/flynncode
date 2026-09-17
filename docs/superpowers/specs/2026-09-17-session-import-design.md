@@ -1,7 +1,7 @@
 # Session Import (Claude Code / Codex) - Design
 
 Date: 2026-09-17
-Status: Draft
+Status: Implemented
 Phase: 1 of 2 (see Scope)
 
 ## Problem
@@ -274,9 +274,12 @@ package.
 
 ## Open Questions
 
-- Codex `event_msg.agent_message` carries a `phase` field. Phase 1 keeps final
-  messages only; whether interim commentary should be imported is deferred to
-  phase 2.
+- Whether interim Codex commentary should be imported is deferred to phase 2.
+  Phase 1 takes assistant text solely from `response_item` message records, so
+  the `event_msg.agent_message` `phase` field is not consulted at all.
+- The TUI plugin's filesystem `list` tolerates `ENOTDIR` and `ENOENT`. If a
+  non-`.jsonl` file appears in a source directory it is skipped rather than
+  aborting the walk.
 
 ## Resolved Decisions
 
@@ -288,3 +291,59 @@ package.
   (`packages/tui/src/context/sync.tsx:603`) and the app timeline reads V2
   (`packages/protocol/src/groups/message.ts:26`), so writing only one would make
   imported history invisible in the other surface.
+- **Codex assistant text comes only from `response_item`.** The design originally
+  gated `event_msg.agent_message` on `phase === "final"` and deduplicated the
+  mirrored copies across the two record layers. Verification against 127 real
+  Codex rollouts on this machine showed Codex never emits `phase: "final"` — the
+  observed values are `commentary` (410) and `final_answer` (31) — so that gate
+  dropped every `event_msg` assistant message. `response_item` message records
+  carry genuine assistant prose (6,903 prose messages across those files), while
+  `response_item` user messages are always empty (642 empty, 0 non-empty). Phase 1
+  therefore reads assistant text from `response_item` and user text from
+  `event_msg.user_message`, and needs no deduplication. Mirrored records were
+  measured as always adjacent (426 adjacent, 0 separated), so removing the dedup
+  is safe.
+- **The import create route uses no session-location middleware.** The endpoint
+  creates a session and takes its `location` in the payload, so it matches
+  `session.create`, which has no middleware. Applying the session-location
+  middleware made the endpoint fail with `400 InvalidRequestError` because that
+  middleware requires a `sessionID` route param that does not exist yet.
+
+## Verification
+
+Verified:
+
+- **Core**: unit tests cover the dual-projection write, zero usage accounting,
+  durable sequencing, provenance encode/decode, the `findImported` lookup, and the
+  `importSession` create-stamp-write operation including time bounds.
+- **Parsers**: unit tests cover Claude Code user/assistant extraction, multi-block
+  joining, sidechain exclusion, and malformed-line tolerance; Codex session
+  metadata, user/assistant ordering, ignoring non-message records, and
+  exactly-once assistant text. Codex assumptions were additionally checked
+  against 127 real rollouts on this machine.
+- **Discovery**: unit tests cover both layouts, Codex's nested date directories,
+  zero-message filtering, and descending sort.
+- **Routes**: the server `packages/server` typecheck passes, and a route-surface
+  test guards operationIds `v2.import.session` and `v2.import.imported`.
+- **End-to-end against a live server**, using a real Claude Code transcript:
+  `POST /api/import/session` returned `200` and created a session; reading history
+  back through the V2 path (`GET /api/session/{id}/message`) returned the imported
+  messages in order with user and assistant text intact, proving the dual-write
+  reaches the app-timeline projection; and `GET /api/import/imported` listed the
+  imported session, proving provenance persisted.
+
+Not verified:
+
+- **The TUI plugin's runtime behavior.** `tui.tsx` typechecks (including JSX
+  types) but has never been executed. Route registration, keymap binding, dialog
+  rendering, multi-select interaction, and the actual import calls through
+  `client.v2.import.session` remain unexercised at runtime. This is the largest
+  remaining gap.
+- **The V1 projection read-back through the legacy endpoint** during the live E2E.
+  The core unit tests assert the V1 `message` / `part` rows, but the live check
+  read back only through the V2 path.
+- **Codex end-to-end.** The live E2E used a Claude Code transcript. Codex parsing
+  is unit-tested and was checked against real files, but no Codex session was
+  imported through the live endpoint.
+- **The desktop app timeline rendering an imported session.** The V2 API response
+  was verified; the app UI itself was not opened.
