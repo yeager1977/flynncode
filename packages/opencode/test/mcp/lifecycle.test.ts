@@ -1,6 +1,6 @@
 import path from "node:path"
 import { pathToFileURL } from "node:url"
-import { expect } from "bun:test"
+import { expect, test } from "bun:test"
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
 import {
@@ -558,6 +558,13 @@ it.instance("remote connect timeout is a shared budget across transport attempts
     expect(elapsed).toBeLessThan(750)
   }),
 )
+
+test("remote connect without a configured timeout uses a short connect budget", () => {
+  // A remote connect is an HTTP handshake, so an unreachable host must not burn
+  // the longer generic request timeout. An explicit timeout always wins.
+  expect(MCP.remoteConnectTimeout({ type: "remote", url: "http://127.0.0.1:1/mcp" })).toBeLessThanOrEqual(10_000)
+  expect(MCP.remoteConnectTimeout({ type: "remote", url: "http://127.0.0.1:1/mcp", timeout: 500 })).toBe(500)
+})
 
 it.live("McpOAuthCallback.cancelPending rejects the pending callback", () =>
   Effect.acquireUseRelease(

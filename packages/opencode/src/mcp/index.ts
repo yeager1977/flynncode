@@ -36,6 +36,15 @@ import { McpEvent } from "@opencode-ai/schema/mcp-event"
 import { McpBrowser } from "./browser"
 
 const DEFAULT_TIMEOUT = 30_000
+// A remote connect is an HTTP handshake, not a tool call, so an unreachable host
+// must not hold instance bootstrap for the full request timeout. Keep this
+// separate from DEFAULT_TIMEOUT and let an explicit config timeout take over.
+const DEFAULT_CONNECT_TIMEOUT = 10_000
+
+export function remoteConnectTimeout(mcp: ConfigMCPV1.Info) {
+  return mcp.timeout ?? DEFAULT_CONNECT_TIMEOUT
+}
+
 const CLIENT_OPTIONS = {
   capabilities: {
     // https://github.com/anomalyco/opencode/issues/11948
@@ -289,7 +298,7 @@ const layer = Layer.effect(
       // the configured timeout once per transport, doubling how long instance
       // bootstrap waits. Both transports are still attempted; the fallback runs
       // on whatever time is left.
-      const connectTimeout = mcp.timeout ?? DEFAULT_TIMEOUT
+      const connectTimeout = remoteConnectTimeout(mcp)
       const deadline = Date.now() + connectTimeout
       let lastStatus: Status | undefined
 
