@@ -28,12 +28,16 @@ test("draft previews match the real plugin's selection and ranking contract", ()
           { key: "ollama-local/missing", capability: 10, price: 1, speed: 10, tags: [] },
         ]
         if (zero) TASK_NAMES.forEach((task) => (draft.taskWeights[task] = { capability: 0, price: 0, speed: 0 }))
+        // Pin a different model per task, including unscored and tagged-away
+        // entries, so previews and plugin must agree on pin precedence.
+        draft.taskModels = { coding: "ollama-local/unscored", writing: "ollama-local/smart" }
         const parsed = parseOptions(serializeForm(draft))
         if (!parsed.ok) throw new Error(parsed.errors.join(", "))
         for (const task of TASK_NAMES) {
           const actual = previewTask(draft, routerCatalog(source), task)
           const plugin = rankModels(collectCandidates(source, parsed.options), task, draft.taskWeights[task], {
             allowUnscored,
+            pinned: parsed.options.taskModels[task],
           })
           expect(actual.map((item) => [item.model.key, item.score])).toEqual(
             plugin.ranked.map((item) => [item.key, item.score]),

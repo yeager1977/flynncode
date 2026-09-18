@@ -71,6 +71,7 @@ export function createTools(deps: Deps): Hooks["tool"] {
           }
           const result = rankModels(candidates, task, options.taskWeights[task], {
             allowUnscored: options.allowUnscored,
+            pinned: options.taskModels?.[task],
           })
           blocks.push(formatRankTable(result, 10, meta))
         }
@@ -106,6 +107,7 @@ export function createTools(deps: Deps): Hooks["tool"] {
         const meta = collectMeta(cfg, options)
         const result = rankModels(candidates, args.task, options.taskWeights[args.task], {
           allowUnscored: options.allowUnscored,
+          pinned: options.taskModels?.[args.task],
         })
         if (result.ranked.length === 0) {
           return `No eligible models for "${args.task}".\n\n` + formatRankTable(result, 10, meta)

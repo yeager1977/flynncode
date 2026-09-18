@@ -40,7 +40,7 @@ export function rankModels(
   candidates: Candidate[],
   task: TaskName,
   weights: Weights,
-  opts: { allowUnscored: boolean },
+  opts: { allowUnscored: boolean; pinned?: string },
 ): RankResult {
   const ranked: RankedModel[] = []
   const excluded: RankedModel[] = []
@@ -52,6 +52,15 @@ export function rankModels(
       modelID: c.modelID,
       score: 0,
       reasons: [],
+    }
+    // An explicit per-task choice wins over scoring, except when its provider is
+    // disabled: routing to a disabled provider would fail at request time.
+    if (opts.pinned === c.key && !c.providerDisabled) {
+      // Tags restrict the automatic pool; an explicit task choice overrides them.
+      const entry = c.entry ? { ...c.entry, tags: undefined } : { price: 5, capability: 5, speed: 5 }
+      const { score, reasons } = scoreModel(entry, weights, task) as { score: number; reasons: string[] }
+      ranked.push({ ...base, score, reasons: [...reasons, "explicit task override"] })
+      continue
     }
     if (c.providerDisabled) {
       excluded.push({ ...base, excluded: "provider disabled" })
@@ -79,6 +88,8 @@ export function rankModels(
   }
 
   ranked.sort((a, b) => {
+    if (opts.pinned === a.key) return -1
+    if (opts.pinned === b.key) return 1
     if (b.score !== a.score) return b.score - a.score
     const priceA = candidates.find((c) => c.key === a.key)?.entry?.price ?? 10
     const priceB = candidates.find((c) => c.key === b.key)?.entry?.price ?? 10

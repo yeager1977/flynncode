@@ -44,12 +44,17 @@ export function modelAvailability(form: ModelRouterFormState, model: RouterModel
 export function previewTask(form: ModelRouterFormState, catalog: RouterModel[], task: TaskName) {
   const scores = new Map(form.models.map((model) => [model.key, model]))
   const weights = normalized(form.taskWeights[task])
+  const pinned = form.taskModels[task]
   return catalog
     .filter((model) => modelAvailability(form, model) === "available")
     .flatMap((model) => {
       const entry = scores.get(model.key)
-      if (!entry && !form.allowUnscored) return []
-      if (entry?.tags.length && !entry.tags.includes(task)) return []
+      const isPinned = pinned === model.key
+      // The plugin ranks a pinned model even when it is unscored or tagged away.
+      if (!isPinned) {
+        if (!entry && !form.allowUnscored) return []
+        if (entry?.tags.length && !entry.tags.includes(task)) return []
+      }
       const value = entry ?? { capability: 5, price: 5, speed: 5 }
       return [
         {
@@ -61,11 +66,16 @@ export function previewTask(form: ModelRouterFormState, catalog: RouterModel[], 
     })
     .sort(
       (a, b) =>
+        pinnedIndex(pinned, a.model.key) - pinnedIndex(pinned, b.model.key) ||
         b.score - a.score ||
         (scores.get(a.model.key)?.price ?? 10) - (scores.get(b.model.key)?.price ?? 10) ||
         (scores.get(b.model.key)?.speed ?? 0) - (scores.get(a.model.key)?.speed ?? 0) ||
         a.model.key.localeCompare(b.model.key),
     )
+}
+
+function pinnedIndex(pinned: string | undefined, key: string) {
+  return pinned === key ? -1 : 0
 }
 
 export const PRIORITIES = ["recommended", "balanced", "quality", "cost", "speed"] as const

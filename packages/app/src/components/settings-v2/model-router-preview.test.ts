@@ -37,7 +37,9 @@ const form = () => {
 describe("router preview", () => {
   test("only configured, enabled, in-scope models with matching tasks can win", () => {
     const catalog = routerCatalog(source)
-    const ranked = previewTask(form(), catalog, "coding")
+    const draft = form()
+    draft.allowUnscored = false
+    const ranked = previewTask(draft, catalog, "coding")
     expect(ranked.map((item) => item.model.key)).toEqual(["ollama-local/smart", "ollama-local/fast"])
     expect(ranked[0].score).toBeCloseTo(6.95)
     expect(catalog.find((model) => model.key === "ollama-local/smart")?.name).toBe("Smart model")
@@ -61,6 +63,23 @@ describe("router preview", () => {
     draft.taskWeights.coding = priorityWeights("coding", "speed")
     expect(previewTask(draft, routerCatalog(source), "coding")[0].model.key).toBe("ollama-local/fast")
     expect(draft.models[0].capability).toBe(10)
+  })
+
+  test("unscored models are eligible by default", () => {
+    const draft = form()
+    expect(previewTask(draft, routerCatalog(source), "coding").map((item) => item.model.key)).toContain(
+      "ollama-local/unscored",
+    )
+  })
+
+  test("a pinned task model wins even when unscored or tagged away", () => {
+    const draft = form()
+    draft.taskModels = { coding: "ollama-local/writer" }
+    expect(previewTask(draft, routerCatalog(source), "coding")[0].model.key).toBe("ollama-local/writer")
+    const unscored = form()
+    unscored.allowUnscored = false
+    unscored.taskModels = { coding: "ollama-local/unscored" }
+    expect(previewTask(unscored, routerCatalog(source), "coding")[0].model.key).toBe("ollama-local/unscored")
   })
 
   test("ties prefer lower price, then higher speed, then stable model identity", () => {

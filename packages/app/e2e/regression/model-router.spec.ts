@@ -124,6 +124,31 @@ test("bulk model selection, ratings and task choices save a usable router config
   })
 })
 
+test("pinning a model per task overrides ranking and saves the choice", async ({ page }, testInfo) => {
+  const { router, state } = await openRouter(page)
+  await router.getByRole("tab", { name: "Routing", exact: true }).click()
+  const coding = router.getByRole("article", { name: "Coding", exact: true })
+  await coding.getByRole("combobox", { name: "Model for Coding", exact: true }).selectOption("ollama-local/fast")
+  await expect(coding.getByText("Fast model", { exact: true })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath("pinned-task.png") })
+  await router.getByRole("button", { name: "Save", exact: true }).click()
+  await expect.poll(() => state.writes.length).toBe(1)
+  expect(state.writes[0].model_router).toMatchObject({ taskModels: { coding: "ollama-local/fast" } })
+  await coding.getByRole("combobox", { name: "Model for Coding", exact: true }).selectOption("")
+  await router.getByRole("button", { name: "Save", exact: true }).click()
+  await expect.poll(() => state.writes.length).toBe(2)
+  expect(state.writes[1].model_router).not.toHaveProperty("taskModels")
+})
+
+test("every available provider model is offered for scoring by default", async ({ page }) => {
+  const { router } = await openRouter(page)
+  await router.getByRole("tab", { name: "Models", exact: true }).click()
+  const available = router.locator(".model-router-section", { hasText: "Available models" })
+  await expect(available.getByRole("button", { name: /Smart model/ })).toBeVisible()
+  await available.getByRole("button", { name: /Smart model/ }).click()
+  await expect(router.getByRole("article", { name: "Smart model", exact: true })).toBeVisible()
+})
+
 test("provider scope uses readable catalog names and controls the bulk picker", async ({ page }) => {
   const { router, state } = await openRouter(page)
   await router.getByRole("tab", { name: "Advanced", exact: true }).click()
@@ -152,13 +177,14 @@ test("failed saves preserve the draft and successful saves survive reopening", a
   const { router, state } = await openRouter(page)
   await router.getByRole("tab", { name: "Advanced", exact: true }).click()
   const fallback = router.getByRole("switch", { name: "Allow unscored models", exact: true })
+  await expect(fallback).toBeChecked()
   await fallback.focus()
   await fallback.press("Space")
-  await expect(fallback).toBeChecked()
+  await expect(fallback).not.toBeChecked()
   state.fail = true
   await router.getByRole("button", { name: "Save", exact: true }).click()
   await expect(router.getByRole("alert")).toContainText("Your changes are still here")
-  await expect(fallback).toBeChecked()
+  await expect(fallback).not.toBeChecked()
   await expect(router.getByRole("button", { name: "Save", exact: true })).toBeEnabled()
   await fallback.focus()
   await fallback.press("Space")
@@ -174,7 +200,7 @@ test("failed saves preserve the draft and successful saves survive reopening", a
   await page.keyboard.press("Control+,")
   await page.locator('.settings-v2-dialog [role="tab"][data-value="model-router"]').click()
   await router.getByRole("tab", { name: "Advanced", exact: true }).click()
-  await expect(fallback).toBeChecked()
+  await expect(fallback).not.toBeChecked()
 })
 
 test("removing a model is reversible until saved and deletes it from the payload", async ({ page }) => {

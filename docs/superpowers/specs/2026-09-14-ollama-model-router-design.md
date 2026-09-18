@@ -75,7 +75,7 @@ Installed in `~/.config/opencode/opencode.jsonc` as a tuple entry:
     "/home/yeager1977/GitHub/opencode/ollama-model-router",
     {
       "autoRoute": true,
-      "allowUnscored": false,
+      "allowUnscored": true,
       "providers": ["ollama-local", "ollama-gpu", "ollama-cloud"],
       "agentTasks": {
         "build": "coding",
@@ -116,17 +116,22 @@ Rules:
   are candidates for every task.
 - Weights within a task need not sum to 1; the scorer normalizes.
 - Models present in the configured providers but missing from `models` are
-  "unscored": they are listed by `rank_models` as excluded (with provider
-  metadata: context, parameter size, tool/reasoning flags) and are only
-  eligible if `allowUnscored: true`, in which case they score with
-  `capability: 5, price: 5, speed: 5`.
+  "unscored". They are eligible by default and score with
+  `capability: 5, price: 5, speed: 5`. With `allowUnscored: false` they are
+  instead excluded, and `rank_models` lists them with provider metadata
+  (context, tool/reasoning flags).
+- `taskModels` (optional) pins a `providerID/modelID` to a task name. The pin
+  wins over scoring, `tags`, and scorecard entries, so each task can target a
+  specific model. A pin whose provider is disabled is ignored and normal
+  ranking is used instead.
 - `agentTasks` may include any agent name. Only non-hidden agents are touched.
   If an agent does not exist in the live config, the plugin logs a warning and
   skips it.
 
-Defaults if omitted: `autoRoute: true`, `allowUnscored: false`,
+Defaults if omitted: `autoRoute: true`, `allowUnscored: true`,
 `overrideExplicit: false`, providers = all providers whose id starts with
-`ollama`, standard `agentTasks` and `taskWeights` as above, `models: {}`.
+`ollama`, standard `agentTasks` and `taskWeights` as above, `taskModels: {}`,
+`models: {}`.
 
 ## Scoring
 
@@ -156,7 +161,9 @@ Candidates are filtered per task:
 3. Model exists on that provider per the merged config's
    `cfg.provider[id].models`.
 4. If the model has `tags`, the task must be in `tags`.
-5. Unscored models are filtered unless `allowUnscored: true`.
+5. Unscored models are eligible by default; `allowUnscored: false` filters them.
+6. A `taskModels` pin for the task is always ranked first unless its provider is
+   disabled.
 
 ## Hooks
 

@@ -43,6 +43,41 @@ describe("plugin", () => {
     expect(cfg.model).toBe("should/not-change")
   })
 
+  test("config hook honors an explicit per-task model override", async () => {
+    const hooks = await plugin.server(fakeInput, {
+      autoRoute: true,
+      providers: ["ollama-cloud"],
+      taskModels: { coding: "ollama-cloud/weak" },
+      models: {
+        "ollama-cloud/strong": { price: 1, capability: 10, speed: 10 },
+        "ollama-cloud/weak": { price: 9, capability: 2, speed: 2 },
+      },
+    })
+    const cfg: any = {
+      provider: { "ollama-cloud": { models: { strong: {}, weak: {} } } },
+      agent: {},
+    }
+    await hooks.config?.(cfg)
+    expect(cfg.agent.build.model).toBe("ollama-cloud/weak")
+    expect(cfg.agent.plan.model).toBe("ollama-cloud/strong")
+  })
+
+  test("unscored models are eligible by default", async () => {
+    const hooks = await plugin.server(fakeInput, {
+      autoRoute: true,
+      providers: ["ollama-cloud"],
+      models: { "ollama-cloud/scored": { price: 9, capability: 1, speed: 1 } },
+    })
+    const cfg: any = {
+      provider: { "ollama-cloud": { models: { scored: {}, unscored: {} } } },
+      agent: {},
+    }
+    await hooks.config?.(cfg)
+    const output = await hooks.tool!.rank_models.execute({ task: "coding" } as any, { sessionID: "s" } as any)
+    expect(String(output)).toContain("ollama-cloud/unscored")
+    expect(String(output)).not.toContain("ollama-cloud/unscored (unscored")
+  })
+
   test("invalid options disable routing but keep tools", async () => {
     const hooks = await plugin.server(fakeInput, {
       models: { bad: { price: 99, capability: 1, speed: 1 } },

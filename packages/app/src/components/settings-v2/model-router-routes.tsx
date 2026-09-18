@@ -3,7 +3,14 @@ import { For, Show, createMemo } from "solid-js"
 import { produce, type SetStoreFunction } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { TASK_NAMES, type ModelRouterFormState, type TaskName } from "./model-router-payload"
-import { PRIORITIES, previewTask, selectedPriority, type Priority, type RouterModel } from "./model-router-preview"
+import {
+  PRIORITIES,
+  modelAvailability,
+  previewTask,
+  selectedPriority,
+  type Priority,
+  type RouterModel,
+} from "./model-router-preview"
 
 export function ModelRouterRoutes(props: {
   form: ModelRouterFormState
@@ -20,6 +27,25 @@ export function ModelRouterRoutes(props: {
   const previews = createMemo(
     () => new Map(TASK_NAMES.map((task) => [task, previewTask(props.form, props.catalog, task)])),
   )
+  const selectable = createMemo(() =>
+    props.catalog.filter((model) => modelAvailability(props.form, model) === "available"),
+  )
+  // A saved pin can point outside the current scope or vanish from the catalog.
+  // Keep it selectable so the control reflects the stored value instead of
+  // silently implying "Automatic".
+  const orphan = (task: TaskName) => {
+    const key = props.form.taskModels[task]
+    if (!key || selectable().some((model) => model.key === key)) return undefined
+    return key
+  }
+  const setPinned = (task: TaskName, key: string) =>
+    props.setForm(
+      "taskModels",
+      produce((draft) => {
+        if (key === "") delete draft[task]
+        else draft[task] = key
+      }),
+    )
   return (
     <>
       <section class="model-router-section">
@@ -160,6 +186,30 @@ export function ModelRouterRoutes(props: {
                       )}
                     </Show>
                   </div>
+                  <label class="model-router-field">
+                    <span>{language.t("settings.modelRouter.taskModel.label", { task: language.t(`settings.modelRouter.task.${task}`) })}</span>
+                    <select
+                      class="model-router-select"
+                      aria-label={language.t("settings.modelRouter.taskModel.label", {
+                        task: language.t(`settings.modelRouter.task.${task}`),
+                      })}
+                      value={props.form.taskModels[task] ?? ""}
+                      onChange={(event) => setPinned(task, event.currentTarget.value)}
+                    >
+                      <option value="">{language.t("settings.modelRouter.taskModel.automatic")}</option>
+                      <Show when={orphan(task)}>
+                        {(key) => <option value={key()}>{key()}</option>}
+                      </Show>
+                      <For each={selectable()}>
+                        {(model) => (
+                          <option value={model.key}>
+                            {model.name} - {model.provider}
+                          </option>
+                        )}
+                      </For>
+                    </select>
+                    <span class="model-router-muted">{language.t("settings.modelRouter.taskModel.help")}</span>
+                  </label>
                   <Show when={!matches().length}>
                     <button type="button" class="model-router-link" onClick={props.onModels}>
                       {language.t("settings.modelRouter.reviewModels")}

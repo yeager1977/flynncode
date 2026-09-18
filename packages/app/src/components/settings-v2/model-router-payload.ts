@@ -44,17 +44,19 @@ export type ModelRouterFormState = {
   providers: string[]
   agentTasks: AgentTaskRow[]
   taskWeights: TaskWeights
+  taskModels: Partial<Record<TaskName, string>>
   models: ModelScoreRow[]
 }
 
 export function emptyForm(): ModelRouterFormState {
   return {
     autoRoute: true,
-    allowUnscored: false,
+    allowUnscored: true,
     overrideExplicit: false,
     providers: [],
     agentTasks: Object.entries(DEFAULT_AGENT_TASKS).map(([agent, task]) => ({ agent, task })),
     taskWeights: structuredClone(DEFAULT_TASK_WEIGHTS),
+    taskModels: {},
     models: [],
   }
 }
@@ -63,11 +65,12 @@ export function formFromConfig(config: Record<string, unknown> | undefined): Mod
   const raw = config ?? {}
   return {
     autoRoute: typeof raw.autoRoute === "boolean" ? raw.autoRoute : true,
-    allowUnscored: typeof raw.allowUnscored === "boolean" ? raw.allowUnscored : false,
+    allowUnscored: typeof raw.allowUnscored === "boolean" ? raw.allowUnscored : true,
     overrideExplicit: typeof raw.overrideExplicit === "boolean" ? raw.overrideExplicit : false,
     providers: providersFrom(raw.providers),
     agentTasks: agentTasksFrom(raw.agentTasks),
     taskWeights: weightsFrom(raw.taskWeights),
+    taskModels: taskModelsFrom(raw.taskModels),
     models: modelsFrom(raw.models),
   }
 }
@@ -81,6 +84,10 @@ export function serializeForm(form: ModelRouterFormState): Record<string, unknow
     agentTasks: Object.fromEntries(form.agentTasks.map((row) => [row.agent, row.task])),
     taskWeights: Object.fromEntries(TASK_NAMES.map((task) => [task, { ...form.taskWeights[task] }])),
   }
+  const taskModels = Object.fromEntries(
+    Object.entries(form.taskModels).filter((entry): entry is [TaskName, string] => typeof entry[1] === "string"),
+  )
+  if (Object.keys(taskModels).length > 0) payload.taskModels = taskModels
   if (form.models.length > 0) {
     payload.models = Object.fromEntries(
       form.models.map((model) => [
@@ -117,6 +124,10 @@ export function validateForm(
       const value = form.taskWeights[task][dim]
       if (!Number.isFinite(value) || value < 0) errors.push(`taskWeights.${task}.${dim}`)
     }
+  }
+  for (const [task, model] of Object.entries(form.taskModels)) {
+    if (!isTaskName(task)) errors.push(`taskModels.${task}`)
+    if (model !== undefined && parseModelKey(model) === undefined) errors.push(`taskModels.${task}`)
   }
   const seen = new Set<string>()
   for (const model of form.models) {
@@ -158,6 +169,15 @@ function agentTasksFrom(raw: unknown): AgentTaskRow[] {
   return Object.entries(raw as Record<string, unknown>)
     .filter((entry): entry is [string, TaskName] => isTaskName(entry[1]))
     .map(([agent, task]) => ({ agent, task }))
+}
+
+function taskModelsFrom(raw: unknown): Partial<Record<TaskName, string>> {
+  if (raw === undefined || raw === null || typeof raw !== "object" || Array.isArray(raw)) return {}
+  return Object.fromEntries(
+    Object.entries(raw as Record<string, unknown>).filter(
+      (entry): entry is [TaskName, string] => isTaskName(entry[0]) && typeof entry[1] === "string",
+    ),
+  )
 }
 
 function weightsFrom(raw: unknown): TaskWeights {

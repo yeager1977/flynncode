@@ -27,6 +27,15 @@ export function ModelRouterModels(props: {
         .includes(state.search.trim().toLowerCase())
     }),
   )
+  const available = createMemo(() =>
+    props.catalog.filter(
+      (model) =>
+        modelAvailability(props.form, model) === "available" &&
+        !props.form.models.some((row) => row.key === model.key),
+    ),
+  )
+  const scoreModel = (key: string) =>
+    props.setForm("models", (rows) => [...rows, { key, tags: [], capability: 5, price: 5, speed: 5 }])
 
   const add = () =>
     dialog.push(() => (
@@ -227,6 +236,27 @@ export function ModelRouterModels(props: {
             }}
           </For>
         </div>
+      </Show>
+
+      <Show when={available().length}>
+        <section class="model-router-section">
+          <div class="model-router-section-heading">
+            <div>
+              <h3>{language.t("settings.modelRouter.models.available")}</h3>
+              <p class="model-router-muted">{language.t("settings.modelRouter.models.notScored")}</p>
+            </div>
+          </div>
+          <div class="model-router-chips">
+            <For each={available().slice(0, 50)}>
+              {(model) => (
+                <button type="button" onClick={() => scoreModel(model.key)}>
+                  <bdi>{model.name}</bdi>
+                  <span class="model-router-muted"> {model.provider}</span>
+                </button>
+              )}
+            </For>
+          </div>
+        </section>
       </Show>
     </>
   )

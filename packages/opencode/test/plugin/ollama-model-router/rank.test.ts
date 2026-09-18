@@ -120,4 +120,53 @@ describe("rankModels", () => {
     expect(result.ranked.length).toBe(1)
     expect(result.ranked[0].score).toBeCloseTo(5)
   })
+
+  test("an explicit task pin beats a higher-scoring model", () => {
+    const result = rankModels(
+      [
+        { key: "p/strong", providerID: "p", modelID: "strong", entry: { price: 1, capability: 10, speed: 10 } },
+        { key: "p/pinned", providerID: "p", modelID: "pinned", entry: { price: 9, capability: 2, speed: 2 } },
+      ],
+      "coding",
+      weights,
+      { allowUnscored: false, pinned: "p/pinned" },
+    )
+    expect(result.ranked.map((r) => r.key)).toEqual(["p/pinned", "p/strong"])
+    expect(result.ranked[0].reasons).toContain("explicit task override")
+  })
+
+  test("a pin overrides task tags and unscored exclusion", () => {
+    const result = rankModels(
+      [
+        {
+          key: "p/tagged",
+          providerID: "p",
+          modelID: "tagged",
+          entry: { price: 1, capability: 10, speed: 10, tags: ["lookup"] },
+        },
+      ],
+      "coding",
+      weights,
+      { allowUnscored: false, pinned: "p/tagged" },
+    )
+    expect(result.ranked.map((r) => r.key)).toEqual(["p/tagged"])
+    const unscored = rankModels(
+      [{ key: "p/u", providerID: "p", modelID: "u" }],
+      "coding",
+      weights,
+      { allowUnscored: false, pinned: "p/u" },
+    )
+    expect(unscored.ranked.map((r) => r.key)).toEqual(["p/u"])
+  })
+
+  test("a pin to a disabled provider is ignored", () => {
+    const result = rankModels(
+      [{ key: "p/a", providerID: "p", modelID: "a", providerDisabled: true, entry: { price: 1, capability: 10, speed: 10 } }],
+      "coding",
+      weights,
+      { allowUnscored: false, pinned: "p/a" },
+    )
+    expect(result.ranked).toEqual([])
+    expect(result.excluded[0].excluded).toBe("provider disabled")
+  })
 })

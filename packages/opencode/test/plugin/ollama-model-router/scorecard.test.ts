@@ -7,11 +7,26 @@ describe("parseOptions", () => {
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.options.autoRoute).toBe(true)
-    expect(result.options.allowUnscored).toBe(false)
+    expect(result.options.allowUnscored).toBe(true)
     expect(result.options.overrideExplicit).toBe(false)
     expect(result.options.providers).toEqual([])
     expect(result.options.agentTasks).toEqual(DEFAULT_AGENT_TASKS)
+    expect(result.options.taskModels).toEqual({})
     expect(result.options.models).toEqual({})
+  })
+
+  test("parses explicit per-task model overrides", () => {
+    const result = parseOptions({ taskModels: { coding: "ollama-cloud/glm-5.3-flash" } })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.options.taskModels.coding).toBe("ollama-cloud/glm-5.3-flash")
+  })
+
+  test("rejects unknown task names and malformed keys in taskModels", () => {
+    const unknown = parseOptions({ taskModels: { nope: "p/a" } })
+    expect(unknown.ok).toBe(false)
+    const malformed = parseOptions({ taskModels: { coding: "no-slash" } })
+    expect(malformed.ok).toBe(false)
   })
 
   test("accepts a valid scorecard", () => {

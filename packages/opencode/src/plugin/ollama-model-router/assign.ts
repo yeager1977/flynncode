@@ -23,6 +23,7 @@ export function assignAgents(
   for (const task of new Set(Object.values(options.agentTasks))) {
     const result = rankModels(candidates, task, options.taskWeights[task], {
       allowUnscored: options.allowUnscored,
+      pinned: options.taskModels?.[task],
     })
     if (result.ranked.length === 0) {
       warnings.push(`no eligible model for task "${task}"`)

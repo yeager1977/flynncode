@@ -43,7 +43,7 @@ export function parseOptions(
     const r = raw ?? {}
 
     const autoRoute = typeof r.autoRoute === "boolean" ? r.autoRoute : true
-    const allowUnscored = typeof r.allowUnscored === "boolean" ? r.allowUnscored : false
+    const allowUnscored = typeof r.allowUnscored === "boolean" ? r.allowUnscored : true
     const overrideExplicit = typeof r.overrideExplicit === "boolean" ? r.overrideExplicit : false
 
     let providers: string[] = []
@@ -98,6 +98,25 @@ export function parseOptions(
       }
     }
 
+    const taskModels: Partial<Record<TaskName, string>> = {}
+    if (r.taskModels !== undefined) {
+      if (r.taskModels === null || typeof r.taskModels !== "object" || Array.isArray(r.taskModels)) {
+        errors.push("taskModels must be an object keyed by task name")
+      } else {
+        for (const [task, model] of Object.entries(r.taskModels as Record<string, unknown>)) {
+          if (!isTaskName(task)) {
+            errors.push(`taskModels.${task}: unknown task (valid: ${TASK_NAMES.join(", ")})`)
+            continue
+          }
+          if (typeof model !== "string" || !parseModelKey(model)) {
+            errors.push(`taskModels.${task}: must be a "providerID/modelID" string`)
+            continue
+          }
+          taskModels[task] = model
+        }
+      }
+    }
+
     const models: Record<string, ScoreEntry> = {}
     if (r.models !== undefined) {
       if (r.models === null || typeof r.models !== "object" || Array.isArray(r.models)) {
@@ -135,7 +154,19 @@ export function parseOptions(
     }
 
     if (errors.length > 0) return { ok: false, errors }
-    return { ok: true, options: { autoRoute, allowUnscored, overrideExplicit, providers, agentTasks, taskWeights, models } }
+    return {
+      ok: true,
+      options: {
+        autoRoute,
+        allowUnscored,
+        overrideExplicit,
+        providers,
+        agentTasks,
+        taskWeights,
+        taskModels,
+        models,
+      },
+    }
   } catch (e) {
     return { ok: false, errors: [String(e)] }
   }

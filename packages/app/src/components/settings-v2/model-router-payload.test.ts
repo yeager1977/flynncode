@@ -16,7 +16,7 @@ describe("emptyForm", () => {
     const form = emptyForm()
     expect(form).toEqual({
       autoRoute: true,
-      allowUnscored: false,
+      allowUnscored: true,
       overrideExplicit: false,
       providers: [],
       agentTasks: [
@@ -26,6 +26,7 @@ describe("emptyForm", () => {
         { agent: "general", task: "coding" },
       ],
       taskWeights: DEFAULT_TASK_WEIGHTS,
+      taskModels: {},
       models: [],
     } satisfies ModelRouterFormState)
     expect(form.agentTasks.map((row) => [row.agent, row.task])).toEqual(Object.entries(DEFAULT_AGENT_TASKS))
@@ -49,7 +50,7 @@ describe("formFromConfig", () => {
       models: { "ollama/llama3.1": { price: 7, capability: 8, speed: 6, tags: ["coding"] } },
     })
     expect(form.autoRoute).toBe(false)
-    expect(form.allowUnscored).toBe(false)
+    expect(form.allowUnscored).toBe(true)
     expect(form.providers).toEqual(["ollama"])
     expect(form.agentTasks.map((row) => row.agent)).toEqual(Object.keys(DEFAULT_AGENT_TASKS))
     expect(form.taskWeights).toEqual(DEFAULT_TASK_WEIGHTS)
@@ -76,9 +77,17 @@ describe("formFromConfig", () => {
       providers: ["ollama", 42],
       agentTasks: "nope",
       taskWeights: { coding: "nope" },
+      taskModels: "nope",
       models: ["nope"],
     })
     expect(form).toEqual(emptyForm())
+  })
+
+  test("taskModels keeps valid entries and drops malformed ones", () => {
+    const form = formFromConfig({
+      taskModels: { coding: "ollama/glm", planning: 42, nope: "ollama/x" },
+    })
+    expect(form.taskModels).toEqual({ coding: "ollama/glm" })
   })
 
   test("overrideExplicit preserves true", () => {
@@ -98,7 +107,7 @@ describe("serializeForm", () => {
   test("empty form serializes to the default object", () => {
     expect(serializeForm(emptyForm())).toEqual({
       autoRoute: true,
-      allowUnscored: false,
+      allowUnscored: true,
       overrideExplicit: false,
       providers: [],
       agentTasks: DEFAULT_AGENT_TASKS,
@@ -106,8 +115,26 @@ describe("serializeForm", () => {
     })
   })
 
-  test("omits models when empty", () => {
+  test("omits models and taskModels when empty", () => {
     expect("models" in serializeForm(emptyForm())).toBe(false)
+    expect("taskModels" in serializeForm(emptyForm())).toBe(false)
+  })
+
+  test("includes taskModels when set", () => {
+    const form: ModelRouterFormState = { ...emptyForm(), taskModels: { coding: "ollama/glm" } }
+    expect(serializeForm(form).taskModels).toEqual({ coding: "ollama/glm" })
+  })
+
+  test("a cleared pin (undefined) is omitted, keeping the form clean", () => {
+    const form: ModelRouterFormState = {
+      ...emptyForm(),
+      taskModels: { coding: "ollama/glm", planning: undefined },
+    }
+    expect("taskModels" in serializeForm(form)).toBe(true)
+    expect(serializeForm(form).taskModels).toEqual({ coding: "ollama/glm" })
+    const cleared = serializeForm({ ...emptyForm(), taskModels: { coding: undefined } })
+    expect("taskModels" in cleared).toBe(false)
+    expect(formFromConfig(cleared)).toEqual(emptyForm())
   })
 
   test("includes models with tags when set", () => {
@@ -117,7 +144,7 @@ describe("serializeForm", () => {
     }
     expect(serializeForm(form)).toEqual({
       autoRoute: true,
-      allowUnscored: false,
+      allowUnscored: true,
       overrideExplicit: false,
       providers: [],
       agentTasks: DEFAULT_AGENT_TASKS,
@@ -253,6 +280,11 @@ describe("validateForm", () => {
     expect(validateForm(form)).toEqual({ ok: false, errors: ["providers.0"] })
   })
 
+  test("malformed taskModels override rejected", () => {
+    const form: ModelRouterFormState = { ...emptyForm(), taskModels: { coding: "no-slash" } }
+    expect(validateForm(form)).toEqual({ ok: false, errors: ["taskModels.coding"] })
+  })
+
   test("valid form passes and serializes", () => {
     const form: ModelRouterFormState = {
       ...emptyForm(),
@@ -281,6 +313,7 @@ describe("round trip", () => {
       providers: ["ollama", "openai"],
       agentTasks: [{ agent: "build", task: "review" }],
       taskWeights: { ...DEFAULT_TASK_WEIGHTS, coding: { capability: 0.8, price: 0.1, speed: 0.1 } },
+      taskModels: { coding: "ollama/qwen3" },
       models: [{ key: "ollama/qwen3", tags: ["writing"], price: 2, capability: 7, speed: 9 }],
     }
     expect(formFromConfig(serializeForm(form) as Record<string, unknown>)).toEqual(form)
