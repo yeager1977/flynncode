@@ -111,6 +111,62 @@ describe("importTranscript", () => {
     }),
   )
 
+  it.effect("gives every assistant message a user parent, even across consecutive assistant turns", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const events = yield* EventV2.Service
+      yield* seed(db)
+
+      yield* importTranscript(events, {
+        sessionID,
+        transcript: [
+          { role: "user", text: "first prompt", time: 1 },
+          { role: "assistant", text: "reply one", time: 2 },
+          { role: "assistant", text: "reply two", time: 3 },
+          { role: "user", text: "second prompt", time: 4 },
+          { role: "assistant", text: "reply three", time: 5 },
+        ],
+      })
+
+      const rows = yield* db
+        .select()
+        .from(MessageTable)
+        .where(eq(MessageTable.session_id, sessionID))
+        .all()
+        .pipe(Effect.orDie)
+
+      const assistants = rows.filter((row) => row.data.role === "assistant")
+      expect(assistants).toHaveLength(3)
+      for (const assistant of assistants) {
+        const parentID = (assistant.data as { parentID?: string }).parentID
+        expect(parentID).toBeDefined()
+        const parent = rows.find((row) => row.id === parentID)
+        expect(parent?.data.role).toBe("user")
+      }
+    }),
+  )
+
+  it.effect("imports nothing when a transcript has no user turn", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const events = yield* EventV2.Service
+      yield* seed(db)
+
+      yield* importTranscript(events, {
+        sessionID,
+        transcript: [{ role: "assistant", text: "no prompt ever", time: 1 }],
+      })
+
+      const rows = yield* db
+        .select()
+        .from(MessageTable)
+        .where(eq(MessageTable.session_id, sessionID))
+        .all()
+        .pipe(Effect.orDie)
+      expect(rows).toEqual([])
+    }),
+  )
+
   it.effect("keeps imported usage at zero", () =>
     Effect.gen(function* () {
       const { db } = yield* Database.Service

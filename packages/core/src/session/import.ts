@@ -39,6 +39,17 @@ export const importTranscript = (
   input: { readonly sessionID: SessionSchema.ID; readonly transcript: ReadonlyArray<ImportedMessage> },
 ) =>
   Effect.gen(function* () {
+    // The V1 projection requires every assistant message to hang off a user
+    // message. Transcripts routinely contain several assistant turns in a row
+    // for one user prompt, so every assistant parents to the nearest preceding
+    // user rather than to the previous item.
+    const firstUserIndex = input.transcript.findIndex((item) => item.role === "user")
+    // A transcript with no user turn cannot produce valid V1 parents. Such
+    // sessions are machine runs, not human work, and are dropped upstream;
+    // bail out rather than fabricate a turn or emit an unresolvable parent.
+    if (firstUserIndex < 0) return
+    let lastUserID = messageID(input.sessionID, firstUserIndex)
+
     for (let index = 0; index < input.transcript.length; index++) {
       const item = input.transcript[index]
       if (!item) continue
@@ -46,6 +57,7 @@ export const importTranscript = (
       const textID = `text-import-${hash(input.sessionID)}_${index}`
       const timestamp = DateTime.makeUnsafe(item.time)
       if (item.role === "user") {
+        lastUserID = id
         yield* events.publish(SessionEvent.Prompted, {
           sessionID: input.sessionID,
           messageID: id,
@@ -114,7 +126,7 @@ export const importTranscript = (
           sessionID: input.sessionID,
           role: "assistant",
           time: { created: item.time, completed: item.time },
-          parentID: SessionV1.MessageID.ascending(messageID(input.sessionID, index - 1)),
+          parentID: SessionV1.MessageID.ascending(lastUserID),
           modelID: importedModelID,
           providerID: importedProviderID,
           mode: importedAgent,
