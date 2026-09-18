@@ -8,7 +8,9 @@ import type { ImportSource } from "./types.js"
 async function list(directory: string): Promise<ReadonlyArray<string>> {
   const entries = await readdir(directory, { withFileTypes: true }).catch(() => undefined)
   if (entries === undefined) return []
-  return entries.map((entry) => path.join(directory, entry.name))
+  return entries
+    .filter((entry) => !entry.isSymbolicLink())
+    .map((entry) => path.join(directory, entry.name))
 }
 
 async function read(file: string): Promise<string | undefined> {
