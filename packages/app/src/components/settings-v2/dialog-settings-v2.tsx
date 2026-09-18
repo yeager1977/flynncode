@@ -10,6 +10,7 @@ import { SettingsProvidersV2 } from "./providers"
 import { SettingsModelsV2 } from "./models"
 import { SettingsPluginsV2 } from "./plugins"
 import { SettingsMcpV2 } from "./mcp"
+import { SettingsImportSessionsV2 } from "./import-sessions"
 import { SettingsModelRouterV2 } from "./model-router"
 import "./settings-v2.css"
 import { SettingsServersV2 } from "./servers"
@@ -74,6 +75,12 @@ export const DialogSettings: Component<{
                         {language.t("settings.tab.plugins")}
                       </TabsV2.Trigger>
                     </Show>
+                    <Show when={platform.platform === "desktop"}>
+                      <TabsV2.Trigger value="import-sessions">
+                        <Icon name="download" />
+                        {language.t("settings.tab.importSessions")}
+                      </TabsV2.Trigger>
+                    </Show>
                     <TabsV2.Trigger value="mcp">
                       <Icon name="server" />
                       {language.t("settings.tab.mcp")}
@@ -128,6 +135,11 @@ export const DialogSettings: Component<{
         <Show when={platform.platform === "desktop" && platform.plugins}>
           <TabsV2.Content value="plugins" class="settings-v2-panel">
             <SettingsPluginsV2 />
+          </TabsV2.Content>
+        </Show>
+        <Show when={platform.platform === "desktop"}>
+          <TabsV2.Content value="import-sessions" class="settings-v2-panel">
+            <SettingsImportSessionsV2 directory={directory()} />
           </TabsV2.Content>
         </Show>
         <TabsV2.Content value="mcp" class="settings-v2-panel">
