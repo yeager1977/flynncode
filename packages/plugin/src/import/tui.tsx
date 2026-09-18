@@ -193,6 +193,7 @@ const tui: TuiPlugin = async (api) => {
         name: "session-import.open",
         title: "Import sessions",
         category: "Session",
+        namespace: "palette",
         run() {
           api.route.navigate("session-import")
         },
