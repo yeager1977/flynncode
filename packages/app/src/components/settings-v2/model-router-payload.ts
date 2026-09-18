@@ -27,7 +27,7 @@ export const DEFAULT_AGENT_TASKS: Record<string, TaskName> = {
 export type TaskWeights = Record<TaskName, { capability: number; price: number; speed: number }>
 
 export const DEFAULT_TASK_WEIGHTS: TaskWeights = {
-  coding: { capability: 0.6, price: 0.25, speed: 0.15 },
+  coding: { capability: 0.7, price: 0.1, speed: 0.2 },
   planning: { capability: 0.7, price: 0.2, speed: 0.1 },
   review: { capability: 0.65, price: 0.25, speed: 0.1 },
   architecture: { capability: 0.9, price: 0.05, speed: 0.05 },

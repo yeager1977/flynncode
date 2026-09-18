@@ -1,7 +1,7 @@
 import type { Hooks, PluginInput, PluginOptions } from "@opencode-ai/plugin"
 import { assignAgents, resolveTaskModel } from "./assign"
 import { ROUTER_MODEL_ID, ROUTER_MODEL_KEY, ROUTER_PROVIDER_ID, type CatalogLike } from "./candidates"
-import { parseOptions, TASK_NAMES, isTaskName } from "./scorecard"
+import { parseOptions, parseTaskVariant, ROUTER_VARIANTS, VALUE_TASK_WEIGHTS } from "./scorecard"
 import { createTools } from "./tools"
 import type { RouterOptions, TaskName } from "./types"
 
@@ -11,11 +11,6 @@ function readTupleOptions(options: PluginOptions | undefined): Record<string, un
   if (!options || typeof options !== "object" || Array.isArray(options)) return undefined
   return options as Record<string, unknown>
 }
-
-// The virtual model must be routable by task name without a task-specific
-// config, so it advertises one variant per task. `auto` follows the active
-// agent's mapping.
-const ROUTER_VARIANTS = Object.fromEntries(TASK_NAMES.map((task) => [task, {}]))
 
 /**
  * Built-in Ollama model router.
@@ -78,17 +73,22 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
     agent?: string
     model?: { providerID: string; modelID: string }
     variant?: string
-  }): string | undefined => {
+  }): { task: TaskName; model: string } | undefined => {
     if (!currentOptions) return undefined
     if (event.model?.providerID !== ROUTER_PROVIDER_ID) return undefined
+    const parsed = parseTaskVariant(event.variant)
     const task: TaskName | undefined =
-      event.variant && isTaskName(event.variant)
-        ? event.variant
-        : event.agent
-          ? currentOptions.agentTasks[event.agent]
-          : undefined
+      parsed?.task ?? (event.agent ? currentOptions.agentTasks[event.agent] : undefined)
     if (!task) return undefined
-    return resolveTaskModel(currentConfig, currentOptions, task, getCatalog())
+    // A `<task>-value` variant asks for the cheap lane, so it uses value weights
+    // and ignores the task pin (a pin would otherwise re-impose the premium
+    // model for tasks like review).
+    const value = parsed?.value === true
+    const model = resolveTaskModel(currentConfig, currentOptions, task, getCatalog(), {
+      weights: value ? VALUE_TASK_WEIGHTS : undefined,
+      ignorePin: value,
+    })
+    return model ? { task, model } : undefined
   }
 
   return {
@@ -150,11 +150,11 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
               `Check model_router providers, scorecards, and excludeModels.`,
           )
         }
-        const index = resolved.indexOf("/")
+        const index = resolved.model.indexOf("/")
         output.message.model = {
           ...output.message.model,
-          providerID: resolved.slice(0, index),
-          modelID: resolved.slice(index + 1),
+          providerID: resolved.model.slice(0, index),
+          modelID: resolved.model.slice(index + 1),
         }
       } catch (error) {
         console.error(`${PREFIX} chat.message hook failed`, error)

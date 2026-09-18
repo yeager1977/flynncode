@@ -4,11 +4,17 @@ import type { RouterOptions, TaskName } from "./types"
 
 const BUILTIN_AGENTS = new Set(["build", "plan", "general", "explore"])
 
+type RankOverride = {
+  weights?: RouterOptions["taskWeights"][TaskName]
+  ignorePin?: boolean
+}
+
 export function taskWinners(
   cfg: any,
   options: RouterOptions,
   tasks: Iterable<TaskName>,
   catalog?: CatalogLike,
+  override?: RankOverride,
 ): { winners: Map<TaskName, string>; warnings: string[] } {
   const warnings: string[] = []
   const winners = new Map<TaskName, string>()
@@ -18,9 +24,9 @@ export function taskWinners(
     return { winners, warnings }
   }
   for (const task of tasks) {
-    const result = rankModels(candidates, task, options.taskWeights[task], {
+    const result = rankModels(candidates, task, override?.weights ?? options.taskWeights[task], {
       allowUnscored: options.allowUnscored,
-      pinned: options.taskModels?.[task],
+      pinned: override?.ignorePin ? undefined : options.taskModels?.[task],
     })
     if (result.ranked.length === 0) {
       warnings.push(`no eligible model for task "${task}"`)
@@ -36,8 +42,9 @@ export function resolveTaskModel(
   options: RouterOptions,
   task: TaskName,
   catalog?: CatalogLike,
+  override?: RankOverride,
 ): string | undefined {
-  return taskWinners(cfg, options, [task], catalog).winners.get(task)
+  return taskWinners(cfg, options, [task], catalog, override).winners.get(task)
 }
 
 export function assignAgents(

@@ -41,7 +41,8 @@ describe("router preview", () => {
     draft.allowUnscored = false
     const ranked = previewTask(draft, catalog, "coding")
     expect(ranked.map((item) => item.model.key)).toEqual(["ollama-local/smart", "ollama-local/fast"])
-    expect(ranked[0].score).toBeCloseTo(6.95)
+    // 0.7*10 + 0.1*(10-8) + 0.2*3 = 7.8 under the capability-dominant coding weights
+    expect(ranked[0].score).toBeCloseTo(7.8)
     expect(catalog.find((model) => model.key === "ollama-local/smart")?.name).toBe("Smart model")
     expect(
       modelAvailability(
@@ -117,7 +118,7 @@ describe("router preview", () => {
 
 describe("priority editing", () => {
   test("recognizes proportional presets without replacing custom weights", () => {
-    expect(selectedPriority("coding", { capability: 60, price: 25, speed: 15 })).toBe("recommended")
+    expect(selectedPriority("coding", { capability: 70, price: 10, speed: 20 })).toBe("recommended")
     expect(selectedPriority("coding", { capability: 0, price: 0, speed: 0 })).toBe("balanced")
     expect(selectedPriority("coding", { capability: 8, price: 1, speed: 1 })).toBe("quality")
     expect(selectedPriority("coding", { capability: 2, price: 3, speed: 8 })).toBe("custom")

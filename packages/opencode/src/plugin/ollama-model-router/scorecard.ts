@@ -18,7 +18,9 @@ export const DEFAULT_AGENT_TASKS: Record<string, TaskName> = {
 }
 
 export const DEFAULT_TASK_WEIGHTS: Record<TaskName, { capability: number; price: number; speed: number }> = {
-  coding: { capability: 0.6, price: 0.25, speed: 0.15 },
+  // Coding is capability-dominant so the strongest model (Claude Opus 5) wins;
+  // the `<task>-value` lane covers the cheap Flash alternatives.
+  coding: { capability: 0.7, price: 0.1, speed: 0.2 },
   planning: { capability: 0.7, price: 0.2, speed: 0.1 },
   review: { capability: 0.65, price: 0.25, speed: 0.1 },
   architecture: { capability: 0.9, price: 0.05, speed: 0.05 },
@@ -26,6 +28,28 @@ export const DEFAULT_TASK_WEIGHTS: Record<TaskName, { capability: number; price:
   writing: { capability: 0.5, price: 0.3, speed: 0.2 },
   "long-context": { capability: 0.6, price: 0.3, speed: 0.1 },
 }
+
+// Cost-dominant profile behind `<task>-value` variants, matching the settings
+// editor's "Lower cost" preset.
+export const VALUE_TASK_WEIGHTS = { capability: 0.25, price: 0.65, speed: 0.1 }
+
+const VALUE_SUFFIX = "-value"
+
+export function parseTaskVariant(variant: string | undefined): { task: TaskName; value: boolean } | undefined {
+  if (!variant) return undefined
+  if (variant.endsWith(VALUE_SUFFIX)) {
+    const task = variant.slice(0, -VALUE_SUFFIX.length)
+    return isTaskName(task) ? { task, value: true } : undefined
+  }
+  return isTaskName(variant) ? { task: variant, value: false } : undefined
+}
+
+export const ROUTER_VARIANTS: Record<string, Record<string, never>> = Object.fromEntries(
+  TASK_NAMES.flatMap((task) => [
+    [task, {}],
+    [`${task}${VALUE_SUFFIX}`, {}],
+  ]),
+)
 
 export function parseModelKey(key: string): { providerID: string; modelID: string } | undefined {
   const idx = key.indexOf("/")

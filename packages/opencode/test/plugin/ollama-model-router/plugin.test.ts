@@ -222,6 +222,39 @@ describe("plugin", () => {
     expect(concrete.model).toEqual({ providerID: "anthropic", modelID: "claude-sonnet-5" })
   })
 
+  test("chat.message routes a value variant through value weights, dropping the pin", async () => {
+    const hooks = await plugin.server(fakeInput, {
+      providers: ["ollama-cloud"],
+      agentTasks: { build: "coding" },
+      taskModels: { review: "ollama-cloud/premium" },
+      models: {
+        "ollama-cloud/premium": { price: 8, capability: 10, speed: 4 },
+        "ollama-cloud/cheap": { price: 1, capability: 6, speed: 9 },
+      },
+    })
+    const cfg: any = { provider: { "ollama-cloud": { models: { premium: {}, cheap: {} } } }, agent: {} }
+    await hooks.config?.(cfg)
+
+    const premium: any = { model: { providerID: "model-router", modelID: "auto" } }
+    await hooks["chat.message"]?.(
+      { sessionID: "s", agent: "build", model: { providerID: "model-router", modelID: "auto" } },
+      { message: premium, parts: [] },
+    )
+    expect(premium.model).toEqual({ providerID: "ollama-cloud", modelID: "premium" })
+
+    const cheap: any = { model: { providerID: "model-router", modelID: "auto" } }
+    await hooks["chat.message"]?.(
+      {
+        sessionID: "s",
+        agent: "build",
+        model: { providerID: "model-router", modelID: "auto" },
+        variant: "review-value",
+      },
+      { message: cheap, parts: [] },
+    )
+    expect(cheap.model).toEqual({ providerID: "ollama-cloud", modelID: "cheap" })
+  })
+
   test("chat.message honors a task-named variant over the agent mapping", async () => {
     const hooks = await plugin.server(fakeInput, {
       providers: ["ollama-cloud"],

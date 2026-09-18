@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import { DEFAULT_AGENT_TASKS, parseModelKey, parseOptions } from "../../../src/plugin/ollama-model-router/scorecard"
+import {
+  DEFAULT_AGENT_TASKS,
+  parseModelKey,
+  parseOptions,
+  parseTaskVariant,
+} from "../../../src/plugin/ollama-model-router/scorecard"
 
 describe("parseOptions", () => {
   test("applies defaults for empty options", () => {
@@ -100,5 +105,23 @@ describe("parseModelKey", () => {
 
   test("returns undefined without a slash", () => {
     expect(parseModelKey("glm-5.3")).toBeUndefined()
+  })
+})
+
+describe("parseTaskVariant", () => {
+  test("parses a plain task name", () => {
+    expect(parseTaskVariant("coding")).toEqual({ task: "coding", value: false })
+  })
+
+  test("parses a value variant", () => {
+    expect(parseTaskVariant("coding-value")).toEqual({ task: "coding", value: true })
+    expect(parseTaskVariant("long-context-value")).toEqual({ task: "long-context", value: true })
+  })
+
+  test("rejects unknown tasks and stray suffixes", () => {
+    expect(parseTaskVariant("nope")).toBeUndefined()
+    expect(parseTaskVariant("nope-value")).toBeUndefined()
+    expect(parseTaskVariant("-value")).toBeUndefined()
+    expect(parseTaskVariant(undefined)).toBeUndefined()
   })
 })
