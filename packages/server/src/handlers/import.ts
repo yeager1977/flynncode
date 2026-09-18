@@ -1,5 +1,7 @@
 import { Database } from "@opencode-ai/core/database/database"
+import { EventV2 } from "@opencode-ai/core/event"
 import { SessionSchema } from "@opencode-ai/core/session/schema"
+import { SessionV2 } from "@opencode-ai/core/session"
 import { SessionImport } from "@opencode-ai/core/session/import"
 import { SessionImportRegistry } from "@opencode-ai/core/session/import-registry"
 import { SessionNotFoundError } from "@opencode-ai/protocol/errors"
@@ -9,6 +11,10 @@ import { Api } from "../api"
 
 export const ImportHandler = HttpApiBuilder.group(Api, "server.import", (handlers) =>
   Effect.gen(function* () {
+    const session = yield* SessionV2.Service
+    const events = yield* EventV2.Service
+    const database = yield* Database.Service
+
     return handlers
       .handle(
         "import.session",
@@ -22,6 +28,9 @@ export const ImportHandler = HttpApiBuilder.group(Api, "server.import", (handler
               title: ctx.payload.title,
               transcript: ctx.payload.transcript,
             }).pipe(
+              Effect.provideService(SessionV2.Service, session),
+              Effect.provideService(EventV2.Service, events),
+              Effect.provideService(Database.Service, database),
               Effect.catchTag("Session.NotFoundError", (error) =>
                 Effect.fail(
                   new SessionNotFoundError({
@@ -37,8 +46,7 @@ export const ImportHandler = HttpApiBuilder.group(Api, "server.import", (handler
       .handle(
         "import.imported",
         Effect.fn(function* (ctx) {
-          const { db } = yield* Database.Service
-          const imported = yield* SessionImportRegistry.findImported(db, {
+          const imported = yield* SessionImportRegistry.findImported(database.db, {
             source: ctx.query.source,
             directory: ctx.query.directory,
           })
