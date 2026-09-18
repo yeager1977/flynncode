@@ -999,6 +999,7 @@ export const dict = {
   "settings.modelRouter.availability.available": "Available for routing",
   "settings.modelRouter.availability.provider": "Outside your provider scope. Include this provider in Advanced to use this model.",
   "settings.modelRouter.availability.disabled": "This provider is disabled. The router will skip this model.",
+  "settings.modelRouter.availability.hidden": "This model is hidden in Manage Models. Enable it there to use it for routing.",
   "settings.modelRouter.availability.missing": "This model is no longer in your global provider configuration. Its saved ratings are preserved.",
   "settings.modelRouter.behavior": "Routing behavior",
   "settings.modelRouter.agents.help": "Choose the kind of work each agent does. Agents sharing a task share its routing priorities.",

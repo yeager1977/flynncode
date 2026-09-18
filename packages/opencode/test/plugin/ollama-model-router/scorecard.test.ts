@@ -29,6 +29,14 @@ describe("parseOptions", () => {
     expect(malformed.ok).toBe(false)
   })
 
+  test("parses excludeModels and rejects malformed entries", () => {
+    const result = parseOptions({ excludeModels: ["ollama-cloud/hidden"] })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.options.excludeModels).toEqual(["ollama-cloud/hidden"])
+    expect(parseOptions({ excludeModels: ["no-slash"] }).ok).toBe(false)
+  })
+
   test("accepts a valid scorecard", () => {
     const result = parseOptions({
       providers: ["ollama-cloud"],

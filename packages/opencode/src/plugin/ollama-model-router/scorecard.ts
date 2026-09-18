@@ -117,6 +117,15 @@ export function parseOptions(
       }
     }
 
+    let excludeModels: string[] = []
+    if (r.excludeModels !== undefined) {
+      if (Array.isArray(r.excludeModels) && r.excludeModels.every((key) => typeof key === "string" && parseModelKey(key))) {
+        excludeModels = r.excludeModels as string[]
+      } else {
+        errors.push('excludeModels must be an array of "providerID/modelID" strings')
+      }
+    }
+
     const models: Record<string, ScoreEntry> = {}
     if (r.models !== undefined) {
       if (r.models === null || typeof r.models !== "object" || Array.isArray(r.models)) {
@@ -164,6 +173,7 @@ export function parseOptions(
         agentTasks,
         taskWeights,
         taskModels,
+        excludeModels,
         models,
       },
     }

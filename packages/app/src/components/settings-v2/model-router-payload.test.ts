@@ -27,6 +27,7 @@ describe("emptyForm", () => {
       ],
       taskWeights: DEFAULT_TASK_WEIGHTS,
       taskModels: {},
+      excludeModels: [],
       models: [],
     } satisfies ModelRouterFormState)
     expect(form.agentTasks.map((row) => [row.agent, row.task])).toEqual(Object.entries(DEFAULT_AGENT_TASKS))
@@ -90,6 +91,11 @@ describe("formFromConfig", () => {
     expect(form.taskModels).toEqual({ coding: "ollama/glm" })
   })
 
+  test("excludeModels keeps valid keys and drops malformed ones", () => {
+    const form = formFromConfig({ excludeModels: ["ollama/glm", "no-slash", 42] })
+    expect(form.excludeModels).toEqual(["ollama/glm"])
+  })
+
   test("overrideExplicit preserves true", () => {
     const form = formFromConfig({ overrideExplicit: true })
     expect(form.overrideExplicit).toBe(true)
@@ -115,14 +121,25 @@ describe("serializeForm", () => {
     })
   })
 
-  test("omits models and taskModels when empty", () => {
+  test("omits models, taskModels, and excludeModels when empty", () => {
     expect("models" in serializeForm(emptyForm())).toBe(false)
     expect("taskModels" in serializeForm(emptyForm())).toBe(false)
+    expect("excludeModels" in serializeForm(emptyForm())).toBe(false)
   })
 
   test("includes taskModels when set", () => {
     const form: ModelRouterFormState = { ...emptyForm(), taskModels: { coding: "ollama/glm" } }
     expect(serializeForm(form).taskModels).toEqual({ coding: "ollama/glm" })
+  })
+
+  test("includes excludeModels when set and round-trips them", () => {
+    const form: ModelRouterFormState = {
+      ...emptyForm(),
+      excludeModels: ["ollama-cloud/hidden", "ollama-gpu/off"],
+    }
+    const serialized = serializeForm(form)
+    expect(serialized.excludeModels).toEqual(["ollama-cloud/hidden", "ollama-gpu/off"])
+    expect(formFromConfig(serialized).excludeModels).toEqual(["ollama-cloud/hidden", "ollama-gpu/off"])
   })
 
   test("a cleared pin (undefined) is omitted, keeping the form clean", () => {
@@ -285,6 +302,11 @@ describe("validateForm", () => {
     expect(validateForm(form)).toEqual({ ok: false, errors: ["taskModels.coding"] })
   })
 
+  test("malformed excludeModels entry rejected", () => {
+    const form: ModelRouterFormState = { ...emptyForm(), excludeModels: ["ollama/ok", "no-slash"] }
+    expect(validateForm(form)).toEqual({ ok: false, errors: ["excludeModels.1"] })
+  })
+
   test("valid form passes and serializes", () => {
     const form: ModelRouterFormState = {
       ...emptyForm(),
@@ -314,6 +336,7 @@ describe("round trip", () => {
       agentTasks: [{ agent: "build", task: "review" }],
       taskWeights: { ...DEFAULT_TASK_WEIGHTS, coding: { capability: 0.8, price: 0.1, speed: 0.1 } },
       taskModels: { coding: "ollama/qwen3" },
+      excludeModels: ["ollama/hidden"],
       models: [{ key: "ollama/qwen3", tags: ["writing"], price: 2, capability: 7, speed: 9 }],
     }
     expect(formFromConfig(serializeForm(form) as Record<string, unknown>)).toEqual(form)

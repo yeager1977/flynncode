@@ -34,6 +34,7 @@ export type Candidate = {
   modelID: string
   entry?: ScoreEntry
   providerDisabled?: boolean
+  hidden?: boolean
 }
 
 export function rankModels(
@@ -53,17 +54,22 @@ export function rankModels(
       score: 0,
       reasons: [],
     }
-    // An explicit per-task choice wins over scoring, except when its provider is
-    // disabled: routing to a disabled provider would fail at request time.
-    if (opts.pinned === c.key && !c.providerDisabled) {
-      // Tags restrict the automatic pool; an explicit task choice overrides them.
+    // Provider scope and Manage Models visibility gate every candidate, even an
+    // explicit task pin: routing to a disabled provider or a hidden model would
+    // contradict the user's choices elsewhere.
+    if (c.providerDisabled) {
+      excluded.push({ ...base, excluded: "provider disabled" })
+      continue
+    }
+    if (c.hidden) {
+      excluded.push({ ...base, excluded: "hidden" })
+      continue
+    }
+    // An explicit per-task choice wins over scoring and tags.
+    if (opts.pinned === c.key) {
       const entry = c.entry ? { ...c.entry, tags: undefined } : { price: 5, capability: 5, speed: 5 }
       const { score, reasons } = scoreModel(entry, weights, task) as { score: number; reasons: string[] }
       ranked.push({ ...base, score, reasons: [...reasons, "explicit task override"] })
-      continue
-    }
-    if (c.providerDisabled) {
-      excluded.push({ ...base, excluded: "provider disabled" })
       continue
     }
     if (!c.entry) {

@@ -16,9 +16,15 @@ export type RouterModel = {
   providerID: string
   provider: string
   disabled: boolean
+  enabled: boolean
 }
 
-export function routerCatalog(source: RouterSource): RouterModel[] {
+// `isEnabled` comes from the Manage Models visibility store. It is optional so
+// pure callers (and the plugin contract test) see the full provider catalog.
+export function routerCatalog(
+  source: RouterSource,
+  isEnabled?: (providerID: string, modelID: string) => boolean,
+): RouterModel[] {
   return Object.entries(source.provider ?? {}).flatMap(([providerID, provider]) =>
     Object.entries(provider?.models ?? {}).map(([modelID, model]) => ({
       key: `${providerID}/${modelID}`,
@@ -26,6 +32,7 @@ export function routerCatalog(source: RouterSource): RouterModel[] {
       providerID,
       provider: provider?.name ?? providerID,
       disabled: source.disabled_providers?.includes(providerID) ?? false,
+      enabled: isEnabled ? isEnabled(providerID, modelID) : true,
     })),
   )
 }
@@ -36,6 +43,7 @@ export function modelAvailability(form: ModelRouterFormState, model: RouterModel
   if (form.providers.length ? !form.providers.includes(model.providerID) : !model.providerID.startsWith("ollama")) {
     return "provider"
   }
+  if (!model.enabled) return "hidden"
   return "available"
 }
 

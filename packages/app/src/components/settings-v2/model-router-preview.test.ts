@@ -58,6 +58,20 @@ describe("router preview", () => {
     expect(modelAvailability(form(), undefined)).toBe("missing")
   })
 
+  test("models hidden in Manage Models are unavailable and excluded from previews", () => {
+    const catalog = routerCatalog(source, (providerID, modelID) => !(providerID === "ollama-local" && modelID === "fast"))
+    expect(catalog.find((model) => model.key === "ollama-local/fast")?.enabled).toBe(false)
+    expect(modelAvailability(form(), catalog.find((model) => model.key === "ollama-local/fast"))).toBe("hidden")
+    expect(previewTask(form(), catalog, "coding").map((item) => item.model.key)).not.toContain("ollama-local/fast")
+  })
+
+  test("a pin cannot resurrect a hidden model, matching the runtime router", () => {
+    const draft = form()
+    draft.taskModels = { coding: "ollama-local/fast" }
+    const catalog = routerCatalog(source, (providerID, modelID) => !(providerID === "ollama-local" && modelID === "fast"))
+    expect(previewTask(draft, catalog, "coding").map((item) => item.model.key)).not.toContain("ollama-local/fast")
+  })
+
   test("priorities change the top match instead of silently changing model scores", () => {
     const draft = form()
     draft.taskWeights.coding = priorityWeights("coding", "speed")

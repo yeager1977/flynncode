@@ -31,10 +31,18 @@ test("draft previews match the real plugin's selection and ranking contract", ()
         // Pin a different model per task, including unscored and tagged-away
         // entries, so previews and plugin must agree on pin precedence.
         draft.taskModels = { coding: "ollama-local/unscored", writing: "ollama-local/smart" }
+        // Hidden models are snapshot into excludeModels on save; previews read
+        // the same keys through the catalog's enabled flag.
+        draft.excludeModels = ["ollama-local/writer"]
+        const hidden = new Set(draft.excludeModels)
         const parsed = parseOptions(serializeForm(draft))
         if (!parsed.ok) throw new Error(parsed.errors.join(", "))
         for (const task of TASK_NAMES) {
-          const actual = previewTask(draft, routerCatalog(source), task)
+          const actual = previewTask(
+            draft,
+            routerCatalog(source, (providerID, modelID) => !hidden.has(`${providerID}/${modelID}`)),
+            task,
+          )
           const plugin = rankModels(collectCandidates(source, parsed.options), task, draft.taskWeights[task], {
             allowUnscored,
             pinned: parsed.options.taskModels[task],

@@ -57,6 +57,8 @@ export function collectCandidates(cfg: ConfigLike, options: RouterOptions): Cand
     return providerID.startsWith("ollama")
   }
 
+  const hidden = new Set(options.excludeModels ?? [])
+
   const out: Candidate[] = []
   for (const [providerID, provider] of Object.entries(cfg.provider ?? {})) {
     if (!provider || !provider.models) continue
@@ -69,6 +71,7 @@ export function collectCandidates(cfg: ConfigLike, options: RouterOptions): Cand
         modelID,
         entry: options.models[key],
         providerDisabled: disabled.has(providerID),
+        hidden: hidden.has(key),
       })
     }
   }

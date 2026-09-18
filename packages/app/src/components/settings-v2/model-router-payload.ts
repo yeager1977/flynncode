@@ -45,6 +45,7 @@ export type ModelRouterFormState = {
   agentTasks: AgentTaskRow[]
   taskWeights: TaskWeights
   taskModels: Partial<Record<TaskName, string>>
+  excludeModels: string[]
   models: ModelScoreRow[]
 }
 
@@ -57,6 +58,7 @@ export function emptyForm(): ModelRouterFormState {
     agentTasks: Object.entries(DEFAULT_AGENT_TASKS).map(([agent, task]) => ({ agent, task })),
     taskWeights: structuredClone(DEFAULT_TASK_WEIGHTS),
     taskModels: {},
+    excludeModels: [],
     models: [],
   }
 }
@@ -71,6 +73,7 @@ export function formFromConfig(config: Record<string, unknown> | undefined): Mod
     agentTasks: agentTasksFrom(raw.agentTasks),
     taskWeights: weightsFrom(raw.taskWeights),
     taskModels: taskModelsFrom(raw.taskModels),
+    excludeModels: modelKeysFrom(raw.excludeModels),
     models: modelsFrom(raw.models),
   }
 }
@@ -88,6 +91,7 @@ export function serializeForm(form: ModelRouterFormState): Record<string, unknow
     Object.entries(form.taskModels).filter((entry): entry is [TaskName, string] => typeof entry[1] === "string"),
   )
   if (Object.keys(taskModels).length > 0) payload.taskModels = taskModels
+  if (form.excludeModels.length > 0) payload.excludeModels = [...form.excludeModels]
   if (form.models.length > 0) {
     payload.models = Object.fromEntries(
       form.models.map((model) => [
@@ -129,6 +133,9 @@ export function validateForm(
     if (!isTaskName(task)) errors.push(`taskModels.${task}`)
     if (model !== undefined && parseModelKey(model) === undefined) errors.push(`taskModels.${task}`)
   }
+  form.excludeModels.forEach((key, index) => {
+    if (parseModelKey(key) === undefined) errors.push(`excludeModels.${index}`)
+  })
   const seen = new Set<string>()
   for (const model of form.models) {
     if (parseModelKey(model.key) === undefined) errors.push(`models.${model.key}.key`)
@@ -169,6 +176,11 @@ function agentTasksFrom(raw: unknown): AgentTaskRow[] {
   return Object.entries(raw as Record<string, unknown>)
     .filter((entry): entry is [string, TaskName] => isTaskName(entry[1]))
     .map(([agent, task]) => ({ agent, task }))
+}
+
+function modelKeysFrom(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  return raw.filter((key): key is string => typeof key === "string" && parseModelKey(key) !== undefined)
 }
 
 function taskModelsFrom(raw: unknown): Partial<Record<TaskName, string>> {

@@ -169,4 +169,15 @@ describe("rankModels", () => {
     expect(result.ranked).toEqual([])
     expect(result.excluded[0].excluded).toBe("provider disabled")
   })
+
+  test("excludes hidden models, including when pinned", () => {
+    const result = rankModels(
+      [{ key: "p/a", providerID: "p", modelID: "a", hidden: true, entry: { price: 1, capability: 10, speed: 10 } }],
+      "coding",
+      weights,
+      { allowUnscored: false, pinned: "p/a" },
+    )
+    expect(result.ranked).toEqual([])
+    expect(result.excluded[0].excluded).toBe("hidden")
+  })
 })

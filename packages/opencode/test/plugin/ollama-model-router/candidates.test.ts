@@ -74,6 +74,12 @@ describe("collectCandidates", () => {
     expect(unmatched).toEqual(["ollama-cloud/nope"])
   })
 
+  test("marks models listed in excludeModels as hidden", () => {
+    const list = collectCandidates(cfg, options({ excludeModels: ["ollama-cloud/gpt-oss:20b"] }))
+    expect(list.find((c) => c.key === "ollama-cloud/gpt-oss:20b")?.hidden).toBe(true)
+    expect(list.find((c) => c.key === "ollama-cloud/glm-5.3-flash:cloud")?.hidden).toBe(false)
+  })
+
   test("collectMeta extracts name, context, and capability flags", () => {
     const meta = collectMeta(cfg, options())
     const hit = meta.get("ollama-cloud/glm-5.3-flash:cloud")

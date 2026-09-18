@@ -78,6 +78,24 @@ describe("plugin", () => {
     expect(String(output)).not.toContain("ollama-cloud/unscored (unscored")
   })
 
+  test("config hook skips models listed in excludeModels", async () => {
+    const hooks = await plugin.server(fakeInput, {
+      autoRoute: true,
+      providers: ["ollama-cloud"],
+      excludeModels: ["ollama-cloud/hidden"],
+      models: {
+        "ollama-cloud/visible": { price: 1, capability: 5, speed: 5 },
+        "ollama-cloud/hidden": { price: 1, capability: 10, speed: 10 },
+      },
+    })
+    const cfg: any = {
+      provider: { "ollama-cloud": { models: { visible: {}, hidden: {} } } },
+      agent: {},
+    }
+    await hooks.config?.(cfg)
+    expect(cfg.agent.build.model).toBe("ollama-cloud/visible")
+  })
+
   test("invalid options disable routing but keep tools", async () => {
     const hooks = await plugin.server(fakeInput, {
       models: { bad: { price: 99, capability: 1, speed: 1 } },

@@ -8,7 +8,13 @@ const directory = "/model-router-fixture"
 
 async function openRouter(
   page: Page,
-  options: { rtl?: boolean; locale?: string; modelName?: string; config?: Record<string, unknown> } = {},
+  options: {
+    rtl?: boolean
+    locale?: string
+    modelName?: string
+    config?: Record<string, unknown>
+    visible?: [string, string][]
+  } = {},
 ) {
   const state = { config: {} as Record<string, unknown>, writes: [] as Record<string, unknown>[], fail: false }
   const providers = [
@@ -72,10 +78,30 @@ async function openRouter(
   await page.route("**/pty/shells*", (route) =>
     route.fulfill({ json: [], headers: { "access-control-allow-origin": "*" } }),
   )
-  await page.addInitScript((locale) => {
-    localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
-    localStorage.setItem("opencode.global.dat:language", JSON.stringify({ locale }))
-  }, options.locale ?? "en")
+  await page.addInitScript(
+    (input) => {
+      localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
+      localStorage.setItem("opencode.global.dat:language", JSON.stringify({ locale: input.locale }))
+      // Manage Models visibility defaults to the "latest" heuristic, which would
+      // hide the fixture models. Pin them visible so router lists are stable.
+      localStorage.setItem(
+        "opencode.global.dat:model",
+        JSON.stringify({
+          user: input.visible.map(([providerID, modelID]) => ({ providerID, modelID, visibility: "show" })),
+          recent: [],
+          variant: {},
+        }),
+      )
+    },
+    {
+      locale: options.locale ?? "en",
+      visible: options.visible ?? [
+        ["ollama-local", "smart"],
+        ["ollama-local", "fast"],
+        ["cloud", "remote"],
+      ],
+    },
+  )
   await page.goto(`/server/${base64Encode(server)}/session/ses_router`)
   await expect(page.locator('[contenteditable="true"]')).toBeEditable()
   if (options.rtl) await page.getByRole("button", { name: "DIR: LTR", exact: true }).click()
@@ -122,6 +148,26 @@ test("bulk model selection, ratings and task choices save a usable router config
       "ollama-local/fast": { capability: 5, price: 5, speed: 10 },
     },
   })
+})
+
+test("hidden models leave every list and are snapshotted as exclusions on save", async ({ page }) => {
+  const { router, state } = await openRouter(page, {
+    visible: [["ollama-local", "smart"]],
+  })
+  await router.getByRole("tab", { name: "Routing", exact: true }).click()
+  const coding = router.getByRole("article", { name: "Coding", exact: true })
+  const select = coding.getByRole("combobox", { name: "Model for Coding", exact: true })
+  await expect(select.locator("option", { hasText: "Fast model" })).toHaveCount(0)
+  await expect(select.locator("option", { hasText: "Smart model" })).toHaveCount(1)
+  await router.getByRole("tab", { name: "Models", exact: true }).click()
+  await router.getByRole("button", { name: "Add models", exact: true }).click()
+  const picker = page.getByRole("dialog", { name: "Add models", exact: true })
+  await expect(picker.getByRole("checkbox", { name: "Fast model", exact: true })).toHaveCount(0)
+  await expect(picker.getByRole("checkbox", { name: "Smart model", exact: true })).toBeEnabled()
+  await picker.getByRole("button", { name: "Cancel", exact: true }).click()
+  await router.getByRole("button", { name: "Save", exact: true }).click()
+  await expect.poll(() => state.writes.length).toBe(1)
+  expect(state.writes[0].model_router).toMatchObject({ excludeModels: ["ollama-local/fast"] })
 })
 
 test("pinning a model per task overrides ranking and saves the choice", async ({ page }, testInfo) => {

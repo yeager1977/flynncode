@@ -19,6 +19,8 @@ behavior is configured through the `model_router` key in the global config
   "taskModels": {
     "review": "ollama-cloud/deepseek-v4-pro"
   },
+  // Models hidden in the app's Manage Models screen, captured on Save.
+  "excludeModels": ["ollama-cloud/gemma4:31b"],
   "models": {
     "ollama-cloud/glm-5.3-flash": { "price": 3, "capability": 8, "speed": 9, "tags": ["coding"] }
   }
@@ -31,8 +33,12 @@ With no `model_router` key the plugin stays inert (no warnings, no routing).
   (`allowUnscored: true`). Models without a scorecard entry score a neutral
   5/5/5. Set `allowUnscored: false` to require an explicit scorecard entry.
 - `taskModels` pins a specific `providerID/modelID` per task. A pinned model is
-  ranked first even when unscored or tagged away. A disabled provider still
-  wins: the pin is ignored and the best-ranked eligible model is used instead.
+  ranked first even when unscored or tagged away. A disabled provider or an
+  `excludeModels` entry still wins: the pin is ignored and the best-ranked
+  eligible model is used instead.
+- `excludeModels` lists `providerID/modelID` pairs the router must skip. The app
+  writes it when the router settings are saved, from the Manage Models
+  visibility toggles.
 
 - Verify routing with the `rank_models` tool or the `[ollama-model-router] agent routing:` log line.
 - `/route <task> <prompt>` uses the `route_task` tool when the command file exists.

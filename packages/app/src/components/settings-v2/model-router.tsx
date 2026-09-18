@@ -6,6 +6,7 @@ import { For, Show, batch, createEffect, createMemo, on, type Component } from "
 import { createStore, reconcile } from "solid-js/store"
 import { createQuery } from "@tanstack/solid-query"
 import { useLanguage } from "@/context/language"
+import { useModels } from "@/context/models"
 import { useServerSync } from "@/context/server-sync"
 import { pathKey } from "@/utils/path-key"
 import {
@@ -25,6 +26,7 @@ import "./model-router.css"
 export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) => {
   const language = useLanguage()
   const serverSync = useServerSync()
+  const models = useModels()
   const agentsQuery = createQuery(() => serverSync().queryOptions.agents(pathKey(props.directory ?? "")))
   const config = () => serverSync().data.config?.model_router as Record<string, unknown> | undefined
   const [form, setForm] = createStore(formFromConfig(config()))
@@ -53,10 +55,12 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
   })
 
   const catalog = createMemo(() =>
-    routerCatalog(serverSync().data.config).map((model) => ({
-      ...model,
-      provider: serverSync().data.provider.all.get(model.providerID)?.name ?? model.provider,
-    })),
+    routerCatalog(serverSync().data.config, (providerID, modelID) => models.visible({ providerID, modelID })).map(
+      (model) => ({
+        ...model,
+        provider: serverSync().data.provider.all.get(model.providerID)?.name ?? model.provider,
+      }),
+    ),
   )
   const providers = createMemo(() =>
     Array.from(
@@ -89,9 +93,21 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
       setState({ baseline: next, incoming: undefined, raw: {}, error: "" })
     })
 
+  const inScope = (providerID: string) =>
+    form.providers.length > 0 ? form.providers.includes(providerID) : providerID.startsWith("ollama")
+
+  // Manage Models visibility is a client-side store the server plugin cannot
+  // read, so snapshot the hidden in-scope models into the config the router
+  // does see. Models hidden later need another Save to take effect.
+  const excludeSnapshot = () =>
+    catalog()
+      .filter((model) => !model.enabled && !model.disabled && inScope(model.providerID))
+      .map((model) => model.key)
+
   const save = async () => {
     if (state.saving || invalid()) return
-    const result = validateForm(form)
+    const excludeModels = excludeSnapshot()
+    const result = validateForm({ ...form, excludeModels })
     if (!result.ok) {
       setState("error", language.t("settings.modelRouter.invalid"))
       return
@@ -100,7 +116,10 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
     await serverSync()
       .updateConfig({ model_router: result.value })
       .then(
-        () => setState({ baseline: JSON.stringify(result.value), incoming: undefined, raw: {}, saved: true }),
+        () => {
+          setForm("excludeModels", excludeModels)
+          setState({ baseline: JSON.stringify(result.value), incoming: undefined, raw: {}, saved: true })
+        },
         () => setState("error", language.t("settings.modelRouter.saveFailed")),
       )
       .finally(() => setState("saving", false))

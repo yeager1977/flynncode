@@ -31,6 +31,7 @@ export type RouterOptions = {
   agentTasks: Record<string, TaskName>
   taskWeights: Record<TaskName, { capability: number; price: number; speed: number }>
   taskModels: Partial<Record<TaskName, string>>
+  excludeModels: string[]
   models: Record<string, ScoreEntry>
 }
 

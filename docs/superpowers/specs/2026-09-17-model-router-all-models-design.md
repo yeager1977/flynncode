@@ -28,16 +28,26 @@ specific model per purpose:
 - New `taskModels: Record<TaskName, "providerID/modelID">` option:
   - `parseOptions` validates task names and model keys.
   - `rankModels` gains `opts.pinned`. A pinned candidate is ranked first and
-    bypasses tag filtering and unscored exclusion. Its provider being disabled
-    still excludes it, and the pin is then ignored.
+    bypasses tag filtering and unscored exclusion. A disabled provider or an
+    `excludeModels` entry still excludes it, and the pin is then ignored.
   - `assignAgents` and both tools pass `options.taskModels[task]`.
+- New `excludeModels: string[]` lists models the router must skip. Candidates
+  carry a `hidden` flag and `rankModels` excludes hidden candidates before pin
+  handling.
 - The existing `models` scorecard still refines non-pinned ranking.
 
 ## Settings Editor Changes
 
-- Payload mirrors the plugin: `taskModels` on the form, default
-  `allowUnscored: true`, validation for pinned keys. Absent `taskModels` is
+- Payload mirrors the plugin: `taskModels` and `excludeModels` on the form,
+  default `allowUnscored: true`, validation for both key lists. Empty lists are
   omitted from the serialized payload.
+- The router catalog reads Manage Models visibility (`useModels().visible`), so
+  hidden models do not appear in the task select, the bulk picker, or the
+  "Available models" section. Already-scored hidden models stay visible with an
+  explanation.
+- On Save the editor snapshots hidden in-scope models into `excludeModels`,
+  because Manage Models visibility is client-side and the server plugin cannot
+  read it. Hiding a model later requires another Save.
 - Routing tab: each task card gains a "Model for …" select listing available
   models plus an "Automatic (best match)" option.
 - Models tab: an "Available models" section lists every in-scope model not yet
@@ -45,10 +55,13 @@ specific model per purpose:
 
 ## Verification
 
-- Plugin tests cover the new default, `taskModels` parsing, pin precedence
-  (beats higher score, overrides tags and unscored exclusion, ignored when the
-  provider is disabled), and config-hook assignment.
-- App payload and preview tests mirror the plugin contract.
+- Plugin tests cover the new default, `taskModels` and `excludeModels` parsing,
+  pin precedence (beats higher score, overrides tags and unscored exclusion,
+  ignored when the provider is disabled or the model is hidden), hidden
+  candidate marking, and config-hook assignment.
+- App payload and preview tests mirror the plugin contract, including a
+  cross-package contract test that compares preview output with the real plugin
+  for hidden, pinned, tagged, and unscored candidates.
 - `bun typecheck` in `packages/opencode`; app unit tests, app typecheck, and
   e2e typecheck.
 
