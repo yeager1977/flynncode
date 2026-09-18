@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import { Schema } from "effect"
-import { ImportedMessage } from "@opencode-ai/protocol/groups/import"
+import { HttpApi, OpenApi } from "effect/unstable/httpapi"
+import { ImportedMessage, makeImportGroup } from "@opencode-ai/protocol/groups/import"
 
 const decode = Schema.decodeUnknownSync(ImportedMessage)
 
@@ -17,5 +18,19 @@ describe("ImportedMessage", () => {
 
   it("rejects negative timestamps", () => {
     expect(() => decode({ role: "user", text: "x", time: -1 })).toThrow()
+  })
+})
+
+describe("import group routes", () => {
+  const spec = OpenApi.fromApi(HttpApi.make("import-test").add(makeImportGroup())) as {
+    paths: Record<string, Record<string, { operationId?: string }>>
+  }
+
+  it("exposes import.sources", () => {
+    expect(spec.paths["/api/import/sources"]?.get?.operationId).toBe("v2.import.sources")
+  })
+
+  it("exposes import.fromSource", () => {
+    expect(spec.paths["/api/import/from-source"]?.post?.operationId).toBe("v2.import.fromSource")
   })
 })
