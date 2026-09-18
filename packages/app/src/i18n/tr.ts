@@ -1,12 +1,14 @@
 import { dict as en } from "./en"
 import { modelRouterFallback } from "./model-router-fallback"
 import { providerEditFallback } from "./provider-edit-fallback"
+import { importSessionsFallback } from "./import-sessions-fallback"
 
 type Keys = keyof typeof en
 
 export const dict = {
   ...modelRouterFallback,
   ...providerEditFallback,
+  ...importSessionsFallback,
   "desktop.menu.app": "OpenCode",
   "desktop.menu.file": "Dosya",
   "desktop.menu.edit": "Düzen",

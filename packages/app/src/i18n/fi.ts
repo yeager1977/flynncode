@@ -1,9 +1,11 @@
 import { modelRouterFallback } from "./model-router-fallback"
 import { providerEditFallback } from "./provider-edit-fallback"
+import { importSessionsFallback } from "./import-sessions-fallback"
 
 export const dict = {
   ...modelRouterFallback,
   ...providerEditFallback,
+  ...importSessionsFallback,
   "command.category.suggested": "Ehdotetut",
   "command.category.view": "Näytä",
   "command.category.project": "Projekti",

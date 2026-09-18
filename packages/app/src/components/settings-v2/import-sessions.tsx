@@ -25,6 +25,7 @@ export const SettingsImportSessionsV2: Component<{ directory?: string }> = (prop
   const [query, setQuery] = createSignal("")
   const [selected, setSelected] = createSignal<ReadonlySet<string>>(new Set<string>())
   const [importing, setImporting] = createSignal(false)
+  const [loadError, setLoadError] = createSignal<string | undefined>()
 
   const directory = () => props.directory
 
@@ -32,11 +33,19 @@ export const SettingsImportSessionsV2: Component<{ directory?: string }> = (prop
     () => ({ source: source(), directory: directory() }),
     async (input) => {
       if (!input.directory) return [] as ImportCandidate[]
-      const result = await serverSdk().client.v2.import.sources(
-        { source: input.source, directory: input.directory },
-        { throwOnError: true },
-      )
-      return result.data.data
+      // Swallow fetch failures so the errored resource is never read in a
+      // render-tracked scope, which would crash the whole app.
+      try {
+        const result = await serverSdk().client.v2.import.sources(
+          { source: input.source, directory: input.directory },
+          { throwOnError: true },
+        )
+        setLoadError(undefined)
+        return result.data.data
+      } catch (error) {
+        setLoadError(error instanceof Error ? error.message : String(error))
+        return []
+      }
     },
   )
 
@@ -145,7 +154,12 @@ export const SettingsImportSessionsV2: Component<{ directory?: string }> = (prop
           fallback={
             <div class="settings-v2-plugins-note">
               <Show when={!candidates.loading} fallback={<>{language.t("settings.import.loading")}</>}>
-                {language.t("settings.import.empty")}
+                <Show
+                  when={!loadError()}
+                  fallback={<>{language.t("settings.import.loadError")} {loadError()}</>}
+                >
+                  {language.t("settings.import.empty")}
+                </Show>
               </Show>
             </div>
           }
@@ -167,7 +181,7 @@ export const SettingsImportSessionsV2: Component<{ directory?: string }> = (prop
                 >
                   <Checkbox
                     checked={selected().has(option.value.sourceSessionID)}
-                    disabled={option.disabled}
+                    disabled={option.disabled || importing()}
                     onChange={() => toggle(option.value.sourceSessionID)}
                   >
                     <span class="sr-only">{option.value.title}</span>

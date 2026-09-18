@@ -1,6 +1,7 @@
 import { DESKTOP_NATIVE_KEYS } from "./desktop-native"
 import { modelRouterFallback } from "./model-router-fallback"
 import { providerEditFallback } from "./provider-edit-fallback"
+import { importSessionsFallback } from "./import-sessions-fallback"
 
 const desktop = [
   "OpenCode",
@@ -98,6 +99,7 @@ const desktop = [
 export const dict = {
   ...modelRouterFallback,
   ...providerEditFallback,
+  ...importSessionsFallback,
   ...Object.fromEntries(DESKTOP_NATIVE_KEYS.map((key, index) => [key, desktop[index]])),
   "command.category.suggested": "Predloženo",
   "command.category.view": "Prikaz",

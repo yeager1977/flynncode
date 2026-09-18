@@ -1,9 +1,11 @@
 import { modelRouterFallback } from "./model-router-fallback"
 import { providerEditFallback } from "./provider-edit-fallback"
+import { importSessionsFallback } from "./import-sessions-fallback"
 
 export const dict = {
   ...modelRouterFallback,
   ...providerEditFallback,
+  ...importSessionsFallback,
   "command.category.suggested": "추천",
   "command.category.view": "보기",
   "command.category.project": "프로젝트",

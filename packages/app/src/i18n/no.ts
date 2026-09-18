@@ -3,10 +3,12 @@ type Keys = keyof typeof en
 
 import { modelRouterFallback } from "./model-router-fallback"
 import { providerEditFallback } from "./provider-edit-fallback"
+import { importSessionsFallback } from "./import-sessions-fallback"
 
 export const dict = {
   ...modelRouterFallback,
   ...providerEditFallback,
+  ...importSessionsFallback,
   "desktop.menu.app": "OpenCode",
   "desktop.menu.file": "Arkiv",
   "desktop.menu.edit": "Rediger",
