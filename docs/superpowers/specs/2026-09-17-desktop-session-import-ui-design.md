@@ -1,7 +1,7 @@
 # Desktop Session Import UI - Design
 
 Date: 2026-09-17
-Status: Draft
+Status: Implemented
 Depends on: `2026-09-17-session-import-design.md` (phase 1: core service, routes, TUI plugin)
 
 ## Problem
@@ -202,17 +202,57 @@ runs it.
 
 ## Verification
 
-Verified after implementation:
+Verified:
 
-- `bun turbo typecheck` passes (31/31), including `packages/sdk-next`.
-- Core, protocol, server, and app tests for this feature pass.
-- A live check: start a server, list sources, import one through `from-source`,
-  and read the history back through `GET /api/session/:id/message` to confirm the
-  imported messages are present.
-- The `.deb` is rebuilt and copied to `~/Downloads` with a matching checksum.
+- **Full typecheck**: `bun turbo typecheck` passes 31/31, including
+  `packages/sdk-next` (the embedded build that catches leaked handler
+  requirements).
+- **Feature tests pass**: 14 core (parsers, discovery adapter, `importSession`,
+  `importTranscript`), 5 protocol (schema and route surface), 4 server (route
+  surface), 4 app (pure selection logic).
+- **Live end-to-end against a real server**, using this machine's real tool
+  stores:
+  - `GET /api/import/sources?source=claude-code` returned `200` with **2,510**
+    discovered sessions.
+  - `POST /api/import/from-source` returned `200` and created a session.
+  - `GET /api/session/{id}/message` returned `200` with 4 messages in order and
+    the imported text present, confirming the dual-projection write still holds
+    through the new route.
+  - `GET /api/import/sources?source=codex` returned `200` with **127** sessions.
+- **Security check**: `POST /api/import/from-source` with
+  `sourcePath: "/etc/passwd"` returned `400 InvalidRequestError`
+  ("Source path is not a discovered import candidate"). The candidate-set
+  validation is enforced.
+- **Symlink escape closed**: a symlinked file pointing outside the tool store,
+  and a symlinked directory, are both excluded by discovery. Both vectors were
+  reproduced before the fix and confirmed closed after it.
 
 Not verified:
 
-- The rendered Settings section in a running desktop app. The implementer should
-  open the app and confirm the tab, list, selection, and toast once; if that is
-  not possible, it must be reported as unverified rather than assumed.
+- **The rendered Settings section in a running desktop app.** It typechecks and
+  its pure logic is unit-tested, but the tab, list, checkbox selection, import
+  click, and toast have never been executed. The `.deb` was rebuilt with the
+  code included and the routes were confirmed present in the packaged bundle,
+  but the UI itself still needs one manual pass in the app.
+- **The target-project picker.** It was deliberately not wired: the section
+  shows the currently open project's directory read-only, so an import targets
+  the project you have open. Choosing a different target project is not
+  supported yet.
+
+## Known Gaps
+
+- **Duplicate import is not enforced server-side.** `SessionImport.importSession`
+  has no dedupe; `findImported` is consulted only when listing sources. The UI
+  disables already-imported rows, but a direct call to `from-source` for an
+  already-imported session creates a second session. Enforcing this server-side
+  is deferred.
+- **Duplicated discovery and parsing.** The same logic exists in
+  `packages/core/src/session/import-source/` and
+  `packages/plugin/src/import/`. The plugin was left untouched deliberately.
+- **TOCTOU and no read size cap.** `from-source` re-discovers to validate the
+  path, then reads the file; a local process with write access to the tool store
+  could swap the file between those steps. The read is also unbounded in size.
+  Both are bounded by the fact that the server runs as the same user.
+- **The route-surface server test cannot catch handler-logic regressions** — it
+  asserts operationIds only. The live check above is what covers the real
+  behaviour.
