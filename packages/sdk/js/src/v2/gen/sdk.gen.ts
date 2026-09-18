@@ -282,10 +282,14 @@ import type {
   V2FsReadResponses,
   V2HealthGetErrors,
   V2HealthGetResponses,
+  V2ImportFromSourceErrors,
+  V2ImportFromSourceResponses,
   V2ImportImportedErrors,
   V2ImportImportedResponses,
   V2ImportSessionErrors,
   V2ImportSessionResponses,
+  V2ImportSourcesErrors,
+  V2ImportSourcesResponses,
   V2IntegrationAttemptCancelErrors,
   V2IntegrationAttemptCancelResponses,
   V2IntegrationAttemptCompleteErrors,
@@ -5949,6 +5953,77 @@ export class Import extends HeyApiClient {
       url: "/api/import/imported",
       ...options,
       ...params,
+    })
+  }
+
+  /**
+   * List importable sessions
+   *
+   * Discover Claude Code and Codex sessions available for import into the given directory.
+   */
+  public sources<ThrowOnError extends boolean = false>(
+    parameters: {
+      source: "claude-code" | "codex"
+      directory: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "source" },
+            { in: "query", key: "directory" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<V2ImportSourcesResponses, V2ImportSourcesErrors, ThrowOnError>({
+      url: "/api/import/sources",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Import session from source
+   *
+   * Read a discovered source session, parse it, and import it as a new session.
+   */
+  public fromSource<ThrowOnError extends boolean = false>(
+    parameters?: {
+      source?: "claude-code" | "codex"
+      sourceSessionID?: string
+      sourcePath?: string
+      title?: string
+      location?: LocationRef
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "source" },
+            { in: "body", key: "sourceSessionID" },
+            { in: "body", key: "sourcePath" },
+            { in: "body", key: "title" },
+            { in: "body", key: "location" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2ImportFromSourceResponses, V2ImportFromSourceErrors, ThrowOnError>({
+      url: "/api/import/from-source",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 }

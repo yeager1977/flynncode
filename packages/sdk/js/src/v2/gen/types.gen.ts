@@ -12082,6 +12082,89 @@ export type V2ImportImportedResponses = {
 
 export type V2ImportImportedResponse = V2ImportImportedResponses[keyof V2ImportImportedResponses]
 
+export type V2ImportSourcesData = {
+  body?: never
+  path?: never
+  query: {
+    source: "claude-code" | "codex"
+    directory: string
+  }
+  url: "/api/import/sources"
+}
+
+export type V2ImportSourcesErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2ImportSourcesError = V2ImportSourcesErrors[keyof V2ImportSourcesErrors]
+
+export type V2ImportSourcesResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: Array<{
+      path: string
+      sourceSessionID: string
+      title: string
+      cwd: string
+      time: number
+      messageCount: number
+      imported: boolean
+    }>
+  }
+}
+
+export type V2ImportSourcesResponse = V2ImportSourcesResponses[keyof V2ImportSourcesResponses]
+
+export type V2ImportFromSourceData = {
+  body: {
+    source: "claude-code" | "codex"
+    sourceSessionID: string
+    sourcePath: string
+    title: string
+    location: LocationRef
+  }
+  path?: never
+  query?: never
+  url: "/api/import/from-source"
+}
+
+export type V2ImportFromSourceErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2ImportFromSourceError = V2ImportFromSourceErrors[keyof V2ImportFromSourceErrors]
+
+export type V2ImportFromSourceResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: SessionV2Info
+  }
+}
+
+export type V2ImportFromSourceResponse = V2ImportFromSourceResponses[keyof V2ImportFromSourceResponses]
+
 export type V2SessionMessagesData = {
   body?: never
   path: {

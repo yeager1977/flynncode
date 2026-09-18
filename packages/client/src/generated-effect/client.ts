@@ -262,7 +262,45 @@ const Endpoint4_1 = (raw: RawClient["server.import"]) => (input: Endpoint4_1Inpu
     Effect.map((value) => value.data),
   )
 
-const adaptGroup4 = (raw: RawClient["server.import"]) => ({ session: Endpoint4_0(raw), imported: Endpoint4_1(raw) })
+type Endpoint4_2Request = Parameters<RawClient["server.import"]["import.sources"]>[0]
+type Endpoint4_2Input = {
+  readonly source: Endpoint4_2Request["query"]["source"]
+  readonly directory: Endpoint4_2Request["query"]["directory"]
+}
+const Endpoint4_2 = (raw: RawClient["server.import"]) => (input: Endpoint4_2Input) =>
+  raw["import.sources"]({ query: { source: input["source"], directory: input["directory"] } }).pipe(
+    Effect.mapError(mapClientError),
+    Effect.map((value) => value.data),
+  )
+
+type Endpoint4_3Request = Parameters<RawClient["server.import"]["import.fromSource"]>[0]
+type Endpoint4_3Input = {
+  readonly source: Endpoint4_3Request["payload"]["source"]
+  readonly sourceSessionID: Endpoint4_3Request["payload"]["sourceSessionID"]
+  readonly sourcePath: Endpoint4_3Request["payload"]["sourcePath"]
+  readonly title: Endpoint4_3Request["payload"]["title"]
+  readonly location: Endpoint4_3Request["payload"]["location"]
+}
+const Endpoint4_3 = (raw: RawClient["server.import"]) => (input: Endpoint4_3Input) =>
+  raw["import.fromSource"]({
+    payload: {
+      source: input["source"],
+      sourceSessionID: input["sourceSessionID"],
+      sourcePath: input["sourcePath"],
+      title: input["title"],
+      location: input["location"],
+    },
+  }).pipe(
+    Effect.mapError(mapClientError),
+    Effect.map((value) => value.data),
+  )
+
+const adaptGroup4 = (raw: RawClient["server.import"]) => ({
+  session: Endpoint4_0(raw),
+  imported: Endpoint4_1(raw),
+  sources: Endpoint4_2(raw),
+  fromSource: Endpoint4_3(raw),
+})
 
 type Endpoint5_0Request = Parameters<RawClient["server.message"]["session.messages"]>[0]
 type Endpoint5_0Input = {

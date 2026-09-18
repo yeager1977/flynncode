@@ -41,6 +41,10 @@ import type {
   ImportsSessionOutput,
   ImportsImportedInput,
   ImportsImportedOutput,
+  ImportsSourcesInput,
+  ImportsSourcesOutput,
+  ImportsFromSourceInput,
+  ImportsFromSourceOutput,
   MessagesListInput,
   MessagesListOutput,
   ModelsListInput,
@@ -525,6 +529,36 @@ export function make(options: ClientOptions) {
             query: { source: input["source"], directory: input["directory"] },
             successStatus: 200,
             declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
+      sources: (input: ImportsSourcesInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: ImportsSourcesOutput }>(
+          {
+            method: "GET",
+            path: `/api/import/sources`,
+            query: { source: input["source"], directory: input["directory"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
+      fromSource: (input: ImportsFromSourceInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: ImportsFromSourceOutput }>(
+          {
+            method: "POST",
+            path: `/api/import/from-source`,
+            body: {
+              source: input["source"],
+              sourceSessionID: input["sourceSessionID"],
+              sourcePath: input["sourcePath"],
+              title: input["title"],
+              location: input["location"],
+            },
+            successStatus: 200,
+            declaredStatuses: [400, 404, 401],
             empty: false,
           },
           requestOptions,
