@@ -1,13 +1,20 @@
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { Checkbox } from "@opencode-ai/ui/checkbox"
+import { CheckboxV2 } from "@opencode-ai/ui/v2/checkbox-v2"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { For, Show, createMemo, createResource, createSignal, type Component } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useServerSDK } from "@/context/server-sdk"
 import { showToast } from "@/utils/toast"
-import { buildOptions, tally, toggleSelection, type ImportCandidate } from "./import-selection"
+import {
+  buildOptions,
+  clearVisible,
+  selectAll,
+  selectedCount,
+  tally,
+  toggleSelection,
+  type ImportCandidate,
+} from "./import-selection"
 import { SettingsListV2 } from "./parts/list"
-import { SettingsRowV2 } from "./parts/row"
 import "./settings-v2.css"
 
 type ImportSource = "claude-code" | "codex"
@@ -55,7 +62,13 @@ export const SettingsImportSessionsV2: Component<{ directory?: string }> = (prop
     () => options().filter((option) => !option.disabled && selected().has(option.value.sourceSessionID)),
   )
 
+  const chosen = createMemo(() => selectedCount(selected(), options()))
+
   const toggle = (id: string) => setSelected(toggleSelection(selected(), id))
+
+  const selectAllVisible = () => setSelected(selectAll(selected(), options()))
+
+  const clearVisibleSelection = () => setSelected(clearVisible(selected(), options()))
 
   const runImport = async () => {
     const pending = selectable()
@@ -96,6 +109,24 @@ export const SettingsImportSessionsV2: Component<{ directory?: string }> = (prop
         <div class="settings-v2-tab-header-row">
           <h2 class="settings-v2-tab-title">{language.t("settings.import.title")}</h2>
           <div class="flex items-center gap-2">
+            <Show when={chosen() > 0}>
+              <span class="settings-v2-plugins-note">
+                {language.t("settings.import.selected", { count: chosen() })}
+              </span>
+            </Show>
+            <ButtonV2
+              size="normal"
+              variant="ghost-muted"
+              disabled={importing() || options().length === 0}
+              onClick={selectAllVisible}
+            >
+              {language.t("settings.import.selectAll")}
+            </ButtonV2>
+            <Show when={chosen() > 0}>
+              <ButtonV2 size="normal" variant="ghost-muted" disabled={importing()} onClick={clearVisibleSelection}>
+                {language.t("settings.import.clear")}
+              </ButtonV2>
+            </Show>
             <ButtonV2
               size="normal"
               variant="neutral"
@@ -167,26 +198,23 @@ export const SettingsImportSessionsV2: Component<{ directory?: string }> = (prop
           <SettingsListV2>
             <For each={options()}>
               {(option) => (
-                <SettingsRowV2
-                  title={option.label}
-                  description={
-                    <>
-                      <Show when={option.disabled}>
-                        {language.t("settings.import.imported")}
-                        {" · "}
-                      </Show>
-                      {option.value.cwd}
-                    </>
-                  }
-                >
-                  <Checkbox
+                <div data-slot="settings-import-option" data-disabled={option.disabled ? "" : undefined}>
+                  <CheckboxV2
                     checked={selected().has(option.value.sourceSessionID)}
                     disabled={option.disabled || importing()}
                     onChange={() => toggle(option.value.sourceSessionID)}
-                  >
-                    <span class="sr-only">{option.value.title}</span>
-                  </Checkbox>
-                </SettingsRowV2>
+                    label={option.label}
+                    description={
+                      <>
+                        <Show when={option.disabled}>
+                          {language.t("settings.import.imported")}
+                          {" · "}
+                        </Show>
+                        {option.value.cwd}
+                      </>
+                    }
+                  />
+                </div>
               )}
             </For>
           </SettingsListV2>

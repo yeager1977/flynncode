@@ -1375,4 +1375,7 @@ export const dict = {
   "settings.import.importing": "Importing...",
   "settings.import.summary": "Imported {{imported}}, failed {{failed}}",
   "settings.import.loadError": "Could not load importable sessions.",
+  "settings.import.selected": "{{count}} selected",
+  "settings.import.selectAll": "Select all",
+  "settings.import.clear": "Clear",
 }

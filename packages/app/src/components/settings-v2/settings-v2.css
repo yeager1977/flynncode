@@ -757,3 +757,34 @@
   gap: 24px;
   padding-bottom: 24px;
 }
+
+/* Session import: make the whole row a click target by stretching the
+   checkbox label, and give the row a hover affordance so selection is
+   discoverable. */
+[data-slot="settings-import-option"] {
+  padding-block: 10px;
+
+  [data-slot="checkbox-v2"],
+  [data-slot="checkbox-v2-row"] {
+    width: 100%;
+  }
+
+  [data-slot="checkbox-v2-label"] {
+    flex: 1;
+    min-width: 0;
+    cursor: pointer;
+  }
+
+  [data-slot="checkbox-v2-control-stack"] {
+    margin-top: 2px;
+  }
+
+  &:not([data-disabled]):hover {
+    background-color: var(--v2-overlay-simple-overlay-hover);
+  }
+
+  &[data-disabled] [data-slot="checkbox-v2-label"],
+  &[data-disabled] [data-slot="checkbox-v2-control-stack"] {
+    cursor: not-allowed;
+  }
+}
