@@ -17,7 +17,13 @@ import {
   validateForm,
   type TaskName,
 } from "./model-router-payload"
-import { parseWeight, priorityWeights, routerCatalog, type Priority } from "./model-router-preview"
+import {
+  parseWeight,
+  priorityWeights,
+  routerCatalog,
+  type Priority,
+  type RouterSource,
+} from "./model-router-preview"
 import { ModelRouterModels } from "./model-router-models"
 import { ModelRouterRoutes } from "./model-router-routes"
 import "./settings-v2.css"
@@ -54,13 +60,35 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
     setState({ baseline: next, incoming: undefined, raw: {} })
   })
 
+  // Match runtime candidate discovery: models.dev providers such as Anthropic and
+  // OpenAI only exist in the connected catalog, never in raw config. Limit the
+  // merge to providers that are configured or in scope so the picker stays small.
+  const catalogSource = createMemo<RouterSource>(() => {
+    const provider: NonNullable<RouterSource["provider"]> = {}
+    const add = (id: string, source: { name?: string; models?: Record<string, { name?: string }> } | undefined) => {
+      if (!source) return
+      provider[id] = {
+        name: provider[id]?.name ?? source.name,
+        models: { ...(provider[id]?.models ?? {}), ...(source.models ?? {}) },
+      }
+    }
+    const ids = new Set([
+      ...Object.keys(serverSync().data.config.provider ?? {}),
+      ...serverSync().data.provider.connected,
+      ...form.providers,
+    ])
+    ids.delete("model-router")
+    for (const id of ids) add(id, serverSync().data.provider.all.get(id))
+    for (const [id, config] of Object.entries(serverSync().data.config.provider ?? {})) {
+      if (id !== "model-router") add(id, config as any)
+    }
+    return { provider, disabled_providers: serverSync().data.config.disabled_providers }
+  })
   const catalog = createMemo(() =>
-    routerCatalog(serverSync().data.config, (providerID, modelID) => models.visible({ providerID, modelID })).map(
-      (model) => ({
-        ...model,
-        provider: serverSync().data.provider.all.get(model.providerID)?.name ?? model.provider,
-      }),
-    ),
+    routerCatalog(catalogSource(), (providerID, modelID) => models.visible({ providerID, modelID })).map((model) => ({
+      ...model,
+      provider: serverSync().data.provider.all.get(model.providerID)?.name ?? model.provider,
+    })),
   )
   const providers = createMemo(() =>
     Array.from(
@@ -283,7 +311,7 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
 
             <section class="model-router-section">
               <h3>{language.t("settings.modelRouter.behavior")}</h3>
-              <For each={["allowUnscored", "overrideExplicit"] as const}>
+              <For each={["allowUnscored", "overrideExplicit", "legacyAssign"] as const}>
                 {(key) => (
                   <div class="model-router-enable model-router-card">
                     <div>

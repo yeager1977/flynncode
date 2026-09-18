@@ -1,6 +1,11 @@
 import { tool } from "@opencode-ai/plugin"
 import type { Hooks, PluginInput } from "@opencode-ai/plugin"
-import { collectCandidates, collectMeta, findUnmatchedScorecardKeys } from "./candidates"
+import {
+  collectCandidates,
+  collectMeta,
+  findUnmatchedScorecardKeys,
+  type CatalogLike,
+} from "./candidates"
 import { rankModels } from "./rank"
 import { TASK_NAMES, isTaskName } from "./scorecard"
 import type { ModelMeta, RankResult, RouterOptions } from "./types"
@@ -40,6 +45,7 @@ type Deps = {
   getOptions: () => RouterOptions | undefined
   getOptionsError: () => string[] | undefined
   getConfig: () => any
+  getCatalog: () => CatalogLike | undefined
   getAssignments: () => Record<string, string>
 }
 
@@ -61,8 +67,9 @@ export function createTools(deps: Deps): Hooks["tool"] {
         const options = deps.getOptions()
         if (!options) return disabledMessage(deps.getOptionsError())
         const cfg = deps.getConfig()
-        const candidates = collectCandidates(cfg, options)
-        const meta = collectMeta(cfg, options)
+        const catalog = deps.getCatalog()
+        const candidates = collectCandidates(cfg, options, catalog)
+        const meta = collectMeta(cfg, options, catalog)
         const tasks = args.task ? [args.task] : TASK_NAMES
         const blocks: string[] = []
         for (const task of tasks) {
@@ -75,7 +82,7 @@ export function createTools(deps: Deps): Hooks["tool"] {
           })
           blocks.push(formatRankTable(result, 10, meta))
         }
-        const unmatched = findUnmatchedScorecardKeys(cfg, options)
+        const unmatched = findUnmatchedScorecardKeys(cfg, options, catalog)
         if (unmatched.length > 0) {
           blocks.push("", "Scorecard entries with no matching model (check for typos):", ...unmatched.map((k) => `- ${k}`))
         }
@@ -103,8 +110,9 @@ export function createTools(deps: Deps): Hooks["tool"] {
           return `Unknown task "${args.task}". Valid tasks: ${TASK_NAMES.join(", ")}`
         }
         const cfg = deps.getConfig()
-        const candidates = collectCandidates(cfg, options)
-        const meta = collectMeta(cfg, options)
+        const catalog = deps.getCatalog()
+        const candidates = collectCandidates(cfg, options, catalog)
+        const meta = collectMeta(cfg, options, catalog)
         const result = rankModels(candidates, args.task, options.taskWeights[args.task], {
           allowUnscored: options.allowUnscored,
           pinned: options.taskModels?.[args.task],

@@ -1,26 +1,23 @@
-import { collectCandidates } from "./candidates"
+import { collectCandidates, type CatalogLike } from "./candidates"
 import { rankModels } from "./rank"
-import type { RouterOptions } from "./types"
+import type { RouterOptions, TaskName } from "./types"
 
 const BUILTIN_AGENTS = new Set(["build", "plan", "general", "explore"])
 
-export function assignAgents(
+export function taskWinners(
   cfg: any,
   options: RouterOptions,
-): { assignments: Record<string, string>; warnings: string[] } {
+  tasks: Iterable<TaskName>,
+  catalog?: CatalogLike,
+): { winners: Map<TaskName, string>; warnings: string[] } {
   const warnings: string[] = []
-  const assignments: Record<string, string> = {}
-
-  if (!options.autoRoute) return { assignments, warnings }
-
-  const candidates = collectCandidates(cfg, options)
+  const winners = new Map<TaskName, string>()
+  const candidates = collectCandidates(cfg, options, catalog)
   if (candidates.length === 0) {
     warnings.push("no candidate models found for configured providers")
-    return { assignments, warnings }
+    return { winners, warnings }
   }
-
-  const winners = new Map<string, { key: string; score: number }>()
-  for (const task of new Set(Object.values(options.agentTasks))) {
+  for (const task of tasks) {
     const result = rankModels(candidates, task, options.taskWeights[task], {
       allowUnscored: options.allowUnscored,
       pinned: options.taskModels?.[task],
@@ -29,8 +26,39 @@ export function assignAgents(
       warnings.push(`no eligible model for task "${task}"`)
       continue
     }
-    winners.set(task, { key: result.ranked[0].key, score: result.ranked[0].score })
+    winners.set(task, result.ranked[0].key)
   }
+  return { winners, warnings }
+}
+
+export function resolveTaskModel(
+  cfg: any,
+  options: RouterOptions,
+  task: TaskName,
+  catalog?: CatalogLike,
+): string | undefined {
+  return taskWinners(cfg, options, [task], catalog).winners.get(task)
+}
+
+export function assignAgents(
+  cfg: any,
+  options: RouterOptions,
+  catalog?: CatalogLike,
+): { assignments: Record<string, string>; warnings: string[] } {
+  const warnings: string[] = []
+  const assignments: Record<string, string> = {}
+
+  // Selecting the virtual Model Router resolves at prompt time. Mutating agent
+  // models at startup is legacy behavior, kept only behind `legacyAssign`.
+  if (!options.autoRoute || !options.legacyAssign) return { assignments, warnings }
+
+  const { winners, warnings: rankWarnings } = taskWinners(
+    cfg,
+    options,
+    new Set(Object.values(options.agentTasks)),
+    catalog,
+  )
+  warnings.push(...rankWarnings)
 
   if (!cfg.agent) cfg.agent = {}
 
@@ -49,8 +77,8 @@ export function assignAgents(
       continue
     }
     if (!cfg.agent[agent]) cfg.agent[agent] = {}
-    cfg.agent[agent].model = winner.key
-    assignments[agent] = winner.key
+    cfg.agent[agent].model = winner
+    assignments[agent] = winner
   }
 
   return { assignments, warnings }

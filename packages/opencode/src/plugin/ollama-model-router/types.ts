@@ -2,6 +2,7 @@ export type TaskName =
   | "coding"
   | "planning"
   | "review"
+  | "architecture"
   | "lookup"
   | "writing"
   | "long-context"
@@ -27,6 +28,7 @@ export type RouterOptions = {
   autoRoute: boolean
   allowUnscored: boolean
   overrideExplicit: boolean
+  legacyAssign: boolean
   providers: string[]
   agentTasks: Record<string, TaskName>
   taskWeights: Record<TaskName, { capability: number; price: number; speed: number }>

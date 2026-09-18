@@ -7,8 +7,9 @@ behavior is configured through the `model_router` key in the global config
 ```jsonc
 "model_router": {
   "autoRoute": true,
-  "allowUnscored": true,
-  "providers": ["ollama-cloud", "ollama-gpu", "ollama-local"],
+  "allowUnscored": false,
+  "legacyAssign": false,
+  "providers": ["ollama-cloud", "anthropic", "openai"],
   "agentTasks": {
     "build": "coding",
     "plan": "planning",
@@ -39,6 +40,15 @@ With no `model_router` key the plugin stays inert (no warnings, no routing).
 - `excludeModels` lists `providerID/modelID` pairs the router must skip. The app
   writes it when the router settings are saved, from the Manage Models
   visibility toggles.
+- The router injects a virtual `model-router/auto` provider shown as **Model
+  Router** in the model picker. Selecting it routes each prompt to the winning
+  concrete model (per the active agent's task, or the selected task variant);
+  the transcript records the concrete model while the session keeps the
+  sentinel. Selecting any concrete model bypasses routing entirely.
+- `legacyAssign` (default false) restores the old behavior of rewriting agent
+  models at startup. Prefer selecting Model Router in the picker.
+- `architecture` is a task with quality-first weights, used to reserve premium
+  models for complex design work. `taskModels` pins win over scoring.
 
 - Verify routing with the `rank_models` tool or the `[ollama-model-router] agent routing:` log line.
 - `/route <task> <prompt>` uses the `route_task` tool when the command file exists.

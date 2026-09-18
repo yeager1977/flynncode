@@ -69,7 +69,8 @@ export const Info = Schema.Struct({
     description: "Disable providers that are loaded automatically",
   }),
   model_router: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)).annotate({
-    description: "Options for the built-in Ollama model router plugin (scorecard, task weights, agent routing)",
+    description:
+      "Options for the built-in Ollama model router plugin (scorecard, task weights, per-task pins, model exclusions, agent routing)",
   }),
   enabled_providers: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
     description: "When set, ONLY these providers will be enabled. All other providers will be ignored",

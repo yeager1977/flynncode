@@ -84,6 +84,7 @@ test("route_task caps concurrent executions per session", async () => {
     getOptions: () => options,
     getOptionsError: () => undefined,
     getConfig: () => ({ provider: { p: { models: { a: {} } } } }),
+    getCatalog: () => undefined,
     getAssignments: () => ({}),
   })
   const ctx = { sessionID: "s1" } as any
@@ -106,6 +107,7 @@ test("rank_models reports unmatched scorecard keys", async () => {
     getOptions: () => options,
     getOptionsError: () => undefined,
     getConfig: () => ({ provider: { p: { models: { a: {} } } } }),
+    getCatalog: () => undefined,
     getAssignments: () => ({}),
   })
   const out = await tools!.rank_models.execute({ task: "coding" } as any, { sessionID: "s" } as any)
@@ -120,6 +122,7 @@ test("tools report parse errors when options are invalid", async () => {
     getOptions: () => undefined,
     getOptionsError: () => ["models.bad must be an integer 1-10", "provider missing"],
     getConfig: () => ({ provider: {} }),
+    getCatalog: () => undefined,
     getAssignments: () => ({}),
   })
   const rank = await tools!.rank_models.execute({} as any, { sessionID: "s" } as any)

@@ -4,6 +4,7 @@ export const TASK_NAMES: TaskName[] = [
   "coding",
   "planning",
   "review",
+  "architecture",
   "lookup",
   "writing",
   "long-context",
@@ -20,6 +21,7 @@ export const DEFAULT_TASK_WEIGHTS: Record<TaskName, { capability: number; price:
   coding: { capability: 0.6, price: 0.25, speed: 0.15 },
   planning: { capability: 0.7, price: 0.2, speed: 0.1 },
   review: { capability: 0.65, price: 0.25, speed: 0.1 },
+  architecture: { capability: 0.9, price: 0.05, speed: 0.05 },
   lookup: { capability: 0.3, price: 0.3, speed: 0.4 },
   writing: { capability: 0.5, price: 0.3, speed: 0.2 },
   "long-context": { capability: 0.6, price: 0.3, speed: 0.1 },
@@ -45,6 +47,7 @@ export function parseOptions(
     const autoRoute = typeof r.autoRoute === "boolean" ? r.autoRoute : true
     const allowUnscored = typeof r.allowUnscored === "boolean" ? r.allowUnscored : true
     const overrideExplicit = typeof r.overrideExplicit === "boolean" ? r.overrideExplicit : false
+    const legacyAssign = typeof r.legacyAssign === "boolean" ? r.legacyAssign : false
 
     let providers: string[] = []
     if (r.providers !== undefined) {
@@ -169,6 +172,7 @@ export function parseOptions(
         autoRoute,
         allowUnscored,
         overrideExplicit,
+        legacyAssign,
         providers,
         agentTasks,
         taskWeights,

@@ -2,6 +2,7 @@ export type TaskName =
   | "coding"
   | "planning"
   | "review"
+  | "architecture"
   | "lookup"
   | "writing"
   | "long-context"
@@ -10,6 +11,7 @@ export const TASK_NAMES: TaskName[] = [
   "coding",
   "planning",
   "review",
+  "architecture",
   "lookup",
   "writing",
   "long-context",
@@ -28,6 +30,7 @@ export const DEFAULT_TASK_WEIGHTS: TaskWeights = {
   coding: { capability: 0.6, price: 0.25, speed: 0.15 },
   planning: { capability: 0.7, price: 0.2, speed: 0.1 },
   review: { capability: 0.65, price: 0.25, speed: 0.1 },
+  architecture: { capability: 0.9, price: 0.05, speed: 0.05 },
   lookup: { capability: 0.3, price: 0.3, speed: 0.4 },
   writing: { capability: 0.5, price: 0.3, speed: 0.2 },
   "long-context": { capability: 0.6, price: 0.3, speed: 0.1 },
@@ -41,6 +44,7 @@ export type ModelRouterFormState = {
   autoRoute: boolean
   allowUnscored: boolean
   overrideExplicit: boolean
+  legacyAssign: boolean
   providers: string[]
   agentTasks: AgentTaskRow[]
   taskWeights: TaskWeights
@@ -54,6 +58,7 @@ export function emptyForm(): ModelRouterFormState {
     autoRoute: true,
     allowUnscored: true,
     overrideExplicit: false,
+    legacyAssign: false,
     providers: [],
     agentTasks: Object.entries(DEFAULT_AGENT_TASKS).map(([agent, task]) => ({ agent, task })),
     taskWeights: structuredClone(DEFAULT_TASK_WEIGHTS),
@@ -69,6 +74,7 @@ export function formFromConfig(config: Record<string, unknown> | undefined): Mod
     autoRoute: typeof raw.autoRoute === "boolean" ? raw.autoRoute : true,
     allowUnscored: typeof raw.allowUnscored === "boolean" ? raw.allowUnscored : true,
     overrideExplicit: typeof raw.overrideExplicit === "boolean" ? raw.overrideExplicit : false,
+    legacyAssign: typeof raw.legacyAssign === "boolean" ? raw.legacyAssign : false,
     providers: providersFrom(raw.providers),
     agentTasks: agentTasksFrom(raw.agentTasks),
     taskWeights: weightsFrom(raw.taskWeights),
@@ -83,6 +89,7 @@ export function serializeForm(form: ModelRouterFormState): Record<string, unknow
     autoRoute: form.autoRoute,
     allowUnscored: form.allowUnscored,
     overrideExplicit: form.overrideExplicit,
+    legacyAssign: form.legacyAssign,
     providers: [...form.providers],
     agentTasks: Object.fromEntries(form.agentTasks.map((row) => [row.agent, row.task])),
     taskWeights: Object.fromEntries(TASK_NAMES.map((task) => [task, { ...form.taskWeights[task] }])),

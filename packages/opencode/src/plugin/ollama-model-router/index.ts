@@ -1,8 +1,9 @@
 import type { Hooks, PluginInput, PluginOptions } from "@opencode-ai/plugin"
-import { assignAgents } from "./assign"
-import { parseOptions } from "./scorecard"
+import { assignAgents, resolveTaskModel } from "./assign"
+import { ROUTER_MODEL_ID, ROUTER_MODEL_KEY, ROUTER_PROVIDER_ID, type CatalogLike } from "./candidates"
+import { parseOptions, TASK_NAMES, isTaskName } from "./scorecard"
 import { createTools } from "./tools"
-import type { RouterOptions } from "./types"
+import type { RouterOptions, TaskName } from "./types"
 
 const PREFIX = "[ollama-model-router]"
 
@@ -10,6 +11,11 @@ function readTupleOptions(options: PluginOptions | undefined): Record<string, un
   if (!options || typeof options !== "object" || Array.isArray(options)) return undefined
   return options as Record<string, unknown>
 }
+
+// The virtual model must be routable by task name without a task-specific
+// config, so it advertises one variant per task. `auto` follows the active
+// agent's mapping.
+const ROUTER_VARIANTS = Object.fromEntries(TASK_NAMES.map((task) => [task, {}]))
 
 /**
  * Built-in Ollama model router.
@@ -25,6 +31,30 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
   let currentConfig: any
   let assignments: Record<string, string> = {}
 
+  const getOptions = () => currentOptions
+  const getOptionsError = () => optionsError
+
+  // The connected catalog (models.dev providers resolved by the server) is the
+  // same source the model picker uses. Raw config is the fallback so headless
+  // and unit-test callers keep working.
+  let catalog: CatalogLike | undefined
+  let catalogLoaded = false
+  const getCatalog = (): CatalogLike | undefined => catalog
+  const loadCatalog = async () => {
+    if (catalogLoaded) return
+    catalogLoaded = true
+    try {
+      const result = await input.client.provider.list()
+      const all = result.data?.all ?? []
+      catalog = Object.fromEntries(
+        all.map((provider: any) => [provider.id, { name: provider.name, models: provider.models ?? {} }]),
+      ) as CatalogLike
+    } catch (error) {
+      console.warn(`${PREFIX} connected catalog unavailable; using config providers`, error)
+      catalog = undefined
+    }
+  }
+
   const resolveOptions = (cfg: any): { raw: Record<string, unknown> | undefined; source: string } => {
     const fromConfig = cfg && typeof cfg === "object" ? (cfg as Record<string, unknown>).model_router : undefined
     if (fromConfig !== undefined) {
@@ -39,8 +69,27 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
     return { raw: tupleOptions, source: "plugin options" }
   }
 
-  const getOptions = () => currentOptions
-  const getOptionsError = () => optionsError
+  // Selecting "Model Router" in the picker must not reach a provider API. When
+  // the sentinel is present, resolve it to the concrete winner for the chosen
+  // task (variant) or the active agent's task, and rewrite the transcript
+  // message. The session preference keeps the sentinel so the picker stays put.
+  const resolveSentinel = (event: {
+    sessionID: string
+    agent?: string
+    model?: { providerID: string; modelID: string }
+    variant?: string
+  }): string | undefined => {
+    if (!currentOptions) return undefined
+    if (event.model?.providerID !== ROUTER_PROVIDER_ID) return undefined
+    const task: TaskName | undefined =
+      event.variant && isTaskName(event.variant)
+        ? event.variant
+        : event.agent
+          ? currentOptions.agentTasks[event.agent]
+          : undefined
+    if (!task) return undefined
+    return resolveTaskModel(currentConfig, currentOptions, task, getCatalog())
+  }
 
   return {
     config: async (cfg) => {
@@ -63,6 +112,11 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
         }
         currentOptions = parsed.options
         optionsError = undefined
+
+        injectRouterProvider(cfg)
+
+        // Assignment mutates agent models and is legacy-only. Normal activation
+        // is selecting Model Router, resolved at prompt time.
         const result = assignAgents(cfg, parsed.options)
         assignments = result.assignments
         for (const warning of result.warnings) console.warn(`${PREFIX} ${warning}`)
@@ -79,14 +133,61 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
         currentOptions = undefined
       }
     },
+    "chat.message": async (event, output) => {
+      // Another plugin may have already replaced the sentinel; never touch a
+      // concrete model.
+      if (output.message.model.providerID !== ROUTER_PROVIDER_ID) return
+      if (event.model?.providerID !== ROUTER_PROVIDER_ID) return
+      try {
+        await loadCatalog()
+        const resolved = resolveSentinel(event)
+        if (!resolved) {
+          // Failing here is safer than letting the sentinel reach a provider
+          // API. The prompt surfaces this message to the user.
+          const task = event.variant ?? (event.agent ? currentOptions?.agentTasks[event.agent] : undefined) ?? "?"
+          throw new Error(
+            `Model Router has no eligible model for task "${task}". ` +
+              `Check model_router providers, scorecards, and excludeModels.`,
+          )
+        }
+        const index = resolved.indexOf("/")
+        output.message.model = {
+          ...output.message.model,
+          providerID: resolved.slice(0, index),
+          modelID: resolved.slice(index + 1),
+        }
+      } catch (error) {
+        console.error(`${PREFIX} chat.message hook failed`, error)
+        throw error
+      }
+    },
     tool: createTools({
       client: input.client,
       directory: input.directory,
       getOptions,
       getOptionsError,
       getConfig: () => currentConfig,
+      getCatalog,
       getAssignments: () => assignments,
     }),
+  }
+
+  function injectRouterProvider(cfg: any) {
+    if (!cfg || typeof cfg !== "object") return
+    if (!cfg.provider || typeof cfg.provider !== "object") cfg.provider = {}
+    if (cfg.provider[ROUTER_PROVIDER_ID]) return
+    cfg.provider[ROUTER_PROVIDER_ID] = {
+      name: "Model Router",
+      models: {
+        [ROUTER_MODEL_ID]: {
+          name: "Model Router",
+          tool_call: true,
+          reasoning: true,
+          limit: { context: 1000000, output: 65536 },
+          variants: ROUTER_VARIANTS,
+        },
+      },
+    }
   }
 }
 

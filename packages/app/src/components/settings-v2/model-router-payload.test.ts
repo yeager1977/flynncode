@@ -18,6 +18,7 @@ describe("emptyForm", () => {
       autoRoute: true,
       allowUnscored: true,
       overrideExplicit: false,
+      legacyAssign: false,
       providers: [],
       agentTasks: [
         { agent: "build", task: "coding" },
@@ -31,7 +32,7 @@ describe("emptyForm", () => {
       models: [],
     } satisfies ModelRouterFormState)
     expect(form.agentTasks.map((row) => [row.agent, row.task])).toEqual(Object.entries(DEFAULT_AGENT_TASKS))
-    expect(TASK_NAMES).toEqual(["coding", "planning", "review", "lookup", "writing", "long-context"])
+    expect(TASK_NAMES).toEqual(["coding", "planning", "review", "architecture", "lookup", "writing", "long-context"])
   })
 })
 
@@ -115,6 +116,7 @@ describe("serializeForm", () => {
       autoRoute: true,
       allowUnscored: true,
       overrideExplicit: false,
+      legacyAssign: false,
       providers: [],
       agentTasks: DEFAULT_AGENT_TASKS,
       taskWeights: DEFAULT_TASK_WEIGHTS,
@@ -163,6 +165,7 @@ describe("serializeForm", () => {
       autoRoute: true,
       allowUnscored: true,
       overrideExplicit: false,
+      legacyAssign: false,
       providers: [],
       agentTasks: DEFAULT_AGENT_TASKS,
       taskWeights: DEFAULT_TASK_WEIGHTS,
@@ -332,6 +335,7 @@ describe("round trip", () => {
       autoRoute: false,
       allowUnscored: true,
       overrideExplicit: true,
+      legacyAssign: true,
       providers: ["ollama", "openai"],
       agentTasks: [{ agent: "build", task: "review" }],
       taskWeights: { ...DEFAULT_TASK_WEIGHTS, coding: { capability: 0.8, price: 0.1, speed: 0.1 } },

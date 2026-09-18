@@ -1,7 +1,13 @@
 # Model Router: Evidence-Based Model Cards and Selectable Routing - Design
 
 Date: 2026-09-18
-Status: Approved
+Status: Implemented (2026-09-18)
+
+Implementation note: the card table's `planning` tag on Fable 5.1/Opus 5 was
+implemented as `architecture` only, following the user's instruction to reserve
+premium escalation models for unusually complex work. Routine planning resolves
+to Opus 5 only when it wins on score; the automatic planning pool does not
+reserve Fable/Astra.
 
 ## Problem
 

@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { assignAgents } from "../../../src/plugin/ollama-model-router/assign"
+import { assignAgents, resolveTaskModel } from "../../../src/plugin/ollama-model-router/assign"
 import { parseOptions } from "../../../src/plugin/ollama-model-router/scorecard"
 
+// These tests cover legacy startup assignment, which is off unless requested.
 function makeOptions(overrides: Record<string, unknown> = {}) {
   const result = parseOptions({
+    legacyAssign: true,
     providers: ["ollama-cloud"],
     models: {
       "ollama-cloud/big": { price: 8, capability: 10, speed: 3 },
@@ -78,5 +80,18 @@ describe("assignAgents", () => {
     const { assignments, warnings } = assignAgents(cfg, makeOptions())
     expect(assignments).toEqual({})
     expect(warnings.length).toBeGreaterThan(0)
+  })
+
+  test("does not mutate agents unless legacyAssign is set", () => {
+    const cfg = cfgBase()
+    const { assignments } = assignAgents(cfg, makeOptions({ legacyAssign: false }))
+    expect(assignments).toEqual({})
+    expect(cfg.agent).toEqual({})
+  })
+
+  test("resolveTaskModel returns the winner without mutating agents", () => {
+    const cfg = cfgBase()
+    expect(resolveTaskModel(cfg, makeOptions({ legacyAssign: false }), "coding")).toBe("ollama-cloud/cheap")
+    expect(cfg.agent).toEqual({})
   })
 })

@@ -10,70 +10,101 @@ type ConfigLike = {
   disabled_providers?: string[]
 }
 
+// The resolved connected-provider catalog (`Provider.list()` shape). It covers
+// models.dev providers (Anthropic, OpenAI, ...) that never appear in raw config
+// `provider.*.models`.
+export type CatalogLike = Record<string, ProviderLike | undefined>
+
 type ModelEntryLike = {
   name?: unknown
   tool_call?: unknown
+  capability?: { toolcall?: unknown; reasoning?: unknown }
   reasoning?: unknown
   limit?: { context?: unknown }
 }
 
-export function collectMeta(cfg: ConfigLike, options: RouterOptions): Map<string, ModelMeta> {
-  const disabled = new Set(cfg.disabled_providers ?? [])
-  const selected = (providerID: string) => {
+type ProviderModelEntry = { key: string; providerID: string; modelID: string; raw: ModelEntryLike }
+
+function selected(options: RouterOptions) {
+  return (providerID: string) => {
     if (options.providers.length > 0) return options.providers.includes(providerID)
     return providerID.startsWith("ollama")
   }
+}
 
-  const meta = new Map<string, ModelMeta>()
-  for (const [providerID, provider] of Object.entries(cfg.provider ?? {})) {
+// Raw config providers are the fallback; the connected catalog wins when given
+// because it is the same source the app model picker and provider API use.
+function providerSources(cfg: ConfigLike, catalog?: CatalogLike) {
+  return Object.entries(catalog ?? cfg.provider ?? {})
+}
+
+function collectModels(cfg: ConfigLike, options: RouterOptions, catalog?: CatalogLike): ProviderModelEntry[] {
+  const isSelected = selected(options)
+  const out: ProviderModelEntry[] = []
+  for (const [providerID, provider] of providerSources(cfg, catalog)) {
+    if (providerID === ROUTER_PROVIDER_ID) continue
     if (!provider || !provider.models) continue
-    if (!selected(providerID)) continue
+    if (!isSelected(providerID)) continue
     for (const [modelID, raw] of Object.entries(provider.models)) {
-      const entry = (raw ?? {}) as ModelEntryLike
-      const key = `${providerID}/${modelID}`
-      meta.set(key, {
-        providerID,
-        modelID,
-        name: typeof entry.name === "string" ? entry.name : undefined,
-        context: typeof entry.limit?.context === "number" ? entry.limit.context : undefined,
-        toolCall: entry.tool_call === true,
-        reasoning: entry.reasoning === true,
-        providerDisabled: disabled.has(providerID),
-      })
-    }
-  }
-  return meta
-}
-
-export function findUnmatchedScorecardKeys(cfg: ConfigLike, options: RouterOptions): string[] {
-  const known = new Set(collectCandidates(cfg, options).map((c) => c.key))
-  return Object.keys(options.models).filter((key) => !known.has(key))
-}
-
-export function collectCandidates(cfg: ConfigLike, options: RouterOptions): Candidate[] {
-  const disabled = new Set(cfg.disabled_providers ?? [])
-  const selected = (providerID: string) => {
-    if (options.providers.length > 0) return options.providers.includes(providerID)
-    return providerID.startsWith("ollama")
-  }
-
-  const hidden = new Set(options.excludeModels ?? [])
-
-  const out: Candidate[] = []
-  for (const [providerID, provider] of Object.entries(cfg.provider ?? {})) {
-    if (!provider || !provider.models) continue
-    if (!selected(providerID)) continue
-    for (const modelID of Object.keys(provider.models)) {
-      const key = `${providerID}/${modelID}`
-      out.push({
-        key,
-        providerID,
-        modelID,
-        entry: options.models[key],
-        providerDisabled: disabled.has(providerID),
-        hidden: hidden.has(key),
-      })
+      out.push({ key: `${providerID}/${modelID}`, providerID, modelID, raw: (raw ?? {}) as ModelEntryLike })
     }
   }
   return out
 }
+
+export function collectMeta(
+  cfg: ConfigLike,
+  options: RouterOptions,
+  catalog?: CatalogLike,
+): Map<string, ModelMeta> {
+  const disabled = new Set(cfg.disabled_providers ?? [])
+  const meta = new Map<string, ModelMeta>()
+  for (const entry of collectModels(cfg, options, catalog)) {
+    meta.set(entry.key, {
+      providerID: entry.providerID,
+      modelID: entry.modelID,
+      name: typeof entry.raw.name === "string" ? entry.raw.name : undefined,
+      context: typeof entry.raw.limit?.context === "number" ? entry.raw.limit.context : undefined,
+      toolCall: entry.raw.tool_call === true || entry.raw.capability?.toolcall === true,
+      reasoning: entry.raw.reasoning === true || entry.raw.capability?.reasoning === true,
+      providerDisabled: disabled.has(entry.providerID),
+    })
+  }
+  return meta
+}
+
+export function findUnmatchedScorecardKeys(
+  cfg: ConfigLike,
+  options: RouterOptions,
+  catalog?: CatalogLike,
+): string[] {
+  const known = new Set(collectCandidates(cfg, options, catalog).map((c) => c.key))
+  return Object.keys(options.models).filter((key) => !known.has(key))
+}
+
+export function collectCandidates(
+  cfg: ConfigLike,
+  options: RouterOptions,
+  catalog?: CatalogLike,
+): Candidate[] {
+  const disabled = new Set(cfg.disabled_providers ?? [])
+  const hidden = new Set(options.excludeModels ?? [])
+
+  return collectModels(cfg, options, catalog).map((entry) => ({
+    key: entry.key,
+    providerID: entry.providerID,
+    modelID: entry.modelID,
+    entry: options.models[entry.key],
+    providerDisabled: disabled.has(entry.providerID),
+    hidden: hidden.has(entry.key),
+  }))
+}
+
+/**
+ * Injected by the plugin config hook so "Model Router" is selectable in the
+ * normal model picker. It is never a routing candidate and never reaches a
+ * provider API: `chat.message` rewrites it to a concrete model.
+ */
+export const ROUTER_PROVIDER_ID = "model-router"
+export const ROUTER_MODEL_ID = "auto"
+export const ROUTER_MODEL_KEY = `${ROUTER_PROVIDER_ID}/${ROUTER_MODEL_ID}`
