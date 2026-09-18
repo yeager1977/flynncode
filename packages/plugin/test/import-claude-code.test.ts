@@ -59,4 +59,38 @@ describe("parseClaudeCode", () => {
     const parsed = parseClaudeCode({ path: "/tmp/s1.jsonl", text: fixture })
     expect(parsed.title).toBe("Hello there")
   })
+
+  it("drops an automation stub with no human origin and only template prompts", () => {
+    const stub = line({
+      type: "user",
+      uuid: "n1",
+      sessionId: "n1",
+      cwd: "/home/u/.claude/double-shot-latte",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      promptSource: "sdk",
+      message: {
+        role: "user",
+        content: "Analyze this conversation and determine: Does the assistant have more autonomous work to do RIGHT NOW?",
+      },
+    })
+    const parsed = parseClaudeCode({ path: "/tmp/n1.jsonl", text: stub })
+    expect(parsed.messages).toEqual([])
+  })
+
+  it("strips a leading system-reminder block from the title", () => {
+    const reminder = line({
+      type: "user",
+      uuid: "w1",
+      sessionId: "w1",
+      cwd: "/work",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      origin: { kind: "human" },
+      message: {
+        role: "user",
+        content: "<system-reminder>\nYou are operating in a git worktree.\n</system-reminder>\n\nFix the ingress config",
+      },
+    })
+    const parsed = parseClaudeCode({ path: "/tmp/w1.jsonl", text: reminder })
+    expect(parsed.title).toBe("Fix the ingress config")
+  })
 })
