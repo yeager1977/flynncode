@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { collectCandidates, collectMeta, findUnmatchedScorecardKeys } from "../../../src/plugin/ollama-model-router/candidates"
-import { parseOptions } from "../../../src/plugin/ollama-model-router/scorecard"
+import { rankModels } from "../../../src/plugin/ollama-model-router/rank"
+import { DEFAULT_TASK_WEIGHTS, parseOptions } from "../../../src/plugin/ollama-model-router/scorecard"
 
 const cfg = {
   provider: {
@@ -71,13 +72,82 @@ describe("collectCandidates", () => {
   test("findUnmatchedScorecardKeys reports scorecard keys with no live model", () => {
     const opts = options({ models: { "ollama-cloud/nope": { price: 1, capability: 1, speed: 1 }, "ollama-cloud/gpt-oss:20b": { price: 2, capability: 2, speed: 2 } } })
     const unmatched = findUnmatchedScorecardKeys(cfg, opts)
-    expect(unmatched).toEqual(["ollama-cloud/nope"])
+    expect(unmatched).toContain("ollama-cloud/nope")
+    expect(unmatched.filter((key) => key.startsWith("xai/"))).toEqual([
+      "xai/grok-4.6",
+      "xai/grok-4.5",
+      "xai/grok-4.20-0309-reasoning",
+      "xai/grok-4.20-0309-non-reasoning",
+      "xai/grok-4.3",
+      "xai/grok-build-0.1",
+    ])
   })
 
   test("marks models listed in excludeModels as hidden", () => {
     const list = collectCandidates(cfg, options({ excludeModels: ["ollama-cloud/gpt-oss:20b"] }))
     expect(list.find((c) => c.key === "ollama-cloud/gpt-oss:20b")?.hidden).toBe(true)
     expect(list.find((c) => c.key === "ollama-cloud/glm-5.3-flash:cloud")?.hidden).toBe(false)
+  })
+
+  test("xAI models appear only when xai is in providers", () => {
+    const xaiCfg = {
+      provider: {
+        ...cfg.provider,
+        xai: {
+          models: {
+            "grok-4.6": {},
+            "grok-4.5": {},
+            "grok-4.20-0309-reasoning": {},
+            "grok-4.20-0309-non-reasoning": {},
+            "grok-4.3": {},
+            "grok-build-0.1": {},
+            "grok-4.20-multi-agent-0309": {},
+            "grok-imagine-image": {},
+            "grok-imagine-video": {},
+            "grok-imagine-video-1.5": {},
+          },
+        },
+      },
+    }
+    const scored = [
+      "xai/grok-4.6",
+      "xai/grok-4.5",
+      "xai/grok-4.20-0309-reasoning",
+      "xai/grok-4.20-0309-non-reasoning",
+      "xai/grok-4.3",
+      "xai/grok-build-0.1",
+    ]
+    const without = collectCandidates(xaiCfg, options())
+    expect(without.some((c) => c.providerID === "xai")).toBe(false)
+    const withXai = collectCandidates(xaiCfg, options({ providers: ["xai"] }))
+    expect(scored.every((key) => withXai.some((c) => c.key === key && c.entry))).toBe(true)
+  })
+
+  test("bundled non-agentic Grok models are not routable when allowUnscored is false", () => {
+    const xaiCfg = {
+      provider: {
+        xai: {
+          models: {
+            "grok-4.6": {},
+            "grok-4.20-multi-agent-0309": {},
+            "grok-imagine-image": {},
+            "grok-imagine-video": {},
+            "grok-imagine-video-1.5": {},
+          },
+        },
+      },
+    }
+    const opts = options({ providers: ["xai"], allowUnscored: false })
+    const result = rankModels(collectCandidates(xaiCfg, opts), "coding", DEFAULT_TASK_WEIGHTS.coding, {
+      allowUnscored: false,
+    })
+    expect(result.ranked.map((r) => r.key)).toEqual(["xai/grok-4.6"])
+    expect(result.excluded.map((r) => r.key).sort()).toEqual([
+      "xai/grok-4.20-multi-agent-0309",
+      "xai/grok-imagine-image",
+      "xai/grok-imagine-video",
+      "xai/grok-imagine-video-1.5",
+    ])
   })
 
   test("collectMeta extracts name, context, and capability flags", () => {

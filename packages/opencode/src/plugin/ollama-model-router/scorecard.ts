@@ -33,6 +33,23 @@ export const DEFAULT_TASK_WEIGHTS: Record<TaskName, { capability: number; price:
 // editor's "Lower cost" preset.
 export const VALUE_TASK_WEIGHTS = { capability: 0.25, price: 0.65, speed: 0.1 }
 
+export const DEFAULT_MODELS: Record<string, ScoreEntry> = {
+  "xai/grok-4.6": { capability: 9, price: 7, speed: 4, tags: ["coding", "planning", "architecture"] },
+  "xai/grok-4.5": { capability: 9, price: 7, speed: 4, tags: ["coding", "planning", "review"] },
+  "xai/grok-4.20-0309-reasoning": { capability: 8, price: 4, speed: 5, tags: ["coding", "long-context"] },
+  "xai/grok-4.20-0309-non-reasoning": { capability: 7, price: 3, speed: 7, tags: ["coding", "lookup"] },
+  "xai/grok-4.3": { capability: 8, price: 4, speed: 5, tags: ["coding", "long-context"] },
+  "xai/grok-build-0.1": { capability: 7, price: 3, speed: 6, tags: ["coding"] },
+}
+
+// Bundled exclusions encode agentic correctness and cannot be removed by a user list.
+export const DEFAULT_EXCLUDE_MODELS = [
+  "xai/grok-imagine-image",
+  "xai/grok-imagine-video",
+  "xai/grok-imagine-video-1.5",
+  "xai/grok-4.20-multi-agent-0309",
+]
+
 const VALUE_SUFFIX = "-value"
 
 export function parseTaskVariant(variant: string | undefined): { task: TaskName; value: boolean } | undefined {
@@ -144,16 +161,16 @@ export function parseOptions(
       }
     }
 
-    let excludeModels: string[] = []
+    let excludeModels = [...DEFAULT_EXCLUDE_MODELS]
     if (r.excludeModels !== undefined) {
       if (Array.isArray(r.excludeModels) && r.excludeModels.every((key) => typeof key === "string" && parseModelKey(key))) {
-        excludeModels = r.excludeModels as string[]
+        excludeModels = [...new Set([...DEFAULT_EXCLUDE_MODELS, ...(r.excludeModels as string[])])]
       } else {
         errors.push('excludeModels must be an array of "providerID/modelID" strings')
       }
     }
 
-    const models: Record<string, ScoreEntry> = {}
+    const models: Record<string, ScoreEntry> = structuredClone(DEFAULT_MODELS)
     if (r.models !== undefined) {
       if (r.models === null || typeof r.models !== "object" || Array.isArray(r.models)) {
         errors.push("models must be an object keyed by providerID/modelID")

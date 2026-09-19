@@ -1,7 +1,7 @@
 # xAI / Grok in the Model Router - Design
 
 Date: 2026-09-18
-Status: Draft
+Status: Implemented
 
 ## Problem
 

@@ -9,7 +9,7 @@ behavior is configured through the `model_router` key in the global config
   "autoRoute": true,
   "allowUnscored": false,
   "legacyAssign": false,
-  "providers": ["ollama-cloud", "anthropic", "openai"],
+  "providers": ["ollama-cloud", "anthropic", "openai", "xai"],
   "agentTasks": {
     "build": "coding",
     "plan": "planning",
@@ -30,6 +30,10 @@ behavior is configured through the `model_router` key in the global config
 
 With no `model_router` key the plugin stays inert (no warnings, no routing).
 
+- Agentic xAI Grok models ship with bundled scorecard entries. A user entry
+  for the same key replaces the bundled one wholesale. Non-agentic Grok
+  models (`grok-imagine-*`, `grok-4.20-multi-agent-0309`) are always excluded;
+  a user `excludeModels` list is unioned with those defaults.
 - Every model on a configured provider is eligible by default
   (`allowUnscored: true`). Models without a scorecard entry score a neutral
   5/5/5. Set `allowUnscored: false` to require an explicit scorecard entry.

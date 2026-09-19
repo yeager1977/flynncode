@@ -17,7 +17,45 @@ describe("parseOptions", () => {
     expect(result.options.providers).toEqual([])
     expect(result.options.agentTasks).toEqual(DEFAULT_AGENT_TASKS)
     expect(result.options.taskModels).toEqual({})
-    expect(result.options.models).toEqual({})
+  })
+
+  test("parses bundled xAI defaults with exactly six scored keys", () => {
+    const result = parseOptions({})
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.options.models).toEqual({
+      "xai/grok-4.6": { capability: 9, price: 7, speed: 4, tags: ["coding", "planning", "architecture"] },
+      "xai/grok-4.5": { capability: 9, price: 7, speed: 4, tags: ["coding", "planning", "review"] },
+      "xai/grok-4.20-0309-reasoning": { capability: 8, price: 4, speed: 5, tags: ["coding", "long-context"] },
+      "xai/grok-4.20-0309-non-reasoning": { capability: 7, price: 3, speed: 7, tags: ["coding", "lookup"] },
+      "xai/grok-4.3": { capability: 8, price: 4, speed: 5, tags: ["coding", "long-context"] },
+      "xai/grok-build-0.1": { capability: 7, price: 3, speed: 6, tags: ["coding"] },
+    })
+    expect(result.options.taskModels).toEqual({})
+  })
+
+  test("user scorecard entries override bundled keys wholesale and add new keys", () => {
+    const result = parseOptions({
+      models: {
+        "xai/grok-4.6": { capability: 10, price: 1, speed: 1 },
+        "custom/foo": { price: 2, capability: 6, speed: 8, tags: ["writing"] },
+      },
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.options.models["xai/grok-4.6"]).toEqual({ price: 1, capability: 10, speed: 1 })
+    expect(result.options.models["custom/foo"]).toEqual({
+      price: 2,
+      capability: 6,
+      speed: 8,
+      tags: ["writing"],
+    })
+    expect(result.options.models["xai/grok-4.5"]).toEqual({
+      capability: 9,
+      price: 7,
+      speed: 4,
+      tags: ["coding", "planning", "review"],
+    })
   })
 
   test("parses explicit per-task model overrides", () => {
@@ -38,8 +76,30 @@ describe("parseOptions", () => {
     const result = parseOptions({ excludeModels: ["ollama-cloud/hidden"] })
     expect(result.ok).toBe(true)
     if (!result.ok) return
-    expect(result.options.excludeModels).toEqual(["ollama-cloud/hidden"])
+    expect(result.options.excludeModels).toContain("ollama-cloud/hidden")
     expect(parseOptions({ excludeModels: ["no-slash"] }).ok).toBe(false)
+  })
+
+  test("unions bundled excludeModels with the user list", () => {
+    const result = parseOptions({ excludeModels: ["ollama-cloud/hidden"] })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.options.excludeModels).toEqual([
+      "xai/grok-imagine-image",
+      "xai/grok-imagine-video",
+      "xai/grok-imagine-video-1.5",
+      "xai/grok-4.20-multi-agent-0309",
+      "ollama-cloud/hidden",
+    ])
+    const empty = parseOptions({})
+    expect(empty.ok).toBe(true)
+    if (!empty.ok) return
+    expect(empty.options.excludeModels).toEqual([
+      "xai/grok-imagine-image",
+      "xai/grok-imagine-video",
+      "xai/grok-imagine-video-1.5",
+      "xai/grok-4.20-multi-agent-0309",
+    ])
   })
 
   test("accepts a valid scorecard", () => {
