@@ -399,6 +399,59 @@ it.effect("updates global config and omits empty shell key in jsonc", () =>
   ),
 )
 
+it.effect("removes an mcp server from an existing jsonc config", () =>
+  withGlobalConfig(
+    {
+      name: "opencode.jsonc",
+      config: {
+        mcp: {
+          "rl-mcp-rag": { type: "remote", url: "http://a/sse" },
+          "4m-mcp": { type: "remote", url: "http://b/mcp" },
+        },
+      },
+    },
+    ({ dir }) =>
+      Effect.gen(function* () {
+        // Mirrors the desktop app: read the config, drop one mcp entry, PUT the rest.
+        yield* Config.use.updateGlobal({
+          mcp: {
+            "4m-mcp": { type: "remote", url: "http://b/mcp" },
+          },
+        })
+
+        const file = path.join(dir, "opencode.jsonc")
+        const writtenConfig = yield* FSUtil.use.readFileString(file)
+        const parsed = ConfigParse.schema(ConfigV1.Info, ConfigParse.jsonc(writtenConfig, file), file)
+        expect(Object.keys(parsed.mcp ?? {})).toEqual(["4m-mcp"])
+        expect(writtenConfig).not.toContain("rl-mcp-rag")
+      }),
+  ),
+)
+
+it.effect("removes an mcp server from an existing json config", () =>
+  withGlobalConfig(
+    {
+      config: {
+        mcp: {
+          "rl-mcp-rag": { type: "remote", url: "http://a/sse" },
+          "4m-mcp": { type: "remote", url: "http://b/mcp" },
+        },
+      },
+    },
+    ({ dir }) =>
+      Effect.gen(function* () {
+        yield* Config.use.updateGlobal({
+          mcp: {
+            "4m-mcp": { type: "remote", url: "http://b/mcp" },
+          },
+        })
+
+        const writtenConfig = yield* FSUtil.use.readJson(path.join(dir, "opencode.json"))
+        expect(Object.keys((writtenConfig as { mcp?: object }).mcp ?? {})).toEqual(["4m-mcp"])
+      }),
+  ),
+)
+
 it.effect("logs global update diagnostics once without exposing values", () =>
   withGlobalConfig(
     {

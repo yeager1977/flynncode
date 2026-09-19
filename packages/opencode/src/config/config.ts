@@ -162,7 +162,24 @@ function mergeWholeSubtrees(base: Record<string, unknown>, patch: Record<string,
   return merged
 }
 
-function patchJsonc(input: string, patch: unknown, path: string[] = []): string {
+/**
+ * Names of MCP servers present in the file but absent from the incoming patch.
+ *
+ * A patch can only add or update keys, so an omitted server would otherwise
+ * survive and reappear immediately after a delete. Resolve names through the
+ * V1 compatibility layer so a legacy `mcp.servers.<name>` envelope counts as a
+ * server, and ignore the raw envelope/timeout keys.
+ */
+function removedMcpServers(before: string, patch: unknown, file: string): string[] {
+  if (!isRecord(patch) || !Object.hasOwn(patch, "mcp")) return []
+  const existing = ConfigParse.jsonc(before, file)
+  const lowered = ConfigV2Compat.lower(normalizeLoadedConfig(existing), file).value
+  if (!isRecord(lowered) || !isRecord(lowered.mcp)) return []
+  const next = isRecord(patch.mcp) ? patch.mcp : {}
+  return Object.keys(lowered.mcp).filter((name) => !Object.hasOwn(next, name))
+}
+
+function patchJsonc(input: string, patch: unknown, path: string[] = [], removeMcp: string[] = []): string {
   if (!isRecord(patch)) {
     const edits = modify(input, path, patch, {
       formattingOptions: {
@@ -184,6 +201,21 @@ function patchJsonc(input: string, patch: unknown, path: string[] = []): string 
       })
       return applyEdits(result, edits)
     }
+    // mcp needs explicit deletions: a merge patch can only add or update, so a
+    // removed server would otherwise stay in the file. Delete exactly the names
+    // the incoming patch dropped, then apply the rest normally.
+    if (path.length === 0 && key === "mcp") {
+      const deleted = removeMcp.reduce((current, name) => {
+        const edits = modify(current, [key, name], undefined, {
+          formattingOptions: {
+            insertSpaces: true,
+            tabSize: 2,
+          },
+        })
+        return applyEdits(current, edits)
+      }, result)
+      return patchJsonc(deleted, value, [...path, key], removeMcp)
+    }
     // A provider entry is swapped as a whole subtree so removed headers, models,
     // and a cleared base URL persist, while sibling providers stay untouched.
     if (path.length === 0 && key === "provider" && isRecord(value)) {
@@ -197,7 +229,7 @@ function patchJsonc(input: string, patch: unknown, path: string[] = []): string 
         return applyEdits(current, edits)
       }, result)
     }
-    return patchJsonc(result, value, [...path, key])
+    return patchJsonc(result, value, [...path, key], removeMcp)
   }, input)
 }
 
@@ -703,14 +735,23 @@ const layer = Layer.effect(
       if (!file.endsWith(".jsonc")) {
         const existing = ConfigParse.jsonc(before, file)
         ConfigParse.schema(ConfigV1.Info, ConfigV2Compat.lower(normalizeLoadedConfig(existing), file).value, file)
-        const base = isRecord(existing) ? existing : {}
+        const base = isRecord(existing) ? { ...existing } : {}
+        // Drop MCP servers the patch removed before merging; a deep merge keeps
+        // deleted entries alive, which makes a removed server reappear.
+        const removed = removedMcpServers(before, patch, file)
+        if (removed.length > 0 && isRecord(base.mcp)) {
+          const mcp = { ...base.mcp }
+          for (const name of removed) delete mcp[name]
+          base.mcp = mcp
+        }
         const merged = mergeWholeSubtrees(base, patch)
         const serialized = JSON.stringify(merged, null, 2)
         next = yield* decodeConfig(merged, file)
         changed = serialized !== before
         if (changed) yield* fs.writeFileString(file, serialized).pipe(Effect.orDie)
       } else {
-        const updated = patchJsonc(before, patch)
+        const removed = removedMcpServers(before, patch, file)
+        const updated = patchJsonc(before, patch, [], removed)
         next = yield* decodeConfig(ConfigParse.jsonc(updated, file), file)
         changed = updated !== before
         if (changed) yield* fs.writeFileString(file, updated).pipe(Effect.orDie)
