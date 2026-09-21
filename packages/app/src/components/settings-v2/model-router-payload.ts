@@ -41,6 +41,7 @@ export type AgentTaskRow = { agent: string; task: TaskName }
 export type ModelScoreRow = { key: string; tags: TaskName[]; price: number; capability: number; speed: number }
 
 export type ModelRouterFormState = {
+  enabled: boolean
   autoRoute: boolean
   allowUnscored: boolean
   overrideExplicit: boolean
@@ -55,6 +56,7 @@ export type ModelRouterFormState = {
 
 export function emptyForm(): ModelRouterFormState {
   return {
+    enabled: true,
     autoRoute: true,
     allowUnscored: true,
     overrideExplicit: false,
@@ -71,6 +73,7 @@ export function emptyForm(): ModelRouterFormState {
 export function formFromConfig(config: Record<string, unknown> | undefined): ModelRouterFormState {
   const raw = config ?? {}
   return {
+    enabled: typeof raw.enabled === "boolean" ? raw.enabled : true,
     autoRoute: typeof raw.autoRoute === "boolean" ? raw.autoRoute : true,
     allowUnscored: typeof raw.allowUnscored === "boolean" ? raw.allowUnscored : true,
     overrideExplicit: typeof raw.overrideExplicit === "boolean" ? raw.overrideExplicit : false,
@@ -86,6 +89,7 @@ export function formFromConfig(config: Record<string, unknown> | undefined): Mod
 
 export function serializeForm(form: ModelRouterFormState): Record<string, unknown> {
   const payload: Record<string, unknown> = {
+    enabled: form.enabled,
     autoRoute: form.autoRoute,
     allowUnscored: form.allowUnscored,
     overrideExplicit: form.overrideExplicit,
@@ -155,6 +159,16 @@ export function validateForm(
   }
   if (errors.length > 0) return { ok: false, errors }
   return { ok: true, value: serializeForm(form) }
+}
+
+export function isRouterModel(model: unknown): boolean {
+  return typeof model === "string" && (model === "model-router/auto" || model.startsWith("model-router/"))
+}
+
+export function modelAfterDisable(model: unknown, smallModel: unknown) {
+  if (!isRouterModel(model)) return model
+  if (typeof smallModel === "string" && smallModel.length > 0 && !isRouterModel(smallModel)) return smallModel
+  return model
 }
 
 function isTaskName(value: unknown): value is TaskName {

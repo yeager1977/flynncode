@@ -7,6 +7,8 @@ import {
   type TaskName,
   emptyForm,
   formFromConfig,
+  isRouterModel,
+  modelAfterDisable,
   serializeForm,
   validateForm,
 } from "./model-router-payload"
@@ -15,6 +17,7 @@ describe("emptyForm", () => {
   test("matches plugin defaults", () => {
     const form = emptyForm()
     expect(form).toEqual({
+      enabled: true,
       autoRoute: true,
       allowUnscored: true,
       overrideExplicit: false,
@@ -113,6 +116,7 @@ describe("formFromConfig", () => {
 describe("serializeForm", () => {
   test("empty form serializes to the default object", () => {
     expect(serializeForm(emptyForm())).toEqual({
+      enabled: true,
       autoRoute: true,
       allowUnscored: true,
       overrideExplicit: false,
@@ -162,6 +166,7 @@ describe("serializeForm", () => {
       models: [{ key: "ollama/llama3.1", tags: ["coding", "review"], price: 4, capability: 9, speed: 3 }],
     }
     expect(serializeForm(form)).toEqual({
+      enabled: true,
       autoRoute: true,
       allowUnscored: true,
       overrideExplicit: false,
@@ -332,6 +337,7 @@ describe("round trip", () => {
 
   test("round-trips a populated form", () => {
     const form: ModelRouterFormState = {
+      enabled: true,
       autoRoute: false,
       allowUnscored: true,
       overrideExplicit: true,
@@ -345,4 +351,33 @@ describe("round trip", () => {
     }
     expect(formFromConfig(serializeForm(form) as Record<string, unknown>)).toEqual(form)
   })
+})
+
+test("defaults enabled to true", () => {
+  expect(emptyForm().enabled).toBe(true)
+  expect(formFromConfig({}).enabled).toBe(true)
+})
+
+test("parses and serializes enabled false", () => {
+  const form = formFromConfig({ enabled: false })
+  expect(form.enabled).toBe(false)
+  expect(serializeForm(form).enabled).toBe(false)
+})
+
+test("isRouterModel detects the sentinel", () => {
+  expect(isRouterModel("model-router/auto")).toBe(true)
+  expect(isRouterModel("model-router/coding")).toBe(true)
+  expect(isRouterModel("ollama-cloud/glm-5.3-flash")).toBe(false)
+})
+
+test("modelAfterDisable retargets sentinel to small_model", () => {
+  expect(modelAfterDisable("model-router/auto", "ollama-cloud/glm-5.3-flash")).toBe("ollama-cloud/glm-5.3-flash")
+})
+
+test("modelAfterDisable leaves model unchanged without small_model", () => {
+  expect(modelAfterDisable("model-router/auto", undefined)).toBe("model-router/auto")
+})
+
+test("modelAfterDisable leaves a concrete model unchanged", () => {
+  expect(modelAfterDisable("xai/grok-4.6", "ollama-cloud/glm-5.3-flash")).toBe("xai/grok-4.6")
 })
