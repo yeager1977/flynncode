@@ -85,6 +85,7 @@ export function parseOptions(
     const errors: string[] = []
     const r = raw ?? {}
 
+    const enabled = typeof r.enabled === "boolean" ? r.enabled : true
     const autoRoute = typeof r.autoRoute === "boolean" ? r.autoRoute : true
     const allowUnscored = typeof r.allowUnscored === "boolean" ? r.allowUnscored : true
     const overrideExplicit = typeof r.overrideExplicit === "boolean" ? r.overrideExplicit : false
@@ -210,6 +211,7 @@ export function parseOptions(
     return {
       ok: true,
       options: {
+        enabled,
         autoRoute,
         allowUnscored,
         overrideExplicit,

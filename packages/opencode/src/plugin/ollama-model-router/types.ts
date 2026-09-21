@@ -25,6 +25,7 @@ export type ModelMeta = {
 }
 
 export type RouterOptions = {
+  enabled: boolean
   autoRoute: boolean
   allowUnscored: boolean
   overrideExplicit: boolean

@@ -19,6 +19,20 @@ describe("parseOptions", () => {
     expect(result.options.taskModels).toEqual({})
   })
 
+  test("defaults enabled to true", () => {
+    const result = parseOptions({})
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.options.enabled).toBe(true)
+  })
+
+  test("parses enabled false", () => {
+    const result = parseOptions({ enabled: false })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.options.enabled).toBe(false)
+  })
+
   test("parses bundled xAI defaults with exactly six scored keys", () => {
     const result = parseOptions({})
     expect(result.ok).toBe(true)
