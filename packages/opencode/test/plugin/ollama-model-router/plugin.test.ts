@@ -273,4 +273,52 @@ describe("plugin", () => {
     const output = await hooks.tool!.rank_models.execute({ task: "review" } as any, { sessionID: "s" } as any)
     expect(String(output)).toContain("ollama-cloud/reviewer")
   })
+
+  test("enabled false does not inject the sentinel or assign agents", async () => {
+    const hooks = await plugin.server(fakeInput, {
+      enabled: false,
+      autoRoute: true,
+      legacyAssign: true,
+      providers: ["ollama-cloud"],
+      models: { "ollama-cloud/a": { price: 1, capability: 10, speed: 10 } },
+    })
+    const cfg: any = {
+      model_router: {
+        enabled: false,
+        autoRoute: true,
+        legacyAssign: true,
+        providers: ["ollama-cloud"],
+        models: { "ollama-cloud/a": { price: 1, capability: 10, speed: 10 } },
+      },
+      provider: { "ollama-cloud": { models: { a: {} } } },
+      agent: {},
+    }
+    await hooks.config?.(cfg)
+    expect(cfg.provider["model-router"]).toBeUndefined()
+    expect(cfg.agent).toEqual({})
+  })
+
+  test("enabled false leaves the sentinel unrewritten", async () => {
+    const hooks = await plugin.server(fakeInput)
+    const cfg: any = {
+      model_router: { enabled: false, providers: ["ollama-cloud"] },
+      provider: { "ollama-cloud": { models: { a: {} } } },
+      agent: {},
+    }
+    await hooks.config?.(cfg)
+    const message: any = { model: { providerID: "model-router", modelID: "auto" } }
+    await hooks["chat.message"]?.(
+      { sessionID: "s", agent: "build", model: { providerID: "model-router", modelID: "auto" } },
+      { message, parts: [] },
+    )
+    expect(message.model).toEqual({ providerID: "model-router", modelID: "auto" })
+  })
+
+  test("rank_models reports disabled when enabled is false", async () => {
+    const hooks = await plugin.server(fakeInput)
+    const cfg: any = { model_router: { enabled: false } }
+    await hooks.config?.(cfg)
+    const output = await hooks.tool!.rank_models.execute({ task: "coding" } as any, { sessionID: "s" } as any)
+    expect(String(output)).toBe("Model router disabled.")
+  })
 })

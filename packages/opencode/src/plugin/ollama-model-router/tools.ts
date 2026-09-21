@@ -65,6 +65,7 @@ export function createTools(deps: Deps): Hooks["tool"] {
       },
       async execute(args) {
         const options = deps.getOptions()
+        if (options?.enabled === false) return "Model router disabled."
         if (!options) return disabledMessage(deps.getOptionsError())
         const cfg = deps.getConfig()
         const catalog = deps.getCatalog()
@@ -105,6 +106,7 @@ export function createTools(deps: Deps): Hooks["tool"] {
       },
       async execute(args, ctx) {
         const options = deps.getOptions()
+        if (options?.enabled === false) return "Model router disabled."
         if (!options) return disabledMessage(deps.getOptionsError())
         if (!isTaskName(args.task)) {
           return `Unknown task "${args.task}". Valid tasks: ${TASK_NAMES.join(", ")}`

@@ -112,6 +112,10 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
         }
         currentOptions = parsed.options
         optionsError = undefined
+        if (!parsed.options.enabled) {
+          assignments = {}
+          return
+        }
 
         injectRouterProvider(cfg)
 
@@ -138,6 +142,7 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
       // concrete model.
       if (output.message.model.providerID !== ROUTER_PROVIDER_ID) return
       if (event.model?.providerID !== ROUTER_PROVIDER_ID) return
+      if (!currentOptions?.enabled) return
       try {
         await loadCatalog()
         const resolved = resolveSentinel(event)
