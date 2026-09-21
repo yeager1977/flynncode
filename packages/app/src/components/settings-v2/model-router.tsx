@@ -13,10 +13,12 @@ import {
   DEFAULT_AGENT_TASKS,
   TASK_NAMES,
   formFromConfig,
+  modelAfterDisable,
   serializeForm,
   validateForm,
   type TaskName,
 } from "./model-router-payload"
+import { hasOmoPlugin, setOmoPlugin } from "./omo-plugin"
 import {
   parseWeight,
   priorityWeights,
@@ -141,8 +143,12 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
       return
     }
     setState({ saving: true, error: "" })
+    const config = serverSync().data.config
+    const nextModel = form.enabled ? config.model : modelAfterDisable(config.model, config.small_model)
+    const patch: Record<string, unknown> = { model_router: result.value }
+    if (nextModel !== config.model) patch.model = nextModel
     await serverSync()
-      .updateConfig({ model_router: result.value })
+      .updateConfig(patch)
       .then(
         () => {
           setForm("excludeModels", excludeModels)
@@ -218,6 +224,41 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
           aria-label={language.t("settings.modelRouter.title")}
         >
           <Tabs.Content value="routing" class="model-router-panel">
+            <div class="model-router-enable model-router-card">
+              <div>
+                <h3>{language.t("settings.modelRouter.enabled.title")}</h3>
+                <p class="model-router-muted">{language.t("settings.modelRouter.enabled.description")}</p>
+              </div>
+              <Switch
+                checked={form.enabled}
+                disabled={state.saving}
+                onChange={(checked) => setForm("enabled", checked)}
+                hideLabel
+              >
+                {language.t("settings.modelRouter.enabled.title")}
+              </Switch>
+            </div>
+            <div class="model-router-enable model-router-card">
+              <div>
+                <h3>{language.t("settings.modelRouter.omo.title")}</h3>
+                <p class="model-router-muted">{language.t("settings.modelRouter.omo.description")}</p>
+              </div>
+              <Switch
+                checked={hasOmoPlugin(serverSync().data.config.plugin)}
+                disabled={state.saving}
+                onChange={(checked) => {
+                  void serverSync().updateConfig({
+                    plugin: setOmoPlugin(serverSync().data.config.plugin, checked) as (
+                      | string
+                      | [string, { [key: string]: unknown }]
+                    )[],
+                  })
+                }}
+                hideLabel
+              >
+                {language.t("settings.modelRouter.omo.title")}
+              </Switch>
+            </div>
             <div class="model-router-enable model-router-card">
               <div>
                 <h3>{language.t("settings.modelRouter.autoRoute.title")}</h3>
