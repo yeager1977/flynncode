@@ -6,7 +6,7 @@ import { Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitleGroup } from
 import { Switch } from "@opencode-ai/ui/v2/switch-v2"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { For, Show, createMemo, createResource, createSignal, type Component } from "solid-js"
-import type { McpLocalConfig, McpRemoteConfig } from "@opencode-ai/sdk/v2/client"
+import type { Config, McpLocalConfig, McpRemoteConfig } from "@opencode-ai/sdk/v2/client"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { useServerProtocol, useServerSDK } from "@/context/server-sdk"
@@ -70,7 +70,7 @@ export const SettingsMcpV2: Component<{ directory?: string }> = (props) => {
   // sidecar (in-tree server) does not expose `/api/mcp`, and upstream's own
   // loadMcpQuery/toggleMcp call `legacy.mcp.status()` and `sdk.mcp.*` on both
   // protocols. Removal has no dedicated route: it unsets `mcp[name]` in the
-  // global config. The promise client's mcp routes only exist on genuine
+  // global or project config. The promise client's mcp routes only exist on genuine
   // 1.17-era servers; fall back to them only when the SDK client fails with a
   // route error (defense in depth for real v1 servers).
   const mcpApi = () => {
@@ -93,19 +93,27 @@ export const SettingsMcpV2: Component<{ directory?: string }> = (props) => {
         )
         return result.data ?? []
       },
-      add: async (server: string, config: McpServerConfig) => {
+      add: async (server: string, config: McpServerConfig, directory?: string) => {
         // The v2 schema wants mutable arrays; the payload builder types them readonly.
         const mutable = (config.type === "local"
           ? { ...config, command: [...config.command] }
           : { ...config }) as McpLocalConfig | McpRemoteConfig
         try {
-          await sdk.client.mcp.add({ name: server, config: mutable, ...directory() })
+          await sdk.client.mcp.add({ name: server, config: mutable, ...(directory !== undefined ? { directory } : {}) })
         } catch (error) {
           if (protocol() === "v2") throw error
-          await sdk.api.mcp.add({ server, config, ...location() })
+          await sdk.api.mcp.add({ server, config, ...(directory !== undefined ? location() : {}) })
         }
       },
-      remove: async (server: string) => {
+      remove: async (server: string, scope?: "global" | "directory") => {
+        if (scope === "directory" && props.directory !== undefined) {
+          const response = await sdk.client.config.get({ directory: props.directory })
+          const project = (response.data ?? {}) as Config
+          const next = { ...project, mcp: { ...project.mcp } }
+          delete next.mcp[server]
+          await sdk.client.config.update({ directory: props.directory, config: next })
+          return
+        }
         const config = serverSync().data.config
         const next = { ...config, mcp: { ...config?.mcp } }
         delete next.mcp[server]
@@ -156,24 +164,31 @@ export const SettingsMcpV2: Component<{ directory?: string }> = (props) => {
   const onError = (error: unknown) =>
     showToast({ variant: "error", description: error instanceof Error ? error.message : String(error) })
 
-  const addServer = async (form: McpFormState, previous?: { name: string; wasConnected: boolean }) => {
-    const built = buildAddInput(form, { keepSecret: previous !== undefined })
+  const addServer = async (form: McpFormState, previous?: { name: string; wasConnected: boolean; scope: "global" | "directory" }) => {
+    const built = buildAddInput(form, { keepSecret: previous !== undefined, directory: props.directory })
     if (!built.ok) throw new Error(built.error)
     const api = mcpApi()
     if (previous) {
       if (previous.wasConnected) {
         await api.disconnect(previous.name).catch(() => undefined)
       }
-      await api.remove(previous.name)
+      await api.remove(previous.name, previous.scope)
+      await api.add(built.input.server, built.input.config, previous.scope === "directory" ? props.directory : undefined)
+      return
     }
-    await api.add(built.input.server, built.input.config)
+    await api.add(built.input.server, built.input.config, built.input.directory)
   }
 
-  const openForm = (initial: McpFormState, previous?: { name: string; wasConnected: boolean }) => {
+  const openForm = (
+    initial: McpFormState,
+    previous?: { name: string; wasConnected: boolean; scope: "global" | "directory" },
+    note?: string,
+  ) => {
     // A reactive store keeps the dialog's toggles, switches, and row editors
     // updating as the form is mutated (a plain object would render once and
     // freeze every non-text control).
-    const [form] = createStore<McpFormState>({ ...initial, environment: [...initial.environment], headers: [...initial.headers] })
+    const scope = previous?.scope ?? (props.directory !== undefined ? "directory" : "global")
+    const [form] = createStore<McpFormState>({ ...initial, scope, environment: [...initial.environment], headers: [...initial.headers] })
     void dialog.push(() => (
       <Dialog fit>
         <DialogHeader>
@@ -184,7 +199,10 @@ export const SettingsMcpV2: Component<{ directory?: string }> = (props) => {
         </DialogHeader>
         <DividerV2 />
         <DialogBody class="flex w-full min-w-0 flex-1 flex-col gap-4 px-4 pt-4 pb-2">
-          <McpFormFields form={form} previous={previous} />
+          <Show when={note !== undefined}>
+            <div class="settings-v2-plugins-note">{note}</div>
+          </Show>
+          <McpFormFields form={form} previous={previous} hasDirectory={props.directory !== undefined} />
         </DialogBody>
         <DialogFooter>
           <ButtonV2 variant="neutral" onClick={() => dialog.close()}>
@@ -208,14 +226,25 @@ export const SettingsMcpV2: Component<{ directory?: string }> = (props) => {
   const onAdd = () => openForm(emptyForm())
 
   const onEdit = (name: string) => {
-    const existing = serverSync().data.config?.mcp?.[name]
-    if (!existing || !("type" in existing)) {
-      showToast({ variant: "error", description: language.t("settings.mcp.errors.noConfig", { name }) })
-      return
-    }
-    const config = storedToPayloadConfig(existing)
-    const status = (servers() ?? []).find((server) => server.name === name)?.status.status
-    openForm(formFromConfig(name, config), { name, wasConnected: status === "connected" })
+    void (async () => {
+      let scope: "global" | "directory" = "global"
+      let existing = serverSync().data.config?.mcp?.[name]
+      if (props.directory !== undefined) {
+        const response = await serverSdk().client.config.get({ directory: props.directory })
+        const project = (response.data ?? {}) as Config
+        if (project.mcp?.[name] !== undefined) {
+          scope = "directory"
+          existing = project.mcp[name]
+        }
+      }
+      if (!existing || !("type" in existing)) {
+        showToast({ variant: "error", description: language.t("settings.mcp.errors.noConfig", { name }) })
+        return
+      }
+      const config = storedToPayloadConfig(existing)
+      const status = (servers() ?? []).find((server) => server.name === name)?.status.status
+      openForm(formFromConfig(name, config), { name, wasConnected: status === "connected", scope })
+    })()
   }
 
   const connect = async (name: string) => {
@@ -398,7 +427,8 @@ export const SettingsMcpV2: Component<{ directory?: string }> = (props) => {
 }
 const McpFormFields: Component<{
   form: McpFormState
-  previous?: { name: string; wasConnected: boolean }
+  previous?: { name: string; wasConnected: boolean; scope: "global" | "directory" }
+  hasDirectory: boolean
 }> = (props) => {
   const language = useLanguage()
 
@@ -419,6 +449,24 @@ const McpFormFields: Component<{
           onInput={(event) => (props.form.name = event.currentTarget.value)}
         />
       </div>
+      <Show when={props.hasDirectory && props.previous === undefined}>
+        <div class="flex gap-2">
+          <ButtonV2
+            size="normal"
+            variant={props.form.scope !== "directory" ? "neutral" : "ghost-muted"}
+            onClick={() => (props.form.scope = "global")}
+          >
+            {language.t("settings.mcp.form.scope.global")}
+          </ButtonV2>
+          <ButtonV2
+            size="normal"
+            variant={props.form.scope === "directory" ? "neutral" : "ghost-muted"}
+            onClick={() => (props.form.scope = "directory")}
+          >
+            {language.t("settings.mcp.form.scope.project")}
+          </ButtonV2>
+        </div>
+      </Show>
       <div class="flex gap-2">
         <ButtonV2
           size="normal"
@@ -547,8 +595,8 @@ const McpFormFields: Component<{
 
 const KeyValueRows: Component<{
   label: string
-  rows: () => { key: string; value: string }[]
-  onChange: (rows: { key: string; value: string }[]) => void
+  rows: () => { key: string; value: string; hint?: string }[]
+  onChange: (rows: { key: string; value: string; hint?: string }[]) => void
 }> = (props) => {
   const language = useLanguage()
   return (
@@ -571,6 +619,7 @@ const KeyValueRows: Component<{
               type="text"
               class="flex-1"
               value={row.value}
+              placeholder={row.hint}
               onInput={(event) => {
                 const next = [...props.rows()]
                 next[index()] = { ...next[index()], value: event.currentTarget.value }

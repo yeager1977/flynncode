@@ -1111,6 +1111,8 @@ export const dict = {
   "settings.mcp.form.title.edit": "Edit MCP server",
   "settings.mcp.form.subtitle": "Configure the connection settings.",
   "settings.mcp.form.name": "Name",
+  "settings.mcp.form.scope.global": "Global",
+  "settings.mcp.form.scope.project": "Project",
   "settings.mcp.form.command": "Command",
   "settings.mcp.form.command.hint": "e.g. npx -y @modelcontextprotocol/server-filesystem",
   "settings.mcp.form.cwd": "Working directory",
