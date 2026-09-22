@@ -10,12 +10,21 @@ describe("pluginFile", () => {
 })
 
 describe("openCodeFile", () => {
-  test("prefers .opencode/opencode.jsonc and never returns config.json", () => {
+  test("returns the .opencode/opencode.jsonc default when no candidate exists", () => {
     expect(openCodeFile("/work", () => false)).toBe("/work/.opencode/opencode.jsonc")
-    expect(openCodeFile("/work", (path) => path === "/work/opencode.json")).toBe("/work/.opencode/opencode.jsonc")
-    expect(openCodeFile("/work", (path) => path === "/work/.opencode/opencode.jsonc")).toBe(
-      "/work/.opencode/opencode.jsonc",
-    )
+  })
+
+  test(".opencode/opencode.jsonc wins over a root opencode.json", () => {
+    const exists = (path: string) => path === "/work/.opencode/opencode.jsonc" || path === "/work/opencode.json"
+    expect(openCodeFile("/work", exists)).toBe("/work/.opencode/opencode.jsonc")
+  })
+
+  test("falls through to a root opencode.json when the .opencode/ dir is empty", () => {
+    expect(openCodeFile("/work", (path) => path === "/work/opencode.json")).toBe("/work/opencode.json")
+  })
+
+  test("never returns a path ending in config.json", () => {
+    expect(openCodeFile("/work", (path) => path.endsWith("config.json"))).toBe("/work/.opencode/opencode.jsonc")
   })
 })
 

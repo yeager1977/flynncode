@@ -18,18 +18,21 @@ const PLUGIN_FILE_NAMES = [
   "oh-my-opencode.json",
 ] as const
 
-const OPENCODE_FILE_NAMES = ["opencode.jsonc", "opencode.json"] as const
-
 export function pluginFile(dir: string, exists: (candidate: string) => boolean): string | undefined {
   return PLUGIN_FILE_NAMES.map((name) => path.join(dir, name)).find(exists)
 }
 
-// Root `<dir>/opencode.{json,jsonc}` files are intentionally not returned.
-// The Oh My OpenCode patch always lands under `.opencode/` so a legacy root
-// config remains untouched and a fresh install stays namespaced.
+// Spec order: patch the first that exists, otherwise fall back to the
+// `.opencode/opencode.jsonc` default so a fresh install stays namespaced.
+// The global `config.json` sibling is never a valid target here.
 export function openCodeFile(dir: string, exists: (candidate: string) => boolean): string {
-  const files = OPENCODE_FILE_NAMES.map((name) => path.join(dir, ".opencode", name))
-  return files.find(exists) ?? files[0]
+  const candidates = [
+    path.join(dir, ".opencode", "opencode.jsonc"),
+    path.join(dir, ".opencode", "opencode.json"),
+    path.join(dir, "opencode.jsonc"),
+    path.join(dir, "opencode.json"),
+  ].filter((candidate) => !candidate.endsWith("config.json"))
+  return candidates.find(exists) ?? candidates[0]
 }
 
 const FORMAT = {
