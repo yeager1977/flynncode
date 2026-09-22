@@ -19,10 +19,6 @@ import "./model-router.css"
 
 type Scope = "global" | "project"
 
-// `ollama-local` is a hidden ban surfaced on save so a fresh install cannot
-// leak local endpoints through the picker; keep the constant in one place.
-const HIDDEN_BANS = ["ollama-local"] as const
-
 const AUTOMATIC_VALUE = "__automatic__"
 const INHERIT_VALUE = "__inherit__"
 
@@ -156,22 +152,7 @@ export const SettingsOmoV2: Component<{ directory: Accessor<string | undefined> 
     const response = await fetcher()(url, { headers })
     if (!response.ok) throw new Error(`Failed to load: ${response.status}`)
     const info = (await response.json()) as OmoInfo
-    const agentPins = pinsFromRecord(info.agents, OMO_AGENTS)
-    const categoryPins = pinsFromRecord(info.categories, OMO_CATEGORIES)
-    const banUnion = uniqueList([...info.disabledProviders, ...info.openCodeDisabledProviders]).filter(
-      (id) => !HIDDEN_BANS.includes(id as (typeof HIDDEN_BANS)[number]),
-    )
-    const next: ScopeForm = {
-      agents: agentPins,
-      categories: categoryPins,
-      checked: banUnion,
-      existingAgents: recordOfRecords(info.agents),
-      existingCategories: recordOfRecords(info.categories),
-      path: info.path,
-      parseError: info.parseError,
-      openCodeDisabledProviders: [...info.openCodeDisabledProviders],
-      disabledProviders: [...info.disabledProviders],
-    }
+    const next = formFromInfo(info)
     if (scope === "global") {
       setGlobalForm(reconcile(next))
       setGlobalBaseline(serialize(next))
@@ -211,15 +192,9 @@ export const SettingsOmoV2: Component<{ directory: Accessor<string | undefined> 
 
   const shownProviders = createMemo(() => {
     const ids = new Set<string>()
-    for (const id of connectedProviderIDs()) if (!HIDDEN_BANS.includes(id as (typeof HIDDEN_BANS)[number])) ids.add(id)
-    for (const id of activeForm().disabledProviders) {
-      if (HIDDEN_BANS.includes(id as (typeof HIDDEN_BANS)[number])) continue
-      ids.add(id)
-    }
-    for (const id of activeForm().openCodeDisabledProviders) {
-      if (HIDDEN_BANS.includes(id as (typeof HIDDEN_BANS)[number])) continue
-      ids.add(id)
-    }
+    for (const id of connectedProviderIDs()) ids.add(id)
+    for (const id of activeForm().disabledProviders) ids.add(id)
+    for (const id of activeForm().openCodeDisabledProviders) ids.add(id)
     return Array.from(ids).sort((a, b) => providerName(a).localeCompare(providerName(b)))
   })
 
@@ -344,11 +319,22 @@ export const SettingsOmoV2: Component<{ directory: Accessor<string | undefined> 
     if (state.scope === "project" && !props.directory()) return
     if (activeForm().parseError) return
     setState({ saving: true, error: null, saved: false })
+    const shown = shownProviders()
+    const shownSet = new Set(shown)
+    const loadedBans = uniqueList([
+      ...activeForm().disabledProviders,
+      ...activeForm().openCodeDisabledProviders,
+    ])
+    const hiddenBans = loadedBans.filter((id) => !shownSet.has(id))
+    const checked =
+      state.scope === "project"
+        ? uniqueList([...activeForm().checked, ...shown.filter((id) => isLocked(id))])
+        : activeForm().checked
     const input = {
       scope: state.scope,
-      shownProviders: shownProviders(),
-      checked: activeForm().checked,
-      hiddenBans: HIDDEN_BANS as unknown as readonly string[],
+      shownProviders: shown,
+      checked,
+      hiddenBans,
       globalOpenCodeBans: globalForm.openCodeDisabledProviders,
       globalPluginBans: globalForm.disabledProviders,
       agents: activeForm().agents,
@@ -398,22 +384,7 @@ export const SettingsOmoV2: Component<{ directory: Accessor<string | undefined> 
       return
     }
     const info = (await response.json()) as OmoInfo
-    const agentPins = pinsFromRecord(info.agents, OMO_AGENTS)
-    const categoryPins = pinsFromRecord(info.categories, OMO_CATEGORIES)
-    const banUnion = uniqueList([...info.disabledProviders, ...info.openCodeDisabledProviders]).filter(
-      (id) => !HIDDEN_BANS.includes(id as (typeof HIDDEN_BANS)[number]),
-    )
-    const next: ScopeForm = {
-      agents: agentPins,
-      categories: categoryPins,
-      checked: banUnion,
-      existingAgents: recordOfRecords(info.agents),
-      existingCategories: recordOfRecords(info.categories),
-      path: info.path,
-      parseError: info.parseError,
-      openCodeDisabledProviders: [...info.openCodeDisabledProviders],
-      disabledProviders: [...info.disabledProviders],
-    }
+    const next = formFromInfo(info)
     if (state.scope === "global") {
       setGlobalForm(reconcile(next))
       setGlobalBaseline(serialize(next))
@@ -623,6 +594,20 @@ const PinRow: Component<{
       </Show>
     </div>
   )
+}
+
+function formFromInfo(info: OmoInfo): ScopeForm {
+  return {
+    agents: pinsFromRecord(info.agents, OMO_AGENTS),
+    categories: pinsFromRecord(info.categories, OMO_CATEGORIES),
+    checked: uniqueList([...info.disabledProviders, ...info.openCodeDisabledProviders]),
+    existingAgents: recordOfRecords(info.agents),
+    existingCategories: recordOfRecords(info.categories),
+    path: info.path,
+    parseError: info.parseError,
+    openCodeDisabledProviders: [...info.openCodeDisabledProviders],
+    disabledProviders: [...info.disabledProviders],
+  }
 }
 
 function pinsFromRecord(record: Record<string, unknown>, keys: readonly string[]): Record<string, Pin> {
