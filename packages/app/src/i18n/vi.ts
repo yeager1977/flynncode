@@ -2,12 +2,20 @@ import { modelRouterFallback } from "./model-router-fallback"
 import { omoSettingsFallback } from "./omo-settings-fallback"
 import { providerEditFallback } from "./provider-edit-fallback"
 import { importSessionsFallback } from "./import-sessions-fallback"
+import { dispatchFallback } from "./dispatch-fallback"
+import { routinesFallback } from "./routines-fallback"
+import { artifactsSidebarFallback } from "./artifacts-sidebar-fallback"
+import { mcpRegistryFallback } from "./mcp-registry-fallback"
 
 export const dict = {
   ...modelRouterFallback,
   ...omoSettingsFallback,
   ...providerEditFallback,
   ...importSessionsFallback,
+  ...dispatchFallback,
+  ...routinesFallback,
+  ...artifactsSidebarFallback,
+  ...mcpRegistryFallback,
   "desktop.menu.app": "OpenCode",
   "desktop.menu.file": "Tệp",
   "desktop.menu.edit": "Chỉnh sửa",
@@ -125,6 +133,24 @@ export const dict = {
   "command.category.workspace": "Không gian làm việc",
   "command.category.settings": "Cài đặt",
   "command.logs.export": "Xuất nhật ký",
+  "settings.mcp.form.scope.global": "Toàn cục",
+  "settings.mcp.form.scope.project": "Dự án",
+  "settings.mcp.registry.deprecated": "Ngừng hỗ trợ",
+  "settings.mcp.registry.empty": "Không có kết quả.",
+  "settings.mcp.registry.error": "Không thể kết nối tới sổ đăng ký MCP.",
+  "settings.mcp.registry.filter.all": "Tất cả",
+  "settings.mcp.registry.filter.remote": "Từ xa",
+  "settings.mcp.registry.filter.stdio": "Stdio",
+  "settings.mcp.registry.loadMore": "Tải thêm",
+  "settings.mcp.registry.note": "Đã điền sẵn từ sổ đăng ký MCP — hãy cung cấp giá trị cho: {{vars}}",
+  "settings.mcp.registry.placeholder": "Tìm máy chủ…",
+  "settings.mcp.registry.retry": "Thử lại",
+  "settings.mcp.registry.search": "Tìm kiếm trong sổ đăng ký…",
+  "settings.mcp.registry.select": "Cấu hình",
+  "settings.mcp.registry.subtitle": "Tìm kiếm trong sổ đăng ký MCP chính thức và cấu hình máy chủ.",
+  "settings.mcp.registry.title": "Sổ đăng ký MCP",
+  "settings.mcp.registry.typePrompt": "Nhập để tìm kiếm trong sổ đăng ký MCP.",
+  "settings.mcp.registry.unsupported": "Không có gói cài đặt được hoặc URL từ xa",
   "theme.scheme.system": "Hệ thống",
   "theme.scheme.light": "Sáng",
   "theme.scheme.dark": "Tối",

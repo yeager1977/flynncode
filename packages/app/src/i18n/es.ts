@@ -2,12 +2,20 @@ import { modelRouterFallback } from "./model-router-fallback"
 import { omoSettingsFallback } from "./omo-settings-fallback"
 import { providerEditFallback } from "./provider-edit-fallback"
 import { importSessionsFallback } from "./import-sessions-fallback"
+import { dispatchFallback } from "./dispatch-fallback"
+import { routinesFallback } from "./routines-fallback"
+import { artifactsSidebarFallback } from "./artifacts-sidebar-fallback"
+import { mcpRegistryFallback } from "./mcp-registry-fallback"
 
 export const dict = {
   ...modelRouterFallback,
   ...omoSettingsFallback,
   ...providerEditFallback,
   ...importSessionsFallback,
+  ...dispatchFallback,
+  ...routinesFallback,
+  ...artifactsSidebarFallback,
+  ...mcpRegistryFallback,
   "desktop.menu.app": "OpenCode",
   "desktop.menu.file": "Archivo",
   "desktop.menu.edit": "Editar",
@@ -127,6 +135,24 @@ export const dict = {
   "command.category.settings": "Ajustes",
   "command.logs.export": "Exportar registros",
 
+  "settings.mcp.form.scope.global": "Global",
+  "settings.mcp.form.scope.project": "Proyecto",
+  "settings.mcp.registry.deprecated": "Obsoleto",
+  "settings.mcp.registry.empty": "Sin resultados.",
+  "settings.mcp.registry.error": "No se pudo acceder al registro de MCP.",
+  "settings.mcp.registry.filter.all": "Todos",
+  "settings.mcp.registry.filter.remote": "Remoto",
+  "settings.mcp.registry.filter.stdio": "Stdio",
+  "settings.mcp.registry.loadMore": "Cargar más",
+  "settings.mcp.registry.note": "Rellenado desde el registro de MCP: proporcione los valores de: {{vars}}",
+  "settings.mcp.registry.placeholder": "Buscar servidores…",
+  "settings.mcp.registry.retry": "Reintentar",
+  "settings.mcp.registry.search": "Buscar en el registro…",
+  "settings.mcp.registry.select": "Configurar",
+  "settings.mcp.registry.subtitle": "Busque en el registro oficial de MCP y configure un servidor.",
+  "settings.mcp.registry.title": "Registro de MCP",
+  "settings.mcp.registry.typePrompt": "Escriba para buscar en el registro de MCP.",
+  "settings.mcp.registry.unsupported": "No hay ningún paquete instalable ni URL remota",
   "theme.scheme.system": "Sistema",
   "theme.scheme.light": "Claro",
   "theme.scheme.dark": "Oscuro",

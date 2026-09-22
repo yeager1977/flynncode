@@ -2,12 +2,20 @@ import { modelRouterFallback } from "./model-router-fallback"
 import { omoSettingsFallback } from "./omo-settings-fallback"
 import { providerEditFallback } from "./provider-edit-fallback"
 import { importSessionsFallback } from "./import-sessions-fallback"
+import { dispatchFallback } from "./dispatch-fallback"
+import { routinesFallback } from "./routines-fallback"
+import { artifactsSidebarFallback } from "./artifacts-sidebar-fallback"
+import { mcpRegistryFallback } from "./mcp-registry-fallback"
 
 export const dict = {
   ...modelRouterFallback,
   ...omoSettingsFallback,
   ...providerEditFallback,
   ...importSessionsFallback,
+  ...dispatchFallback,
+  ...routinesFallback,
+  ...artifactsSidebarFallback,
+  ...mcpRegistryFallback,
   "desktop.menu.app": "OpenCode",
   "desktop.menu.file": "Berkas",
   "desktop.menu.edit": "Sunting",
@@ -127,6 +135,24 @@ export const dict = {
   "command.category.settings": "Pengaturan",
   "command.logs.export": "Ekspor log",
 
+  "settings.mcp.form.scope.global": "Global",
+  "settings.mcp.form.scope.project": "Proyek",
+  "settings.mcp.registry.deprecated": "Tidak digunakan lagi",
+  "settings.mcp.registry.empty": "Tidak ada hasil.",
+  "settings.mcp.registry.error": "Tidak dapat menghubungi registri MCP.",
+  "settings.mcp.registry.filter.all": "Semua",
+  "settings.mcp.registry.filter.remote": "Jarak jauh",
+  "settings.mcp.registry.filter.stdio": "Stdio",
+  "settings.mcp.registry.loadMore": "Muat lebih banyak",
+  "settings.mcp.registry.note": "Terisi otomatis dari registri MCP — berikan nilai untuk: {{vars}}",
+  "settings.mcp.registry.placeholder": "Cari server…",
+  "settings.mcp.registry.retry": "Coba lagi",
+  "settings.mcp.registry.search": "Cari registri…",
+  "settings.mcp.registry.select": "Konfigurasikan",
+  "settings.mcp.registry.subtitle": "Cari di registri MCP resmi dan konfigurasikan server.",
+  "settings.mcp.registry.title": "Registri MCP",
+  "settings.mcp.registry.typePrompt": "Ketik untuk mencari registri MCP.",
+  "settings.mcp.registry.unsupported": "Tidak ada paket yang dapat dipasang atau URL jarak jauh",
   "theme.scheme.system": "Sistem",
   "theme.scheme.light": "Terang",
   "theme.scheme.dark": "Gelap",

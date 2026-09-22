@@ -2,12 +2,20 @@ import { modelRouterFallback } from "./model-router-fallback"
 import { omoSettingsFallback } from "./omo-settings-fallback"
 import { providerEditFallback } from "./provider-edit-fallback"
 import { importSessionsFallback } from "./import-sessions-fallback"
+import { dispatchFallback } from "./dispatch-fallback"
+import { routinesFallback } from "./routines-fallback"
+import { artifactsSidebarFallback } from "./artifacts-sidebar-fallback"
+import { mcpRegistryFallback } from "./mcp-registry-fallback"
 
 export const dict = {
   ...modelRouterFallback,
   ...omoSettingsFallback,
   ...providerEditFallback,
   ...importSessionsFallback,
+  ...dispatchFallback,
+  ...routinesFallback,
+  ...artifactsSidebarFallback,
+  ...mcpRegistryFallback,
   "desktop.menu.app": "OpenCode",
   "desktop.menu.file": "Файл",
   "desktop.menu.edit": "Правка",
@@ -126,6 +134,24 @@ export const dict = {
   "command.category.settings": "Настройки",
   "command.logs.export": "Экспортировать журналы",
 
+  "settings.mcp.form.scope.global": "Глобальный",
+  "settings.mcp.form.scope.project": "Проект",
+  "settings.mcp.registry.deprecated": "Устарело",
+  "settings.mcp.registry.empty": "Нет результатов.",
+  "settings.mcp.registry.error": "Не удалось подключиться к реестру MCP.",
+  "settings.mcp.registry.filter.all": "Все",
+  "settings.mcp.registry.filter.remote": "Удалённый",
+  "settings.mcp.registry.filter.stdio": "Stdio",
+  "settings.mcp.registry.loadMore": "Загрузить ещё",
+  "settings.mcp.registry.note": "Заполнено из реестра MCP — укажите значения для: {{vars}}",
+  "settings.mcp.registry.placeholder": "Поиск серверов…",
+  "settings.mcp.registry.retry": "Повторить",
+  "settings.mcp.registry.search": "Поиск в реестре…",
+  "settings.mcp.registry.select": "Настроить",
+  "settings.mcp.registry.subtitle": "Выполните поиск в официальном реестре MCP и настройте сервер.",
+  "settings.mcp.registry.title": "Реестр MCP",
+  "settings.mcp.registry.typePrompt": "Введите запрос для поиска в реестре MCP.",
+  "settings.mcp.registry.unsupported": "Нет устанавливаемого пакета или удалённого URL",
   "theme.scheme.system": "Системная",
   "theme.scheme.light": "Светлая",
   "theme.scheme.dark": "Тёмная",

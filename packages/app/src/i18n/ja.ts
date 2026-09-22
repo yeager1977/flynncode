@@ -2,12 +2,20 @@ import { modelRouterFallback } from "./model-router-fallback"
 import { omoSettingsFallback } from "./omo-settings-fallback"
 import { providerEditFallback } from "./provider-edit-fallback"
 import { importSessionsFallback } from "./import-sessions-fallback"
+import { dispatchFallback } from "./dispatch-fallback"
+import { routinesFallback } from "./routines-fallback"
+import { artifactsSidebarFallback } from "./artifacts-sidebar-fallback"
+import { mcpRegistryFallback } from "./mcp-registry-fallback"
 
 export const dict = {
   ...modelRouterFallback,
   ...omoSettingsFallback,
   ...providerEditFallback,
   ...importSessionsFallback,
+  ...dispatchFallback,
+  ...routinesFallback,
+  ...artifactsSidebarFallback,
+  ...mcpRegistryFallback,
   "desktop.menu.app": "OpenCode",
   "desktop.menu.file": "ファイル",
   "desktop.menu.edit": "編集",
@@ -124,6 +132,24 @@ export const dict = {
   "command.category.workspace": "ワークスペース",
   "command.category.settings": "設定",
   "command.logs.export": "ログをエクスポート",
+  "settings.mcp.form.scope.global": "グローバル",
+  "settings.mcp.form.scope.project": "プロジェクト",
+  "settings.mcp.registry.deprecated": "非推奨",
+  "settings.mcp.registry.empty": "結果はありません。",
+  "settings.mcp.registry.error": "MCP レジストリに接続できませんでした。",
+  "settings.mcp.registry.filter.all": "すべて",
+  "settings.mcp.registry.filter.remote": "リモート",
+  "settings.mcp.registry.filter.stdio": "Stdio",
+  "settings.mcp.registry.loadMore": "さらに読み込む",
+  "settings.mcp.registry.note": "MCP レジストリから事前入力されています。次の値を入力してください: {{vars}}",
+  "settings.mcp.registry.placeholder": "サーバーを検索…",
+  "settings.mcp.registry.retry": "再試行",
+  "settings.mcp.registry.search": "レジストリを検索…",
+  "settings.mcp.registry.select": "設定",
+  "settings.mcp.registry.subtitle": "公式の MCP レジストリを検索してサーバーを設定します。",
+  "settings.mcp.registry.title": "MCP レジストリ",
+  "settings.mcp.registry.typePrompt": "入力して MCP レジストリを検索します。",
+  "settings.mcp.registry.unsupported": "インストール可能なパッケージまたはリモート URL がありません",
   "theme.scheme.system": "システム",
   "theme.scheme.light": "ライト",
   "theme.scheme.dark": "ダーク",

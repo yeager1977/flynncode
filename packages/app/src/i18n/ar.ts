@@ -2,12 +2,20 @@ import { modelRouterFallback } from "./model-router-fallback"
 import { omoSettingsFallback } from "./omo-settings-fallback"
 import { providerEditFallback } from "./provider-edit-fallback"
 import { importSessionsFallback } from "./import-sessions-fallback"
+import { dispatchFallback } from "./dispatch-fallback"
+import { routinesFallback } from "./routines-fallback"
+import { artifactsSidebarFallback } from "./artifacts-sidebar-fallback"
+import { mcpRegistryFallback } from "./mcp-registry-fallback"
 
 export const dict = {
   ...modelRouterFallback,
   ...omoSettingsFallback,
   ...providerEditFallback,
   ...importSessionsFallback,
+  ...dispatchFallback,
+  ...routinesFallback,
+  ...artifactsSidebarFallback,
+  ...mcpRegistryFallback,
   "desktop.menu.app": "OpenCode",
   "desktop.menu.file": "ملف",
   "desktop.menu.edit": "تحرير",
@@ -124,6 +132,24 @@ export const dict = {
   "command.category.workspace": "مساحة عمل",
   "command.category.settings": "إعدادات",
   "command.logs.export": "تصدير السجلات",
+  "settings.mcp.form.scope.global": "عالمي",
+  "settings.mcp.form.scope.project": "مشروع",
+  "settings.mcp.registry.deprecated": "مستنكر",
+  "settings.mcp.registry.empty": "لا توجد نتائج.",
+  "settings.mcp.registry.error": "تعذّر الوصول إلى سجل MCP.",
+  "settings.mcp.registry.filter.all": "الكل",
+  "settings.mcp.registry.filter.remote": "بعيد",
+  "settings.mcp.registry.filter.stdio": "Stdio",
+  "settings.mcp.registry.loadMore": "تحميل المزيد",
+  "settings.mcp.registry.note": "معبأ مسبقًا من سجل MCP — قدِّم القيم لـ: {{vars}}",
+  "settings.mcp.registry.placeholder": "البحث عن خوادم…",
+  "settings.mcp.registry.retry": "إعادة المحاولة",
+  "settings.mcp.registry.search": "البحث في السجل…",
+  "settings.mcp.registry.select": "تهيئة",
+  "settings.mcp.registry.subtitle": "ابحث في سجل MCP الرسمي واضبط خادمًا.",
+  "settings.mcp.registry.title": "سجل MCP",
+  "settings.mcp.registry.typePrompt": "اكتب للبحث في سجل MCP.",
+  "settings.mcp.registry.unsupported": "لا توجد حزمة قابلة للتثبيت أو عنوان URL بعيد",
   "theme.scheme.system": "نظام",
   "theme.scheme.light": "فاتح",
   "theme.scheme.dark": "داكن",

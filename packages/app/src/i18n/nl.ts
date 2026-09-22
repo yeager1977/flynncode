@@ -2,12 +2,20 @@ import { modelRouterFallback } from "./model-router-fallback"
 import { omoSettingsFallback } from "./omo-settings-fallback"
 import { providerEditFallback } from "./provider-edit-fallback"
 import { importSessionsFallback } from "./import-sessions-fallback"
+import { dispatchFallback } from "./dispatch-fallback"
+import { routinesFallback } from "./routines-fallback"
+import { artifactsSidebarFallback } from "./artifacts-sidebar-fallback"
+import { mcpRegistryFallback } from "./mcp-registry-fallback"
 
 export const dict = {
   ...modelRouterFallback,
   ...omoSettingsFallback,
   ...providerEditFallback,
   ...importSessionsFallback,
+  ...dispatchFallback,
+  ...routinesFallback,
+  ...artifactsSidebarFallback,
+  ...mcpRegistryFallback,
   "desktop.menu.app": "OpenCode",
   "desktop.menu.file": "Bestand",
   "desktop.menu.edit": "Bewerken",
@@ -118,6 +126,24 @@ export const dict = {
   "command.category.workspace": "Werkruimte",
   "command.category.settings": "Instellingen",
   "command.logs.export": "Logboeken exporteren",
+  "settings.mcp.form.scope.global": "Globaal",
+  "settings.mcp.form.scope.project": "Project",
+  "settings.mcp.registry.deprecated": "Verouderd",
+  "settings.mcp.registry.empty": "Geen resultaten.",
+  "settings.mcp.registry.error": "Kan de MCP-registry niet bereiken.",
+  "settings.mcp.registry.filter.all": "Alle",
+  "settings.mcp.registry.filter.remote": "Extern",
+  "settings.mcp.registry.filter.stdio": "Stdio",
+  "settings.mcp.registry.loadMore": "Meer laden",
+  "settings.mcp.registry.note": "Vooraf ingevuld vanuit de MCP-registry — geef waarden op voor: {{vars}}",
+  "settings.mcp.registry.placeholder": "Servers zoeken…",
+  "settings.mcp.registry.retry": "Opnieuw proberen",
+  "settings.mcp.registry.search": "Registry doorzoeken…",
+  "settings.mcp.registry.select": "Configureren",
+  "settings.mcp.registry.subtitle": "Zoek in de officiële MCP-registry en configureer een server.",
+  "settings.mcp.registry.title": "MCP-registry",
+  "settings.mcp.registry.typePrompt": "Typ om de MCP-registry te doorzoeken.",
+  "settings.mcp.registry.unsupported": "Geen installeerbaar pakket of externe URL",
   "theme.scheme.system": "Systeem",
   "theme.scheme.light": "Licht",
   "theme.scheme.dark": "Donker",

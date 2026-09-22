@@ -2,12 +2,20 @@ import { modelRouterFallback } from "./model-router-fallback"
 import { omoSettingsFallback } from "./omo-settings-fallback"
 import { providerEditFallback } from "./provider-edit-fallback"
 import { importSessionsFallback } from "./import-sessions-fallback"
+import { dispatchFallback } from "./dispatch-fallback"
+import { routinesFallback } from "./routines-fallback"
+import { artifactsSidebarFallback } from "./artifacts-sidebar-fallback"
+import { mcpRegistryFallback } from "./mcp-registry-fallback"
 
 export const dict = {
   ...modelRouterFallback,
   ...omoSettingsFallback,
   ...providerEditFallback,
   ...importSessionsFallback,
+  ...dispatchFallback,
+  ...routinesFallback,
+  ...artifactsSidebarFallback,
+  ...mcpRegistryFallback,
   "command.category.suggested": "Suggeriti",
   "command.category.view": "Visualizzazione",
   "command.category.project": "Progetto",
@@ -26,6 +34,24 @@ export const dict = {
   "command.category.workspace": "Area di lavoro",
   "command.category.settings": "Impostazioni",
   "command.logs.export": "Esporta log",
+  "settings.mcp.form.scope.global": "Globale",
+  "settings.mcp.form.scope.project": "Progetto",
+  "settings.mcp.registry.deprecated": "Deprecato",
+  "settings.mcp.registry.empty": "Nessun risultato.",
+  "settings.mcp.registry.error": "Impossibile raggiungere il registro MCP.",
+  "settings.mcp.registry.filter.all": "Tutti",
+  "settings.mcp.registry.filter.remote": "Remoto",
+  "settings.mcp.registry.filter.stdio": "Stdio",
+  "settings.mcp.registry.loadMore": "Carica altri elementi",
+  "settings.mcp.registry.note": "Precompilato dal registro MCP — fornisci i valori per: {{vars}}",
+  "settings.mcp.registry.placeholder": "Cerca server…",
+  "settings.mcp.registry.retry": "Riprova",
+  "settings.mcp.registry.search": "Cerca nel registro…",
+  "settings.mcp.registry.select": "Configura",
+  "settings.mcp.registry.subtitle": "Cerca nel registro MCP ufficiale e configura un server.",
+  "settings.mcp.registry.title": "Registro MCP",
+  "settings.mcp.registry.typePrompt": "Digita per cercare nel registro MCP.",
+  "settings.mcp.registry.unsupported": "Nessun pacchetto installabile o URL remoto",
   "theme.scheme.system": "Sistema",
   "theme.scheme.light": "Chiaro",
   "theme.scheme.dark": "Scuro",

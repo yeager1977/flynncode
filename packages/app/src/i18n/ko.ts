@@ -2,12 +2,20 @@ import { modelRouterFallback } from "./model-router-fallback"
 import { omoSettingsFallback } from "./omo-settings-fallback"
 import { providerEditFallback } from "./provider-edit-fallback"
 import { importSessionsFallback } from "./import-sessions-fallback"
+import { dispatchFallback } from "./dispatch-fallback"
+import { routinesFallback } from "./routines-fallback"
+import { artifactsSidebarFallback } from "./artifacts-sidebar-fallback"
+import { mcpRegistryFallback } from "./mcp-registry-fallback"
 
 export const dict = {
   ...modelRouterFallback,
   ...omoSettingsFallback,
   ...providerEditFallback,
   ...importSessionsFallback,
+  ...dispatchFallback,
+  ...routinesFallback,
+  ...artifactsSidebarFallback,
+  ...mcpRegistryFallback,
   "command.category.suggested": "추천",
   "command.category.view": "보기",
   "command.category.project": "프로젝트",
@@ -25,6 +33,24 @@ export const dict = {
   "command.category.permissions": "권한",
   "command.category.workspace": "작업 공간",
   "command.category.settings": "설정",
+  "settings.mcp.form.scope.global": "전역",
+  "settings.mcp.form.scope.project": "프로젝트",
+  "settings.mcp.registry.deprecated": "지원 중단됨",
+  "settings.mcp.registry.empty": "결과가 없습니다.",
+  "settings.mcp.registry.error": "MCP 레지스트리에 연결할 수 없습니다.",
+  "settings.mcp.registry.filter.all": "전체",
+  "settings.mcp.registry.filter.remote": "원격",
+  "settings.mcp.registry.filter.stdio": "Stdio",
+  "settings.mcp.registry.loadMore": "더 불러오기",
+  "settings.mcp.registry.note": "MCP 레지스트리에서 미리 채워졌습니다. 다음 값을 입력하세요: {{vars}}",
+  "settings.mcp.registry.placeholder": "서버 검색…",
+  "settings.mcp.registry.retry": "다시 시도",
+  "settings.mcp.registry.search": "레지스트리 검색…",
+  "settings.mcp.registry.select": "구성",
+  "settings.mcp.registry.subtitle": "공식 MCP 레지스트리를 검색하여 서버를 구성합니다.",
+  "settings.mcp.registry.title": "MCP 레지스트리",
+  "settings.mcp.registry.typePrompt": "입력하여 MCP 레지스트리를 검색합니다.",
+  "settings.mcp.registry.unsupported": "설치 가능한 패키지나 원격 URL이 없습니다",
   "theme.scheme.system": "시스템",
   "theme.scheme.light": "라이트",
   "theme.scheme.dark": "다크",

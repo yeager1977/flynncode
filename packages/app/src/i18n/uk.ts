@@ -2,12 +2,20 @@ import { modelRouterFallback } from "./model-router-fallback"
 import { omoSettingsFallback } from "./omo-settings-fallback"
 import { providerEditFallback } from "./provider-edit-fallback"
 import { importSessionsFallback } from "./import-sessions-fallback"
+import { dispatchFallback } from "./dispatch-fallback"
+import { routinesFallback } from "./routines-fallback"
+import { artifactsSidebarFallback } from "./artifacts-sidebar-fallback"
+import { mcpRegistryFallback } from "./mcp-registry-fallback"
 
 export const dict = {
   ...modelRouterFallback,
   ...omoSettingsFallback,
   ...providerEditFallback,
   ...importSessionsFallback,
+  ...dispatchFallback,
+  ...routinesFallback,
+  ...artifactsSidebarFallback,
+  ...mcpRegistryFallback,
   "desktop.menu.app": "OpenCode",
   "desktop.menu.file": "Файл",
   "desktop.menu.edit": "Редагування",
@@ -127,6 +135,24 @@ export const dict = {
   "command.category.settings": "Налаштування",
   "command.logs.export": "Експортувати журнали",
 
+  "settings.mcp.form.scope.global": "Глобальний",
+  "settings.mcp.form.scope.project": "Проєкт",
+  "settings.mcp.registry.deprecated": "Застаріле",
+  "settings.mcp.registry.empty": "Немає результатів.",
+  "settings.mcp.registry.error": "Не вдалося під'єднатися до реєстру MCP.",
+  "settings.mcp.registry.filter.all": "Усі",
+  "settings.mcp.registry.filter.remote": "Віддалений",
+  "settings.mcp.registry.filter.stdio": "Stdio",
+  "settings.mcp.registry.loadMore": "Завантажити більше",
+  "settings.mcp.registry.note": "Заповнено з реєстру MCP — укажіть значення для: {{vars}}",
+  "settings.mcp.registry.placeholder": "Пошук серверів…",
+  "settings.mcp.registry.retry": "Повторити",
+  "settings.mcp.registry.search": "Пошук у реєстрі…",
+  "settings.mcp.registry.select": "Налаштувати",
+  "settings.mcp.registry.subtitle": "Знайдіть в офіційному реєстрі MCP і налаштуйте сервер.",
+  "settings.mcp.registry.title": "Реєстр MCP",
+  "settings.mcp.registry.typePrompt": "Введіть запит для пошуку в реєстрі MCP.",
+  "settings.mcp.registry.unsupported": "Немає пакета для встановлення або віддаленої URL-адреси",
   "theme.scheme.system": "Системна",
   "theme.scheme.light": "Світла",
   "theme.scheme.dark": "Темна",

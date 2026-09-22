@@ -3,6 +3,10 @@ import { modelRouterFallback } from "./model-router-fallback"
 import { omoSettingsFallback } from "./omo-settings-fallback"
 import { providerEditFallback } from "./provider-edit-fallback"
 import { importSessionsFallback } from "./import-sessions-fallback"
+import { dispatchFallback } from "./dispatch-fallback"
+import { routinesFallback } from "./routines-fallback"
+import { artifactsSidebarFallback } from "./artifacts-sidebar-fallback"
+import { mcpRegistryFallback } from "./mcp-registry-fallback"
 
 type Keys = keyof typeof en
 
@@ -11,6 +15,10 @@ export const dict = {
   ...omoSettingsFallback,
   ...providerEditFallback,
   ...importSessionsFallback,
+  ...dispatchFallback,
+  ...routinesFallback,
+  ...artifactsSidebarFallback,
+  ...mcpRegistryFallback,
   "desktop.menu.app": "OpenCode",
   "desktop.menu.file": "檔案",
   "desktop.menu.edit": "編輯",
@@ -128,6 +136,24 @@ export const dict = {
 
   "command.category.settings": "設定",
   "command.logs.export": "匯出記錄檔",
+  "settings.mcp.form.scope.global": "全域",
+  "settings.mcp.form.scope.project": "專案",
+  "settings.mcp.registry.deprecated": "已棄用",
+  "settings.mcp.registry.empty": "無結果。",
+  "settings.mcp.registry.error": "無法連線 MCP 註冊表。",
+  "settings.mcp.registry.filter.all": "全部",
+  "settings.mcp.registry.filter.remote": "遠端",
+  "settings.mcp.registry.filter.stdio": "Stdio",
+  "settings.mcp.registry.loadMore": "載入更多",
+  "settings.mcp.registry.note": "已從 MCP 註冊表預填 — 請為以下變數提供值：{{vars}}",
+  "settings.mcp.registry.placeholder": "搜尋伺服器…",
+  "settings.mcp.registry.retry": "重試",
+  "settings.mcp.registry.search": "搜尋註冊表…",
+  "settings.mcp.registry.select": "設定",
+  "settings.mcp.registry.subtitle": "在官方 MCP 註冊表中搜尋並設定伺服器。",
+  "settings.mcp.registry.title": "MCP 註冊表",
+  "settings.mcp.registry.typePrompt": "輸入以搜尋 MCP 註冊表。",
+  "settings.mcp.registry.unsupported": "無可安裝的套件或遠端 URL",
   "theme.scheme.system": "系統",
   "theme.scheme.light": "淺色",
   "theme.scheme.dark": "深色",

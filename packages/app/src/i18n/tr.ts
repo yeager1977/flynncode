@@ -3,6 +3,10 @@ import { modelRouterFallback } from "./model-router-fallback"
 import { omoSettingsFallback } from "./omo-settings-fallback"
 import { providerEditFallback } from "./provider-edit-fallback"
 import { importSessionsFallback } from "./import-sessions-fallback"
+import { dispatchFallback } from "./dispatch-fallback"
+import { routinesFallback } from "./routines-fallback"
+import { artifactsSidebarFallback } from "./artifacts-sidebar-fallback"
+import { mcpRegistryFallback } from "./mcp-registry-fallback"
 
 type Keys = keyof typeof en
 
@@ -11,6 +15,10 @@ export const dict = {
   ...omoSettingsFallback,
   ...providerEditFallback,
   ...importSessionsFallback,
+  ...dispatchFallback,
+  ...routinesFallback,
+  ...artifactsSidebarFallback,
+  ...mcpRegistryFallback,
   "desktop.menu.app": "OpenCode",
   "desktop.menu.file": "Dosya",
   "desktop.menu.edit": "Düzen",
@@ -130,6 +138,24 @@ export const dict = {
   "command.category.settings": "Ayarlar",
   "command.logs.export": "Günlükleri dışa aktar",
 
+  "settings.mcp.form.scope.global": "Global",
+  "settings.mcp.form.scope.project": "Proje",
+  "settings.mcp.registry.deprecated": "Kullanımdan kaldırılmış",
+  "settings.mcp.registry.empty": "Sonuç yok.",
+  "settings.mcp.registry.error": "MCP kayıt defterine ulaşılamadı.",
+  "settings.mcp.registry.filter.all": "Tümü",
+  "settings.mcp.registry.filter.remote": "Uzak",
+  "settings.mcp.registry.filter.stdio": "Stdio",
+  "settings.mcp.registry.loadMore": "Daha fazla yükle",
+  "settings.mcp.registry.note": "MCP kayıt defterinden öndolduruldu — şu değerleri girin: {{vars}}",
+  "settings.mcp.registry.placeholder": "Sunucu ara…",
+  "settings.mcp.registry.retry": "Yeniden dene",
+  "settings.mcp.registry.search": "Kayıt defterinde ara…",
+  "settings.mcp.registry.select": "Yapılandır",
+  "settings.mcp.registry.subtitle": "Resmî MCP kayıt defterinde arama yapın ve bir sunucu yapılandırın.",
+  "settings.mcp.registry.title": "MCP kayıt defteri",
+  "settings.mcp.registry.typePrompt": "MCP kayıt defterinde aramak için yazın.",
+  "settings.mcp.registry.unsupported": "Kurulabilir paket veya uzak URL yok",
   "theme.scheme.system": "Sistem",
   "theme.scheme.light": "Açık",
   "theme.scheme.dark": "Koyu",

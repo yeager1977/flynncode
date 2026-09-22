@@ -3,6 +3,10 @@ import { modelRouterFallback } from "./model-router-fallback"
 import { omoSettingsFallback } from "./omo-settings-fallback"
 import { providerEditFallback } from "./provider-edit-fallback"
 import { importSessionsFallback } from "./import-sessions-fallback"
+import { dispatchFallback } from "./dispatch-fallback"
+import { routinesFallback } from "./routines-fallback"
+import { artifactsSidebarFallback } from "./artifacts-sidebar-fallback"
+import { mcpRegistryFallback } from "./mcp-registry-fallback"
 
 type Keys = keyof typeof en
 
@@ -11,6 +15,10 @@ export const dict = {
   ...omoSettingsFallback,
   ...providerEditFallback,
   ...importSessionsFallback,
+  ...dispatchFallback,
+  ...routinesFallback,
+  ...artifactsSidebarFallback,
+  ...mcpRegistryFallback,
   "desktop.menu.app": "OpenCode",
   "desktop.menu.file": "文件",
   "desktop.menu.edit": "编辑",
@@ -128,6 +136,24 @@ export const dict = {
   "command.category.settings": "设置",
   "command.logs.export": "导出日志",
 
+  "settings.mcp.form.scope.global": "全局",
+  "settings.mcp.form.scope.project": "项目",
+  "settings.mcp.registry.deprecated": "已弃用",
+  "settings.mcp.registry.empty": "无结果。",
+  "settings.mcp.registry.error": "无法连接 MCP 注册表。",
+  "settings.mcp.registry.filter.all": "全部",
+  "settings.mcp.registry.filter.remote": "远程",
+  "settings.mcp.registry.filter.stdio": "Stdio",
+  "settings.mcp.registry.loadMore": "加载更多",
+  "settings.mcp.registry.note": "已从 MCP 注册表预填 — 请为以下变量提供值：{{vars}}",
+  "settings.mcp.registry.placeholder": "搜索服务器…",
+  "settings.mcp.registry.retry": "重试",
+  "settings.mcp.registry.search": "搜索注册表…",
+  "settings.mcp.registry.select": "配置",
+  "settings.mcp.registry.subtitle": "在官方 MCP 注册表中搜索并配置服务器。",
+  "settings.mcp.registry.title": "MCP 注册表",
+  "settings.mcp.registry.typePrompt": "输入以搜索 MCP 注册表。",
+  "settings.mcp.registry.unsupported": "无可安装的软件包或远程 URL",
   "theme.scheme.system": "系统",
   "theme.scheme.light": "浅色",
   "theme.scheme.dark": "深色",
