@@ -1,9 +1,11 @@
 import { modelRouterFallback } from "./model-router-fallback"
+import { omoSettingsFallback } from "./omo-settings-fallback"
 import { providerEditFallback } from "./provider-edit-fallback"
 import { importSessionsFallback } from "./import-sessions-fallback"
 
 export const dict: Record<string, string> = {
   ...modelRouterFallback,
+  ...omoSettingsFallback,
   ...providerEditFallback,
   ...importSessionsFallback,
   "desktop.menu.app": "OpenCode",

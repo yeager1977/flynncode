@@ -1,5 +1,6 @@
 import { dict as en } from "./en"
 import { modelRouterFallback } from "./model-router-fallback"
+import { omoSettingsFallback } from "./omo-settings-fallback"
 import { providerEditFallback } from "./provider-edit-fallback"
 import { importSessionsFallback } from "./import-sessions-fallback"
 
@@ -7,6 +8,7 @@ type Keys = keyof typeof en
 
 export const dict = {
   ...modelRouterFallback,
+  ...omoSettingsFallback,
   ...providerEditFallback,
   ...importSessionsFallback,
   "desktop.menu.app": "OpenCode",

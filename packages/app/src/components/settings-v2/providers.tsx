@@ -1,5 +1,6 @@
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { Tag } from "@opencode-ai/ui/v2/badge-v2"
+import { Switch } from "@opencode-ai/ui/v2/switch-v2"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { showToast } from "@/utils/toast"
@@ -12,6 +13,7 @@ import { canEditProvider, isConfigCustomProvider } from "@/hooks/provider-connec
 import { DialogConnectProvider, useProviderConnectController } from "../dialog-connect-provider"
 import { DialogCustomProvider } from "../dialog-custom-provider"
 import { DialogEditProvider } from "../dialog-edit-provider"
+import { providerRows, setProviderEnabled } from "./provider-enabled"
 import { SettingsListV2 } from "./parts/list"
 import "./settings-v2.css"
 
@@ -52,6 +54,23 @@ export const SettingsProvidersV2: Component<{
     return providers
       .connected()
       .filter((p) => p.id !== "opencode" || Object.values(p.models).find((m) => m.cost?.input))
+  })
+
+  const itemById = createMemo(() => new Map(connected().map((item) => [item.id, item] as const)))
+
+  const rows = createMemo(() => {
+    const provider = serverSync().data.config.provider ?? {}
+    const configuredNames = Object.fromEntries(
+      Object.entries(provider).flatMap(([id, entry]) => {
+        const name = entry && typeof entry === "object" && "name" in entry ? entry.name : undefined
+        return typeof name === "string" ? [[id, name] as const] : []
+      }),
+    )
+    return providerRows({
+      connected: connected().map((p) => ({ id: p.id, name: p.name })),
+      disabled: serverSync().data.config.disabled_providers ?? [],
+      configuredNames,
+    })
   })
 
   const popular = createMemo(() => {
@@ -101,6 +120,19 @@ export const SettingsProvidersV2: Component<{
 
   const isConfigCustom = (providerID: string) =>
     isConfigCustomProvider(serverSync().data.config.provider?.[providerID])
+
+  const toggleEnabled = async (providerID: string, enabled: boolean) => {
+    const before = serverSync().data.config.disabled_providers ?? []
+    const next = setProviderEnabled(before, providerID, enabled)
+    serverSync().set("config", "disabled_providers", next)
+    await serverSync()
+      .updateConfig({ disabled_providers: next })
+      .catch((err: unknown) => {
+        serverSync().set("config", "disabled_providers", before)
+        const message = err instanceof Error ? err.message : String(err)
+        showToast({ title: language.t("common.requestFailed"), description: message })
+      })
+  }
 
   const disableProvider = async (providerID: string, name: string) => {
     if (protocol() !== "v1") return
@@ -161,56 +193,73 @@ export const SettingsProvidersV2: Component<{
           <h3 class="settings-v2-section-title">{language.t("settings.providers.section.connected")}</h3>
           <SettingsListV2>
             <Show
-              when={connected().length > 0}
+              when={rows().length > 0}
               fallback={
                 <div class="settings-v2-provider-empty">{language.t("settings.providers.connected.empty")}</div>
               }
             >
-              <For each={connected()}>
-                {(item) => (
-                  <div class="settings-v2-provider-row group">
-                    <div class="settings-v2-provider-lead">
-                      <ProviderIcon
-                        id={item.id}
-                        width={PROVIDER_ICON_SIZE}
-                        height={PROVIDER_ICON_SIZE}
-                        class="settings-v2-provider-icon shrink-0"
-                      />
-                      <div class="settings-v2-provider-main">
-                        <span class="settings-v2-provider-name truncate">{item.name}</span>
-                        <Tag>{type(item)}</Tag>
+              <For each={rows()}>
+                {(row) => {
+                  const item = () => itemById().get(row.id)
+                  return (
+                    <div class="settings-v2-provider-row group">
+                      <div class="settings-v2-provider-lead">
+                        <ProviderIcon
+                          id={row.id}
+                          width={PROVIDER_ICON_SIZE}
+                          height={PROVIDER_ICON_SIZE}
+                          class="settings-v2-provider-icon shrink-0"
+                        />
+                        <div class="settings-v2-provider-main">
+                          <span class="settings-v2-provider-name truncate">{row.name}</span>
+                          <Show when={item()}>{(current) => <Tag>{type(current())}</Tag>}</Show>
+                        </div>
+                      </div>
+                      <div class="flex items-center gap-1">
+                        <Switch
+                          checked={row.enabled}
+                          onChange={(checked) => void toggleEnabled(row.id, checked)}
+                          data-action="provider-enabled"
+                          hideLabel
+                        >
+                          {language.t("settings.providers.enabled")}
+                        </Switch>
+                        <Show when={item()}>
+                          {(current) => (
+                            <>
+                              <Show when={canEditProvider(protocol() ?? "v2")}>
+                                <ButtonV2
+                                  size="normal"
+                                  variant="ghost-muted"
+                                  data-action="provider-edit"
+                                  onClick={() => edit(current())}
+                                >
+                                  {language.t("common.edit")}
+                                </ButtonV2>
+                              </Show>
+                              <Show
+                                when={canDisconnect(current())}
+                                fallback={
+                                  <span class="settings-v2-provider-env-hint">
+                                    {language.t("settings.providers.connected.environmentDescription")}
+                                  </span>
+                                }
+                              >
+                                <ButtonV2
+                                  size="normal"
+                                  variant="ghost-muted"
+                                  onClick={() => void disconnect(current().id, current().name)}
+                                >
+                                  {language.t("common.disconnect")}
+                                </ButtonV2>
+                              </Show>
+                            </>
+                          )}
+                        </Show>
                       </div>
                     </div>
-                    <div class="flex items-center gap-1">
-                      <Show when={canEditProvider(protocol() ?? "v2")}>
-                        <ButtonV2
-                          size="normal"
-                          variant="ghost-muted"
-                          data-action="provider-edit"
-                          onClick={() => edit(item)}
-                        >
-                          {language.t("common.edit")}
-                        </ButtonV2>
-                      </Show>
-                      <Show
-                        when={canDisconnect(item)}
-                        fallback={
-                          <span class="settings-v2-provider-env-hint">
-                            {language.t("settings.providers.connected.environmentDescription")}
-                          </span>
-                        }
-                      >
-                        <ButtonV2
-                          size="normal"
-                          variant="ghost-muted"
-                          onClick={() => void disconnect(item.id, item.name)}
-                        >
-                          {language.t("common.disconnect")}
-                        </ButtonV2>
-                      </Show>
-                    </div>
-                  </div>
-                )}
+                  )
+                }}
               </For>
             </Show>
           </SettingsListV2>

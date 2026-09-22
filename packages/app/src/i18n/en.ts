@@ -1289,6 +1289,8 @@ export const dict = {
   "settings.providers.tag.config": "Config",
   "settings.providers.tag.custom": "Custom",
   "settings.providers.tag.other": "Other",
+  "settings.providers.enabled": "Enabled",
+  "settings.providers.enabled.description": "Turn this provider off without removing its key or config. Applies after you quit and restart.",
   "settings.models.title": "Models",
   "settings.models.description": "Model settings will be configurable here.",
   "settings.agents.title": "Agents",
