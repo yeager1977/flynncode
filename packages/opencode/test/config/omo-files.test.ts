@@ -4,7 +4,7 @@ import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { FSUtil } from "@opencode-ai/core/fs-util"
-import { Effect } from "effect"
+import { Cause, Effect, Exit } from "effect"
 import {
   applyOpenCodeBans,
   applyPluginPatch,
@@ -73,7 +73,12 @@ describe("applyPluginPatch", () => {
         "agents": { "sisyphus": { "temperature": 0.2, "model": "openai/gpt-5.6-sol" } },
         "experimental": { "task_system": true }
       }`,
-      { agents: { sisyphus: { temperature: 0.2 } }, categories: {}, disabledProviders: ["xai"] },
+      {
+        agents: { sisyphus: { temperature: 0.2 } },
+        categories: {},
+        disabledProviders: ["xai"],
+        openCodeDisabledProviders: ["xai"],
+      },
     )
     expect(result.text).toContain("temperature")
     expect(result.text).not.toContain("gpt-5.6-sol")
@@ -113,6 +118,7 @@ describe("ConfigOmoFiles.write", () => {
         agents: {},
         categories: {},
         disabledProviders: ["ollama-local", "xai"],
+        openCodeDisabledProviders: ["ollama-local", "xai"],
       })
 
       expect(info.path).toBe(path.join(dir, "oh-my-openagent.jsonc"))
@@ -126,6 +132,36 @@ describe("ConfigOmoFiles.write", () => {
 
       expect(yield* fs.existsSafe(path.join(dir, "config.json"))).toBe(false)
     }),
+  )
+
+  it.live(
+    "a project save splits plugin extras from OpenCode bans so the plugin file stays free of global-only ids",
+    () =>
+      Effect.gen(function* () {
+        const dir = yield* tmpdirScoped()
+        const fs = yield* FSUtil.Service
+
+        const info = yield* ConfigOmoFiles.write(dir, {
+          agents: {},
+          categories: {},
+          disabledProviders: ["xai"],
+          openCodeDisabledProviders: ["ollama-local", "xai"],
+        })
+
+        expect(info.path).toBe(path.join(dir, "oh-my-openagent.jsonc"))
+        expect(info.disabledProviders).toEqual(["xai"])
+        expect(info.openCodeDisabledProviders).toEqual(["ollama-local", "xai"])
+
+        const pluginText = yield* fs.readFileString(path.join(dir, "oh-my-openagent.jsonc"))
+        expect(pluginText).toContain("xai")
+        expect(pluginText).not.toContain("ollama-local")
+
+        const openCodeText = yield* fs.readFileString(path.join(dir, ".opencode", "opencode.jsonc"))
+        expect(openCodeText).toContain("ollama-local")
+        expect(openCodeText).toContain("xai")
+
+        expect(yield* fs.existsSafe(path.join(dir, "config.json"))).toBe(false)
+      }),
   )
 
   it.live(
@@ -149,6 +185,7 @@ describe("ConfigOmoFiles.write", () => {
             agents: {},
             categories: {},
             disabledProviders: ["ollama-local"],
+            openCodeDisabledProviders: ["ollama-local"],
           },
           "global",
         )
@@ -163,5 +200,50 @@ describe("ConfigOmoFiles.write", () => {
         expect(yield* fs.existsSafe(path.join(dir, ".opencode"))).toBe(false)
         expect(yield* fs.existsSafe(path.join(dir, ".opencode", "opencode.jsonc"))).toBe(false)
       }),
+  )
+})
+
+describe("ConfigOmoFiles.readInfo", () => {
+  it.live("a missing plugin file reads as an empty document with a null path", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+
+      const info = yield* ConfigOmoFiles.readInfo(dir)
+
+      expect(info.path).toBeNull()
+      expect(info.parseError).toBeUndefined()
+      expect(info.agents).toEqual({})
+      expect(info.categories).toEqual({})
+      expect(info.disabledProviders).toEqual([])
+      expect(info.openCodeDisabledProviders).toEqual([])
+    }),
+  )
+
+  it.live("an invalid JSONC plugin file refuses the write and does not overwrite the file", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      const fs = yield* FSUtil.Service
+      const pluginPath = path.join(dir, "oh-my-openagent.jsonc")
+      const original = `{ "agents": { "sisyphus": { "model": `
+      yield* fs.writeFileString(pluginPath, original)
+
+      const exit = yield* ConfigOmoFiles.write(dir, {
+        agents: {},
+        categories: {},
+        disabledProviders: ["xai"],
+        openCodeDisabledProviders: ["xai"],
+      }).pipe(Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        const error = Cause.squash(exit.cause) as { path: string; message: string }
+        expect(error.path).toBe(pluginPath)
+        expect(error.message).toContain("could not be parsed")
+      }
+
+      const after = yield* fs.readFileString(pluginPath)
+      expect(after).toBe(original)
+      expect(yield* fs.existsSafe(path.join(dir, ".opencode", "opencode.jsonc"))).toBe(false)
+    }),
   )
 })

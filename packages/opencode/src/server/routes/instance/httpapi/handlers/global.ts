@@ -94,6 +94,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
         agents: { ...ctx.payload.agents },
         categories: { ...ctx.payload.categories },
         disabledProviders: [...ctx.payload.disabledProviders],
+        openCodeDisabledProviders: [...ctx.payload.openCodeDisabledProviders],
       }
       return yield* ConfigOmoFiles.write(Global.Path.config, patch, "global").pipe(
         Effect.mapError(

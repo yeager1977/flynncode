@@ -78,6 +78,7 @@ export const OmoConfigPatch = Schema.Struct({
   agents: Schema.Record(Schema.String, Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown))),
   categories: Schema.Record(Schema.String, Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown))),
   disabledProviders: Schema.Array(Schema.String),
+  openCodeDisabledProviders: Schema.Array(Schema.String),
 }).annotate({ identifier: "OmoConfigPatch" })
 
 // Custom 400 with the failing path in the body so a client can point the

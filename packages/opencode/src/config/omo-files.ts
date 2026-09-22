@@ -9,7 +9,13 @@ import { isRecord } from "@/util/record"
 export type PluginPatch = {
   agents: Record<string, Record<string, unknown> | null>
   categories: Record<string, Record<string, unknown> | null>
+  // `disabledProviders` writes only to the plugin file. For project scope it
+  // carries the "extras" list — ids the user banned in the project that are
+  // not already banned globally. The OpenCode `disabled_providers` key is
+  // driven by `openCodeDisabledProviders` so a later global un-ban cannot
+  // leave stale extras behind.
   disabledProviders: string[]
+  openCodeDisabledProviders: string[]
 }
 
 // `oh-my-openagent` is the current package name; the two `oh-my-opencode`
@@ -265,7 +271,7 @@ export const write = Effect.fn("ConfigOmoFiles.write")(function* (
   const openCodeExisting = exists.has(openCodePath)
     ? yield* fs.readFileStringSafe(openCodePath).pipe(Effect.orDie)
     : undefined
-  const openCodeText = applyOpenCodeBans(openCodeExisting, patch.disabledProviders)
+  const openCodeText = applyOpenCodeBans(openCodeExisting, patch.openCodeDisabledProviders)
   const openCodeWrite = fs.writeWithDirs(openCodePath, openCodeText).pipe(
     Effect.catch(
       (cause) =>

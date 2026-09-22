@@ -346,7 +346,8 @@ export const SettingsOmoV2: Component<{ directory: Accessor<string | undefined> 
     const body = {
       agents: patch.agents,
       categories: patch.categories,
-      disabledProviders: state.scope === "global" ? patch.disabledProviders : openCodeBans(input),
+      disabledProviders: patch.disabledProviders,
+      openCodeDisabledProviders: state.scope === "global" ? patch.disabledProviders : openCodeBans(input),
     }
     const url =
       state.scope === "global"

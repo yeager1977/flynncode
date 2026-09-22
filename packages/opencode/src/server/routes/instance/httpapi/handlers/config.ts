@@ -44,6 +44,7 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
         agents: { ...ctx.payload.agents },
         categories: { ...ctx.payload.categories },
         disabledProviders: [...ctx.payload.disabledProviders],
+        openCodeDisabledProviders: [...ctx.payload.openCodeDisabledProviders],
       }
       return yield* ConfigOmoFiles.write(instance.directory, patch).pipe(
         Effect.mapError(
