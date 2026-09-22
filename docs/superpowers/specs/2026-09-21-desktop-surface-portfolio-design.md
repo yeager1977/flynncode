@@ -21,10 +21,9 @@ cycle's spec is written; they must not share one implementation plan.
    sensible models from the user's provider allowlist, Claude over ChatGPT,
    no xAI in defaults. Spec:
    `docs/superpowers/specs/2026-09-21-omo-allowlist-models-design.md`
-2. **OpenCode Mobile (doza62)** — install `npx opencode-mobile` so the App
-   Store OpenCode Mobile app can pair via `/mobile` QR, push, and tunnel.
-   Replace Flynncode `mobile-gateway` as the phone client. Keep the gateway
-   package in the repo; stop loading it from this machine's `plugin[]`.
+2. **OpenCode Mobile (doza62)** — this machine: `opencode-mobile@latest` in
+   `plugin[]`, `/mobile` command present, Flynncode `mobile-gateway` removed
+   from this machine's plugin list. Package stays in the repo.
 3. **Artifacts sidebar** — a desktop sidebar listing session artifacts.
 4. **Routines menu** — scheduled or repeatable agent jobs in a menu.
 5. **Dispatch** — Claude Desktop-style send-a-task surface.
