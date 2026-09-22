@@ -1,13 +1,7 @@
 export * as ConfigOmoFiles from "./omo-files"
 
 import path from "path"
-import {
-  type ParseError as JsoncParseError,
-  applyEdits,
-  modify,
-  parse as parseJsonc,
-  printParseErrorCode,
-} from "jsonc-parser"
+import { type ParseError, applyEdits, modify, parse, printParseErrorCode } from "jsonc-parser"
 
 export type PluginPatch = {
   agents: Record<string, Record<string, unknown> | null>
@@ -67,8 +61,8 @@ export function applyPluginPatch(
     ["disabled_providers"],
     patch.disabledProviders.length > 0 ? patch.disabledProviders : undefined,
   )
-  const errors: JsoncParseError[] = []
-  const parsed = parseJsonc(next, errors, { allowTrailingComma: true })
+  const errors: ParseError[] = []
+  const parsed = parse(next, errors, { allowTrailingComma: true })
   const empty =
     !!parsed && typeof parsed === "object" && !Array.isArray(parsed) && Object.keys(parsed).length === 0
   return { text: next, empty }
@@ -80,8 +74,8 @@ export function applyOpenCodeBans(text: string | undefined, bans: string[]): str
 }
 
 export function readPlugin(text: string): { document: Record<string, unknown> } | { parseError: string } {
-  const errors: JsoncParseError[] = []
-  const data = parseJsonc(text, errors, { allowTrailingComma: true })
+  const errors: ParseError[] = []
+  const data = parse(text, errors, { allowTrailingComma: true })
   if (errors.length > 0) {
     return {
       parseError: errors.map((e) => `${printParseErrorCode(e.error)} at offset ${e.offset}`).join("; "),
