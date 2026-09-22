@@ -13,6 +13,8 @@ import { useServerProtocol, useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import { buildAddInput, emptyForm, formFromConfig, storedToPayloadConfig, type McpFormState, type McpServerConfig } from "./mcp-payload"
+import { RegistrySearchDialog } from "./mcp-registry"
+import { registryToForm, type RegistryEntry } from "./mcp-registry-payload"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import "./settings-v2.css"
@@ -225,6 +227,17 @@ export const SettingsMcpV2: Component<{ directory?: string }> = (props) => {
 
   const onAdd = () => openForm(emptyForm())
 
+  const onRegistrySelect = (entry: RegistryEntry) => {
+    dialog.close()
+    const result = registryToForm(entry, { existingNames: (servers() ?? []).map((server) => server.name) })
+    const note = result.noteVars.length > 0 ? language.t("settings.mcp.registry.note", { vars: result.noteVars.join(", ") }) : undefined
+    openForm(result.form, undefined, note)
+  }
+
+  const onRegistry = () => {
+    void dialog.push(() => <RegistrySearchDialog onSelect={onRegistrySelect} />)
+  }
+
   const onEdit = (name: string) => {
     void (async () => {
       try {
@@ -388,6 +401,9 @@ export const SettingsMcpV2: Component<{ directory?: string }> = (props) => {
         <div class="settings-v2-tab-header-row">
           <h2 class="settings-v2-tab-title">{language.t("settings.tab.mcp")}</h2>
           <div class="flex items-center gap-2">
+            <ButtonV2 size="normal" variant="outline" onClick={onRegistry}>
+              {language.t("settings.mcp.registry.search")}
+            </ButtonV2>
             <ButtonV2 size="normal" variant="neutral" onClick={onAdd}>
               {language.t("settings.mcp.add")}
             </ButtonV2>

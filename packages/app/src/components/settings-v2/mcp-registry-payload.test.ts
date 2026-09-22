@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { buildRegistryUrl, parseRegistryList, registryToForm, toRegistryEntry } from "./mcp-registry"
+import { buildRegistryUrl, parseRegistryList, registryToForm, toRegistryEntry } from "./mcp-registry-payload"
 
 describe("buildRegistryUrl", () => {
   test("base url with limit", () => {
