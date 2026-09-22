@@ -280,6 +280,23 @@ export const matchToolChoice = <Auto, None, Required, Tool>(
     return cases.tool(toolChoice.name)
   })
 
+/**
+ * Claude Opus 5.5 and Fable 5.1 reject forced tool use: `tool_choice` of
+ * `{"type": "any"}` or `{"type": "tool", name}` returns a 400. Only `auto`
+ * and `none` are accepted. Same version gate as thinking-block binding —
+ * applies from Claude 5.1 onward, with Opus 5.5 and newer 5.x included.
+ * https://platform.claude.com/docs/en/models/opus-5-5/whats-new-opus-5-5
+ */
+export const rejectsForcedToolChoice = (modelId: string): boolean => {
+  const version = /claude-(?:([a-z]+)-)?(\d+)(?:[.-](\d{1,2}))?(?:-([a-z]+))?(?:[.@-]|$)/i.exec(modelId)
+  if (!version) return false
+  const family = (version[1] ?? version[4])?.toLowerCase()
+  const major = Number(version[2])
+  const minor = Number(version[3] ?? 0)
+  if (major === 5 && minor >= 1) return family !== "mythos"
+  return major > 5
+}
+
 type ContentType = ContentPart["type"]
 
 const formatContentTypes = (types: ReadonlyArray<ContentType>) => {

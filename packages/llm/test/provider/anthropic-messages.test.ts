@@ -893,3 +893,58 @@ describe("Anthropic Messages route", () => {
     }),
   )
 })
+
+describe("Anthropic Messages forced tool choice", () => {
+  const routed = (id: string) =>
+    AnthropicMessages.route
+      .with({ endpoint: { baseURL: "https://api.anthropic.test/v1/" }, auth: Auth.header("x-api-key", "test") })
+      .model({ id })
+  const base = (model: ReturnType<typeof routed>) =>
+    LLM.request({
+      id: "req_forced",
+      model,
+      system: "You are concise.",
+      prompt: "Return JSON.",
+      tools: [{ name: "lookup", description: "Lookup", inputSchema: { type: "object", properties: {} } }],
+      toolChoice: { type: "required" },
+      cache: "none",
+    })
+
+  it.effect("drops forced tool choice on models that reject it (Opus 5.5+ / Fable 5.1+)", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<AnthropicMessages.AnthropicMessagesBody>(base(routed("claude-opus-5-5")))
+      expect(prepared.body.tool_choice).toBeUndefined()
+      expect(prepared.body.tools).toHaveLength(1)
+    }),
+  )
+
+  it.effect("keeps forced tool choice on models that support it", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<AnthropicMessages.AnthropicMessagesBody>(base(routed("claude-opus-5")))
+      expect(prepared.body.tool_choice).toEqual({ type: "any" })
+    }),
+  )
+
+  it.effect("drops named tool choice on models that reject it", () =>
+    Effect.gen(function* () {
+      const request = LLM.updateRequest(base(routed("claude-fable-5-1")), {
+        toolChoice: { type: "tool", name: "lookup" },
+      })
+      const prepared = yield* LLMClient.prepare<AnthropicMessages.AnthropicMessagesBody>(request)
+      expect(prepared.body.tool_choice).toBeUndefined()
+    }),
+  )
+
+  it.effect("keeps tool choice auto and none untouched on gated models", () =>
+    Effect.gen(function* () {
+      const auto = yield* LLMClient.prepare<AnthropicMessages.AnthropicMessagesBody>(
+        LLM.updateRequest(base(routed("claude-opus-5-5")), { toolChoice: { type: "auto" } }),
+      )
+      expect(auto.body.tool_choice).toEqual({ type: "auto" })
+      const none = yield* LLMClient.prepare<AnthropicMessages.AnthropicMessagesBody>(
+        LLM.updateRequest(base(routed("claude-opus-5-5")), { toolChoice: { type: "none" } }),
+      )
+      expect(none.body.tool_choice).toBeUndefined()
+    }),
+  )
+})

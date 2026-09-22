@@ -154,6 +154,29 @@ describe("Bedrock Converse route", () => {
     }),
   )
 
+  it.effect("drops forced toolChoice on models that reject it (Opus 5.5+ / Fable 5.1+)", () =>
+    Effect.gen(function* () {
+      const gated = AmazonBedrock.configure({
+        baseURL: "https://bedrock-runtime.test",
+        apiKey: "test-bearer",
+      }).model("anthropic.claude-opus-5-5")
+      const prepared = yield* LLMClient.prepare<BedrockConverse.BedrockConverseBody>(
+        LLM.updateRequest(baseRequest, {
+          model: gated,
+          tools: [
+            {
+              name: "lookup",
+              description: "Lookup data",
+              inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+            },
+          ],
+          toolChoice: ToolChoice.make({ type: "required" }),
+        }),
+      )
+      expect(prepared.body.toolConfig?.toolChoice).toBeUndefined()
+    }),
+  )
+
   it.effect("lowers assistant tool-call + tool-result message history", () =>
     Effect.gen(function* () {
       const prepared = yield* LLMClient.prepare(

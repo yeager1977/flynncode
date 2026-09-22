@@ -247,6 +247,15 @@ const lowerToolChoice = (toolChoice: NonNullable<LLMRequest["toolChoice"]>) =>
     tool: (name) => ({ tool: { name } }) as const,
   })
 
+// Bedrock keeps accepting forced tool use on these Claude versions, but gate
+// anyway so Claude 5.1+ deployments behave identically across platforms.
+const lowerToolChoiceForModel = (request: LLMRequest) => {
+  const modelId = String(request.model.id)
+  if (ProviderShared.rejectsForcedToolChoice(modelId) && request.toolChoice?.type !== "auto")
+    return request.toolChoice?.type === "none" ? lowerToolChoice(request.toolChoice) : Effect.succeed(undefined)
+  return request.toolChoice ? lowerToolChoice(request.toolChoice) : Effect.succeed(undefined)
+}
+
 const bedrockMetadata = (metadata: Record<string, unknown>): ProviderMetadata => ({ bedrock: metadata })
 
 const reasoningSignature = (part: ReasoningPart) => {
@@ -386,7 +395,7 @@ const lowerSystem = (
 ): BedrockSystemBlock[] => system.flatMap((part) => textWithCache(breakpoints, part.text, part.cache))
 
 const fromRequest = Effect.fn("BedrockConverse.fromRequest")(function* (request: LLMRequest) {
-  const toolChoice = request.toolChoice ? yield* lowerToolChoice(request.toolChoice) : undefined
+  const toolChoice = yield* lowerToolChoiceForModel(request)
   const generation = request.generation
   // Bedrock-Claude shares Anthropic's 4-breakpoint cap. Spend the budget in
   // tools → system → messages order to favour the highest-impact prefixes.

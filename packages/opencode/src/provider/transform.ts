@@ -697,6 +697,28 @@ function anthropicBindsThinking(apiId: string) {
   return major > 5 || (major === 5 && minor >= 1)
 }
 
+// Opus 5.5+ / Fable 5.1+ reject forced tool use (tool_choice "any"/"tool" → 400).
+// Same version gate as thinking binding, including the Mythos 5.1 exception.
+// https://platform.claude.com/docs/en/models/opus-5-5/whats-new-opus-5-5
+export function supportsForcedToolChoice(model: Provider.Model) {
+  if (model.api.npm !== "@ai-sdk/anthropic" && model.api.npm !== "@ai-sdk/google-vertex/anthropic") return true
+  const version = /claude-(?:([a-z]+)-)?(\d+)(?:[.-](\d{1,2}))?(?:-([a-z]+))?(?:[.@-]|$)/i.exec(model.api.id)
+  if (!version) return true
+  const family = (version[1] ?? version[4])?.toLowerCase()
+  const major = Number(version[2])
+  const minor = Number(version[3] ?? 0)
+  if (major === 5 && minor >= 1) return family === "mythos"
+  return major < 5 || (major === 5 && minor === 0)
+}
+
+export function structuredOutputToolChoice(
+  model: Provider.Model,
+  format: { readonly type: string },
+): "required" | undefined {
+  if (format.type !== "json_schema") return undefined
+  return supportsForcedToolChoice(model) ? "required" : undefined
+}
+
 // Fable 5.1 binds each thinking signature to the system prompt, tool list, and
 // messages above it, and rejects the request when any of that changes. opencode
 // re-renders parts of that prefix between turns (system prompt, tools, compaction),

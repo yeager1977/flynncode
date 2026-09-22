@@ -273,6 +273,15 @@ const lowerToolChoice = (toolChoice: NonNullable<LLMRequest["toolChoice"]>) =>
     tool: (name) => ({ type: "tool" as const, name }),
   })
 
+// Opus 5.5+ / Fable 5.1+ return 400 for forced tool use; lower to the API's
+// accepted default instead of failing the whole structured-output turn.
+const lowerToolChoiceForModel = (request: LLMRequest) => {
+  const modelId = String(request.model.id)
+  if (ProviderShared.rejectsForcedToolChoice(modelId) && request.toolChoice?.type !== "auto")
+    return request.toolChoice?.type === "none" ? lowerToolChoice(request.toolChoice) : Effect.succeed(undefined)
+  return request.toolChoice ? lowerToolChoice(request.toolChoice) : Effect.succeed(undefined)
+}
+
 const lowerToolCall = (part: ToolCallPart): AnthropicToolUseBlock => ({
   type: "tool_use",
   id: part.id,
@@ -504,7 +513,7 @@ const lowerThinking = Effect.fn("AnthropicMessages.lowerThinking")(function* (re
 })
 
 const fromRequest = Effect.fn("AnthropicMessages.fromRequest")(function* (request: LLMRequest) {
-  const toolChoice = request.toolChoice ? yield* lowerToolChoice(request.toolChoice) : undefined
+  const toolChoice = yield* lowerToolChoiceForModel(request)
   const generation = request.generation
   const toolSchemaCompatibility = request.model.compatibility?.toolSchema
   const outputLimit = request.model.defaults?.limits?.output ?? request.model.route.defaults.limits?.output ?? 4096

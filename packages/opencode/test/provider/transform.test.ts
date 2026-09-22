@@ -6209,3 +6209,71 @@ describe("ProviderTransform.options - kimi family adaptive thinking", () => {
     expect(result.thinking).toBeUndefined()
   })
 })
+
+describe("ProviderTransform.supportsForcedToolChoice", () => {
+  const claude = (id: string) =>
+    ({
+      id: `anthropic/${id}`,
+      providerID: "anthropic",
+      api: { id, url: "https://api.anthropic.com", npm: "@ai-sdk/anthropic" },
+      name: "Claude",
+      capabilities: { reasoning: true },
+      limit: { output: 64_000 },
+    }) as any
+
+  test.each([
+    "claude-opus-5-5",
+    "claude-opus-5.5",
+    "claude-5-5-opus",
+    "anthropic.claude-opus-5-5",
+    "claude-fable-5-1",
+    "claude-sonnet-5-5",
+  ])("reports unsupported for %s", (id) => {
+    expect(ProviderTransform.supportsForcedToolChoice(claude(id))).toBe(false)
+  })
+
+  test.each([
+    "claude-opus-5",
+    "claude-opus-4-8",
+    "claude-sonnet-4-5",
+    "claude-fable-5",
+    "claude-mythos-5-1",
+  ])("reports supported for %s", (id) => {
+    expect(ProviderTransform.supportsForcedToolChoice(claude(id))).toBe(true)
+  })
+
+  test("reports supported for non-anthropic providers", () => {
+    const gpt = { ...claude("gpt-5-mini"), providerID: "openai" } as any
+    expect(ProviderTransform.supportsForcedToolChoice(gpt)).toBe(true)
+  })
+})
+
+describe("ProviderTransform.structuredOutputToolChoice", () => {
+  const claude = (id: string) =>
+    ({
+      id: `anthropic/${id}`,
+      providerID: "anthropic",
+      api: { id, url: "https://api.anthropic.com", npm: "@ai-sdk/anthropic" },
+      name: "Claude",
+      capabilities: { reasoning: true },
+      limit: { output: 64_000 },
+    }) as any
+
+  test("requires tool choice for models that accept forced tool use", () => {
+    expect(ProviderTransform.structuredOutputToolChoice(claude("claude-opus-5"), { type: "json_schema" })).toBe(
+      "required",
+    )
+    expect(ProviderTransform.structuredOutputToolChoice(claude("claude-mythos-5-1"), { type: "json_schema" })).toBe(
+      "required",
+    )
+  })
+
+  test("omits tool choice for models that reject forced tool use", () => {
+    expect(ProviderTransform.structuredOutputToolChoice(claude("claude-opus-5-5"), { type: "json_schema" })).toBeUndefined()
+    expect(ProviderTransform.structuredOutputToolChoice(claude("claude-fable-5-1"), { type: "json_schema" })).toBeUndefined()
+  })
+
+  test("omits tool choice for text format", () => {
+    expect(ProviderTransform.structuredOutputToolChoice(claude("claude-opus-5"), { type: "text" })).toBeUndefined()
+  })
+})
