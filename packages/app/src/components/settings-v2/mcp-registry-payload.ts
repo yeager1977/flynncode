@@ -1,3 +1,5 @@
+import { emptyForm, type McpFormState } from "./mcp-payload"
+
 export type RegistryEntry = {
   id: string // reverse-DNS name, e.g. "io.github.user/filesystem"
   title: string // last path segment of id
@@ -49,8 +51,6 @@ export async function searchRegistry(query: { search?: string; cursor?: string }
   if (!response.ok) throw new Error(`registry ${response.status}`)
   return parseRegistryList(await response.json())
 }
-
-import { emptyForm, type McpFormState } from "./mcp-payload"
 
 const RUNNERS: Record<string, string> = { npm: "npx", pypi: "uvx" }
 

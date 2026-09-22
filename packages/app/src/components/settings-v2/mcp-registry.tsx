@@ -54,6 +54,7 @@ export const RegistrySearchDialog: Component<{
       setError(false)
       return
     }
+    setCursor(undefined)
     const timer = setTimeout(() => {
       pendingSearchTimer = undefined
       void run(search)

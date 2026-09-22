@@ -238,18 +238,23 @@ export const SettingsMcpV2: Component<{ directory?: string }> = (props) => {
     void dialog.push(() => <RegistrySearchDialog onSelect={onRegistrySelect} />)
   }
 
+  const resolveServerScope = async (name: string) => {
+    if (props.directory === undefined) return { scope: "global" as const, project: undefined }
+    const response = await serverSdk().client.config.get({ directory: props.directory })
+    const project = (response.data ?? {}) as Config
+    return {
+      scope: project.mcp?.[name] !== undefined ? ("directory" as const) : ("global" as const),
+      project,
+    }
+  }
+
   const onEdit = (name: string) => {
     void (async () => {
       try {
-        let scope: "global" | "directory" = "global"
+        const resolved = await resolveServerScope(name)
         let existing = serverSync().data.config?.mcp?.[name]
-        if (props.directory !== undefined) {
-          const response = await serverSdk().client.config.get({ directory: props.directory })
-          const project = (response.data ?? {}) as Config
-          if (project.mcp?.[name] !== undefined) {
-            scope = "directory"
-            existing = project.mcp[name]
-          }
+        if (resolved.scope === "directory") {
+          existing = resolved.project?.mcp?.[name]
         }
         if (!existing || !("type" in existing)) {
           showToast({ variant: "error", description: language.t("settings.mcp.errors.noConfig", { name }) })
@@ -257,7 +262,7 @@ export const SettingsMcpV2: Component<{ directory?: string }> = (props) => {
         }
         const config = storedToPayloadConfig(existing)
         const status = (servers() ?? []).find((server) => server.name === name)?.status.status
-        openForm(formFromConfig(name, config), { name, wasConnected: status === "connected", scope })
+        openForm(formFromConfig(name, config), { name, wasConnected: status === "connected", scope: resolved.scope })
       } catch (error) {
         onError(error)
       }
@@ -306,7 +311,8 @@ export const SettingsMcpV2: Component<{ directory?: string }> = (props) => {
   const remove = async (name: string) => {
     setBusy(name)
     try {
-      await mcpApi().remove(name)
+      const { scope } = await resolveServerScope(name)
+      await mcpApi().remove(name, scope)
       showToast({ variant: "success", description: language.t("settings.mcp.deleted", { name }) })
       await serversActions.refetch()
     } catch (error) {
