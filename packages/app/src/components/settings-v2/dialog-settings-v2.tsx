@@ -13,6 +13,7 @@ import { SettingsMcpV2 } from "./mcp"
 import { SettingsImportSessionsV2 } from "./import-sessions"
 import { SettingsModelRouterV2 } from "./model-router"
 import { SettingsOmoV2 } from "./omo-settings"
+import { SettingsRoutinesV2 } from "./routines"
 import "./settings-v2.css"
 import { SettingsServersV2 } from "./servers"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -94,6 +95,10 @@ export const DialogSettings: Component<{
                       <Icon name="models" />
                       {language.t("settings.tab.omo")}
                     </TabsV2.Trigger>
+                    <TabsV2.Trigger value="routines">
+                      <Icon name="archive" />
+                      {language.t("settings.tab.routines")}
+                    </TabsV2.Trigger>
                   </div>
                 </div>
 
@@ -155,6 +160,9 @@ export const DialogSettings: Component<{
         </TabsV2.Content>
         <TabsV2.Content value="omo" class="settings-v2-panel">
           <SettingsOmoV2 directory={directory} />
+        </TabsV2.Content>
+        <TabsV2.Content value="routines" class="settings-v2-panel">
+          <SettingsRoutinesV2 />
         </TabsV2.Content>
       </TabsV2>
     </Dialog>

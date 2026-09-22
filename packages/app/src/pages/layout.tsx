@@ -1100,6 +1100,14 @@ export default function LegacyLayout(props: ParentProps) {
     })
   }
 
+  function openDispatch() {
+    const run = ++dialogRun
+    void import("@/pages/dispatch/dispatch-panel").then((mod) => {
+      if (dialogDead || dialogRun !== run) return
+      dialog.show(() => <mod.DispatchPanel />)
+    })
+  }
+
   function openSettings() {
     const run = ++dialogRun
     const module = settings.general.newLayoutDesigns()
@@ -2250,6 +2258,8 @@ export default function LegacyLayout(props: ParentProps) {
       settingsLabel={() => language.t("sidebar.settings")}
       settingsKeybind={() => command.keybind("settings.open")}
       onOpenSettings={openSettings}
+      dispatchLabel={() => language.t("sidebar.dispatch")}
+      onOpenDispatch={openDispatch}
       helpLabel={() => language.t("sidebar.help")}
       onOpenHelp={() => platform.openExternal("https://opencode.ai/desktop-feedback")}
       renderPanel={() =>
