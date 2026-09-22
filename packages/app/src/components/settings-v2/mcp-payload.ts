@@ -7,9 +7,9 @@ export type McpFormState = {
   kind: "local" | "remote"
   command: string[]
   cwd: string
-  environment: { key: string; value: string }[]
+  environment: { key: string; value: string; hint?: string }[]
   url: string
-  headers: { key: string; value: string }[]
+  headers: { key: string; value: string; hint?: string }[]
   oauthEnabled: boolean
   oauthDisableAutodetect: boolean
   clientId: string
