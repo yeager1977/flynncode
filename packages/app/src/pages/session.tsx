@@ -368,7 +368,7 @@ export default function Page() {
   const comments = useComments()
   const command = useCommand()
   const terminal = useTerminal()
-  const [searchParams, setSearchParams] = useSearchParams<{ prompt?: string }>()
+  const [searchParams, setSearchParams] = useSearchParams<{ prompt?: string; file?: string }>()
   const location = useLocation()
   const navigate = useNavigate()
   const { params, sessionKey, workspaceKey, tabs, view } = useSessionLayout()
@@ -1437,6 +1437,15 @@ export default function Page() {
     view().review.setFile(path)
     setTree("pendingDiff", path)
   }
+
+  createEffect(() => {
+    const file = searchParams.file
+    if (!file || !params.id) return
+    untrack(() => {
+      focusReviewDiff(file)
+      setSearchParams({ ...searchParams, file: undefined })
+    })
+  })
 
   createEffect(() => {
     const pending = tree.pendingDiff

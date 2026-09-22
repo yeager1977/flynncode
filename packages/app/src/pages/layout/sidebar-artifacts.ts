@@ -25,6 +25,10 @@ export type ArtifactGroup = {
 
 const MAX_GROUPS = 20
 
+export function artifactSessionHref(slug: string, sessionID: string, file: string) {
+  return `/${slug}/session/${sessionID}?file=${encodeURIComponent(file)}`
+}
+
 export function groupSessionArtifacts(store: SessionDiffData, activeProjectDirectory: string): ArtifactGroup[] {
   const key = pathKey(activeProjectDirectory)
   if (!key) return []

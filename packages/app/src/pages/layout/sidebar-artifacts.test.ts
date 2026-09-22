@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import type { FileDiffInfo } from "@opencode-ai/client/promise"
-import { groupSessionArtifacts, type ArtifactGroup, type SessionDiffData } from "./sidebar-artifacts"
+import { artifactSessionHref, groupSessionArtifacts, type ArtifactGroup, type SessionDiffData } from "./sidebar-artifacts"
 
 const diff = (file: string, additions = 1, deletions = 0): FileDiffInfo => ({ file, patch: "", additions, deletions, status: "modified" })
 
@@ -116,6 +116,12 @@ describe("sidebar artifacts", () => {
       "/proj/",
     )
     expect(result.map((item) => item.sessionID)).toEqual(["s1"])
+  })
+})
+
+describe("artifactSessionHref", () => {
+  test("points at the session and the changed file", () => {
+    expect(artifactSessionHref("abc", "ses_1", "src/a.ts")).toBe("/abc/session/ses_1?file=src%2Fa.ts")
   })
 })
 

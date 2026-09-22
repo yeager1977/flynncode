@@ -9,7 +9,7 @@ import { useLanguage } from "@/context/language"
 import { getRelativeTime } from "@/utils/time"
 import { sessionTitle } from "@/utils/session-title"
 import { pathKey } from "@/utils/path-key"
-import { groupSessionArtifacts, type ArtifactGroup } from "./sidebar-artifacts"
+import { artifactSessionHref, groupSessionArtifacts, type ArtifactGroup } from "./sidebar-artifacts"
 
 const ArtifactRow = (props: {
   group: ArtifactGroup
@@ -19,7 +19,7 @@ const ArtifactRow = (props: {
   clearHoverProjectSoon: () => void
   language: ReturnType<typeof useLanguage>
 }): JSX.Element => {
-  const href = `/${props.slug}/session/${props.group.sessionID}`
+  const href = artifactSessionHref(props.slug, props.group.sessionID, props.file.file)
   return (
     <A
       href={href}
