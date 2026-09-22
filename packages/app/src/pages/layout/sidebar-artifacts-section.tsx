@@ -1,4 +1,4 @@
-import { A, useNavigate } from "@solidjs/router"
+import { A } from "@solidjs/router"
 import { createMemo, createSignal, For, Show, type Accessor, type JSX } from "solid-js"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { getFilename } from "@opencode-ai/core/util/path"
