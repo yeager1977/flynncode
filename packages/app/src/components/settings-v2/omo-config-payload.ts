@@ -22,7 +22,7 @@ export function pluginPatch(input: PayloadInput) {
     disabledProviders:
       input.scope === "project"
         ? input.checked.filter((id) => !input.globalPluginBans.includes(id))
-        : [...input.checked],
+        : Array.from(new Set([...input.hiddenBans, ...input.checked])),
   }
 }
 

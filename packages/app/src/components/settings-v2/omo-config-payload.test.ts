@@ -32,6 +32,10 @@ describe("pluginPatch", () => {
     expect(patch.agents.sisyphus).toBeNull()
     expect(patch.disabledProviders).toEqual(["xai"])
   })
+
+  test("global file keeps a banned id the form did not show", () => {
+    expect(pluginPatch(base).disabledProviders).toEqual(["ollama-local", "xai"])
+  })
 })
 
 describe("openCodeBans", () => {
