@@ -1,5 +1,20 @@
 import { describe, expect, test } from "bun:test"
-import { applyOpenCodeBans, applyPluginPatch, openCodeFile, pluginFile, readPlugin } from "@/config/omo-files"
+import path from "path"
+import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { FSUtil } from "@opencode-ai/core/fs-util"
+import { Effect } from "effect"
+import {
+  applyOpenCodeBans,
+  applyPluginPatch,
+  ConfigOmoFiles,
+  openCodeFile,
+  pluginFile,
+  readPlugin,
+} from "@/config/omo-files"
+import { tmpdirScoped } from "../fixture/fixture"
+import { testEffect } from "../lib/effect"
 
 describe("pluginFile", () => {
   test("prefers oh-my-openagent.jsonc, then legacy names", () => {
@@ -62,4 +77,32 @@ describe("readPlugin", () => {
   test("invalid JSONC is an error and is not rewritten by the caller contract", () => {
     expect(readPlugin("{")).toEqual({ parseError: expect.any(String) })
   })
+})
+
+const it = testEffect(AppNodeBuilder.build(LayerNode.group([FSUtil.node, CrossSpawnSpawner.node])))
+
+describe("ConfigOmoFiles.write", () => {
+  it.live("a project save writes both files with merged bans and never touches config.json", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      const fs = yield* FSUtil.Service
+
+      const info = yield* ConfigOmoFiles.write(dir, {
+        agents: {},
+        categories: {},
+        disabledProviders: ["ollama-local", "xai"],
+      })
+
+      expect(info.path).toBe(path.join(dir, "oh-my-openagent.jsonc"))
+      expect(info.disabledProviders).toEqual(["ollama-local", "xai"])
+      expect(info.openCodeDisabledProviders).toEqual(["ollama-local", "xai"])
+
+      const openCodePath = path.join(dir, ".opencode", "opencode.jsonc")
+      const openCodeText = yield* fs.readFileString(openCodePath)
+      expect(openCodeText).toContain("ollama-local")
+      expect(openCodeText).toContain("xai")
+
+      expect(yield* fs.existsSafe(path.join(dir, "config.json"))).toBe(false)
+    }),
+  )
 })

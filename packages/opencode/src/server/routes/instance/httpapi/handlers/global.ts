@@ -1,7 +1,9 @@
 import { Config } from "@/config/config"
+import { ConfigOmoFiles } from "@/config/omo-files"
 import { GlobalBus, type GlobalEvent as GlobalBusEvent } from "@/bus/global"
 import { EffectBridge } from "@/effect/bridge"
 import { EventV2 } from "@opencode-ai/core/event"
+import { Global } from "@opencode-ai/core/global"
 import { Installation } from "@/installation"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
@@ -11,7 +13,7 @@ import { HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import * as Sse from "effect/unstable/encoding/Sse"
 import { RootHttpApi } from "../api"
-import { GlobalUpgradeInput } from "../groups/global"
+import { ApiOmoConfigWriteError, GlobalUpgradeInput, OmoConfigPatch } from "../groups/global"
 
 function eventData(data: unknown): Sse.Event {
   return {
@@ -81,6 +83,25 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       return result.info
     })
 
+    const omoConfigGet = Effect.fn("GlobalHttpApi.omoConfigGet")(function* () {
+      return yield* ConfigOmoFiles.readInfo(Global.Path.config)
+    })
+
+    const omoConfigPut = Effect.fn("GlobalHttpApi.omoConfigPut")(function* (ctx: {
+      payload: typeof OmoConfigPatch.Type
+    }) {
+      const patch: ConfigOmoFiles.PluginPatch = {
+        agents: { ...ctx.payload.agents },
+        categories: { ...ctx.payload.categories },
+        disabledProviders: [...ctx.payload.disabledProviders],
+      }
+      return yield* ConfigOmoFiles.write(Global.Path.config, patch).pipe(
+        Effect.mapError(
+          (error) => new ApiOmoConfigWriteError({ name: "OmoConfigWriteError", data: error }),
+        ),
+      )
+    })
+
     const dispose = Effect.fn("GlobalHttpApi.dispose")(function* () {
       yield* disposeAllInstancesAndEmitGlobalDisposed()
       return true
@@ -120,6 +141,8 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       .handleRaw("event", event)
       .handle("configGet", configGet)
       .handle("configUpdate", configUpdate)
+      .handle("omoConfigGet", omoConfigGet)
+      .handle("omoConfigPut", omoConfigPut)
       .handle("dispose", dispose)
       .handle("upgrade", upgrade)
   }),

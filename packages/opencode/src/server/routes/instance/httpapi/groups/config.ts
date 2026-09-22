@@ -2,6 +2,7 @@ import { Config } from "@/config/config"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import { Provider } from "@/provider/provider"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { ApiOmoConfigWriteError, OmoConfigInfo, OmoConfigPatch } from "./global"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
 import { WorkspaceRoutingMiddleware, WorkspaceRoutingQuery } from "../middleware/workspace-routing"
@@ -43,6 +44,30 @@ export const ConfigApi = HttpApi.make("config")
             identifier: "config.providers",
             summary: "List config providers",
             description: "Get a list of all configured AI providers and their default models.",
+          }),
+        ),
+        HttpApiEndpoint.get("omoGet", `${root}/omo`, {
+          query: WorkspaceRoutingQuery,
+          success: described(OmoConfigInfo, "Get project Oh My OpenCode config info"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "config.omo.get",
+            summary: "Get project Oh My OpenCode configuration",
+            description:
+              "Retrieve the current project Oh My OpenCode plugin configuration along with OpenCode's disabled providers.",
+          }),
+        ),
+        HttpApiEndpoint.put("omoPut", `${root}/omo`, {
+          query: WorkspaceRoutingQuery,
+          payload: OmoConfigPatch,
+          success: described(OmoConfigInfo, "Successfully updated project Oh My OpenCode config"),
+          error: ApiOmoConfigWriteError,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "config.omo.update",
+            summary: "Update project Oh My OpenCode configuration",
+            description:
+              "Update project Oh My OpenCode plugin configuration and OpenCode disabled providers in one call.",
           }),
         ),
       )

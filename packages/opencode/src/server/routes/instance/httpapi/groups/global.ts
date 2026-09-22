@@ -65,10 +65,40 @@ const GlobalUpgradeResult = Schema.Union([
   }),
 ])
 
+export const OmoConfigInfo = Schema.Struct({
+  path: Schema.NullOr(Schema.String),
+  parseError: Schema.optional(Schema.String),
+  agents: Schema.Record(Schema.String, Schema.Unknown),
+  categories: Schema.Record(Schema.String, Schema.Unknown),
+  disabledProviders: Schema.Array(Schema.String),
+  openCodeDisabledProviders: Schema.Array(Schema.String),
+}).annotate({ identifier: "OmoConfigInfo" })
+
+export const OmoConfigPatch = Schema.Struct({
+  agents: Schema.Record(Schema.String, Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown))),
+  categories: Schema.Record(Schema.String, Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown))),
+  disabledProviders: Schema.Array(Schema.String),
+}).annotate({ identifier: "OmoConfigPatch" })
+
+// Custom 400 with the failing path in the body so a client can point the
+// user at the exact file that broke; the built-in `HttpApiError.BadRequest`
+// is empty and cannot carry that context.
+export class ApiOmoConfigWriteError extends Schema.ErrorClass<ApiOmoConfigWriteError>("OmoConfigWriteError")(
+  {
+    name: Schema.Literal("OmoConfigWriteError"),
+    data: Schema.Struct({
+      message: Schema.String,
+      path: Schema.String,
+    }),
+  },
+  { httpApiStatus: 400 },
+) {}
+
 export const GlobalPaths = {
   health: "/global/health",
   event: "/global/event",
   config: "/global/config",
+  omoConfig: "/global/omo-config",
   dispose: "/global/dispose",
   upgrade: "/global/upgrade",
 } as const
@@ -112,6 +142,28 @@ export const GlobalApi = HttpApi.make("global").add(
           identifier: "global.config.update",
           summary: "Update global configuration",
           description: "Update global OpenCode configuration settings and preferences.",
+        }),
+      ),
+      HttpApiEndpoint.get("omoConfigGet", GlobalPaths.omoConfig, {
+        success: described(OmoConfigInfo, "Get global Oh My OpenCode config info"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "global.omoConfig.get",
+          summary: "Get global Oh My OpenCode configuration",
+          description:
+            "Retrieve the current global Oh My OpenCode plugin configuration along with OpenCode's disabled providers.",
+        }),
+      ),
+      HttpApiEndpoint.put("omoConfigPut", GlobalPaths.omoConfig, {
+        payload: OmoConfigPatch,
+        success: described(OmoConfigInfo, "Successfully updated global Oh My OpenCode config"),
+        error: ApiOmoConfigWriteError,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "global.omoConfig.update",
+          summary: "Update global Oh My OpenCode configuration",
+          description:
+            "Update global Oh My OpenCode plugin configuration and OpenCode disabled providers in one call.",
         }),
       ),
       HttpApiEndpoint.post("dispose", GlobalPaths.dispose, {

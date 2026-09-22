@@ -2,6 +2,9 @@ export * as ConfigOmoFiles from "./omo-files"
 
 import path from "path"
 import { type ParseError, applyEdits, modify, parse, printParseErrorCode } from "jsonc-parser"
+import { Effect, Schema } from "effect"
+import { FSUtil } from "@opencode-ai/core/fs-util"
+import { isRecord } from "@/util/record"
 
 export type PluginPatch = {
   agents: Record<string, Record<string, unknown> | null>
@@ -17,6 +20,8 @@ const PLUGIN_FILE_NAMES = [
   "oh-my-opencode.jsonc",
   "oh-my-opencode.json",
 ] as const
+
+const DEFAULT_PLUGIN_NAME = "oh-my-openagent.jsonc"
 
 export function pluginFile(dir: string, exists: (candidate: string) => boolean): string | undefined {
   return PLUGIN_FILE_NAMES.map((name) => path.join(dir, name)).find(exists)
@@ -87,3 +92,155 @@ export function readPlugin(text: string): { document: Record<string, unknown> } 
   if (!data || typeof data !== "object" || Array.isArray(data)) return { document: {} }
   return { document: data as Record<string, unknown> }
 }
+
+export type Info = {
+  path: string | null
+  parseError?: string
+  agents: Record<string, unknown>
+  categories: Record<string, unknown>
+  disabledProviders: string[]
+  openCodeDisabledProviders: readonly string[]
+}
+
+export class WriteError extends Schema.TaggedErrorClass<WriteError>()("OmoConfigWriteError", {
+  message: Schema.String,
+  path: Schema.String,
+}) {}
+
+const emptyInfo = (openCodeDisabledProviders: readonly string[]): Info => ({
+  path: null,
+  agents: {},
+  categories: {},
+  disabledProviders: [],
+  openCodeDisabledProviders,
+})
+
+// Batch existence checks for the four plugin candidates and four OpenCode
+// candidates so the sync `pluginFile`/`openCodeFile` helpers can decide which
+// path to touch without leaking Effect into their signatures.
+const readCandidateExists = Effect.fnUntraced(function* (dir: string) {
+  const fs = yield* FSUtil.Service
+  const candidates = [
+    ...PLUGIN_FILE_NAMES.map((name) => path.join(dir, name)),
+    path.join(dir, ".opencode", "opencode.jsonc"),
+    path.join(dir, ".opencode", "opencode.json"),
+    path.join(dir, "opencode.jsonc"),
+    path.join(dir, "opencode.json"),
+  ]
+  const present = yield* Effect.forEach(
+    candidates,
+    (candidate) =>
+      fs.existsSafe(candidate).pipe(Effect.map((exists) => (exists ? candidate : undefined))),
+    { concurrency: "unbounded" },
+  )
+  return new Set(present.filter((candidate): candidate is string => candidate !== undefined))
+})
+
+const readOpenCodeBans = Effect.fnUntraced(function* (openCodePath: string) {
+  const fs = yield* FSUtil.Service
+  const text = yield* fs.readFileStringSafe(openCodePath).pipe(Effect.orDie)
+  if (!text) return [] as string[]
+  const errors: ParseError[] = []
+  const parsed = parse(text, errors, { allowTrailingComma: true })
+  if (errors.length > 0 || !isRecord(parsed)) return [] as string[]
+  const bans = parsed.disabled_providers
+  return Array.isArray(bans) ? bans.filter((value): value is string => typeof value === "string") : []
+})
+
+const readStringArray = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : []
+
+const readRecord = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {})
+
+// GET orchestration: report the resolved plugin path (null when missing),
+// surface a JSONC parseError without throwing, and always include
+// OpenCode's own `disabled_providers` alongside plugin state.
+export const readInfo = Effect.fn("ConfigOmoFiles.readInfo")(function* (dir: string) {
+  const fs = yield* FSUtil.Service
+  const exists = yield* readCandidateExists(dir)
+  const inSet = (candidate: string) => exists.has(candidate)
+  const pluginPath = pluginFile(dir, inSet)
+  const openCodePath = openCodeFile(dir, inSet)
+  const openCodeDisabledProviders = exists.has(openCodePath)
+    ? yield* readOpenCodeBans(openCodePath)
+    : []
+
+  if (!pluginPath) return emptyInfo(openCodeDisabledProviders)
+
+  const text = yield* fs.readFileStringSafe(pluginPath).pipe(Effect.orDie)
+  if (!text) return { ...emptyInfo(openCodeDisabledProviders), path: pluginPath }
+
+  const parsed = readPlugin(text)
+  if ("parseError" in parsed) {
+    return {
+      ...emptyInfo(openCodeDisabledProviders),
+      path: pluginPath,
+      parseError: parsed.parseError,
+    }
+  }
+
+  return {
+    path: pluginPath,
+    agents: readRecord(parsed.document.agents),
+    categories: readRecord(parsed.document.categories),
+    disabledProviders: readStringArray(parsed.document.disabled_providers),
+    openCodeDisabledProviders,
+  }
+})
+
+// PUT orchestration: refuse when the current plugin file cannot be parsed,
+// write the plugin file (creating or deleting the fresh JSONC as needed),
+// then persist the OpenCode ban list. A failed OpenCode write surfaces as
+// `WriteError` naming that path — the plugin file is intentionally not
+// rolled back so the caller can warn that the picker may still list a
+// banned provider.
+export const write = Effect.fn("ConfigOmoFiles.write")(function* (dir: string, patch: PluginPatch) {
+  const fs = yield* FSUtil.Service
+  const exists = yield* readCandidateExists(dir)
+  const inSet = (candidate: string) => exists.has(candidate)
+  const existingPluginPath = pluginFile(dir, inSet)
+  const pluginPath = existingPluginPath ?? path.join(dir, DEFAULT_PLUGIN_NAME)
+
+  const existingText = existingPluginPath
+    ? yield* fs.readFileStringSafe(existingPluginPath).pipe(Effect.orDie)
+    : undefined
+  if (existingText) {
+    const parsed = readPlugin(existingText)
+    if ("parseError" in parsed) {
+      return yield* new WriteError({
+        message: `Existing plugin file could not be parsed: ${parsed.parseError}`,
+        path: existingPluginPath!,
+      })
+    }
+  }
+
+  const patched = applyPluginPatch(existingText, patch)
+  let pluginWritten = existingPluginPath !== undefined
+  if (patched.empty && !existingPluginPath) {
+    // Nothing was configured before the request and the patch produced an
+    // empty document — do not leave an empty `oh-my-openagent.jsonc` behind.
+  } else {
+    yield* fs.writeWithDirs(pluginPath, patched.text).pipe(Effect.orDie)
+    pluginWritten = true
+  }
+
+  const openCodePath = openCodeFile(dir, inSet)
+  const openCodeExisting = exists.has(openCodePath)
+    ? yield* fs.readFileStringSafe(openCodePath).pipe(Effect.orDie)
+    : undefined
+  const openCodeText = applyOpenCodeBans(openCodeExisting, patch.disabledProviders)
+  const openCodeWrite = fs.writeWithDirs(openCodePath, openCodeText).pipe(
+    Effect.catch(
+      (cause) =>
+        new WriteError({
+          message: pluginWritten
+            ? `Failed to write OpenCode disabled providers to ${openCodePath}: ${cause.message}. The plugin file may already be saved, so a banned provider can still appear in the picker.`
+            : `Failed to write OpenCode disabled providers to ${openCodePath}: ${cause.message}.`,
+          path: openCodePath,
+        }),
+    ),
+  )
+  yield* openCodeWrite
+
+  return yield* readInfo(dir)
+})
