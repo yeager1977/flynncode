@@ -90,31 +90,41 @@ export const SettingsProvidersV2: Component<{
     return
   }
 
-  const edit = (item: ProviderItem) => {
+  // Disabled providers drop out of the live catalog, so fall back to config
+  // to keep their Edit and Disconnect actions.
+  const rowSource = (id: string): ProviderSource | undefined => {
+    const live = itemById().get(id)
+    if (live) return source(live)
+    const entry = serverSync().data.config.provider?.[id]
+    if (!entry) return undefined
+    return isConfigCustomProvider(entry) ? "custom" : "config"
+  }
+
+  const editRow = (id: string, name: string) => {
+    const live = itemById().get(id)
     dialog.show(() => (
       <DialogEditProvider
-        providerID={item.id}
-        providerName={item.name}
-        source={source(item)}
+        providerID={id}
+        providerName={name}
+        source={live ? source(live) : rowSource(id)}
         onBack={dialog.close}
       />
     ))
   }
 
-  const type = (item: ProviderItem) => {
-    const current = source(item)
-    if (current === "env") return language.t("settings.providers.tag.environment")
-    if (current === "api") return language.t("provider.connect.method.apiKey")
-    if (current === "config") {
-      if (isConfigCustom(item.id)) return language.t("settings.providers.tag.custom")
-      return language.t("settings.providers.tag.config")
-    }
-    if (current === "custom") return language.t("settings.providers.tag.custom")
+  const tagLabel = (src: ProviderSource | undefined, providerID: string) => {
+    if (src === "env") return language.t("settings.providers.tag.environment")
+    if (src === "api") return language.t("provider.connect.method.apiKey")
+    if (src === "config" && !isConfigCustom(providerID)) return language.t("settings.providers.tag.config")
+    if (src === "config" || src === "custom") return language.t("settings.providers.tag.custom")
     return language.t("settings.providers.tag.other")
   }
 
-  const canDisconnect = (item: ProviderItem) =>
-    source(item) !== "env" && (protocol() === "v1" || !isConfigCustom(item.id))
+  const canDisconnectRow = (id: string) => {
+    const src = rowSource(id)
+    if (src === undefined || src === "env") return false
+    return protocol() === "v1" || !isConfigCustom(id)
+  }
 
   const note = (id: string) => PROVIDER_NOTES.find((item) => item.match(id))?.key
 
@@ -191,6 +201,7 @@ export const SettingsProvidersV2: Component<{
       <div class="settings-v2-tab-body settings-v2-providers">
         <div class="settings-v2-section" data-component="connected-providers-section">
           <h3 class="settings-v2-section-title">{language.t("settings.providers.section.connected")}</h3>
+          <p class="settings-v2-provider-description">{language.t("settings.providers.enabled.description")}</p>
           <SettingsListV2>
             <Show
               when={rows().length > 0}
@@ -200,7 +211,7 @@ export const SettingsProvidersV2: Component<{
             >
               <For each={rows()}>
                 {(row) => {
-                  const item = () => itemById().get(row.id)
+                  const src = () => rowSource(row.id)
                   return (
                     <div class="settings-v2-provider-row group">
                       <div class="settings-v2-provider-lead">
@@ -212,7 +223,7 @@ export const SettingsProvidersV2: Component<{
                         />
                         <div class="settings-v2-provider-main">
                           <span class="settings-v2-provider-name truncate">{row.name}</span>
-                          <Show when={item()}>{(current) => <Tag>{type(current())}</Tag>}</Show>
+                          <Show when={src()}>{(current) => <Tag>{tagLabel(current(), row.id)}</Tag>}</Show>
                         </div>
                       </div>
                       <div class="flex items-center gap-1">
@@ -224,37 +235,33 @@ export const SettingsProvidersV2: Component<{
                         >
                           {language.t("settings.providers.enabled")}
                         </Switch>
-                        <Show when={item()}>
-                          {(current) => (
-                            <>
-                              <Show when={canEditProvider(protocol() ?? "v2")}>
-                                <ButtonV2
-                                  size="normal"
-                                  variant="ghost-muted"
-                                  data-action="provider-edit"
-                                  onClick={() => edit(current())}
-                                >
-                                  {language.t("common.edit")}
-                                </ButtonV2>
-                              </Show>
-                              <Show
-                                when={canDisconnect(current())}
-                                fallback={
-                                  <span class="settings-v2-provider-env-hint">
-                                    {language.t("settings.providers.connected.environmentDescription")}
-                                  </span>
-                                }
-                              >
-                                <ButtonV2
-                                  size="normal"
-                                  variant="ghost-muted"
-                                  onClick={() => void disconnect(current().id, current().name)}
-                                >
-                                  {language.t("common.disconnect")}
-                                </ButtonV2>
-                              </Show>
-                            </>
-                          )}
+                        <Show when={src() && canEditProvider(protocol() ?? "v2")}>
+                          <ButtonV2
+                            size="normal"
+                            variant="ghost-muted"
+                            data-action="provider-edit"
+                            onClick={() => editRow(row.id, row.name)}
+                          >
+                            {language.t("common.edit")}
+                          </ButtonV2>
+                        </Show>
+                        <Show
+                          when={canDisconnectRow(row.id)}
+                          fallback={
+                            <Show when={src() === "env"}>
+                              <span class="settings-v2-provider-env-hint">
+                                {language.t("settings.providers.connected.environmentDescription")}
+                              </span>
+                            </Show>
+                          }
+                        >
+                          <ButtonV2
+                            size="normal"
+                            variant="ghost-muted"
+                            onClick={() => void disconnect(row.id, row.name)}
+                          >
+                            {language.t("common.disconnect")}
+                          </ButtonV2>
                         </Show>
                       </div>
                     </div>
