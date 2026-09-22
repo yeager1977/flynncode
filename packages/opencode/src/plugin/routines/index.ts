@@ -1,18 +1,53 @@
-import { homedir } from "os"
 import path from "path"
+import { Global } from "@opencode-ai/core/global"
+import { applyEdits, modify, parse } from "jsonc-parser"
 import type { Hooks, PluginInput } from "@opencode-ai/plugin"
 import { dueRoutines } from "./due"
 import { parseRoutines, type Routine } from "./parse"
 
-const FILE = path.join(homedir(), ".config", "opencode", "routines.jsonc")
+// Mirrors globalConfigFile() precedence so we patch the file OpenCode loads.
+const CONFIG_CANDIDATES = ["opencode.jsonc", "opencode.json", "config.json"]
+const FILE = path.join(Global.Path.config, "routines.jsonc")
 const PREFIX = "[routines]"
 
 type Client = PluginInput["client"]
 
-export async function loadRoutines() {
+function stored(routine: Routine) {
+  return {
+    id: routine.id,
+    name: routine.name,
+    prompt: routine.prompt,
+    enabled: routine.enabled,
+    lastRun: routine.lastRun,
+    schedule: routine.dailyAt ? { dailyAt: routine.dailyAt } : undefined,
+  }
+}
+
+function configFile() {
+  for (const name of CONFIG_CANDIDATES) {
+    const candidate = path.join(Global.Path.config, name)
+    if (Bun.file(candidate).size > 0) return candidate
+  }
+  return path.join(Global.Path.config, CONFIG_CANDIDATES[0] ?? "opencode.jsonc")
+}
+
+async function readConfigRoutines() {
+  const file = Bun.file(configFile())
+  if (!(await file.exists())) return
+  const data = parse(await file.text()) as { routines?: unknown }
+  if (!data || data.routines === undefined) return
+  const parsed = parseRoutines(data.routines)
+  if (!parsed.ok) {
+    console.warn(`${PREFIX} invalid config:\n- ${parsed.errors.join("\n- ")}`)
+    return []
+  }
+  return parsed.value.routines
+}
+
+async function readFileRoutines() {
   const file = Bun.file(FILE)
   if (!(await file.exists())) return []
-  const parsed = parseRoutines(await file.json())
+  const parsed = parseRoutines(parse(await file.text()))
   if (!parsed.ok) {
     console.warn(`${PREFIX} invalid file:\n- ${parsed.errors.join("\n- ")}`)
     return []
@@ -20,11 +55,24 @@ export async function loadRoutines() {
   return parsed.value.routines
 }
 
-export async function markRan(routines: Routine[], ids: string[], now: Date) {
-  const next = routines.map((routine) =>
+export async function loadRoutines() {
+  const fromConfig = await readConfigRoutines()
+  if (fromConfig) return { source: "config" as const, routines: fromConfig }
+  return { source: "file" as const, routines: await readFileRoutines() }
+}
+
+export async function markRan(loaded: { source: "config" | "file"; routines: Routine[] }, ids: string[], now: Date) {
+  const next = loaded.routines.map((routine) =>
     ids.includes(routine.id) ? { ...routine, lastRun: now.toISOString() } : routine,
   )
-  await Bun.write(FILE, JSON.stringify({ routines: next }, null, 2))
+  const storedRoutines = next.map(stored)
+  if (loaded.source === "file") {
+    await Bun.write(FILE, JSON.stringify({ routines: storedRoutines }, null, 2))
+    return next
+  }
+  const text = await Bun.file(configFile()).text()
+  const edits = modify(text, ["routines"], { routines: storedRoutines }, { formattingOptions: { insertSpaces: true, tabSize: 2 } })
+  await Bun.write(configFile(), applyEdits(text, edits))
   return next
 }
 
@@ -46,26 +94,17 @@ async function runOne(client: Client, directory: string, routine: Routine) {
 }
 
 export function startScheduler(client: Client, directory: string) {
-  let timer: ReturnType<typeof setInterval> | undefined
+  const timer = setInterval(() => {
+    void tick()
+  }, 30_000)
   const tick = async () => {
-    const routines = await loadRoutines()
-    const due = dueRoutines(routines, new Date())
+    const loaded = await loadRoutines()
+    const due = dueRoutines(loaded.routines, new Date())
     if (due.length === 0) return
     await Promise.all(due.map((routine) => runOne(client, directory, routine)))
-    await markRan(routines, due.map((routine) => routine.id), new Date())
+    await markRan(loaded, due.map((routine) => routine.id), new Date())
   }
-  const arm = async () => {
-    const routines = await loadRoutines()
-    if (!routines.some((routine) => routine.enabled && routine.dailyAt)) return
-    timer = setInterval(() => {
-      void tick()
-    }, 30_000)
-  }
-  void arm()
-  return () => {
-    if (!timer) return
-    clearInterval(timer)
-  }
+  return () => clearInterval(timer)
 }
 
 export const RoutinesPlugin = async (input: PluginInput): Promise<Hooks> => {
