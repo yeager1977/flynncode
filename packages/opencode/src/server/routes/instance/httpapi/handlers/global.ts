@@ -84,7 +84,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     })
 
     const omoConfigGet = Effect.fn("GlobalHttpApi.omoConfigGet")(function* () {
-      return yield* ConfigOmoFiles.readInfo(Global.Path.config)
+      return yield* ConfigOmoFiles.readInfo(Global.Path.config, "global")
     })
 
     const omoConfigPut = Effect.fn("GlobalHttpApi.omoConfigPut")(function* (ctx: {
@@ -95,7 +95,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
         categories: { ...ctx.payload.categories },
         disabledProviders: [...ctx.payload.disabledProviders],
       }
-      return yield* ConfigOmoFiles.write(Global.Path.config, patch).pipe(
+      return yield* ConfigOmoFiles.write(Global.Path.config, patch, "global").pipe(
         Effect.mapError(
           (error) => new ApiOmoConfigWriteError({ name: "OmoConfigWriteError", data: error }),
         ),

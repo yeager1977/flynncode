@@ -9,6 +9,7 @@ import {
   applyOpenCodeBans,
   applyPluginPatch,
   ConfigOmoFiles,
+  globalOpenCodeFile,
   openCodeFile,
   pluginFile,
   readPlugin,
@@ -40,6 +41,27 @@ describe("openCodeFile", () => {
 
   test("never returns a path ending in config.json", () => {
     expect(openCodeFile("/work", (path) => path.endsWith("config.json"))).toBe("/work/.opencode/opencode.jsonc")
+  })
+})
+
+describe("globalOpenCodeFile", () => {
+  test("mirrors globalConfigFile() order and returns opencode.jsonc when nothing exists", () => {
+    expect(globalOpenCodeFile("/cfg", () => false)).toBe("/cfg/opencode.jsonc")
+  })
+
+  test("prefers an existing opencode.jsonc over legacy config.json", () => {
+    const exists = (path: string) => path === "/cfg/opencode.jsonc" || path === "/cfg/config.json"
+    expect(globalOpenCodeFile("/cfg", exists)).toBe("/cfg/opencode.jsonc")
+  })
+
+  test("keeps a legacy config.json target when it is the only file present", () => {
+    expect(globalOpenCodeFile("/cfg", (path) => path === "/cfg/config.json")).toBe("/cfg/config.json")
+  })
+
+  test("never routes through a `.opencode/` subdirectory", () => {
+    expect(
+      globalOpenCodeFile("/cfg", (path) => path === "/cfg/.opencode/opencode.jsonc"),
+    ).toBe("/cfg/opencode.jsonc")
   })
 })
 
@@ -104,5 +126,42 @@ describe("ConfigOmoFiles.write", () => {
 
       expect(yield* fs.existsSafe(path.join(dir, "config.json"))).toBe(false)
     }),
+  )
+
+  it.live(
+    "a global save patches the existing opencode.jsonc in the global dir and never creates .opencode/",
+    () =>
+      Effect.gen(function* () {
+        const dir = yield* tmpdirScoped()
+        const fs = yield* FSUtil.Service
+        const globalOpenCodePath = path.join(dir, "opencode.jsonc")
+        yield* fs.writeFileString(
+          globalOpenCodePath,
+          `{
+  "model": "ollama-cloud/glm-5.3-flash"
+}
+`,
+        )
+
+        const info = yield* ConfigOmoFiles.write(
+          dir,
+          {
+            agents: {},
+            categories: {},
+            disabledProviders: ["ollama-local"],
+          },
+          "global",
+        )
+
+        expect(info.path).toBe(path.join(dir, "oh-my-openagent.jsonc"))
+        expect(info.openCodeDisabledProviders).toEqual(["ollama-local"])
+
+        const openCodeText = yield* fs.readFileString(globalOpenCodePath)
+        expect(openCodeText).toContain("glm-5.3-flash")
+        expect(openCodeText).toContain("ollama-local")
+
+        expect(yield* fs.existsSafe(path.join(dir, ".opencode"))).toBe(false)
+        expect(yield* fs.existsSafe(path.join(dir, ".opencode", "opencode.jsonc"))).toBe(false)
+      }),
   )
 })

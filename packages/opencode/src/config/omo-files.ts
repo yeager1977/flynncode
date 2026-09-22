@@ -40,6 +40,24 @@ export function openCodeFile(dir: string, exists: (candidate: string) => boolean
   return candidates.find(exists) ?? candidates[0]
 }
 
+// Global scope has no `.opencode/` subdirectory: patch the same file
+// `packages/opencode/src/config/config.ts::globalConfigFile()` selects.
+// `config.json` is a legitimate legacy target under `~/.config/opencode` and
+// must be preserved when it already exists.
+export function globalOpenCodeFile(dir: string, exists: (candidate: string) => boolean): string {
+  const candidates = [
+    path.join(dir, "opencode.jsonc"),
+    path.join(dir, "opencode.json"),
+    path.join(dir, "config.json"),
+  ]
+  return candidates.find(exists) ?? candidates[0]
+}
+
+export type Scope = "project" | "global"
+
+const resolveOpenCodeFile = (dir: string, exists: (candidate: string) => boolean, scope: Scope) =>
+  scope === "global" ? globalOpenCodeFile(dir, exists) : openCodeFile(dir, exists)
+
 const FORMAT = {
   formattingOptions: { tabSize: 2, insertSpaces: true },
 } as const
@@ -115,17 +133,29 @@ const emptyInfo = (openCodeDisabledProviders: readonly string[]): Info => ({
   openCodeDisabledProviders,
 })
 
-// Batch existence checks for the four plugin candidates and four OpenCode
-// candidates so the sync `pluginFile`/`openCodeFile` helpers can decide which
-// path to touch without leaking Effect into their signatures.
-const readCandidateExists = Effect.fnUntraced(function* (dir: string) {
+// Batch existence checks for the four plugin candidates plus the OpenCode
+// candidates for the requested scope so the sync `pluginFile` /
+// `openCodeFile` / `globalOpenCodeFile` helpers can decide which path to
+// touch without leaking Effect into their signatures.
+const openCodeCandidatePaths = (dir: string, scope: Scope) =>
+  scope === "global"
+    ? [
+        path.join(dir, "opencode.jsonc"),
+        path.join(dir, "opencode.json"),
+        path.join(dir, "config.json"),
+      ]
+    : [
+        path.join(dir, ".opencode", "opencode.jsonc"),
+        path.join(dir, ".opencode", "opencode.json"),
+        path.join(dir, "opencode.jsonc"),
+        path.join(dir, "opencode.json"),
+      ]
+
+const readCandidateExists = Effect.fnUntraced(function* (dir: string, scope: Scope) {
   const fs = yield* FSUtil.Service
   const candidates = [
     ...PLUGIN_FILE_NAMES.map((name) => path.join(dir, name)),
-    path.join(dir, ".opencode", "opencode.jsonc"),
-    path.join(dir, ".opencode", "opencode.json"),
-    path.join(dir, "opencode.jsonc"),
-    path.join(dir, "opencode.json"),
+    ...openCodeCandidatePaths(dir, scope),
   ]
   const present = yield* Effect.forEach(
     candidates,
@@ -155,12 +185,15 @@ const readRecord = (value: unknown): Record<string, unknown> => (isRecord(value)
 // GET orchestration: report the resolved plugin path (null when missing),
 // surface a JSONC parseError without throwing, and always include
 // OpenCode's own `disabled_providers` alongside plugin state.
-export const readInfo = Effect.fn("ConfigOmoFiles.readInfo")(function* (dir: string) {
+export const readInfo = Effect.fn("ConfigOmoFiles.readInfo")(function* (
+  dir: string,
+  scope: Scope = "project",
+) {
   const fs = yield* FSUtil.Service
-  const exists = yield* readCandidateExists(dir)
+  const exists = yield* readCandidateExists(dir, scope)
   const inSet = (candidate: string) => exists.has(candidate)
   const pluginPath = pluginFile(dir, inSet)
-  const openCodePath = openCodeFile(dir, inSet)
+  const openCodePath = resolveOpenCodeFile(dir, inSet, scope)
   const openCodeDisabledProviders = exists.has(openCodePath)
     ? yield* readOpenCodeBans(openCodePath)
     : []
@@ -194,9 +227,13 @@ export const readInfo = Effect.fn("ConfigOmoFiles.readInfo")(function* (dir: str
 // `WriteError` naming that path — the plugin file is intentionally not
 // rolled back so the caller can warn that the picker may still list a
 // banned provider.
-export const write = Effect.fn("ConfigOmoFiles.write")(function* (dir: string, patch: PluginPatch) {
+export const write = Effect.fn("ConfigOmoFiles.write")(function* (
+  dir: string,
+  patch: PluginPatch,
+  scope: Scope = "project",
+) {
   const fs = yield* FSUtil.Service
-  const exists = yield* readCandidateExists(dir)
+  const exists = yield* readCandidateExists(dir, scope)
   const inSet = (candidate: string) => exists.has(candidate)
   const existingPluginPath = pluginFile(dir, inSet)
   const pluginPath = existingPluginPath ?? path.join(dir, DEFAULT_PLUGIN_NAME)
@@ -224,7 +261,7 @@ export const write = Effect.fn("ConfigOmoFiles.write")(function* (dir: string, p
     pluginWritten = true
   }
 
-  const openCodePath = openCodeFile(dir, inSet)
+  const openCodePath = resolveOpenCodeFile(dir, inSet, scope)
   const openCodeExisting = exists.has(openCodePath)
     ? yield* fs.readFileStringSafe(openCodePath).pipe(Effect.orDie)
     : undefined
@@ -242,5 +279,5 @@ export const write = Effect.fn("ConfigOmoFiles.write")(function* (dir: string, p
   )
   yield* openCodeWrite
 
-  return yield* readInfo(dir)
+  return yield* readInfo(dir, scope)
 })
