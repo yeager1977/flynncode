@@ -227,23 +227,27 @@ export const SettingsMcpV2: Component<{ directory?: string }> = (props) => {
 
   const onEdit = (name: string) => {
     void (async () => {
-      let scope: "global" | "directory" = "global"
-      let existing = serverSync().data.config?.mcp?.[name]
-      if (props.directory !== undefined) {
-        const response = await serverSdk().client.config.get({ directory: props.directory })
-        const project = (response.data ?? {}) as Config
-        if (project.mcp?.[name] !== undefined) {
-          scope = "directory"
-          existing = project.mcp[name]
+      try {
+        let scope: "global" | "directory" = "global"
+        let existing = serverSync().data.config?.mcp?.[name]
+        if (props.directory !== undefined) {
+          const response = await serverSdk().client.config.get({ directory: props.directory })
+          const project = (response.data ?? {}) as Config
+          if (project.mcp?.[name] !== undefined) {
+            scope = "directory"
+            existing = project.mcp[name]
+          }
         }
+        if (!existing || !("type" in existing)) {
+          showToast({ variant: "error", description: language.t("settings.mcp.errors.noConfig", { name }) })
+          return
+        }
+        const config = storedToPayloadConfig(existing)
+        const status = (servers() ?? []).find((server) => server.name === name)?.status.status
+        openForm(formFromConfig(name, config), { name, wasConnected: status === "connected", scope })
+      } catch (error) {
+        onError(error)
       }
-      if (!existing || !("type" in existing)) {
-        showToast({ variant: "error", description: language.t("settings.mcp.errors.noConfig", { name }) })
-        return
-      }
-      const config = storedToPayloadConfig(existing)
-      const status = (servers() ?? []).find((server) => server.name === name)?.status.status
-      openForm(formFromConfig(name, config), { name, wasConnected: status === "connected", scope })
     })()
   }
 
