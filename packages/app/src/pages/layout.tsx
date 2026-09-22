@@ -81,6 +81,7 @@ import {
   type WorkspaceSidebarContext,
 } from "./layout/sidebar-workspace"
 import { ProjectDragOverlay, SortableProject, type ProjectSidebarContext } from "./layout/sidebar-project"
+import { SidebarArtifacts } from "./layout/sidebar-artifacts-section"
 import { SidebarContent } from "./layout/sidebar-shell"
 
 export default function LegacyLayout(props: ParentProps) {
@@ -2115,13 +2116,20 @@ export default function LegacyLayout(props: ParentProps) {
                           {language.t("command.session.new")}
                         </Button>
                       </div>
-                      <div class="flex-1 min-h-0">
-                        <LocalWorkspace
-                          ctx={workspaceSidebarCtx}
-                          project={project}
-                          sortNow={sortNow}
-                          mobile={panelProps.mobile}
+                      <div class="flex-1 min-h-0 flex flex-col">
+                        <SidebarArtifacts
+                          directory={() => worktree() || undefined}
+                          sidebarExpanded={sidebarExpanded}
+                          clearHoverProjectSoon={clearHoverProjectSoon}
                         />
+                        <div class="flex-1 min-h-0">
+                          <LocalWorkspace
+                            ctx={workspaceSidebarCtx}
+                            project={project}
+                            sortNow={sortNow}
+                            mobile={panelProps.mobile}
+                          />
+                        </div>
                       </div>
                     </>
                   }
@@ -2167,6 +2175,11 @@ export default function LegacyLayout(props: ParentProps) {
                               )}
                             </For>
                           </SortableProvider>
+                          <SidebarArtifacts
+                            directory={() => worktree() || undefined}
+                            sidebarExpanded={sidebarExpanded}
+                            clearHoverProjectSoon={clearHoverProjectSoon}
+                          />
                         </div>
                         <DragOverlay>
                           <WorkspaceDragOverlay
