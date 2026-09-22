@@ -512,8 +512,8 @@ const McpFormFields: Component<{
                 <label class={label}>{language.t("settings.mcp.form.oauth.scope")}</label>
                 <TextInputV2
                   type="text"
-                  value={props.form.scope}
-                  onInput={(event) => (props.form.scope = event.currentTarget.value)}
+                  value={props.form.oauthScope}
+                  onInput={(event) => (props.form.oauthScope = event.currentTarget.value)}
                 />
               </div>
               <div class={field}>

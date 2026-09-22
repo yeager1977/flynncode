@@ -15,10 +15,12 @@ export type McpFormState = {
   clientId: string
   clientSecret: string
   clientSecretPlaceholder?: string
-  scope: string
+  oauthScope: string
   callbackPort: string
   enabled: boolean
   timeout: string
+  // undefined behaves as "global"; set by openForm based on context
+  scope?: "global" | "directory"
 }
 
 const SECRET_PLACEHOLDER = "configured"
@@ -37,7 +39,7 @@ export function emptyForm(name?: string): McpFormState {
     clientId: "",
     clientSecret: "",
     clientSecretPlaceholder: undefined,
-    scope: "",
+    oauthScope: "",
     callbackPort: "",
     enabled: true,
     timeout: "",
@@ -74,7 +76,7 @@ export function formFromConfig(name: string, config: McpServerConfig): McpFormSt
     clientId: settings?.client_id ?? "",
     clientSecret: "",
     clientSecretPlaceholder: settings?.client_secret === undefined ? undefined : SECRET_PLACEHOLDER,
-    scope: settings?.scope ?? "",
+    oauthScope: settings?.scope ?? "",
     callbackPort: settings?.callback_port === undefined ? "" : String(settings.callback_port),
     enabled: !config.disabled,
     timeout: timeoutFromConfig(config),
@@ -118,8 +120,8 @@ function parseTimeout(value: string) {
 // round-trip later needs to distinguish "keep" from "fresh add".
 export function buildAddInput(
   form: McpFormState,
-  _opts: { keepSecret?: boolean } = {},
-): { ok: true; input: { server: string; config: McpServerConfig } } | { ok: false; error: string } {
+  opts: { keepSecret?: boolean; directory?: string } = {},
+): { ok: true; input: { server: string; config: McpServerConfig; directory?: string } } | { ok: false; error: string } {
   const name = form.name.trim()
   if (name === "") return { ok: false, error: "name" }
 
@@ -140,7 +142,7 @@ export function buildAddInput(
       disabled,
       timeout: timeoutConfig,
     }
-    return { ok: true, input: { server: name, config } }
+    return { ok: true, input: { server: name, config, directory: opts.directory !== undefined && form.scope === "directory" ? opts.directory : undefined } }
   }
 
   if (form.url.trim() === "") return { ok: false, error: "url" }
@@ -154,7 +156,8 @@ export function buildAddInput(
     disabled,
     timeout: timeoutConfig,
   }
-  return { ok: true, input: { server: name, config } }
+  const directory = opts.directory !== undefined && form.scope === "directory" ? opts.directory : undefined
+  return { ok: true, input: { server: name, config, directory } }
 }
 
 // Returns the oauth config, or an error key when a numeric field is invalid.
@@ -167,7 +170,7 @@ function buildOauth(form: McpFormState) {
   // A blank secret with the "configured" sentinel means the server still
   // holds the previous credential: omitting client_secret preserves it.
   if (form.clientSecret.trim() !== "") oauth.client_secret = form.clientSecret
-  if (form.scope.trim() !== "") oauth.scope = form.scope.trim()
+  if (form.oauthScope.trim() !== "") oauth.scope = form.oauthScope.trim()
   if (port.value !== undefined) oauth.callback_port = port.value
   return oauth
 }

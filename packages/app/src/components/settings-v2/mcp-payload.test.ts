@@ -17,7 +17,7 @@ describe("emptyForm", () => {
       clientId: "",
       clientSecret: "",
       clientSecretPlaceholder: undefined,
-      scope: "",
+      oauthScope: "",
       callbackPort: "",
       enabled: true,
       timeout: "",
@@ -82,7 +82,7 @@ describe("formFromConfig", () => {
     expect(form.clientId).toBe("abc")
     expect(form.clientSecret).toBe("")
     expect(form.clientSecretPlaceholder).toBe("configured")
-    expect(form.scope).toBe("read")
+    expect(form.oauthScope).toBe("read")
     expect(form.callbackPort).toBe("8123")
     expect(form.headers).toEqual([{ key: "Authorization", value: "Bearer x" }])
     expect(form.enabled).toBe(true)
@@ -144,7 +144,7 @@ describe("buildAddInput", () => {
       oauthEnabled: true,
       clientId: "cid",
       clientSecret: "sec",
-      scope: "openid",
+      oauthScope: "openid",
       callbackPort: "19876",
     }
     const result = buildAddInput(form)
@@ -185,7 +185,7 @@ describe("buildAddInput", () => {
       clientId: "cid",
       clientSecret: "",
       clientSecretPlaceholder: "configured",
-      scope: "openid",
+      oauthScope: "openid",
     }
     const result = buildAddInput(form, { keepSecret: true })
     expect(result).toEqual({
@@ -362,5 +362,33 @@ describe("buildAddInput", () => {
       callbackPort: "70000",
     }
     expect(buildAddInput(form).ok).toBe(false)
+  })
+})
+
+const remoteForm = { ...emptyForm("x"), kind: "remote" as const, url: "https://mcp.example.com/mcp" }
+
+describe("buildAddInput scope", () => {
+  test("directory scope with directory returns directory", () => {
+    const built = buildAddInput({ ...remoteForm, scope: "directory" }, { directory: "/proj" })
+    expect(built.ok).toBe(true)
+    if (built.ok) expect(built.input.directory).toBe("/proj")
+  })
+
+  test("global scope ignores directory", () => {
+    const built = buildAddInput({ ...remoteForm, scope: "global" }, { directory: "/proj" })
+    expect(built.ok).toBe(true)
+    if (built.ok) expect(built.input.directory).toBeUndefined()
+  })
+
+  test("undefined scope behaves as global", () => {
+    const built = buildAddInput({ ...remoteForm }, { directory: "/proj" })
+    expect(built.ok).toBe(true)
+    if (built.ok) expect(built.input.directory).toBeUndefined()
+  })
+
+  test("no directory option → directory undefined regardless of scope", () => {
+    const built = buildAddInput({ ...remoteForm, scope: "directory" })
+    expect(built.ok).toBe(true)
+    if (built.ok) expect(built.input.directory).toBeUndefined()
   })
 })
