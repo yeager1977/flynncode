@@ -22,6 +22,7 @@ export const RegistrySearchDialog: Component<{
   const [error, setError] = createSignal(false)
 
   let runId = 0
+  let pendingSearchTimer: ReturnType<typeof setTimeout> | undefined
   const run = async (search: string) => {
     const id = ++runId
     setBusy(true)
@@ -45,16 +46,23 @@ export const RegistrySearchDialog: Component<{
   // unfiltered listing (spec choice: search + filters, no browse default).
   createEffect(() => {
     const search = query().trim()
+    runId++
     if (search === "") {
-      runId++
       setEntries([])
       setCursor(undefined)
       setBusy(false)
       setError(false)
       return
     }
-    const timer = setTimeout(() => void run(search), 300)
-    onCleanup(() => clearTimeout(timer))
+    const timer = setTimeout(() => {
+      pendingSearchTimer = undefined
+      void run(search)
+    }, 300)
+    pendingSearchTimer = timer
+    onCleanup(() => {
+      clearTimeout(timer)
+      if (pendingSearchTimer === timer) pendingSearchTimer = undefined
+    })
   })
 
   const visible = () => {
@@ -67,17 +75,20 @@ export const RegistrySearchDialog: Component<{
   const loadMore = async () => {
     const next = cursor()
     if (next === undefined) return
+    const id = ++runId
     setCursor(undefined)
     setBusy(true)
     try {
       const search = query().trim()
       const page = await searchRegistry(search === "" ? { cursor: next } : { search, cursor: next })
+      if (id !== runId) return
       setEntries((current) => [...current, ...page.entries])
       setCursor(page.nextCursor)
     } catch {
+      if (id !== runId) return
       setError(true)
     } finally {
-      setBusy(false)
+      if (id === runId) setBusy(false)
     }
   }
 
@@ -96,6 +107,17 @@ export const RegistrySearchDialog: Component<{
           value={query()}
           placeholder={language.t("settings.mcp.registry.placeholder")}
           onInput={(event) => setQuery(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter") return
+            event.preventDefault()
+            const search = query().trim()
+            if (search === "") return
+            if (pendingSearchTimer !== undefined) {
+              clearTimeout(pendingSearchTimer)
+              pendingSearchTimer = undefined
+            }
+            void run(search)
+          }}
         />
         <div class="flex gap-2">
           {(["all", "stdio", "remote"] as const).map((value) => (
