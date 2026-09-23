@@ -4,15 +4,15 @@ import { For, Show, createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
-import { useSDK } from "@/context/sdk"
+import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { addRoutine, removeRoutine, routinesFromConfig, routinesToConfig, toggleRoutine } from "./routines-edit"
 
 export function SettingsRoutinesV2() {
   const language = useLanguage()
   const serverSync = useServerSync()
+  const serverSDK = useServerSDK()
   const layout = useLayout()
-  const sdk = useSDK()
   const [draft, setDraft] = createStore({ name: "", prompt: "", dailyAt: "", error: "", saving: false })
   const routines = createMemo(() => routinesFromConfig(serverSync().data.config.routines))
   const directory = createMemo(() => layout.projects.list()[0]?.worktree ?? "")
@@ -41,14 +41,14 @@ export function SettingsRoutinesV2() {
     const dir = directory()
     if (!routine || !dir) return
     const agent = "build"
-    const created = await sdk()
+    const created = await serverSDK()
       .api.session.create({ agent, location: { directory: dir } })
       .catch(() => undefined)
     if (!created?.id) {
       setDraft("error", language.t("settings.routines.runFailed"))
       return
     }
-    await sdk()
+    await serverSDK()
       .api.session.prompt({ sessionID: created.id, agent, text: routine.prompt })
       .catch(() => setDraft("error", language.t("settings.routines.runFailed")))
   }
