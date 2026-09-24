@@ -17,10 +17,16 @@ import { SessionID, MessageID } from "../../src/session/schema"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Plugin } from "../../src/plugin"
-import { testEffect } from "../lib/effect"
+import { pollWithTimeout, testEffect } from "../lib/effect"
 import { Tool } from "@/tool/tool"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { InstanceStore } from "@/project/instance-store"
+import { InstanceState } from "@/effect/instance-state"
+import { Location } from "@opencode-ai/core/location"
+import { LocationServiceMap, locationServiceMapLayer } from "@opencode-ai/core/location-services"
+import { Pty } from "@opencode-ai/core/pty"
+import { PtyID } from "@opencode-ai/core/pty/schema"
+import { AbsolutePath } from "@opencode-ai/core/schema"
 
 const shellLayer = Layer.mergeAll(
   LayerNode.compile(
@@ -35,6 +41,7 @@ const shellLayer = Layer.mergeAll(
     ]),
   ),
   testInstanceStoreLayer,
+  locationServiceMapLayer,
 )
 const it = testEffect(shellLayer)
 type ShellTestServices =
@@ -217,6 +224,72 @@ describe("tool.shell", () => {
       )
     }),
   )
+
+  if (process.platform !== "win32") {
+    it.live("runs interactive commands in the instance Location PTY", () =>
+      Effect.gen(function* () {
+        const tmp = yield* tmpdirScoped()
+        yield* runIn(
+          tmp,
+          Effect.gen(function* () {
+            // The sleep keeps the process running until the tool attaches to it.
+            const result = yield* run({ command: "sleep 1; echo interactive-ok", interactive: true })
+            expect(result.metadata.exit).toBe(0)
+            expect(result.output).toContain("interactive-ok")
+            const ptyID = "ptyID" in result.metadata ? String(result.metadata.ptyID) : ""
+            expect(ptyID).toStartWith("pty_")
+
+            // The /pty routes look sessions up through this map with the instance directory.
+            const locations = yield* LocationServiceMap.Service
+            const directory = (yield* InstanceState.context).directory
+            const info = yield* Effect.gen(function* () {
+              const pty = yield* Pty.Service
+              return yield* pty.get(PtyID.make(ptyID))
+            }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))))
+            expect(info.id).toBe(PtyID.make(ptyID))
+          }),
+        )
+      }),
+    )
+
+    it.live("captures interactive commands that exit while tool metadata is published", () =>
+      Effect.gen(function* () {
+        const tmp = yield* tmpdirScoped()
+        yield* runIn(
+          tmp,
+          Effect.gen(function* () {
+            const locations = yield* LocationServiceMap.Service
+            const directory = (yield* InstanceState.context).directory
+            const result = yield* run(
+              { command: "echo fast", interactive: true },
+              {
+                ...ctx,
+                // Persisting tool metadata can outlast a fast command, so hold it until the command exits.
+                metadata: (input) => {
+                  const ptyID = input.metadata?.ptyID
+                  if (typeof ptyID !== "string") return Effect.void
+                  return pollWithTimeout(
+                    Effect.gen(function* () {
+                      const pty = yield* Pty.Service
+                      const info = yield* pty.get(PtyID.make(ptyID))
+                      return info.status === "exited" ? info : undefined
+                    }),
+                    "interactive command never exited",
+                  ).pipe(
+                    Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
+                    Effect.asVoid,
+                    Effect.orDie,
+                  )
+                },
+              },
+            )
+            expect(result.metadata.exit).toBe(0)
+            expect(result.output).toContain("fast")
+          }),
+        )
+      }),
+    )
+  }
 })
 
 describe("tool.shell permissions", () => {

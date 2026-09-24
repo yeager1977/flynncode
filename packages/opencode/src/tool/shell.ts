@@ -14,6 +14,9 @@ import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Shell } from "@opencode-ai/core/shell"
 import { Pty } from "@opencode-ai/core/pty"
+import { Location } from "@opencode-ai/core/location"
+import { LocationServiceMap } from "@opencode-ai/core/location-services"
+import { AbsolutePath } from "@opencode-ai/core/schema"
 import { ShellID } from "./shell/id"
 
 import * as Truncate from "./truncate"
@@ -344,7 +347,7 @@ export const ShellTool = Tool.define(
     const fs = yield* FSUtil.Service
     const trunc = yield* Truncate.Service
     const plugin = yield* Plugin.Service
-    const pty = yield* Pty.Service
+    const locations = yield* LocationServiceMap.Service
     const flags = yield* RuntimeFlags.Service
     const defaultTimeoutMs = flags.bashDefaultTimeoutMs ?? 2 * 60 * 1000
 
@@ -606,6 +609,9 @@ export const ShellTool = Tool.define(
       },
       ctx: Tool.Context,
     ) {
+      const pty = yield* Pty.Service
+      const done = yield* Deferred.make<{ exitCode?: number }>()
+      let text = ""
       const info = yield* pty.create({
         command: input.shell,
         args: ["-c", input.command],
@@ -613,6 +619,26 @@ export const ShellTool = Tool.define(
         title: input.command.slice(0, 48),
         env: input.env,
       })
+      // Attach before anything else can yield: once a fast command exits, the session rejects attachments.
+      const attachment = yield* pty
+        .attach(info.id, {
+          onData: (chunk) => {
+            text += chunk
+          },
+          onEnd: (event) => Deferred.doneUnsafe(done, Effect.succeed(event)),
+        })
+        .pipe(
+          // The command can still win the race when the fiber stalls. Its retained output is then out of
+          // reach, but its exit status is not.
+          Effect.catchTag("Pty.ExitedError", () =>
+            pty.get(info.id).pipe(
+              Effect.flatMap((exited) => Deferred.succeed(done, { exitCode: exited.exitCode })),
+              Effect.as(undefined),
+            ),
+          ),
+        )
+      // Output printed before the attach only arrives as replay; later chunks wait for activate().
+      text = attachment?.replay ?? ""
       yield* ctx.metadata({
         title: input.command,
         metadata: {
@@ -621,27 +647,19 @@ export const ShellTool = Tool.define(
           output: "",
         },
       })
-      const done = yield* Deferred.make<{ exitCode?: number }>()
-      const context = yield* Effect.context()
-      const runFork = Effect.runForkWith(context)
-      let text = ""
-      const attachment = yield* pty.attach(info.id, {
-        onData: (chunk) => {
-          text += chunk
-        },
-        onEnd: (event) => {
-          runFork(Deferred.succeed(done, event).pipe(Effect.ignore))
-        },
-      })
-      attachment.activate()
+      attachment?.activate()
       const exit = yield* Effect.raceFirst(
         Deferred.await(done).pipe(Effect.map((event) => ({ kind: "exit" as const, code: event.exitCode }))),
         Effect.sleep(`${input.timeout} millis`).pipe(Effect.map(() => ({ kind: "timeout" as const }))),
       )
-      attachment.detach()
+      attachment?.detach()
       const limits = yield* trunc.limits()
       const end = tail(text, limits.maxLines, limits.maxBytes)
       let output = end.text || "(no output)"
+      if (!attachment) {
+        output +=
+          "\n\n<shell_metadata>\nThe command exited before the terminal attached, so its output was not captured.\n</shell_metadata>"
+      }
       if (exit.kind === "timeout") {
         output +=
           "\n\n<shell_metadata>\nThe terminal is still open. The user can keep typing. The command was not killed.\n</shell_metadata>"
@@ -653,6 +671,7 @@ export const ShellTool = Tool.define(
           interactive: true,
           output: preview(output),
           exit: exit.kind === "exit" ? (exit.code ?? null) : null,
+          truncated: end.cut,
         },
         output,
       }
@@ -707,6 +726,13 @@ export const ShellTool = Tool.define(
                     timeout,
                   },
                   ctx,
+                ).pipe(
+                  // Pty is Location-scoped. Resolve it the same way the /pty routes do (instance
+                  // directory, no workspace) so the app terminal can attach to the session.
+                  Effect.provide(
+                    locations.get(Location.Ref.make({ directory: AbsolutePath.make(instanceCtx.directory) })),
+                  ),
+                  Effect.orDie,
                 )
               }
 

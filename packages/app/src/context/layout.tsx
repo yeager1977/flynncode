@@ -73,6 +73,8 @@ type SessionView = {
   pendingMessage?: string
   pendingMessageAt?: number
   todoCollapsed?: boolean
+  subagentExpandedID?: string
+  subagentFinishedOpen?: boolean
 }
 
 type TabHandoff = {
@@ -872,6 +874,22 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
               } else {
                 setStore("sessionView", session, "todoCollapsed", collapsed)
               }
+            },
+          },
+          subagents: {
+            expandedID: () => s().subagentExpandedID,
+            setExpandedID(id: string | undefined) {
+              const session = key()
+              const current = store.sessionView[session]
+              if (!current) setStore("sessionView", session, { scroll: {}, subagentExpandedID: id })
+              else setStore("sessionView", session, "subagentExpandedID", id)
+            },
+            finishedOpen: () => s().subagentFinishedOpen ?? false,
+            setFinishedOpen(open: boolean) {
+              const session = key()
+              const current = store.sessionView[session]
+              if (!current) setStore("sessionView", session, { scroll: {}, subagentFinishedOpen: open })
+              else setStore("sessionView", session, "subagentFinishedOpen", open)
             },
           },
           terminal: {

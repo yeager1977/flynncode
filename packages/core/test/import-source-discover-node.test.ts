@@ -2,7 +2,7 @@ import { describe, expect, it, afterAll } from "bun:test"
 import { mkdtemp, mkdir, writeFile, symlink, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { discoverFromHome } from "@opencode-ai/core/session/import-source/discover-node"
+import { discoverFromHome, resolveSourceFile } from "@opencode-ai/core/session/import-source/discover-node"
 
 const line = (value: unknown) => JSON.stringify(value)
 
@@ -88,11 +88,61 @@ describe("discoverFromHome", () => {
   it.skipIf(!symlinksSupported)("rejects symlinks pointing outside the store", async () => {
     const found = await discoverFromHome({ source: "claude-code", home })
     expect(found).toHaveLength(1)
-    expect(found[0]?.sourceSessionID).toBe("aaa")
+    expect(found[0]).toMatchObject({ sourceSessionID: "aaa", title: "First prompt", cwd: "/work" })
     expect(found.some((candidate) => candidate.path.endsWith("evil.jsonl"))).toBe(false)
     expect(found.some((candidate) => candidate.sourceSessionID === "evil")).toBe(false)
     const codex = await discoverFromHome({ source: "codex", home })
     expect(codex).toHaveLength(1)
     expect(codex[0]?.sourceSessionID).toBe("01abc")
+  })
+})
+
+describe("resolveSourceFile", () => {
+  it("accepts a jsonl file inside the source store", async () => {
+    const resolved = await resolveSourceFile({
+      source: "claude-code",
+      home,
+      path: join(home, ".claude", "projects", "-work", "aaa.jsonl"),
+    })
+    expect(resolved).toBeDefined()
+    expect(resolved?.source).toBe("claude-code")
+    expect(resolved?.path.endsWith("aaa.jsonl")).toBe(true)
+  })
+
+  it("rejects a path outside the source store", async () => {
+    const resolved = await resolveSourceFile({ source: "claude-code", home, path: join(outside, "secret.jsonl") })
+    expect(resolved).toBeUndefined()
+  })
+
+  it("rejects a symlink inside the store pointing outside", async () => {
+    const resolved = await resolveSourceFile({
+      source: "claude-code",
+      home,
+      path: join(home, ".claude", "projects", "-work", "evil.jsonl"),
+    })
+    expect(resolved).toBeUndefined()
+  })
+
+  it("rejects a non-jsonl file", async () => {
+    const resolved = await resolveSourceFile({
+      source: "claude-code",
+      home,
+      path: join(home, ".claude", "projects", "-work", "notes.txt"),
+    })
+    expect(resolved).toBeUndefined()
+  })
+
+  it("rejects a missing file", async () => {
+    const resolved = await resolveSourceFile({
+      source: "claude-code",
+      home,
+      path: join(home, ".claude", "projects", "-work", "missing.jsonl"),
+    })
+    expect(resolved).toBeUndefined()
+  })
+
+  it("rejects a path from a different source store", async () => {
+    const resolved = await resolveSourceFile({ source: "codex", home, path: join(home, ".claude", "projects", "-work", "aaa.jsonl") })
+    expect(resolved).toBeUndefined()
   })
 })

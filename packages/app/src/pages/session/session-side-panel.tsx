@@ -1,4 +1,4 @@
-import { For, Match, Show, Switch, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
+import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
 import { DragDropProvider as DndKitProvider, PointerSensor } from "@dnd-kit/solid"
@@ -43,6 +43,7 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useSDK } from "@/context/sdk"
 import { useSettings } from "@/context/settings"
+import { useSync } from "@/context/sync"
 import { createFileTabListSync } from "@/pages/session/file-tab-scroll"
 import { FileTabContent } from "@/pages/session/file-tabs"
 import {
@@ -55,6 +56,8 @@ import {
 } from "@/pages/session/helpers"
 import { setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
+import { sessionShowsSubagents } from "@/pages/session/subagent-list"
+import { SubagentList } from "@/pages/session/subagent-list-view"
 import { SessionFileBrowserTab, type SessionFileBrowserState } from "@/pages/session/v2/session-file-browser-tab"
 
 type ReviewDiff = FileDiffInfo | SnapshotFileDiff | VcsFileDiff
@@ -90,6 +93,16 @@ export function SessionSidePanel(props: {
   const dialog = useDialog()
   const sdk = useSDK()
   const { sessionKey, tabs, view, params } = useSessionLayout()
+  const sync = useSync()
+  const [tasksSelected, setTasksSelected] = createSignal(false)
+  const showTasks = createMemo(() =>
+    sessionShowsSubagents(
+      params.id ?? "",
+      Object.values(sync().data.session ?? {}),
+      sync().data.message,
+      sync().data.part,
+    ),
+  )
   const projectDirectory = createMemo(() => sdk().directory)
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
@@ -188,6 +201,12 @@ export function SessionSidePanel(props: {
   const activeTab = tabState.activeTab
   const activeFileTab = tabState.activeFileTab
 
+  // Tasks is a panel-local tab; any real tab activation leaves it.
+  createEffect(() => {
+    activeTab()
+    setTasksSelected(false)
+  })
+
   const fileTreeTab = () => layout.fileTree.tab()
 
   const setFileTreeTabValue = (value: string) => {
@@ -216,6 +235,11 @@ export function SessionSidePanel(props: {
     queueMicrotask(() => fileFilter?.focus())
   }
   const activateTab = (value: string) => {
+    if (value === "tasks") {
+      setTasksSelected(true)
+      return
+    }
+    setTasksSelected(false)
     const next = normalizeTab(value)
     const path = file.pathFromTab(next)
     if (path) void file.load(path)
@@ -237,6 +261,7 @@ export function SessionSidePanel(props: {
     return openedTabs().length > 0 || openFileOpen() || !!browserTab()
   })
   const fileBrowserVisible = createMemo(() => {
+    if (tasksSelected()) return false
     const active = activeTab()
     return active !== "review" && active !== "context" && active !== "empty"
   })
@@ -435,6 +460,9 @@ export function SessionSidePanel(props: {
                                   )}
                                 </For>
                               </SortableProvider>
+                              <Show when={showTasks()}>
+                                <Tabs.Trigger value="tasks">{language.t("session.subagents.tasks")}</Tabs.Trigger>
+                              </Show>
                               <div
                                 class="h-full shrink-0 sticky right-0 z-10 flex items-center justify-center pr-3"
                                 classList={{
@@ -495,6 +523,12 @@ export function SessionSidePanel(props: {
                               <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
                                 <SessionContextTab />
                               </div>
+                            </Tabs.Content>
+                          </Show>
+
+                          <Show when={tasksSelected()}>
+                            <Tabs.Content value="tasks" class="flex flex-col h-full overflow-y-auto contain-strict">
+                              <SubagentList sessionID={() => params.id ?? ""} />
                             </Tabs.Content>
                           </Show>
 
@@ -654,6 +688,9 @@ export function SessionSidePanel(props: {
                                 </Show>
                               )}
                             </For>
+                            <Show when={showTasks()}>
+                              <Tabs.Trigger value="tasks">{language.t("session.subagents.tasks")}</Tabs.Trigger>
+                            </Show>
                             <div
                               class="h-full shrink-0 sticky right-0 z-10 flex items-center justify-center"
                               classList={{
@@ -723,6 +760,12 @@ export function SessionSidePanel(props: {
                             <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
                               <SessionContextTab />
                             </div>
+                          </Tabs.Content>
+                        </Show>
+
+                        <Show when={tasksSelected()}>
+                          <Tabs.Content value="tasks" class="flex flex-col h-full overflow-y-auto contain-strict">
+                            <SubagentList sessionID={() => params.id ?? ""} />
                           </Tabs.Content>
                         </Show>
 

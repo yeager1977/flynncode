@@ -24,6 +24,13 @@ const sources: ImportSource[] = ["claude-code", "codex"]
 const sourceKey = (source: ImportSource) =>
   source === "claude-code" ? "settings.import.source.claudeCode" : "settings.import.source.codex"
 
+// Scan results survive closing and reopening settings. Discovering importable
+// sessions walks every local transcript, so it only re-runs via Refresh or when
+// the source/target directory changes, never on tab mount.
+const cache = new Map<string, ImportCandidate[]>()
+
+const cacheKey = (source: ImportSource, directory: string) => `${source}::${directory}`
+
 export const SettingsImportSessionsV2: Component<{ directory?: string }> = (props) => {
   const language = useLanguage()
   const serverSdk = useServerSDK()
@@ -40,6 +47,9 @@ export const SettingsImportSessionsV2: Component<{ directory?: string }> = (prop
     () => ({ source: source(), directory: directory() }),
     async (input) => {
       if (!input.directory) return [] as ImportCandidate[]
+      const key = cacheKey(input.source, input.directory)
+      const cached = cache.get(key)
+      if (cached) return cached
       // Swallow fetch failures so the errored resource is never read in a
       // render-tracked scope, which would crash the whole app.
       try {
@@ -48,6 +58,7 @@ export const SettingsImportSessionsV2: Component<{ directory?: string }> = (prop
           { throwOnError: true },
         )
         setLoadError(undefined)
+        cache.set(key, result.data.data)
         return result.data.data
       } catch (error) {
         setLoadError(error instanceof Error ? error.message : String(error))
@@ -55,6 +66,27 @@ export const SettingsImportSessionsV2: Component<{ directory?: string }> = (prop
       }
     },
   )
+
+  const refresh = () => {
+    const target = directory()
+    if (!target) return
+    cache.delete(cacheKey(source(), target))
+    setLoadError(undefined)
+    void candidatesActions.refetch()
+  }
+
+  const markImported = (ids: ReadonlyArray<string>) => {
+    const target = directory()
+    if (!target) return
+    const key = cacheKey(source(), target)
+    const cached = cache.get(key)
+    if (!cached) return
+    const importedIds = new Set(ids)
+    cache.set(
+      key,
+      cached.map((item) => (importedIds.has(item.sourceSessionID) ? { ...item, imported: true } : item)),
+    )
+  }
 
   const options = createMemo(() => buildOptions(candidates() ?? [], query()))
 
@@ -96,6 +128,9 @@ export const SettingsImportSessionsV2: Component<{ directory?: string }> = (prop
     }
     setImporting(false)
     const counts = tally(results)
+    markImported(
+      pending.filter((_, index) => results[index]).map((option) => option.value.sourceSessionID),
+    )
     showToast({
       variant: counts.failed > 0 ? "error" : "success",
       description: language.t("settings.import.summary", counts),
@@ -127,6 +162,14 @@ export const SettingsImportSessionsV2: Component<{ directory?: string }> = (prop
                 {language.t("settings.import.clear")}
               </ButtonV2>
             </Show>
+            <ButtonV2
+              size="normal"
+              variant="ghost-muted"
+              disabled={importing() || candidates.loading}
+              onClick={refresh}
+            >
+              {language.t("settings.import.refresh")}
+            </ButtonV2>
             <ButtonV2
               size="normal"
               variant="neutral"
@@ -184,7 +227,7 @@ export const SettingsImportSessionsV2: Component<{ directory?: string }> = (prop
           when={!candidates.loading && options().length > 0}
           fallback={
             <div class="settings-v2-plugins-note">
-              <Show when={!candidates.loading} fallback={<>{language.t("settings.import.loading")}</>}>
+              <Show when={!candidates.loading} fallback={<>{language.t("settings.import.scanning")}</>}>
                 <Show
                   when={!loadError()}
                   fallback={<>{language.t("settings.import.loadError")} {loadError()}</>}

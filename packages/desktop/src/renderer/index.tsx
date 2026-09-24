@@ -362,7 +362,6 @@ function DesktopRoot(props: { windowState: DesktopWindowState }) {
   const router = (props: BaseRouterProps) => (
     <DesktopMemoryRouter {...props} windowID={platform.windowID ?? "browser"} />
   )
-  const onboarding = Promise.withResolvers<void>()
 
   function Inner() {
     const cmd = useCommand()
@@ -417,11 +416,9 @@ function DesktopRoot(props: { windowState: DesktopWindowState }) {
               defaultServer={key}
               servers={servers()}
               router={router}
-              startup={onboarding.promise}
               serverScoped={
                 <DesktopFirstLaunchOnboarding
                   initialUrl={getLastActiveUrl(platform.windowID ?? "browser")}
-                  onLoaded={onboarding.resolve}
                 />
               }
             >

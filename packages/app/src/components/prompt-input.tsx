@@ -65,6 +65,8 @@ import {
   createPromptInputHistory,
   type PromptInputHistory,
 } from "./prompt-input/history-store"
+import { createScopedPromptInputHistory } from "./prompt-input/scoped-history"
+import { Persist } from "@/utils/persist"
 import {
   type PromptInputControls,
   type PromptInputProps,
@@ -315,7 +317,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return messages.some((m) => m.role === "user")
   })
 
-  const history = props.history ?? createPersistedPromptInputHistory()
+  const history =
+    props.history ??
+    createScopedPromptInputHistory(() => props.controls.session.id, () => sdk().directory, {
+      createGlobal: () => createPersistedPromptInputHistory(),
+      createPersisted: ({ directory, sessionID }) =>
+        createPersistedPromptInputHistory(Persist.session(directory, sessionID, "prompt-history", ["prompt-history.v1"])),
+    })
 
   const suggest = createMemo(() => !hasUserPrompt())
 

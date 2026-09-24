@@ -22,10 +22,13 @@ import { useLayout } from "@/context/layout"
 import { useSettings } from "@/context/settings"
 import { useTerminal } from "@/context/terminal"
 import { useSDK } from "@/context/sdk"
+import { useSync } from "@/context/sync"
+import { sessionShowsSubagents } from "@/pages/session/subagent-list"
 import { terminalTabLabel } from "@/pages/session/terminal-label"
 import { createSizing, focusTerminalById } from "@/pages/session/helpers"
 import { getTerminalHandoff, setTerminalHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
+import { SubagentList } from "@/pages/session/subagent-list-view"
 
 export function TerminalPanelV2(props: { stacked?: boolean } = {}) {
   const layout = useLayout()
@@ -34,7 +37,17 @@ export function TerminalPanelV2(props: { stacked?: boolean } = {}) {
   const language = useLanguage()
   const command = useCommand()
   const settings = useSettings()
-  const { workspaceKey, view } = useSessionLayout()
+  const sync = useSync()
+  const { workspaceKey, view, params } = useSessionLayout()
+  const tasksOpen = createMemo(() =>
+    sessionShowsSubagents(
+      params.id ?? "",
+      Object.values(sync().data.session ?? {}),
+      sync().data.message,
+      sync().data.part,
+    ),
+  )
+  const dockOpen = createMemo(() => opened() || tasksOpen())
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const newLayout = createMemo(() => settings.general.newLayoutDesigns())
@@ -56,9 +69,11 @@ export function TerminalPanelV2(props: { stacked?: boolean } = {}) {
   const max = () => store.view * 0.6
   const pane = () => Math.min(height(), max())
   const stacked = createMemo(() => isDesktop() && props.stacked)
-  const panelHeight = createMemo(() =>
-    isDesktop() ? (stacked() ? `${pane()}px` : "100%") : opened() ? `${pane()}px` : "0px",
-  )
+  const panelHeight = createMemo(() => {
+    if (!opened() && tasksOpen() && (!isDesktop() || stacked())) return "auto"
+    if (isDesktop()) return stacked() ? `${pane()}px` : "100%"
+    return opened() ? `${pane()}px` : "0px"
+  })
   const contentHeight = createMemo(() => (isDesktop() ? (stacked() ? `${pane()}px` : "100%") : `${pane()}px`))
   const newTerminalKeybind = createMemo(() => command.keybindParts("terminal.new"))
 
@@ -170,13 +185,14 @@ export function TerminalPanelV2(props: { stacked?: boolean } = {}) {
       id="terminal-panel"
       role="region"
       aria-label={language.t("terminal.title")}
-      aria-hidden={!opened()}
-      inert={!opened()}
+      aria-hidden={!dockOpen()}
+      inert={!dockOpen()}
       class="relative shrink-0 overflow-hidden bg-v2-background-bg-base"
       classList={{
         "w-full": !isDesktop() || stacked(),
         "min-w-0 h-full flex-1": isDesktop() && opened() && !stacked(),
-        "w-0 h-full pointer-events-none": isDesktop() && !opened(),
+        "w-0 h-full pointer-events-none": isDesktop() && !dockOpen(),
+        "w-[280px] h-full": isDesktop() && !opened() && tasksOpen() && !stacked(),
         "rounded-[10px] shadow-[var(--v2-elevation-raised)]": isDesktop() && newLayout(),
         "transition-[height] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[height] motion-reduce:transition-none":
           !isDesktop() && !size.active(),
@@ -200,6 +216,11 @@ export function TerminalPanelV2(props: { stacked?: boolean } = {}) {
           onCollapse={close}
         />
       </div>
+      <Show when={!opened() && tasksOpen()}>
+        <div class="max-h-64 overflow-y-auto">
+          <SubagentList sessionID={() => params.id ?? ""} />
+        </div>
+      </Show>
       <div
         class="absolute inset-0 flex flex-col overflow-hidden"
         classList={{
@@ -207,6 +228,7 @@ export function TerminalPanelV2(props: { stacked?: boolean } = {}) {
           "border-t border-border-weaker-base": opened() && stacked() && !newLayout(),
           "border-l border-border-weaker-base": opened() && isDesktop() && !newLayout(),
           "pointer-events-none": !opened(),
+          hidden: !opened() && tasksOpen(),
         }}
         style={{ height: contentHeight() }}
       >
@@ -320,6 +342,7 @@ export function TerminalPanelV2(props: { stacked?: boolean } = {}) {
                 </Tabs.List>
               </Tabs>
               <div class="flex-1 min-h-0 relative">
+                <SubagentList sessionID={() => params.id ?? ""} />
                 <Show when={opened() && terminal.active()} keyed>
                   {(id) => {
                     const ops = terminal.bind()

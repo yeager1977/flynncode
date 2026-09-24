@@ -5,7 +5,7 @@ import { SessionSchema } from "@opencode-ai/core/session/schema"
 import { SessionV2 } from "@opencode-ai/core/session"
 import { SessionImport } from "@opencode-ai/core/session/import"
 import { SessionImportRegistry } from "@opencode-ai/core/session/import-registry"
-import { discoverFromHome } from "@opencode-ai/core/session/import-source/discover-node"
+import { discoverFromHome, resolveSourceFile } from "@opencode-ai/core/session/import-source/discover-node"
 import { parseClaudeCode } from "@opencode-ai/core/session/import-source/claude-code"
 import { parseCodex } from "@opencode-ai/core/session/import-source/codex"
 import { InvalidRequestError, SessionNotFoundError } from "@opencode-ai/protocol/errors"
@@ -90,20 +90,20 @@ export const ImportHandler = HttpApiBuilder.group(Api, "server.import", (handler
       .handle(
         "import.fromSource",
         Effect.fn(function* (ctx) {
-          const candidates = yield* Effect.promise(() =>
-            discoverFromHome({ source: ctx.payload.source, home: Global.Path.home }),
+          const resolved = yield* Effect.promise(() =>
+            resolveSourceFile({
+              source: ctx.payload.source,
+              home: Global.Path.home,
+              path: ctx.payload.sourcePath,
+            }),
           )
-          const match = candidates.find(
-            (item) =>
-              item.path === ctx.payload.sourcePath && item.sourceSessionID === ctx.payload.sourceSessionID,
-          )
-          if (!match)
+          if (!resolved)
             return yield* new InvalidRequestError({
               message: "Source path is not a discovered import candidate",
               field: "sourcePath",
             })
 
-          const text = yield* Effect.promise(() => readFile(match.path, "utf8").catch(() => undefined))
+          const text = yield* Effect.promise(() => readFile(resolved.path, "utf8").catch(() => undefined))
           if (text === undefined)
             return yield* new InvalidRequestError({
               message: "Source session could not be read",
@@ -111,17 +111,20 @@ export const ImportHandler = HttpApiBuilder.group(Api, "server.import", (handler
             })
 
           const parsed =
-            ctx.payload.source === "claude-code"
-              ? parseClaudeCode({ path: match.path, text })
-              : parseCodex({ path: match.path, text })
+            resolved.source === "claude-code" ? parseClaudeCode({ path: resolved.path, text }) : parseCodex({ path: resolved.path, text })
+          if (!parsed.messages.length)
+            return yield* new InvalidRequestError({
+              message: "Source session has no importable messages",
+              field: "sourcePath",
+            })
 
           return {
             data: yield* SessionImport.importSession({
               location: ctx.payload.location,
-              source: ctx.payload.source,
-              sourceSessionID: match.sourceSessionID,
-              sourcePath: match.path,
-              title: ctx.payload.title || match.title,
+              source: resolved.source,
+              sourceSessionID: parsed.sourceSessionID,
+              sourcePath: resolved.path,
+              title: ctx.payload.title || parsed.title,
               transcript: parsed.messages,
             }).pipe(
               Effect.provideService(SessionV2.Service, session),

@@ -17,4 +17,7 @@ if (process.versions.bun !== expectedBunVersion) {
   console.warn(`Warning: Bun version ${process.versions.bun} differs from expected ${expectedBunVersion}`);
 }
 '
+# Fresh worktrees (e.g. Claude Code sessions under .claude/worktrees) start without node_modules,
+# so turbo is missing and typecheck fails. HUSKY=0 keeps husky from rewriting git config mid-push.
+[ -d node_modules ] || HUSKY=0 bun install
 bun typecheck

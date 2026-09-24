@@ -1,6 +1,7 @@
 import { createStore, type SetStoreFunction, type Store } from "solid-js/store"
 import type { Prompt } from "@/context/prompt"
-import { Persist, persisted } from "@/utils/persist"
+import type { Platform } from "@/context/platform"
+import { Persist, persisted, type PersistTarget } from "@/utils/persist"
 import {
   clonePromptHistoryComments,
   clonePromptParts,
@@ -40,14 +41,22 @@ export function createPromptInputHistory(): PromptInputHistory {
   return createPromptInputHistoryStore(normal, setNormal, shell, setShell)
 }
 
-export function createPersistedPromptInputHistory() {
+export function createPersistedPromptInputHistory(target?: PersistTarget, platformOverride?: Platform) {
+  const normalTarget = target
+    ? Persist.prompt({ ...target, key: `${target.key}-normal` })
+    : Persist.prompt(Persist.global("prompt-history", ["prompt-history.v1"]))
+  const shellTarget = target
+    ? Persist.prompt({ ...target, key: `${target.key}-shell` })
+    : Persist.prompt(Persist.global("prompt-history-shell", ["prompt-history-shell.v1"]))
   const [normal, setNormal, normalInit] = persisted(
-    Persist.prompt(Persist.global("prompt-history", ["prompt-history.v1"])),
+    normalTarget,
     createStore<PromptHistoryState>({ entries: [] }),
+    platformOverride,
   )
   const [shell, setShell, shellInit] = persisted(
-    Persist.prompt(Persist.global("prompt-history-shell", ["prompt-history-shell.v1"])),
+    shellTarget,
     createStore<PromptHistoryState>({ entries: [] }),
+    platformOverride,
   )
   const history = createPromptInputHistoryStore(normal, setNormal, shell, setShell)
   return {

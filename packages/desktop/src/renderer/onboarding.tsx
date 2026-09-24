@@ -1,13 +1,13 @@
 import { ServerConnection, useServer, useSettings, useTabs } from "@opencode-ai/app"
 import { onMount } from "solid-js"
 
-export function DesktopFirstLaunchOnboarding(props: { initialUrl: string; onLoaded: () => void }) {
+export function DesktopFirstLaunchOnboarding(props: { initialUrl: string }) {
   const server = useServer()
   const settings = useSettings()
   const tabs = useTabs()
 
   onMount(() => {
-    void runFirstLaunchOnboarding().finally(props.onLoaded)
+    void runFirstLaunchOnboarding()
   })
 
   async function runFirstLaunchOnboarding() {

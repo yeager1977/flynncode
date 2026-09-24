@@ -1408,4 +1408,8 @@ export const dict = {
   "settings.modelRouter.weights.description": "Relative importance of capability, price, and speed per task.",
   "settings.modelRouter.weights.title": "Task weights",
   "settings.tab.modelRouter": "Model Router",
+  "session.subagents.tasks": "Tasks",
+  "session.subagents.finished": "Finished",
+  "session.subagents.running": "Running",
+  "session.subagents.idle": "Idle",
 }

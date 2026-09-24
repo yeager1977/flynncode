@@ -12,6 +12,8 @@ import { DialogSelectModelUnpaidV2 } from "@/components/dialog-select-model-unpa
 import type { PromptInputProps } from "@/components/prompt-input/contracts"
 import { normalizePromptHistoryEntry, promptLength, type PromptHistoryComment } from "@/components/prompt-input/history"
 import { createPersistedPromptInputHistory } from "@/components/prompt-input/history-store"
+import { createScopedPromptInputHistory } from "@/components/prompt-input/scoped-history"
+import { Persist } from "@/utils/persist"
 import { promptDesignPlaceholder, promptPlaceholder } from "@/components/prompt-input/placeholder"
 import { createPromptSubmit } from "@/components/prompt-input/submit"
 import { selectionFromLines, type SelectedLineRange, useFile } from "@/context/file"
@@ -94,7 +96,13 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
 
   const interaction = createPromptInputV2State()
   const mode = () => interaction[0].mode
-  const history = props.history ?? createPersistedPromptInputHistory()
+  const history =
+    props.history ??
+    createScopedPromptInputHistory(() => props.controls.session.id, () => sdk().directory, {
+      createGlobal: () => createPersistedPromptInputHistory(),
+      createPersisted: ({ directory, sessionID }) =>
+        createPersistedPromptInputHistory(Persist.session(directory, sessionID, "prompt-history", ["prompt-history.v1"])),
+    })
   const tabs = () => props.controls.session.tabs
   const activeFileTab = createSessionTabs({
     tabs,

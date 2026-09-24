@@ -427,7 +427,7 @@ export function AppBaseProviders(
   )
 }
 
-function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean; startup?: Promise<void> }>) {
+function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
   const server = useServer()
   const checkServerHealth = useCheckServerHealth()
 
@@ -456,17 +456,6 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean; start
   const checking = createMemo(
     () => checkMode() === "blocking" && ["unresolved", "pending"].includes(startupHealthCheck.state),
   )
-  const [startup] = createResource(async () => {
-    if (!props.startup) return true
-    await props.startup.catch((error) => {
-      console.error("[startup] startup gate failed", error)
-    })
-    return true
-  })
-  const startupChecking = createMemo(
-    () => startupHealthCheck.latest === true && ["unresolved", "pending"].includes(startup.state),
-  )
-  const loading = createMemo(() => checking() || startupChecking())
 
   return (
     <>
@@ -489,7 +478,7 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean; start
           {props.children}
         </Show>
       </Show>
-      <Show when={loading()}>
+      <Show when={checking()}>
         <div class="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-background-base">
           <Splash class="w-16 h-20 opacity-50 animate-pulse" />
         </div>
@@ -561,7 +550,6 @@ export function AppInterface(props: {
   servers?: Array<ServerConnection.Any>
   router?: Component<BaseRouterProps>
   disableHealthCheck?: boolean
-  startup?: Promise<void>
   serverScoped?: JSX.Element
 }) {
   // The visual new layout lives in the router root so it remains mounted across
@@ -584,7 +572,7 @@ export function AppInterface(props: {
     >
       <GlobalProvider>
         <SettingsProvider>
-          <ConnectionGate disableHealthCheck={props.disableHealthCheck} startup={props.startup}>
+          <ConnectionGate disableHealthCheck={props.disableHealthCheck}>
             <Show when={useSettings().general.newLayoutDesigns().toString()} keyed>
               <Dynamic
                 component={props.router ?? Router}

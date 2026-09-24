@@ -13,7 +13,7 @@ import { ReadTool } from "./read"
 import { TaskTool } from "./task"
 import { MessageTool } from "./message"
 import { Database } from "@opencode-ai/core/database/database"
-import { Pty } from "@opencode-ai/core/pty"
+import { LocationServiceMap, locationServiceMapLayer } from "@opencode-ai/core/location-services"
 import { TodoWriteTool } from "./todo"
 import { WebFetchTool } from "./webfetch"
 import { WriteTool } from "./write"
@@ -430,6 +430,13 @@ function isJsonSchemaObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
+// Must stay the map the V1 /pty routes provide, so interactive shell PTYs are visible to the app terminal.
+const locationServiceMapNode = LayerNode.make({
+  service: LocationServiceMap.Service,
+  layer: locationServiceMapLayer,
+  deps: [],
+})
+
 export const node = LayerNode.make({
   service: Service,
   layer,
@@ -455,7 +462,7 @@ export const node = LayerNode.make({
     RuntimeFlags.node,
     MCP.node,
     Database.node,
-    Pty.node,
+    locationServiceMapNode,
     Ripgrep.node,
   ],
 })
