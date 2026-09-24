@@ -19,11 +19,27 @@ export function parameterSchema() {
     workdir: Schema.optional(Schema.String).annotate({
       description: `The working directory to run the command in. Defaults to the current directory. Use this instead of 'cd' commands.`,
     }),
+    interactive: Schema.optional(Schema.Boolean).annotate({
+      description:
+        "Open the command in the session terminal so the user can type, including passwords and Enter. Use this for prompts. sudo, ssh, su, and passwd do this automatically.",
+    }),
   })
 }
 
 export const Parameters = parameterSchema()
 export type Parameters = Schema.Schema.Type<typeof Parameters>
+
+const INTERACTIVE = new Set(["sudo", "ssh", "su", "passwd"])
+
+export function needsInteractiveTerminal(command: string, interactive: boolean | undefined) {
+  if (interactive !== undefined) return interactive
+  const token = command
+    .trim()
+    .split(/\s+/)
+    .find((part) => !part.includes("="))
+  if (!token) return false
+  return INTERACTIVE.has(token)
+}
 
 function renderPrompt(template: string, values: Record<string, string>) {
   return template.replace(/\$\{(\w+)\}/g, (_, key: string) => {

@@ -8,8 +8,17 @@ import {
   createSessionTabs,
   focusTerminalById,
   getTabReorderIndex,
+  shellPtyID,
   shouldShowFileTree,
 } from "./helpers"
+
+describe("shellPtyID", () => {
+  test("reads a pty id from shell tool metadata", () => {
+    expect(shellPtyID({ ptyID: "pty_abc", interactive: true })).toBe("pty_abc")
+    expect(shellPtyID({ ptyID: "not-a-pty" })).toBeUndefined()
+    expect(shellPtyID(undefined)).toBeUndefined()
+  })
+})
 
 describe("shouldShowFileTree", () => {
   test("does not reserve space for a disabled file tree", () => {

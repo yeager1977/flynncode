@@ -61,9 +61,11 @@ export const WriteTool = Tool.define(
             },
           })
 
-          yield* fs.writeWithDirs(filepath, Bom.join(contentNew, desiredBom))
+          const mode = restrictiveMode(filepath, contentNew)
+          yield* fs.writeWithDirs(filepath, Bom.join(contentNew, desiredBom), mode)
           if (yield* format.file(filepath)) {
             yield* Bom.syncFile(fs, filepath, desiredBom)
+            if (mode !== undefined) yield* fs.chmod(filepath, mode)
           }
           yield* events.publish(FileSystem.Event.Edited, { file: filepath })
           yield* events.publish(Watcher.Event.Updated, {
@@ -102,3 +104,14 @@ export const WriteTool = Tool.define(
     }
   }),
 )
+
+// Group-writable umasks (0002) would otherwise leave secrets at 0664.
+// chmod after write is required because create mode is masked.
+function restrictiveMode(filepath: string, content: string) {
+  const name = path.basename(filepath)
+  if (SENSITIVE_NAME.test(name) || SENSITIVE_CONTENT.test(content)) return 0o644
+  return undefined
+}
+
+const SENSITIVE_NAME = /(^|\.)env(\.|$)|secret|credential|password|token|sensitive|\.(pem|key|p12|pfx)$/i
+const SENSITIVE_CONTENT = /(api[_-]?key|secret|password|private[_-]?key)\s*["']?\s*[:=]/i

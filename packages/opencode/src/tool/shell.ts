@@ -1,4 +1,4 @@
-import { Effect, Stream } from "effect"
+import { Effect, Deferred, Stream } from "effect"
 import os from "os"
 import { createWriteStream } from "node:fs"
 import * as Tool from "./tool"
@@ -13,13 +13,14 @@ import { fileURLToPath } from "url"
 import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Shell } from "@opencode-ai/core/shell"
+import { Pty } from "@opencode-ai/core/pty"
 import { ShellID } from "./shell/id"
 
 import * as Truncate from "./truncate"
 import { Plugin } from "@/plugin"
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
-import { ShellPrompt, type Parameters } from "./shell/prompt"
+import { ShellPrompt, needsInteractiveTerminal, type Parameters } from "./shell/prompt"
 import { BashArity } from "@/permission/arity"
 
 export { Parameters } from "./shell/prompt"
@@ -343,6 +344,7 @@ export const ShellTool = Tool.define(
     const fs = yield* FSUtil.Service
     const trunc = yield* Truncate.Service
     const plugin = yield* Plugin.Service
+    const pty = yield* Pty.Service
     const flags = yield* RuntimeFlags.Service
     const defaultTimeoutMs = flags.bashDefaultTimeoutMs ?? 2 * 60 * 1000
 
@@ -594,6 +596,68 @@ export const ShellTool = Tool.define(
       }
     })
 
+    const runInteractive = Effect.fn("ShellTool.runInteractive")(function* (
+      input: {
+        shell: string
+        command: string
+        cwd: string
+        env: Record<string, string>
+        timeout: number
+      },
+      ctx: Tool.Context,
+    ) {
+      const info = yield* pty.create({
+        command: input.shell,
+        args: ["-c", input.command],
+        cwd: input.cwd,
+        title: input.command.slice(0, 48),
+        env: input.env,
+      })
+      yield* ctx.metadata({
+        title: input.command,
+        metadata: {
+          ptyID: info.id,
+          interactive: true,
+          output: "",
+        },
+      })
+      const done = yield* Deferred.make<{ exitCode?: number }>()
+      const context = yield* Effect.context()
+      const runFork = Effect.runForkWith(context)
+      let text = ""
+      const attachment = yield* pty.attach(info.id, {
+        onData: (chunk) => {
+          text += chunk
+        },
+        onEnd: (event) => {
+          runFork(Deferred.succeed(done, event).pipe(Effect.ignore))
+        },
+      })
+      attachment.activate()
+      const exit = yield* Effect.raceFirst(
+        Deferred.await(done).pipe(Effect.map((event) => ({ kind: "exit" as const, code: event.exitCode }))),
+        Effect.sleep(`${input.timeout} millis`).pipe(Effect.map(() => ({ kind: "timeout" as const }))),
+      )
+      attachment.detach()
+      const limits = yield* trunc.limits()
+      const end = tail(text, limits.maxLines, limits.maxBytes)
+      let output = end.text || "(no output)"
+      if (exit.kind === "timeout") {
+        output +=
+          "\n\n<shell_metadata>\nThe terminal is still open. The user can keep typing. The command was not killed.\n</shell_metadata>"
+      }
+      return {
+        title: input.command,
+        metadata: {
+          ptyID: info.id,
+          interactive: true,
+          output: preview(output),
+          exit: exit.kind === "exit" ? (exit.code ?? null) : null,
+        },
+        output,
+      }
+    })
+
     return () =>
       Effect.gen(function* () {
         const cfg = yield* config.get()
@@ -627,6 +691,24 @@ export const ShellTool = Tool.define(
                   yield* ask(ctx, scan, params)
                 }),
               )
+
+              if (needsInteractiveTerminal(params.command, params.interactive)) {
+                const env = Object.fromEntries(
+                  Object.entries(yield* shellEnv(ctx, cwd)).flatMap(([key, value]) =>
+                    typeof value === "string" ? [[key, value]] : [],
+                  ),
+                )
+                return yield* runInteractive(
+                  {
+                    shell,
+                    command: params.command,
+                    cwd,
+                    env,
+                    timeout,
+                  },
+                  ctx,
+                )
+              }
 
               return yield* run(
                 {

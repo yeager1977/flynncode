@@ -13,6 +13,7 @@ import { ReadTool } from "./read"
 import { TaskTool } from "./task"
 import { MessageTool } from "./message"
 import { Database } from "@opencode-ai/core/database/database"
+import { Pty } from "@opencode-ai/core/pty"
 import { TodoWriteTool } from "./todo"
 import { WebFetchTool } from "./webfetch"
 import { WriteTool } from "./write"
@@ -454,6 +455,7 @@ export const node = LayerNode.make({
     RuntimeFlags.node,
     MCP.node,
     Database.node,
+    Pty.node,
     Ripgrep.node,
   ],
 })

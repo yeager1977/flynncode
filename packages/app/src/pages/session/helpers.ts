@@ -96,6 +96,13 @@ export const createSessionTabs = (input: TabsInput) => {
   }
 }
 
+export function shellPtyID(metadata: unknown) {
+  if (!metadata || typeof metadata !== "object") return
+  const id = (metadata as { ptyID?: unknown }).ptyID
+  if (typeof id !== "string" || !id.startsWith("pty_")) return
+  return id
+}
+
 export const focusTerminalById = (id: string) => {
   const wrapper = document.getElementById(`terminal-wrapper-${id}`)
   const terminal = wrapper?.querySelector('[data-component="terminal"]')

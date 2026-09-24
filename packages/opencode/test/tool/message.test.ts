@@ -66,7 +66,7 @@ const recordingOps = () => {
   return { calls, ops }
 }
 
-const ctx = (sessionID: any, ops: TaskPromptOps, agent = "build") =>
+const ctx = (sessionID: any, ops: TaskPromptOps, agent = "build", asks: string[] = []) =>
   ({
     sessionID,
     messageID: MessageID.ascending(),
@@ -74,7 +74,10 @@ const ctx = (sessionID: any, ops: TaskPromptOps, agent = "build") =>
     abort: new AbortController().signal,
     messages: [],
     metadata: () => Effect.void,
-    ask: () => Effect.void,
+    ask: (req: { permission: string }) =>
+      Effect.sync(() => {
+        asks.push(req.permission)
+      }),
     extra: { promptOps: ops },
   }) as unknown as Tool.Context
 
@@ -87,10 +90,16 @@ describe("tool.message", () => {
         const sender = yield* sessions.create({ title: "lead" })
         const target = yield* sessions.create({ title: "worker" })
         const { calls, ops } = recordingOps()
+        const asks: string[] = []
         const info = yield* MessageTool
         const def = yield* Tool.init(info)
 
-        yield* def.execute({ session_id: target.id, message: "found the failing test" }, ctx(sender.id, ops))
+        yield* def.execute(
+          { session_id: target.id, message: "found the failing test" },
+          ctx(sender.id, ops, "build", asks),
+        )
+
+        expect(asks).toEqual(["message"])
 
         expect(calls.length).toBe(1)
         expect(calls[0].sessionID).toBe(target.id)

@@ -6243,8 +6243,21 @@ describe("ProviderTransform.supportsForcedToolChoice", () => {
   })
 
   test("reports supported for non-anthropic providers", () => {
-    const gpt = { ...claude("gpt-5-mini"), providerID: "openai" } as any
+    const gpt = { ...claude("gpt-5-mini"), providerID: "openai", api: { id: "gpt-5-mini", url: "https://api.openai.com", npm: "@ai-sdk/openai" } } as any
     expect(ProviderTransform.supportsForcedToolChoice(gpt)).toBe(true)
+  })
+
+  test("reports unsupported for Bedrock Claude 5.1+", () => {
+    const bedrock = {
+      ...claude("anthropic.claude-opus-5-5"),
+      providerID: "amazon-bedrock",
+      api: {
+        id: "anthropic.claude-opus-5-5",
+        url: "https://bedrock-runtime.us-east-1.amazonaws.com",
+        npm: "@ai-sdk/amazon-bedrock",
+      },
+    } as any
+    expect(ProviderTransform.supportsForcedToolChoice(bedrock)).toBe(false)
   })
 })
 

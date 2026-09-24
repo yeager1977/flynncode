@@ -45,6 +45,12 @@ export const MessageTool = Tool.define(
         return yield* Effect.fail(new Error("Cannot send a message to your own session; reply directly instead"))
       }
       yield* runState.assertNotBusy(target.id)
+      yield* ctx.ask({
+        permission: "message",
+        patterns: [target.id],
+        always: [target.id],
+        metadata: { sessionID: target.id },
+      })
 
       const title = `Message to ${target.title || target.id}`
       yield* ctx.metadata({
@@ -77,7 +83,7 @@ export const MessageTool = Tool.define(
         title,
         metadata: { sessionID: target.id },
         output:
-          `Message delivered to session ${target.id}. It will be processed as a new turn in that session.` +
+          `Message queued for session ${target.id}. It will be processed as a new turn in that session.` +
           " You will not receive a reply here; wait for the peer to report back or ask the user.",
       }
     })

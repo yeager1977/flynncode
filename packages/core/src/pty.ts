@@ -165,7 +165,8 @@ const layer = Layer.effect(
     const create = Effect.fn("Pty.create")(function* (input: CreateInput) {
       const id = PtyID.ascending()
       const command = input.command || Shell.preferred(Config.latest(yield* config.entries(), "shell"))
-      const args = Shell.login(command) ? [...(input.args ?? []), "-l"] : [...(input.args ?? [])]
+      const provided = [...(input.args ?? [])]
+      const args = Shell.login(command) && !provided.includes("-l") ? ["-l", ...provided] : provided
       const cwd = input.cwd || location.directory
       const env = {
         ...process.env,

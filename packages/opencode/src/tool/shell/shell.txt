@@ -8,6 +8,8 @@ Use `${tmp}` for temporary work outside the workspace. This directory has alread
 
 IMPORTANT: This tool is for terminal operations like git, npm, docker, etc. DO NOT use it for file operations (reading, writing, editing, searching, finding files) - use the specialized tools for this instead.
 
+Set interactive to true when the user must type, including passwords or Enter. sudo, ssh, su, and passwd already open in the session terminal.
+
 ${commandSection}
 
 # Git and GitHub

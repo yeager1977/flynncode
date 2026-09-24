@@ -701,7 +701,7 @@ function anthropicBindsThinking(apiId: string) {
 // Same version gate as thinking binding, including the Mythos 5.1 exception.
 // https://platform.claude.com/docs/en/models/opus-5-5/whats-new-opus-5-5
 export function supportsForcedToolChoice(model: Provider.Model) {
-  if (model.api.npm !== "@ai-sdk/anthropic" && model.api.npm !== "@ai-sdk/google-vertex/anthropic") return true
+  if (!ANTHROPIC_TOOL_CHOICE_SDKS.has(model.api.npm)) return true
   const version = /claude-(?:([a-z]+)-)?(\d+)(?:[.-](\d{1,2}))?(?:-([a-z]+))?(?:[.@-]|$)/i.exec(model.api.id)
   if (!version) return true
   const family = (version[1] ?? version[4])?.toLowerCase()
@@ -710,6 +710,12 @@ export function supportsForcedToolChoice(model: Provider.Model) {
   if (major === 5 && minor >= 1) return family === "mythos"
   return major < 5 || (major === 5 && minor === 0)
 }
+
+const ANTHROPIC_TOOL_CHOICE_SDKS = new Set([
+  "@ai-sdk/anthropic",
+  "@ai-sdk/google-vertex/anthropic",
+  "@ai-sdk/amazon-bedrock",
+])
 
 export function structuredOutputToolChoice(
   model: Provider.Model,

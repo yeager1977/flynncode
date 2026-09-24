@@ -392,6 +392,23 @@ function createWorkspaceTerminalSession(
     open(id: string) {
       setStore("active", id)
     },
+    adopt(id: string, title?: string) {
+      if (store.all.some((item) => item.id === id)) {
+        setStore("active", id)
+        requestFocus(id)
+        return
+      }
+      const titleNumber = pickNextTerminalNumber()
+      batch(() => {
+        setStore("all", store.all.length, {
+          id,
+          title: title ?? `Terminal ${id.slice(-4)}`,
+          titleNumber,
+        })
+        setStore("active", id)
+      })
+      requestFocus(id)
+    },
     requestFocus(id?: string) {
       requestFocus(id)
     },
@@ -533,6 +550,7 @@ export const { use: useTerminal, provider: TerminalProvider } = createSimpleCont
       clone: (id: string) => workspace().clone(id),
       bind: () => workspace(),
       open: (id: string) => workspace().open(id),
+      adopt: (id: string, title?: string) => workspace().adopt(id, title),
       requestFocus: (id?: string) => workspace().requestFocus(id),
       focusRequested: (id?: string) => workspace().focusRequested(id),
       consumeFocus: (id: string) => workspace().consumeFocus(id),

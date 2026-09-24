@@ -71,7 +71,7 @@ import {
   createSessionComposerRegionController,
   SessionComposerRegion,
 } from "@/pages/session/composer"
-import { createOpenReviewFile, createSessionTabs, createSizing, shouldShowFileTree } from "@/pages/session/helpers"
+import { createOpenReviewFile, createSessionTabs, createSizing, shellPtyID, shouldShowFileTree } from "@/pages/session/helpers"
 import { MessageTimeline } from "@/pages/session/timeline/message-timeline"
 import { createTimelineModel } from "@/pages/session/timeline/model"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
@@ -368,6 +368,23 @@ export default function Page() {
   const comments = useComments()
   const command = useCommand()
   const terminal = useTerminal()
+  const handedPty = new Set<string>()
+  createEffect(() => {
+    const parts = sync().data.part
+    for (const list of Object.values(parts)) {
+      if (!Array.isArray(list)) continue
+      for (const part of list) {
+        if (part.type !== "tool" || part.tool !== "shell") continue
+        const metadata = "metadata" in part.state ? part.state.metadata : undefined
+        const id = shellPtyID(metadata)
+        if (!id || handedPty.has(id)) continue
+        handedPty.add(id)
+        const title = "title" in part.state && typeof part.state.title === "string" ? part.state.title : undefined
+        terminal.adopt(id, title)
+        view().terminal.open()
+      }
+    }
+  })
   const [searchParams, setSearchParams] = useSearchParams<{ prompt?: string; file?: string }>()
   const location = useLocation()
   const navigate = useNavigate()
