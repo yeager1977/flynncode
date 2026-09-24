@@ -1,0 +1,15 @@
+Send a message to another agent's session.
+
+Use this to coordinate with a session you or the user knows about (for example a
+subagent session you started with the task tool, identified by its task_id), to
+provide updates or ask for coordination without waiting for that session to
+finish its current work.
+
+Notes:
+1. The target session must exist and be idle. If it is running, the delivery
+   fails — tell the user, or retry later.
+2. The message is delivered as a synthetic peer message and the target agent
+   processes it as a new turn.
+3. You are not blocked: delivery is asynchronous and you get no reply here. If
+   you need the peer's answer, ask the user or wait for that session to report
+   back.
