@@ -1,5 +1,22 @@
 import { describe, expect, test } from "bun:test"
-import { filterReviewFiles, reviewDiffDirectory, reviewDiffKinds, reviewDiffNeedsLoad } from "./review-diff-kinds"
+import {
+  filterReviewFiles,
+  reviewDiffDirectory,
+  reviewDiffKinds,
+  reviewDiffNeedsLoad,
+  sessionReviewMode,
+} from "./review-diff-kinds"
+
+describe("sessionReviewMode", () => {
+  test("uses the session turn when no mode is stored", () => {
+    expect(sessionReviewMode(undefined)).toBe("turn")
+  })
+
+  test("keeps an explicit working-tree mode", () => {
+    expect(sessionReviewMode("git")).toBe("git")
+    expect(sessionReviewMode("branch")).toBe("branch")
+  })
+})
 
 describe("reviewDiffKinds", () => {
   test("maps file and directory kinds", () => {
