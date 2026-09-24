@@ -8,10 +8,11 @@ import { createEffect, For, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
-import { useLocal } from "@/context/local"
 import { useModels } from "@/context/models"
-import { useSDK } from "@/context/sdk"
+import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
+import { useProviders } from "@/hooks/use-providers"
+import { resolveDefaultModel } from "@/hooks/provider-catalog"
 import { Persist, persisted } from "@/utils/persist"
 import { pathKey } from "@/utils/path-key"
 import {
@@ -27,12 +28,14 @@ import {
 export function DispatchPanel() {
   const language = useLanguage()
   const layout = useLayout()
-  const local = useLocal()
   const models = useModels()
-  const sdk = useSDK()
+  const serverSDK = useServerSDK()
   const serverSync = useServerSync()
   const dialog = useDialog()
   const navigate = useNavigate()
+  // Sidebar dialogs render under server-scoped providers only — no
+  // SDKProvider/LocalProvider here, so resolve models from the global catalog.
+  const providers = useProviders(() => undefined)
   const [desk, setDesk, , ready] = persisted(
     { ...Persist.global("dispatch.v1"), migrate: migrateDispatch },
     createStore({ tasks: [] as DispatchTask[] }),
@@ -72,14 +75,14 @@ export function DispatchPanel() {
   })
 
   createEffect(() => {
-    const current = local.model.current()
-    if (state.model || !current) return
-    setState("model", `${current.provider.id}/${current.id}`)
+    const model = resolveDefaultModel(providers.defaultModel(), serverSync().data.config.model)
+    if (state.model || !model) return
+    setState("model", `${model.providerID}/${model.modelID}`)
   })
 
   createEffect(() => {
     if (!ready()) return
-    void sdk()
+    void serverSDK()
       .api.session.active()
       .then((active) => {
         setDesk("tasks", (current) => reconcileDispatch(current, new Set(Object.keys(active))))
@@ -102,7 +105,7 @@ export function DispatchPanel() {
     setState({ sending: true, error: "" })
     const model = selectedModel()
     const agent = state.agent || "build"
-    const created = await sdk()
+    const created = await serverSDK()
       .api.session.create({
         agent,
         model: model ? { id: model.id, providerID: model.provider.id } : undefined,
@@ -117,7 +120,7 @@ export function DispatchPanel() {
       "tasks",
       (current) => addDispatch(current, { sessionID: created.id, title: text, status: "running", directory }),
     )
-    await sdk()
+    await serverSDK()
       .api.session.prompt({
         sessionID: created.id,
         agent,
