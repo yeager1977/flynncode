@@ -3,7 +3,13 @@ import type { FileDiffInfo } from "@opencode-ai/client/promise"
 import type { Kind } from "@/components/file-tree-v2"
 import { normalizeFileTreeV2Path } from "@/components/file-tree-v2-model"
 
+export type ReviewChangeMode = "git" | "branch" | "turn"
 export type RenderDiff = FileDiffInfo | (SnapshotFileDiff & { file: string }) | VcsFileDiff
+
+export function sessionReviewMode(stored: string | undefined): ReviewChangeMode {
+  if (stored === "git" || stored === "branch" || stored === "turn") return stored
+  return "turn"
+}
 
 export function normalizePath(p: string) {
   return normalizeFileTreeV2Path(p)
