@@ -172,11 +172,29 @@ Where this is authored (OMO package vs. in-repo snapshot) is open question 1.
 
 ## Open Questions
 
-1. **Where does the GPT-6 baseline live?** Runtime OMO chains come from the
-   installed OMO package / `oh-my-openagent.jsonc`, so authoring the GPT-6
-   baseline there changes behavior; editing `omo-catalog.ts` alone only changes
-   UI labels. Confirm whether this repo should change the snapshot only, or
-   whether the OMO-side defaults are also in scope.
-2. Confirm the "Class to Model Mapping" table before implementation.
-3. Confirm whether the override should also apply when the router plugin is
+1. **Where does the GPT-6 baseline live?** Resolved by evidence gathered
+   2026-09-28:
+
+   - The active plugin is `oh-my-openagent@4.19.4`
+     (`~/.config/opencode/opencode.jsonc`). Its built `dist/index.js` contains
+     **zero** `gpt-6` strings; it only ships `gpt-5.6-*`.
+   - The GPT-6 family exists only on OMO `dev`
+     (`packages/model-core/src/category-model-requirements.ts` has
+     `gpt-6-astra`, `gpt-6-sol`, `gpt-6-sol-fast`, `gpt-6-luna-fast`).
+   - npm `dist-tags`: `latest` and `beta` are `5.0.1`; `next` is `4.5.12`.
+   - The git-plugin cache directory under
+     `~/.cache/opencode/packages/oh-my-openagent@git+https:/` is **empty**, so
+     no git install is materialized.
+
+   Therefore editing `omo-catalog.ts` changes only Settings UI labels; it cannot
+   make GPT-6 the runtime default. GPT-6 runtime defaults require an OMO build
+   that contains them (the `dev` worktree does). Decision still required: is
+   Flynncode expected to ship GPT-6 in the UI snapshot only, or is an OMO
+   build/upgrade also in scope?
+2. Note the live `~/.omo/omo.jsonc` pins almost every agent and category to an
+   explicit `model`, which overrides built-in chain defaults regardless. If the
+   GPT-6 baseline is expected to take effect on this machine, those pins are the
+   controlling layer, not the chains.
+3. Confirm the "Class to Model Mapping" table before implementation.
+4. Confirm whether the override should also apply when the router plugin is
    disabled (current design: the key is read only by the router).
