@@ -227,6 +227,7 @@ export const loadProvidersQuery = (
 ) =>
   queryOptions({
     queryKey: [scope, directory, "providers"],
+    refetchInterval: 5 * 60 * 1000,
     queryFn: () =>
       retry(async () => {
         if ((await protocol) === "v1" && legacy) {
