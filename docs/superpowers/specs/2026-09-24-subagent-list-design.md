@@ -1,7 +1,7 @@
 # Subagent list
 
 Date: 2026-09-24
-Status: Approved approach, pending spec review
+Status: Approved design, pending spec review
 
 ## Problem
 
@@ -23,7 +23,7 @@ In scope:
 - Expanded row: that child's messages, read-only, with no second composer and no second permission dock.
 - Active children stay in the top group. Finished children move into a collapsed group below the active ones.
 - The finished group is collapsed by default. Opening it does not expand a child. Expanding a finished child from either mount opens the finished group in both mounts so the expanded row is visible.
-- The list is hidden when this session has no children. If every child is finished, the list still shows, with only the collapsed finished group.
+- The right-side Tasks tab is always available beside Files and Review. When this session has no child sessions or background tasks, it shows an empty state explaining that delegated tasks appear there. If every child is finished, the list shows only the collapsed finished group.
 - A child that is still loading shows its row. Messages appear when they arrive.
 - A deleted child disappears from both mounts.
 - New user-visible English strings use i18n keys. Child titles and message text use `dir="auto"`. Panel layout uses logical properties. No new physical left/right layout.
@@ -51,7 +51,7 @@ Order inside each group is most recently updated first.
 
 - A pure helper groups the current session's children into active and finished, builds the one-line preview, and resolves the shared expanded id.
 - `packages/app` session view state owns the expanded child id and whether the finished group is open. Both mounts read and write that state.
-- The right side panel gains a Tasks tab beside the existing file browser tab. It uses the same panel width and chrome.
+- The right side panel always shows a Tasks tab beside the existing file browser tab. It uses the same panel width and chrome. Selecting it does not open the panel automatically and needs no setting; its empty state explains where delegated task activity will appear.
 - The terminal dock gains a Tasks section in the existing dock chrome. It does not replace the terminal. Collapsing the Tasks section does not close the terminal. Collapsing the terminal does not clear the expanded child.
 - The expanded body reuses the existing message projection for that child session. It does not mount the session composer.
 
@@ -79,6 +79,7 @@ Pin the contracts in source tests. Solid render with `--conditions=solid` throws
 - Expand: one id. Expanding a second id replaces the first. Expanding a finished id also opens the finished group.
 - Both mounts read the same expanded id. This is a state test, not a second component test.
 - The helper does not change the current session route.
+- The Tasks tab remains selectable with no children and renders the empty state rather than no content.
 
 ## RTL
 
