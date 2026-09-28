@@ -10,6 +10,7 @@ import PROMPT_GEMINI from "./prompt/gemini.txt"
 import PROMPT_GPT from "./prompt/gpt.txt"
 import PROMPT_ASTRA from "./prompt/gpt-astra.txt"
 import PROMPT_KIMI from "./prompt/kimi.txt"
+import PROMPT_GLM from "./prompt/glm.txt"
 import PROMPT_META from "./prompt/meta.txt"
 
 import PROMPT_CODEX from "./prompt/codex.txt"
@@ -47,6 +48,7 @@ export function provider(model: Provider.Model) {
     ["kimi-for-coding", "moonshotai", "moonshotai-cn"].includes(model.providerID)
   )
     return [PROMPT_KIMI]
+  if (model.api.id.toLowerCase().includes("glm")) return [PROMPT_GLM]
   return [PROMPT_DEFAULT]
 }
 
