@@ -12,6 +12,8 @@ import { disposeAllInstances, provideInstanceEffect, tmpdirScoped, TestInstance 
 import { markPluginDependenciesReady } from "../fixture/plugin"
 import { Auth } from "@/auth"
 import { Config } from "@/config/config"
+import { ConfigParse } from "../../src/config/parse"
+import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import { Env } from "../../src/env"
 import { Plugin } from "../../src/plugin/index"
 import { Provider } from "@/provider/provider"
@@ -366,6 +368,15 @@ it.instance(
   }),
   { config: { model: "anthropic/claude-sonnet-4-20250514" } },
 )
+
+test("config schema accepts model_family and preserves the value", () => {
+  const parsed = ConfigParse.schema(ConfigV1.Info, { model_family: "openai" }, "test:config")
+  expect(parsed.model_family).toBe("openai")
+})
+
+test("config schema rejects unknown model_family values", () => {
+  expect(() => ConfigParse.schema(ConfigV1.Info, { model_family: "mistral" }, "test:config")).toThrow()
+})
 
 it.instance(
   "defaultModel treats empty provider config as no allowlist",
