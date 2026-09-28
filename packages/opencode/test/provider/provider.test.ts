@@ -925,6 +925,32 @@ it.instance(
 )
 
 it.instance(
+  "getSmallModel ignores the family winner for ollama like defaultModel",
+  Effect.gen(function* () {
+    const model = yield* Provider.use.getSmallModel(ProviderV2.ID.make("test-provider"))
+    expect(model?.id).toBe(ModelV2.ID.make("new-flash"))
+  }),
+  {
+    config: {
+      model_family: "ollama",
+      enabled_providers: ["openai", "test-provider"],
+      provider: {
+        openai: { models: { "gpt-6-sol-fast": { name: "GPT-6 Sol Fast" } } },
+        "test-provider": {
+          name: "Test Provider",
+          npm: "@ai-sdk/openai-compatible",
+          models: {
+            "old-flash": { family: "gemini-flash", release_date: "2025-01-01" },
+            "new-flash": { family: "gemini-flash", release_date: "2026-01-01" },
+          },
+          options: { apiKey: "test-key" },
+        },
+      },
+    },
+  },
+)
+
+it.instance(
   "getSmallModel falls back when family has no fast model",
   Effect.gen(function* () {
     const model = yield* Provider.use.getSmallModel(ProviderV2.ID.make("test-provider"))

@@ -2051,7 +2051,7 @@ const layer = Layer.effect(
 
       const s = yield* InstanceState.get(state)
 
-      if (cfg.model_family && cfg.model_family !== "auto") {
+      if (cfg.model_family && cfg.model_family !== "auto" && cfg.model_family !== "ollama") {
         const winner = familyWinner({
           family: cfg.model_family,
           tier: "fast",
