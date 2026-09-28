@@ -11,6 +11,7 @@ import { Plugin } from "../plugin"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { type LanguageModelV3 } from "@ai-sdk/provider"
 import { ModelsDev } from "@opencode-ai/core/models-dev"
+import { EventV2 } from "@opencode-ai/core/event"
 import { Auth } from "../auth"
 import { Env } from "../env"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
@@ -18,7 +19,8 @@ import { iife } from "@/util/iife"
 import { Global } from "@opencode-ai/core/global"
 import path from "path"
 import { pathToFileURL } from "url"
-import { Effect, Layer, Context, Schema, Types } from "effect"
+import { Effect, Layer, Context, Schema, Types, Stream } from "effect"
+
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { EffectPromise } from "@/effect/promise"
@@ -2140,6 +2142,14 @@ const layer = Layer.effect(
       }
     })
 
+    // ModelsDev polls and rebuilds the catalog, but this state is built once per
+    // directory. Invalidate on Refreshed so list() and discovery pick up new models.
+    const events = yield* EventV2.Service
+    yield* events.subscribe(ModelsDev.Event.Refreshed).pipe(
+      Stream.runForEach(() => InstanceState.invalidate(state)),
+      Effect.forkScoped({ startImmediately: true }),
+    )
+
     return Service.of({ list, getProvider, getModel, getLanguage, closest, getSmallModel, defaultModel })
   }),
 )
@@ -2166,7 +2176,16 @@ export function parseModel(model: string) {
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [FSUtil.node, Config.node, Auth.node, Env.node, Plugin.node, ModelsDev.node, RuntimeFlags.node],
+  deps: [
+    FSUtil.node,
+    Config.node,
+    Auth.node,
+    Env.node,
+    Plugin.node,
+    ModelsDev.node,
+    RuntimeFlags.node,
+    EventV2.node,
+  ],
 })
 
 export * as Provider from "./provider"
