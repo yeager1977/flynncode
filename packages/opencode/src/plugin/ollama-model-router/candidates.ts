@@ -1,6 +1,6 @@
 import type { ModelMeta, RouterOptions } from "./types"
 import type { Candidate } from "./rank"
-import { familyProviders } from "./provider-family"
+import { FAMILY_ORDER, familyProviders, type ModelFamily } from "./provider-family"
 
 type ProviderLike = {
   models?: Record<string, unknown>
@@ -31,13 +31,19 @@ function isRouterProvider(providerID: string) {
   return providerID === ROUTER_PROVIDER_ID
 }
 
+function familyPredicate(family: ModelFamily): ((providerID: string) => boolean) | undefined {
+  if (family === "ollama") return (providerID) => providerID.startsWith("ollama")
+  if (family === "openai") return (providerID) => familyProviders("openai").includes(providerID)
+  if (family === "anthropic") return (providerID) => familyProviders("anthropic").includes(providerID)
+  return undefined
+}
+
 function selected(options: RouterOptions) {
   return (providerID: string) => {
     if (options.providers.length > 0) return options.providers.includes(providerID)
     if (isRouterProvider(providerID)) return false
-    if (options.modelFamily === "ollama") return providerID.startsWith("ollama")
-    if (options.modelFamily === "openai") return familyProviders("openai").includes(providerID)
-    if (options.modelFamily === "anthropic") return familyProviders("anthropic").includes(providerID)
+    const primary = familyPredicate(options.modelFamily)
+    if (primary) return primary(providerID)
     return providerID.startsWith("ollama")
   }
 }
@@ -54,8 +60,41 @@ export function resolveCatalog(cfg: ConfigLike, catalog?: CatalogLike): CatalogL
   return catalog ?? cfg.provider ?? {}
 }
 
+// A family scope is "available" when at least one of its providers is
+// connected with at least one model.
+function familyYieldsModels(family: ModelFamily, cfg: ConfigLike, catalog?: CatalogLike): boolean {
+  const predicate = familyPredicate(family)
+  if (!predicate) return false
+  return providerSources(cfg, catalog).some(
+    ([providerID, provider]) => predicate(providerID) && provider?.models && Object.keys(provider.models).length > 0,
+  )
+}
+
+// When the selected family is unavailable, walk the remaining families so the
+// pool stays non-empty while any model is connected; with nothing connected the
+// result stays empty and resolution degrades to the existing failure path.
+function selectedWithFallback(
+  options: RouterOptions,
+  cfg: ConfigLike,
+  catalog: CatalogLike | undefined,
+): (providerID: string) => boolean {
+  const primary = familyPredicate(options.modelFamily)
+  if (!primary) return selected(options)
+  return (providerID: string) => {
+    if (options.providers.length > 0) return options.providers.includes(providerID)
+    if (isRouterProvider(providerID)) return false
+    if (primary(providerID)) return true
+    if (familyYieldsModels(options.modelFamily, cfg, catalog)) return false
+    for (const family of FAMILY_ORDER) {
+      if (family === options.modelFamily) continue
+      if (familyYieldsModels(family, cfg, catalog) && familyPredicate(family)!(providerID)) return true
+    }
+    return providerID.startsWith("ollama")
+  }
+}
+
 function collectModels(cfg: ConfigLike, options: RouterOptions, catalog?: CatalogLike): ProviderModelEntry[] {
-  const isSelected = selected(options)
+  const isSelected = selectedWithFallback(options, cfg, catalog)
   const out: ProviderModelEntry[] = []
   for (const [providerID, provider] of providerSources(cfg, catalog)) {
     if (providerID === ROUTER_PROVIDER_ID) continue

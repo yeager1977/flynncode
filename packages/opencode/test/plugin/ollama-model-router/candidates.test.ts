@@ -92,6 +92,28 @@ describe("collectCandidates", () => {
     expect(list.some((c) => c.providerID.startsWith("ollama"))).toBe(false)
   })
 
+  test("model_family openai falls through to anthropic when openai is not connected", () => {
+    const anthropicOnly = {
+      provider: {
+        anthropic: { models: { "claude-sonnet-5": { name: "Claude Sonnet 5" } } },
+      },
+    }
+    const list = collectCandidates(anthropicOnly, options({ providers: undefined }, "openai"))
+    expect(list.map((c) => c.key)).toEqual(["anthropic/claude-sonnet-5"])
+  })
+
+  test("model_family openai yields an empty pool when nothing is connected", () => {
+    const list = collectCandidates({ provider: {} }, options({ providers: undefined }, "openai"))
+    expect(list).toEqual([])
+  })
+
+  test("model_family openai keeps the family scope when openai is connected", () => {
+    const list = collectCandidates({ provider: cfg.provider }, options({ providers: undefined }, "openai"))
+    expect(list.some((c) => c.key === "openai/gpt-5")).toBe(true)
+    expect(list.some((c) => c.providerID.startsWith("ollama"))).toBe(false)
+    expect(list.some((c) => c.key === "anthropic/claude-sonnet-5")).toBe(false)
+  })
+
   test("model_family anthropic selects the anthropic provider only", () => {
     const cfgWithAnthropic = {
       ...cfg,
