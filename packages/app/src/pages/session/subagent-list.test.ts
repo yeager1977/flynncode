@@ -1,5 +1,25 @@
 import { describe, expect, test } from "bun:test"
-import { expandSubagent, groupSubagents, mergeSubagents, subagentPreview, tasksFromParts } from "./subagent-list"
+import { readFileSync } from "node:fs"
+import { expandSubagent, groupSubagents, mergeSubagents, subagentListState, subagentPreview, tasksFromParts } from "./subagent-list"
+
+describe("Tasks visibility boundary", () => {
+  test("keeps side-panel triggers unconditional while terminal docks remain session-gated", () => {
+    const sidePanel = readFileSync(new URL("./session-side-panel.tsx", import.meta.url), "utf8")
+    const terminalPanel = readFileSync(new URL("./terminal-panel.tsx", import.meta.url), "utf8")
+    const terminalPanelV2 = readFileSync(new URL("./terminal-panel-v2.tsx", import.meta.url), "utf8")
+
+    expect(sidePanel.match(/<Tabs\.Trigger value="tasks">/g)).toHaveLength(2)
+    expect(sidePanel).not.toContain("sessionShowsSubagents")
+    expect(sidePanel.match(/<Tabs\.Content value="tasks"/g)).toHaveLength(2)
+    expect(sidePanel).not.toMatch(/<Show when=\{tasksSelected\(\)\}>\s*<Tabs\.Content value="tasks"/)
+    expect(sidePanel.match(/<Tabs value=\{panelTab\(\)\} onChange=\{activateTab\}>/g)).toHaveLength(2)
+
+    for (const source of [terminalPanel, terminalPanelV2]) {
+      expect(source).toMatch(/const tasksOpen = createMemo\(\(\) =>\s*sessionShowsSubagents\(/)
+      expect(source).toContain("<Show when={!opened() && tasksOpen()}>")
+    }
+  })
+})
 
 const child = (
   id: string,
@@ -19,6 +39,13 @@ describe("groupSubagents", () => {
     ])
     expect(groups.active.map((item) => item.id)).toEqual(["retry-new", "busy-old"])
     expect(groups.finished.map((item) => item.id)).toEqual(["missing", "idle-new", "idle-old"])
+  })
+})
+
+describe("subagentListState", () => {
+  test("shows the empty state until a child exists", () => {
+    expect(subagentListState([])).toBe("empty")
+    expect(subagentListState([child("child", "busy", 1)])).toBe("list")
   })
 })
 

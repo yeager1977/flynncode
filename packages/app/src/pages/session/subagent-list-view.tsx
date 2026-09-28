@@ -2,7 +2,15 @@ import { For, Show, createEffect, createMemo } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSync } from "@/context/sync"
 import { useSessionLayout } from "@/pages/session/session-layout"
-import { expandSubagent, groupSubagents, mergeSubagents, subagentPreview, tasksFromParts, type SubagentChild } from "./subagent-list"
+import {
+  expandSubagent,
+  groupSubagents,
+  mergeSubagents,
+  subagentListState,
+  subagentPreview,
+  tasksFromParts,
+  type SubagentChild,
+} from "./subagent-list"
 
 export function SubagentList(props: { sessionID: () => string }) {
   const sync = useSync()
@@ -44,7 +52,10 @@ export function SubagentList(props: { sessionID: () => string }) {
   }
 
   return (
-    <Show when={groups().active.length + groups().finished.length > 0}>
+    <Show
+      when={subagentListState(rows()) === "list"}
+      fallback={<div class="p-2 text-12-regular text-text-weak">{language.t("session.subagents.empty")}</div>}
+    >
       <div class="flex flex-col gap-2 p-2 text-12-regular text-text-base">
         <For each={groups().active}>{(child) => <Row child={child} finished={false} open={open} />}</For>
         <Show when={groups().finished.length > 0}>

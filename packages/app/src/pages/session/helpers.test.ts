@@ -8,6 +8,7 @@ import {
   createSessionTabs,
   focusTerminalById,
   getTabReorderIndex,
+  panelTabValue,
   shellPtyID,
   shouldShowFileTree,
 } from "./helpers"
@@ -111,6 +112,19 @@ describe("getTabReorderIndex", () => {
 
   test("returns undefined for unknown droppable id", () => {
     expect(getTabReorderIndex(["a", "b", "c"], "a", "missing")).toBeUndefined()
+  })
+})
+
+describe("panelTabValue", () => {
+  test("returns the panel-local tasks tab while Tasks is selected", () => {
+    expect(panelTabValue(true, "empty")).toBe("tasks")
+    expect(panelTabValue(true, "norm:src/a.ts")).toBe("tasks")
+  })
+
+  test("falls back to the resolved session tab when Tasks is not selected", () => {
+    expect(panelTabValue(false, "empty")).toBe("empty")
+    expect(panelTabValue(false, "context")).toBe("context")
+    expect(panelTabValue(false, "norm:src/a.ts")).toBe("norm:src/a.ts")
   })
 })
 

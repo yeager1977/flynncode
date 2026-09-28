@@ -20,6 +20,10 @@ export function groupSubagents(children: readonly SubagentChild[]): SubagentGrou
   return { active, finished }
 }
 
+export function subagentListState(children: readonly SubagentChild[]) {
+  return children.length === 0 ? "empty" : "list"
+}
+
 export function subagentPreview(text: string) {
   const line = text
     .split("\n")

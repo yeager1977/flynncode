@@ -43,7 +43,6 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useSDK } from "@/context/sdk"
 import { useSettings } from "@/context/settings"
-import { useSync } from "@/context/sync"
 import { createFileTabListSync } from "@/pages/session/file-tab-scroll"
 import { FileTabContent } from "@/pages/session/file-tabs"
 import {
@@ -51,12 +50,12 @@ import {
   createOpenSessionFileTab,
   createSessionTabs,
   getTabReorderIndex,
+  panelTabValue,
   shouldShowFileTree,
   type Sizing,
 } from "@/pages/session/helpers"
 import { setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
-import { sessionShowsSubagents } from "@/pages/session/subagent-list"
 import { SubagentList } from "@/pages/session/subagent-list-view"
 import { SessionFileBrowserTab, type SessionFileBrowserState } from "@/pages/session/v2/session-file-browser-tab"
 
@@ -93,16 +92,7 @@ export function SessionSidePanel(props: {
   const dialog = useDialog()
   const sdk = useSDK()
   const { sessionKey, tabs, view, params } = useSessionLayout()
-  const sync = useSync()
   const [tasksSelected, setTasksSelected] = createSignal(false)
-  const showTasks = createMemo(() =>
-    sessionShowsSubagents(
-      params.id ?? "",
-      Object.values(sync().data.session ?? {}),
-      sync().data.message,
-      sync().data.part,
-    ),
-  )
   const projectDirectory = createMemo(() => sdk().directory)
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
@@ -200,6 +190,7 @@ export function SessionSidePanel(props: {
   const openedTabs = tabState.openedTabs
   const activeTab = tabState.activeTab
   const activeFileTab = tabState.activeFileTab
+  const panelTab = createMemo(() => panelTabValue(tasksSelected(), activeTab()))
 
   // Tasks is a panel-local tab; any real tab activation leaves it.
   createEffect(() => {
@@ -366,7 +357,7 @@ export function SessionSidePanel(props: {
                       >
                         <DragDropSensors />
                         <ConstrainDragYAxis />
-                        <Tabs value={activeTab()} onChange={activateTab}>
+                        <Tabs value={panelTab()} onChange={activateTab}>
                           <div class="sticky top-0 shrink-0 flex">
                             <Tabs.List
                               ref={(el: HTMLDivElement) => {
@@ -460,9 +451,7 @@ export function SessionSidePanel(props: {
                                   )}
                                 </For>
                               </SortableProvider>
-                              <Show when={showTasks()}>
-                                <Tabs.Trigger value="tasks">{language.t("session.subagents.tasks")}</Tabs.Trigger>
-                              </Show>
+                              <Tabs.Trigger value="tasks">{language.t("session.subagents.tasks")}</Tabs.Trigger>
                               <div
                                 class="h-full shrink-0 sticky right-0 z-10 flex items-center justify-center pr-3"
                                 classList={{
@@ -526,11 +515,9 @@ export function SessionSidePanel(props: {
                             </Tabs.Content>
                           </Show>
 
-                          <Show when={tasksSelected()}>
-                            <Tabs.Content value="tasks" class="flex flex-col h-full overflow-y-auto contain-strict">
-                              <SubagentList sessionID={() => params.id ?? ""} />
-                            </Tabs.Content>
-                          </Show>
+                          <Tabs.Content value="tasks" class="flex flex-col h-full overflow-y-auto contain-strict">
+                            <SubagentList sessionID={() => params.id ?? ""} />
+                          </Tabs.Content>
 
                           <Show when={activeFileTab()} keyed>
                             {(tab) => <FileTabContent tab={tab} />}
@@ -578,7 +565,7 @@ export function SessionSidePanel(props: {
                         tabs().move(source.id.toString(), source.index)
                       }}
                     >
-                      <Tabs value={activeTab()} onChange={activateTab}>
+                      <Tabs value={panelTab()} onChange={activateTab}>
                         <div class="session-review-v2-tabs-bar sticky top-0 shrink-0 flex items-center">
                           <Tabs.List
                             ref={(el: HTMLDivElement) => {
@@ -688,9 +675,7 @@ export function SessionSidePanel(props: {
                                 </Show>
                               )}
                             </For>
-                            <Show when={showTasks()}>
-                              <Tabs.Trigger value="tasks">{language.t("session.subagents.tasks")}</Tabs.Trigger>
-                            </Show>
+                            <Tabs.Trigger value="tasks">{language.t("session.subagents.tasks")}</Tabs.Trigger>
                             <div
                               class="h-full shrink-0 sticky right-0 z-10 flex items-center justify-center"
                               classList={{
@@ -763,11 +748,9 @@ export function SessionSidePanel(props: {
                           </Tabs.Content>
                         </Show>
 
-                        <Show when={tasksSelected()}>
-                          <Tabs.Content value="tasks" class="flex flex-col h-full overflow-y-auto contain-strict">
-                            <SubagentList sessionID={() => params.id ?? ""} />
-                          </Tabs.Content>
-                        </Show>
+                        <Tabs.Content value="tasks" class="flex flex-col h-full overflow-y-auto contain-strict">
+                          <SubagentList sessionID={() => params.id ?? ""} />
+                        </Tabs.Content>
 
                         <Show when={fileBrowserMounted()}>
                           <div
