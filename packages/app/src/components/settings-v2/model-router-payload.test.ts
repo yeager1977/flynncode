@@ -216,6 +216,12 @@ describe("modelFamily", () => {
     expect("model_family" in serializeForm(form)).toBe(false)
   })
 
+  test("the router subtree is the payload minus model_family (save() strip contract)", () => {
+    const { model_family: family, ...routerValue } = serializeForm({ ...emptyForm(), modelFamily: "anthropic" })
+    expect(family).toBe("anthropic")
+    expect(routerValue).toEqual(serializeForm(emptyForm()))
+  })
+
   test("modelFamily round-trips through the form", () => {
     const form = formFromConfig({ model_family: "openai" })
     expect(form.modelFamily).toBe("openai")

@@ -148,8 +148,9 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
     setState({ saving: true, error: "" })
     const config = serverSync().data.config
     const nextModel = form.enabled ? config.model : modelAfterDisable(config.model, config.small_model)
-    const patch: Record<string, unknown> = { model_router: result.value }
-    if (typeof result.value.model_family === "string") patch.model_family = result.value.model_family
+    const { model_family: modelFamily, ...routerValue } = result.value
+    const patch: Record<string, unknown> = { model_router: routerValue }
+    if (typeof modelFamily === "string") patch.model_family = modelFamily
     if (nextModel !== config.model) patch.model = nextModel
     await serverSync()
       .updateConfig(patch)
