@@ -148,9 +148,10 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
     setState({ saving: true, error: "" })
     const config = serverSync().data.config
     const nextModel = form.enabled ? config.model : modelAfterDisable(config.model, config.small_model)
-    const { model_family: modelFamily, ...routerValue } = result.value
-    const patch: Record<string, unknown> = { model_router: routerValue }
-    if (typeof modelFamily === "string") patch.model_family = modelFamily
+    const { model_family: _, ...routerValue } = result.value
+    // serializeForm omits model_family for "auto", so read it from the form to
+    // make the reset explicit and survive the server's deep merge.
+    const patch: Record<string, unknown> = { model_router: routerValue, model_family: form.modelFamily }
     if (nextModel !== config.model) patch.model = nextModel
     await serverSync()
       .updateConfig(patch)

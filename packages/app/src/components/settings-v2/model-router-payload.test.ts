@@ -222,6 +222,11 @@ describe("modelFamily", () => {
     expect(routerValue).toEqual(serializeForm(emptyForm()))
   })
 
+  test("the save() strip keeps the router subtree intact for auto", () => {
+    const { model_family: _, ...routerValue } = serializeForm({ ...emptyForm(), modelFamily: "auto" })
+    expect(routerValue).toEqual(serializeForm(emptyForm()))
+  })
+
   test("modelFamily round-trips through the form", () => {
     const form = formFromConfig({ model_family: "openai" })
     expect(form.modelFamily).toBe("openai")
