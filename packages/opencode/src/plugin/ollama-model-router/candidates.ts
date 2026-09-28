@@ -70,25 +70,34 @@ function familyYieldsModels(family: ModelFamily, cfg: ConfigLike, catalog?: Cata
   )
 }
 
-// When the selected family is unavailable, walk the remaining families so the
-// pool stays non-empty while any model is connected; with nothing connected the
-// result stays empty and resolution degrades to the existing failure path.
+// The first family in FAMILY_ORDER after the selected one that yields models.
+function firstYieldingFamily(
+  selectedFamily: Exclude<ModelFamily, "auto">,
+  cfg: ConfigLike,
+  catalog?: CatalogLike,
+): Exclude<ModelFamily, "auto"> | undefined {
+  return FAMILY_ORDER.filter((family) => family !== selectedFamily).find((family) =>
+    familyYieldsModels(family, cfg, catalog),
+  )
+}
+
+// The fallback commits to the FIRST yielding family in FAMILY_ORDER (never a
+// union), and with nothing connected the pool stays empty, degrading to the
+// existing failure path.
 function selectedWithFallback(
   options: RouterOptions,
   cfg: ConfigLike,
   catalog: CatalogLike | undefined,
 ): (providerID: string) => boolean {
-  const primary = familyPredicate(options.modelFamily)
-  if (!primary) return selected(options)
+  if (options.modelFamily === "auto") return selected(options)
+  const fallback = familyYieldsModels(options.modelFamily, cfg, catalog)
+    ? undefined
+    : firstYieldingFamily(options.modelFamily, cfg, catalog)
+  const scope = fallback ? familyPredicate(fallback) : familyPredicate(options.modelFamily)
   return (providerID: string) => {
     if (options.providers.length > 0) return options.providers.includes(providerID)
     if (isRouterProvider(providerID)) return false
-    if (primary(providerID)) return true
-    if (familyYieldsModels(options.modelFamily, cfg, catalog)) return false
-    for (const family of FAMILY_ORDER) {
-      if (family === options.modelFamily) continue
-      if (familyYieldsModels(family, cfg, catalog) && familyPredicate(family)!(providerID)) return true
-    }
+    if (scope) return scope(providerID)
     return providerID.startsWith("ollama")
   }
 }

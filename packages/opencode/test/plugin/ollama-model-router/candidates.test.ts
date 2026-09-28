@@ -102,6 +102,18 @@ describe("collectCandidates", () => {
     expect(list.map((c) => c.key)).toEqual(["anthropic/claude-sonnet-5"])
   })
 
+  test("model_family openai stops the fallback at the first yielding family, never a union", () => {
+    const ollamaAndAnthropic = {
+      provider: {
+        "ollama-cloud": { models: { "glm-5.3-flash": { name: "GLM 5.3 Flash" } } },
+        anthropic: { models: { "claude-sonnet-5": { name: "Claude Sonnet 5" } } },
+      },
+    }
+    const list = collectCandidates(ollamaAndAnthropic, options({ providers: undefined }, "openai"))
+    expect(list.some((c) => c.key === "ollama-cloud/glm-5.3-flash")).toBe(true)
+    expect(list.some((c) => c.providerID === "anthropic")).toBe(false)
+  })
+
   test("model_family openai yields an empty pool when nothing is connected", () => {
     const list = collectCandidates({ provider: {} }, options({ providers: undefined }, "openai"))
     expect(list).toEqual([])
