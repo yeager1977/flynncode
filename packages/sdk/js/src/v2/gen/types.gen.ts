@@ -1940,6 +1940,7 @@ export type Config = {
   enabled_providers?: Array<string>
   model?: string
   small_model?: string
+  model_family?: "auto" | "ollama" | "openai" | "anthropic"
   default_agent?: string
   subagent_depth?: number
   username?: string
@@ -2035,6 +2036,42 @@ export type Config = {
     continue_loop_on_deny?: boolean
     mcp_timeout?: number
     policies?: Array<ConfigV2ExperimentalPolicy>
+  }
+}
+
+export type OmoConfigInfo = {
+  path: string
+  parseError?: string
+  agents: {
+    [key: string]: unknown
+  }
+  categories: {
+    [key: string]: unknown
+  }
+  disabledProviders: Array<string>
+  openCodeDisabledProviders: Array<string>
+}
+
+export type OmoConfigPatch = {
+  agents: {
+    [key: string]: {
+      [key: string]: unknown
+    }
+  }
+  categories: {
+    [key: string]: {
+      [key: string]: unknown
+    }
+  }
+  disabledProviders: Array<string>
+  openCodeDisabledProviders: Array<string>
+}
+
+export type OmoConfigWriteError = {
+  name: "OmoConfigWriteError"
+  data: {
+    message: string
+    path: string
   }
 }
 
@@ -7347,6 +7384,56 @@ export type GlobalConfigUpdateResponses = {
 
 export type GlobalConfigUpdateResponse = GlobalConfigUpdateResponses[keyof GlobalConfigUpdateResponses]
 
+export type GlobalOmoConfigGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/global/omo-config"
+}
+
+export type GlobalOmoConfigGetErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type GlobalOmoConfigGetError = GlobalOmoConfigGetErrors[keyof GlobalOmoConfigGetErrors]
+
+export type GlobalOmoConfigGetResponses = {
+  /**
+   * Get global Oh My OpenCode config info
+   */
+  200: OmoConfigInfo
+}
+
+export type GlobalOmoConfigGetResponse = GlobalOmoConfigGetResponses[keyof GlobalOmoConfigGetResponses]
+
+export type GlobalOmoConfigUpdateData = {
+  body?: OmoConfigPatch
+  path?: never
+  query?: never
+  url: "/global/omo-config"
+}
+
+export type GlobalOmoConfigUpdateErrors = {
+  /**
+   * OmoConfigWriteError | InvalidRequestError
+   */
+  400: OmoConfigWriteError | InvalidRequestError
+}
+
+export type GlobalOmoConfigUpdateError = GlobalOmoConfigUpdateErrors[keyof GlobalOmoConfigUpdateErrors]
+
+export type GlobalOmoConfigUpdateResponses = {
+  /**
+   * Successfully updated global Oh My OpenCode config
+   */
+  200: OmoConfigInfo
+}
+
+export type GlobalOmoConfigUpdateResponse = GlobalOmoConfigUpdateResponses[keyof GlobalOmoConfigUpdateResponses]
+
 export type GlobalDisposeData = {
   body?: never
   path?: never
@@ -7514,6 +7601,62 @@ export type ConfigProvidersResponses = {
 }
 
 export type ConfigProvidersResponse = ConfigProvidersResponses[keyof ConfigProvidersResponses]
+
+export type ConfigOmoGetData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/config/omo"
+}
+
+export type ConfigOmoGetErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ConfigOmoGetError = ConfigOmoGetErrors[keyof ConfigOmoGetErrors]
+
+export type ConfigOmoGetResponses = {
+  /**
+   * Get project Oh My OpenCode config info
+   */
+  200: OmoConfigInfo
+}
+
+export type ConfigOmoGetResponse = ConfigOmoGetResponses[keyof ConfigOmoGetResponses]
+
+export type ConfigOmoUpdateData = {
+  body?: OmoConfigPatch
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/config/omo"
+}
+
+export type ConfigOmoUpdateErrors = {
+  /**
+   * OmoConfigWriteError | InvalidRequestError
+   */
+  400: OmoConfigWriteError | InvalidRequestError
+}
+
+export type ConfigOmoUpdateError = ConfigOmoUpdateErrors[keyof ConfigOmoUpdateErrors]
+
+export type ConfigOmoUpdateResponses = {
+  /**
+   * Successfully updated project Oh My OpenCode config
+   */
+  200: OmoConfigInfo
+}
+
+export type ConfigOmoUpdateResponse = ConfigOmoUpdateResponses[keyof ConfigOmoUpdateResponses]
 
 export type ExperimentalCapabilitiesGetData = {
   body?: never

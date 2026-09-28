@@ -17,6 +17,7 @@ describe("emptyForm", () => {
   test("matches plugin defaults", () => {
     const form = emptyForm()
     expect(form).toEqual({
+      modelFamily: "auto",
       enabled: true,
       autoRoute: true,
       allowUnscored: true,
@@ -192,6 +193,40 @@ describe("serializeForm", () => {
   })
 })
 
+describe("modelFamily", () => {
+  test("formFromConfig reads a configured family", () => {
+    const form = formFromConfig({ model_family: "openai" })
+    expect(form.modelFamily).toBe("openai")
+  })
+
+  test("formFromConfig defaults to auto when absent or malformed", () => {
+    expect(formFromConfig({}).modelFamily).toBe("auto")
+    expect(formFromConfig(undefined).modelFamily).toBe("auto")
+    expect(formFromConfig({ model_family: "grok" }).modelFamily).toBe("auto")
+    expect(formFromConfig({ model_family: 42 }).modelFamily).toBe("auto")
+  })
+
+  test("serializeForm emits the family literal", () => {
+    const form: ModelRouterFormState = { ...emptyForm(), modelFamily: "anthropic" }
+    expect(serializeForm(form).model_family).toBe("anthropic")
+  })
+
+  test("serializeForm omits model_family entirely for auto", () => {
+    const form: ModelRouterFormState = { ...emptyForm(), modelFamily: "auto" }
+    expect("model_family" in serializeForm(form)).toBe(false)
+  })
+
+  test("modelFamily round-trips through the form", () => {
+    const form = formFromConfig({ model_family: "openai" })
+    expect(form.modelFamily).toBe("openai")
+    const patch = serializeForm({ ...form, modelFamily: "anthropic" })
+    expect(patch.model_family).toBe("anthropic")
+    expect(formFromConfig(patch).modelFamily).toBe("anthropic")
+    const restored = formFromConfig(serializeForm({ ...form, modelFamily: "auto" }))
+    expect(restored.modelFamily).toBe("auto")
+  })
+})
+
 describe("validateForm", () => {
   test("duplicate agent assignments cannot silently overwrite one another", () => {
     const form = emptyForm()
@@ -337,6 +372,7 @@ describe("round trip", () => {
 
   test("round-trips a populated form", () => {
     const form: ModelRouterFormState = {
+      modelFamily: "openai",
       enabled: true,
       autoRoute: false,
       allowUnscored: true,

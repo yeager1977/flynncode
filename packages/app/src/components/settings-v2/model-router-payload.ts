@@ -40,7 +40,14 @@ export type AgentTaskRow = { agent: string; task: TaskName }
 
 export type ModelScoreRow = { key: string; tags: TaskName[]; price: number; capability: number; speed: number }
 
+// Top-level config keys, mirroring the literals in the model_family schema
+// (packages/core/src/v1/config/config.ts). "auto" keeps current behavior.
+export type ModelFamily = "auto" | "ollama" | "openai" | "anthropic"
+
+export const MODEL_FAMILIES: ModelFamily[] = ["auto", "ollama", "openai", "anthropic"]
+
 export type ModelRouterFormState = {
+  modelFamily: ModelFamily
   enabled: boolean
   autoRoute: boolean
   allowUnscored: boolean
@@ -56,6 +63,7 @@ export type ModelRouterFormState = {
 
 export function emptyForm(): ModelRouterFormState {
   return {
+    modelFamily: "auto",
     enabled: true,
     autoRoute: true,
     allowUnscored: true,
@@ -73,6 +81,7 @@ export function emptyForm(): ModelRouterFormState {
 export function formFromConfig(config: Record<string, unknown> | undefined): ModelRouterFormState {
   const raw = config ?? {}
   return {
+    modelFamily: modelFamilyFrom(raw.model_family),
     enabled: typeof raw.enabled === "boolean" ? raw.enabled : true,
     autoRoute: typeof raw.autoRoute === "boolean" ? raw.autoRoute : true,
     allowUnscored: typeof raw.allowUnscored === "boolean" ? raw.allowUnscored : true,
@@ -88,7 +97,9 @@ export function formFromConfig(config: Record<string, unknown> | undefined): Mod
 }
 
 export function serializeForm(form: ModelRouterFormState): Record<string, unknown> {
+  // model_family is a top-level config key; omitting it restores "auto".
   const payload: Record<string, unknown> = {
+    ...(form.modelFamily !== "auto" ? { model_family: form.modelFamily } : {}),
     enabled: form.enabled,
     autoRoute: form.autoRoute,
     allowUnscored: form.allowUnscored,
@@ -183,6 +194,14 @@ function parseModelKey(key: string): { providerID: string; modelID: string } | u
 
 function isScore(value: number): boolean {
   return Number.isInteger(value) && value >= 1 && value <= 10
+}
+
+function isModelFamily(value: unknown): value is ModelFamily {
+  return typeof value === "string" && (MODEL_FAMILIES as string[]).includes(value)
+}
+
+function modelFamilyFrom(raw: unknown): ModelFamily {
+  return isModelFamily(raw) ? raw : "auto"
 }
 
 function providersFrom(raw: unknown): string[] {

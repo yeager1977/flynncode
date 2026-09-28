@@ -1,5 +1,6 @@
 import { Tabs } from "@kobalte/core/tabs"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
+import { SelectV2 } from "@opencode-ai/ui/v2/select-v2"
 import { Switch } from "@opencode-ai/ui/v2/switch-v2"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { For, Show, batch, createEffect, createMemo, on, type Component } from "solid-js"
@@ -11,6 +12,7 @@ import { useServerSync } from "@/context/server-sync"
 import { pathKey } from "@/utils/path-key"
 import {
   DEFAULT_AGENT_TASKS,
+  MODEL_FAMILIES,
   TASK_NAMES,
   formFromConfig,
   modelAfterDisable,
@@ -36,7 +38,8 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
   const serverSync = useServerSync()
   const models = useModels()
   const agentsQuery = createQuery(() => serverSync().queryOptions.agents(pathKey(props.directory ?? "")))
-  const config = () => serverSync().data.config?.model_router as Record<string, unknown> | undefined
+  const routerConfig = () => serverSync().data.config?.model_router as Record<string, unknown> | undefined
+  const config = () => ({ ...routerConfig(), model_family: serverSync().data.config?.model_family })
   const [form, setForm] = createStore(formFromConfig(config()))
   const [state, setState] = createStore({
     tab: "routing",
@@ -146,6 +149,7 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
     const config = serverSync().data.config
     const nextModel = form.enabled ? config.model : modelAfterDisable(config.model, config.small_model)
     const patch: Record<string, unknown> = { model_router: result.value }
+    if (typeof result.value.model_family === "string") patch.model_family = result.value.model_family
     if (nextModel !== config.model) patch.model = nextModel
     await serverSync()
       .updateConfig(patch)
@@ -272,6 +276,21 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
               >
                 {language.t("settings.modelRouter.autoRoute.title")}
               </Switch>
+            </div>
+            <div class="model-router-enable model-router-card">
+              <div>
+                <h3>{language.t("settings.modelRouter.family.title")}</h3>
+              </div>
+              <SelectV2
+                appearance="inline"
+                data-action="settings-model-family"
+                options={MODEL_FAMILIES}
+                current={form.modelFamily}
+                placement="bottom-end"
+                gutter={6}
+                label={(family) => language.t(`settings.modelRouter.family.${family}`)}
+                onSelect={(family) => family && setForm("modelFamily", family)}
+              />
             </div>
             <Show when={!form.models.length && !form.allowUnscored}>
               <div class="model-router-empty">
