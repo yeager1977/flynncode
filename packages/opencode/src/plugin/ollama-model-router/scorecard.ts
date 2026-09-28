@@ -1,5 +1,5 @@
 import type { RouterOptions, ScoreEntry, TaskName } from "./types"
-import { MODEL_FAMILIES, type ModelFamily } from "./provider-family"
+import type { ModelFamily } from "./provider-family"
 
 export const TASK_NAMES: TaskName[] = [
   "coding",

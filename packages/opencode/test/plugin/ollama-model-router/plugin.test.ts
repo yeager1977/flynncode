@@ -386,6 +386,27 @@ describe("plugin", () => {
     expect(model).toEqual({ providerID: "ollama-cloud", modelID: "glm-5.3-flash" })
   })
 
+  test("a value-variant sentinel keeps existing scoring despite model_family", async () => {
+    const hooks = await plugin.server(fakeInput, {
+      autoRoute: false,
+      agentTasks: { build: "coding" },
+      ...familyOptions,
+    } as any)
+    const cfg = familyCfg("openai")
+    await hooks.config?.(cfg)
+    const message: any = { model: { providerID: "model-router", modelID: "auto" } }
+    await hooks["chat.message"]?.(
+      {
+        sessionID: "s",
+        agent: "build",
+        model: { providerID: "model-router", modelID: "auto" },
+        variant: "coding-value",
+      },
+      { message, parts: [] },
+    )
+    expect(message.model).toEqual({ providerID: "ollama-cloud", modelID: "glm-5.3-flash" })
+  })
+
   test("an invalid model_family degrades to auto behavior", async () => {
     const warnings: unknown[][] = []
     const original = console.warn

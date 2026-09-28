@@ -21,12 +21,15 @@ const cfg = {
   disabled_providers: ["ollama-local"],
 }
 
-function options(overrides: Record<string, unknown> = {}) {
-  const result = parseOptions({
-    providers: ["ollama-cloud", "ollama-gpu"],
-    models: { "ollama-cloud/glm-5.3-flash:cloud": { price: 3, capability: 8, speed: 9 } },
-    ...overrides,
-  })
+function options(overrides: Record<string, unknown> = {}, modelFamily?: "ollama" | "openai" | "anthropic") {
+  const result = parseOptions(
+    {
+      providers: ["ollama-cloud", "ollama-gpu"],
+      models: { "ollama-cloud/glm-5.3-flash:cloud": { price: 3, capability: 8, speed: 9 } },
+      ...overrides,
+    },
+    modelFamily,
+  )
   if (!result.ok) throw new Error(result.errors.join(", "))
   return result.options
 }
@@ -67,6 +70,45 @@ describe("collectCandidates", () => {
     const list = collectCandidates(cfg, options({ providers: undefined }))
     expect(list.every((c) => c.providerID.startsWith("ollama"))).toBe(true)
     expect(list.find((c) => c.key === "openai/gpt-5")).toBeUndefined()
+  })
+
+  test("model_family ollama matches every ollama-prefixed provider", () => {
+    const cfgWithLocal = {
+      ...cfg,
+      provider: {
+        ...cfg.provider,
+        "ollama-local": { models: { "llama3.1:8b": { name: "Llama 3.1 8B" } } },
+      },
+    }
+    const list = collectCandidates(cfgWithLocal, options({ providers: undefined }, "ollama"))
+    expect(list.some((c) => c.key === "ollama-cloud/gpt-oss:20b")).toBe(true)
+    expect(list.some((c) => c.key === "ollama-local/llama3.1:8b")).toBe(true)
+    expect(list.some((c) => c.key === "openai/gpt-5")).toBe(false)
+  })
+
+  test("model_family openai selects the openai provider only", () => {
+    const list = collectCandidates(cfg, options({ providers: undefined }, "openai"))
+    expect(list.some((c) => c.key === "openai/gpt-5")).toBe(true)
+    expect(list.some((c) => c.providerID.startsWith("ollama"))).toBe(false)
+  })
+
+  test("model_family anthropic selects the anthropic provider only", () => {
+    const cfgWithAnthropic = {
+      ...cfg,
+      provider: {
+        ...cfg.provider,
+        anthropic: { models: { "claude-sonnet-5": { name: "Claude Sonnet 5" } } },
+      },
+    }
+    const list = collectCandidates(cfgWithAnthropic, options({ providers: undefined }, "anthropic"))
+    expect(list.some((c) => c.key === "anthropic/claude-sonnet-5")).toBe(true)
+    expect(list.some((c) => c.providerID.startsWith("ollama"))).toBe(false)
+    expect(list.some((c) => c.key === "openai/gpt-5")).toBe(false)
+  })
+
+  test("explicit providers config wins over model_family scoping", () => {
+    const list = collectCandidates(cfg, options({ providers: ["openai"] }, "ollama"))
+    expect(list.map((c) => c.key)).toEqual(["openai/gpt-5"])
   })
 
   test("findUnmatchedScorecardKeys reports scorecard keys with no live model", () => {
