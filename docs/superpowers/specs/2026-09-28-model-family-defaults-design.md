@@ -170,6 +170,21 @@ Where this is authored (OMO package vs. in-repo snapshot) is open question 1.
 - App suites run with the project command:
   `bun test --conditions=solid --preload ./happydom.ts ./src`.
 
+## Resolved Decisions (2026-09-28)
+
+1. **GPT-6 baseline location — UI snapshot + user pins.** Author the GPT-6
+   chains in `packages/app/src/components/settings-v2/omo-catalog.ts`, and
+   re-point the non-deepseek/glm pins in `~/.omo/omo.jsonc` to GPT-6 models so
+   the baseline takes effect at runtime on this machine. Chains containing a
+   deepseek or glm rung stay untouched. OMO-side package changes remain out of
+   scope (blocked on the pending OMO git-plugin release authorization).
+2. **Class-to-model mapping table — approved** as written in the section above.
+3. **Override scope — global.** `model_family` must work when the
+   ollama-model-router plugin is disabled. In addition to the router's
+   candidate selection, the value is consumed by default-model resolution
+   (`Provider.defaultModel` and `Provider.getSmallModel`) so every model
+   selection honors the override.
+
 ## Open Questions
 
 1. **Where does the GPT-6 baseline live?** Resolved by evidence gathered
@@ -188,13 +203,9 @@ Where this is authored (OMO package vs. in-repo snapshot) is open question 1.
 
    Therefore editing `omo-catalog.ts` changes only Settings UI labels; it cannot
    make GPT-6 the runtime default. GPT-6 runtime defaults require an OMO build
-   that contains them (the `dev` worktree does). Decision still required: is
-   Flynncode expected to ship GPT-6 in the UI snapshot only, or is an OMO
-   build/upgrade also in scope?
+   that contains them (the `dev` worktree does). Decision recorded above.
 2. Note the live `~/.omo/omo.jsonc` pins almost every agent and category to an
    explicit `model`, which overrides built-in chain defaults regardless. If the
    GPT-6 baseline is expected to take effect on this machine, those pins are the
-   controlling layer, not the chains.
-3. Confirm the "Class to Model Mapping" table before implementation.
-4. Confirm whether the override should also apply when the router plugin is
-   disabled (current design: the key is read only by the router).
+   controlling layer, not the chains. Per decision 1, the non-deepseek/glm pins
+   are re-pointed to GPT-6.
