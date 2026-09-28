@@ -1315,6 +1315,7 @@ export const dict = {
   "settings.modelRouter.weights.title": "Task weights",
   "settings.tab.modelRouter": "Model Router",
   "session.subagents.tasks": "Tasks",
+  "session.subagents.empty": "위임된 작업이 여기에 표시됩니다.",
   "session.subagents.finished": "Finished",
   "session.subagents.running": "Running",
   "session.subagents.idle": "Idle",

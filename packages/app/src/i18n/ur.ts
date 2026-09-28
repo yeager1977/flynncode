@@ -1294,6 +1294,7 @@ export const dict = {
   "settings.modelRouter.weights.title": "Task weights",
   "settings.tab.modelRouter": "Model Router",
   "session.subagents.tasks": "Tasks",
+  "session.subagents.empty": "تفویض کردہ کام یہاں ظاہر ہوں گے۔",
   "session.subagents.finished": "Finished",
   "session.subagents.running": "Running",
   "session.subagents.idle": "Idle",

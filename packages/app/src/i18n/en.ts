@@ -681,6 +681,7 @@ export const dict = {
   "session.tab.review": "Review",
   "session.tab.context": "Context",
   "session.subagents.tasks": "Tasks",
+  "session.subagents.empty": "Delegated tasks will appear here.",
   "session.subagents.finished": "Finished",
   "session.subagents.running": "Running",
   "session.subagents.idle": "Idle",

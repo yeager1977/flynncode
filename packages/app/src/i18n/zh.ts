@@ -1372,6 +1372,7 @@ export const dict = {
   "settings.modelRouter.weights.title": "Task weights",
   "settings.tab.modelRouter": "Model Router",
   "session.subagents.tasks": "Tasks",
+  "session.subagents.empty": "已委派的任务将显示在此处。",
   "session.subagents.finished": "Finished",
   "session.subagents.running": "Running",
   "session.subagents.idle": "Idle",

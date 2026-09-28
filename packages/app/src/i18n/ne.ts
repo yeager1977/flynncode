@@ -1287,6 +1287,7 @@ export const dict: Record<string, string> = {
   "settings.modelRouter.weights.title": "Task weights",
   "settings.tab.modelRouter": "Model Router",
   "session.subagents.tasks": "Tasks",
+  "session.subagents.empty": "प्रत्यायोजित कार्यहरू यहाँ देखिनेछन्।",
   "session.subagents.finished": "Finished",
   "session.subagents.running": "Running",
   "session.subagents.idle": "Idle",
