@@ -34,7 +34,7 @@ export const OMO_CATEGORIES = [
 
 const AGENT_FALLBACKS: Record<string, FallbackChain> = {
   sisyphus: [
-    { providers: ["anthropic", "github-copilot", "opencode", "vercel"], model: "claude-opus-5", variant: "max" },
+    { providers: ["anthropic", "github-copilot", "opencode", "vercel"], model: "gpt-6-astra", variant: "max" },
     {
       providers: [
         "opencode-go",
@@ -55,10 +55,10 @@ const AGENT_FALLBACKS: Record<string, FallbackChain> = {
     { providers: ["opencode"], model: "big-pickle" },
   ],
   hephaestus: [
-    { providers: ["openai", "github-copilot", "vercel", "opencode"], model: "gpt-5.6-sol", variant: "medium" },
+    { providers: ["openai", "github-copilot", "vercel", "opencode"], model: "gpt-6-sol", variant: "medium" },
   ],
   oracle: [
-    { providers: ["openai", "opencode", "vercel"], model: "gpt-5.6-sol", variant: "xhigh" },
+    { providers: ["openai", "opencode", "vercel"], model: "gpt-6-astra", variant: "xhigh" },
     { providers: ["github-copilot"], model: "gpt-5.6-sol", variant: "high" },
     { providers: ["google", "github-copilot", "opencode", "vercel"], model: "gemini-3.1-pro", variant: "high" },
     { providers: ["anthropic", "github-copilot", "opencode", "vercel"], model: "claude-opus-5", variant: "max" },
@@ -93,7 +93,7 @@ const AGENT_FALLBACKS: Record<string, FallbackChain> = {
     { providers: ["openai", "github-copilot", "opencode", "vercel"], model: "gpt-5-nano" },
   ],
   prometheus: [
-    { providers: ["anthropic", "github-copilot", "opencode", "vercel"], model: "claude-fable-5", variant: "xhigh" },
+    { providers: ["anthropic", "github-copilot", "opencode", "vercel"], model: "gpt-6-sol", variant: "high" },
     {
       providers: ["opencode-go", "kimi-for-coding", "moonshotai", "opencode", "vercel"],
       model: "kimi-k3",
@@ -101,7 +101,7 @@ const AGENT_FALLBACKS: Record<string, FallbackChain> = {
     },
   ],
   metis: [
-    { providers: ["anthropic", "github-copilot", "opencode", "vercel"], model: "claude-opus-5", variant: "high" },
+    { providers: ["anthropic", "github-copilot", "opencode", "vercel"], model: "gpt-6-sol", variant: "high" },
     {
       providers: ["opencode-go", "kimi-for-coding", "moonshotai", "opencode", "vercel"],
       model: "kimi-k3",
@@ -109,7 +109,7 @@ const AGENT_FALLBACKS: Record<string, FallbackChain> = {
     },
   ],
   momus: [
-    { providers: ["openai", "vercel"], model: "gpt-5.6-terra", variant: "high" },
+    { providers: ["openai", "vercel"], model: "gpt-6-sol", variant: "xhigh" },
     { providers: ["github-copilot"], model: "gpt-5.6-terra", variant: "high" },
     { providers: ["openai", "opencode", "vercel"], model: "gpt-5.6-sol", variant: "xhigh" },
     { providers: ["github-copilot"], model: "gpt-5.6-sol", variant: "high" },
@@ -118,7 +118,7 @@ const AGENT_FALLBACKS: Record<string, FallbackChain> = {
     { providers: ["opencode-go", "vercel"], model: "glm-5.2" },
   ],
   atlas: [
-    { providers: ["anthropic", "github-copilot", "opencode", "vercel"], model: "claude-sonnet-5" },
+    { providers: ["anthropic", "github-copilot", "opencode", "vercel"], model: "gpt-6-sol", variant: "medium" },
     { providers: ["opencode-go", "vercel"], model: "kimi-k3" },
     { providers: ["openai", "github-copilot", "opencode", "vercel"], model: "gpt-5.6-sol", variant: "medium" },
     { providers: ["opencode-go", "vercel"], model: "minimax-m3" },
@@ -126,7 +126,7 @@ const AGENT_FALLBACKS: Record<string, FallbackChain> = {
     { providers: ["opencode-go", "vercel"], model: "minimax-m2.7" },
   ],
   "sisyphus-junior": [
-    { providers: ["anthropic", "github-copilot", "opencode", "vercel"], model: "claude-sonnet-5" },
+    { providers: ["anthropic", "github-copilot", "opencode", "vercel"], model: "gpt-6-sol", variant: "medium" },
     { providers: ["opencode-go", "vercel"], model: "kimi-k3" },
     { providers: ["openai", "github-copilot", "opencode", "vercel"], model: "gpt-5.6-sol", variant: "medium" },
     { providers: ["opencode-go", "vercel"], model: "minimax-m3" },
@@ -140,7 +140,7 @@ const CATEGORY_FALLBACKS: Record<string, FallbackChain> = {
   "visual-engineering": [
     {
       providers: ["anthropic", "anthropic-api", "github-copilot", "opencode", "vercel"],
-      model: "claude-opus-5",
+      model: "gpt-6-astra",
       variant: "max",
     },
     {
@@ -156,21 +156,21 @@ const CATEGORY_FALLBACKS: Record<string, FallbackChain> = {
     },
   ],
   ultrabrain: [
-    { providers: ["openai", "quotio-openai", "vercel"], model: "gpt-5.6-sol", variant: "max" },
+    { providers: ["openai", "quotio-openai", "vercel"], model: "gpt-6-sol", variant: "max" },
     { providers: ["github-copilot"], model: "gpt-5.6-sol", variant: "max" },
     { providers: ["openai", "opencode", "vercel"], model: "gpt-5.6-sol", variant: "max" },
   ],
   deep: [
     {
       providers: ["openai", "quotio-openai", "github-copilot", "opencode", "vercel"],
-      model: "gpt-5.6-sol",
+      model: "gpt-6-sol",
       variant: "medium",
     },
   ],
   artistry: [
     {
       providers: ["anthropic", "anthropic-api", "github-copilot", "opencode", "vercel"],
-      model: "claude-fable-5",
+      model: "gpt-6-astra",
       variant: "xhigh",
     },
     {
@@ -224,8 +224,8 @@ const CATEGORY_FALLBACKS: Record<string, FallbackChain> = {
   "unspecified-high": [
     {
       providers: ["kimi-for-coding", "moonshotai", "opencode-go", "opencode", "vercel"],
-      model: "kimi-k3",
-      variant: "max",
+      model: "gpt-6-sol",
+      variant: "high",
     },
     {
       providers: ["anthropic", "anthropic-api", "github-copilot", "opencode", "vercel"],
@@ -241,7 +241,7 @@ const CATEGORY_FALLBACKS: Record<string, FallbackChain> = {
   writing: [
     {
       providers: ["kimi-for-coding", "moonshotai", "opencode-go", "opencode", "vercel"],
-      model: "kimi-k3",
+      model: "gpt-6-sol",
       variant: "low",
     },
     {

@@ -51,6 +51,24 @@ describe("openCodeBans", () => {
   })
 })
 
+describe("omo catalog gpt-6 baseline", () => {
+  test("chains without deepseek or glm lead with a gpt-6 model", () => {
+    const converted = ["visual-engineering", "ultrabrain", "deep", "artistry", "unspecified-high", "writing"]
+    for (const name of converted) {
+      const chain = fallbackChain("category", name)
+      expect(chain[0]?.model).toMatch(/^gpt-6/)
+    }
+  })
+
+  test("deepseek or glm chains stay untouched", () => {
+    for (const name of ["quick", "unspecified-low"]) {
+      const chain = fallbackChain("category", name)
+      expect(chain.some((entry) => entry.model.includes("deepseek"))).toBe(true)
+      expect(chain[0]?.model).not.toMatch(/^gpt-6/)
+    }
+  })
+})
+
 describe("fallbackLabel", () => {
   test("quick names the xAI grok entry when xAI is connected", () => {
     expect(fallbackChain("category", "quick").some((entry) => entry.providers.includes("xai"))).toBe(true)
@@ -60,9 +78,9 @@ describe("fallbackLabel", () => {
     })
   })
 
-  test("sisyphus head is claude-opus-5 when nothing is connected", () => {
+  test("sisyphus head is gpt-6-astra when nothing is connected", () => {
     expect(fallbackLabel(fallbackChain("agent", "sisyphus"), new Set())).toEqual({
-      model: "anthropic/claude-opus-5",
+      model: "anthropic/gpt-6-astra",
       connected: false,
     })
   })
