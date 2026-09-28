@@ -1,5 +1,6 @@
 import type { ModelMeta, RouterOptions } from "./types"
 import type { Candidate } from "./rank"
+import { familyProviders } from "./provider-family"
 
 type ProviderLike = {
   models?: Record<string, unknown>
@@ -25,9 +26,18 @@ type ModelEntryLike = {
 
 type ProviderModelEntry = { key: string; providerID: string; modelID: string; raw: ModelEntryLike }
 
+// Never route the sentinel provider back into the candidate pool.
+function isRouterProvider(providerID: string) {
+  return providerID === ROUTER_PROVIDER_ID
+}
+
 function selected(options: RouterOptions) {
   return (providerID: string) => {
     if (options.providers.length > 0) return options.providers.includes(providerID)
+    if (isRouterProvider(providerID)) return false
+    if (options.modelFamily === "ollama") return providerID.startsWith("ollama")
+    if (options.modelFamily === "openai") return familyProviders("openai").includes(providerID)
+    if (options.modelFamily === "anthropic") return familyProviders("anthropic").includes(providerID)
     return providerID.startsWith("ollama")
   }
 }
@@ -36,6 +46,12 @@ function selected(options: RouterOptions) {
 // because it is the same source the app model picker and provider API use.
 function providerSources(cfg: ConfigLike, catalog?: CatalogLike) {
   return Object.entries(catalog ?? cfg.provider ?? {})
+}
+
+// The catalog view every consumer should share, so family resolution and
+// candidate collection always read the same provider source.
+export function resolveCatalog(cfg: ConfigLike, catalog?: CatalogLike): CatalogLike {
+  return catalog ?? cfg.provider ?? {}
 }
 
 function collectModels(cfg: ConfigLike, options: RouterOptions, catalog?: CatalogLike): ProviderModelEntry[] {

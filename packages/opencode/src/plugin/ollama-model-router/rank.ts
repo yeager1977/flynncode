@@ -41,7 +41,7 @@ export function rankModels(
   candidates: Candidate[],
   task: TaskName,
   weights: Weights,
-  opts: { allowUnscored: boolean; pinned?: string },
+  opts: { allowUnscored: boolean; pinned?: string; familyWinner?: string },
 ): RankResult {
   const ranked: RankedModel[] = []
   const excluded: RankedModel[] = []
@@ -55,8 +55,8 @@ export function rankModels(
       reasons: [],
     }
     // Provider scope and Manage Models visibility gate every candidate, even an
-    // explicit task pin: routing to a disabled provider or a hidden model would
-    // contradict the user's choices elsewhere.
+    // explicit task pin or the family winner: routing to a disabled provider or
+    // a hidden model would contradict the user's choices elsewhere.
     if (c.providerDisabled) {
       excluded.push({ ...base, excluded: "provider disabled" })
       continue
@@ -70,6 +70,14 @@ export function rankModels(
       const entry = c.entry ? { ...c.entry, tags: undefined } : { price: 5, capability: 5, speed: 5 }
       const { score, reasons } = scoreModel(entry, weights, task) as { score: number; reasons: string[] }
       ranked.push({ ...base, score, reasons: [...reasons, "explicit task override"] })
+      continue
+    }
+    // The model_family override lands in the pool like a pin, just behind any
+    // explicit task choice.
+    if (opts.familyWinner === c.key) {
+      const entry = c.entry ? { ...c.entry, tags: undefined } : { price: 5, capability: 5, speed: 5 }
+      const { score, reasons } = scoreModel(entry, weights, task) as { score: number; reasons: string[] }
+      ranked.push({ ...base, score, reasons: [...reasons, "model_family override"] })
       continue
     }
     if (!c.entry) {
@@ -96,6 +104,8 @@ export function rankModels(
   ranked.sort((a, b) => {
     if (opts.pinned === a.key) return -1
     if (opts.pinned === b.key) return 1
+    if (opts.familyWinner === a.key) return -1
+    if (opts.familyWinner === b.key) return 1
     if (b.score !== a.score) return b.score - a.score
     const priceA = candidates.find((c) => c.key === a.key)?.entry?.price ?? 10
     const priceB = candidates.find((c) => c.key === b.key)?.entry?.price ?? 10

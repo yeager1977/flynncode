@@ -1,4 +1,5 @@
-import { collectCandidates, type CatalogLike } from "./candidates"
+import { collectCandidates, resolveCatalog, type CatalogLike } from "./candidates"
+import { resolveFamilyModel, taskFamilyTier } from "./provider-family"
 import { rankModels } from "./rank"
 import type { RouterOptions, TaskName } from "./types"
 
@@ -7,6 +8,30 @@ const BUILTIN_AGENTS = new Set(["build", "plan", "general", "explore"])
 type RankOverride = {
   weights?: RouterOptions["taskWeights"][TaskName]
   ignorePin?: boolean
+}
+
+// The value/cheap lane keeps existing scoring (same rationale as the pin drop)
+// and a pin or "auto" suppresses the family override entirely.
+function familyWinnerFor(
+  cfg: any,
+  candidates: ReturnType<typeof collectCandidates>,
+  options: RouterOptions,
+  task: TaskName,
+  catalog: CatalogLike | undefined,
+  override: RankOverride | undefined,
+): string | undefined {
+  if (!options.modelFamily || options.modelFamily === "auto") return undefined
+  if (options.taskModels?.[task]) return undefined
+  if (override?.ignorePin) return undefined
+  const available = new Set(
+    candidates.filter((c) => !c.providerDisabled && !c.hidden).map((c) => c.key),
+  )
+  return resolveFamilyModel({
+    family: options.modelFamily,
+    tier: taskFamilyTier(task),
+    catalog: resolveCatalog(cfg, catalog),
+    available,
+  })
 }
 
 export function taskWinners(
@@ -24,9 +49,11 @@ export function taskWinners(
     return { winners, warnings }
   }
   for (const task of tasks) {
+    const familyWinner = familyWinnerFor(cfg, candidates, options, task, catalog, override)
     const result = rankModels(candidates, task, override?.weights ?? options.taskWeights[task], {
       allowUnscored: options.allowUnscored,
       pinned: override?.ignorePin ? undefined : options.taskModels?.[task],
+      familyWinner,
     })
     if (result.ranked.length === 0) {
       warnings.push(`no eligible model for task "${task}"`)

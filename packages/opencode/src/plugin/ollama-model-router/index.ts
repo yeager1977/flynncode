@@ -1,6 +1,7 @@
 import type { Hooks, PluginInput, PluginOptions } from "@opencode-ai/plugin"
 import { assignAgents, resolveTaskModel } from "./assign"
 import { ROUTER_MODEL_ID, ROUTER_MODEL_KEY, ROUTER_PROVIDER_ID, type CatalogLike } from "./candidates"
+import { MODEL_FAMILIES, type ModelFamily } from "./provider-family"
 import { parseOptions, parseTaskVariant, ROUTER_VARIANTS, VALUE_TASK_WEIGHTS } from "./scorecard"
 import { createTools } from "./tools"
 import type { RouterOptions, TaskName } from "./types"
@@ -50,7 +51,18 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
     }
   }
 
-  const resolveOptions = (cfg: any): { raw: Record<string, unknown> | undefined; source: string } => {
+  // cfg.model_family is a top-level config key, not part of the model_router
+  // tuple, and an invalid value degrades to "auto" so routing stays enabled.
+  const readModelFamily = (cfg: any): ModelFamily => {
+    const value = cfg?.model_family
+    if (value === undefined) return "auto"
+    if (MODEL_FAMILIES.includes(value)) return value
+    console.warn(`${PREFIX} invalid model_family "${String(value)}"; using "auto"`)
+    return "auto"
+  }
+
+  const resolveOptions = (cfg: any): { raw: Record<string, unknown> | undefined; source: string; modelFamily: ModelFamily } => {
+    const modelFamily = readModelFamily(cfg)
     const fromConfig = cfg && typeof cfg === "object" ? (cfg as Record<string, unknown>).model_router : undefined
     if (fromConfig !== undefined) {
       return {
@@ -59,9 +71,10 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
             ? (fromConfig as Record<string, unknown>)
             : {},
         source: "config.model_router",
+        modelFamily,
       }
     }
-    return { raw: tupleOptions, source: "plugin options" }
+    return { raw: tupleOptions, source: "plugin options", modelFamily }
   }
 
   // Selecting "Model Router" in the picker must not reach a provider API. When
@@ -95,7 +108,7 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
     config: async (cfg) => {
       try {
         currentConfig = cfg
-        const { raw, source } = resolveOptions(cfg)
+        const { raw, source, modelFamily } = resolveOptions(cfg)
         if (raw === undefined) {
           // Built-in plugin with no `model_router` config and no options tuple:
           // stay silently inert so unconfigured users see no warnings.
@@ -103,7 +116,7 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
           optionsError = undefined
           return
         }
-        const parsed = parseOptions(raw)
+        const parsed = parseOptions(raw, modelFamily)
         if (!parsed.ok) {
           currentOptions = undefined
           optionsError = parsed.errors

@@ -1,3 +1,5 @@
+import type { ModelFamily } from "./provider-family"
+
 export type TaskName =
   | "coding"
   | "planning"
@@ -31,6 +33,7 @@ export type RouterOptions = {
   overrideExplicit: boolean
   legacyAssign: boolean
   providers: string[]
+  modelFamily: ModelFamily
   agentTasks: Record<string, TaskName>
   taskWeights: Record<TaskName, { capability: number; price: number; speed: number }>
   taskModels: Partial<Record<TaskName, string>>

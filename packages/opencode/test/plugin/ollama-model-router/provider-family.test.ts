@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { nextFamily, resolveFamilyModel } from "../../../src/plugin/ollama-model-router/provider-family"
+import {
+  nextFamily,
+  resolveFamilyModel,
+  taskFamilyTier,
+} from "../../../src/plugin/ollama-model-router/provider-family"
 
 const catalog = {
   openai: { id: "openai", models: { "gpt-6-astra": {}, "gpt-6-sol": {}, "gpt-6-luna-fast": {} } },
@@ -24,5 +28,17 @@ describe("resolveFamilyModel", () => {
   test("returns undefined when the family lacks the tier", () => {
     const available = new Set<string>()
     expect(resolveFamilyModel({ family: "ollama", tier: "flagship", catalog, available })).toBeUndefined()
+  })
+})
+
+describe("taskFamilyTier", () => {
+  test("maps every task to its family tier", () => {
+    expect(taskFamilyTier("coding")).toBe("balanced")
+    expect(taskFamilyTier("planning")).toBe("balanced-writing")
+    expect(taskFamilyTier("review")).toBe("flagship")
+    expect(taskFamilyTier("architecture")).toBe("flagship")
+    expect(taskFamilyTier("lookup")).toBe("fast")
+    expect(taskFamilyTier("writing")).toBe("balanced-writing")
+    expect(taskFamilyTier("long-context")).toBe("fast")
   })
 })

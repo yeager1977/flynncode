@@ -1,4 +1,5 @@
 import type { RouterOptions, ScoreEntry, TaskName } from "./types"
+import { MODEL_FAMILIES, type ModelFamily } from "./provider-family"
 
 export const TASK_NAMES: TaskName[] = [
   "coding",
@@ -80,6 +81,7 @@ export function isTaskName(value: unknown): value is TaskName {
 
 export function parseOptions(
   raw: Record<string, unknown> | undefined,
+  modelFamily: ModelFamily = "auto",
 ): { ok: true; options: RouterOptions } | { ok: false; errors: string[] } {
   try {
     const errors: string[] = []
@@ -217,6 +219,7 @@ export function parseOptions(
         overrideExplicit,
         legacyAssign,
         providers,
+        modelFamily,
         agentTasks,
         taskWeights,
         taskModels,

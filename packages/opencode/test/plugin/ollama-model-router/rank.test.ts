@@ -180,4 +180,92 @@ describe("rankModels", () => {
     expect(result.ranked).toEqual([])
     expect(result.excluded[0].excluded).toBe("hidden")
   })
+
+  test("a family winner is force-included ahead of scoring", () => {
+    const result = rankModels(
+      [
+        { key: "p/strong", providerID: "p", modelID: "strong", entry: { price: 1, capability: 10, speed: 10 } },
+        { key: "p/family", providerID: "p", modelID: "family", entry: { price: 9, capability: 2, speed: 2 } },
+      ],
+      "coding",
+      weights,
+      { allowUnscored: false, familyWinner: "p/family" },
+    )
+    expect(result.ranked.map((r) => r.key)).toEqual(["p/family", "p/strong"])
+    expect(result.ranked[0].reasons).toContain("model_family override")
+  })
+
+  test("a family winner overrides tags and unscored exclusion", () => {
+    const tagged = rankModels(
+      [
+        {
+          key: "p/tagged",
+          providerID: "p",
+          modelID: "tagged",
+          entry: { price: 1, capability: 10, speed: 10, tags: ["lookup"] },
+        },
+      ],
+      "coding",
+      weights,
+      { allowUnscored: false, familyWinner: "p/tagged" },
+    )
+    expect(tagged.ranked.map((r) => r.key)).toEqual(["p/tagged"])
+    const unscored = rankModels(
+      [{ key: "p/u", providerID: "p", modelID: "u" }],
+      "coding",
+      weights,
+      { allowUnscored: false, familyWinner: "p/u" },
+    )
+    expect(unscored.ranked.map((r) => r.key)).toEqual(["p/u"])
+  })
+
+  test("a pin outranks a family winner", () => {
+    const result = rankModels(
+      [
+        { key: "p/strong", providerID: "p", modelID: "strong", entry: { price: 1, capability: 10, speed: 10 } },
+        { key: "p/family", providerID: "p", modelID: "family", entry: { price: 9, capability: 2, speed: 2 } },
+        { key: "p/pinned", providerID: "p", modelID: "pinned", entry: { price: 9, capability: 2, speed: 2 } },
+      ],
+      "coding",
+      weights,
+      { allowUnscored: false, pinned: "p/pinned", familyWinner: "p/family" },
+    )
+    expect(result.ranked.map((r) => r.key)).toEqual(["p/pinned", "p/family", "p/strong"])
+  })
+
+  test("a family winner to a disabled provider is ignored", () => {
+    const result = rankModels(
+      [{ key: "p/a", providerID: "p", modelID: "a", providerDisabled: true, entry: { price: 1, capability: 10, speed: 10 } }],
+      "coding",
+      weights,
+      { allowUnscored: false, familyWinner: "p/a" },
+    )
+    expect(result.ranked).toEqual([])
+    expect(result.excluded[0].excluded).toBe("provider disabled")
+  })
+
+  test("a family winner to a hidden model is ignored", () => {
+    const result = rankModels(
+      [{ key: "p/a", providerID: "p", modelID: "a", hidden: true, entry: { price: 1, capability: 10, speed: 10 } }],
+      "coding",
+      weights,
+      { allowUnscored: false, familyWinner: "p/a" },
+    )
+    expect(result.ranked).toEqual([])
+    expect(result.excluded[0].excluded).toBe("hidden")
+  })
+
+  test("without a family winner behavior is unchanged", () => {
+    const result = rankModels(
+      [
+        { key: "p/b", providerID: "p", modelID: "b", entry: { price: 1, capability: 8, speed: 9 } },
+        { key: "p/a", providerID: "p", modelID: "a", entry: { price: 3, capability: 8, speed: 9 } },
+      ],
+      "coding",
+      weights,
+      { allowUnscored: false },
+    )
+    expect(result.ranked.map((r) => r.key)).toEqual(["p/b", "p/a"])
+    expect(result.ranked[0].reasons).not.toContain("model_family override")
+  })
 })

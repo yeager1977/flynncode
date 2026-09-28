@@ -4,11 +4,13 @@ import {
   collectCandidates,
   collectMeta,
   findUnmatchedScorecardKeys,
+  resolveCatalog,
   type CatalogLike,
 } from "./candidates"
+import { resolveFamilyModel, taskFamilyTier } from "./provider-family"
 import { rankModels } from "./rank"
 import { TASK_NAMES, isTaskName } from "./scorecard"
-import type { ModelMeta, RankResult, RouterOptions } from "./types"
+import type { ModelMeta, RankResult, RouterOptions, TaskName } from "./types"
 
 function metaLine(meta: Map<string, ModelMeta> | undefined, key: string): string {
   const m = meta?.get(key)
@@ -54,6 +56,41 @@ function disabledMessage(errors: string[] | undefined): string {
   return `Model router disabled: invalid options:\n- ${lines.join("\n- ")}`
 }
 
+// Mirrors assign.taskWinners so the displayed table and the route_task pick
+// honor the family the same way prompt-time resolution does. Tools never pass
+// a value-lane override, so the pin is the only suppressor here.
+function familyWinnerFor(
+  cfg: any,
+  candidates: ReturnType<typeof collectCandidates>,
+  options: RouterOptions,
+  task: TaskName,
+  catalog: CatalogLike | undefined,
+): string | undefined {
+  if (!options.modelFamily || options.modelFamily === "auto") return undefined
+  if (options.taskModels?.[task]) return undefined
+  const available = new Set(candidates.filter((c) => !c.providerDisabled && !c.hidden).map((c) => c.key))
+  return resolveFamilyModel({
+    family: options.modelFamily,
+    tier: taskFamilyTier(task),
+    catalog: resolveCatalog(cfg, catalog),
+    available,
+  })
+}
+
+function rankFor(
+  cfg: any,
+  candidates: ReturnType<typeof collectCandidates>,
+  options: RouterOptions,
+  task: TaskName,
+  catalog: CatalogLike | undefined,
+) {
+  return rankModels(candidates, task, options.taskWeights[task], {
+    allowUnscored: options.allowUnscored,
+    pinned: options.taskModels?.[task],
+    familyWinner: familyWinnerFor(cfg, candidates, options, task, catalog),
+  })
+}
+
 export function createTools(deps: Deps): Hooks["tool"] {
   const inFlight = new Set<string>()
   return {
@@ -77,10 +114,7 @@ export function createTools(deps: Deps): Hooks["tool"] {
           if (!isTaskName(task)) {
             return `Unknown task "${task}". Valid tasks: ${TASK_NAMES.join(", ")}`
           }
-          const result = rankModels(candidates, task, options.taskWeights[task], {
-            allowUnscored: options.allowUnscored,
-            pinned: options.taskModels?.[task],
-          })
+          const result = rankFor(cfg, candidates, options, task, catalog)
           blocks.push(formatRankTable(result, 10, meta))
         }
         const unmatched = findUnmatchedScorecardKeys(cfg, options, catalog)
@@ -115,10 +149,7 @@ export function createTools(deps: Deps): Hooks["tool"] {
         const catalog = deps.getCatalog()
         const candidates = collectCandidates(cfg, options, catalog)
         const meta = collectMeta(cfg, options, catalog)
-        const result = rankModels(candidates, args.task, options.taskWeights[args.task], {
-          allowUnscored: options.allowUnscored,
-          pinned: options.taskModels?.[args.task],
-        })
+        const result = rankFor(cfg, candidates, options, args.task, catalog)
         if (result.ranked.length === 0) {
           return `No eligible models for "${args.task}".\n\n` + formatRankTable(result, 10, meta)
         }

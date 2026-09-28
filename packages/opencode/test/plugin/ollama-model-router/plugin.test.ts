@@ -321,4 +321,90 @@ describe("plugin", () => {
     const output = await hooks.tool!.rank_models.execute({ task: "coding" } as any, { sessionID: "s" } as any)
     expect(String(output)).toBe("Model router disabled.")
   })
+
+  const familyCfg = (model_family: unknown): any => ({
+    model_family,
+    provider: {
+      "ollama-cloud": { models: { "glm-5.3-flash": {}, "deepseek-v4-pro": {} } },
+      openai: { models: { "gpt-6-sol": {}, "gpt-6-sol-fast": {} } },
+    },
+    agent: {},
+  })
+
+  const familyOptions = {
+    providers: ["ollama-cloud", "openai"],
+    models: {
+      "ollama-cloud/glm-5.3-flash": { price: 3, capability: 8, speed: 9 },
+      "ollama-cloud/deepseek-v4-pro": { price: 6, capability: 10, speed: 6 },
+      "openai/gpt-6-sol": { price: 9, capability: 4, speed: 4 },
+    },
+  }
+
+  const routeSentinel = async (hooks: Awaited<ReturnType<typeof plugin.server>>, cfg: any, agent = "build") => {
+    const message: any = { model: { providerID: "model-router", modelID: "auto" } }
+    await hooks["chat.message"]?.(
+      { sessionID: "s", agent, model: { providerID: "model-router", modelID: "auto" } },
+      { message, parts: [] },
+    )
+    return message.model
+  }
+
+  test("model_family openai routes coding to the tier model", async () => {
+    const hooks = await plugin.server(fakeInput, {
+      autoRoute: false,
+      agentTasks: { build: "coding" },
+      ...familyOptions,
+    } as any)
+    const cfg = familyCfg("openai")
+    await hooks.config?.(cfg)
+    const model = await routeSentinel(hooks, cfg)
+    expect(model).toEqual({ providerID: "openai", modelID: "gpt-6-sol" })
+  })
+
+  test("model_family auto preserves the exact current winner", async () => {
+    const hooks = await plugin.server(fakeInput, {
+      autoRoute: false,
+      agentTasks: { build: "coding" },
+      ...familyOptions,
+    } as any)
+    const cfg = familyCfg("auto")
+    await hooks.config?.(cfg)
+    const model = await routeSentinel(hooks, cfg)
+    expect(model).toEqual({ providerID: "ollama-cloud", modelID: "deepseek-v4-pro" })
+  })
+
+  test("an explicit taskModels pin beats model_family", async () => {
+    const hooks = await plugin.server(fakeInput, {
+      autoRoute: false,
+      agentTasks: { build: "coding" },
+      taskModels: { coding: "ollama-cloud/glm-5.3-flash" },
+      ...familyOptions,
+    } as any)
+    const cfg = familyCfg("openai")
+    await hooks.config?.(cfg)
+    const model = await routeSentinel(hooks, cfg)
+    expect(model).toEqual({ providerID: "ollama-cloud", modelID: "glm-5.3-flash" })
+  })
+
+  test("an invalid model_family degrades to auto behavior", async () => {
+    const warnings: unknown[][] = []
+    const original = console.warn
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args)
+    }
+    const hooks = await plugin.server(fakeInput, {
+      autoRoute: false,
+      agentTasks: { build: "coding" },
+      ...familyOptions,
+    } as any)
+    const cfg = familyCfg("mistral")
+    try {
+      await hooks.config?.(cfg)
+    } finally {
+      console.warn = original
+    }
+    const model = await routeSentinel(hooks, cfg)
+    expect(model).toEqual({ providerID: "ollama-cloud", modelID: "deepseek-v4-pro" })
+    expect(warnings.some((args) => args.some((a) => String(a).includes("invalid model_family")))).toBe(true)
+  })
 })
