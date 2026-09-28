@@ -34,6 +34,7 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { ModelStatus } from "./model-status"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderError } from "./error"
+import { FAMILY_ORDER, resolveFamilyModel, type FamilyTier, type ModelFamily } from "@/plugin/ollama-model-router/provider-family"
 
 const OPENAI_HEADER_TIMEOUT_DEFAULT = 300_000
 
@@ -2049,6 +2050,19 @@ const layer = Layer.effect(
       }
 
       const s = yield* InstanceState.get(state)
+
+      if (cfg.model_family && cfg.model_family !== "auto") {
+        const winner = familyWinner({
+          family: cfg.model_family,
+          tier: "fast",
+          providers: s.providers,
+          available: providerModelKeys(s.providers),
+        })
+        if (winner) return yield* getModel(winner.providerID, winner.modelID).pipe(
+          Effect.catchTag("ProviderModelNotFoundError", () => Effect.succeed(undefined)),
+        )
+      }
+
       const provider = s.providers[providerID]
       if (!provider) return undefined
 
@@ -2112,6 +2126,13 @@ const layer = Layer.effect(
       if (cfg.model) return parseModel(cfg.model)
 
       const s = yield* InstanceState.get(state)
+
+      if (cfg.model_family && cfg.model_family !== "auto" && cfg.model_family !== "ollama") {
+        const available = providerModelKeys(s.providers)
+        const winner = familyWinner({ family: cfg.model_family, tier: "balanced", providers: s.providers, available })
+        if (winner) return winner
+      }
+
       const recent = yield* fs.readJson(path.join(Global.Path.state, "model.json")).pipe(
         Effect.map((x): { providerID: ProviderV2.ID; modelID: ModelV2.ID }[] => {
           if (!isRecord(x) || !Array.isArray(x.recent)) return []
@@ -2156,6 +2177,34 @@ const layer = Layer.effect(
 
 const priority = ["gpt-5", "claude-sonnet-4", "big-pickle", "gemini-3-pro"]
 const smallModelFamilyPriority = ["gemini-flash", "gpt-nano", "claude-haiku"]
+
+// Resolves the family's tier model against connected provider state, walking
+// the family fallback order (Ollama → OpenAI → Anthropic) when the selected
+// family lacks the model. Family "ollama" is tier-less by design and never
+// resolves here.
+function familyWinner(input: {
+  family: Exclude<ModelFamily, "auto">
+  tier: FamilyTier
+  providers: Record<ProviderV2.ID, Info>
+  available: Set<string>
+}): { providerID: ProviderV2.ID; modelID: ModelV2.ID } | undefined {
+  const catalog = mapValues(input.providers, (provider) => ({ models: provider.models }))
+  const resolved = resolveFamilyModel({ family: input.family, tier: input.tier, catalog, available: input.available })
+  if (resolved) return parseModel(resolved)
+  for (const family of FAMILY_ORDER) {
+    if (family === input.family) continue
+    const model = resolveFamilyModel({ family, tier: input.tier, catalog, available: input.available })
+    if (model) return parseModel(model)
+  }
+  return undefined
+}
+
+// Connected model keys; an empty set means "everything available" per module
+// semantics, so prefer non-empty from state.
+function providerModelKeys(providers: Record<ProviderV2.ID, Info>) {
+  return new Set(Object.entries(providers).flatMap(([providerID, provider]) => Object.keys(provider.models).map((modelID) => `${providerID}/${modelID}`)))
+}
+
 export function sort<T extends { id: string }>(models: T[]) {
   return sortBy(
     models,

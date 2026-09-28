@@ -379,6 +379,77 @@ test("config schema rejects unknown model_family values", () => {
 })
 
 it.instance(
+  "defaultModel uses model_family openai tier model",
+  Effect.gen(function* () {
+    const model = yield* Provider.use.defaultModel()
+    expect(String(model.providerID)).toBe("openai")
+    expect(String(model.modelID)).toBe("gpt-6-sol")
+  }),
+  {
+    config: {
+      model_family: "openai",
+      enabled_providers: ["openai"],
+      provider: {
+        openai: { models: { "gpt-6-sol": { name: "GPT-6 Sol" } } },
+      },
+    },
+  },
+)
+
+it.instance(
+  "defaultModel falls through families when the tier model is missing",
+  Effect.gen(function* () {
+    const model = yield* Provider.use.defaultModel()
+    expect(String(model.providerID)).toBe("openai")
+    expect(String(model.modelID)).toBe("gpt-6-sol")
+  }),
+  {
+    config: {
+      model_family: "anthropic",
+      enabled_providers: ["openai"],
+      provider: {
+        openai: { models: { "gpt-6-sol": { name: "GPT-6 Sol" } } },
+      },
+    },
+  },
+)
+
+it.instance(
+  "defaultModel with model_family ollama keeps existing behavior",
+  Effect.gen(function* () {
+    const model = yield* Provider.use.defaultModel()
+    expect(String(model.providerID)).toBe("custom-provider")
+    expect(String(model.modelID)).toBe("solo-model")
+  }),
+  {
+    config: {
+      model_family: "ollama",
+      enabled_providers: ["custom-provider"],
+      provider: {
+        "custom-provider": {
+          name: "Custom Provider",
+          npm: "@ai-sdk/openai-compatible",
+          api: "https://api.custom.com/v1",
+          models: { "solo-model": { name: "Solo Model", tool_call: true, limit: { context: 128000, output: 4096 } } },
+          options: { apiKey: "custom-key" },
+        },
+      },
+    },
+  },
+)
+
+it.instance(
+  "explicit model config beats model_family",
+  Effect.gen(function* () {
+    yield* setProcessEnv("ANTHROPIC_API_KEY", "test-api-key")
+    const model = yield* Provider.use.defaultModel()
+    expect(String(model.providerID)).toBe("anthropic")
+    expect(String(model.modelID)).toBe("claude-sonnet-4-20250514")
+  }),
+  { config: { model: "anthropic/claude-sonnet-4-20250514", model_family: "openai" } },
+)
+
+it.instance(
   "defaultModel treats empty provider config as no allowlist",
   Effect.gen(function* () {
     yield* setProcessEnv("ANTHROPIC_API_KEY", "test-api-key")
@@ -840,6 +911,54 @@ it.instance(
     expect(model).toBeUndefined()
   }),
   { config: { small_model: "anthropic/not-a-real-model" } },
+)
+
+it.instance(
+  "getSmallModel uses model_family fast tier",
+  Effect.gen(function* () {
+    yield* set("ANTHROPIC_API_KEY", "test-api-key")
+    const model = yield* Provider.use.getSmallModel(ProviderV2.ID.anthropic)
+    expect(String(model?.providerID)).toBe("anthropic")
+    expect(String(model?.id)).toBe("claude-sonnet-5")
+  }),
+  { config: { model_family: "anthropic" } },
+)
+
+it.instance(
+  "getSmallModel falls back when family has no fast model",
+  Effect.gen(function* () {
+    const model = yield* Provider.use.getSmallModel(ProviderV2.ID.make("test-provider"))
+    expect(model?.id).toBe(ModelV2.ID.make("new-flash"))
+  }),
+  {
+    config: {
+      model_family: "openai",
+      enabled_providers: ["test-provider"],
+      provider: {
+        "test-provider": {
+          name: "Test Provider",
+          npm: "@ai-sdk/openai-compatible",
+          models: {
+            "old-flash": { family: "gemini-flash", release_date: "2025-01-01" },
+            "new-flash": { family: "gemini-flash", release_date: "2026-01-01" },
+          },
+          options: { apiKey: "test-key" },
+        },
+      },
+    },
+  },
+)
+
+it.instance(
+  "explicit small_model beats model_family",
+  Effect.gen(function* () {
+    yield* set("ANTHROPIC_API_KEY", "test-api-key")
+    const model = yield* Provider.use.getSmallModel(ProviderV2.ID.anthropic)
+    expect(model).toBeDefined()
+    expect(String(model?.providerID)).toBe("anthropic")
+    expect(String(model?.id)).toBe("claude-sonnet-4-6")
+  }),
+  { config: { small_model: "anthropic/claude-sonnet-4-6", model_family: "openai" } },
 )
 
 test("provider.sort prioritizes preferred models", () => {
