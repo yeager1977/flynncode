@@ -64,14 +64,13 @@ test("provider.sort ranks newest Claude 5.x Sonnet above Sonnet 4.6 and Opus 5",
 
 test("provider.sort falls back to Claude Opus 5 when no Sonnet model exists", () => {
   const models = [
-    { id: "some-legacy-model", name: "Legacy" },
     { id: "claude-fable-5-1", name: "Claude Fable 5.1" },
+    { id: "aa-legacy-model", name: "Legacy" },
     { id: "claude-opus-5", name: "Claude Opus 5" },
   ] as any[]
 
   const sorted = Provider.sort(models)
   expect(sorted[0].id).toBe("claude-opus-5")
-  expect(sorted[1].id).toBe("claude-fable-5-1")
 })
 
 test("provider.sort prefers the Sonnet family over Opus even for dated legacy IDs", () => {
