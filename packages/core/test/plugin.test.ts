@@ -3,6 +3,7 @@ import { Effect, Exit, Fiber } from "effect"
 import { define } from "@opencode-ai/plugin/v2/effect"
 import { AgentV2 } from "@opencode-ai/core/agent"
 import { PluginV2 } from "@opencode-ai/core/plugin"
+import { State } from "@opencode-ai/core/state"
 import { testEffect } from "./lib/effect"
 import { PluginTestLayer } from "./plugin/fixture"
 
@@ -18,6 +19,34 @@ describe("PluginV2", () => {
       yield* plugins.add(id, () => Effect.void)
       yield* Fiber.join(waiting)
       yield* plugins.wait(id)
+    }),
+  )
+
+  it.effect("waiters observe state transforms after a nested batch reload", () =>
+    Effect.gen(function* () {
+      const plugins = yield* PluginV2.Service
+      const agents = yield* AgentV2.Service
+      const id = PluginV2.ID.make("nested-batch")
+      const waiting = yield* plugins
+        .wait(id)
+        .pipe(Effect.andThen(agents.get(AgentV2.ID.make("configured"))), Effect.forkChild)
+
+      yield* State.batch(
+        Effect.gen(function* () {
+          yield* plugins.add(id, (ctx) =>
+            ctx.agent
+              .transform((draft) =>
+                draft.update("configured", (agent) => {
+                  agent.description = "ready"
+                }),
+              )
+              .pipe(Effect.asVoid),
+          )
+          yield* Effect.yieldNow
+        }),
+      )
+
+      expect((yield* Fiber.join(waiting))?.description).toBe("ready")
     }),
   )
 
