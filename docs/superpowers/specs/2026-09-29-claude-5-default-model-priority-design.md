@@ -1,7 +1,8 @@
 # Claude 5 Default-Model Priority — Design
 
 Date: 2026-09-29
-Status: Approved (Approach A)
+Status: Approved (Approach A); amended 2026-09-29 after dry-run verification of
+`sort()` ranking semantics
 
 ## Problem
 
@@ -47,49 +48,65 @@ against the live models.dev catalog (2026-09-29):
   of the pinned `oh-my-openagent` package; all Claude IDs it references still
   exist in the catalog. Leave as-is — hand-editing drifts it from its source.
 
+## Ranking mechanics (load-bearing; drives the array order below)
+
+The `sort()` implementation (verified at `provider.ts:2208-2215`) ranks by
+`priority.findIndex((filter) => model.id.includes(filter))` under a
+**descending** modifier. Concretely: the **last matching entry in `priority`
+wins**; models matching no entry rank below all ranked ones. Tiebreaks, in
+order: IDs containing `latest` sort first, then lexicographically descending
+by ID.
+
+Under descending semantics, to make Sonnet the default wherever it exists while
+letting Opus act as the Sonnet-less fallback, `claude-sonnet` must sit at a
+**later** index than `claude-opus-5` — Sonnet's effective rank (4) must exceed
+Opus's (1).
+
 ## Change (Approach A — family-prefix matching)
 
-In `packages/opencode/src/provider/provider.ts`, replace the Claude entry in
-the `priority` array:
+In `packages/opencode/src/provider/provider.ts`, replace the `priority` array:
 
 ```ts
 // Before
 const priority = ["gpt-5", "claude-sonnet-4", "big-pickle", "gemini-3-pro"]
 
 // After
-const priority = ["gpt-5", "claude-sonnet", "big-pickle", "gemini-3-pro", "claude-opus-5"]
+const priority = ["gpt-5", "claude-opus-5", "big-pickle", "gemini-3-pro", "claude-sonnet"]
 ```
 
 Two edits, one line:
 
-1. `"claude-sonnet-4"` → `"claude-sonnet"` — the substring now matches every
-   Sonnet generation; the existing id-descending tiebreak picks the newest
+1. `"claude-sonnet-4"` → `"claude-sonnet"`, repositioned to the **last** index —
+   the substring now matches every Sonnet generation, and under descending
+   rank semantics its last-match position makes Sonnet the top-ranked family;
+   the existing id-descending tiebreak then picks the newest Sonnet
    (currently `claude-sonnet-5-5`). Decay-proof: Claude 6.x sonnets keep
    matching.
-2. Append `"claude-opus-5"` as the **last** entry — a fallback so an Anthropic
-   catalog without any Sonnet still defaults to a 5.x Opus rather than an
-   unranked legacy pick.
+2. Insert `"claude-opus-5"` at index 1 (after `gpt-5`, before `big-pickle`) —
+   a fallback so a Sonnet-less Anthropic catalog still defaults to a 5.x Opus
+   rather than an unranked legacy pick.
 
-The `sort()` implementation (verified at `provider.ts:2208-2215`) ranks by
-`priority.findIndex((filter) => model.id.includes(filter))` under a
-**descending** modifier — so the **last** matching entry in `priority` wins,
-and models matching no entry sort below all ranked ones. Consequences of the
-array above, all intentional:
+### Verified consequence table (dry-run against real `sort()` semantics)
 
-- `claude-opus-5` (last) outranks `gpt-5` for Anthropic models. Required for
-  the fallback to function. Safe globally: `sort()` runs per provider, so a
-  model ID only ever competes within its own provider's catalog, and no
-  OpenAI/Gemini model ID contains the substring `claude-opus-5`.
-- Among ranked entries, a Sonnet 5.x ID's last match is `claude-sonnet`
-  (index 1) while an Opus 5.x ID's last match is `claude-opus-5` (index 4):
-  Sonnet remains the default wherever both exist. Neither substring matches
-  the other's family, so order between the two entries cannot collide.
-- The id-descending tiebreak correctly prefers unprefixed 5.x IDs
-  (`claude-sonnet-5-5`) over dated 4.x snapshot IDs
-  (`claude-sonnet-4-5-20250929`), which the `claude-sonnet` entry also
-  matches.
+| Catalog contains | Default resolves to | Why |
+| --- | --- | --- |
+| `claude-sonnet-5-5` + `claude-sonnet-4-6` + `claude-opus-5` | `claude-sonnet-5-5` | Sonnet rank 4 > Opus rank 1; id-desc tiebreak picks 5-5 over 4-6 |
+| `claude-opus-5` + `claude-fable-5-1` only (Sonnet-less) | `claude-opus-5` | Opus rank 1 beats all unranked |
+| Legacy-only: `claude-sonnet-4-5-20250929` + `claude-opus-5` | `claude-sonnet-4-5-20250929` | Dated 4.x IDs also match `claude-sonnet` (rank 4) — Sonnet-first family preference outweighs generation recency. Accepted. |
+| `claude-sonnet-5-5` + `claude-sonnet-4-5-20250929` | `claude-sonnet-5-5` | Same rank; id-desc tiebreak prefers unprefixed 5.x over dated 4.x |
+| OpenAI only: `gpt-5` + others | `gpt-5` | `gpt-5` entry untouched; no OpenAI ID contains any Claude substring |
 
-**Ranking mechanics (load-bearing, verified at `provider.ts:2208-2215`):**
+`sort()` runs **per provider** (`provider.ts:1200`, `provider.ts:2158`), so a
+model ID only ever competes within its own provider's catalog — no
+OpenAI/Gemini ID contains `claude-opus-5` or `claude-sonnet`, and
+Anthropic-side ranking is unaffected by the OpenAI entries' relative order.
+
+Known cross-provider exception: `packages/opencode/src/acp/service.ts:811-814`
+sorts a flat list across **all** providers to pick ACP's "best" model. With
+`claude-sonnet` ranked above `gpt-5`/`big-pickle` there, an aggregate catalog
+listing both flips its top pick from a GPT model to the newest Claude Sonnet.
+That flip is intentional under this design (newest-generation preference) and
+is called out in Risks.
 
 Deliberately excluded: `claude-fable` from the priority list. Fable is the
 premium flagship at $10/$50 per MTok; a default-model pick should not silently
@@ -110,40 +127,44 @@ already exposes it deliberately at its `balanced-writing` tier.
 
 | File | Change |
 | --- | --- |
-| `packages/opencode/src/provider/provider.ts` (line ~2178, `sort` at ~2208) | Update `priority` array |
-| `packages/opencode/test/provider/provider.test.ts` | Add default-model resolution test (see Testing) |
+| `packages/opencode/src/provider/provider.ts` (line ~2178; `sort` at ~2208) | Update `priority` array |
+| `packages/opencode/test/provider/provider.test.ts` (new tests after the existing `provider.sort` test at ~line 990) | Ranking assertions (see Testing) |
 
 No protocol/API changes, no SDK regeneration, no schema changes, no migration.
 
 ## Testing
 
-1. New unit test in `packages/opencode/test/provider/provider.test.ts` (or the
-   closest existing suite for `sort`/default-model selection), asserting on
-   the real `sort()` ranking semantics (last matching priority entry wins):
-   - given a fixture provider containing `claude-sonnet-4-6`,
-     `claude-sonnet-5-5`, and `claude-opus-5`: `sort()` must rank
-     `claude-sonnet-5-5` first (beats 4.6 via `claude-sonnet`, beats Opus via
-     earlier effective rank), and the default-model path must resolve to it.
-   - given a Sonnet-less Anthropic fixture (`claude-opus-5` plus legacy
-     `claude-sonnet-4-5` and an unranked model): `claude-opus-5` must rank
-     above both.
-2. Existing provider/transform tests must pass unchanged — the change must not
-   alter OpenAI, Gemini, or Bedrock/Vertex default behavior.
-3. `bun typecheck` from `packages/opencode` (never `tsc` directly).
-4. Spot-check: `provider-family.ts` tier resolution still yields
+1. New pure unit tests next to the existing `provider.sort` test in
+   `packages/opencode/test/provider/provider.test.ts`, asserting the verified
+   descending-last-match-wins semantics:
+   - both families present → `claude-sonnet-5-5` ranks first, above
+     `claude-sonnet-4-6`, above `claude-opus-5`.
+   - Sonnet-less catalog → `claude-opus-5` ranks above unranked entries
+     (e.g. `claude-fable-5-1`).
+   - legacy-4.x + Opus → dated `claude-sonnet-4-5-20250929` ranks above
+     `claude-opus-5` (Sonnet-first family preference — intentional).
+2. Existing `provider.sort` test ("prioritizes preferred models") must pass
+   unchanged: under both the old and new arrays, `claude-sonnet-4-latest`
+   still ranks first and `gpt-5-turbo` above the unranked entries.
+3. Existing provider/transform tests must pass unchanged — the change must not
+   alter OpenAI, Gemini, or Bedrock/Vertex transform behavior.
+4. `bun typecheck` from `packages/opencode` (never `tsc` directly).
+5. Spot-check: `provider-family.ts` tier resolution still yields
    `claude-opus-5-5` (flagship) and `claude-sonnet-5` (balanced) for an
-   Anthropic-family selection — untouched by this change, verified by existing
-   router tests if present.
+   Anthropic-family selection — untouched by this change, covered by existing
+   router tests.
 
 ## Risks
 
-- Behavior change is intentional: new Anthropic users' default flips from
+- Intentional behavior change: fresh Anthropic users' default flips from
   Sonnet 4.6 to Sonnet 5.5. Users who pinned `model` in config are unaffected
   (`cfg.model` short-circuits the default path).
-- The substring `claude-sonnet` also matches dated snapshot IDs
-  (`claude-sonnet-4-5-20250929`); the id-descending tiebreak handles that
-  correctly (unprefixed 5.x IDs sort above dated 4.x ones).
-- OpenAI's `gpt-5` entry and Gemini/`big-pickle` entries are untouched, so
-  non-Anthropic default ordering is unchanged except where a Claude model
-  previously ranked unranked-last; ordering among non-Claude families is
-  unchanged.
+- Dated 4.x snapshot IDs match the `claude-sonnet` family substring and
+  outrank Opus under the new order (Sonnet-first preference). Accepted; the
+  id-descending tiebreak still prefers unprefixed 5.x IDs over dated 4.x ones
+  when both exist.
+- ACP's cross-provider "best" pick (`acp/service.ts:811-814`) may flip from a
+  GPT model to the newest Claude Sonnet for aggregate catalogs. Intentional
+  under "smart defaults point at the new generation" (user-approved).
+- `gpt-5`, `big-pickle`, `gemini-3-pro` entries are untouched, so within-provider
+  ordering among non-Claude models is unchanged.
