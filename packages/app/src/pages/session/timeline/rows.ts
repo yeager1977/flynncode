@@ -19,7 +19,7 @@ export type TimelineRowMap = {
   }
   TurnDivider: {
     userMessageID: string
-    label: "compaction" | "interrupted"
+    label: "compaction" | "interrupted" | "background"
   }
   AssistantPart: {
     userMessageID: string
@@ -114,6 +114,10 @@ export namespace Timeline {
     const previousUserMessage = index > 0
     const userParts = getMessageParts(userMessage.id)
     const comments = userParts.flatMap((p) => MessageComment.fromPart(p) ?? [])
+    const background =
+      userParts.some((p) => p.type === "text") &&
+      userParts.every((p) => p.type !== "text" || p.synthetic) &&
+      userParts.every((p) => p.type !== "file" && p.type !== "agent")
     const compaction = userParts.some((p) => p.type === "compaction")
     const interruptedMessageIndex = assistantMessages.findIndex((m) => m.error?.name === "MessageAbortedError")
     const interrupted = interruptedMessageIndex !== -1
@@ -152,12 +156,21 @@ export namespace Timeline {
         }),
       )
 
-    rows.push(
-      new TimelineRow.UserMessage({
-        userMessageID: userMessage.id,
-        anchor: inlineComments || comments.length === 0,
-      }),
-    )
+    if (background) {
+      rows.push(
+        new TimelineRow.TurnDivider({
+          userMessageID: userMessage.id,
+          label: "background",
+        }),
+      )
+    } else {
+      rows.push(
+        new TimelineRow.UserMessage({
+          userMessageID: userMessage.id,
+          anchor: inlineComments || comments.length === 0,
+        }),
+      )
+    }
 
     if (compaction) {
       rows.push(

@@ -168,6 +168,186 @@ describe("current session timeline rows", () => {
     ])
   })
 
+  test("renders a synthetic-only user message as a background divider row", () => {
+    const source = [
+      {
+        id: "msg_bg",
+        type: "synthetic",
+        text: "wake task-agent-reliability",
+        description: "wake task-agent-reliability",
+        time: { created: 1 },
+      },
+    ] satisfies SessionMessageInfo[]
+    const normalized = normalizeSessionMessages("ses_1", source)
+    const messages = new Map(normalized.messages.map((message) => [message.id, message]))
+
+    const result = Timeline.constructSessionMessageRows(
+      source,
+      (messageID) => messages.get(messageID),
+      (messageID) => normalized.parts.get(messageID) ?? [],
+      true,
+      "idle",
+      true,
+      normalized.messages.filter((message) => message.role === "user"),
+    )
+
+    expect(result.rows.map(TimelineRow.key)).toEqual(["turn-divider:msg_bg:background"])
+    expect(result.rows.every((row) => row._tag === "TurnDivider")).toBe(true)
+  })
+
+  test("renders a normal user prompt ending with the OMO marker as a background divider row", () => {
+    const source = [
+      {
+        id: "msg_wake",
+        type: "user",
+        text: "wake task-agent-reliability\n<!-- OMO_INTERNAL_INITIATOR -->",
+        time: { created: 1 },
+      },
+    ] satisfies SessionMessageInfo[]
+    const normalized = normalizeSessionMessages("ses_1", source)
+    const messages = new Map(normalized.messages.map((message) => [message.id, message]))
+
+    const result = Timeline.constructSessionMessageRows(
+      source,
+      (messageID) => messages.get(messageID),
+      (messageID) => normalized.parts.get(messageID) ?? [],
+      true,
+      "idle",
+      true,
+      normalized.messages.filter((message) => message.role === "user"),
+    )
+
+    expect(result.rows.map(TimelineRow.key)).toEqual(["turn-divider:msg_wake:background"])
+    expect(result.rows.every((row) => row._tag === "TurnDivider")).toBe(true)
+  })
+
+  test("keeps a normal user prompt quoting the marker mid-text as a user message row", () => {
+    const source = [
+      {
+        id: "msg_quote",
+        type: "user",
+        text: "the marker <!-- OMO_INTERNAL_INITIATOR --> appears mid-prose",
+        time: { created: 1 },
+      },
+    ] satisfies SessionMessageInfo[]
+    const normalized = normalizeSessionMessages("ses_1", source)
+    const messages = new Map(normalized.messages.map((message) => [message.id, message]))
+
+    const result = Timeline.constructSessionMessageRows(
+      source,
+      (messageID) => messages.get(messageID),
+      (messageID) => normalized.parts.get(messageID) ?? [],
+      true,
+      "idle",
+      true,
+      normalized.messages.filter((message) => message.role === "user"),
+    )
+
+    expect(result.rows.map(TimelineRow.key)).toEqual(["user-message:msg_quote"])
+  })
+
+  test("renders a genuine user message with a non-synthetic text part as a user message row", () => {
+    const source = [
+      {
+        id: "msg_genuine",
+        type: "user",
+        text: "hello there",
+        time: { created: 1 },
+      },
+    ] satisfies SessionMessageInfo[]
+    const normalized = normalizeSessionMessages("ses_1", source)
+    const messages = new Map(normalized.messages.map((message) => [message.id, message]))
+
+    const result = Timeline.constructSessionMessageRows(
+      source,
+      (messageID) => messages.get(messageID),
+      (messageID) => normalized.parts.get(messageID) ?? [],
+      true,
+      "idle",
+      true,
+      normalized.messages.filter((message) => message.role === "user"),
+    )
+
+    expect(result.rows.map(TimelineRow.key)).toEqual(["user-message:msg_genuine"])
+  })
+
+  test("keeps a synthetic text part with a file part as a user message row", () => {
+    const source = [
+      {
+        id: "msg_file",
+        type: "user",
+        text: "",
+        files: [{ name: "a.ts", mime: "text/plain", data: "aGVsbG8=", source: { type: "uri", uri: "file:///a.ts" } }],
+        time: { created: 1 },
+      },
+    ] satisfies SessionMessageInfo[]
+    const normalized = normalizeSessionMessages("ses_1", source)
+    const messages = new Map(normalized.messages.map((message) => [message.id, message]))
+
+    const result = Timeline.constructSessionMessageRows(
+      source,
+      (messageID) => messages.get(messageID),
+      (messageID) => normalized.parts.get(messageID) ?? [],
+      true,
+      "idle",
+      true,
+      normalized.messages.filter((message) => message.role === "user"),
+    )
+
+    expect(result.rows.map(TimelineRow.key)).toEqual(["user-message:msg_file"])
+  })
+
+  test("keeps a user message with an agent part as a user message row", () => {
+    const source = [
+      {
+        id: "msg_agent",
+        type: "user",
+        text: "",
+        agents: [{ name: "build" }],
+        time: { created: 1 },
+      },
+    ] satisfies SessionMessageInfo[]
+    const normalized = normalizeSessionMessages("ses_1", source)
+    const messages = new Map(normalized.messages.map((message) => [message.id, message]))
+
+    const result = Timeline.constructSessionMessageRows(
+      source,
+      (messageID) => messages.get(messageID),
+      (messageID) => normalized.parts.get(messageID) ?? [],
+      true,
+      "idle",
+      true,
+      normalized.messages.filter((message) => message.role === "user"),
+    )
+
+    expect(result.rows.map(TimelineRow.key)).toEqual(["user-message:msg_agent"])
+  })
+
+  test("renders a user message with an empty text part as a user message row", () => {
+    const source = [
+      {
+        id: "msg_empty",
+        type: "user",
+        text: "",
+        time: { created: 1 },
+      },
+    ] satisfies SessionMessageInfo[]
+    const normalized = normalizeSessionMessages("ses_1", source)
+    const messages = new Map(normalized.messages.map((message) => [message.id, message]))
+
+    const result = Timeline.constructSessionMessageRows(
+      source,
+      (messageID) => messages.get(messageID),
+      (messageID) => normalized.parts.get(messageID) ?? [],
+      true,
+      "idle",
+      true,
+      normalized.messages.filter((message) => message.role === "user"),
+    )
+
+    expect(result.rows.map(TimelineRow.key)).toEqual(["user-message:msg_empty"])
+  })
+
   test("removes a failed assistant error when the turn continues streaming", () => {
     const source = [
       { id: "msg_user", type: "user", text: "recover", time: { created: 1 } },
