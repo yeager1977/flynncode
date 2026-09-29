@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test"
 import { mockOpenCodeServer } from "../utils/mock-server"
 import { expectSessionTitle } from "../utils/waits"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 
 const PATH_TODO_CONTENT =
   "[WHERE] src/utils/validation.ts: Add validateEmail() for input sanitization - expect returns boolean"
@@ -23,11 +24,15 @@ const activeTodos = [
   { id: "todo-skip", content: CANCELLED_TODO_CONTENT, status: "cancelled", priority: "low" },
 ]
 
+// Derive evidence path relative to the repo root so it works in any checkout.
+// __dirname equivalent for ESM: dirname(fileURLToPath(import.meta.url))
+// spec lives at packages/app/e2e/regression/ → 4 levels up reaches repo root
 const evidenceDir = path.resolve(
-  "/home/yeager1977/GitHub/flynncode/.omo/evidence/task-agent-reliability/ui",
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../../../.omo/evidence/task-agent-reliability/ui",
 )
 
-test.use({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" })
+test.use({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" })
 
 test("capture LTR desktop list state", async ({ page }) => {
   const events: { directory: string; payload: Record<string, unknown> }[] = []
@@ -43,11 +48,41 @@ test("capture LTR desktop list state", async ({ page }) => {
   await expect(dock).toBeVisible()
   await expect(dock.locator('[data-action="session-todo-toggle-button"]')).toHaveAttribute("data-collapsed", "false")
 
-  // Verify completed and cancelled status rows are visible and correctly styled
-  await expect(dock.locator('[data-status="completed"]')).toBeVisible()
-  await expect(dock.locator('[data-status="cancelled"]')).toBeVisible()
+  const completedRow = dock.locator('[data-status="completed"]')
+  const cancelledRow = dock.locator('[data-status="cancelled"]')
+  await expect(completedRow).toBeVisible()
+  await expect(cancelledRow).toBeVisible()
+  // Kobalte Checkbox renders role="checkbox" inside the group; completed is checked, cancelled is not.
+  await expect(completedRow.getByRole("checkbox")).toBeChecked()
+  await expect(cancelledRow.getByRole("checkbox")).not.toBeChecked()
 
   await page.screenshot({ path: path.join(evidenceDir, "ltr-desktop-list.png"), fullPage: false })
+})
+
+test("capture LTR desktop list scrolled state", async ({ page }) => {
+  const events: { directory: string; payload: Record<string, unknown> }[] = []
+  const todos: typeof activeTodos = []
+  await setupMock(page, { events: () => events.splice(0, 1), todos: () => todos })
+  await page.goto(sessionHref())
+  await expectSessionTitle(page, sessionTitle)
+
+  const dock = page.locator('[data-component="session-todo-dock"]')
+  events.push(statusEvent("busy"))
+  todos.push(...activeTodos)
+  events.push(todoEvent(activeTodos))
+  await expect(dock).toBeVisible()
+
+  const todoList = dock.locator('[data-slot="session-todo-list"]')
+  const innerScroller = todoList.locator("div.max-h-42.overflow-y-auto")
+  await innerScroller.evaluate((el) => {
+    el.scrollTop = el.scrollHeight
+  })
+  const scrollTop = await innerScroller.evaluate((el) => el.scrollTop)
+  expect(scrollTop).toBeGreaterThan(0)
+  const cancelledRow = todoList.locator('[data-status="cancelled"]')
+  await expect(cancelledRow).toBeInViewport()
+
+  await page.screenshot({ path: path.join(evidenceDir, "ltr-desktop-list-scrolled.png"), fullPage: false })
 })
 
 test("capture LTR desktop detail-open state", async ({ page }) => {
@@ -98,6 +133,80 @@ test("capture LTR desktop collapsed-preview state", async ({ page }) => {
   await page.screenshot({ path: path.join(evidenceDir, "ltr-desktop-collapsed.png"), fullPage: false })
 })
 
+test("capture LTR tablet list state", async ({ page }) => {
+  await page.setViewportSize({ width: 768, height: 900 })
+  const events: { directory: string; payload: Record<string, unknown> }[] = []
+  const todos: typeof activeTodos = []
+  await setupMock(page, { events: () => events.splice(0, 1), todos: () => todos })
+  await page.goto(sessionHref())
+  await expectSessionTitle(page, sessionTitle)
+
+  const dock = page.locator('[data-component="session-todo-dock"]')
+  events.push(statusEvent("busy"))
+  todos.push(...activeTodos)
+  events.push(todoEvent(activeTodos))
+  await expect(dock).toBeVisible()
+  await expect(dock.locator('[data-action="session-todo-toggle-button"]')).toHaveAttribute("data-collapsed", "false")
+  await expect(dock.locator('[data-status="completed"]')).toBeVisible()
+  await expect(dock.locator('[data-status="cancelled"]')).toBeVisible()
+
+  await page.screenshot({ path: path.join(evidenceDir, "ltr-tablet-list.png"), fullPage: false })
+})
+
+test("capture LTR mobile detail state", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  const events: { directory: string; payload: Record<string, unknown> }[] = []
+  const todos: typeof activeTodos = []
+  await setupMock(page, { events: () => events.splice(0, 1), todos: () => todos })
+  await page.goto(sessionHref())
+  await expectSessionTitle(page, sessionTitle)
+
+  const dock = page.locator('[data-component="session-todo-dock"]')
+  events.push(statusEvent("busy"))
+  todos.push(...activeTodos)
+  events.push(todoEvent(activeTodos))
+  await expect(dock).toBeVisible()
+
+  const detailToggle = dock.locator('[data-action="session-todo-detail-toggle"]')
+  await expect(detailToggle).toBeVisible()
+  await detailToggle.click()
+  await expect(dock.getByText(PATH_TODO_CONTENT)).toBeVisible()
+
+  await page.screenshot({ path: path.join(evidenceDir, "ltr-mobile-detail.png"), fullPage: false })
+})
+
+test("capture LTR mobile scrolled state", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  const events: { directory: string; payload: Record<string, unknown> }[] = []
+  const todos: typeof activeTodos = []
+  await setupMock(page, { events: () => events.splice(0, 1), todos: () => todos })
+  await page.goto(sessionHref())
+  await expectSessionTitle(page, sessionTitle)
+
+  const dock = page.locator('[data-component="session-todo-dock"]')
+  events.push(statusEvent("busy"))
+  todos.push(...activeTodos)
+  events.push(todoEvent(activeTodos))
+  await expect(dock).toBeVisible()
+
+  const detailToggle = dock.locator('[data-action="session-todo-detail-toggle"]')
+  await expect(detailToggle).toBeVisible()
+  await detailToggle.click()
+  await expect(dock.getByText(PATH_TODO_CONTENT)).toBeVisible()
+
+  const todoList = dock.locator('[data-slot="session-todo-list"]')
+  const innerScroller = todoList.locator("div.max-h-42.overflow-y-auto")
+  await innerScroller.evaluate((el) => {
+    el.scrollTop = el.scrollHeight
+  })
+  const scrollTop = await innerScroller.evaluate((el) => el.scrollTop)
+  expect(scrollTop).toBeGreaterThan(0)
+  const cancelledTodo = todoList.getByRole("group", { name: "Todo status: cancelled" })
+  await expect(cancelledTodo).toBeInViewport()
+
+  await page.screenshot({ path: path.join(evidenceDir, "ltr-mobile-detail-scrolled.png"), fullPage: false })
+})
+
 test("capture RTL desktop detail state", async ({ page }) => {
   const events: { directory: string; payload: Record<string, unknown> }[] = []
   const todos: typeof activeTodos = []
@@ -120,6 +229,29 @@ test("capture RTL desktop detail state", async ({ page }) => {
   await expect.poll(() => page.evaluate(() => document.documentElement.dir)).toBe("rtl")
 
   await page.screenshot({ path: path.join(evidenceDir, "rtl-desktop-detail.png"), fullPage: false })
+})
+
+test("capture RTL desktop collapsed state", async ({ page }) => {
+  const events: { directory: string; payload: Record<string, unknown> }[] = []
+  const todos: typeof activeTodos = []
+  await setupMock(page, { events: () => events.splice(0, 1), todos: () => todos, rtl: true })
+  await page.goto(sessionHref())
+  await expectSessionTitle(page, sessionTitle)
+
+  const dock = page.locator('[data-component="session-todo-dock"]')
+  events.push(statusEvent("busy"))
+  todos.push(...activeTodos)
+  events.push(todoEvent(activeTodos))
+  await expect(dock).toBeVisible()
+
+  const headerChevron = dock.locator('[data-action="session-todo-toggle-button"]')
+  await headerChevron.click()
+  await expect(headerChevron).toHaveAttribute("data-collapsed", "true")
+  await expect(dock.locator('[data-slot="session-todo-preview"]')).toBeVisible()
+  await expect(dock.locator('[data-slot="session-todo-list"]')).toBeHidden()
+  await expect.poll(() => page.evaluate(() => document.documentElement.dir)).toBe("rtl")
+
+  await page.screenshot({ path: path.join(evidenceDir, "rtl-desktop-collapsed.png"), fullPage: false })
 })
 
 test("capture RTL mobile detail state", async ({ page }) => {
@@ -157,9 +289,8 @@ test("capture RTL mobile detail state", async ({ page }) => {
   // Assert scroll position moved (proves the list content overflowed its max height)
   const scrollTop = await innerScroller.evaluate((el) => el.scrollTop)
   expect(scrollTop).toBeGreaterThan(0)
-  // toBeInViewport uses IntersectionObserver with the viewport as root, so unlike toBeVisible
-  // it accounts for clipping by ancestor scroll containers.
-  const secondTodo = todoList.getByRole("group", { name: PLAIN_TODO_CONTENT })
+  // data-status is locale-independent; toBeInViewport accounts for ancestor scroll clipping.
+  const secondTodo = todoList.locator('[data-status="pending"]')
   await expect(secondTodo).toBeInViewport()
 
   // Capture the scrolled state
