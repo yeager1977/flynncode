@@ -120,6 +120,35 @@ it.live("classifies a part whose trailing line is the OMO initiator marker as sy
   ),
 )
 
+it.live("classifies a part whose trailing lines are initiator then NOREPLY as synthetic", () =>
+  provideTmpdirServer(() =>
+    Effect.gen(function* () {
+      const text =
+        "wake task-agent-reliability\n<!-- OMO_INTERNAL_INITIATOR -->\n<!-- OMO_INTERNAL_NOREPLY -->"
+      const part = yield* admit([{ type: "text", text }])
+      expect(part.type).toBe("text")
+      if (part.type === "text") {
+        expect(part.synthetic).toBe(true)
+        expect(part.text).toBe(text)
+      }
+    }),
+  ),
+)
+
+it.live("keeps a part whose trailing line is NOREPLY without a preceding initiator non-synthetic", () =>
+  provideTmpdirServer(() =>
+    Effect.gen(function* () {
+      const text = "plain user text\n<!-- OMO_INTERNAL_NOREPLY -->"
+      const part = yield* admit([{ type: "text", text }])
+      expect(part.type).toBe("text")
+      if (part.type === "text") {
+        expect(part.synthetic).toBeFalsy()
+        expect(part.text).toBe(text)
+      }
+    }),
+  ),
+)
+
 it.live("keeps a part quoting the marker mid-text non-synthetic", () =>
   provideTmpdirServer(() =>
     Effect.gen(function* () {
