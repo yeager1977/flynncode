@@ -763,6 +763,8 @@ export const dict = {
   "session.todo.collapse": "Свиване",
   "session.todo.expand": "Разширяване",
   "session.todo.progress": "{{done}} от {{total}} задачи са изпълнени",
+  "session.todo.statusLabel": "Статус: {{status}}",
+  "session.timeline.backgroundDivider": "Готов отговор",
   "session.question.progress": "{{current}} от {{total}} въпроса",
   "session.question.minimize": "Минимизиране на въпроса",
   "session.question.restore": "Възстановете въпроса",

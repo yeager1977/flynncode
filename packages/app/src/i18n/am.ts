@@ -744,6 +744,8 @@ export const dict = {
   "session.todo.collapse": "ስብስብ",
   "session.todo.expand": "ዘርጋ",
   "session.todo.progress": "{{done}} ከ{{total}} ስራ ተጠናቋል",
+  "session.todo.statusLabel": "ሁኔታ: {{status}}",
+  "session.timeline.backgroundDivider": "ምላሽ ዝግጁ",
   "session.question.progress": "{{current}} ከ{{total}} ጥያቄዎች",
   "session.question.minimize": "ጥያቄን አሳንስ",
   "session.question.restore": "ጥያቄን ወደነበረበት መልስ",

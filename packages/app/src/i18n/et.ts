@@ -753,6 +753,8 @@ export const dict = {
   "session.todo.collapse": "Ahenda",
   "session.todo.expand": "Laienda",
   "session.todo.progress": "{{done}} ülesannet {{total}}-st lõpetatud",
+  "session.todo.statusLabel": "Olek: {{status}}",
+  "session.timeline.backgroundDivider": "Vastus valmis",
   "session.question.progress": "{{current}} küsimust {{total}}-st",
   "session.question.minimize": "Minimeerige küsimus",
   "session.question.restore": "Taasta küsimus",

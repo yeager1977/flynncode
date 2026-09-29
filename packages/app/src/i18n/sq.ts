@@ -760,6 +760,8 @@ export const dict = {
   "session.todo.collapse": "Kolapsi",
   "session.todo.expand": "Zgjerojeni",
   "session.todo.progress": "{{done}} e {{total}} detyrat e përfunduara",
+  "session.todo.statusLabel": "Statusi: {{status}}",
+  "session.timeline.backgroundDivider": "Përgjigja gati",
   "session.question.progress": "{{current}} e pyetjeve {{total}}",
   "session.question.minimize": "Minimizo pyetjen",
   "session.question.restore": "Rivendos pyetjen",

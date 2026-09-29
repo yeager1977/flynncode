@@ -783,6 +783,8 @@ export const dict = {
   "session.todo.collapse": "Samenvouwen",
   "session.todo.expand": "Uitvouwen",
   "session.todo.progress": "{{done}} van {{total}} taken voltooid",
+  "session.todo.statusLabel": "Status: {{status}}",
+  "session.timeline.backgroundDivider": "Reactie klaar",
   "session.question.progress": "{{current}} van {{total}} vragen",
   "session.question.minimize": "Minimaliseer de vraag",
   "session.question.restore": "Vraag herstellen",

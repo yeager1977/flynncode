@@ -1296,6 +1296,8 @@ export const dict = {
   "session.review.noVcs.createGit.actionLoading": "Создание репозитория Git...",
   "session.review.noVcs.createGit.action": "Создать репозиторий Git",
   "session.todo.progress": "Выполнено {{done}} из {{total}} задач",
+  "session.todo.statusLabel": "Статус: {{status}}",
+  "session.timeline.backgroundDivider": "Ответ готов",
   "session.question.progress": "{{current}} из {{total}} вопросов",
   "session.header.open.finder": "Finder",
   "session.header.open.fileExplorer": "Проводник",

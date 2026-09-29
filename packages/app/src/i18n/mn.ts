@@ -763,6 +763,8 @@ export const dict = {
   "session.todo.collapse": "Нурах",
   "session.todo.expand": "Өргөтгөх",
   "session.todo.progress": "{{total}} хийхээс {{done}} нь дууссан",
+  "session.todo.statusLabel": "Статус: {{status}}",
+  "session.timeline.backgroundDivider": "Хариулт бэлэн",
   "session.question.progress": "{{total}} асуултын {{current}}",
   "session.question.minimize": "Асуултыг багасгах",
   "session.question.restore": "Асуултыг сэргээх",

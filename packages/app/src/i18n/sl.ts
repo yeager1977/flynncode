@@ -757,6 +757,8 @@ export const dict = {
   "session.todo.collapse": "Strni",
   "session.todo.expand": "Razširi",
   "session.todo.progress": "{{done}} od {{total}} opravil je končano",
+  "session.todo.statusLabel": "Stanje: {{status}}",
+  "session.timeline.backgroundDivider": "Odziv pripravljen",
   "session.question.progress": "{{current}} od vprašanj {{total}}",
   "session.question.minimize": "Zmanjšajte vprašanje",
   "session.question.restore": "Obnovi vprašanje",

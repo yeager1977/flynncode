@@ -754,6 +754,8 @@ export const dict: Record<string, string> = {
   "session.todo.collapse": "හකුළන්න",
   "session.todo.expand": "පුළුල් කරන්න",
   "session.todo.progress": "{{total}} න් {{done}} සම්පූර්ණයි",
+  "session.todo.statusLabel": "තත්ත්වය: {{status}}",
+  "session.timeline.backgroundDivider": "ප්‍රතිචාරය සූදානම්",
   "session.question.progress": "{{current}} {{total}} ප්‍රශ්න",
   "session.question.minimize": "ප්‍රශ්නය අවම කරන්න",
   "session.question.restore": "ප්‍රශ්නය ප්‍රතිසාධනය කරන්න",

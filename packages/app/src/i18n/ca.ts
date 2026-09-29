@@ -763,6 +763,8 @@ export const dict = {
   "session.todo.collapse": "Col·lapse",
   "session.todo.expand": "Expandir",
   "session.todo.progress": "{{done}} de {{total}} tots completats",
+  "session.todo.statusLabel": "Estat: {{status}}",
+  "session.timeline.backgroundDivider": "Resposta a punt",
   "session.question.progress": "{{current}} de {{total}} preguntes",
   "session.question.minimize": "Minimitzar la pregunta",
   "session.question.restore": "Pregunta de restauració",
