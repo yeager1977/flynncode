@@ -72,6 +72,14 @@ const SUPPORTED_MCP_RESOURCE_ATTACHMENT_MIMES = new Set([
   "image/webp",
 ])
 
+// OMO orchestration appends this marker as the trailing line of its internal
+// wake prompts without setting synthetic. Classify such parts at admission.
+const OMO_INTERNAL_INITIATOR_PATTERN = /^\s*<!--\s*OMO_INTERNAL_INITIATOR\s*-->\s*$/
+
+function lastNonEmptyLine(text: string) {
+  return text.trimEnd().split("\n").at(-1)?.trim() ?? ""
+}
+
 const STRUCTURED_OUTPUT_DESCRIPTION = `Use this tool to return your final response in the requested structured format.
 
 IMPORTANT:
@@ -988,6 +996,14 @@ const layer = Layer.effect(
                 hint,
             },
           ]
+        }
+
+        if (
+          part.type === "text" &&
+          part.synthetic !== true &&
+          OMO_INTERNAL_INITIATOR_PATTERN.test(lastNonEmptyLine(part.text))
+        ) {
+          return [{ ...part, messageID: info.id, sessionID: input.sessionID, synthetic: true }]
         }
 
         return [{ ...part, messageID: info.id, sessionID: input.sessionID }]
