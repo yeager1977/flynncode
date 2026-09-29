@@ -314,6 +314,7 @@ function TodoList(props: { todos: Todo[] }) {
                 {hasDetail() && isExpanded() && (
                   <div class="ps-6 mt-0.5">
                     <span
+                      dir="auto"
                       class="text-13-regular text-text-weak break-words block"
                       style={{ "line-height": "var(--line-height-normal)" }}
                     >
