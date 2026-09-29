@@ -2175,7 +2175,11 @@ const layer = Layer.effect(
   }),
 )
 
-const priority = ["gpt-5", "claude-sonnet-4", "big-pickle", "gemini-3-pro"]
+// Ranking substring list; sort() uses findIndex under a DESCENDING modifier,
+// so the LAST matching entry wins. claude-sonnet sits last so every Sonnet
+// generation outranks Opus in default-model selection; claude-opus-5 (rank 1)
+// is the fallback when no Sonnet is in the catalog.
+const priority = ["gpt-5", "claude-opus-5", "big-pickle", "gemini-3-pro", "claude-sonnet"]
 const smallModelFamilyPriority = ["gemini-flash", "gpt-nano", "claude-haiku"]
 
 // Resolves the family's tier model against connected provider state, walking

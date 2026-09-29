@@ -1002,6 +1002,40 @@ test("provider.sort prioritizes preferred models", () => {
   expect(sorted[sorted.length - 1].id).not.toContain("sonnet-4")
 })
 
+test("provider.sort ranks newest Claude 5.x Sonnet above Sonnet 4.6 and Opus 5", () => {
+  const models = [
+    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
+    { id: "claude-opus-5", name: "Claude Opus 5" },
+    { id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5" },
+  ] as any[]
+
+  const sorted = Provider.sort(models)
+  expect(sorted[0].id).toBe("claude-sonnet-5-5")
+  expect(sorted[1].id).toBe("claude-sonnet-4-6")
+  expect(sorted[2].id).toBe("claude-opus-5")
+})
+
+test("provider.sort falls back to Claude Opus 5 when no Sonnet model exists", () => {
+  const models = [
+    { id: "claude-fable-5-1", name: "Claude Fable 5.1" },
+    { id: "aa-legacy-model", name: "Legacy" },
+    { id: "claude-opus-5", name: "Claude Opus 5" },
+  ] as any[]
+
+  const sorted = Provider.sort(models)
+  expect(sorted[0].id).toBe("claude-opus-5")
+})
+
+test("provider.sort prefers the Sonnet family over Opus even for dated legacy IDs", () => {
+  const models = [
+    { id: "claude-opus-5", name: "Claude Opus 5" },
+    { id: "claude-sonnet-4-5-20250929", name: "Claude Sonnet 4.5 snapshot" },
+  ] as any[]
+
+  const sorted = Provider.sort(models)
+  expect(sorted[0].id).toBe("claude-sonnet-4-5-20250929")
+})
+
 it.instance(
   "multiple providers can be configured simultaneously",
   Effect.gen(function* () {
