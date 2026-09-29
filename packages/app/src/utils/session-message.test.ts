@@ -103,6 +103,56 @@ describe("normalizeSessionMessages", () => {
     })
   })
 
+  test("marks a user message whose trailing line is the OMO initiator marker as synthetic", () => {
+    const source = [
+      {
+        id: "msg_wake",
+        type: "user",
+        text: "wake task-agent-reliability\n<!-- OMO_INTERNAL_INITIATOR -->",
+        time: { created: 1 },
+      },
+    ] satisfies SessionMessageInfo[]
+
+    const result = normalizeSessionMessages("ses_1", source)
+
+    const parts = result.parts.get("msg_wake") ?? []
+    expect(parts).toHaveLength(1)
+    expect(parts[0]).toMatchObject({
+      type: "text",
+      text: "wake task-agent-reliability\n<!-- OMO_INTERNAL_INITIATOR -->",
+      synthetic: true,
+    })
+  })
+
+  test("keeps a user message quoting the marker mid-text non-synthetic", () => {
+    const source = [
+      {
+        id: "msg_quote",
+        type: "user",
+        text: "note the marker <!-- OMO_INTERNAL_INITIATOR --> appears mid-prose here",
+        time: { created: 1 },
+      },
+    ] satisfies SessionMessageInfo[]
+
+    const result = normalizeSessionMessages("ses_1", source)
+
+    const part = result.parts.get("msg_quote")?.[0]
+    expect(part?.type).toBe("text")
+    if (part?.type === "text") expect(part.synthetic).toBeUndefined()
+  })
+
+  test("leaves ordinary user text unchanged", () => {
+    const source = [
+      { id: "msg_plain", type: "user", text: "fix the bug", time: { created: 1 } },
+    ] satisfies SessionMessageInfo[]
+
+    const result = normalizeSessionMessages("ses_1", source)
+
+    const part = result.parts.get("msg_plain")?.[0]
+    expect(part).toMatchObject({ type: "text", text: "fix the bug" })
+    if (part?.type === "text") expect(part.synthetic).toBeUndefined()
+  })
+
   test("does not invent a parent for an assistant-only page", () => {
     const source = [
       {

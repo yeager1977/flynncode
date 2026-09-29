@@ -12,6 +12,11 @@ const emptyTokens = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write
 const emptyModel: { id: string; providerID: string; variant?: string } = { id: "", providerID: "" }
 const decodeToolInput = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)
 
+// OMO orchestration appends this marker as the trailing line of its internal
+// wake prompts on the ordinary prompt endpoint. Classify such user text as
+// synthetic at normalization so the timeline renders it as background activity.
+const OMO_INTERNAL_INITIATOR_PATTERN = /^\s*<!--\s*OMO_INTERNAL_INITIATOR\s*-->\s*$/
+
 export function compareMessages(a: Pick<Message, "id" | "time">, b: Pick<Message, "id" | "time">) {
   const left = messageKey(a)
   const right = messageKey(b)
@@ -203,8 +208,13 @@ function userMessage(
 }
 
 function userParts(sessionID: string, message: SessionMessageUser): Part[] {
+  const synthetic = OMO_INTERNAL_INITIATOR_PATTERN.test(
+    message.text.trimEnd().split("\n").at(-1)?.trim() ?? "",
+  )
+    ? true
+    : undefined
   return [
-    textPart(sessionID, message.id, 0, message.text),
+    textPart(sessionID, message.id, 0, message.text, synthetic),
     ...(message.files ?? []).map(
       (file, index): FilePart => ({
         id: `${message.id}:file:${index}`,
