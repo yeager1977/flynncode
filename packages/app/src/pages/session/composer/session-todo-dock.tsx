@@ -12,6 +12,7 @@ import { Dynamic } from "solid-js/web"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
+import { splitTodoContent } from "@/utils/todo-content"
 
 const doneToken = "\u0000done\u0000"
 const totalToken = "\u0000total\u0000"
@@ -72,7 +73,10 @@ export function SessionTodoDock(props: {
       props.todos[0],
   )
 
-  const preview = createMemo(() => active()?.content ?? "")
+  const preview = createMemo(() => {
+    const content = active()?.content ?? ""
+    return splitTodoContent(content).summary
+  })
   const collapse = useSpring(() => (props.collapsed ? 1 : 0), { visualDuration: 0.3, bounce: 0 })
   const dock = createMemo(() => Math.max(0, Math.min(1, props.dockProgress)))
   const shut = createMemo(() => 1 - dock())
@@ -112,8 +116,8 @@ export function SessionTodoDock(props: {
           data-action="session-todo-toggle"
           classList={{
             "flex items-center gap-2 overflow-visible": true,
-            "h-[42px] pl-4 pr-2": settings.general.newLayoutDesigns(),
-            "pl-3 pr-2 py-2": !settings.general.newLayoutDesigns(),
+            "h-[42px] ps-4 pe-2": settings.general.newLayoutDesigns(),
+            "ps-3 pe-2 py-2": !settings.general.newLayoutDesigns(),
           }}
           role="button"
           tabIndex={0}
@@ -217,8 +221,13 @@ export function SessionTodoDock(props: {
 }
 
 function TodoList(props: { todos: Todo[] }) {
-  const [store, setStore] = createStore({
+  const language = useLanguage()
+  const [store, setStore] = createStore<{
+    stuck: boolean
+    expanded: Record<number, boolean>
+  }>({
     stuck: false,
+    expanded: {},
   })
 
   return (
@@ -231,38 +240,90 @@ function TodoList(props: { todos: Todo[] }) {
         }}
       >
         <Index each={props.todos}>
-          {(todo) => (
-            <Checkbox
-              readOnly
-              checked={todo().status === "completed"}
-              indeterminate={todo().status === "in_progress"}
-              data-in-progress={todo().status === "in_progress" ? "" : undefined}
-              data-state={todo().status}
-              icon={dot(todo().status)}
-              style={{
-                "--checkbox-align": "flex-start",
-                "--checkbox-offset": "1px",
-                transition: "opacity 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1))",
-                opacity: todo().status === "pending" ? "0.94" : "1",
-              }}
-            >
-              <TextStrikethrough
-                active={todo().status === "completed" || todo().status === "cancelled"}
-                text={todo().content}
-                class="text-14-regular min-w-0 break-words"
-                style={{
-                  "line-height": "var(--line-height-normal)",
-                  transition:
-                    "color 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1)), opacity 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1))",
-                  color:
-                    todo().status === "completed" || todo().status === "cancelled"
-                      ? "var(--text-weak)"
-                      : "var(--text-strong)",
-                  opacity: todo().status === "pending" ? "0.92" : "1",
+          {(todo, index) => {
+            const parts = createMemo(() => splitTodoContent(todo().content))
+            const hasDetail = createMemo(() => parts().detail !== parts().summary)
+            const isExpanded = createMemo(() => !!store.expanded[index])
+
+            return (
+              <div
+                data-status={todo().status}
+                classList={{
+                  "rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-02 px-2 py-1.5": true,
+                  "border-s-2 ps-2": todo().status === "in_progress",
                 }}
-              />
-            </Checkbox>
-          )}
+                style={{
+                  "border-inline-start-color": todo().status === "in_progress" ? "var(--v2-icon-icon-accent)" : undefined,
+                }}
+              >
+                <Checkbox
+                  readOnly
+                  checked={todo().status === "completed"}
+                  indeterminate={todo().status === "in_progress"}
+                  data-in-progress={todo().status === "in_progress" ? "" : undefined}
+                  data-state={todo().status}
+                  icon={dot(todo().status)}
+                  aria-label={parts().summary}
+                  style={{
+                    "--checkbox-align": "flex-start",
+                    "--checkbox-offset": "1px",
+                    transition: "opacity 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1))",
+                    opacity: todo().status === "pending" ? "0.94" : "1",
+                  }}
+                >
+                  <div class="flex items-start gap-1 min-w-0 w-full">
+                    <TextStrikethrough
+                      active={todo().status === "completed" || todo().status === "cancelled"}
+                      text={parts().summary}
+                      class="text-14-regular min-w-0 break-words flex-1"
+                      style={{
+                        "line-height": "var(--line-height-normal)",
+                        transition:
+                          "color 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1)), opacity 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1))",
+                        color:
+                          todo().status === "completed" || todo().status === "cancelled"
+                            ? "var(--text-weak)"
+                            : "var(--text-strong)",
+                        opacity: todo().status === "pending" ? "0.92" : "1",
+                      }}
+                    />
+                    {hasDetail() && (
+                      <IconButton
+                        data-action="session-todo-detail-toggle"
+                        class="pointer-events-auto"
+                        icon="chevron-down"
+                        size="small"
+                        variant="ghost"
+                        style={{ transform: isExpanded() ? "rotate(180deg)" : "rotate(0deg)", "flex-shrink": "0" }}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setStore("expanded", index, !store.expanded[index])
+                        }}
+                        onMouseDown={(event) => {
+                          event.stopPropagation()
+                        }}
+                        onKeyDown={(event: KeyboardEvent) => {
+                          if (event.key !== "Enter" && event.key !== " ") return
+                          event.stopPropagation()
+                        }}
+                        aria-label={language.t(isExpanded() ? "session.todo.collapse" : "session.todo.expand")}
+                      />
+                    )}
+                  </div>
+                </Checkbox>
+                {hasDetail() && isExpanded() && (
+                  <div class="ps-6 mt-0.5">
+                    <span
+                      class="text-13-regular text-text-weak break-words block"
+                      style={{ "line-height": "var(--line-height-normal)" }}
+                    >
+                      {parts().detail}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )
+          }}
         </Index>
       </div>
       <div
