@@ -1157,7 +1157,7 @@ export function MessageTimeline(props: {
                 <MessageDivider
                   label={language.t(
                     dividerLabel === "background"
-                      ? "notification.session.responseReady.title"
+                      ? "session.timeline.backgroundDivider"
                       : dividerLabel === "compaction"
                         ? "ui.messagePart.compaction"
                         : "ui.message.interrupted",

@@ -124,6 +124,44 @@ describe("normalizeSessionMessages", () => {
     })
   })
 
+  test("marks a user message ending with the initiator then noReply marker pair as synthetic", () => {
+    const source = [
+      {
+        id: "msg_wake_pair",
+        type: "user",
+        text: "wake task-agent-reliability\n<!-- OMO_INTERNAL_INITIATOR -->\n<!-- OMO_INTERNAL_NOREPLY -->",
+        time: { created: 1 },
+      },
+    ] satisfies SessionMessageInfo[]
+
+    const result = normalizeSessionMessages("ses_1", source)
+
+    const parts = result.parts.get("msg_wake_pair") ?? []
+    expect(parts).toHaveLength(1)
+    expect(parts[0]).toMatchObject({
+      type: "text",
+      text: "wake task-agent-reliability\n<!-- OMO_INTERNAL_INITIATOR -->\n<!-- OMO_INTERNAL_NOREPLY -->",
+      synthetic: true,
+    })
+  })
+
+  test("keeps a user message ending with the noReply marker alone non-synthetic", () => {
+    const source = [
+      {
+        id: "msg_noreply_only",
+        type: "user",
+        text: "wake task-agent-reliability\n<!-- OMO_INTERNAL_NOREPLY -->",
+        time: { created: 1 },
+      },
+    ] satisfies SessionMessageInfo[]
+
+    const result = normalizeSessionMessages("ses_1", source)
+
+    const part = result.parts.get("msg_noreply_only")?.[0]
+    expect(part?.type).toBe("text")
+    if (part?.type === "text") expect(part.synthetic).toBeUndefined()
+  })
+
   test("keeps a user message quoting the marker mid-text non-synthetic", () => {
     const source = [
       {

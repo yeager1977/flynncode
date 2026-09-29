@@ -9,10 +9,12 @@ const projectID = "proj_omo_background"
 const sessionID = "ses_omo_background"
 const sessionTitle = "OMO background wake regression"
 
-// OMO sendParentWakePrompt appends this marker as the trailing line of a
-// normal /session/:id/message prompt. The app normalization must classify the
-// wake as synthetic and render it as managed background activity.
-const WAKE_TEXT = "wake task-agent-reliability\n<!-- OMO_INTERNAL_INITIATOR -->"
+// OMO sendParentWakePrompt appends the initiator marker followed by the
+// noReply marker as the trailing lines of a normal /session/:id/message
+// prompt. The app normalization must classify the wake as synthetic and
+// render it as managed background activity.
+const WAKE_TEXT =
+  "wake task-agent-reliability\n<!-- OMO_INTERNAL_INITIATOR -->\n<!-- OMO_INTERNAL_NOREPLY -->"
 // A user quoting the marker mid-prose is genuine content and must stay a user message.
 const QUOTE_TEXT = "note the marker <!-- OMO_INTERNAL_INITIATOR --> appears mid-prose here"
 
@@ -73,7 +75,10 @@ test.beforeEach(async ({ page }) => {
     }),
   })
   await page.addInitScript(() => {
-    localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
+    localStorage.setItem(
+      "settings.v3",
+      JSON.stringify({ general: { newLayoutDesigns: true, shouldDisplayTabsToast: false } }),
+    )
   })
 })
 
@@ -86,7 +91,7 @@ test("renders an OMO wake prompt as managed background activity and keeps quoted
   // The wake turn renders as a background divider with the localized label.
   const divider = page.locator('[data-timeline-row="TurnDivider"]')
   await expect(divider).toHaveCount(1)
-  await expect(divider.getByText("Response ready", { exact: true })).toBeVisible()
+  await expect(divider.getByText("Background activity", { exact: true })).toBeVisible()
 
   // The wake prompt text is not rendered as a user bubble.
   await expect(page.getByText("wake task-agent-reliability")).toHaveCount(0)
