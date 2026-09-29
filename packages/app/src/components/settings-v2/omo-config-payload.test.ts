@@ -60,20 +60,21 @@ describe("omo catalog gpt-6 baseline", () => {
     }
   })
 
-  test("deepseek or glm chains stay untouched", () => {
+  test("deepseek or glm chains keep their deepseek rungs", () => {
     for (const name of ["quick", "unspecified-low"]) {
       const chain = fallbackChain("category", name)
       expect(chain.some((entry) => entry.model.includes("deepseek"))).toBe(true)
-      expect(chain[0]?.model).not.toMatch(/^gpt-6/)
     }
+    expect(fallbackChain("category", "quick")[0]?.model).toBe("gpt-6-luna")
+    expect(fallbackChain("category", "unspecified-low")[0]?.model).toBe("gpt-5.6-terra")
   })
 })
 
 describe("fallbackLabel", () => {
-  test("quick names the xAI grok entry when xAI is connected", () => {
-    expect(fallbackChain("category", "quick").some((entry) => entry.providers.includes("xai"))).toBe(true)
-    expect(fallbackLabel(fallbackChain("category", "quick"), new Set(["xai"]))).toEqual({
-      model: "xai/grok-4.20-0309-non-reasoning",
+  test("quick resolves to a live fast-lane entry", () => {
+    const chain = fallbackChain("category", "quick")
+    expect(fallbackLabel(chain, new Set(["opencode"]))).toEqual({
+      model: "opencode/gpt-6-luna",
       connected: true,
     })
   })
