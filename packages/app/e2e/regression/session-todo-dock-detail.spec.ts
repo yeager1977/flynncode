@@ -48,9 +48,9 @@ test("summary/detail toggle: click opens detail without collapsing dock", async 
   const headerChevron = dock.locator('[data-action="session-todo-toggle-button"]')
   await expect(headerChevron).toHaveAttribute("data-collapsed", "false")
 
-  // Kobalte Checkbox renders as role="group" with aria-label set to parts().summary.
-  // This is the correct contract locator: the group name IS the summary text.
-  const summaryGroup = dock.locator('[data-slot="session-todo-list"]').getByRole("group", { name: PATH_TODO_SUMMARY })
+  // Kobalte Checkbox renders as role="group" with aria-label set to the status label key.
+  // The accessible name is now "Todo status: <status>" from session.todo.statusLabel.
+  const summaryGroup = dock.locator('[data-slot="session-todo-list"]').getByRole("group", { name: "Todo status: in_progress" })
   await expect(summaryGroup).toBeVisible()
   // Full path-heavy content must not appear anywhere in the dock
   await expect(dock.getByText(PATH_TODO_CONTENT)).toHaveCount(0)

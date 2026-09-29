@@ -263,7 +263,7 @@ function TodoList(props: { todos: Todo[] }) {
                   data-in-progress={todo().status === "in_progress" ? "" : undefined}
                   data-state={todo().status}
                   icon={dot(todo().status)}
-                  aria-label={parts().summary}
+                  aria-label={language.t("session.todo.statusLabel", { status: todo().status })}
                   style={{
                     "--checkbox-align": "flex-start",
                     "--checkbox-offset": "1px",
