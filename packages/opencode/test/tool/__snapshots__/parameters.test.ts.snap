@@ -24,6 +24,10 @@ exports[`tool parameters JSON Schema (wire shape) bash 1`] = `
       "description": "The command to execute",
       "type": "string",
     },
+    "interactive": {
+      "description": "Open the command in the session terminal so the user can type, including passwords and Enter. Use this for prompts. sudo, ssh, su, and passwd do this automatically.",
+      "type": "boolean",
+    },
     "timeout": {
       "description": "Optional timeout in milliseconds",
       "exclusiveMinimum": 0,

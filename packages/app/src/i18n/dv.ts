@@ -769,6 +769,8 @@ export const dict = {
   "session.todo.collapse": "ހޭނެތިގެން ވެއްޓުން",
   "session.todo.expand": "އިތުރުކުރުން",
   "session.todo.progress": "{{done}} ގެ {{total}} ޓޯޑޯސް ނިމިއްޖެއެވެ",
+  "session.todo.statusLabel": "ޙާލަތު: {{status}}",
+  "session.timeline.backgroundDivider": "Background activity",
   "session.question.progress": "{{current}} ގެ {{total}} ސުވާލުތަކެވެ",
   "session.question.minimize": "ސުވާލު އެންމެ ކުޑަކުރުން",
   "session.question.restore": "ސުވާލު އަލުން އާލާކުރުން",

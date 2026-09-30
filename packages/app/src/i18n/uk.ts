@@ -847,6 +847,8 @@ export const dict = {
   "session.todo.collapse": "Згорнути",
   "session.todo.expand": "Розгорнути",
   "session.todo.progress": "Виконано {{done}} з {{total}} завдань",
+  "session.todo.statusLabel": "Статус: {{status}}",
+  "session.timeline.backgroundDivider": "Фонова активність",
   "session.question.progress": "{{current}} з {{total}} запитань",
   "session.question.minimize": "Згорнути запитання",
   "session.question.restore": "Відновити запитання",

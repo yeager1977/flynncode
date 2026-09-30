@@ -317,7 +317,7 @@ describe("plugin.openai.ws-pool", () => {
     })
     const fetch = OpenAIWebSocketPool.createWebSocketFetch({
       url: server.url,
-      idleTimeout: 20,
+      idleTimeout: 250,
     })
 
     const first = await fetch(server.url, streamRequest())

@@ -17,7 +17,7 @@ export namespace TimelineRow {
   }> {}
   export class TurnDivider extends Data.TaggedClass("TurnDivider")<{
     userMessageID: string
-    label: "compaction" | "interrupted"
+    label: "compaction" | "interrupted" | "background"
   }> {}
   export class AssistantPart extends Data.TaggedClass("AssistantPart")<{
     userMessageID: string

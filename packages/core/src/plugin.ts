@@ -61,12 +61,26 @@ const layer = Layer.effect(
                   Effect.withSpan("Plugin.load", { attributes: { "plugin.id": id } }),
                   Effect.onExit((exit) => (Exit.isFailure(exit) ? Scope.close(child, exit) : Effect.void)),
                 )
-                yield* events.publish(Event.Added, { id })
-                active.set(id, child)
-                yield* Effect.forEach(waiters.get(id) ?? [], (waiter) => Deferred.succeed(waiter, undefined), {
-                  discard: true,
-                })
-                waiters.delete(id)
+                yield* State.afterBatch((reloadExit) =>
+                  Effect.gen(function* () {
+                    const pending = waiters.get(id) ?? []
+                    waiters.delete(id)
+                    loading.delete(id)
+                    if (Exit.isFailure(reloadExit)) {
+                      failures.set(id, reloadExit)
+                      yield* Effect.forEach(pending, (waiter) => Deferred.done(waiter, reloadExit), {
+                        discard: true,
+                      })
+                      return
+                    }
+
+                    active.set(id, child)
+                    yield* events.publish(Event.Added, { id })
+                    yield* Effect.forEach(pending, (waiter) => Deferred.succeed(waiter, undefined), {
+                      discard: true,
+                    })
+                  }),
+                )
               }),
             ),
           ),
@@ -75,9 +89,15 @@ const layer = Layer.effect(
             failures.set(id, exit)
             return Effect.forEach(waiters.get(id) ?? [], (waiter) => Deferred.done(waiter, exit), {
               discard: true,
-            }).pipe(Effect.ensuring(Effect.sync(() => waiters.delete(id))))
+            }).pipe(
+              Effect.ensuring(
+                Effect.sync(() => {
+                  waiters.delete(id)
+                  loading.delete(id)
+                }),
+              ),
+            )
           }),
-          Effect.ensuring(Effect.sync(() => loading.delete(id))),
         ),
       )
     })

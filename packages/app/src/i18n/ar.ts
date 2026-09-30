@@ -1208,6 +1208,8 @@ export const dict = {
   "session.review.noVcs.createGit.actionLoading": "جارٍ إنشاء مستودع Git...",
   "session.review.noVcs.createGit.action": "إنشاء مستودع Git",
   "session.todo.progress": "تم إكمال {{done}} من {{total}} مهام",
+  "session.todo.statusLabel": "الحالة: {{status}}",
+  "session.timeline.backgroundDivider": "النشاط في الخلفية",
   "session.question.progress": "{{current}} من {{total}} أسئلة",
   "session.header.open.finder": "Finder",
   "session.header.open.fileExplorer": "مستكشف الملفات",

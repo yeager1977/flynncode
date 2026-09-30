@@ -1,6 +1,6 @@
 export * as State from "./state"
 
-import { Context, Effect, Scope, Semaphore } from "effect"
+import { Context, Effect, Exit, Scope, Semaphore } from "effect"
 
 /**
  * A replayable transform applied to a draft during reload.
@@ -26,7 +26,12 @@ export interface Transformable<DraftApi> {
   readonly reload: Reload
 }
 
-const CurrentBatch = Context.Reference<Set<Reload> | undefined>("@opencode/State/CurrentBatch", {
+type Batch = {
+  reloads: Set<Reload>
+  after: Set<(exit: Exit.Exit<void, never>) => Effect.Effect<void>>
+}
+
+const CurrentBatch = Context.Reference<Batch | undefined>("@opencode/State/CurrentBatch", {
   defaultValue: () => undefined,
 })
 
@@ -34,10 +39,24 @@ export function batch<A, E, R>(effect: Effect.Effect<A, E, R>) {
   return Effect.gen(function* () {
     const current = yield* CurrentBatch
     if (current) return yield* effect
-    const reloads = new Set<Reload>()
-    const result = yield* effect.pipe(Effect.provideService(CurrentBatch, reloads))
-    yield* Effect.forEach(reloads, (reload) => reload(), { discard: true })
-    return result
+    const batch: Batch = { reloads: new Set(), after: new Set() }
+    const result = yield* effect.pipe(Effect.provideService(CurrentBatch, batch), Effect.exit)
+    const reloaded = yield* Effect.forEach(batch.reloads, (reload) => reload(), { discard: true }).pipe(Effect.exit)
+    yield* Effect.forEach(batch.after, (after) => after(reloaded), { discard: true })
+    if (Exit.isFailure(reloaded)) return yield* Effect.failCause(reloaded.cause)
+    if (Exit.isFailure(result)) return yield* Effect.failCause(result.cause)
+    return result.value
+  })
+}
+
+export function afterBatch(effect: (exit: Exit.Exit<void, never>) => Effect.Effect<void>) {
+  return Effect.gen(function* () {
+    const batch = yield* CurrentBatch
+    if (batch) {
+      batch.after.add(effect)
+      return
+    }
+    yield* effect(Exit.succeed(undefined))
   })
 }
 
@@ -101,7 +120,7 @@ export function create<State, DraftApi>(options: Options<State, DraftApi>): Inte
                 return Effect.gen(function* () {
                   const batch = yield* CurrentBatch
                   if (batch) {
-                    batch.add(reload)
+                    batch.reloads.add(reload)
                     return
                   }
                   yield* materialize()
@@ -116,7 +135,7 @@ export function create<State, DraftApi>(options: Options<State, DraftApi>): Inte
           )
           yield* Scope.addFinalizer(scope, dispose)
           const batch = yield* CurrentBatch
-          if (batch) batch.add(reload)
+          if (batch) batch.reloads.add(reload)
           else yield* reload()
           return { dispose }
         }),

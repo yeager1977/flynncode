@@ -762,6 +762,8 @@ export const dict = {
   "session.todo.collapse": "Yiqilish",
   "session.todo.expand": "Kengaytirish",
   "session.todo.progress": "{{done}} {{total}} todos yakunlandi",
+  "session.todo.statusLabel": "Holat: {{status}}",
+  "session.timeline.backgroundDivider": "Background activity",
   "session.question.progress": "{{total}} savollarining {{current}}",
   "session.question.minimize": "Savolni minimallashtirish",
   "session.question.restore": "Savolni tiklash",

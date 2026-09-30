@@ -1,8 +1,8 @@
-import { afterEach, expect } from "bun:test"
+import { expect } from "bun:test"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Cause, Effect, Exit, Layer } from "effect"
 import path from "path"
-import { disposeAllInstances, TestInstance } from "../fixture/fixture"
+import { TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { Agent } from "../../src/agent/agent"
 import { Auth } from "../../src/auth"
@@ -38,10 +38,6 @@ const expectDefaultAgentError = Effect.fn("AgentTest.expectDefaultAgentError")(f
   const exit = yield* load((svc) => svc.defaultAgent()).pipe(Effect.exit)
   expect(Exit.isFailure(exit)).toBe(true)
   if (Exit.isFailure(exit)) expect(Cause.pretty(exit.cause)).toContain(message)
-})
-
-afterEach(async () => {
-  await disposeAllInstances()
 })
 
 it.instance("returns default native agents when no config", () =>
@@ -598,7 +594,7 @@ it.instance(
   () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const skillDir = path.join(test.directory, ".opencode", "skill", "perm-skill")
+      const skillDir = path.join(Global.Path.home, ".opencode", "skill", "perm-skill")
       yield* Effect.promise(() =>
         Bun.write(
           path.join(skillDir, "SKILL.md"),
@@ -610,14 +606,6 @@ description: Permission skill.
 # Permission Skill
 `,
         ),
-      )
-
-      const home = process.env.OPENCODE_TEST_HOME
-      process.env.OPENCODE_TEST_HOME = test.directory
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() => {
-          process.env.OPENCODE_TEST_HOME = home
-        }),
       )
 
       const build = yield* load((svc) => svc.get("build"))

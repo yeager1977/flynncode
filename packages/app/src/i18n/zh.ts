@@ -1261,6 +1261,8 @@ export const dict = {
   "session.review.noVcs.createGit.actionLoading": "正在创建 Git 仓库...",
   "session.review.noVcs.createGit.action": "创建 Git 仓库",
   "session.todo.progress": "已完成 {{done}} 个任务（共 {{total}} 个）",
+  "session.todo.statusLabel": "状态: {{status}}",
+  "session.timeline.backgroundDivider": "后台活动",
   "session.question.progress": "{{current}}/{{total}} 个问题",
   "session.header.open.finder": "访达",
   "session.header.open.fileExplorer": "文件资源管理器",

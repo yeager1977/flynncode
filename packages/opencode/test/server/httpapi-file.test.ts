@@ -56,10 +56,6 @@ describe("file HttpApi", () => {
     await using tmp = await tmpdir({ git: true })
     await Bun.write(path.join(tmp.path, "hello.txt"), "needle")
 
-    const [text, symbols] = await Promise.all([
-      request(FilePaths.findText, tmp.path, { pattern: "needle" }),
-      request(FilePaths.findSymbol, tmp.path, { query: "hello" }),
-    ])
     const files = await Effect.runPromise(
       pollWithTimeout(
         Effect.promise(async () => {
@@ -70,6 +66,10 @@ describe("file HttpApi", () => {
         "file search index was not ready",
       ),
     )
+    const [text, symbols] = await Promise.all([
+      request(FilePaths.findText, tmp.path, { pattern: "needle" }),
+      request(FilePaths.findSymbol, tmp.path, { query: "hello" }),
+    ])
 
     expect(text.status).toBe(200)
     expect(await text.json()).toContainEqual(expect.objectContaining({ line_number: 1 }))

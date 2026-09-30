@@ -72,6 +72,26 @@ const SUPPORTED_MCP_RESOURCE_ATTACHMENT_MIMES = new Set([
   "image/webp",
 ])
 
+// OMO orchestration appends the initiator marker as the trailing line of its
+// internal wake prompts without setting synthetic. No-reply wakes append an
+// additional NOREPLY marker line after it. Classify such parts at admission.
+const OMO_INTERNAL_INITIATOR_PATTERN = /^\s*<!--\s*OMO_INTERNAL_INITIATOR\s*-->\s*$/
+const OMO_INTERNAL_NOREPLY_PATTERN = /^\s*<!--\s*OMO_INTERNAL_NOREPLY\s*-->\s*$/
+
+function hasOmoInternalWakeMarker(text: string) {
+  const lines = text
+    .trimEnd()
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "")
+  const last = lines.at(-1) ?? ""
+  const previous = lines.at(-2) ?? ""
+  return (
+    OMO_INTERNAL_INITIATOR_PATTERN.test(last) ||
+    (OMO_INTERNAL_NOREPLY_PATTERN.test(last) && OMO_INTERNAL_INITIATOR_PATTERN.test(previous))
+  )
+}
+
 const STRUCTURED_OUTPUT_DESCRIPTION = `Use this tool to return your final response in the requested structured format.
 
 IMPORTANT:
@@ -988,6 +1008,14 @@ const layer = Layer.effect(
                 hint,
             },
           ]
+        }
+
+        if (
+          part.type === "text" &&
+          part.synthetic !== true &&
+          hasOmoInternalWakeMarker(part.text)
+        ) {
+          return [{ ...part, messageID: info.id, sessionID: input.sessionID, synthetic: true }]
         }
 
         return [{ ...part, messageID: info.id, sessionID: input.sessionID }]

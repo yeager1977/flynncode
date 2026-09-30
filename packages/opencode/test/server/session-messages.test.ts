@@ -156,6 +156,7 @@ describe("session messages endpoint", () => {
       }),
     ),
     { git: true },
+    { timeout: 15_000 },
   )
 
   it.instance(

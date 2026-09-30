@@ -765,6 +765,8 @@ export const dict = {
   "session.todo.collapse": "ခေါက်သိမ်းပါ။",
   "session.todo.expand": "ချဲ့ပါ။",
   "session.todo.progress": "{{total}} todos များ၏ {{done}} ပြီးပါပြီ။",
+  "session.todo.statusLabel": "အခြေအနေ: {{status}}",
+  "session.timeline.backgroundDivider": "နောက်ခံလုပ်ဆောင်ချက်",
   "session.question.progress": "{{total}} မေးခွန်းများ၏ {{current}}",
   "session.question.minimize": "မေးခွန်းကို လျှော့ပါ။",
   "session.question.restore": "မေးခွန်းကို ပြန်ယူပါ။",

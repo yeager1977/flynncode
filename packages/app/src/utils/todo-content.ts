@@ -14,6 +14,7 @@ export function todoSummary(content: string): string {
   const action = match[2]
   if (action.length <= MAX_SUMMARY_LENGTH) return action
   const cut = action.lastIndexOf(" ", MAX_SUMMARY_LENGTH)
+  if (cut === -1) return action
   return action.slice(0, cut) + "\u2026"
 }
 

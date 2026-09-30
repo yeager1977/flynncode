@@ -1019,7 +1019,7 @@ export function createServerSession(
       }
       case "todo.updated": {
         const props = event.properties as { sessionID: string; todos: Todo[] }
-        setData("todo", props.sessionID, reconcile(props.todos, { key: "id" }))
+        setData("todo", props.sessionID, props.todos)
         return
       }
       case "session.status": {
@@ -1388,7 +1388,7 @@ export function createServerSession(
         const active = generation(sessionID)
         return (options?.retry ?? retry)(() => client.session.todo({ sessionID })).then((result) => {
           if (generations.get(sessionID) !== active) return
-          setData("todo", sessionID, reconcile(result.data ?? [], { key: "id" }))
+          setData("todo", sessionID, result.data ?? [])
         })
       })
     },

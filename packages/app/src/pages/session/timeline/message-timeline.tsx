@@ -1149,13 +1149,18 @@ export function MessageTimeline(props: {
       }
       case "TurnDivider": {
         const turnDividerRow = row as Accessor<TimelineRowByTag<"TurnDivider">>
+        const dividerLabel = turnDividerRow().label
         return (
           <TimelineRowFrame row={turnDividerRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
               <div data-slot="session-turn-compaction">
                 <MessageDivider
                   label={language.t(
-                    turnDividerRow().label === "compaction" ? "ui.messagePart.compaction" : "ui.message.interrupted",
+                    dividerLabel === "background"
+                      ? "session.timeline.backgroundDivider"
+                      : dividerLabel === "compaction"
+                        ? "ui.messagePart.compaction"
+                        : "ui.message.interrupted",
                   )}
                 />
               </div>
