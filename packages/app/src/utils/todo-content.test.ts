@@ -28,6 +28,12 @@ describe("todoSummary", () => {
     )
   })
 
+  test("returns an overlong space-free action unchanged instead of corrupting it", () => {
+    const token = "x".repeat(150)
+    const content = `src/utils/token.ts: ${token} - expect returns boolean`
+    expect(todoSummary(content)).toBe(token)
+  })
+
   test("strips a bracket tag when no path pattern matches", () => {
     expect(todoSummary("[WHERE] Add dark mode")).toBe("Add dark mode")
   })
