@@ -692,7 +692,7 @@ export const dict = {
   "session.todo.expand": "Espandi",
   "session.todo.progress": "{{done}} di {{total}} attività completate",
   "session.todo.statusLabel": "Stato: {{status}}",
-  "session.timeline.backgroundDivider": "Risposta pronta",
+  "session.timeline.backgroundDivider": "Attività sullo sfondo",
   "session.question.progress": "{{current}} di {{total}} domande",
   "session.question.minimize": "Riduci la domanda",
   "session.question.restore": "Ripristina la domanda",

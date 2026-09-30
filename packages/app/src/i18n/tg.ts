@@ -761,7 +761,7 @@ export const dict = {
   "session.todo.expand": "Васеъ кунед",
   "session.todo.progress": "{{done}} аз {{total}} тодо анчом ёфт",
   "session.todo.statusLabel": "Статус: {{status}}",
-  "session.timeline.backgroundDivider": "Ҷавоб омода",
+  "session.timeline.backgroundDivider": "Background activity",
   "session.question.progress": "{{current}} аз {{total}} саволҳо",
   "session.question.minimize": "Саволро кам кунед",
   "session.question.restore": "Саволро барқарор кунед",

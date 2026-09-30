@@ -760,7 +760,7 @@ export const dict = {
   "session.todo.expand": "Stækkaðu",
   "session.todo.progress": "{{done}} af {{total}} verkefnum lokið",
   "session.todo.statusLabel": "Staða: {{status}}",
-  "session.timeline.backgroundDivider": "Svar tilbúið",
+  "session.timeline.backgroundDivider": "Bakgrunnsvirkni",
   "session.question.progress": "{{current}} af {{total}} spurningum",
   "session.question.minimize": "Lágmarka spurninguna",
   "session.question.restore": "Endurheimta spurningu",

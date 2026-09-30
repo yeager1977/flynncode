@@ -1199,7 +1199,7 @@ export const dict = {
   "session.review.noVcs.createGit.action": "Git リポジトリを作成",
   "session.todo.progress": "{{done}} 個中 {{total}} 個の Todo が完了",
   "session.todo.statusLabel": "ステータス: {{status}}",
-  "session.timeline.backgroundDivider": "応答の準備ができました",
+  "session.timeline.backgroundDivider": "バックグラウンドアクティビティ",
   "session.question.progress": "{{total}} 問中 {{current}} 問",
   "session.header.open.finder": "Finder",
   "session.header.open.fileExplorer": "エクスプローラー",

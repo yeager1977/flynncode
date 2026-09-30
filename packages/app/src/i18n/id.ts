@@ -844,7 +844,7 @@ export const dict = {
   "session.todo.expand": "Bentangkan",
   "session.todo.progress": "{{done}} dari {{total}} tugas selesai",
   "session.todo.statusLabel": "Status: {{status}}",
-  "session.timeline.backgroundDivider": "Respons siap",
+  "session.timeline.backgroundDivider": "Aktivitas latar belakang",
   "session.question.progress": "{{current}} dari {{total}} pertanyaan",
   "session.question.minimize": "Minimalkan pertanyaan",
   "session.question.restore": "Pulihkan pertanyaan",

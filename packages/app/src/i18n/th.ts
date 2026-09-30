@@ -1255,7 +1255,7 @@ export const dict = {
   "session.review.noVcs.createGit.action": "สร้าง Git รีโพซิทอรี",
   "session.todo.progress": "เสร็จสิ้น {{done}} จาก {{total}} รายการ",
   "session.todo.statusLabel": "สถานะ: {{status}}",
-  "session.timeline.backgroundDivider": "คำตอบพร้อมแล้ว",
+  "session.timeline.backgroundDivider": "กิจกรรมในพื้นหลัง",
   "session.question.progress": "{{current}} จาก {{total}} คำถาม",
   "session.header.open.finder": "Finder",
   "session.header.open.fileExplorer": "File Explorer",

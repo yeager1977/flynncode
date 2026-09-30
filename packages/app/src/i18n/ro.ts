@@ -760,7 +760,7 @@ export const dict = {
   "session.todo.expand": "Extinde",
   "session.todo.progress": "{{done}} din {{total}} sarcini finalizate",
   "session.todo.statusLabel": "Stare: {{status}}",
-  "session.timeline.backgroundDivider": "Răspuns pregătit",
+  "session.timeline.backgroundDivider": "Activitate de fundal",
   "session.question.progress": "{{current}} din {{total}} întrebări",
   "session.question.minimize": "Minimizează întrebarea",
   "session.question.restore": "Restaurează întrebarea",

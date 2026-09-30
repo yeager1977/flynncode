@@ -1101,7 +1101,7 @@ export const dict = {
   "session.review.noVcs.createGit.action": "Opprett Git-depot",
   "session.todo.progress": "{{done}} av {{total}} oppgaver fullført",
   "session.todo.statusLabel": "Status: {{status}}",
-  "session.timeline.backgroundDivider": "Svar klart",
+  "session.timeline.backgroundDivider": "Bakgrunnsaktivitet",
   "session.question.progress": "{{current}} av {{total}} spørsmål",
   "session.header.open.finder": "Finder",
   "session.header.open.fileExplorer": "Filutforsker",

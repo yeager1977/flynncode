@@ -763,7 +763,7 @@ export const dict = {
   "session.todo.expand": "Fäll ut",
   "session.todo.progress": "{{done}} av {{total}} uppgifter slutförda",
   "session.todo.statusLabel": "Status: {{status}}",
-  "session.timeline.backgroundDivider": "Svar redo",
+  "session.timeline.backgroundDivider": "Bakgrundsaktivitet",
   "session.question.progress": "{{current}} av {{total}} frågor",
   "session.question.minimize": "Minimera frågan",
   "session.question.restore": "Återställ fråga",

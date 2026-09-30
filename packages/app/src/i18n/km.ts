@@ -755,7 +755,7 @@ export const dict = {
   "session.todo.expand": "ពង្រីក",
   "session.todo.progress": "{{done}} នៃ {{total}} ការងារត្រូវធ្វើបានបញ្ចប់",
   "session.todo.statusLabel": "ស្ថានភាព: {{status}}",
-  "session.timeline.backgroundDivider": "ការឆ្លើយតបរួចរាល់",
+  "session.timeline.backgroundDivider": "សកម្មភាពផ្ទៃខាងក្រោយ",
   "session.question.progress": "{{current}} នៃសំណួរ {{total}}",
   "session.question.minimize": "បង្រួមសំណួរ",
   "session.question.restore": "ស្ដារសំណួរ",

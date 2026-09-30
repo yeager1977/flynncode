@@ -1199,7 +1199,7 @@ export const dict = {
   "session.review.noVcs.createGit.action": "Criar repositório Git",
   "session.todo.progress": "{{done}} de {{total}} tarefas concluídas",
   "session.todo.statusLabel": "Status: {{status}}",
-  "session.timeline.backgroundDivider": "Resposta pronta",
+  "session.timeline.backgroundDivider": "Atividade em segundo plano",
   "session.question.progress": "{{current}} de {{total}} perguntas",
   "session.header.open.finder": "Finder",
   "session.header.open.fileExplorer": "Explorador de Arquivos",

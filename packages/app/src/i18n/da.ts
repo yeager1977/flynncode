@@ -1148,7 +1148,7 @@ export const dict = {
   "session.review.noVcs.createGit.action": "Opret Git-repository",
   "session.todo.progress": "{{done}} af {{total}} opgaver fuldført",
   "session.todo.statusLabel": "Status: {{status}}",
-  "session.timeline.backgroundDivider": "Svar klar",
+  "session.timeline.backgroundDivider": "Baggrundsaktivitet",
   "session.question.progress": "{{current}} af {{total}} spørgsmål",
   "session.header.open.finder": "Finder",
   "session.header.open.fileExplorer": "Stifinder",

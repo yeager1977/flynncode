@@ -763,7 +763,7 @@ export const dict = {
   "session.todo.expand": "Ընդարձակել",
   "session.todo.progress": "{{done}}՝ {{total}} գործերից ավարտված",
   "session.todo.statusLabel": "Կարգավիճակ: {{status}}",
-  "session.timeline.backgroundDivider": "Պատասխանը պատրաստ է",
+  "session.timeline.backgroundDivider": "Ֆոնային գործողություն",
   "session.question.progress": "{{current}}՝ {{total}} հարցից",
   "session.question.minimize": "Նվազագույնի հասցնել հարցը",
   "session.question.restore": "Վերականգնել հարցը",

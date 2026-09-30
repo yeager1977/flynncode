@@ -753,7 +753,7 @@ export const dict = {
   "session.todo.expand": "ຂະຫຍາຍ",
   "session.todo.progress": "{{done}} ຂອງ {{total}} todos ສຳເລັດແລ້ວ",
   "session.todo.statusLabel": "ສະຖານະ: {{status}}",
-  "session.timeline.backgroundDivider": "ການຕອບສະໜອງພ້ອມແລ້ວ",
+  "session.timeline.backgroundDivider": "ການເຄື່ອນໄຫວໃນພື້ນຫຼັງ",
   "session.question.progress": "{{current}} ຂອງ {{total}} ຄໍາຖາມ",
   "session.question.minimize": "ຫຍໍ້ຄໍາຖາມ",
   "session.question.restore": "ຟື້ນຟູຄໍາຖາມ",

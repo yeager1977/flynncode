@@ -771,7 +771,7 @@ export const dict: Record<string, string> = {
   "session.todo.expand": "རྒྱ་སྐྱེད་གཏང་ནི",
   "session.todo.progress": "{{done}} གི་ {{total}} ཊོ་ཌོས་མཇུག་བསྡུ་ཡོདཔ།",
   "session.todo.statusLabel": "གནས་ཚད: {{status}}",
-  "session.timeline.backgroundDivider": "ལན་འདེབས་གྲ་སྒྲིག།",
+  "session.timeline.backgroundDivider": "Background activity",
   "session.question.progress": "{{current}}གི་{{total}}དྲི་བ།",
   "session.question.minimize": "དྲི་བ་ཉུང་སུ་བཟོ།",
   "session.question.restore": "དྲི་བ་སླར་གསོ་འབད།",

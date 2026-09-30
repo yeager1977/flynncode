@@ -760,7 +760,7 @@ export const dict = {
   "session.todo.expand": "Izvērst",
   "session.todo.progress": "{{done}} no {{total}} darbiem izpildīti",
   "session.todo.statusLabel": "Statuss: {{status}}",
-  "session.timeline.backgroundDivider": "Atbilde gatava",
+  "session.timeline.backgroundDivider": "Fona aktivitāte",
   "session.question.progress": "{{current}} no {{total}} jautājumiem",
   "session.question.minimize": "Minimizēt jautājumu",
   "session.question.restore": "Atjaunot jautājumu",

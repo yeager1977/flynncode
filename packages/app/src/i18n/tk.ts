@@ -758,7 +758,7 @@ export const dict = {
   "session.todo.expand": "Giňeltmek",
   "session.todo.progress": "{{total}} todosynyň {{done}} tamamlandy",
   "session.todo.statusLabel": ".Agdaý: {{status}}",
-  "session.timeline.backgroundDivider": "Jogap taýýar",
+  "session.timeline.backgroundDivider": "Background activity",
   "session.question.progress": "{{total}} soraglarynyň {{current}}",
   "session.question.minimize": "Soragy azaldyň",
   "session.question.restore": "Soragy dikelt",

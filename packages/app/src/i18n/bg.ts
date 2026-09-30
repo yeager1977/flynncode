@@ -764,7 +764,7 @@ export const dict = {
   "session.todo.expand": "Разширяване",
   "session.todo.progress": "{{done}} от {{total}} задачи са изпълнени",
   "session.todo.statusLabel": "Статус: {{status}}",
-  "session.timeline.backgroundDivider": "Готов отговор",
+  "session.timeline.backgroundDivider": "Фонова активност",
   "session.question.progress": "{{current}} от {{total}} въпроса",
   "session.question.minimize": "Минимизиране на въпроса",
   "session.question.restore": "Възстановете въпроса",

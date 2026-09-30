@@ -764,7 +764,7 @@ export const dict = {
   "session.todo.expand": "Bontsa ki",
   "session.todo.progress": "{{done}}/{{total}} todos elkészült",
   "session.todo.statusLabel": "Állapot: {{status}}",
-  "session.timeline.backgroundDivider": "Válasz kész",
+  "session.timeline.backgroundDivider": "Háttértevékenység",
   "session.question.progress": "{{current}}/{{total}} kérdések",
   "session.question.minimize": "Minimalizálja a kérdést",
   "session.question.restore": "Kérdés visszaállítása",

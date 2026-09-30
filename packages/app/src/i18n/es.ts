@@ -1300,7 +1300,7 @@ export const dict = {
   "session.review.noVcs.createGit.action": "Crear repositorio Git",
   "session.todo.progress": "{{done}} de {{total}} tareas completadas",
   "session.todo.statusLabel": "Estado: {{status}}",
-  "session.timeline.backgroundDivider": "Respuesta lista",
+  "session.timeline.backgroundDivider": "Actividad en segundo plano",
   "session.question.progress": "{{current}} de {{total}} preguntas",
   "session.header.open.finder": "Finder",
   "session.header.open.fileExplorer": "Explorador de archivos",

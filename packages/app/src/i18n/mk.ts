@@ -762,7 +762,7 @@ export const dict = {
   "session.todo.expand": "Прошири",
   "session.todo.progress": "{{done}} од {{total}} завршени работи",
   "session.todo.statusLabel": "Статус: {{status}}",
-  "session.timeline.backgroundDivider": "Подготвен одговор",
+  "session.timeline.backgroundDivider": "Активност во позадина",
   "session.question.progress": "{{current}} од {{total}} прашања",
   "session.question.minimize": "Минимизирајте го прашањето",
   "session.question.restore": "Врати прашање",

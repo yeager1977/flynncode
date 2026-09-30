@@ -767,7 +767,7 @@ export const dict = {
   "session.todo.expand": "کھولو",
   "session.todo.progress": "{{done}} دے {{total}} کم مکمل ہو گئے",
   "session.todo.statusLabel": "حالت: {{status}}",
-  "session.timeline.backgroundDivider": "جواب تیار اے",
+  "session.timeline.backgroundDivider": "Background activity",
   "session.question.progress": "{{total}} سوالاں وچوں {{current}}",
   "session.question.minimize": "سوال نوں چھوٹا کرو",
   "session.question.restore": "سوال بحال کرو",

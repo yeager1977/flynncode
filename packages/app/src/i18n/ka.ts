@@ -758,7 +758,7 @@ export const dict = {
   "session.todo.expand": "გაფართოება",
   "session.todo.progress": "{{done}} დასრულებული {{total}}-დან",
   "session.todo.statusLabel": "სტატუსი: {{status}}",
-  "session.timeline.backgroundDivider": "პასუხი მზად არის",
+  "session.timeline.backgroundDivider": "ფონური აქტივობა",
   "session.question.progress": "{{current}} / {{total}} შეკითხვადან",
   "session.question.minimize": "შეკითხვის მინიმიზაცია",
   "session.question.restore": "კითხვის აღდგენა",

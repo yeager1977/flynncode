@@ -1227,7 +1227,7 @@ export const dict = {
   "session.review.noVcs.createGit.action": "Créer un dépôt Git",
   "session.todo.progress": "{{done}} tâches sur {{total}} terminées",
   "session.todo.statusLabel": "Statut: {{status}}",
-  "session.timeline.backgroundDivider": "Réponse prête",
+  "session.timeline.backgroundDivider": "Activité en arrière-plan",
   "session.question.progress": "{{current}} questions sur {{total}}",
   "session.header.open.finder": "Finder",
   "session.header.open.fileExplorer": "Explorateur de fichiers",

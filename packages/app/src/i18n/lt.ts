@@ -764,7 +764,7 @@ export const dict = {
   "session.todo.expand": "Išskleisti",
   "session.todo.progress": "{{done}} iš {{total}} todos baigtas",
   "session.todo.statusLabel": "Būsena: {{status}}",
-  "session.timeline.backgroundDivider": "Atsakymas paruoštas",
+  "session.timeline.backgroundDivider": "Foninė veikla",
   "session.question.progress": "{{current}} iš {{total}} klausimų",
   "session.question.minimize": "Sumažinti klausimą",
   "session.question.restore": "Atkurti klausimą",

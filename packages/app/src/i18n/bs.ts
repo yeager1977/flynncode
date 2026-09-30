@@ -1274,7 +1274,7 @@ export const dict = {
   "session.review.noVcs.createGit.action": "Kreiraj Git repozitorij",
   "session.todo.progress": "{{done}} od {{total}} zadataka završeno",
   "session.todo.statusLabel": "Status: {{status}}",
-  "session.timeline.backgroundDivider": "Odgovor je spreman",
+  "session.timeline.backgroundDivider": "Aktivnost u pozadini",
   "session.question.progress": "{{current}} od {{total}} pitanja",
   "session.header.open.finder": "Finder",
   "session.header.open.fileExplorer": "File Explorer",

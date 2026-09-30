@@ -656,7 +656,7 @@ export const dict = {
   "session.todo.expand": "Laajenna",
   "session.todo.progress": "{{done}}/{{total}} tehtävää suoritettu",
   "session.todo.statusLabel": "Tila: {{status}}",
-  "session.timeline.backgroundDivider": "Vastaus valmiina",
+  "session.timeline.backgroundDivider": "Taustatoimintaa",
   "session.question.progress": "{{current}}/{{total}} kysymystä",
   "session.question.minimize": "Pienennä kysymys",
   "session.question.restore": "Palauta kysymys",

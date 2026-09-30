@@ -786,7 +786,7 @@ export const dict = {
   "session.todo.expand": "Mở rộng",
   "session.todo.progress": "{{done}} trong số {{total}} việc cần làm đã hoàn thành",
   "session.todo.statusLabel": "Trạng thái: {{status}}",
-  "session.timeline.backgroundDivider": "Đã sẵn sàng phản hồi",
+  "session.timeline.backgroundDivider": "Hoạt động nền",
   "session.question.progress": "{{current}} trong số {{total}} câu hỏi",
   "session.question.minimize": "Giảm thiểu câu hỏi",
   "session.question.restore": "Khôi phục câu hỏi",

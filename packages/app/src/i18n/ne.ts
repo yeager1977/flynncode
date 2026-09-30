@@ -760,7 +760,7 @@ export const dict: Record<string, string> = {
   "session.todo.expand": "विस्तार गर्नुहोस्",
   "session.todo.progress": "{{done}} को {{total}} todos पूरा भयो",
   "session.todo.statusLabel": "स्थिति: {{status}}",
-  "session.timeline.backgroundDivider": "प्रतिक्रिया तयार छ",
+  "session.timeline.backgroundDivider": "पृष्ठभूमिको गतिविधि",
   "session.question.progress": "{{total}} प्रश्नहरूको {{current}}",
   "session.question.minimize": "प्रश्न कम गर्नुहोस्",
   "session.question.restore": "प्रश्न पुनर्स्थापित गर्नुहोस्",
