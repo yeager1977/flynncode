@@ -48,6 +48,25 @@ test("capture LTR desktop list state", async ({ page }) => {
   await expect(dock).toBeVisible()
   await expect(dock.locator('[data-action="session-todo-toggle-button"]')).toHaveAttribute("data-collapsed", "false")
 
+  // Regression: preview and chevron wrapper must use logical margins (ms-1 / ms-auto) so RTL mirrors correctly.
+  // Assert class presence on the DOM elements — computed style resolves "auto" to pixels so class is the contract.
+  const headerRow = dock.locator('[data-action="session-todo-toggle"]')
+  const previewClasses = await headerRow.locator('[data-slot="session-todo-preview"]').evaluate(
+    (el) => el.className,
+  )
+  expect(previewClasses).toContain("ms-1")
+  const chevronWrapperHasMsAuto = await headerRow.evaluate((row) => {
+    const btn = row.querySelector('[data-action="session-todo-toggle-button"]')
+    if (!btn) return false
+    let el: Element | null = btn.parentElement
+    while (el && el !== row) {
+      if (el.classList.contains("ms-auto")) return true
+      el = el.parentElement
+    }
+    return false
+  })
+  expect(chevronWrapperHasMsAuto).toBe(true)
+
   const completedRow = dock.locator('[data-status="completed"]')
   const cancelledRow = dock.locator('[data-status="cancelled"]')
   await expect(completedRow).toBeVisible()
