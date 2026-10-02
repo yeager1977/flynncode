@@ -3,6 +3,7 @@ import type { Session } from "@opencode-ai/sdk/v2/client"
 import {
   BULK_PRESETS,
   cleanupCandidates,
+  confirmIDs,
   eligibleRoots,
   isOlderThan,
   protectedRootIDs,
@@ -96,5 +97,11 @@ describe("session bulk eligibility", () => {
       selected: ["a", "c"],
       anchor: "a",
     })
+  })
+
+  test("confirm keeps unloaded ids that a loaded allow-list would drop", () => {
+    const loaded = new Set(["a", "b"])
+    const allowed = new Set(["a"])
+    expect(confirmIDs(["a", "b", "unloaded"], loaded, allowed)).toEqual(["a", "unloaded"])
   })
 })

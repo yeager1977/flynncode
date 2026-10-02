@@ -30,6 +30,7 @@ import { showToast } from "@/utils/toast"
 import {
   BULK_PRESETS,
   cleanupCandidates,
+  confirmIDs,
   presetDays,
   protectedRootIDs,
   selectLoaded,
@@ -263,6 +264,47 @@ function mergeSessions(left: readonly Session[], right: readonly Session[]) {
   return [...byID.values()]
 }
 
+function CleanupConfirm(props: {
+  count: number
+  matchLabel: string
+  skippedLabel?: string
+  busy: boolean
+  onCancel: () => void
+  onRun: (op: BulkOp) => void
+}) {
+  const [step, setStep] = createStore({ op: undefined as BulkOp | undefined })
+  return (
+    <Show
+      when={step.op}
+      fallback={
+        <BulkConfirmDialog
+          op="archive"
+          count={props.count}
+          matchLabel={props.matchLabel}
+          skippedLabel={props.skippedLabel}
+          busy={props.busy}
+          onCancel={props.onCancel}
+          onConfirm={() => {}}
+          onArchive={() => setStep("op", "archive")}
+          onDelete={() => setStep("op", "delete")}
+        />
+      }
+    >
+      {(op) => (
+        <BulkConfirmDialog
+          op={op()}
+          count={props.count}
+          matchLabel={props.matchLabel}
+          skippedLabel={props.skippedLabel}
+          busy={props.busy}
+          onCancel={props.onCancel}
+          onConfirm={() => props.onRun(op())}
+        />
+      )}
+    </Show>
+  )
+}
+
 function useWorkspaceBulk(input: {
   directory: () => string
   sessions: () => Session[]
@@ -283,11 +325,34 @@ function useWorkspaceBulk(input: {
     busy: false,
   })
   let generation = 0
+  let confirmOpen = false
+  let confirmEpoch = 0
+  let retained: readonly Session[] = []
+  const closeConfirm = () => {
+    if (!confirmOpen) return
+    dialog.close()
+  }
+  const showConfirm = (element: () => JSX.Element) => {
+    const epoch = ++confirmEpoch
+    if (confirmOpen) dialog.close()
+    confirmOpen = true
+    dialog.show(element, () => {
+      if (epoch !== confirmEpoch) return
+      confirmOpen = false
+    })
+  }
+  const dismissConfirm = () => {
+    generation += 1
+    dialog.close()
+  }
   const clearBulk = () => {
     generation += 1
+    retained = []
+    closeConfirm()
     setBulk({ selecting: false, selected: [], anchor: undefined, busy: false })
   }
-  const known = () => serverSync().child(input.directory(), { bootstrap: false })[0].session ?? []
+  const knownFor = (directory: string) => serverSync().child(directory, { bootstrap: false })[0].session ?? []
+  const known = () => knownFor(input.directory())
   const pending = (id: string) => {
     const data = serverSync().session.data
     return (data.permission[id]?.length ?? 0) > 0 || (data.question[id]?.length ?? 0) > 0
@@ -313,8 +378,8 @@ function useWorkspaceBulk(input: {
     const blocked = blockedFor(known())
     return new Set(input.sessions().map((session) => session.id).filter((id) => !blocked.has(id)))
   })
-  const forget = (id: string) => {
-    const [, setStore] = serverSync().child(input.directory(), { bootstrap: false })
+  const forget = (id: string, directory: string) => {
+    const [, setStore] = serverSync().child(directory, { bootstrap: false })
     setStore(
       produce((draft) => {
         const match = Binary.search(draft.session, id, (item) => item.id)
@@ -322,31 +387,46 @@ function useWorkspaceBulk(input: {
       }),
     )
     serverSync().homeSessions.remove(id)
-    notifySessionTabsRemoved({ directory: input.directory(), sessionIDs: [id] })
+    notifySessionTabsRemoved({ directory, sessionIDs: [id] })
   }
-  const archiveOne = async (sessionID: string) => {
+  const archiveOne = async (sessionID: string, directory: string) => {
     const archived = Date.now()
-    await serverSDK().client.session.update({ sessionID, directory: input.directory(), time: { archived } })
-    forget(sessionID)
+    await serverSDK().client.session.update({ sessionID, directory, time: { archived } })
+    forget(sessionID, directory)
   }
-  const removeOne = async (sessionID: string) => {
+  const removeOne = async (sessionID: string, directory: string) => {
     await serverSDK().api.session.remove({ sessionID })
-    forget(sessionID)
+    forget(sessionID, directory)
   }
-  const run = async (op: BulkOp, ids: readonly string[], extra: readonly Session[]) => {
+  const protectedNow = (id: string, directory: string, extra: readonly Session[]) => {
+    const list = mergeSessions(knownFor(directory), extra)
+    if (params.id === id) return true
+    if (openTabIDs(list).has(id)) return true
+    if (serverSync().session.data.session_working(id)) return true
+    if (pending(id)) return true
+    return blockedFor(list).has(id)
+  }
+  const run = async (
+    op: BulkOp,
+    ids: readonly string[],
+    extra: readonly Session[],
+    directory: string,
+    ticket: number,
+  ) => {
+    if (ticket !== generation) return
     if (bulk.busy) return
-    const ticket = generation
     setBulk("busy", true)
-    dialog.close()
+    closeConfirm()
     const result = await runSessionBulk({
       ids,
       op,
-      isProtected: (id) => blockedFor(mergeSessions(known(), extra)).has(id),
-      archive: archiveOne,
-      remove: removeOne,
+      isProtected: (id) => protectedNow(id, directory, extra),
+      archive: (id) => archiveOne(id, directory),
+      remove: (id) => removeOne(id, directory),
     })
     if (ticket !== generation) return
     if (result.failed) {
+      retained = extra
       showToast({ title: language.plural("session.bulk.failed", result.pending.length + 1) })
       setBulk({
         selecting: true,
@@ -360,18 +440,21 @@ function useWorkspaceBulk(input: {
   }
   const confirm = (op: BulkOp) => {
     if (bulk.busy) return
-    const ids = bulk.selected.filter((id) => allowed().has(id))
+    const ticket = generation
+    const directory = input.directory()
+    const loaded = new Set(input.sessions().map((session) => session.id))
+    const ids = confirmIDs(bulk.selected, loaded, allowed())
     if (ids.length === 0) return
     const frozen = [...ids]
-    const extra = known()
-    dialog.show(() => (
+    const extra = mergeSessions(knownFor(directory), retained)
+    showConfirm(() => (
       <BulkConfirmDialog
         op={op}
         count={frozen.length}
         busy={bulk.busy}
-        onCancel={() => dialog.close()}
+        onCancel={dismissConfirm}
         onConfirm={() => {
-          void run(op, frozen, extra)
+          void run(op, frozen, extra, directory, ticket)
         }}
       />
     ))
@@ -379,29 +462,30 @@ function useWorkspaceBulk(input: {
   const cleanup = async (id: BulkPreset) => {
     if (bulk.busy) return
     const ticket = generation
+    const directory = input.directory()
     setBulk("busy", true)
     const fetched = await listAllSessions(serverSDK().api.session, {
-      directory: input.directory(),
+      directory,
       order: "desc",
     }).catch(() => undefined)
-    if (ticket !== generation) return
+    if (ticket !== generation || input.directory() !== directory) return
     setBulk("busy", false)
     if (!fetched) {
       showToast({ title: language.t("common.requestFailed") })
       return
     }
-    if (ticket !== generation) return
+    if (ticket !== generation || input.directory() !== directory) return
     const now = Date.now()
-    const extra = mergeSessions(known(), fetched)
+    const extra = mergeSessions(knownFor(directory), fetched)
     const found = cleanupCandidates(fetched, now, presetDays(id), blockedFor(extra))
     if (found.match.length === 0) {
-      dialog.show(() => (
+      showConfirm(() => (
         <BulkConfirmDialog
           op="archive"
           count={0}
           empty
           busy={bulk.busy}
-          onCancel={() => dialog.close()}
+          onCancel={dismissConfirm}
           onConfirm={() => {}}
         />
       ))
@@ -412,20 +496,15 @@ function useWorkspaceBulk(input: {
     const matchLabel = language.plural("session.bulk.cleanup.match", found.match.length, { period })
     const skippedLabel =
       found.skipped.length > 0 ? language.plural("session.bulk.cleanup.skipped", found.skipped.length) : undefined
-    dialog.show(() => (
-      <BulkConfirmDialog
-        op="archive"
+    showConfirm(() => (
+      <CleanupConfirm
         count={ids.length}
         matchLabel={matchLabel}
         skippedLabel={skippedLabel}
         busy={bulk.busy}
-        onCancel={() => dialog.close()}
-        onConfirm={() => {}}
-        onArchive={() => {
-          void run("archive", ids, extra)
-        }}
-        onDelete={() => {
-          void run("delete", ids, extra)
+        onCancel={dismissConfirm}
+        onRun={(op) => {
+          void run(op, ids, extra, directory, ticket)
         }}
       />
     ))
@@ -440,13 +519,9 @@ function useWorkspaceBulk(input: {
   }
   const selectAll = () => {
     if (bulk.busy) return
-    setBulk(
-      "selected",
-      selectLoaded(
-        input.sessions().map((session) => session.id),
-        allowed(),
-      ),
-    )
+    const loaded = input.sessions().map((session) => session.id)
+    const loadedIDs = new Set(loaded)
+    setBulk("selected", [...selectLoaded(loaded, allowed()), ...bulk.selected.filter((id) => !loadedIDs.has(id))])
   }
   const onToggle = (id: string, event: MouseEvent) => {
     if (bulk.busy) return
@@ -499,6 +574,7 @@ function useWorkspaceBulk(input: {
 
   onCleanup(() => {
     generation += 1
+    closeConfirm()
   })
 
   return {

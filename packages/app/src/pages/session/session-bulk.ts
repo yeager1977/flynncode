@@ -108,3 +108,7 @@ export function selectRange(input: RangeInput) {
 export function selectLoaded(order: readonly string[], allowed: ReadonlySet<string>) {
   return order.filter((id) => allowed.has(id))
 }
+
+export function confirmIDs(selected: readonly string[], loaded: ReadonlySet<string>, allowed: ReadonlySet<string>) {
+  return selected.filter((id) => !loaded.has(id) || allowed.has(id))
+}
