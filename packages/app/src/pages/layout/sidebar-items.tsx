@@ -1,5 +1,6 @@
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import { Avatar } from "@opencode-ai/ui/avatar"
+import { Checkbox } from "@opencode-ai/ui/checkbox"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
@@ -87,6 +88,10 @@ export type SessionItemProps = {
   clearHoverProjectSoon: () => void
   prefetchSession: (session: Session, priority?: "high" | "low") => void
   archiveSession: (session: Session) => Promise<void>
+  selecting?: boolean
+  selected?: boolean
+  locked?: boolean
+  onToggle?: (event: MouseEvent) => void
 }
 
 const SessionRow = (props: {
@@ -103,20 +108,13 @@ const SessionRow = (props: {
   sidebarOpened: Accessor<boolean>
   warmPress: () => void
   warmFocus: () => void
+  selecting?: boolean
+  onToggle?: (event: MouseEvent) => void
 }): JSX.Element => {
   const title = () => sessionTitle(props.session.title)
-
-  return (
-    <A
-      href={`/${props.slug}/session/${props.session.id}`}
-      class={`flex items-center gap-2 min-w-0 w-full text-left focus:outline-none ${props.dense ? "py-0.5" : "py-1"}`}
-      onPointerDown={props.warmPress}
-      onFocus={props.warmFocus}
-      onClick={() => {
-        if (props.sidebarOpened()) return
-        props.clearHoverProjectSoon()
-      }}
-    >
+  const className = `flex items-center gap-2 min-w-0 w-full text-left focus:outline-none ${props.dense ? "py-0.5" : "py-1"}`
+  const body = (
+    <>
       <Show when={props.isWorking() || props.hasPermissions() || props.hasError() || props.unseenCount() > 0}>
         <div
           class="shrink-0 size-6 flex items-center justify-center"
@@ -139,6 +137,40 @@ const SessionRow = (props: {
         </div>
       </Show>
       <span class="text-14-regular text-text-strong min-w-0 flex-1 truncate">{title()}</span>
+    </>
+  )
+  if (props.selecting) {
+    return (
+      <button
+        type="button"
+        class={className}
+        onMouseDown={(event) => {
+          if (!event.shiftKey) return
+          event.preventDefault()
+        }}
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          props.onToggle?.(event)
+        }}
+      >
+        {body}
+      </button>
+    )
+  }
+
+  return (
+    <A
+      href={`/${props.slug}/session/${props.session.id}`}
+      class={className}
+      onPointerDown={props.warmPress}
+      onFocus={props.warmFocus}
+      onClick={() => {
+        if (props.sidebarOpened()) return
+        props.clearHoverProjectSoon()
+      }}
+    >
+      {body}
     </A>
   )
 }
@@ -212,6 +244,8 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
       sidebarOpened={layout.sidebar.opened}
       warmPress={() => warm(2, "high")}
       warmFocus={() => warm(2, "high")}
+      selecting={props.selecting}
+      onToggle={props.onToggle}
     />
   )
 
@@ -220,9 +254,29 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
       <div
         data-session-id={props.session.id}
         class="group/session relative w-full min-w-0 rounded-md cursor-default pr-3 transition-colors hover:bg-surface-raised-base-hover [&:has(:focus-visible)]:bg-surface-raised-base-hover has-[[data-expanded]]:bg-surface-raised-base-hover has-[.active]:bg-surface-base-active"
+        classList={{ "bg-surface-base-active": !!props.selecting && !!props.selected && !props.level }}
         style={{ "padding-left": `${8 + (props.level ?? 0) * 16}px` }}
       >
         <div class="flex min-w-0 items-center gap-1">
+          <Show when={props.selecting && !props.level}>
+            <div
+              class="shrink-0"
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                if (props.locked) return
+                props.onToggle?.(event)
+              }}
+            >
+              <Checkbox
+                readOnly
+                checked={!!props.selected}
+                disabled={!!props.locked}
+                style={{ gap: "0" }}
+                aria-label={props.locked ? language.t("session.bulk.locked") : language.t("session.bulk.select")}
+              />
+            </div>
+          </Show>
           <div class="min-w-0 flex-1">
             <Show
               when={!tooltip()}
@@ -241,7 +295,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
             </Show>
           </div>
 
-          <Show when={!props.level}>
+          <Show when={!props.level && !props.selecting}>
             <div
               class="shrink-0 overflow-hidden transition-[width,opacity]"
               classList={{
@@ -271,7 +325,14 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
       <Show when={currentChild()} keyed>
         {(child) => (
           <div class="w-full">
-            <SessionItem {...props} session={child} level={(props.level ?? 0) + 1} />
+            <SessionItem
+              {...props}
+              session={child}
+              level={(props.level ?? 0) + 1}
+              selected={false}
+              locked={false}
+              onToggle={undefined}
+            />
           </div>
         )}
       </Show>

@@ -1,12 +1,14 @@
 import { useNavigate, useParams } from "@solidjs/router"
-import { createEffect, createMemo, For, Show, type Accessor, type JSX } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createEffect, createMemo, For, onCleanup, Show, type Accessor, type JSX } from "solid-js"
+import { createStore, produce } from "solid-js/store"
 import { createSortable } from "@thisbeyond/solid-dnd"
 import { createMediaQuery } from "@solid-primitives/media"
+import { Binary } from "@opencode-ai/core/util/binary"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { getFilename } from "@opencode-ai/core/util/path"
 import { Button } from "@opencode-ai/ui/button"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
@@ -15,10 +17,28 @@ import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { type Session } from "@opencode-ai/sdk/v2/client"
+import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
 import { type LocalProject } from "@/context/layout"
-import { useServerSync, useQueryOptions } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
+import { useServer } from "@/context/server"
+import { useServerSDK } from "@/context/server-sdk"
+import { useServerSync, useQueryOptions } from "@/context/server-sync"
+import { sessionHasOpenTab, useTabs } from "@/context/tabs"
 import { pathKey } from "@/utils/path-key"
+import { listAllSessions } from "@/utils/session"
+import { showToast } from "@/utils/toast"
+import {
+  BULK_PRESETS,
+  cleanupCandidates,
+  presetDays,
+  protectedRootIDs,
+  selectLoaded,
+  selectRange,
+  toggleID,
+  type BulkPreset,
+} from "../session/session-bulk"
+import { BulkConfirmDialog } from "../session/session-bulk-dialog"
+import { runSessionBulk, type BulkOp } from "../session/session-bulk-run"
 import { NewSessionItem, SessionItem, SessionSkeleton } from "./sidebar-items"
 import { sortedRootSessions } from "./helpers"
 import { useIsFetching } from "@tanstack/solid-query"
@@ -236,6 +256,331 @@ const WorkspaceActions = (props: {
   </div>
 )
 
+function mergeSessions(left: readonly Session[], right: readonly Session[]) {
+  const byID = new Map<string, Session>()
+  for (const session of left) byID.set(session.id, session)
+  for (const session of right) byID.set(session.id, session)
+  return [...byID.values()]
+}
+
+function useWorkspaceBulk(input: {
+  directory: () => string
+  sessions: () => Session[]
+  active: () => boolean
+  expanded: () => boolean
+}) {
+  const params = useParams()
+  const dialog = useDialog()
+  const language = useLanguage()
+  const server = useServer()
+  const serverSDK = useServerSDK()
+  const serverSync = useServerSync()
+  const tabs = useTabs()
+  const [bulk, setBulk] = createStore({
+    selecting: false,
+    selected: [] as string[],
+    anchor: undefined as string | undefined,
+    busy: false,
+  })
+  let generation = 0
+  const clearBulk = () => {
+    generation += 1
+    setBulk({ selecting: false, selected: [], anchor: undefined, busy: false })
+  }
+  const known = () => serverSync().child(input.directory(), { bootstrap: false })[0].session ?? []
+  const pending = (id: string) => {
+    const data = serverSync().session.data
+    return (data.permission[id]?.length ?? 0) > 0 || (data.question[id]?.length ?? 0) > 0
+  }
+  const openTabIDs = (list: readonly Session[]) => {
+    const ids = new Set<string>()
+    for (const tab of tabs.store) {
+      if (tab.type === "session" && tab.server === server.key) ids.add(tab.sessionId)
+    }
+    for (const session of list) {
+      if (sessionHasOpenTab(tabs.store, server.key, session)) ids.add(session.id)
+    }
+    return ids
+  }
+  const blockedFor = (list: readonly Session[]) =>
+    protectedRootIDs(list, {
+      openRouteID: params.id,
+      openTabIDs: openTabIDs(list),
+      working: (id) => serverSync().session.data.session_working(id),
+      pending,
+    })
+  const allowed = createMemo(() => {
+    const blocked = blockedFor(known())
+    return new Set(input.sessions().map((session) => session.id).filter((id) => !blocked.has(id)))
+  })
+  const forget = (id: string) => {
+    const [, setStore] = serverSync().child(input.directory(), { bootstrap: false })
+    setStore(
+      produce((draft) => {
+        const match = Binary.search(draft.session, id, (item) => item.id)
+        if (match.found) draft.session.splice(match.index, 1)
+      }),
+    )
+    serverSync().homeSessions.remove(id)
+    notifySessionTabsRemoved({ directory: input.directory(), sessionIDs: [id] })
+  }
+  const archiveOne = async (sessionID: string) => {
+    const archived = Date.now()
+    await serverSDK().client.session.update({ sessionID, directory: input.directory(), time: { archived } })
+    forget(sessionID)
+  }
+  const removeOne = async (sessionID: string) => {
+    await serverSDK().api.session.remove({ sessionID })
+    forget(sessionID)
+  }
+  const run = async (op: BulkOp, ids: readonly string[], extra: readonly Session[]) => {
+    if (bulk.busy) return
+    const ticket = generation
+    setBulk("busy", true)
+    dialog.close()
+    const result = await runSessionBulk({
+      ids,
+      op,
+      isProtected: (id) => blockedFor(mergeSessions(known(), extra)).has(id),
+      archive: archiveOne,
+      remove: removeOne,
+    })
+    if (ticket !== generation) return
+    if (result.failed) {
+      showToast({ title: language.plural("session.bulk.failed", result.pending.length + 1) })
+      setBulk({
+        selecting: true,
+        selected: [result.failed, ...result.pending],
+        anchor: result.failed,
+        busy: false,
+      })
+      return
+    }
+    clearBulk()
+  }
+  const confirm = (op: BulkOp) => {
+    if (bulk.busy) return
+    const ids = bulk.selected.filter((id) => allowed().has(id))
+    if (ids.length === 0) return
+    const frozen = [...ids]
+    const extra = known()
+    dialog.show(() => (
+      <BulkConfirmDialog
+        op={op}
+        count={frozen.length}
+        busy={bulk.busy}
+        onCancel={() => dialog.close()}
+        onConfirm={() => {
+          void run(op, frozen, extra)
+        }}
+      />
+    ))
+  }
+  const cleanup = async (id: BulkPreset) => {
+    if (bulk.busy) return
+    const ticket = generation
+    setBulk("busy", true)
+    const fetched = await listAllSessions(serverSDK().api.session, {
+      directory: input.directory(),
+      order: "desc",
+    }).catch(() => undefined)
+    if (ticket !== generation) return
+    setBulk("busy", false)
+    if (!fetched) {
+      showToast({ title: language.t("common.requestFailed") })
+      return
+    }
+    if (ticket !== generation) return
+    const now = Date.now()
+    const extra = mergeSessions(known(), fetched)
+    const found = cleanupCandidates(fetched, now, presetDays(id), blockedFor(extra))
+    if (found.match.length === 0) {
+      dialog.show(() => (
+        <BulkConfirmDialog
+          op="archive"
+          count={0}
+          empty
+          busy={bulk.busy}
+          onCancel={() => dialog.close()}
+          onConfirm={() => {}}
+        />
+      ))
+      return
+    }
+    const ids = found.match.map((session) => session.id)
+    const period = language.t(`session.bulk.period.${id}`)
+    const matchLabel = language.plural("session.bulk.cleanup.match", found.match.length, { period })
+    const skippedLabel =
+      found.skipped.length > 0 ? language.plural("session.bulk.cleanup.skipped", found.skipped.length) : undefined
+    dialog.show(() => (
+      <BulkConfirmDialog
+        op="archive"
+        count={ids.length}
+        matchLabel={matchLabel}
+        skippedLabel={skippedLabel}
+        busy={bulk.busy}
+        onCancel={() => dialog.close()}
+        onConfirm={() => {}}
+        onArchive={() => {
+          void run("archive", ids, extra)
+        }}
+        onDelete={() => {
+          void run("delete", ids, extra)
+        }}
+      />
+    ))
+  }
+  const toggleSelect = () => {
+    if (bulk.busy) return
+    if (bulk.selecting) {
+      clearBulk()
+      return
+    }
+    setBulk("selecting", true)
+  }
+  const selectAll = () => {
+    if (bulk.busy) return
+    setBulk(
+      "selected",
+      selectLoaded(
+        input.sessions().map((session) => session.id),
+        allowed(),
+      ),
+    )
+  }
+  const onToggle = (id: string, event: MouseEvent) => {
+    if (bulk.busy) return
+    if (event.shiftKey) {
+      const next = selectRange({
+        order: input.sessions().map((session) => session.id),
+        selected: bulk.selected,
+        anchor: bulk.anchor,
+        id,
+        allowed: allowed(),
+      })
+      setBulk("selected", next.selected)
+      setBulk("anchor", next.anchor)
+      return
+    }
+    setBulk("selected", toggleID(bulk.selected, id, allowed()))
+    setBulk("anchor", id)
+  }
+
+  createEffect(() => {
+    if (!bulk.selecting) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      event.preventDefault()
+      clearBulk()
+    }
+    window.addEventListener("keydown", onKeyDown)
+    onCleanup(() => window.removeEventListener("keydown", onKeyDown))
+  })
+
+  let sawActive = false
+  let sawExpanded = false
+  let ready = false
+  createEffect(() => {
+    const active = input.active()
+    const expanded = input.expanded()
+    if (ready && sawActive && !active) clearBulk()
+    if (ready && sawExpanded && !expanded) clearBulk()
+    sawActive = active
+    sawExpanded = expanded
+    ready = true
+  })
+
+  let seenDirectory: string | undefined
+  createEffect(() => {
+    const next = input.directory()
+    if (seenDirectory !== undefined && seenDirectory !== next) clearBulk()
+    seenDirectory = next
+  })
+
+  onCleanup(() => {
+    generation += 1
+  })
+
+  return {
+    store: bulk,
+    locked: (id: string) => !allowed().has(id),
+    onToggle,
+    toggleSelect,
+    selectAll,
+    confirm,
+    cleanup,
+    clearBulk,
+  }
+}
+
+function SessionBulkBar(props: {
+  selecting: boolean
+  count: number
+  busy: boolean
+  onToggleSelect: () => void
+  onSelectAll: () => void
+  onArchive: () => void
+  onDelete: () => void
+  onCancel: () => void
+  onCleanup: (id: BulkPreset) => void
+}) {
+  const language = useLanguage()
+  return (
+    <div class="flex flex-col gap-1 px-2 py-1">
+      <div class="flex flex-wrap items-center gap-1">
+        <Button
+          variant="ghost"
+          size="small"
+          disabled={props.busy}
+          aria-pressed={props.selecting}
+          onClick={props.onToggleSelect}
+        >
+          {language.t("session.bulk.select")}
+        </Button>
+        <DropdownMenu>
+          <DropdownMenu.Trigger
+            as={Button}
+            variant="ghost"
+            size="small"
+            disabled={props.busy}
+            aria-label={language.t("session.bulk.cleanup")}
+          >
+            {language.t("session.bulk.cleanup")}
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content>
+              <For each={BULK_PRESETS}>
+                {(preset) => (
+                  <DropdownMenu.Item disabled={props.busy} onSelect={() => props.onCleanup(preset.id)}>
+                    <DropdownMenu.ItemLabel>{language.t(`session.bulk.period.${preset.id}`)}</DropdownMenu.ItemLabel>
+                  </DropdownMenu.Item>
+                )}
+              </For>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu>
+      </div>
+      <Show when={props.selecting}>
+        <div class="flex flex-wrap items-center gap-1">
+          <span class="text-12-regular text-text-weak">{language.plural("session.bulk.selected", props.count)}</span>
+          <Button variant="ghost" size="small" disabled={props.busy} onClick={props.onSelectAll}>
+            {language.t("session.bulk.selectAll")}
+          </Button>
+          <Button variant="ghost" size="small" disabled={props.busy || props.count === 0} onClick={props.onArchive}>
+            {language.t("session.bulk.archive")}
+          </Button>
+          <Button variant="ghost" size="small" disabled={props.busy || props.count === 0} onClick={props.onDelete}>
+            {language.t("session.bulk.delete")}
+          </Button>
+          <Button variant="ghost" size="small" onClick={props.onCancel}>
+            {language.t("session.bulk.cancel")}
+          </Button>
+        </div>
+      </Show>
+    </div>
+  )
+}
+
 const WorkspaceSessionList = (props: {
   slug: Accessor<string>
   mobile?: boolean
@@ -246,6 +591,10 @@ const WorkspaceSessionList = (props: {
   hasMore: Accessor<boolean>
   loadMore: () => Promise<void>
   language: ReturnType<typeof useLanguage>
+  selecting?: boolean
+  selected?: readonly string[]
+  locked?: (id: string) => boolean
+  onToggle?: (id: string, event: MouseEvent) => void
 }): JSX.Element => (
   <nav class="flex flex-col gap-1">
     <Show when={props.showNew()}>
@@ -272,6 +621,10 @@ const WorkspaceSessionList = (props: {
           clearHoverProjectSoon={props.ctx.clearHoverProjectSoon}
           prefetchSession={props.ctx.prefetchSession}
           archiveSession={props.ctx.archiveSession}
+          selecting={props.selecting}
+          selected={props.selected?.includes(session.id)}
+          locked={props.locked?.(session.id)}
+          onToggle={props.onToggle ? (event) => props.onToggle?.(session.id, event) : undefined}
         />
       )}
     </For>
@@ -321,6 +674,12 @@ export const SortableWorkspace = (props: {
     return props.ctx.workspaceName(props.directory, props.project.id, branch) ?? name
   })
   const open = createMemo(() => props.ctx.workspaceExpanded(props.directory, local()))
+  const bulk = useWorkspaceBulk({
+    directory: () => props.directory,
+    sessions,
+    active,
+    expanded: open,
+  })
   const boot = createMemo(() => open() || active())
   const count = createMemo(() => sessions()?.length ?? 0)
   const hasMore = createMemo(() => workspaceStore.sessionTotal > count())
@@ -426,6 +785,19 @@ export const SortableWorkspace = (props: {
         </div>
 
         <Collapsible.Content>
+          <SessionBulkBar
+            selecting={bulk.store.selecting}
+            count={bulk.store.selected.length}
+            busy={bulk.store.busy}
+            onToggleSelect={bulk.toggleSelect}
+            onSelectAll={bulk.selectAll}
+            onArchive={() => bulk.confirm("archive")}
+            onDelete={() => bulk.confirm("delete")}
+            onCancel={bulk.clearBulk}
+            onCleanup={(id) => {
+              void bulk.cleanup(id)
+            }}
+          />
           <WorkspaceSessionList
             slug={slug}
             mobile={props.mobile}
@@ -436,6 +808,10 @@ export const SortableWorkspace = (props: {
             hasMore={hasMore}
             loadMore={loadMore}
             language={language}
+            selecting={bulk.store.selecting}
+            selected={bulk.store.selected}
+            locked={bulk.locked}
+            onToggle={bulk.onToggle}
           />
         </Collapsible.Content>
       </Collapsible>
@@ -458,6 +834,13 @@ export const LocalWorkspace = (props: {
   })
   const slug = createMemo(() => base64Encode(props.project.worktree))
   const sessions = createMemo(() => sortedRootSessions(workspace().store, props.sortNow()))
+  const active = createMemo(() => pathKey(props.ctx.currentDir()) === pathKey(props.project.worktree))
+  const bulk = useWorkspaceBulk({
+    directory: () => props.project.worktree,
+    sessions,
+    active,
+    expanded: () => true,
+  })
   const count = createMemo(() => sessions()?.length ?? 0)
   const fetching = useIsFetching(() => queryOptions().sessions(pathKey(props.project.worktree)))
   const hasMore = createMemo(() => workspace().store.sessionTotal > count())
@@ -472,6 +855,19 @@ export const LocalWorkspace = (props: {
       ref={(el) => props.ctx.setScrollContainerRef(el, props.mobile)}
       class="size-full flex flex-col py-2 overflow-y-auto no-scrollbar [overflow-anchor:none]"
     >
+      <SessionBulkBar
+        selecting={bulk.store.selecting}
+        count={bulk.store.selected.length}
+        busy={bulk.store.busy}
+        onToggleSelect={bulk.toggleSelect}
+        onSelectAll={bulk.selectAll}
+        onArchive={() => bulk.confirm("archive")}
+        onDelete={() => bulk.confirm("delete")}
+        onCancel={bulk.clearBulk}
+        onCleanup={(id) => {
+          void bulk.cleanup(id)
+        }}
+      />
       <WorkspaceSessionList
         slug={slug}
         mobile={props.mobile}
@@ -482,6 +878,10 @@ export const LocalWorkspace = (props: {
         hasMore={hasMore}
         loadMore={loadMore}
         language={language}
+        selecting={bulk.store.selecting}
+        selected={bulk.store.selected}
+        locked={bulk.locked}
+        onToggle={bulk.onToggle}
       />
     </div>
   )
