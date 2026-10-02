@@ -325,25 +325,43 @@ function useWorkspaceBulk(input: {
     busy: false,
   })
   let generation = 0
-  let confirmOpen = false
   let confirmEpoch = 0
+  let suppressDismiss = false
   let retained: readonly Session[] = []
+  const marker = `bulk-${Math.random().toString(36).slice(2)}`
+  const oursShowing = () => {
+    if (typeof document === "undefined") return false
+    const layers = document.querySelectorAll("[data-dialog-layer]")
+    const top = layers.item(layers.length - 1)
+    return !!top?.querySelector(`[data-bulk-confirm="${marker}"]`)
+  }
+  const invalidateConfirm = () => {
+    generation += 1
+    setBulk("busy", false)
+  }
   const closeConfirm = () => {
-    if (!confirmOpen) return
+    if (!oursShowing()) return
     dialog.close()
   }
   const showConfirm = (element: () => JSX.Element) => {
     const epoch = ++confirmEpoch
-    if (confirmOpen) dialog.close()
-    confirmOpen = true
-    dialog.show(element, () => {
-      if (epoch !== confirmEpoch) return
-      confirmOpen = false
-    })
+    if (oursShowing()) dialog.close()
+    dialog.show(
+      () => (
+        <div data-bulk-confirm={marker} style={{ display: "contents" }}>
+          {element()}
+        </div>
+      ),
+      () => {
+        if (epoch !== confirmEpoch) return
+        if (suppressDismiss) return
+        invalidateConfirm()
+      },
+    )
   }
   const dismissConfirm = () => {
-    generation += 1
-    dialog.close()
+    invalidateConfirm()
+    closeConfirm()
   }
   const clearBulk = () => {
     generation += 1
@@ -416,7 +434,9 @@ function useWorkspaceBulk(input: {
     if (ticket !== generation) return
     if (bulk.busy) return
     setBulk("busy", true)
+    suppressDismiss = true
     closeConfirm()
+    suppressDismiss = false
     const result = await runSessionBulk({
       ids,
       op,
@@ -424,7 +444,10 @@ function useWorkspaceBulk(input: {
       archive: (id) => archiveOne(id, directory),
       remove: (id) => removeOne(id, directory),
     })
-    if (ticket !== generation) return
+    if (ticket !== generation) {
+      setBulk("busy", false)
+      return
+    }
     if (result.failed) {
       retained = extra
       showToast({ title: language.plural("session.bulk.failed", result.pending.length + 1) })
