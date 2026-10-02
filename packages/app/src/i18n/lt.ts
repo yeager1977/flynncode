@@ -6,6 +6,7 @@ import { importSessionsFallback } from "./import-sessions-fallback"
 import { dispatchFallback } from "./dispatch-fallback"
 import { routinesFallback } from "./routines-fallback"
 import { artifactsSidebarFallback } from "./artifacts-sidebar-fallback"
+import { sessionBulkFallback, sessionBulkPluralFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 
 const desktop = [
@@ -109,6 +110,8 @@ export const dict = {
   ...dispatchFallback,
   ...routinesFallback,
   ...artifactsSidebarFallback,
+  ...sessionBulkFallback,
+  ...sessionBulkPluralFallback.lt,
   ...mcpRegistryFallback,
   ...Object.fromEntries(DESKTOP_NATIVE_KEYS.map((key, index) => [key, desktop[index]])),
   "command.category.suggested": "Siūloma",

@@ -5,6 +5,7 @@ import { importSessionsFallback } from "./import-sessions-fallback"
 import { dispatchFallback } from "./dispatch-fallback"
 import { routinesFallback } from "./routines-fallback"
 import { artifactsSidebarFallback } from "./artifacts-sidebar-fallback"
+import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 
 export const dict = {
@@ -15,6 +16,7 @@ export const dict = {
   ...dispatchFallback,
   ...routinesFallback,
   ...artifactsSidebarFallback,
+  ...sessionBulkFallback,
   ...mcpRegistryFallback,
   "desktop.menu.app": "OpenCode",
   "desktop.menu.file": "Fail",

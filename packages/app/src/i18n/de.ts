@@ -6,6 +6,7 @@ import { importSessionsFallback } from "./import-sessions-fallback"
 import { dispatchFallback } from "./dispatch-fallback"
 import { routinesFallback } from "./routines-fallback"
 import { artifactsSidebarFallback } from "./artifacts-sidebar-fallback"
+import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 
 type Keys = keyof typeof en
@@ -18,6 +19,7 @@ export const dict = {
   ...dispatchFallback,
   ...routinesFallback,
   ...artifactsSidebarFallback,
+  ...sessionBulkFallback,
   ...mcpRegistryFallback,
   "command.category.suggested": "Vorgeschlagen",
   "command.category.view": "Ansicht",
