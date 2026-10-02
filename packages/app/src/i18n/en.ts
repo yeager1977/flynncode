@@ -1435,6 +1435,7 @@ export const dict = {
   "session.bulk.selectAll": "Select all loaded",
   "session.bulk.locked": "Open or running",
   "session.bulk.cleanup.empty": "No sessions are old enough.",
+  "session.bulk.cleanup.truncated": "The scan was truncated. Older sessions were not checked.",
   "session.bulk.period.1w": "1 week",
   "session.bulk.period.2w": "2 weeks",
   "session.bulk.period.1m": "1 month",

@@ -77,6 +77,21 @@ describe("session bulk eligibility", () => {
     expect([...blocked].sort()).toEqual(["child", "parent", "route", "running", "tab", "waiting"])
   })
 
+  test("locks a root when an open or running child is absent but its parent link is supplied", () => {
+    const blocked = protectedRootIDs([session({ id: "root" })], {
+      openTabIDs: new Set(["open-child"]),
+      working: (id) => id === "running-child",
+      pending: () => false,
+      parentID: new Map([
+        ["open-child", "root"],
+        ["running-child", "root"],
+      ]),
+    })
+    expect(blocked.has("root")).toBe(true)
+    expect(blocked.has("open-child")).toBe(true)
+    expect(blocked.has("running-child")).toBe(true)
+  })
+
   test("cleanup splits old matches from old protected roots", () => {
     const sessions = [
       session({ id: "old", time: { created: 0, updated: 1 } }),
@@ -103,5 +118,11 @@ describe("session bulk eligibility", () => {
     const loaded = new Set(["a", "b"])
     const allowed = new Set(["a"])
     expect(confirmIDs(["a", "b", "unloaded"], loaded, allowed)).toEqual(["a", "unloaded"])
+  })
+
+  test("confirm drops an unloaded id that is protected", () => {
+    const loaded = new Set(["a"])
+    const allowed = new Set(["a"])
+    expect(confirmIDs(["a", "unloaded", "other"], loaded, allowed, new Set(["unloaded"]))).toEqual(["a", "other"])
   })
 })

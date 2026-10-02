@@ -18,6 +18,7 @@ export type ProtectionInput = {
   openTabIDs: ReadonlySet<string>
   working: (id: string) => boolean
   pending: (id: string) => boolean
+  parentID?: ReadonlyMap<string, string | undefined>
 }
 
 export type RangeInput = {
@@ -46,20 +47,39 @@ export function eligibleRoots(sessions: readonly Session[]) {
   return sessions.filter((session) => !session.parentID && session.time.archived === undefined)
 }
 
-export function protectedRootIDs(sessions: readonly Session[], input: ProtectionInput) {
-  const byID = new Map(sessions.map((session) => [session.id, session]))
-  const blocked = new Set<string>()
-  const blockedSelf = (id: string) =>
-    id === input.openRouteID || input.openTabIDs.has(id) || input.working(id) || input.pending(id)
-
-  for (const session of sessions) {
-    if (blockedSelf(session.id)) blocked.add(session.id)
+export function parentLinks(ids: Iterable<string>, parentOf: (id: string) => string | undefined) {
+  const links = new Map<string, string | undefined>()
+  const seen = new Set<string>()
+  const visit = (id: string) => {
+    if (seen.has(id)) return
+    seen.add(id)
+    const parentID = parentOf(id)
+    links.set(id, parentID)
+    if (!parentID) return
+    visit(parentID)
   }
-  for (const id of blocked) {
-    let parentID = byID.get(id)?.parentID
-    while (parentID) {
+  for (const id of ids) visit(id)
+  return links
+}
+
+export function protectedRootIDs(sessions: readonly Session[], input: ProtectionInput) {
+  const parentOf = new Map<string, string | undefined>()
+  for (const [id, parentID] of input.parentID ?? []) parentOf.set(id, parentID)
+  for (const session of sessions) parentOf.set(session.id, session.parentID)
+
+  const blocked = new Set<string>()
+  if (input.openRouteID) blocked.add(input.openRouteID)
+  for (const id of input.openTabIDs) blocked.add(id)
+  for (const id of parentOf.keys()) {
+    if (input.working(id) || input.pending(id)) blocked.add(id)
+  }
+  for (const id of [...blocked]) {
+    const seen = new Set<string>([id])
+    let parentID = parentOf.get(id)
+    while (parentID && !seen.has(parentID)) {
       blocked.add(parentID)
-      parentID = byID.get(parentID)?.parentID
+      seen.add(parentID)
+      parentID = parentOf.get(parentID)
     }
   }
   return blocked
@@ -109,6 +129,11 @@ export function selectLoaded(order: readonly string[], allowed: ReadonlySet<stri
   return order.filter((id) => allowed.has(id))
 }
 
-export function confirmIDs(selected: readonly string[], loaded: ReadonlySet<string>, allowed: ReadonlySet<string>) {
-  return selected.filter((id) => !loaded.has(id) || allowed.has(id))
+export function confirmIDs(
+  selected: readonly string[],
+  loaded: ReadonlySet<string>,
+  allowed: ReadonlySet<string>,
+  blocked: ReadonlySet<string> = new Set(),
+) {
+  return selected.filter((id) => !blocked.has(id) && (!loaded.has(id) || allowed.has(id)))
 }

@@ -1,5 +1,6 @@
 import type { Session } from "@opencode-ai/sdk/v2/client"
-import { type Accessor, createEffect, createMemo, For, Show, Suspense, untrack } from "solid-js"
+import { type Accessor, createEffect, createMemo, For, onCleanup, Show, Suspense, untrack } from "solid-js"
+import { createStore } from "solid-js/store"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
@@ -88,23 +89,48 @@ export type HomeSessionsViewProps = {
 }
 
 export function HomeSessionsView(props: HomeSessionsViewProps) {
+  const [frame, setFrame] = createStore({ top: 0 })
+  let header: HTMLDivElement | undefined
+  const measure = () => {
+    if (!header) return
+    setFrame("top", header.offsetHeight)
+  }
+  createEffect(() => {
+    props.selecting()
+    if (!header || typeof ResizeObserver === "undefined") {
+      measure()
+      return
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(header)
+    onCleanup(() => observer.disconnect())
+  })
   createEffect(() => {
     if (!props.searchOpen()) return
     untrack(() => props.onClearSelect())
   })
+  const stickyTop = () => (props.selecting() && frame.top > 0 ? frame.top : undefined)
   return (
     <section
       ref={props.onSetHoverTarget}
       class="min-h-0 min-w-0 flex-1 flex flex-col"
       aria-label={props.language.t("sidebar.project.recentSessions")}
     >
-      <div class="sticky top-0 z-30 shrink-0 bg-v2-background-bg-base pb-3 pt-6 lg:pt-12" onWheel={props.onWheel}>
+      <div
+        ref={(element) => {
+          header = element
+          measure()
+        }}
+        class="sticky top-0 z-30 shrink-0 bg-v2-background-bg-base pb-3 pt-6 lg:pt-12"
+        onWheel={props.onWheel}
+      >
         <HomeSessionSearch {...props} />
         <div
-          class={`
-            pointer-events-none absolute right-0 top-[84px] z-20 flex max-w-full flex-wrap
-            items-center justify-end gap-1 bg-v2-background-bg-base lg:top-[108px]
-          `}
+          class="z-20 flex max-w-full flex-wrap items-center justify-end gap-1 bg-v2-background-bg-base"
+          classList={{
+            "pointer-events-none absolute right-0 top-[84px] lg:top-[108px]": !props.selecting(),
+            "relative mt-2": props.selecting(),
+          }}
         >
           <ButtonV2
             data-action="home-session-select"
@@ -201,11 +227,15 @@ export function HomeSessionsView(props: HomeSessionsViewProps) {
           </Suspense>
         </div>
       </div>
-      <div class="pointer-events-none sticky top-[84px] z-40 h-0 -mr-3 lg:top-[108px]">
+      <div
+        class="pointer-events-none sticky top-[84px] z-40 h-0 -mr-3 lg:top-[108px]"
+        style={{ top: stickyTop() === undefined ? undefined : `${stickyTop()}px` }}
+      >
         <div
           ref={props.onSetThumbTrack}
           data-component="home-session-scroll-track"
           class="relative ml-auto h-[calc(100cqh-84px)] w-3 lg:h-[calc(100cqh-108px)]"
+          style={{ height: stickyTop() === undefined ? undefined : `calc(100cqh - ${stickyTop()}px)` }}
         />
       </div>
       <div class="-mr-3 min-h-[calc(100cqh-72px)] lg:min-h-[calc(100cqh-96px)]">
@@ -234,6 +264,7 @@ export function HomeSessionsView(props: HomeSessionsViewProps) {
                       titleOpacity={props.titleOpacity(group.id)}
                       onSetRef={(element) => props.onSetHeader(group.id, element)}
                       elevated={index() === 0}
+                      stickyTop={stickyTop()}
                     />
                     <div
                       class={`flex min-w-0 flex-col gap-px pt-4 ${index() === props.groups().length - 1 ? "" : "mb-6"}`}
@@ -395,10 +426,7 @@ function HomeSessionSearch(props: HomeSessionsViewProps) {
                 ? `home-session-search-option-${props.searchActive()}`
                 : undefined
             }
-            onFocus={() => {
-              props.onClearSelect()
-              props.onSearchFocus()
-            }}
+            onFocus={() => props.onSearchFocus()}
             onInput={(event) => props.onSearchInput(event.currentTarget.value)}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
@@ -504,6 +532,7 @@ function HomeSessionGroupHeader(props: {
   titleOpacity: number
   onSetRef: (element: HTMLDivElement) => void
   elevated?: boolean
+  stickyTop?: number
 }) {
   return (
     <div
@@ -513,6 +542,7 @@ function HomeSessionGroupHeader(props: {
         bg-v2-background-bg-base pl-3 lg:top-[108px]
       `}
       classList={{ "home-session-group-header z-[5]": !!props.elevated, "z-10": !props.elevated }}
+      style={{ top: props.stickyTop === undefined ? undefined : `${props.stickyTop}px` }}
     >
       <div class={HOME_SECTION_LABEL} style={{ opacity: props.titleOpacity }}>
         {props.title}

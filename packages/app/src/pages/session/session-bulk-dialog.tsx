@@ -40,16 +40,8 @@ export function BulkConfirmDialog(props: {
         <Show
           when={props.empty}
           fallback={
-            <Show
-              when={dual()}
-              fallback={<span class="text-14-regular text-text-strong">{confirm()}</span>}
-            >
-              <span class="text-14-regular text-text-strong">
-                {language.plural("session.bulk.archive.confirm", props.count)}
-              </span>
-              <span class="text-14-regular text-text-strong">
-                {language.plural("session.bulk.delete.confirm", props.count)}
-              </span>
+            <Show when={!dual()}>
+              <span class="text-14-regular text-text-strong">{confirm()}</span>
             </Show>
           }
         >

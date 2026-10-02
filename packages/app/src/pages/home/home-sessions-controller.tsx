@@ -35,6 +35,7 @@ import { archiveHomeSession } from "../home-session-archive"
 import {
   cleanupCandidates,
   confirmIDs,
+  parentLinks,
   presetDays,
   protectedRootIDs,
   selectLoaded,
@@ -244,16 +245,6 @@ export function createHomeSessionsController(home: HomeController) {
     return home.selection.value().server
   }
   const indexSessions = () => homeSessions().sessions(sessionLoad.data, sessionEventLoad.data)
-  const childSessions = (sessions: readonly Session[]) => {
-    const sync = home.server.focusedSync()
-    return [...new Set(sessions.map((session) => session.directory))].flatMap(
-      (directory) => sync.peek(directory, { bootstrap: false })[0].session ?? [],
-    )
-  }
-  const protectionSessions = () => {
-    const sessions = indexSessions()
-    return mergeSessions(sessions, childSessions(sessions))
-  }
   const pending = (id: string) => {
     const data = home.server.focusedSync().session.data
     return (data.permission[id]?.length ?? 0) > 0 || (data.question[id]?.length ?? 0) > 0
@@ -269,19 +260,36 @@ export function createHomeSessionsController(home: HomeController) {
     }
     return ids
   }
+  const parentLinkMap = () => {
+    const sync = home.server.focusedSync()
+    const data = sync.session.data
+    const ids = openTabIDs([])
+    if (params.id) ids.add(params.id)
+    for (const id of Object.keys(data.session_status)) {
+      if (data.session_working(id)) ids.add(id)
+    }
+    for (const [id, items] of Object.entries(data.permission)) {
+      if ((items?.length ?? 0) > 0) ids.add(id)
+    }
+    for (const [id, items] of Object.entries(data.question)) {
+      if ((items?.length ?? 0) > 0) ids.add(id)
+    }
+    return parentLinks(ids, (id) => sync.session.peek(id)?.parentID)
+  }
   const blockedFor = (list: readonly Session[]) =>
     protectedRootIDs(list, {
       openRouteID: params.id,
       openTabIDs: openTabIDs(list),
       working: (id) => home.server.focusedSync().session.data.session_working(id),
       pending,
+      parentID: parentLinkMap(),
     })
   const allowed = createMemo(() => {
-    const blocked = blockedFor(protectionSessions())
+    const blocked = blockedFor(indexSessions())
     return new Set(records().map((record) => record.session.id).filter((id) => !blocked.has(id)))
   })
   const protectedNow = (id: string, extra: readonly Session[]) => {
-    const list = mergeSessions(protectionSessions(), extra)
+    const list = mergeSessions(indexSessions(), extra)
     if (params.id === id) return true
     if (openTabIDs(list).has(id)) return true
     if (home.server.focusedSync().session.data.session_working(id)) return true
@@ -358,10 +366,10 @@ export function createHomeSessionsController(home: HomeController) {
     if (bulk.busy) return
     const ticket = generation
     const loaded = new Set(records().map((record) => record.session.id))
-    const ids = confirmIDs(bulk.selected, loaded, allowed())
+    const ids = confirmIDs(bulk.selected, loaded, allowed(), blockedFor(indexSessions()))
     if (ids.length === 0) return
     const frozen = [...ids]
-    const extra = mergeSessions(protectionSessions(), retained)
+    const extra = mergeSessions(indexSessions(), retained)
     showConfirm(() => (
       <BulkConfirmDialog
         op={op}
@@ -385,7 +393,7 @@ export function createHomeSessionsController(home: HomeController) {
     if (!sessionLoad.data) return
     const sessions = homeSessions().sessions(sessionLoad.data, sessionEventLoad.data)
     const now = Date.now()
-    const extra = mergeSessions(mergeSessions(sessions, childSessions(sessions)), retained)
+    const extra = mergeSessions(sessions, retained)
     const found = cleanupCandidates(sessions, now, presetDays(id), blockedFor(extra))
     if (found.match.length === 0) {
       showConfirm(() => (
@@ -454,6 +462,7 @@ export function createHomeSessionsController(home: HomeController) {
     if (!bulk.selecting) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return
+      if (oursShowing()) return
       event.preventDefault()
       clearBulk()
     }

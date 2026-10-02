@@ -25,12 +25,13 @@ import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync, useQueryOptions } from "@/context/server-sync"
 import { sessionHasOpenTab, useTabs } from "@/context/tabs"
 import { pathKey } from "@/utils/path-key"
-import { listAllSessions } from "@/utils/session"
+import { listAllSessions, normalizeSessionInfo } from "@/utils/session"
 import { showToast } from "@/utils/toast"
 import {
   BULK_PRESETS,
   cleanupCandidates,
   confirmIDs,
+  parentLinks,
   presetDays,
   protectedRootIDs,
   selectLoaded,
@@ -257,6 +258,8 @@ const WorkspaceActions = (props: {
   </div>
 )
 
+const CLEANUP_SCAN_LIMIT = 10_000
+
 function mergeSessions(left: readonly Session[], right: readonly Session[]) {
   const byID = new Map<string, Session>()
   for (const session of left) byID.set(session.id, session)
@@ -385,12 +388,29 @@ function useWorkspaceBulk(input: {
     }
     return ids
   }
+  const parentLinkMap = () => {
+    const sync = serverSync()
+    const data = sync.session.data
+    const ids = openTabIDs([])
+    if (params.id) ids.add(params.id)
+    for (const id of Object.keys(data.session_status)) {
+      if (data.session_working(id)) ids.add(id)
+    }
+    for (const [id, items] of Object.entries(data.permission)) {
+      if ((items?.length ?? 0) > 0) ids.add(id)
+    }
+    for (const [id, items] of Object.entries(data.question)) {
+      if ((items?.length ?? 0) > 0) ids.add(id)
+    }
+    return parentLinks(ids, (id) => sync.session.peek(id)?.parentID)
+  }
   const blockedFor = (list: readonly Session[]) =>
     protectedRootIDs(list, {
       openRouteID: params.id,
       openTabIDs: openTabIDs(list),
       working: (id) => serverSync().session.data.session_working(id),
       pending,
+      parentID: parentLinkMap(),
     })
   const allowed = createMemo(() => {
     const blocked = blockedFor(known())
@@ -466,7 +486,7 @@ function useWorkspaceBulk(input: {
     const ticket = generation
     const directory = input.directory()
     const loaded = new Set(input.sessions().map((session) => session.id))
-    const ids = confirmIDs(bulk.selected, loaded, allowed())
+    const ids = confirmIDs(bulk.selected, loaded, allowed(), blockedFor(known()))
     if (ids.length === 0) return
     const frozen = [...ids]
     const extra = mergeSessions(knownFor(directory), retained)
@@ -487,11 +507,34 @@ function useWorkspaceBulk(input: {
     const ticket = generation
     const directory = input.directory()
     setBulk("busy", true)
-    const fetched = await listAllSessions(serverSDK().api.session, {
-      directory,
-      order: "desc",
-    }).catch(() => undefined)
-    if (ticket !== generation || input.directory() !== directory) return
+    const page = await serverSDK()
+      .api.session.list({
+        directory,
+        order: "desc",
+        limit: CLEANUP_SCAN_LIMIT,
+      })
+      .catch(() => undefined)
+    if (ticket !== generation || input.directory() !== directory) {
+      setBulk("busy", false)
+      return
+    }
+    if (!page) {
+      setBulk("busy", false)
+      showToast({ title: language.t("common.requestFailed") })
+      return
+    }
+    if (page.data.length >= CLEANUP_SCAN_LIMIT && !page.cursor.next) {
+      setBulk("busy", false)
+      showToast({ title: language.t("session.bulk.cleanup.truncated") })
+      return
+    }
+    const fetched = page.cursor.next
+      ? await listAllSessions(serverSDK().api.session, {
+          directory,
+          order: "desc",
+          limit: CLEANUP_SCAN_LIMIT,
+        }).catch(() => undefined)
+      : page.data.map(normalizeSessionInfo)
     setBulk("busy", false)
     if (!fetched) {
       showToast({ title: language.t("common.requestFailed") })
@@ -568,6 +611,7 @@ function useWorkspaceBulk(input: {
     if (!bulk.selecting) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return
+      if (oursShowing()) return
       event.preventDefault()
       clearBulk()
     }
