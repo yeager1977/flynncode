@@ -6,9 +6,9 @@ import { Effect, Layer, Context } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { Config } from "@/config/config"
 import { InstanceState } from "@/effect/instance-state"
-import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { FSUtil } from "@opencode-ai/core/fs-util"
+import { RuntimeFlags } from "@/effect/runtime-flags"
 import { withTransientReadRetry } from "@/util/effect-http-client"
 import { Global } from "@opencode-ai/core/global"
 import type { MessageV2 } from "./message-v2"
@@ -61,19 +61,55 @@ const layer: Layer.Layer<
       path.join(global.config, "AGENTS.md"),
       ...(!flags.disableClaudeCodePrompt ? [path.join(global.home, ".claude", "CLAUDE.md")] : []),
     ]
-    const instructionFiles = [
-      "AGENTS.md",
-      ...(!flags.disableClaudeCodePrompt ? ["CLAUDE.md"] : []),
-      "CONTEXT.md", // deprecated
-    ]
+    const globalMemory = path.join(global.config, "MEMORY.md")
+    const instructionFiles = !flags.disableClaudeCodePrompt
+      ? ["AGENTS.md", "CLAUDE.md", ".claude/CLAUDE.md", "CONTEXT.md"]
+      : ["AGENTS.md", "CONTEXT.md"]
+
+    const resolveBasePaths = Effect.fn("Instruction.resolveBasePaths")(function* () {
+      const ctx = yield* InstanceState.context
+      const paths = new Set<string>()
+
+      for (const file of globalFiles) {
+        if (yield* fs.existsSafe(file)) {
+          paths.add(path.resolve(file))
+          break
+        }
+      }
+
+      // The first project-level match wins so we don't stack AGENTS.md/CLAUDE.md from every ancestor.
+      if (!Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
+        for (const file of instructionFiles) {
+          const matches = yield* fs
+            .findUp(file, ctx.directory, ctx.worktree)
+            .pipe(Effect.catch(() => Effect.succeed([])))
+          if (matches.length > 0) {
+            matches.forEach((item) => paths.add(path.resolve(item)))
+            break
+          }
+        }
+      }
+
+      if (yield* fs.existsSafe(globalMemory)) paths.add(path.resolve(globalMemory))
+      if (!Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
+        const projectMemory = yield* fs
+          .findUp("MEMORY.md", ctx.directory, ctx.worktree)
+          .pipe(Effect.catch(() => Effect.succeed([])))
+        projectMemory.forEach((item) => paths.add(path.resolve(item)))
+      }
+
+      return paths
+    })
 
     const state = yield* InstanceState.make(
-      Effect.fn("Instruction.state")(() =>
-        Effect.succeed({
+      Effect.fn("Instruction.state")(function* () {
+        return {
           // Track which instruction files have already been attached for a given assistant message.
           claims: new Map<MessageID, Set<string>>(),
-        }),
-      ),
+          // findUp walks are expensive; resolve instruction paths once per instance.
+          paths: yield* resolveBasePaths(),
+        }
+      }),
     )
 
     const relative = Effect.fnUntraced(function* (instruction: string) {
@@ -109,28 +145,8 @@ const layer: Layer.Layer<
 
     const systemPaths = Effect.fn("Instruction.systemPaths")(function* () {
       const config = yield* cfg.get()
-      const ctx = yield* InstanceState.context
-      const paths = new Set<string>()
-
-      for (const file of globalFiles) {
-        if (yield* fs.existsSafe(file)) {
-          paths.add(path.resolve(file))
-          break
-        }
-      }
-
-      // The first project-level match wins so we don't stack AGENTS.md/CLAUDE.md from every ancestor.
-      if (!Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
-        for (const file of instructionFiles) {
-          const matches = yield* fs
-            .findUp(file, ctx.directory, ctx.worktree)
-            .pipe(Effect.catch(() => Effect.succeed([])))
-          if (matches.length > 0) {
-            matches.forEach((item) => paths.add(path.resolve(item)))
-            break
-          }
-        }
-      }
+      const s = yield* InstanceState.get(state)
+      const paths = new Set(s.paths)
 
       if (config.instructions) {
         for (const raw of config.instructions) {

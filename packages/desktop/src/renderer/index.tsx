@@ -82,6 +82,8 @@ const listenForDeepLinks = () => {
   return window.api.onDeepLink((urls) => emitDeepLinks(urls))
 }
 
+const listenForQuickEntry = () => window.api.onQuickEntry(() => window.dispatchEvent(new CustomEvent("opencode:quick-entry")))
+
 function windowLastActiveUrlKey(windowID: string) {
   return `opencode.desktop.window.${windowID}.last-active-url`
 }
@@ -331,6 +333,7 @@ window.api.onMenuCommand((id) => {
   menuTrigger?.(id)
 })
 listenForDeepLinks()
+listenForQuickEntry()
 
 function LoadingSplash() {
   return (

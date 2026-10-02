@@ -14,18 +14,25 @@ export type RoutinesFile = {
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
 
 export function parseRoutines(raw: unknown): { ok: true; value: RoutinesFile } | { ok: false; errors: string[] } {
-  if (raw === undefined || raw === null) return { ok: true, value: { routines: [] } }
-  if (typeof raw !== "object" || Array.isArray(raw)) return { ok: false, errors: ["routines file must be an object"] }
-  const body = raw as Record<string, unknown>
-  if (body.routines === undefined) return { ok: true, value: { routines: [] } }
-  if (!Array.isArray(body.routines)) return { ok: false, errors: ["routines must be an array"] }
+  const items = routineItems(raw)
+  if (!items.ok) return items
   const errors: string[] = []
-  const routines = body.routines.flatMap((item, index) => {
+  const routines = items.value.flatMap((item, index) => {
     const parsed = parseRoutine(item, index, errors)
     return parsed ? [parsed] : []
   })
   if (errors.length > 0) return { ok: false, errors }
   return { ok: true, value: { routines } }
+}
+
+function routineItems(raw: unknown): { ok: true; value: unknown[] } | { ok: false; errors: string[] } {
+  if (raw === undefined || raw === null) return { ok: true, value: [] }
+  if (Array.isArray(raw)) return { ok: true, value: raw }
+  if (typeof raw !== "object") return { ok: false, errors: ["routines file must be an object"] }
+  const routines = (raw as Record<string, unknown>).routines
+  if (routines === undefined) return { ok: true, value: [] }
+  if (!Array.isArray(routines)) return { ok: false, errors: ["routines must be an array"] }
+  return { ok: true, value: routines }
 }
 
 function parseRoutine(item: unknown, index: number, errors: string[]) {

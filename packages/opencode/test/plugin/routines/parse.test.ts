@@ -28,4 +28,20 @@ describe("parseRoutines", () => {
     })
     expect(result.ok).toBe(false)
   })
+
+  test("parses a raw routine array from config", () => {
+    const result = parseRoutines([
+      { id: "triage", name: "Triage", prompt: "Check CI", schedule: { dailyAt: "09:00" } },
+    ])
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.routines[0]).toEqual({
+      id: "triage",
+      name: "Triage",
+      prompt: "Check CI",
+      enabled: true,
+      dailyAt: "09:00",
+      lastRun: undefined,
+    })
+  })
 })

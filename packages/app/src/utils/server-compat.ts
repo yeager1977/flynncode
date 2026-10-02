@@ -83,11 +83,25 @@ function sessionInfo(session: Session): SessionInfo {
   }
 }
 
+function createV2Api(current: ServerApi): CompatibleApi {
+  return {
+    ...current,
+    session: {
+      ...current.session,
+      revert: {
+        ...current.session.revert,
+        stage: (value) => current.session.revert.stage({ ...value, files: value.files ?? true }),
+      },
+    },
+  }
+}
+
 export function createCompatibleApi(input: CompatibleInput): CompatibleApi {
   const v1 = createV1Api(input)
+  const v2 = createV2Api(input.current)
   return lazyApi(
-    input.protocol.then((protocol) => (protocol === "v1" ? v1 : input.current)),
-    input.current,
+    input.protocol.then((protocol) => (protocol === "v1" ? v1 : v2)),
+    v2,
   )
 }
 

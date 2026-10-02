@@ -189,6 +189,54 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 }),
               ),
             ),
+            Effect.catchTag("Session.MessageDecodeError", (error) =>
+              Effect.fail(
+                new ServiceUnavailableError({
+                  message: error.message,
+                  service: `session.compact.${error._tag}`,
+                }),
+              ),
+            ),
+            Effect.catchTag("SessionRunnerModel.ModelNotSelectedError", (error) =>
+              Effect.fail(
+                new ServiceUnavailableError({
+                  message: error.message,
+                  service: `session.compact.${error._tag}`,
+                }),
+              ),
+            ),
+            Effect.catchTag("SessionRunnerModel.ModelUnavailableError", (error) =>
+              Effect.fail(
+                new ServiceUnavailableError({
+                  message: error.message,
+                  service: `session.compact.${error._tag}`,
+                }),
+              ),
+            ),
+            Effect.catchTag("SessionRunnerModel.VariantUnavailableError", (error) =>
+              Effect.fail(
+                new ServiceUnavailableError({
+                  message: error.message,
+                  service: `session.compact.${error._tag}`,
+                }),
+              ),
+            ),
+            Effect.catchTag("SessionRunnerModel.UnsupportedApiError", (error) =>
+              Effect.fail(
+                new ServiceUnavailableError({
+                  message: error.message,
+                  service: `session.compact.${error._tag}`,
+                }),
+              ),
+            ),
+            Effect.catchTag("Integration.Authorization", (error) =>
+              Effect.fail(
+                new ServiceUnavailableError({
+                  message: error.message,
+                  service: `session.compact.${error._tag}`,
+                }),
+              ),
+            ),
           )
           return HttpApiSchema.NoContent.make()
         }),
@@ -202,14 +250,6 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 new SessionNotFoundError({
                   sessionID: error.sessionID,
                   message: `Session not found: ${error.sessionID}`,
-                }),
-              ),
-            ),
-            Effect.catchTag("Session.OperationUnavailableError", (error) =>
-              Effect.fail(
-                new ServiceUnavailableError({
-                  message: `Session ${error.operation} is not available yet`,
-                  service: `session.${error.operation}`,
                 }),
               ),
             ),

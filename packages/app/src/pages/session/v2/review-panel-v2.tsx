@@ -1,3 +1,4 @@
+import { Button } from "@opencode-ai/ui/button"
 import { createMemo, createResource, createSignal, Show, type JSX } from "solid-js"
 import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
 import type { FileDiffInfo } from "@opencode-ai/client/promise"
@@ -9,6 +10,9 @@ import {
 } from "@opencode-ai/session-ui/v2/session-review-v2"
 import { SessionReviewFilePreviewV2 } from "@opencode-ai/session-ui/v2/session-review-file-preview-v2"
 import { DiffChanges } from "@opencode-ai/ui/v2/diff-changes-v2"
+import { ArtifactPreview } from "@/pages/session/artifact-preview-view"
+import { artifactPreviewKind } from "@/pages/session/artifact-preview"
+import { ReviewBrowser } from "@/pages/session/review-browser"
 import type {
   SessionReviewComment,
   SessionReviewCommentActions,
@@ -20,7 +24,9 @@ import type {
 } from "@opencode-ai/session-ui/session-review"
 import FileTreeV2 from "@/components/file-tree-v2"
 import { useLanguage } from "@/context/language"
+import { hunkApply, whenApplied } from "../hunk-apply"
 import { useSDK } from "@/context/sdk"
+import { showToast } from "@/utils/toast"
 import {
   filterRenderableDiff,
   filterReviewFiles,
@@ -52,10 +58,13 @@ export type ReviewPanelV2Props = {
   comments?: SessionReviewComment[]
   focusedComment?: SessionReviewFocus | null
   onFocusedCommentChange?: (focus: SessionReviewFocus | null) => void
+  indexActions: boolean
+  onApplied?: () => void
 }
 
 export function ReviewPanelV2(props: ReviewPanelV2Props) {
   const sdk = useSDK()
+  const language = useLanguage()
 
   const diffs = createMemo(() => props.diffs().filter(filterRenderableDiff))
   const filteredFiles = createMemo(() =>
@@ -100,6 +109,35 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
     return source
   })
 
+  const patch = () => {
+    const item = activeItem()
+    if (!item || !("patch" in item) || typeof item.patch !== "string" || item.patch.length === 0) return
+    return item.patch
+  }
+  const applyHunk = (call: ReturnType<typeof hunkApply>) => {
+    void whenApplied(sdk().client.vcs.apply(call), () => props.onApplied?.()).catch(() => {
+      showToast({
+        title: language.t("common.requestFailed"),
+        description: language.t("common.requestFailed"),
+      })
+    })
+  }
+  const revertHunk = () => {
+    const value = patch()
+    if (!value) return
+    applyHunk(hunkApply({ patch: value, revert: true }))
+  }
+  const stageHunk = () => {
+    const value = patch()
+    if (!value) return
+    applyHunk(hunkApply({ patch: value, index: "stage" }))
+  }
+  const unstageHunk = () => {
+    const value = patch()
+    if (!value) return
+    applyHunk(hunkApply({ patch: value, index: "unstage" }))
+  }
+
   const readFile = async (path: string) =>
     sdk()
       .client.file.read({ path })
@@ -110,6 +148,7 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
       })
 
   return (
+    <div class="flex h-full min-h-0">
     <SessionReviewV2
       title={props.title}
       stats={<DiffChanges changes={diffs()} />}
@@ -119,7 +158,24 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
         // Always mounted: the sidebar header hosts the changes-mode dropdown,
         // which must stay reachable when the current mode has zero diffs.
         <ReviewPanelV2Sidebar
-          title={props.title}
+      title={
+        <div class="flex items-center gap-2">
+          {props.title}
+          <Show when={props.indexActions && patch()}>
+            <Button size="small" variant="ghost" onClick={stageHunk}>
+              {language.t("session.review.stageHunk")}
+            </Button>
+            <Button size="small" variant="ghost" onClick={unstageHunk}>
+              {language.t("session.review.unstageHunk")}
+            </Button>
+          </Show>
+          <Show when={patch()}>
+            <Button size="small" variant="ghost" onClick={revertHunk}>
+              {language.t("session.review.revertHunk")}
+            </Button>
+          </Show>
+        </div>
+      }
           state={props.state}
           diffsReady={props.diffsReady}
           onSelectFile={props.onSelectFile}
@@ -143,6 +199,7 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
         // updates the mounted preview instead of remounting the whole viewer.
         <Show when={activeDiff()} keyed>
           {(file) => (
+            <Show when={artifactPreviewKind(file)} fallback={
             <Show when={activeItem()}>
               {(diff) => (
                 <SessionReviewFilePreviewV2
@@ -161,10 +218,23 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
                 />
               )}
             </Show>
+            }>
+              <ArtifactPreview path={file} />
+            </Show>
           )}
         </Show>
       }
     />
+    <ReviewBrowser
+      onAnnotate={(comment) =>
+        props.onLineComment?.({
+          file: props.activeFile ?? "preview",
+          selection: { start: 1, end: 1 },
+          comment,
+        })
+      }
+    />
+    </div>
   )
 }
 

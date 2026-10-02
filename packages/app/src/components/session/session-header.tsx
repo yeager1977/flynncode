@@ -8,6 +8,8 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import { showToast } from "@/utils/toast"
 import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import { getFilename } from "@opencode-ai/core/util/path"
+import { base64Encode } from "@opencode-ai/core/util/encode"
+import { useNavigate } from "@solidjs/router"
 import { createEffect, createMemo, createSignal, For, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
@@ -17,6 +19,7 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
+import { useServerSDK } from "@/context/server-sdk"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
@@ -24,6 +27,8 @@ import { focusTerminalById } from "@/pages/session/helpers"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { messageAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
+import { pathKey } from "@/utils/path-key"
+import { checkoutHandoff } from "@/pages/session/checkout-handoff"
 import { fileManagerApp } from "@/utils/file-manager"
 import { Persist, persisted } from "@/utils/persist"
 import { StatusPopover, StatusPopoverV2 } from "../status-popover"
@@ -147,6 +152,8 @@ export function SessionHeader() {
   const sync = useSync()
   const terminal = useTerminal()
   const { params, view } = useSessionLayout()
+  const navigate = useNavigate()
+  const serverSDK = useServerSDK()
 
   const projectDirectory = createMemo(() => decode64(params.dir) ?? "")
   const project = createMemo(() => {
@@ -207,6 +214,60 @@ export function SessionHeader() {
     ] as const
   })
 
+  const onPrimary = createMemo(() => {
+    const root = project()?.worktree
+    if (!root) return true
+    return pathKey(projectDirectory()) === pathKey(root)
+  })
+
+  const handoff = async () => {
+    const current = projectDirectory()
+    const root = project()?.worktree
+    if (!current || !root) return
+    const listed = await serverSDK()
+      .client.worktree.list({ directory: root })
+      .then((result) => result.data ?? [])
+      .catch(() => undefined)
+    if (!listed) {
+      showToast({
+        title: language.t("workspace.create.failed.title"),
+        description: language.t("common.requestFailed"),
+      })
+      return
+    }
+    const decision = checkoutHandoff({
+      current: pathKey(current),
+      primary: pathKey(root),
+      branch: sync().data.vcs?.branch,
+      worktrees: listed.map((directory) => ({ directory: pathKey(directory) })),
+      git: true,
+    })
+    if (!decision.ok) {
+      showToast({
+        title: language.t("workspace.create.failed.title"),
+        description: language.t("common.requestFailed"),
+      })
+      return
+    }
+    const created = decision.create
+      ? await serverSDK()
+          .client.worktree.create({ directory: root })
+          .then((result) => result.data?.directory)
+          .catch(() => undefined)
+      : decision.directory
+    if (!created || pathKey(created) === pathKey(current)) {
+      if (decision.create) {
+        showToast({
+          title: language.t("workspace.create.failed.title"),
+          description: language.t("common.requestFailed"),
+        })
+      }
+      return
+    }
+    const id = params.id
+    navigate(id ? `/${base64Encode(created)}/session/${id}` : `/${base64Encode(created)}/session`)
+  }
+
   const toggleTerminal = () => {
     const next = !view().terminal.opened()
     view().terminal.toggle()
@@ -242,6 +303,11 @@ export function SessionHeader() {
     reviewVisible: isDesktop(),
     reviewOpened: view().reviewPanel.opened(),
     onReviewToggle: () => view().reviewPanel.toggle(),
+    tasksLabel: language.t("session.subagents.tasks"),
+    tasksOpened: view().tasks.opened(),
+    onTasksToggle: () => view().tasks.toggle(),
+    handoffLabel: language.t(onPrimary() ? "session.new.worktree.create" : "session.new.worktree.main"),
+    onHandoff: () => void handoff(),
   }))
 
   const selectApp = (app: OpenApp) => {
@@ -502,6 +568,37 @@ export function SessionHeader() {
                           </div>
                         </Button>
                       </TooltipKeybind>
+                      <Tooltip placement="bottom" value={language.t("session.subagents.tasks")}>
+                        <Button
+                          variant="ghost"
+                          class="titlebar-icon w-8 h-6 p-0 box-border"
+                          data-action="session-tasks-toggle"
+                          onClick={() => view().tasks.toggle()}
+                          aria-label={language.t("session.subagents.tasks")}
+                          aria-expanded={view().tasks.opened()}
+                          aria-controls="tasks-panel"
+                        >
+                          <Icon
+                            size="small"
+                            name="checklist"
+                            classList={{
+                              "text-icon-strong": view().tasks.opened(),
+                              "text-icon-weak": !view().tasks.opened(),
+                            }}
+                          />
+                        </Button>
+                      </Tooltip>
+                      <Tooltip placement="bottom" value={v2ActionsState().handoffLabel}>
+                        <Button
+                          variant="ghost"
+                          class="titlebar-icon w-8 h-6 p-0 box-border"
+                          data-action="session-checkout-handoff"
+                          onClick={() => void handoff()}
+                          aria-label={v2ActionsState().handoffLabel}
+                        >
+                          <Icon size="small" name="branch" />
+                        </Button>
+                      </Tooltip>
                     </div>
                   </div>
                 </div>
@@ -524,6 +621,11 @@ type SessionHeaderV2ActionsState = {
   reviewVisible: boolean
   reviewOpened: boolean
   onReviewToggle: () => void
+  tasksLabel: string
+  tasksOpened: boolean
+  onTasksToggle: () => void
+  handoffLabel: string
+  onHandoff: () => void
 }
 
 function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
@@ -560,6 +662,33 @@ function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
             aria-expanded={props.state.reviewOpened}
             aria-controls="review-panel"
             icon={<IconV2 name="sidebar-right" />}
+          />
+        </TooltipV2>
+        <TooltipV2 class="shrink-0" placement="bottom" value={props.state.tasksLabel}>
+          <IconButtonV2
+            type="button"
+            variant="ghost-muted"
+            size="large"
+            class="!w-9 shrink-0"
+            data-action="session-tasks-toggle"
+            state={props.state.tasksOpened ? "pressed" : undefined}
+            onClick={props.state.onTasksToggle}
+            aria-label={props.state.tasksLabel}
+            aria-expanded={props.state.tasksOpened}
+            aria-controls="tasks-panel"
+            icon={<Icon name="checklist" />}
+          />
+        </TooltipV2>
+        <TooltipV2 class="shrink-0" placement="bottom" value={props.state.handoffLabel}>
+          <IconButtonV2
+            type="button"
+            variant="ghost-muted"
+            size="large"
+            class="!w-9 shrink-0"
+            data-action="session-checkout-handoff"
+            onClick={props.state.onHandoff}
+            aria-label={props.state.handoffLabel}
+            icon={<Icon name="branch" />}
           />
         </TooltipV2>
       </Show>

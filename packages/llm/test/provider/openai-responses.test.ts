@@ -659,6 +659,25 @@ describe("OpenAI Responses route", () => {
     }),
   )
 
+  it.effect("requests GPT-6.1 Sol reasoning defaults and accepts max effort", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<OpenAIResponses.OpenAIResponsesBody>(
+        LLM.request({
+          model: OpenAI.configure({ baseURL: "https://api.openai.test/v1/", apiKey: "test" }).responses("gpt-6.1-sol"),
+          prompt: "hi",
+          generation: { temperature: 0.2, topP: 0.9 },
+          providerOptions: { openai: { reasoningEffort: "max" } },
+        }),
+      )
+
+      expect(prepared.body.store).toBe(false)
+      expect(prepared.body.include).toEqual(["reasoning.encrypted_content"])
+      expect(prepared.body.reasoning).toEqual({ effort: "max", summary: "auto" })
+      expect(prepared.body.temperature).toBeUndefined()
+      expect(prepared.body.top_p).toBeUndefined()
+    }),
+  )
+
   it.effect("lets callers opt out of the GPT-5 default include", () =>
     Effect.gen(function* () {
       const prepared = yield* LLMClient.prepare<OpenAIResponses.OpenAIResponsesBody>(

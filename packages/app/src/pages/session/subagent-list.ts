@@ -37,7 +37,7 @@ export function expandSubagent(
   child: { id: string; finished: boolean },
 ) {
   return {
-    expandedID: child.id,
+    expandedID: state.expandedID === child.id ? undefined : child.id,
     finishedOpen: state.finishedOpen || child.finished,
   }
 }
@@ -127,7 +127,7 @@ export function mergeSubagents(sessions: readonly SubagentChild[], tasks: readon
       ...current,
       title: current.title || task.title,
       text: current.text || task.text,
-      status: current.status === "busy" || current.status === "retry" ? current.status : "busy",
+      status: current.status ?? task.status,
     })
   }
   return [...byID.values()]

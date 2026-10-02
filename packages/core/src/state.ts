@@ -27,8 +27,8 @@ export interface Transformable<DraftApi> {
 }
 
 type Batch = {
-  reloads: Set<Reload>
-  after: Set<(exit: Exit.Exit<void, never>) => Effect.Effect<void>>
+  readonly reloads: Set<Reload>
+  readonly after: Set<(exit: Exit.Exit<void, never>) => Effect.Effect<void>>
 }
 
 const CurrentBatch = Context.Reference<Batch | undefined>("@opencode/State/CurrentBatch", {
@@ -42,13 +42,17 @@ export function batch<A, E, R>(effect: Effect.Effect<A, E, R>) {
     const batch: Batch = { reloads: new Set(), after: new Set() }
     const result = yield* effect.pipe(Effect.provideService(CurrentBatch, batch), Effect.exit)
     const reloaded = yield* Effect.forEach(batch.reloads, (reload) => reload(), { discard: true }).pipe(Effect.exit)
-    yield* Effect.forEach(batch.after, (after) => after(reloaded), { discard: true })
+    const after = yield* Effect.forEach(batch.after, (callback) => Effect.exit(callback(reloaded)))
     if (Exit.isFailure(reloaded)) return yield* Effect.failCause(reloaded.cause)
     if (Exit.isFailure(result)) return yield* Effect.failCause(result.cause)
+    for (const callback of after) {
+      if (Exit.isFailure(callback)) return yield* Effect.failCause(callback.cause)
+    }
     return result.value
   })
 }
 
+/** Runs after the outermost batch's reloads complete and receives their exit. */
 export function afterBatch(effect: (exit: Exit.Exit<void, never>) => Effect.Effect<void>) {
   return Effect.gen(function* () {
     const batch = yield* CurrentBatch

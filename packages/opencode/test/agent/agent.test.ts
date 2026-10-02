@@ -1,6 +1,7 @@
 import { expect } from "bun:test"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Cause, Effect, Exit, Layer } from "effect"
+import { rm } from "node:fs/promises"
 import path from "path"
 import { TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
@@ -593,8 +594,8 @@ it.instance(
   "skill directories are allowed for external_directory",
   () =>
     Effect.gen(function* () {
-      const test = yield* TestInstance
       const skillDir = path.join(Global.Path.home, ".opencode", "skill", "perm-skill")
+      yield* Effect.addFinalizer(() => Effect.promise(() => rm(skillDir, { force: true, recursive: true })))
       yield* Effect.promise(() =>
         Bun.write(
           path.join(skillDir, "SKILL.md"),
@@ -604,7 +605,7 @@ description: Permission skill.
 ---
 
 # Permission Skill
-`,
+          `,
         ),
       )
 

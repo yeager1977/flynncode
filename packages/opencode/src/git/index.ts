@@ -2,6 +2,7 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { AppProcess } from "@opencode-ai/core/process"
 import { Effect, Layer, Context, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
+import { applyArgs, type ApplyIndex } from "./apply-args"
 
 const cfg = [
   "--no-optional-locks",
@@ -85,9 +86,10 @@ export interface Interface {
   readonly stats: (cwd: string, ref: string) => Effect.Effect<Stat[]>
   readonly patch: (cwd: string, ref: string, file: string, options?: PatchOptions) => Effect.Effect<Patch>
   readonly patchAll: (cwd: string, ref: string, options?: PatchOptions) => Effect.Effect<Patch>
+  readonly patchStaged: (cwd: string, file: string, options?: PatchOptions) => Effect.Effect<Patch>
   readonly patchUntracked: (cwd: string, file: string, options?: PatchOptions) => Effect.Effect<Patch>
   readonly statUntracked: (cwd: string, file: string) => Effect.Effect<Stat | undefined>
-  readonly applyPatch: (cwd: string, patch: string) => Effect.Effect<Result>
+  readonly applyPatch: (cwd: string, patch: string, index?: ApplyIndex) => Effect.Effect<Result>
 }
 
 const kind = (code: string): Kind => {
@@ -276,6 +278,24 @@ const layer = Layer.effect(
       return { text: result.text(), truncated: result.truncated } satisfies Patch
     })
 
+    // Index vs HEAD for one file: the patch `git apply --cached -R` needs to unstage.
+    const patchStaged = Effect.fn("Git.patchStaged")(function* (cwd: string, file: string, options?: PatchOptions) {
+      const result = yield* run(
+        [
+          "diff",
+          "--cached",
+          "--patch",
+          "--no-ext-diff",
+          "--no-renames",
+          `--unified=${options?.context ?? 3}`,
+          "--",
+          file,
+        ],
+        { cwd, maxOutputBytes: options?.maxOutputBytes },
+      )
+      return { text: result.truncated ? "" : result.text(), truncated: result.truncated } satisfies Patch
+    })
+
     const patchUntracked = Effect.fn("Git.patchUntracked")(function* (
       cwd: string,
       file: string,
@@ -319,8 +339,8 @@ const layer = Layer.effect(
       } satisfies Stat
     })
 
-    const applyPatch = Effect.fn("Git.applyPatch")(function* (cwd: string, patch: string) {
-      return yield* run(["apply", "-"], { cwd, stdin: stdin(patch) })
+    const applyPatch = Effect.fn("Git.applyPatch")(function* (cwd: string, patch: string, index?: ApplyIndex) {
+      return yield* run(applyArgs(index), { cwd, stdin: stdin(patch) })
     })
 
     return Service.of({
@@ -336,6 +356,7 @@ const layer = Layer.effect(
       stats,
       patch,
       patchAll,
+      patchStaged,
       patchUntracked,
       statUntracked,
       applyPatch,

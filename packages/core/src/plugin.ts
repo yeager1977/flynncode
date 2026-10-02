@@ -61,21 +61,28 @@ const layer = Layer.effect(
                   Effect.withSpan("Plugin.load", { attributes: { "plugin.id": id } }),
                   Effect.onExit((exit) => (Exit.isFailure(exit) ? Scope.close(child, exit) : Effect.void)),
                 )
+                // Do not expose readiness until batched plugin transforms are materialized.
                 yield* State.afterBatch((reloadExit) =>
                   Effect.gen(function* () {
-                    const pending = waiters.get(id) ?? []
-                    waiters.delete(id)
-                    loading.delete(id)
-                    if (Exit.isFailure(reloadExit)) {
-                      failures.set(id, reloadExit)
-                      yield* Effect.forEach(pending, (waiter) => Deferred.done(waiter, reloadExit), {
+                    const published = Exit.isFailure(reloadExit)
+                      ? reloadExit
+                      : yield* events.publish(Event.Added, { id }).pipe(Effect.asVoid, Effect.exit)
+                    if (Exit.isFailure(published)) {
+                      yield* Scope.close(child, published).pipe(Effect.ignore)
+                      failures.set(id, published)
+                      const pending = waiters.get(id) ?? []
+                      waiters.delete(id)
+                      loading.delete(id)
+                      yield* Effect.forEach(pending, (waiter) => Deferred.done(waiter, published), {
                         discard: true,
                       })
-                      return
+                      return yield* Effect.failCause(published.cause)
                     }
 
                     active.set(id, child)
-                    yield* events.publish(Event.Added, { id })
+                    loading.delete(id)
+                    const pending = waiters.get(id) ?? []
+                    waiters.delete(id)
                     yield* Effect.forEach(pending, (waiter) => Deferred.succeed(waiter, undefined), {
                       discard: true,
                     })

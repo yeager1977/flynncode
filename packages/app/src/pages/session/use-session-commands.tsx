@@ -353,7 +353,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     await runCommand({
       owner,
       prompt: promptSession,
-      request: () => session.revert.stage({ sessionID, messageID: message.id }),
+      request: () => session.revert.stage({ sessionID, messageID: message.id, files: true }),
       updatePrompt: (promptSession) => {
         if (parts) promptSession.set(extractPromptFromParts(parts, { directory }))
       },
@@ -389,7 +389,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     await runCommand({
       owner,
       prompt: promptSession,
-      request: () => session.revert.stage({ sessionID, messageID: next.id }),
+      request: () => session.revert.stage({ sessionID, messageID: next.id, files: true }),
       updatePrompt: () => undefined,
       updateViewport: () => setActiveMessage(messages[boundary]),
     })

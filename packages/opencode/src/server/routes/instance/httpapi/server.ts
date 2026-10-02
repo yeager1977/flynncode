@@ -65,6 +65,8 @@ import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { SessionV2 } from "@opencode-ai/core/session"
 import { SessionExecution } from "@opencode-ai/core/session/execution"
+import { TaskTool } from "@opencode-ai/core/tool/task"
+import { MessageTool } from "@opencode-ai/core/tool/message"
 import * as SessionExecutionLocal from "@opencode-ai/core/session/execution/local"
 import { lazy } from "@/util/lazy"
 import { CorsConfig, isAllowedCorsOrigin, type CorsOptions } from "@opencode-ai/server/cors"
@@ -272,6 +274,10 @@ export function createRoutes(
   corsOptions?: CorsOptions,
 ): Layer.Layer<never, EffectConfig.ConfigError, RouteRequirements> {
   const locationServiceMapV2 = buildLocationServiceMap()
+  const sessionReplacements = [
+    [LocationServiceMap.node, locationServiceMapV2],
+    [SessionExecution.node, SessionExecutionLocal.node],
+  ] as const
 
   return Layer.mergeAll(
     rootApiRoutes,
@@ -295,12 +301,9 @@ export function createRoutes(
     Layer.provide(sessionLocationLayer),
     Layer.provide(locationLayer),
     Layer.provide(PtyEnvironment.layer),
-    Layer.provide(
-      AppNodeBuilderV1.build(SessionV2.node, [
-        [LocationServiceMap.node, locationServiceMapV2],
-        [SessionExecution.node, SessionExecutionLocal.node],
-      ]),
-    ),
+    Layer.provide(AppNodeBuilderV1.build(SessionV2.node, sessionReplacements)),
+    Layer.provide(AppNodeBuilderV1.build(TaskTool.bindNode, sessionReplacements)),
+    Layer.provide(AppNodeBuilderV1.build(MessageTool.bindNode, sessionReplacements)),
     Layer.provide(locationServiceMapV2),
 
     Layer.provide(AppNodeBuilderV1.build(app)),

@@ -16,6 +16,14 @@ describe("isDue", () => {
     expect(isDue(routine(), new Date(2026, 8, 22, 9, 0, 12))).toBe(true)
   })
 
+  test("is due later the same day if never run", () => {
+    expect(isDue(routine(), new Date(2026, 8, 22, 15, 30))).toBe(true)
+  })
+
+  test("is not due before dailyAt", () => {
+    expect(isDue(routine(), new Date(2026, 8, 22, 8, 59))).toBe(false)
+  })
+
   test("skips disabled routines", () => {
     expect(isDue(routine({ enabled: false }), new Date(2026, 8, 22, 9, 0))).toBe(false)
   })

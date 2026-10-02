@@ -491,8 +491,8 @@ const fromRequest = Effect.fn("OpenAIResponses.fromRequest")(function* (request:
     tool_choice: request.toolChoice ? yield* lowerToolChoice(request.toolChoice) : undefined,
     stream: true as const,
     max_output_tokens: generation?.maxTokens,
-    temperature: generation?.temperature,
-    top_p: generation?.topP,
+    temperature: OpenAIOptions.omitsSampling(request.model.id) ? undefined : generation?.temperature,
+    top_p: OpenAIOptions.omitsSampling(request.model.id) ? undefined : generation?.topP,
     ...options,
   }
 })

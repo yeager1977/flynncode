@@ -176,6 +176,16 @@ const SettingsProvidersContent: Component<{ onBack?: () => void }> = (props) => 
                       <Tag>{type(item)}</Tag>
                     </div>
                     <div class="flex items-center gap-1">
+                      <Show when={item.id === "openai" && source(item) !== "env"}>
+                        <Button
+                          size="large"
+                          variant="ghost"
+                          data-action="provider-reconnect"
+                          onClick={() => connect("openai")}
+                        >
+                          {language.t("common.reconnect")}
+                        </Button>
+                      </Show>
                       <Show when={canReplaceProviderApiKey(item.id)}>
                         <Button
                           size="large"

@@ -28,6 +28,7 @@ import { Effect, Layer, Context } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { errorMessage } from "@/util/error"
+import { clearPluginTools, syncPluginTools } from "./v2-tools"
 import { PluginLoader } from "./loader"
 import { parsePluginSpecifier, readPluginId, readV1Plugin, resolvePluginId } from "./shared"
 import { registerAdapter } from "@/control-plane/adapters"
@@ -280,6 +281,9 @@ const layer = Layer.effect(
             { discard: true },
           ),
         )
+
+        syncPluginTools(hooks, ctx.directory, ctx.worktree)
+        yield* Effect.addFinalizer(() => Effect.sync(() => clearPluginTools(ctx.directory)))
 
         return { hooks }
       }),

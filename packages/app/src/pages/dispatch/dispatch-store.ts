@@ -1,4 +1,4 @@
-export type DispatchStatus = "running" | "done" | "failed"
+export type DispatchStatus = "running" | "needs-input" | "blocked" | "done" | "failed"
 
 export type DispatchTask = {
   sessionID: string
@@ -44,7 +44,8 @@ export function parseDispatch(raw: unknown): DispatchTask[] {
 }
 
 function dispatchStatus(value: unknown): DispatchStatus | undefined {
-  if (value === "running" || value === "done" || value === "failed") return value
+  if (value === "running" || value === "needs-input" || value === "blocked" || value === "done" || value === "failed")
+    return value
   return undefined
 }
 

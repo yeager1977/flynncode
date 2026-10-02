@@ -71,7 +71,7 @@ export async function markRan(loaded: { source: "config" | "file"; routines: Rou
     return next
   }
   const text = await Bun.file(configFile()).text()
-  const edits = modify(text, ["routines"], { routines: storedRoutines }, { formattingOptions: { insertSpaces: true, tabSize: 2 } })
+  const edits = modify(text, ["routines"], storedRoutines, { formattingOptions: { insertSpaces: true, tabSize: 2 } })
   await Bun.write(configFile(), applyEdits(text, edits))
   return next
 }

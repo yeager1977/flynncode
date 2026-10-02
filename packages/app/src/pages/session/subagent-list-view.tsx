@@ -1,5 +1,7 @@
-import { For, Show, createEffect, createMemo } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
+import { Button } from "@opencode-ai/ui/button"
 import { useLanguage } from "@/context/language"
+import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import {
@@ -83,8 +85,10 @@ function Row(props: {
 }) {
   const sync = useSync()
   const language = useLanguage()
+  const sdk = useSDK()
   const { view } = useSessionLayout()
   const expanded = () => view().subagents.expandedID() === props.child.id
+  const [steer, setSteer] = createSignal("")
   const status = () =>
     props.child.status === "busy" || props.child.status === "retry"
       ? language.t("session.subagents.running")
@@ -96,17 +100,70 @@ function Row(props: {
     )
   })
   return (
-    <div class="flex flex-col gap-1 border-s border-border-weak ps-2">
-      <button type="button" class="text-start" onClick={() => props.open(props.child, props.finished)}>
-        <bdi dir="auto">{props.child.title}</bdi>
-        <span class="text-text-weak"> {status()}</span>
-        <div class="text-text-weak">
-          <bdi dir="auto">{subagentPreview(props.child.text)}</bdi>
+    <div
+      class="flex flex-col gap-1 rounded-md border border-border-weak-base bg-v2-background-bg-layer-02 px-2 py-1.5"
+      data-action="session-task-chip"
+      data-expanded={expanded() ? "true" : "false"}
+    >
+      <button
+        type="button"
+        class="text-start"
+        aria-expanded={expanded()}
+        onClick={() => props.open(props.child, props.finished)}
+      >
+        <div dir="auto" class="text-14-regular text-text-strong" style={{ "font-weight": "560" }}>
+          <bdi>{props.child.title}</bdi>
         </div>
+        <span class="text-text-weak"> {status()}</span>
+        <Show when={!expanded() && subagentPreview(props.child.text)}>
+          <div class="text-text-weak line-clamp-2">
+            <bdi dir="auto">{subagentPreview(props.child.text)}</bdi>
+          </div>
+        </Show>
       </button>
+      <Show when={expanded() && (props.child.status === "busy" || props.child.status === "retry")}>
+        <Button
+          type="button"
+          size="small"
+          variant="ghost"
+          onClick={() => {
+            void sdk().client.session.abort({ sessionID: props.child.id })
+          }}
+        >
+          {language.t("common.cancel")}
+        </Button>
+        <form
+          class="flex gap-1"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const text = steer().trim()
+            if (!text) return
+            void sdk().client.session.prompt({
+              sessionID: props.child.id,
+              parts: [{ type: "text", text }],
+            })
+            setSteer("")
+          }}
+        >
+          <input
+            class="min-w-0 flex-1 rounded-md border border-border-weak-base bg-transparent px-2 py-1 text-12-regular"
+            value={steer()}
+            aria-label={language.t("dispatch.placeholder")}
+            onInput={(event) => setSteer(event.currentTarget.value)}
+          />
+          <Button type="submit" size="small" variant="ghost">
+            {language.t("session.followupDock.sendNow")}
+          </Button>
+        </form>
+      </Show>
       <Show when={expanded()}>
-        <div dir="auto" class="flex flex-col gap-2">
-          <For each={text()}>{(item) => <div dir="auto" class="whitespace-pre-wrap break-words">{item}</div>}</For>
+        <div
+          dir="auto"
+          data-slot="session-task-output"
+          class="max-h-48 overflow-y-auto text-13-regular text-text-weak whitespace-pre-wrap break-words"
+          onClick={() => props.open(props.child, props.finished)}
+        >
+          <For each={text()}>{(item) => <div dir="auto">{item}</div>}</For>
         </div>
       </Show>
     </div>

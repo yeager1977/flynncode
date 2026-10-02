@@ -93,6 +93,18 @@ describe("SessionV2.create", () => {
     }),
   )
 
+  it.effect("stores a parent session id", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const parent = yield* session.create({ location })
+
+      const child = yield* session.create({ location, parentID: parent.id })
+
+      expect(child.parentID).toBe(parent.id)
+      expect((yield* session.get(child.id)).parentID).toBe(parent.id)
+    }),
+  )
+
   it.effect("returns the existing Session when one ID is reused with different create arguments", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
@@ -317,8 +329,44 @@ describe("SessionV2.create", () => {
           Effect.map((error) => (error instanceof SessionV2.OperationUnavailableError ? error.operation : "not-found")),
         )
 
-      expect(yield* unavailable(session.shell({ sessionID: created.id, command: "pwd" }))).toBe("shell")
-      expect(yield* unavailable(session.skill({ sessionID: created.id, skill: "review" }))).toBe("skill")
+      expect(yield* unavailable(session.skill({ sessionID: created.id, skill: "review" }))).toBe("not-found")
+    }),
+  )
+
+  it.effect("runs a shell command in the session directory and records the output", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const dir = yield* Effect.promise(() => tmpdir())
+      const created = yield* session.create({
+        location: Location.Ref.make({ directory: AbsolutePath.make(dir.path) }),
+      })
+
+      yield* session.shell({ sessionID: created.id, command: "printf flynn-shell", resume: false })
+
+      const messages = yield* session.messages({ sessionID: created.id })
+      expect(messages.find((message) => message.type === "shell")).toMatchObject({
+        command: "printf flynn-shell",
+        output: "flynn-shell",
+      })
+    }),
+  )
+
+  it.effect("reports compaction unavailable when the location cannot summarize", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location })
+      const error = yield* session.compact({ sessionID: created.id }).pipe(Effect.flip)
+
+      expect(error).toBeInstanceOf(SessionV2.OperationUnavailableError)
+    }),
+  )
+
+  it.effect("returns immediately when waiting on an idle session", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location })
+
+      yield* session.wait(created.id)
     }),
   )
 

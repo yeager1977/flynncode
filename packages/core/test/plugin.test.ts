@@ -1,13 +1,21 @@
 import { describe, expect } from "bun:test"
-import { Effect, Exit, Fiber } from "effect"
+import { Effect, Exit, Fiber, Layer } from "effect"
 import { define } from "@opencode-ai/plugin/v2/effect"
 import { AgentV2 } from "@opencode-ai/core/agent"
+import { EventV2 } from "@opencode-ai/core/event"
 import { PluginV2 } from "@opencode-ai/core/plugin"
 import { State } from "@opencode-ai/core/state"
 import { testEffect } from "./lib/effect"
-import { PluginTestLayer } from "./plugin/fixture"
+import { PluginTestLayer, PluginTestLayerWithEvent } from "./plugin/fixture"
 
 const it = testEffect(PluginTestLayer)
+const itEventPublishFails = testEffect(
+  PluginTestLayerWithEvent(
+    Layer.mock(EventV2.Service)({
+      publish: () => Effect.die("event publication failed"),
+    }),
+  ),
+)
 
 describe("PluginV2", () => {
   it.effect("waits for a plugin and returns immediately once active", () =>
@@ -47,6 +55,46 @@ describe("PluginV2", () => {
       )
 
       expect((yield* Fiber.join(waiting))?.description).toBe("ready")
+    }),
+  )
+
+  it.effect("runs later after-batch callbacks when an earlier callback defects", () =>
+    Effect.gen(function* () {
+      let ran = false
+      const result = yield* State.batch(
+        Effect.gen(function* () {
+          yield* State.afterBatch(() => Effect.die("after-batch failure"))
+          yield* State.afterBatch(() => Effect.sync(() => (ran = true)))
+        }),
+      ).pipe(Effect.exit)
+
+      expect(Exit.isFailure(result)).toBe(true)
+      expect(ran).toBe(true)
+    }),
+  )
+
+  itEventPublishFails.live("rejects plugin waiters when its added event fails", () =>
+    Effect.gen(function* () {
+      const plugins = yield* PluginV2.Service
+      const agents = yield* AgentV2.Service
+      const id = PluginV2.ID.make("event-fails")
+      const waiting = yield* plugins.wait(id).pipe(Effect.exit, Effect.forkChild)
+      const added = yield* plugins
+        .add(id, (ctx) =>
+          ctx.agent
+            .transform((draft) =>
+              draft.update("configured", (agent) => {
+                agent.description = "not active"
+              }),
+            )
+            .pipe(Effect.asVoid),
+        )
+        .pipe(Effect.exit)
+      const pending = yield* Fiber.join(waiting)
+
+      expect(Exit.isFailure(added)).toBe(true)
+      expect(Exit.isFailure(pending)).toBe(true)
+      expect(yield* agents.get(AgentV2.ID.make("configured"))).toBeUndefined()
     }),
   )
 

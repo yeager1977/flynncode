@@ -8,9 +8,12 @@ describe("Tasks visibility boundary", () => {
     const terminalPanel = readFileSync(new URL("./terminal-panel.tsx", import.meta.url), "utf8")
     const terminalPanelV2 = readFileSync(new URL("./terminal-panel-v2.tsx", import.meta.url), "utf8")
 
-    expect(sidePanel.match(/<Tabs\.Trigger value="tasks">/g)).toHaveLength(2)
+    expect(sidePanel.match(/<Tabs\.Trigger value="tasks">/g) ?? []).toHaveLength(0)
     expect(sidePanel).not.toContain("sessionShowsSubagents")
-    expect(sidePanel.match(/<Tabs\.Content value="tasks"/g)).toHaveLength(2)
+    expect(sidePanel.match(/<Tabs\.Content value="tasks"/g) ?? []).toHaveLength(0)
+    expect(sidePanel).toContain('id="tasks-panel"')
+    const header = readFileSync(new URL("../../components/session/session-header.tsx", import.meta.url), "utf8")
+    expect(header.match(/data-action="session-tasks-toggle"/g)).toHaveLength(2)
     expect(sidePanel).not.toMatch(/<Show when=\{tasksSelected\(\)\}>\s*<Tabs\.Content value="tasks"/)
     expect(sidePanel.match(/<Tabs value=\{panelTab\(\)\} onChange=\{activateTab\}>/g)).toHaveLength(2)
 
@@ -99,6 +102,40 @@ describe("tasksFromParts", () => {
     expect(running).toEqual([])
   })
 
+  test("keeps a finished child finished when its task output is still running", () => {
+    const merged = mergeSubagents(
+      [child("ses_done", "idle", 4, "finished text"), child("ses_live", "busy", 5, "still working")],
+      tasksFromParts(
+        [
+          {
+            type: "tool",
+            tool: "task",
+            state: {
+              status: "completed",
+              title: "Done task",
+              metadata: { sessionId: "ses_done", background: true },
+              output: '<task id="ses_done" state="running">working</task>',
+            },
+          },
+          {
+            type: "tool",
+            tool: "task",
+            state: {
+              status: "completed",
+              title: "Live task",
+              metadata: { sessionId: "ses_live", background: true },
+              output: '<task id="ses_live" state="running">working</task>',
+            },
+          },
+        ],
+        9,
+      ),
+    )
+    expect(groupSubagents(merged).active.map((item) => item.id)).toEqual(["ses_live"])
+    expect(groupSubagents(merged).finished.map((item) => item.id)).toEqual(["ses_done"])
+    expect(merged.find((item) => item.id === "ses_done")?.text).toBe("finished text")
+  })
+
   test("upgrades a child with no status when the parent task is still running", () => {
     const merged = mergeSubagents(
       [child("ses_child", undefined, 1, "")],
@@ -126,6 +163,10 @@ describe("expandSubagent", () => {
     })
     expect(expandSubagent({ expandedID: "a", finishedOpen: false }, { id: "c", finished: true })).toEqual({
       expandedID: "c",
+      finishedOpen: true,
+    })
+    expect(expandSubagent({ expandedID: "b", finishedOpen: true }, { id: "b", finished: false })).toEqual({
+      expandedID: undefined,
       finishedOpen: true,
     })
   })

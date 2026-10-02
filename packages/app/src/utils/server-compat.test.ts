@@ -110,6 +110,37 @@ describe("createCompatibleApi", () => {
     expect(body.parts[2]).not.toHaveProperty("source")
   })
 
+  test("nests V2 prompt files for the current server", async () => {
+    const { api, requests } = setup("v2")
+    await api.session.prompt({
+      sessionID: "ses_1",
+      id: "msg_1",
+      text: "see this",
+      files: [
+        {
+          uri: "data:image/png;base64,aGk=",
+          name: "shot.png",
+          mention: { text: "shot.png", start: 0, end: 8 },
+        },
+      ],
+    })
+
+    expect(new URL(requests[0]!.url).pathname).toBe("/api/session/ses_1/prompt")
+    expect(await requests[0]!.json()).toEqual({
+      id: "msg_1",
+      prompt: {
+        text: "see this",
+        files: [
+          {
+            uri: "data:image/png;base64,aGk=",
+            name: "shot.png",
+            source: { text: "shot.png", start: 0, end: 8 },
+          },
+        ],
+      },
+    })
+  })
+
   test("preserves original parts for V1 optimistic reconciliation", async () => {
     const { api, requests } = setup("v1")
     await api.session.prompt({

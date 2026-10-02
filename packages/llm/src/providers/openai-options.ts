@@ -46,7 +46,7 @@ export const gpt5DefaultOptions = (
   options: { readonly textVerbosity?: boolean } = {},
 ): ProviderOptions | undefined => {
   const id = modelID.toLowerCase()
-  if (!id.includes("gpt-5") || id.includes("gpt-5-chat") || id.includes("gpt-5-pro")) return undefined
+  if (!usesOpenAIReasoningDefaults(id)) return undefined
   return openAIProviderOptions({
     reasoningEffort: "medium",
     reasoningSummary: "auto",
@@ -62,6 +62,9 @@ export const gpt5DefaultOptions = (
         : undefined,
   })
 }
+
+const usesOpenAIReasoningDefaults = (id: string) =>
+  id.includes("gpt-6.1-sol") || (id.includes("gpt-5") && !id.includes("gpt-5-chat") && !id.includes("gpt-5-pro"))
 
 export const openAIDefaultOptions = (
   modelID: string,

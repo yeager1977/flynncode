@@ -1671,14 +1671,17 @@ type ResponsesModelConfig = {
 }
 
 function getResponsesModelConfig(modelId: string): ResponsesModelConfig {
+  const gptMajor = Number(/^gpt-(\d+)/.exec(modelId)?.[1] ?? 0)
   const supportsFlexProcessing =
     modelId.startsWith("o3") ||
     modelId.startsWith("o4-mini") ||
-    (modelId.startsWith("gpt-5") && !modelId.startsWith("gpt-5-chat"))
+    (modelId.startsWith("gpt-5") && !modelId.startsWith("gpt-5-chat")) ||
+    gptMajor >= 6
   const supportsPriorityProcessing =
     modelId.startsWith("gpt-4") ||
     modelId.startsWith("gpt-5-mini") ||
     (modelId.startsWith("gpt-5") && !modelId.startsWith("gpt-5-nano") && !modelId.startsWith("gpt-5-chat")) ||
+    gptMajor >= 6 ||
     modelId.startsWith("o3") ||
     modelId.startsWith("o4-mini")
   const defaults = {
@@ -1700,6 +1703,7 @@ function getResponsesModelConfig(modelId: string): ResponsesModelConfig {
   if (
     modelId.startsWith("o") ||
     modelId.startsWith("gpt-5") ||
+    modelId.startsWith("gpt-6") ||
     modelId.startsWith("codex-") ||
     modelId.startsWith("computer-use")
   ) {

@@ -2262,6 +2262,7 @@ export class Vcs extends HeyApiClient {
       directory?: string
       workspace?: string
       patch?: string
+      index?: "worktree" | "stage" | "unstage"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -2273,6 +2274,7 @@ export class Vcs extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "body", key: "patch" },
+            { in: "body", key: "index" },
           ],
         },
       ],
@@ -3896,6 +3898,7 @@ export class Session2 extends HeyApiClient {
       format?: OutputFormat
       system?: string
       variant?: string
+      delivery?: "steer" | "queue"
       parts?: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
     },
     options?: Options<never, ThrowOnError>,
@@ -3916,6 +3919,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "format" },
             { in: "body", key: "system" },
             { in: "body", key: "variant" },
+            { in: "body", key: "delivery" },
             { in: "body", key: "parts" },
           ],
         },
@@ -4249,6 +4253,7 @@ export class Session2 extends HeyApiClient {
       format?: OutputFormat
       system?: string
       variant?: string
+      delivery?: "steer" | "queue"
       parts?: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
     },
     options?: Options<never, ThrowOnError>,
@@ -4269,6 +4274,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "format" },
             { in: "body", key: "system" },
             { in: "body", key: "variant" },
+            { in: "body", key: "delivery" },
             { in: "body", key: "parts" },
           ],
         },

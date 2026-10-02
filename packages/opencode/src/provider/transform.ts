@@ -629,6 +629,7 @@ function gpt5ChatReasoningEfforts(apiId: string) {
 // to strongest.
 function openaiReasoningEfforts(apiId: string, releaseDate: string) {
   const id = apiId.toLowerCase()
+  if (id.includes("gpt-6.1-sol")) return ["low", "medium", "high", "xhigh", "max"]
   if (id.includes("deep-research")) return ["medium"]
   const chatEfforts = gpt5ChatReasoningEfforts(id)
   if (chatEfforts) return chatEfforts
@@ -1378,7 +1379,10 @@ export function options(input: {
     return result
   }
 
-  if (input.model.api.id.includes("gpt-5") && !input.model.api.id.includes("gpt-5-chat")) {
+  if (
+    (input.model.api.id.includes("gpt-5") && !input.model.api.id.includes("gpt-5-chat")) ||
+    input.model.api.id.includes("gpt-6.1-sol")
+  ) {
     if (!input.model.api.id.includes("gpt-5-pro")) {
       result["reasoningEffort"] = "medium"
       if (

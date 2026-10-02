@@ -556,6 +556,15 @@ describe("ProviderTransform.options - gpt-5 textVerbosity", () => {
       headers: {},
     }) as any
 
+  test("gpt-6.1-sol uses Responses reasoning defaults without verbosity", () => {
+    const model = createGpt5Model("gpt-6.1-sol")
+    const result = ProviderTransform.options({ model, sessionID, providerOptions: {} })
+    expect(result.reasoningEffort).toBe("medium")
+    expect(result.reasoningSummary).toBe("auto")
+    expect(result.include).toEqual(["reasoning.encrypted_content"])
+    expect(result.textVerbosity).toBeUndefined()
+  })
+
   test("gpt-5.2 should have textVerbosity set to low", () => {
     const model = createGpt5Model("gpt-5.2")
     const result = ProviderTransform.options({ model, sessionID, providerOptions: {} })
@@ -5233,6 +5242,21 @@ describe("ProviderTransform.variants", () => {
   })
 
   describe("@ai-sdk/openai", () => {
+    test("gpt-6.1-sol exposes max and omits none", () => {
+      const model = createMockModel({
+        id: "gpt-6.1-sol",
+        providerID: "openai",
+        api: {
+          id: "gpt-6.1-sol",
+          url: "https://api.openai.com",
+          npm: "@ai-sdk/openai",
+        },
+        release_date: "2026-09-29",
+      })
+      const result = ProviderTransform.variants(model)
+      expect(Object.keys(result)).toEqual(["low", "medium", "high", "xhigh", "max"])
+    })
+
     test("gpt-5-pro returns only high effort", () => {
       const model = createMockModel({
         id: "gpt-5-pro",

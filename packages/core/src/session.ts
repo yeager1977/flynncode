@@ -1,7 +1,9 @@
 export * as SessionV2 from "./session"
 export * from "./session/schema"
 
-import { DateTime, Effect, Layer, Schema, Context, Stream } from "effect"
+import { LLM, LLMClient } from "@opencode-ai/llm"
+import { DateTime, Duration, Effect, Exit, Layer, Schema, Context, Stream, Cause } from "effect"
+import { ChildProcess } from "effect/unstable/process"
 import { ListAnchor } from "@opencode-ai/schema/session"
 import { and, asc, desc, eq, gt, like, lt, or, type SQL } from "drizzle-orm"
 import { ProjectV2 } from "./project"
@@ -30,12 +32,18 @@ import { SessionExecution } from "./session/execution"
 import { makeGlobalNode } from "./effect/app-node"
 import { LocationServiceMap } from "./location-service-map"
 import { MessageDecodeError } from "./session/error"
+import { SessionCompaction } from "./session/compaction"
 import { SessionEvent } from "./session/event"
+import { SessionHistory } from "./session/history"
+import { SessionRunnerModel } from "./session/runner/model"
 import { SessionInput } from "./session/input"
 import { Snapshot } from "./snapshot"
 import { SessionRevert } from "./session/revert"
 import { Revert } from "@opencode-ai/schema/revert"
 import { FSUtil } from "./fs-util"
+import { AppProcess } from "./process"
+import { Config } from "./config"
+import { SkillV2 } from "./skill"
 import { SessionDurable } from "@opencode-ai/schema/durable-event-manifest"
 
 export const RevertState = Revert.State
@@ -78,6 +86,7 @@ export type ListInput = typeof ListInput.Type
 
 type CreateInput = {
   id?: SessionSchema.ID
+  parentID?: SessionSchema.ID
   agent?: AgentV2.ID
   model?: ModelV2.Ref
   location: Location.Ref
@@ -157,15 +166,21 @@ export interface Interface {
     sessionID: SessionSchema.ID
     command: string
     resume?: boolean
-  }) => Effect.Effect<void, OperationUnavailableError>
+  }) => Effect.Effect<void, NotFoundError>
   readonly skill: (input: {
     id?: EventV2.ID
     sessionID: SessionSchema.ID
     skill: string
     resume?: boolean
-  }) => Effect.Effect<void, OperationUnavailableError>
-  readonly compact: (input: CompactInput) => Effect.Effect<void, NotFoundError | OperationUnavailableError>
-  readonly wait: (id: SessionSchema.ID) => Effect.Effect<void, NotFoundError | OperationUnavailableError>
+  }) => Effect.Effect<void, NotFoundError>
+  readonly compact: (input: CompactInput) => Effect.Effect<
+    void,
+    | NotFoundError
+    | OperationUnavailableError
+    | SessionRunnerModel.Error
+    | MessageDecodeError
+  >
+  readonly wait: (id: SessionSchema.ID) => Effect.Effect<void, NotFoundError>
   readonly active: Effect.Effect<ReadonlySet<SessionSchema.ID>>
   readonly resume: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError | SessionRunner.RunError>
   readonly interrupt: (sessionID: SessionSchema.ID) => Effect.Effect<void>
@@ -192,6 +207,7 @@ const layer = Layer.effect(
     const execution = yield* SessionExecution.Service
     const store = yield* SessionStore.Service
     const locations = yield* LocationServiceMap.Service
+    const appProcess = yield* AppProcess.Service
     const decodeMessage = Schema.decodeUnknownEffect(SessionMessage.Message)
     const isDurableSessionEvent = Schema.is(SessionEvent.Durable)
     const decode = (row: typeof SessionMessageTable.$inferSelect) =>
@@ -227,6 +243,7 @@ const layer = Layer.effect(
           path: path.relative(project.directory, input.location.directory).replaceAll("\\", "/"),
           workspaceID: input.location.workspaceID ? WorkspaceV2.ID.make(input.location.workspaceID) : undefined,
           title: `New session - ${new Date(now).toISOString()}`,
+          parentID: input.parentID,
           metadata: input.metadata,
           agent: input.agent,
           model: input.model
@@ -386,11 +403,73 @@ const layer = Layer.effect(
           }),
         ),
       ),
-      shell: Effect.fn("V2Session.shell")(function* () {
-        return yield* new OperationUnavailableError({ operation: "shell" })
+      shell: Effect.fn("V2Session.shell")(function* (input) {
+        const session = yield* result.get(input.sessionID)
+        const messageID = SessionMessage.ID.create()
+        const callID = input.id ?? messageID
+        const started = yield* DateTime.now
+        yield* events.publish(SessionEvent.Shell.Started, {
+          sessionID: input.sessionID,
+          messageID,
+          callID,
+          command: input.command,
+          timestamp: started,
+        })
+        const ran = yield* appProcess
+          .run(
+            ChildProcess.make(input.command, [], {
+              cwd: session.location.directory,
+              shell: process.env.SHELL || "sh",
+              stdin: "ignore",
+            }),
+            { combineOutput: true, timeout: Duration.seconds(30), maxOutputBytes: 64_000 },
+          )
+          .pipe(
+            Effect.catchTag(
+              "AppProcessError",
+              (error): Effect.Effect<ShellOutcome> =>
+                Effect.succeed({
+                  command: error.command,
+                  exitCode: error.exitCode ?? 1,
+                  failed: true,
+                  output: Buffer.from(error.message),
+                  stdout: Buffer.alloc(0),
+                  stderr: Buffer.alloc(0),
+                  stdoutTruncated: false,
+                  stderrTruncated: false,
+                }),
+            ),
+          ) as Effect.Effect<ShellOutcome>
+        const text = (ran.output ?? Buffer.from("")).toString("utf8")
+        // Model-facing exit status: append a plain line when the command exited non-zero.
+        const output =
+          ran.failed || ran.exitCode === 0 ? text : `${text}\nCommand exited with code ${ran.exitCode}`
+        yield* events.publish(SessionEvent.Shell.Ended, {
+          sessionID: input.sessionID,
+          callID,
+          output,
+          timestamp: yield* DateTime.now,
+        })
+        if (input.resume !== false) yield* execution.wake(input.sessionID)
       }),
-      skill: Effect.fn("V2Session.skill")(function* () {
-        return yield* new OperationUnavailableError({ operation: "skill" })
+      skill: Effect.fn("V2Session.skill")(function* (input) {
+        const session = yield* result.get(input.sessionID)
+        const skills = yield* Effect.gen(function* () {
+          const service = yield* SkillV2.Service
+          return yield* service.list()
+        }).pipe(
+          Effect.provide(locations.get(session.location)),
+          Effect.catchCause(() => Effect.succeed([] as ReadonlyArray<SkillV2.Info>)),
+        )
+        const skill = skills.find((item) => item.name === input.skill)
+        if (!skill) return yield* new NotFoundError({ sessionID: input.sessionID })
+        yield* events.publish(SessionEvent.Synthetic, {
+          sessionID: input.sessionID,
+          messageID: SessionMessage.ID.create(),
+          timestamp: yield* DateTime.now,
+          text: [`# Skill: ${skill.name}`, "", skill.content.trim()].join("\n"),
+        })
+        if (input.resume !== false) yield* execution.wake(input.sessionID)
       }),
       switchAgent: Effect.fn("V2Session.switchAgent")(function* (input) {
         yield* result.get(input.sessionID)
@@ -417,12 +496,67 @@ const layer = Layer.effect(
         })
       }),
       compact: Effect.fn("V2Session.compact")(function* (input) {
-        yield* result.get(input.sessionID)
-        return yield* new OperationUnavailableError({ operation: "compact" })
+        const session = yield* result.get(input.sessionID)
+        // Pre-flight: confirm the location layer can boot with model services. A boot failure
+        // means compaction cannot run in this placement (the documented unavailable case).
+        const booted = yield* Effect.gen(function* () {
+          yield* LLMClient.Service
+          yield* SessionRunnerModel.Service
+          // The compiled location layer also provides hoisted global services (e.g. LLMClient)
+          // at runtime beyond its declared output type; the cast records that reality.
+        }).pipe(
+          Effect.provide(locations.get(session.location)),
+          Effect.exit,
+          Effect.orDie,
+        ) as Effect.Effect<Exit.Exit<void, never>, never, never>
+        if (Exit.isFailure(booted)) {
+          if (Cause.hasInterruptsOnly(booted.cause)) return yield* Effect.interrupt
+          return yield* new OperationUnavailableError({ operation: "compact" })
+        }
+        const attempted = yield* (Effect.gen(function* () {
+          const models = yield* SessionRunnerModel.Service
+          const llm = yield* LLMClient.Service
+          const config = yield* Config.Service
+          const model = yield* models.resolve(session)
+          const entries = yield* SessionHistory.entriesForRunner(db, session.id, 0)
+          return yield* SessionCompaction.make({
+            events,
+            llm,
+            config: yield* config.entries(),
+          }).compactManual({
+            sessionID: session.id,
+            entries,
+            model,
+            request: LLM.request({ model, messages: [], tools: [] }),
+          })
+          // The compiled location layer also provides hoisted global services (e.g. LLMClient) at
+          // runtime beyond its declared output type; the cast records that reality.
+        }).pipe(Effect.provide(locations.get(session.location)), Effect.exit, Effect.orDie) as Effect.Effect<
+          Exit.Exit<boolean, MessageDecodeError | SessionRunnerModel.Error>,
+          never,
+          never
+        >)
+        if (Exit.isFailure(attempted)) {
+          // Interruption is never a compaction result; re-raise it as interruption.
+          if (Cause.hasInterruptsOnly(attempted.cause)) return yield* Effect.interrupt
+          return yield* Effect.failCause(attempted.cause)
+        }
+        if (!attempted.value) return yield* new OperationUnavailableError({ operation: "compact" })
+        if (input.prompt) {
+          yield* events.publish(SessionEvent.Synthetic, {
+            sessionID: input.sessionID,
+            messageID: SessionMessage.ID.create(),
+            timestamp: yield* DateTime.now,
+            text: input.prompt.text,
+          })
+          yield* execution.wake(input.sessionID)
+        }
       }),
       wait: Effect.fn("V2Session.wait")(function* (sessionID) {
         yield* result.get(sessionID)
-        return yield* new OperationUnavailableError({ operation: "wait" })
+        while ((yield* execution.active).has(sessionID)) {
+          yield* Effect.sleep("50 millis")
+        }
       }),
       active: execution.active,
       resume: Effect.fn("V2Session.resume")(function* (sessionID) {
@@ -473,6 +607,11 @@ const resolvePrompt = (input: PromptInput.Prompt) =>
     }),
   })
 
+/** AppProcess run outcome normalized for shell publication: `failed` marks an AppProcessError. */
+interface ShellOutcome extends AppProcess.RunResult {
+  readonly failed?: boolean
+}
+
 export const node = makeGlobalNode({
   service: Service,
   layer: layer.pipe(Layer.orDie),
@@ -484,5 +623,6 @@ export const node = makeGlobalNode({
     SessionStore.node,
     LocationServiceMap.node,
     SessionProjector.node,
+    AppProcess.node,
   ],
 })

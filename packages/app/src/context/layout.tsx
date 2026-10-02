@@ -73,6 +73,7 @@ type SessionView = {
   pendingMessage?: string
   pendingMessageAt?: number
   todoCollapsed?: boolean
+  tasksOpened?: boolean
   subagentExpandedID?: string
   subagentFinishedOpen?: boolean
 }
@@ -874,6 +875,16 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
               } else {
                 setStore("sessionView", session, "todoCollapsed", collapsed)
               }
+            },
+          },
+          tasks: {
+            opened: () => s().tasksOpened ?? false,
+            toggle() {
+              const session = key()
+              const current = store.sessionView[session]
+              const next = !(current?.tasksOpened ?? false)
+              if (!current) setStore("sessionView", session, { scroll: {}, tasksOpened: next })
+              else setStore("sessionView", session, "tasksOpened", next)
             },
           },
           subagents: {

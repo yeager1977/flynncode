@@ -2,9 +2,7 @@ import { Schema } from "effect"
 import type { LLMRequest, ReasoningEffort, TextVerbosity as TextVerbosityValue } from "../../schema"
 import { ReasoningEfforts, TextVerbosity } from "../../schema"
 
-export const OpenAIReasoningEfforts = ReasoningEfforts.filter(
-  (effort): effort is Exclude<ReasoningEffort, "max"> => effort !== "max",
-)
+export const OpenAIReasoningEfforts = ReasoningEfforts
 export type OpenAIReasoningEffort = (typeof OpenAIReasoningEfforts)[number]
 
 // Mirrors OpenAI's `ResponseIncludable` union from the official SDK. Keep this
@@ -39,6 +37,8 @@ const isAnyReasoningEffort = (effort: unknown): effort is ReasoningEffort =>
 
 export const isReasoningEffort = (effort: unknown): effort is OpenAIReasoningEffort =>
   typeof effort === "string" && OPENAI_REASONING_EFFORTS.has(effort)
+
+export const omitsSampling = (modelID: string) => modelID.toLowerCase().includes("gpt-6.1-sol")
 
 const isTextVerbosity = (value: unknown): value is TextVerbosityValue =>
   typeof value === "string" && TEXT_VERBOSITY.has(value)

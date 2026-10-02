@@ -157,6 +157,8 @@ export default function LegacyLayout(props: ParentProps) {
     peek: undefined as string | undefined,
     peeked: false,
     debugTools: true,
+    quickEntry: false,
+    quickEntryText: "",
   })
 
   const updateVersion = () => {
@@ -1288,6 +1290,10 @@ export default function LegacyLayout(props: ParentProps) {
 
     handleDeepLinks(drainPendingDeepLinks(window))
     makeEventListener(window, deepLinkEvent, handler as EventListener)
+    makeEventListener(window, "opencode:quick-entry", () => {
+      if (!currentDir()) return
+      setState("quickEntry", true)
+    })
   })
 
   async function renameProject(project: LocalProject, next: string) {
@@ -2271,6 +2277,33 @@ export default function LegacyLayout(props: ParentProps) {
   return (
     <div class="relative bg-background-base flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text">
       {autoselecting() ?? ""}
+      <Show when={state.quickEntry}>
+        <form
+          class="absolute inset-x-0 top-12 z-50 mx-auto flex w-[min(32rem,calc(100%-2rem))] gap-2 rounded-md border border-border-weak-base bg-background-base p-2"
+          data-component="quick-entry"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const directory = currentDir()
+            const prompt = state.quickEntryText.trim()
+            if (!directory || !prompt) return
+            handleDeepLinks([
+              `opencode://new-session?directory=${encodeURIComponent(directory)}&prompt=${encodeURIComponent(prompt)}`,
+            ])
+            setState({ quickEntry: false, quickEntryText: "" })
+          }}
+        >
+          <input
+            class="min-w-0 flex-1 rounded-md border border-border-weak-base bg-transparent px-2 py-1 text-14-regular"
+            value={state.quickEntryText}
+            autofocus
+            aria-label={language.t("dispatch.placeholder")}
+            onInput={(event) => setState("quickEntryText", event.currentTarget.value)}
+          />
+          <Button type="submit" size="small">
+            {language.t("dispatch.send")}
+          </Button>
+        </form>
+      </Show>
       <Titlebar
         update={titlebarUpdate}
         debugTools={

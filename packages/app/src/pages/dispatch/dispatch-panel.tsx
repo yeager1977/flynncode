@@ -15,6 +15,7 @@ import { useProviders } from "@/hooks/use-providers"
 import { resolveDefaultModel } from "@/hooks/provider-catalog"
 import { Persist, persisted } from "@/utils/persist"
 import { pathKey } from "@/utils/path-key"
+import { inboxStatus } from "./activity-status"
 import {
   addDispatch,
   completeDispatch,
@@ -137,6 +138,15 @@ export function DispatchPanel() {
     setState({ sending: false, text: "" })
   }
 
+  const liveStatus = (task: DispatchTask) => {
+    const status = serverSync().session.data.session_status[task.sessionID]
+    if (!status) return task.status
+    const waiting =
+      (serverSync().session.data.question[task.sessionID]?.length ?? 0) > 0 ||
+      (serverSync().session.data.permission[task.sessionID]?.length ?? 0) > 0
+    return inboxStatus(task.status, { type: status.type, blocked: waiting })
+  }
+
   const openTask = (task: DispatchTask) => {
     dialog.close()
     navigate(`/${base64Encode(task.directory)}/session/${task.sessionID}`)
@@ -205,7 +215,7 @@ export function DispatchPanel() {
             {(task) => (
               <li>
                 <button type="button" class="w-full truncate text-left text-14-regular" onClick={() => openTask(task)}>
-                  {task.title} · {language.t(statusKey(task.status))}
+                  {task.title} · {language.t(statusKey(liveStatus(task)))}
                 </button>
               </li>
             )}
@@ -224,5 +234,9 @@ function statusKey(status: DispatchStatus) {
       return "dispatch.done" as const
     case "failed":
       return "dispatch.failed" as const
+    case "needs-input":
+      return "dispatch.needsInput" as const
+    case "blocked":
+      return "dispatch.blocked" as const
   }
 }

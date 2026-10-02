@@ -13,6 +13,28 @@ import { definition, permission, settle, validateName, type AnyTool, type Regist
 import { Tools } from "./tools"
 import { makeLocationNode } from "../effect/app-node"
 
+const supplements = new Map<string, Map<string, AnyTool>>()
+const groupsMap = new Map<string, Map<string, AnyTool>>()
+
+export const replaceGroup = (group: string, tools: Readonly<Record<string, AnyTool>>) => {
+  groupsMap.set(group, new Map(Object.entries(tools)))
+}
+
+export const clearGroup = (group: string) => {
+  groupsMap.delete(group)
+}
+
+/** Test-only view of registered groups. */
+export const groups = () => groupsMap
+
+export const replaceSupplements = (owner: string, tools: Readonly<Record<string, AnyTool>>) => {
+  supplements.set(owner, new Map(Object.entries(tools)))
+}
+
+export const clearSupplements = (owner: string) => {
+  supplements.delete(owner)
+}
+
 export type ExecuteInput = {
   readonly sessionID: SessionSchema.ID
   readonly agent: AgentV2.ID
@@ -105,6 +127,20 @@ const registryLayer = Layer.effect(
       }),
       materialize: Effect.fn("ToolRegistry.materialize")(function* (permissions = []) {
         const registrations = new Map(applications.entries())
+        // Overlay groups and supplements keep first-wins on display-name collisions.
+        const overlay = (name: string, tool: AnyTool) => {
+          if (registrations.has(name)) {
+            console.warn(`ToolRegistry: duplicate tool name ${name} from another owner was ignored`)
+            return
+          }
+          registrations.set(name, { identity: {}, tool })
+        }
+        for (const grouped of groupsMap.values()) {
+          for (const [name, tool] of grouped) overlay(name, tool)
+        }
+        for (const owned of supplements.values()) {
+          for (const [name, tool] of owned) overlay(name, tool)
+        }
         for (const [name, entries] of local) {
           const registration = entries.at(-1)?.registration
           if (registration) registrations.set(name, registration)

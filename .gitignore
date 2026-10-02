@@ -35,3 +35,4 @@ tsconfig.tsbuildinfo
 
 # superpowers scratch
 .superpowers/
+/.playwright-mcp

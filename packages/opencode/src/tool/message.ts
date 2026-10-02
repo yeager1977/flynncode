@@ -16,12 +16,19 @@ export const Parameters = Schema.Struct({
   }),
 })
 
-const envelope = (input: { fromSession: string; fromAgent: string; message: string }) =>
+export const deliveryFor = (busy: boolean) => (busy ? "steer" : "queue")
+
+const envelope = (input: { fromSession: string; fromAgent: string; correlation: string; message: string }) =>
   [
-    `<peer_message from_session="${input.fromSession}" from_agent="${input.fromAgent}">`,
+    `<peer_message from_session="${sanitizePeerField(input.fromSession)}" from_agent="${sanitizePeerField(input.fromAgent)}" correlation="${sanitizePeerField(input.correlation)}">`,
     input.message,
     "</peer_message>",
   ].join("\n")
+
+// Header fields are interpolated into the envelope and later parsed by
+// SessionPrompt.peerHeaderFrom; quotes or newlines would change the header
+// structure (breaking routing or enabling forged headers).
+const sanitizePeerField = (value: string) => value.replace(/["\r\n]/g, "")
 
 export const MessageTool = Tool.define(
   "message",
@@ -44,7 +51,11 @@ export const MessageTool = Tool.define(
       if (target.id === ctx.sessionID) {
         return yield* Effect.fail(new Error("Cannot send a message to your own session; reply directly instead"))
       }
-      yield* runState.assertNotBusy(target.id)
+      const busy = yield* runState.assertNotBusy(target.id).pipe(
+        Effect.as(false),
+        Effect.catch(() => Effect.succeed(true)),
+      )
+      const delivery = deliveryFor(busy)
       yield* ctx.ask({
         permission: "message",
         patterns: [target.id],
@@ -58,33 +69,32 @@ export const MessageTool = Tool.define(
         metadata: { sessionID: target.id, agent: target.agent ?? ctx.agent },
       })
 
-      // Deliver without blocking this turn: the peer session drains the
-      // message in a forked fiber, mirroring background task result
-      // injection. The busy guard above keeps delivery off active drains.
       yield* ops
         .prompt({
           sessionID: target.id,
           agent: target.agent ?? ctx.agent,
           parts: [
-            {
-              type: "text",
-              synthetic: true,
-              text: envelope({
-                fromSession: ctx.sessionID,
-                fromAgent: ctx.agent,
-                message: params.message,
-              }),
-            },
-          ],
-        })
+              {
+                type: "text",
+                synthetic: true,
+                text: envelope({
+                  fromSession: ctx.sessionID,
+                  fromAgent: ctx.agent,
+                  correlation: ctx.messageID,
+                  message: params.message,
+                }),
+              },
+            ],
+            delivery,
+          })
         .pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))
 
       return {
         title,
         metadata: { sessionID: target.id },
         output:
-          `Message queued for session ${target.id}. It will be processed as a new turn in that session.` +
-          " You will not receive a reply here; wait for the peer to report back or ask the user.",
+          `Message ${delivery === "steer" ? "steered into" : "queued for"} session ${target.id}. ` +
+          "The peer reply will arrive in this session. Do not wait for it in this turn.",
       }
     })
 

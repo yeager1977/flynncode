@@ -242,18 +242,32 @@ function TodoList(props: { todos: Todo[] }) {
         <Index each={props.todos}>
           {(todo, index) => {
             const parts = createMemo(() => splitTodoContent(todo().content))
-            const hasDetail = createMemo(() => parts().detail !== parts().summary)
             const isExpanded = createMemo(() => !!store.expanded[index])
 
             return (
               <div
                 data-status={todo().status}
+                data-action="session-todo-chip"
+                role="button"
+                tabIndex={0}
+                aria-expanded={isExpanded()}
                 classList={{
-                  "rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-02 px-2 py-1.5": true,
+                  "rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-02 px-2 py-1.5 cursor-pointer":
+                    true,
                   "border-s-2 ps-2": todo().status === "in_progress",
                 }}
                 style={{
                   "border-inline-start-color": todo().status === "in_progress" ? "var(--v2-icon-icon-accent)" : undefined,
+                }}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setStore("expanded", index, !store.expanded[index])
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  setStore("expanded", index, !store.expanded[index])
                 }}
               >
                 <Checkbox
@@ -275,51 +289,47 @@ function TodoList(props: { todos: Todo[] }) {
                     <TextStrikethrough
                       active={todo().status === "completed" || todo().status === "cancelled"}
                       text={parts().summary}
-                      class="text-14-regular min-w-0 break-words flex-1"
+                      class="text-14-regular text-text-strong min-w-0 line-clamp-2 flex-1"
                       style={{
+                        "font-weight": "560",
                         "line-height": "var(--line-height-normal)",
-                        transition:
-                          "color 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1)), opacity 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1))",
-                        color:
-                          todo().status === "completed" || todo().status === "cancelled"
-                            ? "var(--text-weak)"
-                            : "var(--text-strong)",
-                        opacity: todo().status === "pending" ? "0.92" : "1",
+                        color: "var(--text-strong)",
                       }}
                     />
-                    {hasDetail() && (
-                      <IconButton
-                        data-action="session-todo-detail-toggle"
-                        class="pointer-events-auto"
-                        icon="chevron-down"
-                        size="small"
-                        variant="ghost"
-                        style={{ transform: isExpanded() ? "rotate(180deg)" : "rotate(0deg)", "flex-shrink": "0" }}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          setStore("expanded", index, !store.expanded[index])
-                        }}
-                        onMouseDown={(event) => {
-                          event.stopPropagation()
-                        }}
-                        onKeyDown={(event: KeyboardEvent) => {
-                          if (event.key !== "Enter" && event.key !== " ") return
-                          event.stopPropagation()
-                        }}
-                        aria-label={language.t(isExpanded() ? "session.todo.collapse" : "session.todo.expand")}
-                      />
-                    )}
+                    <IconButton
+                      data-action="session-todo-detail-toggle"
+                      class="pointer-events-auto"
+                      icon="chevron-down"
+                      size="small"
+                      variant="ghost"
+                      style={{ transform: isExpanded() ? "rotate(180deg)" : "rotate(0deg)", "flex-shrink": "0" }}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        setStore("expanded", index, !store.expanded[index])
+                      }}
+                      onMouseDown={(event) => {
+                        event.stopPropagation()
+                      }}
+                      onKeyDown={(event: KeyboardEvent) => {
+                        if (event.key !== "Enter" && event.key !== " ") return
+                        event.preventDefault()
+                        event.stopPropagation()
+                        setStore("expanded", index, !store.expanded[index])
+                      }}
+                      aria-expanded={isExpanded()}
+                      aria-label={language.t(isExpanded() ? "session.todo.collapse" : "session.todo.expand")}
+                    />
                   </div>
                 </Checkbox>
-                {hasDetail() && isExpanded() && (
-                  <div class="ps-6 mt-0.5">
-                    <span
-                      dir="auto"
-                      class="text-13-regular text-text-weak break-words block"
-                      style={{ "line-height": "var(--line-height-normal)" }}
-                    >
-                      {parts().detail}
-                    </span>
+                {isExpanded() && (
+                  <div
+                    data-slot="session-todo-output"
+                    dir="auto"
+                    class="ms-6 mt-1 max-h-24 overflow-y-auto text-13-regular text-text-weak break-words whitespace-pre-wrap"
+                    style={{ "line-height": "var(--line-height-normal)" }}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    {parts().detail}
                   </div>
                 )}
               </div>

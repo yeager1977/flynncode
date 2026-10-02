@@ -176,4 +176,56 @@ describe("Git", () => {
       expect(text).toBe("")
     }),
   )
+
+  it.live("stage moves a worktree hunk to the index and unstage moves it back", () =>
+    Effect.gen(function* () {
+      const tmp = yield* scopedTmpdir({ git: true })
+      const file = path.join(tmp.path, "note.txt")
+      yield* Effect.promise(() => fs.writeFile(file, "old\n"))
+      yield* Effect.promise(() => $`git add note.txt`.cwd(tmp.path).quiet())
+      yield* Effect.promise(() => $`git commit --no-gpg-sign -m "add note"`.cwd(tmp.path).quiet())
+      yield* Effect.promise(() => fs.writeFile(file, "next\n"))
+      const git = yield* Git.Service
+      const patch = yield* git.patch(tmp.path, "HEAD", "note.txt")
+      const staged = yield* git.applyPatch(tmp.path, patch.text, "stage")
+      expect(staged.exitCode).toBe(0)
+      const cached = yield* git.run(["diff", "--cached", "--name-only"], { cwd: tmp.path })
+      expect(cached.text()).toContain("note.txt")
+      const unstaged = yield* git.applyPatch(tmp.path, patch.text, "unstage")
+      expect(unstaged.exitCode).toBe(0)
+      const cleared = yield* git.run(["diff", "--cached", "--name-only"], { cwd: tmp.path })
+      expect(cleared.text().trim()).toBe("")
+    }),
+  )
+
+  it.live("unstage derives the staged patch so combined diffs reverse the index", () =>
+    Effect.gen(function* () {
+      const tmp = yield* scopedTmpdir({ git: true })
+      const file = path.join(tmp.path, "note.txt")
+      yield* Effect.promise(() => fs.writeFile(file, "base\n"))
+      yield* Effect.promise(() => $`git add note.txt`.cwd(tmp.path).quiet())
+      yield* Effect.promise(() => $`git commit --no-gpg-sign -m "add note"`.cwd(tmp.path).quiet())
+      // stage one change, then edit again: the review's git scope diff (HEAD vs
+      // worktree) shows the final state and must not drive reverse-apply.
+      yield* Effect.promise(() => fs.writeFile(file, "staged\n"))
+      yield* Effect.promise(() => $`git add note.txt`.cwd(tmp.path).quiet())
+      yield* Effect.promise(() => fs.writeFile(file, "edited\n"))
+      const git = yield* Git.Service
+      const combined = yield* git.patch(tmp.path, "HEAD", "note.txt")
+      const staged = yield* git.patchStaged(tmp.path, "note.txt")
+      expect(staged.text).toContain("+staged")
+
+      // The old direct reverse of the combined patch fails against the index.
+      const direct = yield* git.applyPatch(tmp.path, combined.text, "unstage")
+      expect(direct.exitCode).not.toBe(0)
+
+      // What Vcs.apply now does: reverse the staged diff for the file.
+      const reversed = yield* git.applyPatch(tmp.path, staged.text, "unstage")
+      expect(reversed.exitCode).toBe(0)
+      const cached = yield* git.run(["diff", "--cached", "--name-only"], { cwd: tmp.path })
+      expect(cached.text().trim()).toBe("")
+      const worktree = yield* Effect.promise(() => fs.readFile(file, "utf-8"))
+      expect(worktree).toBe("edited\n")
+    }),
+  )
 })

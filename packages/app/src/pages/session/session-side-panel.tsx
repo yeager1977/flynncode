@@ -50,7 +50,6 @@ import {
   createOpenSessionFileTab,
   createSessionTabs,
   getTabReorderIndex,
-  panelTabValue,
   shouldShowFileTree,
   type Sizing,
 } from "@/pages/session/helpers"
@@ -92,7 +91,7 @@ export function SessionSidePanel(props: {
   const dialog = useDialog()
   const sdk = useSDK()
   const { sessionKey, tabs, view, params } = useSessionLayout()
-  const [tasksSelected, setTasksSelected] = createSignal(false)
+  const tasksOpen = createMemo(() => view().tasks.opened())
   const projectDirectory = createMemo(() => sdk().directory)
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
@@ -107,7 +106,7 @@ export function SessionSidePanel(props: {
         opened: layout.fileTree.opened(),
       }),
   )
-  const open = createMemo(() => reviewOpen() || fileOpen())
+  const open = createMemo(() => reviewOpen() || fileOpen() || tasksOpen())
   const fileTreeWidth = createMemo(() => Math.max(FILE_TREE_WIDTH_MIN, layout.fileTree.width()))
   const reviewTab = createMemo(() => isDesktop())
   const panelWidth = createMemo(() => {
@@ -190,13 +189,7 @@ export function SessionSidePanel(props: {
   const openedTabs = tabState.openedTabs
   const activeTab = tabState.activeTab
   const activeFileTab = tabState.activeFileTab
-  const panelTab = createMemo(() => panelTabValue(tasksSelected(), activeTab()))
-
-  // Tasks is a panel-local tab; any real tab activation leaves it.
-  createEffect(() => {
-    activeTab()
-    setTasksSelected(false)
-  })
+  const panelTab = createMemo(() => activeTab())
 
   const fileTreeTab = () => layout.fileTree.tab()
 
@@ -226,11 +219,6 @@ export function SessionSidePanel(props: {
     queueMicrotask(() => fileFilter?.focus())
   }
   const activateTab = (value: string) => {
-    if (value === "tasks") {
-      setTasksSelected(true)
-      return
-    }
-    setTasksSelected(false)
     const next = normalizeTab(value)
     const path = file.pathFromTab(next)
     if (path) void file.load(path)
@@ -252,7 +240,7 @@ export function SessionSidePanel(props: {
     return openedTabs().length > 0 || openFileOpen() || !!browserTab()
   })
   const fileBrowserVisible = createMemo(() => {
-    if (tasksSelected()) return false
+    if (tasksOpen() && !reviewOpen() && !fileOpen()) return false
     const active = activeTab()
     return active !== "review" && active !== "context" && active !== "empty"
   })
@@ -320,9 +308,10 @@ export function SessionSidePanel(props: {
           "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
             !props.size.active() && !props.reviewSnap,
           "rounded-[10px] shadow-[var(--v2-elevation-raised)] overflow-hidden": settings.general.newLayoutDesigns(),
-          "flex-1": reviewOpen(),
+          "flex-1": reviewOpen() || (tasksOpen() && !fileOpen()),
+          "min-w-0": tasksOpen(),
         }}
-        style={{ width: panelWidth() }}
+        style={{ width: tasksOpen() && !reviewOpen() ? undefined : panelWidth() }}
       >
         <Show when={open()}>
           <div
@@ -451,7 +440,6 @@ export function SessionSidePanel(props: {
                                   )}
                                 </For>
                               </SortableProvider>
-                              <Tabs.Trigger value="tasks">{language.t("session.subagents.tasks")}</Tabs.Trigger>
                               <div
                                 class="h-full shrink-0 sticky right-0 z-10 flex items-center justify-center pr-3"
                                 classList={{
@@ -514,10 +502,6 @@ export function SessionSidePanel(props: {
                               </div>
                             </Tabs.Content>
                           </Show>
-
-                          <Tabs.Content value="tasks" class="flex flex-col h-full overflow-y-auto contain-strict">
-                            <SubagentList sessionID={() => params.id ?? ""} />
-                          </Tabs.Content>
 
                           <Show when={activeFileTab()} keyed>
                             {(tab) => <FileTabContent tab={tab} />}
@@ -675,7 +659,6 @@ export function SessionSidePanel(props: {
                                 </Show>
                               )}
                             </For>
-                            <Tabs.Trigger value="tasks">{language.t("session.subagents.tasks")}</Tabs.Trigger>
                             <div
                               class="h-full shrink-0 sticky right-0 z-10 flex items-center justify-center"
                               classList={{
@@ -747,10 +730,6 @@ export function SessionSidePanel(props: {
                             </div>
                           </Tabs.Content>
                         </Show>
-
-                        <Tabs.Content value="tasks" class="flex flex-col h-full overflow-y-auto contain-strict">
-                          <SubagentList sessionID={() => params.id ?? ""} />
-                        </Tabs.Content>
 
                         <Show when={fileBrowserMounted()}>
                           <div
@@ -868,21 +847,31 @@ export function SessionSidePanel(props: {
                     </Show>
                   </Tabs>
                 </div>
-                <Show when={fileOpen()}>
-                  <div onPointerDown={() => props.size.start()}>
-                    <ResizeHandle
-                      direction="horizontal"
-                      edge="start"
-                      size={fileTreeWidth()}
-                      min={FILE_TREE_WIDTH_MIN}
-                      max={480}
-                      onResize={(width) => {
-                        props.size.touch()
-                        layout.fileTree.resize(width)
-                      }}
-                    />
-                  </div>
-                </Show>
+              </div>
+              <div onPointerDown={() => props.size.start()}>
+                <ResizeHandle
+                  direction="horizontal"
+                  edge="start"
+                  size={fileTreeWidth()}
+                  min={FILE_TREE_WIDTH_MIN}
+                  max={480}
+                  onResize={(width) => {
+                    props.size.touch()
+                    layout.fileTree.resize(width)
+                  }}
+                />
+              </div>
+            </Show>
+
+            <Show when={tasksOpen()}>
+              <div
+                id="tasks-panel"
+                class="relative min-w-0 h-full overflow-hidden border-s border-border-weaker-base"
+                classList={{ "flex-1": !reviewOpen() && !fileOpen(), "w-[320px] shrink-0": reviewOpen() || fileOpen() }}
+              >
+                <div class="h-full overflow-y-auto">
+                  <SubagentList sessionID={() => params.id ?? ""} />
+                </div>
               </div>
             </Show>
           </div>

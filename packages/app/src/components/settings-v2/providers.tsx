@@ -245,6 +245,16 @@ export const SettingsProvidersV2: Component<{
                             {language.t("common.edit")}
                           </ButtonV2>
                         </Show>
+                        <Show when={row.id === "openai" && src() !== "env"}>
+                          <ButtonV2
+                            size="normal"
+                            variant="ghost-muted"
+                            data-action="provider-reconnect"
+                            onClick={() => connect("openai")}
+                          >
+                            {language.t("common.reconnect")}
+                          </ButtonV2>
+                        </Show>
                         <Show
                           when={canDisconnectRow(row.id)}
                           fallback={

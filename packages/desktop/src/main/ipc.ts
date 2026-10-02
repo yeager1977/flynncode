@@ -309,3 +309,7 @@ export function sendMenuCommand(win: BrowserWindow, id: string) {
 export function sendDeepLinks(win: BrowserWindow, urls: string[]) {
   win.webContents.send("deep-link", urls)
 }
+
+export function sendQuickEntry(win: BrowserWindow) {
+  win.webContents.send("quick-entry")
+}

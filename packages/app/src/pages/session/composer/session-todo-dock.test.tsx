@@ -12,8 +12,11 @@ const source = readFileSync(new URL("./session-todo-dock.tsx", import.meta.url),
 describe("SessionTodoDock", () => {
   test("todo rows render as distinct inset task chips", () => {
     expect(source).toContain(
-      '"rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-02 px-2 py-1.5": true',
+      '"rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-02 px-2 py-1.5 cursor-pointer":',
     )
+    expect(source).toContain('data-action="session-todo-chip"')
+    expect(source).toContain('data-slot="session-todo-output"')
+    expect(source).toContain("max-h-24 overflow-y-auto")
   })
 
   test("in_progress items get data-status and accent border", () => {
@@ -31,22 +34,22 @@ describe("SessionTodoDock", () => {
 
   // (c) pending items get dimmed opacity
   test("pending items get dimmed opacity", () => {
-    expect(source).toContain('opacity: todo().status === "pending" ? "0.92" : "1"')
+    expect(source).toContain('opacity: todo().status === "pending" ? "0.94" : "1"')
   })
 
   // (d) cancelled items get strikethrough + weak color (same active prop as completed)
   test("cancelled items get strikethrough and weak color", () => {
     // The active prop covers both completed and cancelled
     expect(source).toContain('todo().status === "cancelled"')
-    expect(source).toContain('"var(--text-weak)"')
+    expect(source).toContain("text-text-weak")
+    expect(source).toContain('"var(--text-strong)"')
   })
 
   // (e) path-pattern content: TextStrikethrough uses summary from splitTodoContent
   test("TextStrikethrough renders summary from splitTodoContent", () => {
     expect(source).toContain("splitTodoContent")
     expect(source).toContain("parts().summary")
-    // Detail toggle is shown only when detail !== summary
-    expect(source).toContain('parts().detail !== parts().summary')
+    expect(source).toContain("line-clamp-2")
   })
 
   // (f) detail toggle reveals original content (detail line rendered when expanded)

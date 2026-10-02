@@ -229,21 +229,44 @@ describe("Instruction.system", () => {
     }),
   )
 
-  it.live("skips project and global CLAUDE.md when Claude Code prompt is disabled", () =>
+  it.live("excludes CLAUDE.md files when disableClaudeCodePrompt is set", () =>
     Effect.gen(function* () {
       const globalTmp = yield* tmpWithFiles({ ".claude/CLAUDE.md": "# Global Claude" })
-      const projectTmp = yield* tmpWithFiles({ "CLAUDE.md": "# Project Claude" })
+      const projectTmp = yield* tmpWithFiles({
+        "AGENTS.md": "# Agents",
+        "CLAUDE.md": "# Project Claude",
+        ".claude/CLAUDE.md": "# Nested Claude",
+        "MEMORY.md": "# Memory",
+      })
 
       yield* Effect.gen(function* () {
         const svc = yield* Instruction.Service
         const paths = yield* svc.systemPaths()
         expect(paths.has(path.join(globalTmp, ".claude", "CLAUDE.md"))).toBe(false)
         expect(paths.has(path.join(projectTmp, "CLAUDE.md"))).toBe(false)
-        expect(yield* svc.system()).toEqual([])
+        expect(paths.has(path.join(projectTmp, ".claude", "CLAUDE.md"))).toBe(false)
+        expect(paths.has(path.join(projectTmp, "AGENTS.md"))).toBe(true)
+        expect(paths.has(path.join(projectTmp, "MEMORY.md"))).toBe(true)
       }).pipe(
         provideInstance(projectTmp),
         provideInstruction({ home: globalTmp, config: globalTmp }, { disableClaudeCodePrompt: true }),
       )
+    }),
+  )
+
+  it.live("prefers AGENTS.md over CLAUDE.md when both exist", () =>
+    Effect.gen(function* () {
+      const projectTmp = yield* tmpWithFiles({
+        "AGENTS.md": "# Agents",
+        "CLAUDE.md": "# Claude",
+      })
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const paths = yield* svc.systemPaths()
+        expect(paths.has(path.join(projectTmp, "AGENTS.md"))).toBe(true)
+        expect(paths.has(path.join(projectTmp, "CLAUDE.md"))).toBe(false)
+      }).pipe(provideInstance(projectTmp), provideInstruction({ home: projectTmp, config: projectTmp }))
     }),
   )
 })

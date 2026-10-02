@@ -17,6 +17,7 @@ import { FSUtil } from "@opencode-ai/core/fs-util"
 import { AppProcess } from "@opencode-ai/core/process"
 import { InstanceState } from "@/effect/instance-state"
 import { WorktreeEvent } from "@opencode-ai/schema/worktree-event"
+import { worktreesToRemove } from "./retention"
 
 export const Event = WorktreeEvent
 
@@ -610,7 +611,29 @@ const layer: Layer.Layer<
       return true
     })
 
-    return Service.of({ makeWorktreeInfo, createFromInfo, create, list, remove, reset })
+    const createAndRetain = Effect.fn("Worktree.createAndRetain")(function* (input?: CreateInput) {
+      const info = yield* create(input)
+      const entries = yield* list().pipe(Effect.catch(() => Effect.succeed([] as Info[])))
+      // Instances loaded in a worktree can host running sessions; retention must
+      // not force-delete them (sessions keep working directories alive).
+      const loaded = yield* store
+        .loadedDirectories()
+        .pipe(Effect.catch(() => Effect.succeed(new Set<string>() as ReadonlySet<string>)))
+      const drop = worktreesToRemove(
+        entries.map((entry, index) => ({
+          directory: entry.directory,
+          updated: entries.length - index,
+          open: entry.directory === info.directory,
+          running: loaded.has(entry.directory),
+        })),
+      )
+      for (const directory of drop) {
+        yield* remove({ directory }).pipe(Effect.catch(() => Effect.void))
+      }
+      return info
+    })
+
+    return Service.of({ makeWorktreeInfo, createFromInfo, create: createAndRetain, list, remove, reset })
   }),
 )
 

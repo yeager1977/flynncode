@@ -120,6 +120,24 @@ function isOrphanedInterruptedTool(part: SessionV1.ToolPart) {
   return part.state.status === "error" && part.state.metadata?.interrupted === true
 }
 
+// Peer messaging envelope header. The regex is anchored (^) so a header
+// embedded mid-text by untrusted model output (prompt injection) never parses.
+// fromSession/fromAgent/correlation are sanitized by the tool's envelope()
+// before interpolation, so the captured field values cannot contain quotes.
+export function peerHeaderFrom(text: string) {
+  return text.match(
+    /^<peer_message from_session="([^"]+)" from_agent="([^"]+)" correlation="([^"]+)">/,
+  )
+}
+
+// Trust anchor for peer replies: a message whose every text part is synthetic.
+// Normal user messages (including model-authored text that merely quotes a
+// <peer_message header) never qualify.
+export function isSyntheticMessage(message: { parts: { type: string; synthetic?: boolean }[] }) {
+  const textParts = message.parts.filter((part): part is { type: "text"; synthetic?: boolean } => part.type === "text")
+  return textParts.length > 0 && textParts.every((part) => part.synthetic === true)
+}
+
 export interface Interface {
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
   readonly prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error>
@@ -1096,7 +1114,40 @@ const layer = Layer.effect(
       }
 
       if (input.noReply === true) return message
+      const busy = yield* state.assertNotBusy(input.sessionID).pipe(
+        Effect.as(false),
+        Effect.catch(() => Effect.succeed(true)),
+      )
+      if (busy && input.delivery === "steer") return message
+      if (busy && input.delivery === "queue") return message
       return yield* loop({ sessionID: input.sessionID })
+    })
+
+    const replyToPeer = Effect.fnUntraced(function* (user: SessionV1.User) {
+      const stored = yield* sessions.messages({ sessionID: user.sessionID }).pipe(Effect.orDie)
+      const source = stored.find((item) => item.info.id === user.id)
+      const text = source?.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n") ?? ""
+      const header = peerHeaderFrom(text)
+      // Only steer a reply when the message being finished is a genuine
+      // synthetic peer-message envelope. A forged header embedded in ordinary
+      // model-visible text (non-synthetic) must never route a reply.
+      if (!source || !header || !isSyntheticMessage(source) || text.includes("<peer_reply")) return
+      const assistant = stored.findLast((item) => item.info.role === "assistant" && item.info.parentID === user.id)
+      const answer =
+        assistant?.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n") ||
+        "The peer session finished without text."
+      yield* prompt({
+        sessionID: SessionID.make(header[1]!),
+        agent: header[2],
+        delivery: "steer",
+        parts: [
+          {
+            type: "text",
+            synthetic: true,
+            text: `<peer_reply correlation="${header[3]}">\n${answer}\n</peer_reply>`,
+          },
+        ],
+      }).pipe(Effect.ignore, Effect.forkIn(scope))
     })
 
     const lastAssistant = Effect.fnUntraced(function* (sessionID: SessionID) {
@@ -1107,12 +1158,34 @@ const layer = Layer.effect(
       throw new Error("Impossible")
     })
 
-    const runLoop: (sessionID: SessionID) => Effect.Effect<SessionV1.WithParts> = Effect.fn("SessionPrompt.run")(
-      function* (sessionID: SessionID) {
-        const ctx = yield* InstanceState.context
-        let structured: unknown
-        let step = 0
-        const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+    // Steer/queue prompts persist their user message without entering the loop,
+    // so a drain only consumes them if a message read happens after persistence.
+    // Check by time.created first, tie-breaking on ID, matching MessageV2.isAfter.
+    const hasNewerUser: (sessionID: SessionID, after: SessionV1.User) => Effect.Effect<boolean> = Effect.fn(
+      "SessionPrompt.hasNewerUser",
+    )(function* (sessionID: SessionID, after: SessionV1.User) {
+      const current = yield* MessageV2.filterCompactedEffect(sessionID).pipe(
+        Effect.provideService(Database.Service, database),
+      )
+      return current.some(
+        (item) =>
+          item.info.role === "user" &&
+          item.info.id !== after.id &&
+          (item.info.time.created > after.time.created ||
+            (item.info.time.created === after.time.created && item.info.id > after.id)),
+      )
+    })
+
+    const runLoopOnce: (sessionID: SessionID) => Effect.Effect<[SessionV1.WithParts, SessionV1.User]> = Effect.fn(
+      "SessionPrompt.runLoopOnce",
+    )(function* (sessionID) {
+      const ctx = yield* InstanceState.context
+      let structured: unknown
+      let step = 0
+      const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+      // The newer-user message this drain last observed, carried across loop
+      // iterations so the post-loop re-check can compare against the right turn.
+      let drainedMessages: SessionV1.User | undefined
 
         while (true) {
           yield* status.set(sessionID, { type: "busy" })
@@ -1123,7 +1196,7 @@ const layer = Layer.effect(
           )
 
           const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = MessageV2.latest(msgs)
-
+          drainedMessages = lastUser
           if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
 
           const lastAssistantMsg = msgs.findLast(
@@ -1345,7 +1418,14 @@ const layer = Layer.effect(
               }
             }
 
-            if (result === "stop") return "break" as const
+            if (result === "stop") {
+              const newer = yield* hasNewerUser(sessionID, lastUser)
+              if (!newer) {
+                yield* replyToPeer(lastUser)
+                return "break" as const
+              }
+              return "continue" as const
+            }
             if (result === "compact") {
               yield* compaction.create({
                 sessionID,
@@ -1365,7 +1445,20 @@ const layer = Layer.effect(
         }
 
         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
-        return yield* lastAssistant(sessionID)
+        return [yield* lastAssistant(sessionID), drainedMessages!] as const
+      },
+    )
+
+    const runLoop: (sessionID: SessionID) => Effect.Effect<SessionV1.WithParts> = Effect.fn("SessionPrompt.run")(
+      function* (sessionID: SessionID) {
+        // A drain must not return while steer/queue user messages persisted after
+        // the last messages read remain unconsumed — they would sit in the
+        // database until some later drain. Rerun the loop when the post-teardown
+        // re-check finds newer user messages.
+        while (true) {
+          const [result, user] = yield* runLoopOnce(sessionID)
+          if (!(yield* hasNewerUser(sessionID, user))) return result
+        }
       },
     )
 
@@ -1538,6 +1631,7 @@ export const PromptInput = Schema.Struct({
   format: Schema.optional(SessionV1.Format),
   system: Schema.optional(Schema.String),
   variant: Schema.optional(Schema.String),
+  delivery: Schema.optional(Schema.Literals(["steer", "queue"])),
   parts: Schema.Array(
     Schema.Union([
       SessionV1.TextPartInput,

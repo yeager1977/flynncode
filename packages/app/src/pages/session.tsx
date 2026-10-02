@@ -75,6 +75,8 @@ import { createOpenReviewFile, createSessionTabs, createSizing, shellPtyID, shou
 import { MessageTimeline } from "@/pages/session/timeline/message-timeline"
 import { createTimelineModel } from "@/pages/session/timeline/model"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
+import { citationFromTarget, scrollCitationLine } from "@/pages/session/citation"
+import { reviewFollowUp } from "@/pages/session/review-follow-up"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { restorePromptModel, syncPromptModel, syncSessionModel } from "@/pages/session/session-model-helpers"
 import {
@@ -488,7 +490,8 @@ export default function Page() {
   const desktopSessionResizeOpen = createMemo(() =>
     newSessionDesign() ? desktopV2ReviewOpen() || desktopTerminalOpen() : desktopReviewOpen(),
   )
-  const desktopSidePanelOpen = createMemo(() => desktopSessionResizeOpen() || desktopFileTreeOpen())
+  const desktopTasksOpen = createMemo(() => view().tasks.opened())
+  const desktopSidePanelOpen = createMemo(() => desktopSessionResizeOpen() || desktopFileTreeOpen() || desktopTasksOpen())
   let panelRow: HTMLDivElement | undefined
   const [panelRowWidth, setPanelRowWidth] = createSignal<number>()
   createResizeObserver(
@@ -529,7 +532,7 @@ export default function Page() {
     sessionPanelLayout({
       review: desktopV2ReviewOpen(),
       terminal: desktopTerminalOpen(),
-      files: desktopFileTreeOpen(),
+      files: desktopFileTreeOpen() || desktopTasksOpen(),
     }),
   )
 
@@ -1199,21 +1202,41 @@ export default function Page() {
     return language.t("ui.sessionReview.title.lastTurn")
   }
 
+  const addressComments = () => {
+    const mode = reviewMode()
+    const scope = mode === "turn" || mode === "branch" ? mode : "git"
+    const text = reviewFollowUp({
+      scope,
+      comments: comments.all().map((item) => ({
+        file: item.file,
+        startLine: item.selection.start,
+        endLine: item.selection.end,
+        comment: item.comment,
+      })),
+    })
+    prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
+  }
+
   const changesTitle = () => {
     if (!canReview()) {
       return null
     }
 
     return (
-      <Select
-        options={changesOptions()}
-        current={reviewMode()}
-        label={changesLabel}
-        onSelect={(option) => option && view().review.setMode(option)}
-        variant="ghost"
-        size="small"
-        valueClass="text-14-medium"
-      />
+      <div class="flex items-center gap-2">
+        <Select
+          options={changesOptions()}
+          current={reviewMode()}
+          label={changesLabel}
+          onSelect={(option) => option && view().review.setMode(option)}
+          variant="ghost"
+          size="small"
+          valueClass="text-14-medium"
+        />
+        <Button size="small" variant="ghost" onClick={addressComments}>
+          {language.t("session.review.addressComments")}
+        </Button>
+      </div>
     )
   }
 
@@ -1223,15 +1246,20 @@ export default function Page() {
     }
 
     return (
-      <SelectV2
-        appearance="inline"
-        options={changesOptions()}
-        current={reviewMode()}
-        label={changesLabel}
-        placement="bottom-start"
-        gutter={6}
-        onSelect={(option) => option && view().review.setMode(option)}
-      />
+      <div class="flex items-center gap-2">
+        <SelectV2
+          appearance="inline"
+          options={changesOptions()}
+          current={reviewMode()}
+          label={changesLabel}
+          placement="bottom-start"
+          gutter={6}
+          onSelect={(option) => option && view().review.setMode(option)}
+        />
+        <Button size="small" variant="ghost" onClick={addressComments}>
+          {language.t("session.review.addressComments")}
+        </Button>
+      </div>
     )
   }
 
@@ -1350,6 +1378,10 @@ export default function Page() {
       return layout.review.diffStyle()
     },
     onDiffStyleChange: layout.review.setDiffStyle,
+    get indexActions() {
+      return reviewMode() === "git"
+    },
+    onApplied: refreshVcs,
     state: reviewV2State,
     onLineComment: (comment: SessionReviewLineComment) => addCommentToContext({ ...comment, origin: "review" }),
     onLineCommentUpdate: updateCommentInContext,
@@ -1877,7 +1909,7 @@ export default function Page() {
           roll(input.sessionID, { messageID: input.messageID }, target)
           prompt.set(value)
         },
-        request: () => halt(input.sessionID).then(() => session.revert.stage(input)),
+        request: () => halt(input.sessionID).then(() => session.revert.stage({ ...input, files: true })),
         complete: () => undefined,
         rollback: () => roll(input.sessionID, last, target),
         fail,
@@ -1910,7 +1942,9 @@ export default function Page() {
         request: () =>
           !next
             ? halt(sessionID).then(() => session.revert.clear({ sessionID }))
-            : halt(sessionID).then(() => session.revert.stage({ sessionID, messageID: next.id }).then(() => undefined)),
+            : halt(sessionID).then(() =>
+                session.revert.stage({ sessionID, messageID: next.id, files: true }).then(() => undefined),
+              ),
         complete: () => undefined,
         rollback: () => roll(sessionID, last, target),
         fail,
@@ -2105,7 +2139,15 @@ export default function Page() {
       <Show when={!isDesktop() && !!params.id && settings.general.newLayoutDesigns() && !mobileTabsBottom()}>
         {mobileTabs(true)}
       </Show>
-      <div class="flex-1 min-h-0 overflow-hidden">
+      <div
+        class="flex-1 min-h-0 overflow-hidden"
+        onClick={(event) => {
+          const citation = citationFromTarget(event.target)
+          if (!citation) return
+          view().review.openPath(citation.path)
+          scrollCitationLine(citation.line)
+        }}
+      >
         <Switch>
           <Match when={params.id && mobileChanges()}>
             <div class="relative h-full overflow-hidden">
@@ -2363,7 +2405,7 @@ export default function Page() {
         <Show when={newSessionDesign()}>
           <Show when={isDesktop() ? desktopV2PanelLayout().visible : terminalOpen()}>
             <div class="min-w-0 h-full flex flex-1 flex-col">
-              <Show when={isDesktop() && (desktopV2ReviewOpen() || desktopFileTreeOpen())}>
+              <Show when={isDesktop() && (desktopV2ReviewOpen() || desktopFileTreeOpen() || desktopTasksOpen())}>
                 <div class="min-h-0 flex-1">
                   <Suspense>
                     <SessionSidePanel

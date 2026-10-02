@@ -4,6 +4,7 @@ import { formatPatch, structuredPatch } from "diff"
 import { InstanceState } from "@/effect/instance-state"
 import { Watcher } from "@opencode-ai/core/filesystem/watcher"
 import { Git } from "@/git"
+import { type ApplyIndex } from "@/git/apply-args"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { EventV2 } from "@opencode-ai/core/event"
 import { VcsEvent } from "@opencode-ai/schema/vcs-event"
@@ -74,6 +75,8 @@ const fileFromGitHeader = (header: string) => {
   if (separator === -1) return
   return fileFromDiffPath(header.slice(separator + 1))
 }
+
+const fileFromPatch = (patch: string) => fileFromPatchChunk(patch)
 
 const fileFromPatchChunk = (chunk: string) => {
   const next = /^\+\+\+ (.+)$/m.exec(chunk)?.[1]
@@ -265,6 +268,7 @@ export type FileStatus = Schema.Schema.Type<typeof FileStatus>
 
 export const ApplyInput = Schema.Struct({
   patch: Schema.String,
+  index: Schema.optional(Schema.Literals(["worktree", "stage", "unstage"])),
 })
 export type ApplyInput = Schema.Schema.Type<typeof ApplyInput>
 
@@ -405,7 +409,16 @@ const layer: Layer.Layer<Service, never, Git.Service | EventV2Bridge.Service> = 
             reason: "non-git",
           })
         }
-        const applied = yield* git.applyPatch(ctx.directory, input.patch)
+        // The review's git scope shows HEAD-vs-worktree, whose hunks do not match
+        // the index once anything is staged; unstage reverses the file's staged
+        // diff (index vs HEAD) instead of the client's combined patch.
+        const patch =
+          input.index === "unstage"
+            ? (yield* git.patchStaged(ctx.directory, fileFromPatch(input.patch) ?? "", { context: PATCH_CONTEXT_LINES }))
+                .text
+            : input.patch
+        if (input.index === "unstage" && !patch) return { applied: true }
+        const applied = yield* git.applyPatch(ctx.directory, patch, input.index)
         if (applied.exitCode !== 0) {
           return yield* new PatchApplyError({
             message: "Patch can't be applied",
