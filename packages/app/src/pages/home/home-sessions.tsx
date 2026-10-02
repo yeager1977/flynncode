@@ -42,6 +42,19 @@ export function HomeSessions(props: {
       onSearchSelectActive={props.search.result.selectActive}
       onSearchHighlight={props.search.result.highlight}
       onSearchSelect={props.search.result.select}
+      selecting={props.sessions.select.active}
+      busy={props.sessions.select.busy}
+      selectedCount={props.sessions.select.count}
+      rowSelected={props.sessions.select.selected}
+      rowLocked={props.sessions.select.locked}
+      onToggleSelect={props.sessions.select.toggleMode}
+      onSelectAll={props.sessions.select.selectAll}
+      onArchiveSelected={props.sessions.select.archive}
+      onDeleteSelected={props.sessions.select.remove}
+      onCancelSelect={props.sessions.select.cancel}
+      onBulkCleanup={props.sessions.select.cleanup}
+      onToggleRow={props.sessions.select.toggle}
+      onClearSelect={props.sessions.select.cancel}
     />
   )
 }

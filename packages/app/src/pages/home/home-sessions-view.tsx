@@ -1,16 +1,19 @@
 import type { Session } from "@opencode-ai/sdk/v2/client"
-import { type Accessor, createMemo, For, Show, Suspense } from "solid-js"
+import { type Accessor, createEffect, createMemo, For, Show, Suspense, untrack } from "solid-js"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
+import { CheckboxV2 } from "@opencode-ai/ui/v2/checkbox-v2"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
+import { MenuV2 } from "@opencode-ai/ui/v2/menu-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { useLanguage } from "@/context/language"
 import { ServerConnection } from "@/context/server"
 import { SessionTabAvatarView } from "@/pages/layout/session-tab-avatar"
 import { sessionTitle } from "@/utils/session-title"
 import { shouldOpenSessionInBackground } from "../home-session-open"
+import { BULK_PRESETS, type BulkPreset } from "../session/session-bulk"
 import {
   HomeSessionStatusController,
   homeSessionSearchKey,
@@ -69,9 +72,26 @@ export type HomeSessionsViewProps = {
   onSearchSelectActive: () => void
   onSearchHighlight: (record: HomeSessionRecord) => void
   onSearchSelect: (record: HomeSessionRecord, options?: OpenSessionOptions) => void
+  selecting: Accessor<boolean>
+  busy: Accessor<boolean>
+  selectedCount: Accessor<number>
+  rowSelected: (id: string) => boolean
+  rowLocked: (id: string) => boolean
+  onToggleSelect: () => void
+  onSelectAll: () => void
+  onArchiveSelected: () => void
+  onDeleteSelected: () => void
+  onCancelSelect: () => void
+  onBulkCleanup: (id: BulkPreset) => void
+  onToggleRow: (id: string, event: MouseEvent) => void
+  onClearSelect: () => void
 }
 
 export function HomeSessionsView(props: HomeSessionsViewProps) {
+  createEffect(() => {
+    if (!props.searchOpen()) return
+    untrack(() => props.onClearSelect())
+  })
   return (
     <section
       ref={props.onSetHoverTarget}
@@ -80,9 +100,93 @@ export function HomeSessionsView(props: HomeSessionsViewProps) {
     >
       <div class="sticky top-0 z-30 shrink-0 bg-v2-background-bg-base pb-3 pt-6 lg:pt-12" onWheel={props.onWheel}>
         <HomeSessionSearch {...props} />
-        <Suspense>
-          <Show when={props.groups().length > 0 && props.canCreateSession()}>
-            <div class="pointer-events-none absolute right-0 top-[84px] z-20 flex lg:top-[108px]">
+        <div
+          class={`
+            pointer-events-none absolute right-0 top-[84px] z-20 flex max-w-full flex-wrap
+            items-center justify-end gap-1 bg-v2-background-bg-base lg:top-[108px]
+          `}
+        >
+          <ButtonV2
+            data-action="home-session-select"
+            variant="ghost-muted"
+            size="normal"
+            class="pointer-events-auto h-7 px-2 [font-weight:530]"
+            disabled={props.busy()}
+            aria-pressed={props.selecting()}
+            onClick={props.onToggleSelect}
+          >
+            {props.language.t("session.bulk.select")}
+          </ButtonV2>
+          <MenuV2 gutter={4} placement="bottom-end">
+            <MenuV2.Trigger
+              as={ButtonV2}
+              data-action="home-session-cleanup"
+              variant="ghost-muted"
+              size="normal"
+              class="pointer-events-auto h-7 px-2 [font-weight:530]"
+              disabled={props.busy()}
+              aria-label={props.language.t("session.bulk.cleanup")}
+            >
+              {props.language.t("session.bulk.cleanup")}
+            </MenuV2.Trigger>
+            <MenuV2.Portal>
+              <MenuV2.Content>
+                <For each={BULK_PRESETS}>
+                  {(preset) => (
+                    <MenuV2.Item disabled={props.busy()} onSelect={() => props.onBulkCleanup(preset.id)}>
+                      {props.language.t(`session.bulk.period.${preset.id}`)}
+                    </MenuV2.Item>
+                  )}
+                </For>
+              </MenuV2.Content>
+            </MenuV2.Portal>
+          </MenuV2>
+          <Show when={props.selecting()}>
+            <span class="px-1 text-[13px] leading-4 tracking-[-0.04px] text-v2-text-text-muted [font-weight:440]">
+              {props.language.plural("session.bulk.selected", props.selectedCount())}
+            </span>
+            <ButtonV2
+              data-action="home-session-select-all"
+              variant="ghost-muted"
+              size="normal"
+              class="pointer-events-auto h-7 px-2 [font-weight:530]"
+              disabled={props.busy()}
+              onClick={props.onSelectAll}
+            >
+              {props.language.t("session.bulk.selectAll")}
+            </ButtonV2>
+            <ButtonV2
+              data-action="home-session-archive"
+              variant="ghost-muted"
+              size="normal"
+              class="pointer-events-auto h-7 px-2 [font-weight:530]"
+              disabled={props.busy() || props.selectedCount() === 0}
+              onClick={props.onArchiveSelected}
+            >
+              {props.language.t("session.bulk.archive")}
+            </ButtonV2>
+            <ButtonV2
+              data-action="home-session-delete"
+              variant="ghost-muted"
+              size="normal"
+              class="pointer-events-auto h-7 px-2 [font-weight:530]"
+              disabled={props.busy() || props.selectedCount() === 0}
+              onClick={props.onDeleteSelected}
+            >
+              {props.language.t("session.bulk.delete")}
+            </ButtonV2>
+            <ButtonV2
+              data-action="home-session-cancel"
+              variant="ghost-muted"
+              size="normal"
+              class="pointer-events-auto h-7 px-2 [font-weight:530]"
+              onClick={props.onCancelSelect}
+            >
+              {props.language.t("session.bulk.cancel")}
+            </ButtonV2>
+          </Show>
+          <Suspense>
+            <Show when={props.groups().length > 0 && props.canCreateSession()}>
               <ButtonV2
                 data-action="home-new-session"
                 variant="ghost-muted"
@@ -93,9 +197,9 @@ export function HomeSessionsView(props: HomeSessionsViewProps) {
               >
                 {props.language.t("command.session.new")}
               </ButtonV2>
-            </div>
-          </Show>
-        </Suspense>
+            </Show>
+          </Suspense>
+        </div>
       </div>
       <div class="pointer-events-none sticky top-[84px] z-40 h-0 -mr-3 lg:top-[108px]">
         <div
@@ -291,7 +395,10 @@ function HomeSessionSearch(props: HomeSessionsViewProps) {
                 ? `home-session-search-option-${props.searchActive()}`
                 : undefined
             }
-            onFocus={props.onSearchFocus}
+            onFocus={() => {
+              props.onClearSelect()
+              props.onSearchFocus()
+            }}
             onInput={(event) => props.onSearchInput(event.currentTarget.value)}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
@@ -421,8 +528,35 @@ function HomeSessionRow(props: HomeSessionsViewProps & { record: HomeSessionReco
   return (
     <div
       class="group/session relative flex h-10 min-w-0 items-center rounded-[6px]"
-      classList={{ group: !!showProjectName() }}
+      classList={{
+        group: !!showProjectName(),
+        "bg-v2-overlay-simple-overlay-hover": props.selecting() && props.rowSelected(props.record.session.id),
+      }}
     >
+      <Show when={props.selecting()}>
+        <div
+          class="shrink-0 pl-2"
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            if (props.rowLocked(props.record.session.id)) return
+            props.onToggleRow(props.record.session.id, event)
+          }}
+        >
+          <CheckboxV2
+            readOnly
+            class="pointer-events-none"
+            checked={props.rowSelected(props.record.session.id)}
+            disabled={props.rowLocked(props.record.session.id)}
+            hideLabel
+            label={
+              props.rowLocked(props.record.session.id)
+                ? props.language.t("session.bulk.locked")
+                : props.language.t("session.bulk.select")
+            }
+          />
+        </div>
+      </Show>
       <button
         type="button"
         data-component="home-session-row"
@@ -434,9 +568,18 @@ function HomeSessionRow(props: HomeSessionsViewProps & { record: HomeSessionReco
         `}
         onMouseDown={(event) => {
           if (event.button === 1) event.preventDefault()
+          if (props.selecting() && event.shiftKey) event.preventDefault()
         }}
-        onClick={(event) => props.onOpenSession(props.record.session, { background: isBackgroundOpen(event) })}
+        onClick={(event) => {
+          if (props.selecting()) {
+            event.preventDefault()
+            props.onToggleRow(props.record.session.id, event)
+            return
+          }
+          props.onOpenSession(props.record.session, { background: isBackgroundOpen(event) })
+        }}
         onAuxClick={(event) => {
+          if (props.selecting()) return
           if (!isBackgroundOpen(event)) return
           event.preventDefault()
           props.onOpenSession(props.record.session, { background: true })
