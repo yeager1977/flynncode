@@ -47,11 +47,10 @@ export function TerminalPanelV2(props: { stacked?: boolean } = {}) {
       sync().data.part,
     ),
   )
-  const dockOpen = createMemo(() => opened() || tasksOpen())
-
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const newLayout = createMemo(() => settings.general.newLayoutDesigns())
   const opened = createMemo(() => view().terminal.opened())
+  const dockOpen = createMemo(() => opened() || tasksOpen())
   const size = createSizing()
   const height = createMemo(() => layout.terminal.height())
   const close = () => view().terminal.close()

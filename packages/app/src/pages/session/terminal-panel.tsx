@@ -43,9 +43,8 @@ export function TerminalPanel() {
       sync().data.part,
     ),
   )
-  const dockOpen = createMemo(() => opened() || tasksOpen())
-
   const opened = createMemo(() => view().terminal.opened())
+  const dockOpen = createMemo(() => opened() || tasksOpen())
   const size = createSizing()
   const height = createMemo(() => layout.terminal.height())
   const close = () => view().terminal.close()
