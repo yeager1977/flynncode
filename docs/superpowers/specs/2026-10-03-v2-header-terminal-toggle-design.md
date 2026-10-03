@@ -37,10 +37,10 @@ One component, `packages/app/src/components/session/session-header.tsx`:
    - `IconButtonV2`, variant `ghost-muted`, size `large`, class `!w-9 shrink-0`
      (identical to review/tasks buttons)
    - `state={terminalOpened ? "pressed" : undefined}`
-   - `icon={<Icon name="terminal-open" />}` (name chosen from existing icon set;
-     if `terminal-open` does not exist, reuse the review pattern's icon component
-     `Icon` size via `IconV2` — final name picked at implementation by checking
-     `packages/ui` icon exports)
+   - `icon={<Icon name={terminalOpened ? "terminal-active" : "terminal"} />}` —
+     the legacy `Icon` component (imported as `IconV2` in this file) already has
+     `terminal` and `terminal-active` glyphs; the tasks button in this same
+     component uses the legacy `Icon` the same way
    - `aria-label`, `aria-expanded={terminalOpened}`,
      `aria-controls="terminal-panel"`
    - Wrapped in `TooltipV2` showing `terminalLabel` + `KeybindV2` when a keybind
