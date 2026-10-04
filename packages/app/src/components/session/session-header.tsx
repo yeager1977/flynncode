@@ -239,7 +239,9 @@ export function SessionHeader() {
       current: pathKey(current),
       primary: pathKey(root),
       branch: sync().data.vcs?.branch,
-      worktrees: listed.map((directory) => ({ directory: pathKey(directory) })),
+      worktrees: listed.map((item) =>
+        typeof item === "string" ? { directory: pathKey(item) } : { directory: pathKey(item.directory), branch: item.branch },
+      ),
       git: true,
     })
     if (!decision.ok) {

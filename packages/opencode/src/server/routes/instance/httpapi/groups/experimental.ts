@@ -60,7 +60,11 @@ export const ToolListQuery = Schema.Struct({
   model: ModelV2.ID,
 })
 
-const WorktreeList = Schema.Array(Schema.String)
+const WorktreeListEntry = Schema.Struct({
+  directory: Schema.String,
+  branch: Schema.optional(Schema.String),
+}).annotate({ identifier: "WorktreeListEntry" })
+const WorktreeList = Schema.Array(WorktreeListEntry)
 const WorktreeErrorName = Schema.Union([
   Schema.Literal("WorktreeNotGitError"),
   Schema.Literal("WorktreeNameGenerationFailedError"),
@@ -175,7 +179,7 @@ export const ExperimentalApi = HttpApi.make("experimental")
         ),
         HttpApiEndpoint.get("worktree", ExperimentalPaths.worktree, {
           query: WorkspaceRoutingQuery,
-          success: described(WorktreeList, "List of worktree directories"),
+          success: described(WorktreeList, "List of worktrees with their checked-out branches"),
           error: WorktreeApiError,
         }).annotateMerge(
           OpenApi.annotations({

@@ -155,6 +155,9 @@ interface State {
   clients: Record<string, MCPClient>
   defs: Record<string, MCPToolDef[]>
   instructions: Record<string, string>
+  // Instance directory; supplement tools in the process-global registry are
+  // owned per (directory, server) so two instances never clobber each other.
+  directory: string
 }
 
 export interface ServerInstructions {
@@ -463,7 +466,7 @@ const layer = Layer.effect(
         delete s.clients[name]
         delete s.defs[name]
         delete s.instructions[name]
-        clearV2Tools(name)
+        clearV2Tools(s.directory, name)
         s.status[name] = { status: "failed", error: "Connection closed" }
         bridge.fork(
           Effect.logWarning("MCP connection closed", { server: name }).pipe(
@@ -486,7 +489,7 @@ const layer = Layer.effect(
         if (s.clients[name] !== client || s.status[name]?.status !== "connected") return
 
         s.defs[name] = listed
-        syncV2Tools(name, client, listed, timeout)
+        syncV2Tools(s.directory, name, client, listed, timeout)
         await bridge.promise(events.publish(ToolsChanged, { server: name }).pipe(Effect.ignore))
       })
     }
@@ -510,7 +513,7 @@ const layer = Layer.effect(
     }
 
     const state = yield* InstanceState.make<State>(
-      Effect.fn("MCP.state")(function* () {
+      Effect.fn("MCP.state")(function* (ctx) {
         const cfg = yield* cfgSvc.get()
         const bridge = yield* EffectBridge.make()
         const config = cfg.mcp ?? {}
@@ -520,6 +523,7 @@ const layer = Layer.effect(
           clients: {},
           defs: {},
           instructions: {},
+          directory: ctx.directory,
         }
 
         yield* Effect.forEach(
@@ -575,7 +579,9 @@ const layer = Layer.effect(
             // Drop these instances' supplement tools AFTER the clients are
             // gone: onclose checks the pre-cleared map, so closing clients
             // alone would never clear the registry entries.
-            yield* Effect.forEach(names, (name) => Effect.sync(() => clearV2Tools(name)), { discard: true })
+            yield* Effect.forEach(names, (name) => Effect.sync(() => clearV2Tools(s.directory, name)), {
+              discard: true,
+            })
             pendingOAuthTransports.clear()
           }),
         )
@@ -589,7 +595,7 @@ const layer = Layer.effect(
       delete s.clients[name]
       delete s.defs[name]
       delete s.instructions[name]
-      clearV2Tools(name)
+      clearV2Tools(s.directory, name)
       if (!client) return Effect.void
       return Effect.tryPromise(() => client.close()).pipe(Effect.ignore)
     }
@@ -607,7 +613,7 @@ const layer = Layer.effect(
       s.status[name] = { status: "connected" }
       s.clients[name] = client
       s.defs[name] = listed
-      syncV2Tools(name, client, listed, timeout)
+      syncV2Tools(s.directory, name, client, listed, timeout)
       if (instructions) s.instructions[name] = instructions
       else delete s.instructions[name]
       watch(s, name, client, bridge, timeout)

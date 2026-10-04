@@ -110,7 +110,8 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
 
     const worktree = Effect.fn("ExperimentalHttpApi.worktree")(function* () {
       const ctx = yield* InstanceState.context
-      return yield* project.sandboxes(ctx.project.id)
+      // Branch info drives the checkout-handoff occupied guard in the app.
+      return yield* mapWorktreeError(worktreeSvc.list())
     })
 
     const worktreeCreate = Effect.fn("ExperimentalHttpApi.worktreeCreate")(function* (ctx: {

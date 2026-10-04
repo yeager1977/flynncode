@@ -6,14 +6,23 @@ import { Tool } from "@opencode-ai/core/tool/tool"
 import { Effect, Schema } from "effect"
 import { toolName } from "./catalog"
 
-export const clearV2Tools = (server: string): Effect.Effect<void> => {
-  // replaceSupplements maps bare server names to tool maps; a no-op when the
-  // server never registered or was already cleared.
-  ToolRegistry.clearSupplements(server)
+// Supplements are owned per directory: two instances can connect to an MCP
+// server with the same name, and one closing must not drop the other's tools.
+export const owner = (directory: string, server: string) => `v1-mcp:${directory}:${server}`
+
+export const clearV2Tools = (directory: string, server: string): Effect.Effect<void> => {
+  // A no-op when the server never registered or was already cleared.
+  ToolRegistry.clearSupplements(owner(directory, server))
   return Effect.void
 }
 
-export const syncV2Tools = (server: string, client: Client, defs: readonly MCPToolDef[], timeout?: number) => {
+export const syncV2Tools = (
+  directory: string,
+  server: string,
+  client: Client,
+  defs: readonly MCPToolDef[],
+  timeout?: number,
+) => {
   const tools: Record<string, Tool.AnyTool> = {}
   for (const def of defs) {
     tools[toolName(server, def.name)] = Tool.make({
@@ -27,7 +36,7 @@ export const syncV2Tools = (server: string, client: Client, defs: readonly MCPTo
         }),
     })
   }
-  ToolRegistry.replaceSupplements(server, tools)
+  ToolRegistry.replaceSupplements(owner(directory, server), tools)
 }
 
 async function call(client: Client, name: string, input: unknown, timeout?: number) {

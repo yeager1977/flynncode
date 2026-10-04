@@ -1940,7 +1940,7 @@ export type Config = {
   enabled_providers?: Array<string>
   model?: string
   small_model?: string
-  model_family?: "auto" | "ollama" | "openai" | "anthropic"
+  model_family?: string
   default_agent?: string
   subagent_depth?: number
   username?: string
@@ -2195,6 +2195,11 @@ export type ToolListItem = {
 export type ToolList = Array<ToolListItem>
 
 export type ToolIds = Array<string>
+
+export type WorktreeListEntry = {
+  directory: string
+  branch?: string
+}
 
 export type WorktreeError = {
   name:
@@ -7893,9 +7898,9 @@ export type WorktreeListError = WorktreeListErrors[keyof WorktreeListErrors]
 
 export type WorktreeListResponses = {
   /**
-   * List of worktree directories
+   * List of worktrees with their checked-out branches
    */
-  200: Array<string>
+  200: Array<WorktreeListEntry>
 }
 
 export type WorktreeListResponse = WorktreeListResponses[keyof WorktreeListResponses]

@@ -259,6 +259,29 @@ describe("Vcs diff", () => {
   )
 
   it.instance(
+    "diff('git') decodes octal-escaped non-ASCII filenames",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        // git quotes é as "\303\251" in diff headers (core.quotepath default).
+        yield* write(path.join(test.directory, "é.md"), "hello\n")
+
+        const vcs = yield* init()
+        const diff = yield* vcs.diff("git")
+
+        expect(diff).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              file: "é.md",
+              status: "added",
+            }),
+          ]),
+        )
+      }),
+    { git: true },
+  )
+
+  it.instance(
     "diff('git') keeps batched patches aligned for type changes",
     () =>
       Effect.gen(function* () {

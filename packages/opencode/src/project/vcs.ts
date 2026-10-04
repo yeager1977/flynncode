@@ -33,21 +33,55 @@ const emptyBatch = () => ({ patches: new Map<string, string>(), capped: false })
 
 const parseQuotedPath = (value: string) => {
   let out = ""
+  // git quotes non-ASCII as octal byte escapes; the bytes are UTF-8, so decode
+  // each run of them at once (per-escape fromCharCode would mojibake é).
+  let byteRun: number[] = []
+  const flush = () => {
+    if (byteRun.length === 0) return
+    out += new TextDecoder().decode(new Uint8Array(byteRun))
+    byteRun = []
+  }
   for (let idx = 1; idx < value.length; idx++) {
     const char = value[idx]
-    if (char === '"') return { value: out, end: idx + 1 }
+    if (char === '"') {
+      flush()
+      return { value: out, end: idx + 1 }
+    }
     if (char !== "\\") {
+      flush()
       out += char
       continue
     }
 
     const next = value[++idx]
-    if (next === "t") out += "\t"
-    else if (next === "n") out += "\n"
-    else if (next === "r") out += "\r"
-    else if (next === '"' || next === "\\") out += next
-    else out += next ?? ""
+    if (next === undefined) break
+    if (next === "t") {
+      flush()
+      out += "\t"
+    } else if (next === "n") {
+      flush()
+      out += "\n"
+    } else if (next === "r") {
+      flush()
+      out += "\r"
+    } else if (next === '"' || next === "\\") {
+      flush()
+      out += next
+    } else if (next >= "0" && next <= "7") {
+      let code = next.charCodeAt(0) - 0x30
+      for (let count = 1; count < 3; count++) {
+        const digit = value[idx + 1]
+        if (digit < "0" || digit > "7") break
+        code = code * 8 + (digit.charCodeAt(0) - 0x30)
+        idx++
+      }
+      byteRun.push(code)
+    } else {
+      flush()
+      out += next
+    }
   }
+  flush()
 }
 
 const parsePathToken = (value: string) => {

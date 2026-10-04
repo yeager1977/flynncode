@@ -333,7 +333,9 @@ function createV1Api(input: CompatibleInput): CompatibleApi {
       // },
       async directories(value: Parameters<ServerApi["project"]["directories"]>[0]) {
         const result = await legacy(value.location).worktree.list()
-        return (result.data ?? []).map((item) => ({ directory: item }))
+        return (result.data ?? []).map((item) => ({
+          directory: typeof item === "string" ? item : item.directory,
+        }))
       },
     },
     // path: {
