@@ -647,7 +647,7 @@ function PromptInputV2ProjectControl(props: {
     </>
   )
   return (
-    <TooltipV2 placement="top" value={language.t("session.project.open")}>
+    <TooltipV2 placement="top" gutter={4} value={language.t("session.project.open")}>
       <Popover
         open={shown()}
         onOpenChange={(next) => {
@@ -659,7 +659,7 @@ function PromptInputV2ProjectControl(props: {
           variant: "ghost-muted",
           size: "normal",
           class: "min-w-0 max-w-[220px] justify-start ![font-weight:440] group",
-          "data-action": "prompt-project",
+          "data-action": "prompt-project-indicator",
           "data-control-type": "popover",
           style: { height: "28px" },
         }}
