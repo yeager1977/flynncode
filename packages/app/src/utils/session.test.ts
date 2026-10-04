@@ -62,12 +62,29 @@ describe("listAllSessions", () => {
 
     const result = await listAllSessions(api, { directory: "/repo", order: "desc" })
 
-    expect(result.map((session) => session.id)).toEqual(["session-3", "session-2", "session-1"])
-    expect(result[2]?.time.archived).toBe(2)
+    expect(result.sessions.map((session) => session.id)).toEqual(["session-3", "session-2", "session-1"])
+    expect(result.truncated).toBe(false)
+    expect(result.sessions[2]?.time.archived).toBe(2)
     expect(calls).toEqual([
       { directory: "/repo", order: "desc", limit: 100, cursor: undefined },
       { directory: "/repo", order: "desc", limit: 100, cursor: "next" },
     ])
+  })
+
+  test("caps unbounded recursion and reports truncation", async () => {
+    const api = {
+      list: async (query = {}) => {
+        if (query.cursor) return { data: [], cursor: {} }
+        return {
+          data: [sessionInfo("a")],
+          cursor: { next: "never-exhausted" },
+        }
+      },
+    } satisfies Pick<SessionApi, "list">
+
+    const result = await listAllSessions(api, { directory: "/repo" }, 1)
+    expect(result.truncated).toBe(true)
+    expect(result.sessions.map((session) => session.id)).toEqual(["a"])
   })
 
   test("requests the terminal empty page when the server returns a next cursor", async () => {
@@ -82,7 +99,8 @@ describe("listAllSessions", () => {
 
     const result = await listAllSessions(api, { directory: "/repo", limit: 25 })
 
-    expect(result.map((session) => session.id)).toEqual(["session-1"])
+    expect(result.sessions.map((session) => session.id)).toEqual(["session-1"])
+    expect(result.truncated).toBe(false)
     expect(cursors).toEqual([undefined, "terminal"])
   })
 })

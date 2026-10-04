@@ -36,4 +36,25 @@ describe("runSessionBulk", () => {
     expect(calls).toEqual(["b"])
     expect(result).toEqual({ done: [], failed: "b", pending: ["c"], skipped: ["a"] })
   })
+
+  test("treats a cancelled callback as a stop without a failure", async () => {
+    const calls: string[] = []
+    const result = await runSessionBulk({
+      ids: ["a", "b", "c"],
+      op: "delete",
+      isProtected: () => false,
+      archive: async () => {
+        calls.push("archive")
+      },
+      remove: async (id) => {
+        if (id === "b") {
+          calls.push("cancelled:b")
+          throw new Error("cancelled")
+        }
+        calls.push(id)
+      },
+    })
+    expect(calls).toEqual(["a", "cancelled:b"])
+    expect(result).toEqual({ done: ["a"], pending: ["c"], skipped: [] })
+  })
 })

@@ -460,9 +460,18 @@ function useWorkspaceBulk(input: {
     const result = await runSessionBulk({
       ids,
       op,
-      isProtected: (id) => protectedNow(id, directory, extra),
-      archive: (id) => archiveOne(id, directory),
-      remove: (id) => removeOne(id, directory),
+      isProtected: (id) => {
+        if (ticket !== generation) throw new Error("cancelled")
+        return protectedNow(id, directory, extra)
+      },
+      archive: async (id) => {
+        if (ticket !== generation) throw new Error("cancelled")
+        await archiveOne(id, directory)
+      },
+      remove: async (id) => {
+        if (ticket !== generation) throw new Error("cancelled")
+        await removeOne(id, directory)
+      },
     })
     if (ticket !== generation) {
       setBulk("busy", false)
@@ -470,16 +479,24 @@ function useWorkspaceBulk(input: {
     }
     if (result.failed) {
       retained = extra
-      showToast({ title: language.plural("session.bulk.failed", result.pending.length + 1) })
+      // Protected-after-confirm sessions were skipped, not failed; count them
+      // in the same not-changed total so the toast matches the dialog count.
+      const unchanged = result.pending.length + result.skipped.length + 1
+      showToast({
+        title: language.plural("session.bulk.failed", unchanged),
+        ...(result.skipped.length > 0
+          ? { description: language.plural("session.bulk.cleanup.skipped", result.skipped.length) }
+          : {}),
+      })
       setBulk({
         selecting: true,
-        selected: [result.failed, ...result.pending],
+        selected: [result.failed, ...result.pending, ...result.skipped],
         anchor: result.failed,
         busy: false,
       })
       return
     }
-    clearBulk()
+    if (result.pending.length > 0) clearBulk()
   }
   const confirm = (op: BulkOp) => {
     if (bulk.busy) return
@@ -523,40 +540,45 @@ function useWorkspaceBulk(input: {
       showToast({ title: language.t("common.requestFailed") })
       return
     }
-    if (page.data.length >= CLEANUP_SCAN_LIMIT && !page.cursor.next) {
-      setBulk("busy", false)
-      showToast({ title: language.t("session.bulk.cleanup.truncated") })
-      return
-    }
-    const fetched = page.cursor.next
+    // Exact-limit pages can still be a complete scan — only bail when a
+    // next cursor exists; listAllSessions bounds the recursion and reports
+    // truncation itself.
+    const fetchedAll = page.cursor.next
       ? await listAllSessions(serverSDK().api.session, {
           directory,
           order: "desc",
           limit: CLEANUP_SCAN_LIMIT,
         }).catch(() => undefined)
-      : page.data.map(normalizeSessionInfo)
+      : { sessions: page.data.map(normalizeSessionInfo), truncated: false }
     setBulk("busy", false)
-    if (!fetched) {
+    if (!fetchedAll) {
       showToast({ title: language.t("common.requestFailed") })
       return
     }
     if (ticket !== generation || input.directory() !== directory) return
+    const fetched = fetchedAll.sessions
+    const truncated = fetchedAll.truncated
     const now = Date.now()
     const extra = mergeSessions(knownFor(directory), fetched)
     const found = cleanupCandidates(fetched, now, presetDays(id), blockedFor(extra))
     if (found.match.length === 0) {
-      showConfirm(() => (
-        <BulkConfirmDialog
-          op="archive"
-          count={0}
-          empty
-          busy={bulk.busy}
-          onCancel={dismissConfirm}
-          onConfirm={() => {}}
-        />
-      ))
+      if (!truncated) {
+        showConfirm(() => (
+          <BulkConfirmDialog
+            op="archive"
+            count={0}
+            empty
+            busy={bulk.busy}
+            onCancel={dismissConfirm}
+            onConfirm={() => {}}
+          />
+        ))
+      } else {
+        showToast({ title: language.t("session.bulk.cleanup.truncated") })
+      }
       return
     }
+    if (truncated) showToast({ title: language.t("session.bulk.cleanup.truncated") })
     const ids = found.match.map((session) => session.id)
     const period = language.t(`session.bulk.period.${id}`)
     const matchLabel = language.plural("session.bulk.cleanup.match", found.match.length, { period })

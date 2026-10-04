@@ -351,16 +351,24 @@ export function createHomeSessionsController(home: HomeController) {
     }
     if (result.failed) {
       retained = extra
-      showToast({ title: language.plural("session.bulk.failed", result.pending.length + 1) })
+      // Protected-after-confirm sessions were skipped, not failed; count them
+      // in the same not-changed total so the toast matches the dialog count.
+      const unchanged = result.pending.length + result.skipped.length + 1
+      showToast({
+        title: language.plural("session.bulk.failed", unchanged),
+        ...(result.skipped.length > 0
+          ? { description: language.plural("session.bulk.cleanup.skipped", result.skipped.length) }
+          : {}),
+      })
       setBulk({
         selecting: true,
-        selected: [result.failed, ...result.pending],
+        selected: [result.failed, ...result.pending, ...result.skipped],
         anchor: result.failed,
         busy: false,
       })
       return
     }
-    clearBulk()
+    if (result.pending.length > 0) clearBulk()
   }
   const confirm = (op: BulkOp) => {
     if (bulk.busy) return
@@ -389,7 +397,10 @@ export function createHomeSessionsController(home: HomeController) {
       showToast({ title: language.t("common.requestFailed") })
       return
     }
-    if ((sessionLoad.isPending || sessionLoad.isFetching) && !sessionLoad.data) return
+    if ((sessionLoad.isPending || sessionLoad.isFetching) && !sessionLoad.data) {
+      showToast({ title: language.t("common.requestFailed") })
+      return
+    }
     if (!sessionLoad.data) return
     const sessions = homeSessions().sessions(sessionLoad.data, sessionEventLoad.data)
     const now = Date.now()
