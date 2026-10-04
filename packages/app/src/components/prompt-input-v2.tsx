@@ -1,12 +1,14 @@
 import { ImagePreview } from "@opencode-ai/ui/image-preview"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
+import { Popover } from "@opencode-ai/ui/popover"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { Icon } from "@opencode-ai/ui/v2/icon"
 import { KeybindV2 } from "@opencode-ai/ui/v2/keybind-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
+import { ProjectAvatar } from "@opencode-ai/ui/v2/project-avatar-v2"
 import type { ReferenceInfo } from "@opencode-ai/sdk/v2/client"
-import { createEffect, createMemo, on, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, on, Show } from "solid-js"
 import { ModelSelectorPopoverV2 } from "@/components/dialog-select-model"
 import { DialogSelectModelUnpaidV2 } from "@/components/dialog-select-model-unpaid-v2"
 import type { PromptInputProps } from "@/components/prompt-input/contracts"
@@ -25,8 +27,11 @@ import { usePermission } from "@/context/permission"
 import { type ImageAttachmentPart, usePrompt } from "@/context/prompt"
 import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
+import { useServerSync } from "@/context/server-sync"
 import { useSync } from "@/context/sync"
 import { createSessionTabs } from "@/pages/session/helpers"
+import { displayName, getProjectAvatarSource } from "@/pages/layout/helpers"
+import { getProjectAvatarVariant, type ProjectAvatarVariant } from "@/context/layout"
 import { showToast } from "@/utils/toast"
 import { PromptInputV2, type PromptInputV2Suggestion } from "@opencode-ai/session-ui/v2/prompt-input"
 import {
@@ -50,6 +55,21 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
   const dialog = useDialog()
   const command = useCommand()
   const language = useLanguage()
+  const sdk = useSDK()
+  const layout = useLayout()
+  const serverSync = useServerSync()
+
+  const project = createMemo(() => {
+    const directory = sdk().directory
+    if (!directory) return undefined
+    return layout.projects.list().find((p) => p.worktree === directory || p.sandboxes?.includes(directory))
+  })
+  const sessions = createMemo(() => {
+    const target = project()
+    if (!target) return undefined
+    return serverSync().child(target.worktree, { bootstrap: false })[0].session ?? []
+  })
+  const activeCount = createMemo(() => sessions()?.filter((session) => session.time.archived === undefined).length)
 
   return (
     <div class="flex flex-col gap-3">
@@ -60,6 +80,20 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
         variantControlVisible={!props.controller.model.loading}
         attachKeybind={command.keybindParts("file.attach")}
         attachShortcut={command.keybind("file.attach")}
+        projectControl={
+          <Show when={project() && displayName(project()!)} keyed>
+            {(name) => (
+              <PromptInputV2ProjectControl
+                name={name}
+                avatarSource={getProjectAvatarSource(project()!.id, project()!.icon)}
+                avatarVariant={getProjectAvatarVariant(project()!.icon?.color)}
+                worktree={project()!.worktree}
+                sessions={activeCount()}
+                restoreFocus={props.controller.restoreFocus}
+              />
+            )}
+          </Show>
+        }
         modelControl={
           <PromptInputV2ModelControl
             loading={props.controller.model.loading}
@@ -574,6 +608,77 @@ function PromptInputV2ModelControl(props: {
         </Show>
       </TooltipV2>
     </Show>
+  )
+}
+
+function PromptInputV2ProjectControl(props: {
+  name: string
+  avatarSource?: string
+  avatarVariant: ProjectAvatarVariant
+  worktree: string
+  sessions: number | undefined
+  restoreFocus: () => void
+}) {
+  const language = useLanguage()
+  const [shown, setShown] = createSignal(false)
+  const content = () => (
+    <>
+      <ProjectAvatar
+        fallback={props.name}
+        src={props.avatarSource}
+        class="size-4 shrink-0"
+        variant={props.avatarVariant}
+      />
+      <span class="truncate leading-4">{props.name}</span>
+      <span class="-ml-0.5 -mr-1 flex shrink-0">
+        <Icon name="chevron-down" />
+      </span>
+    </>
+  )
+  return (
+    <TooltipV2 placement="top" value={language.t("session.project.open")}>
+      <Popover
+        open={shown()}
+        onOpenChange={(next) => {
+          setShown(next)
+          if (!next) props.restoreFocus()
+        }}
+        triggerAs={ButtonV2}
+        triggerProps={{
+          variant: "ghost-muted",
+          size: "normal",
+          class: "min-w-0 max-w-[220px] justify-start ![font-weight:440] group",
+          "data-action": "prompt-project",
+          "data-control-type": "popover",
+          style: { height: "28px" },
+        }}
+        trigger={content()}
+        class="w-[280px] max-w-[calc(100vw-40px)]"
+        gutter={6}
+        placement="top-start"
+      >
+        <div class="flex flex-col gap-3 p-3">
+          <div class="flex items-center gap-2 min-w-0">
+            <ProjectAvatar
+              fallback={props.name}
+              src={props.avatarSource}
+              class="size-6 shrink-0"
+              variant={props.avatarVariant}
+            />
+            <span class="text-14-regular text-text-strong truncate min-w-0">{props.name}</span>
+          </div>
+          <div class="flex items-center justify-between gap-2 min-w-0">
+            <span class="text-12-regular text-text-weak">{language.t("session.project.path")}</span>
+            <span class="text-12-regular text-text-strong truncate min-w-0 font-mono">{props.worktree}</span>
+          </div>
+          <Show when={props.sessions !== undefined}>
+            <span class="text-12-regular text-text-weak">
+              {language.plural("session.project.sessions", props.sessions ?? 0)}
+            </span>
+          </Show>
+        </div>
+      </Popover>
+    </TooltipV2>
   )
 }
 
