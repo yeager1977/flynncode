@@ -14,6 +14,7 @@ describe("PromptInputV2Composer project control", () => {
 
   test("shows the project's total sessions only after the sessions query loads", () => {
     expect(source).toContain("sessionTotal")
+    expect(source).toContain("useIsFetching")
     expect(source).toContain('queryOptions().sessions(pathKey(')
     expect(source).toContain("fetching() && store.sessionTotal === 0")
   })

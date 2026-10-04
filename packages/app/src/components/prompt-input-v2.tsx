@@ -2,7 +2,7 @@ import { ImagePreview } from "@opencode-ai/ui/image-preview"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Popover } from "@opencode-ai/ui/popover"
-import { useQueryClient } from "@tanstack/solid-query"
+import { useIsFetching } from "@tanstack/solid-query"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { Icon } from "@opencode-ai/ui/v2/icon"
 import { KeybindV2 } from "@opencode-ai/ui/v2/keybind-v2"
@@ -61,7 +61,6 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
   const layout = useLayout()
   const serverSync = useServerSync()
   const queryOptions = useQueryOptions()
-  const queryClient = useQueryClient()
 
   const project = createMemo(() => {
     const directory = sdk().directory
@@ -73,10 +72,9 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
     if (!target) return undefined
     return serverSync().child(target.worktree, { bootstrap: false })[0]
   })
-  const fetching = createMemo(() => {
+  const fetching = useIsFetching(() => {
     const worktree = project()?.worktree
-    if (!worktree) return false
-    return queryClient.isFetching(queryOptions().sessions(pathKey(worktree))) > 0
+    return worktree ? queryOptions().sessions(pathKey(worktree)) : { queryKey: ["disabled"] }
   })
   const activeCount = createMemo(() => {
     const store = child()
