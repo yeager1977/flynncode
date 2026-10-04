@@ -1,5 +1,7 @@
 import path from "path"
 import { Global } from "@opencode-ai/core/global"
+import { Flock } from "@opencode-ai/core/util/flock"
+import { Effect } from "effect"
 import { applyEdits, modify, parse } from "jsonc-parser"
 import type { Hooks, PluginInput } from "@opencode-ai/plugin"
 import { dueRoutines } from "./due"
@@ -61,19 +63,34 @@ export async function loadRoutines() {
   return { source: "file" as const, routines: await readFileRoutines() }
 }
 
-export async function markRan(loaded: { source: "config" | "file"; routines: Routine[] }, ids: string[], now: Date) {
-  const next = loaded.routines.map((routine) =>
-    ids.includes(routine.id) ? { ...routine, lastRun: now.toISOString() } : routine,
-  )
+export const markRanEffect = Effect.fn("Routines.markRan")(function* (
+  loaded: { source: "config" | "file"; routines: Routine[] },
+  ids: string[],
+  now: Date,
+) {
+  // Serialize read-modify-write across processes: reload state under a lock so
+  // another scheduler's markRan (or the settings UI) cannot lose our lastRun
+  // or override user edits.
+  yield* Flock.effect(`routines:${configFile()}`, { staleMs: 10_000, timeoutMs: 30_000 })
+  const fresh = yield* Effect.promise(() => loadRoutines())
+  const byID = new Map(fresh.routines.map((routine) => [routine.id, routine]))
+  const next = loaded.routines.map((routine) => {
+    const current = byID.get(routine.id) ?? routine
+    return ids.includes(routine.id) ? { ...current, lastRun: now.toISOString() } : routine
+  })
   const storedRoutines = next.map(stored)
-  if (loaded.source === "file") {
-    await Bun.write(FILE, JSON.stringify({ routines: storedRoutines }, null, 2))
+  if (fresh.source === "file") {
+    yield* Effect.promise(() => Bun.write(FILE, JSON.stringify({ routines: storedRoutines }, null, 2)))
     return next
   }
-  const text = await Bun.file(configFile()).text()
+  const text = yield* Effect.promise(() => Bun.file(configFile()).text())
   const edits = modify(text, ["routines"], storedRoutines, { formattingOptions: { insertSpaces: true, tabSize: 2 } })
-  await Bun.write(configFile(), applyEdits(text, edits))
+  yield* Effect.promise(() => Bun.write(configFile(), applyEdits(text, edits)))
   return next
+})
+
+export async function markRan(loaded: { source: "config" | "file"; routines: Routine[] }, ids: string[], now: Date) {
+  return Effect.runPromise(Effect.scoped(markRanEffect(loaded, ids, now)))
 }
 
 async function runOne(client: Client, directory: string, routine: Routine) {
