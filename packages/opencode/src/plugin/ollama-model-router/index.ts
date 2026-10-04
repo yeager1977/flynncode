@@ -32,7 +32,9 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
 
   // The connected catalog (models.dev providers resolved by the server) is the
   // same source the model picker uses. Raw config is the fallback so headless
-  // and unit-test callers keep working.
+  // and unit-test callers keep working. Only `connected` providers count for
+  // family resolution — the full models.dev `all` list includes providers the
+  // user has no credentials for, which would make every family look available.
   let catalog: CatalogLike | undefined
   const getCatalog = (): CatalogLike | undefined => catalog
   // A transient provider.list() failure must not permanently disable the
@@ -42,12 +44,21 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
     try {
       const result = await input.client.provider.list()
       const all = result.data?.all ?? []
+      const connected = new Set(result.data?.connected ?? [])
       catalog = Object.fromEntries(
-        all.map((provider: any) => [provider.id, { name: provider.name, models: provider.models ?? {} }]),
+        all
+          .filter((provider: any) => connected.has(provider.id))
+          .map((provider: any) => [provider.id, { name: provider.name, models: provider.models ?? {} }]),
       ) as CatalogLike
     } catch (error) {
       console.warn(`${PREFIX} connected catalog unavailable; using config providers`, error)
     }
+  }
+
+  // ModelsDev refreshes rebuild the server catalog hourly; drop the plugin's
+  // snapshot so the next resolution reloads it.
+  const clearCatalog = () => {
+    catalog = undefined
   }
 
   // cfg.model_family is a top-level config key, not part of the model_router
@@ -177,6 +188,11 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
         console.error(`${PREFIX} chat.message hook failed`, error)
         throw error
       }
+    },
+    event: async ({ event }) => {
+      // The v1 Event union cannot express models-dev.refreshed (a v2 event
+      // delivered over the shared bus), so narrow at runtime.
+      if ((event as { type?: string }).type === "models-dev.refreshed") clearCatalog()
     },
     tool: createTools({
       client: input.client,

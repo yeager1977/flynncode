@@ -428,4 +428,37 @@ describe("plugin", () => {
     expect(model).toEqual({ providerID: "ollama-cloud", modelID: "deepseek-v4-pro" })
     expect(warnings.some((args) => args.some((a) => String(a).includes("invalid model_family")))).toBe(true)
   })
+
+  test("the catalog counts only connected providers for family resolution", async () => {
+    const input = {
+      ...fakeInput,
+      client: {
+        provider: {
+          list: async () => ({
+            data: {
+              // The full models.dev catalog lists both, but only openai is
+              // connected; with no openai credential the openai family must
+              // not look available to the fallback walk.
+              all: [
+                { id: "openai", models: { "gpt-6-sol": {} } },
+                { id: "anthropic", models: { "claude-sonnet-5": {} } },
+              ],
+              connected: ["anthropic"],
+            },
+          }),
+        },
+      } as any,
+    }
+    const hooks = await plugin.server(input, {
+      autoRoute: false,
+      agentTasks: { build: "review" },
+      providers: [],
+      models: {},
+    } as any)
+    const cfg = { model_family: "openai", provider: {}, agent: {} }
+    await hooks.config?.(cfg)
+    const model = await routeSentinel(hooks, cfg)
+    // No openai credential, so the fallback walks past openai to anthropic.
+    expect(model).toEqual({ providerID: "anthropic", modelID: "claude-sonnet-5" })
+  })
 })
