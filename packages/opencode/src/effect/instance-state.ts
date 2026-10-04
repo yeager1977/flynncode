@@ -66,4 +66,16 @@ export const invalidate = <A, E, R>(self: InstanceState<A, E, R>) =>
     return yield* ScopedCache.invalidate(self.cache, yield* directory)
   })
 
+export const invalidateAll = <A, E, R>(self: InstanceState<A, E, R>) => ScopedCache.invalidateAll(self.cache)
+
+// Invalidate for the caller's own directory when available; from a background
+// fiber (e.g. a layer-init event subscription) there is no InstanceRef, so
+// drop every cached entry instead of dying on `directory`.
+export const invalidateCurrent = <A, E, R>(self: InstanceState<A, E, R>) =>
+  Effect.gen(function* () {
+    const ctx = yield* InstanceRef
+    if (ctx) return yield* ScopedCache.invalidate(self.cache, ctx.directory)
+    return yield* ScopedCache.invalidateAll(self.cache)
+  })
+
 export * as InstanceState from "./instance-state"

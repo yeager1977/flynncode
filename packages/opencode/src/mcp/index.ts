@@ -551,6 +551,7 @@ const layer = Layer.effect(
         yield* Effect.addFinalizer(() =>
           Effect.gen(function* () {
             const clients = Object.values(s.clients)
+            const names = Object.keys(s.clients)
             s.clients = {}
             s.defs = {}
             s.instructions = {}
@@ -571,6 +572,10 @@ const layer = Layer.effect(
                 }),
               { concurrency: "unbounded" },
             )
+            // Drop these instances' supplement tools AFTER the clients are
+            // gone: onclose checks the pre-cleared map, so closing clients
+            // alone would never clear the registry entries.
+            yield* Effect.forEach(names, (name) => Effect.sync(() => clearV2Tools(name)), { discard: true })
             pendingOAuthTransports.clear()
           }),
         )

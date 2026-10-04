@@ -94,22 +94,44 @@ async function runOne(client: Client, directory: string, routine: Routine) {
 }
 
 export function startScheduler(client: Client, directory: string) {
-  const timer = setInterval(() => {
-    void tick()
-  }, 30_000)
+  // Reentrancy guard: a tick whose session creation outlasts the 30s
+  // interval must not let the next tick re-fire the same routines.
+  let running = false
   const tick = async () => {
-    const loaded = await loadRoutines()
-    const due = dueRoutines(loaded.routines, new Date())
-    if (due.length === 0) return
-    await Promise.all(due.map((routine) => runOne(client, directory, routine)))
-    await markRan(loaded, due.map((routine) => routine.id), new Date())
+    if (running) return
+    running = true
+    try {
+      const loaded = await loadRoutines()
+      const due = dueRoutines(loaded.routines, new Date())
+      if (due.length === 0) return
+      // Record each routine individually so one failure does not make every
+      // later tick re-fire the whole batch.
+      const results = await Promise.allSettled(
+        due.map(async (routine) => {
+          await runOne(client, directory, routine)
+          const saved = await markRan(loaded, [routine.id], new Date())
+          return saved
+        }),
+      )
+      for (const result of results) {
+        if (result.status !== "rejected") continue
+        console.warn(`${PREFIX} scheduled routine run failed`, result.reason)
+      }
+    } catch (error) {
+      console.warn(`${PREFIX} scheduler tick failed`, error)
+    } finally {
+      running = false
+    }
   }
+  const timer = setInterval(() => void tick(), 30_000)
   return () => clearInterval(timer)
 }
 
 export const RoutinesPlugin = async (input: PluginInput): Promise<Hooks> => {
-  startScheduler(input.client, input.directory)
-  return {}
+  const stopScheduler = startScheduler(input.client, input.directory)
+  return {
+    dispose: async () => stopScheduler(),
+  }
 }
 
 export default {

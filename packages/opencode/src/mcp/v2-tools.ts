@@ -6,8 +6,11 @@ import { Tool } from "@opencode-ai/core/tool/tool"
 import { Effect, Schema } from "effect"
 import { toolName } from "./catalog"
 
-export const clearV2Tools = (server: string) => {
+export const clearV2Tools = (server: string): Effect.Effect<void> => {
+  // replaceSupplements maps bare server names to tool maps; a no-op when the
+  // server never registered or was already cleared.
   ToolRegistry.clearSupplements(server)
+  return Effect.void
 }
 
 export const syncV2Tools = (server: string, client: Client, defs: readonly MCPToolDef[], timeout?: number) => {
