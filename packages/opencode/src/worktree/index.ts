@@ -394,6 +394,13 @@ const layer: Layer.Layer<
 
       const directory = yield* canonical(input.directory)
 
+      // Never remove the worktree this instance runs in: the running-guard in
+      // retention is best-effort, and removing the main worktree would
+      // dispose the executing instance before git rejects the request.
+      if (directory === (yield* canonical(ctx.worktree))) {
+        return yield* new RemoveFailedError({ message: "Cannot remove the currently active worktree" })
+      }
+
       // Preserve the loaded path casing for the store cache; `directory` is lowercased on Windows.
       if (directory !== (yield* canonical(ctx.worktree))) yield* store.disposeDirectory(input.directory)
 
@@ -612,22 +619,43 @@ const layer: Layer.Layer<
     })
 
     const createAndRetain = Effect.fn("Worktree.createAndRetain")(function* (input?: CreateInput) {
+      const ctx = yield* InstanceState.context
       const info = yield* create(input)
       const entries = yield* list().pipe(Effect.catch(() => Effect.succeed([] as Info[])))
-      // Instances loaded in a worktree can host running sessions; retention must
-      // not force-delete them (sessions keep working directories alive).
+      // Canonicalize once: canonical() lowercases on Windows while
+      // InstanceStore keys keep original casing, so a raw string comparison
+      // could miss a running worktree there.
+      const self = yield* canonical(ctx.worktree)
       const loaded = yield* store
         .loadedDirectories()
         .pipe(Effect.catch(() => Effect.succeed(new Set<string>() as ReadonlySet<string>)))
+      const loadedKeys = new Set(
+        yield* Effect.forEach([...loaded], (directory) => canonical(directory), { concurrency: "unbounded" }),
+      )
+      const entryKeys = yield* Effect.forEach(entries, (entry) => canonical(entry.directory), {
+        concurrency: "unbounded",
+      })
       const drop = worktreesToRemove(
         entries.map((entry, index) => ({
           directory: entry.directory,
           updated: entries.length - index,
           open: entry.directory === info.directory,
-          running: loaded.has(entry.directory),
+          running: loadedKeys.has(entryKeys[index] ?? ""),
         })),
       )
       for (const directory of drop) {
+        const key = yield* canonical(directory)
+        // Re-check at removal time: a session may have loaded this worktree
+        // between the snapshot and now (TOCTOU). Never remove our own or a
+        // newly-running worktree.
+        if (key === self) continue
+        const reloaded = yield* store
+          .loadedDirectories()
+          .pipe(Effect.catch(() => Effect.succeed(new Set<string>() as ReadonlySet<string>)))
+        const runningNow = new Set(
+          yield* Effect.forEach([...reloaded], (candidate) => canonical(candidate), { concurrency: "unbounded" }),
+        )
+        if (runningNow.has(key)) continue
         yield* remove({ directory }).pipe(Effect.catch(() => Effect.void))
       }
       return info
