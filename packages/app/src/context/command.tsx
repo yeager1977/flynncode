@@ -387,7 +387,9 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
 
     const run = (id: string, source?: CommandSource) => {
       const option = optionMap().get(id)
-      option?.onSelect?.(source)
+      // Commands may be async; a rejection must not become an unhandled
+      // rejection that silently skips the rest of the shortcut chain.
+      Promise.resolve(option?.onSelect?.(source)).catch(() => undefined)
     }
 
     const showPalette = () => {

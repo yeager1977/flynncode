@@ -7,7 +7,7 @@ import { useSpring } from "@opencode-ai/ui/motion-spring"
 import { TextReveal } from "@opencode-ai/ui/text-reveal"
 import { TextStrikethrough } from "@opencode-ai/ui/text-strikethrough"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
-import { Index, createEffect, createMemo } from "solid-js"
+import { Index, createEffect, createMemo, on } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
@@ -91,7 +91,9 @@ export function SessionTodoDock(props: {
     const el = contentRef
     if (!el) return
     const update = () => {
-      setStore("height", (height) => Math.max(height, el.scrollHeight))
+      // Track the measured height instead of a monotonic max: a shrinking
+      // list (or a shorter session) must not keep dead space.
+      setStore("height", el.scrollHeight)
     }
     update()
     createResizeObserver(el, update)
@@ -229,6 +231,15 @@ function TodoList(props: { todos: Todo[] }) {
     stuck: false,
     expanded: {},
   })
+  // Expanded state is index-keyed; when the list is replaced (reordered,
+  // shrunk, or swapped by a session switch) it maps to the wrong rows.
+  const listKey = createMemo(() => props.todos.map((todo) => todo.content).join("\u0000"))
+  createEffect(
+    on(listKey, (_next, prev) => {
+      if (prev === undefined) return
+      setStore("expanded", {})
+    }),
+  )
 
   return (
     <div class="relative">
@@ -277,7 +288,9 @@ function TodoList(props: { todos: Todo[] }) {
                   data-in-progress={todo().status === "in_progress" ? "" : undefined}
                   data-state={todo().status}
                   icon={dot(todo().status)}
-                  aria-label={language.t("session.todo.statusLabel", { status: todo().status })}
+                  aria-label={language.t("session.todo.statusLabel", {
+                    status: language.t(`session.todo.status.${todo().status}` as Parameters<typeof language.t>[0]),
+                  })}
                   style={{
                     "--checkbox-align": "flex-start",
                     "--checkbox-offset": "1px",

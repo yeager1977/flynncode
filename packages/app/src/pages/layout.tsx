@@ -1238,7 +1238,7 @@ export default function LegacyLayout(props: ParentProps) {
             directory: item,
             parentID: null,
             order: "desc",
-          }).catch(() => []),
+          }).then((r) => r.sessions, () => []),
         })),
       ),
       Date.now(),
@@ -1462,7 +1462,10 @@ export default function LegacyLayout(props: ParentProps) {
     })
     const dismiss = () => dismissToast(progress)
 
-    const sessions = await listAllSessions(serverSDK().api.session, { directory, order: "desc" }).catch(() => [])
+    const sessions = await listAllSessions(serverSDK().api.session, { directory, order: "desc" }).then(
+      (r) => r.sessions,
+      () => [],
+    )
 
     clearWorkspaceTerminals(
       directory,
@@ -1599,7 +1602,7 @@ export default function LegacyLayout(props: ParentProps) {
       const sessions = await listAllSessions(serverSDK().api.session, {
         directory: props.directory,
         order: "desc",
-      }).catch(() => [])
+      }).then((r) => r.sessions, () => [])
       const active = sessions.filter((session) => session.time.archived === undefined)
       setState({ sessions: active })
     }

@@ -29,6 +29,7 @@ export type { ProjectAvatarVariant }
 const AVATAR_COLOR_KEYS = ["pink", "mint", "orange", "purple", "cyan", "lime"] as const
 const DEFAULT_SIDEBAR_WIDTH = 344
 const DEFAULT_FILE_TREE_WIDTH = 200
+const DEFAULT_TASKS_WIDTH = 480
 const DEFAULT_SESSION_WIDTH = 600
 const DEFAULT_TERMINAL_HEIGHT = 280
 const DEFAULT_REVIEW_PANEL_OPENED = false
@@ -292,6 +293,9 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           opened: false,
           width: DEFAULT_FILE_TREE_WIDTH,
           tab: "changes" as "changes" | "all",
+        },
+        tasks: {
+          width: DEFAULT_TASKS_WIDTH,
         },
         session: {
           width: DEFAULT_SESSION_WIDTH,
@@ -742,6 +746,16 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             return
           }
           setStore("fileTree", "width", width)
+        },
+      },
+      tasks: {
+        width: createMemo(() => store.tasks?.width ?? DEFAULT_TASKS_WIDTH),
+        resize(width: number) {
+          if (!store.tasks) {
+            setStore("tasks", { width })
+            return
+          }
+          setStore("tasks", "width", width)
         },
       },
       session: {

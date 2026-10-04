@@ -7,9 +7,11 @@ import { routinesFallback } from "./routines-fallback"
 import { artifactsSidebarFallback } from "./artifacts-sidebar-fallback"
 import { sessionBulkFallback, sessionBulkPluralFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
+import { sessionReviewFallback } from "./session-review-fallback"
 
 export const dict = {
   ...modelRouterFallback,
+  ...sessionReviewFallback,
   ...omoSettingsFallback,
   ...providerEditFallback,
   ...importSessionsFallback,

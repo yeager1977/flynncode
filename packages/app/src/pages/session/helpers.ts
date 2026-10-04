@@ -28,10 +28,6 @@ export function shouldShowFileTree(input: { visible: boolean; opened: boolean })
   return input.opened && input.visible
 }
 
-// Kobalte only mounts a Tabs.Content whose value matches the controlled selection.
-export const panelTabValue = (tasksSelected: boolean, activeTab: string) =>
-  tasksSelected ? "tasks" : activeTab
-
 export const createSessionTabs = (input: TabsInput) => {
   const review = input.review ?? (() => false)
   const hasReview = input.hasReview ?? (() => false)

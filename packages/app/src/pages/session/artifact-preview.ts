@@ -26,6 +26,12 @@ export function artifactMime(path: string) {
 
 export function artifactText(content: string, encoding?: string) {
   if (encoding !== "base64") return content
-  const bytes = Uint8Array.from(atob(content), (char) => char.charCodeAt(0))
-  return new TextDecoder().decode(bytes)
+  // Malformed base64 must not throw into the error boundary mid-render;
+  // the preview shows the failure fallback instead.
+  try {
+    const bytes = Uint8Array.from(atob(content), (char) => char.charCodeAt(0))
+    return new TextDecoder().decode(bytes)
+  } catch {
+    return
+  }
 }

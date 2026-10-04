@@ -31,6 +31,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import FileTree from "@/components/file-tree"
 import { normalizeFileTreeV2Path } from "@/components/file-tree-v2-model"
 import { SessionContextUsage } from "@/components/session-context-usage"
+import { clampTasksPanelWidth, TASKS_PANEL_WIDTH_MIN, TASKS_PANEL_WIDTH_MAX } from "./session-panel-width"
 
 const reviewTabID = "session-side-panel-review-tab"
 const reviewTabPanelID = "session-side-panel-review-tabpanel"
@@ -60,7 +61,9 @@ import { SessionFileBrowserTab, type SessionFileBrowserState } from "@/pages/ses
 
 type ReviewDiff = FileDiffInfo | SnapshotFileDiff | VcsFileDiff
 type RenderDiff = FileDiffInfo | (SnapshotFileDiff & { file: string }) | VcsFileDiff
-const FILE_TREE_WIDTH_MIN = 240
+// Exported so the chat panel can subtract the same clamped widths the panels
+// actually render; stored layout widths are unclamped.
+export const FILE_TREE_WIDTH_MIN = 240
 
 function renderDiff(value: ReviewDiff): value is RenderDiff {
   return typeof value.file === "string"
@@ -108,6 +111,7 @@ export function SessionSidePanel(props: {
   )
   const open = createMemo(() => reviewOpen() || fileOpen() || tasksOpen())
   const fileTreeWidth = createMemo(() => Math.max(FILE_TREE_WIDTH_MIN, layout.fileTree.width()))
+  const tasksWidth = createMemo(() => clampTasksPanelWidth(layout.tasks.width()))
   const reviewTab = createMemo(() => isDesktop())
   const panelWidth = createMemo(() => {
     if (!open()) return "0px"
@@ -866,9 +870,23 @@ export function SessionSidePanel(props: {
             <Show when={tasksOpen()}>
               <div
                 id="tasks-panel"
-                class="relative min-w-0 h-full overflow-hidden border-s border-border-weaker-base"
-                classList={{ "flex-1": !reviewOpen() && !fileOpen(), "w-[320px] shrink-0": reviewOpen() || fileOpen() }}
+                class="relative h-full shrink-0 overflow-hidden border-s border-border-weaker-base"
+                style={{ width: `${tasksWidth()}px` }}
               >
+                <div onPointerDown={() => props.size.start()}>
+                  <ResizeHandle
+                    direction="horizontal"
+                    edge="start"
+                    size={tasksWidth()}
+                    min={TASKS_PANEL_WIDTH_MIN}
+                    max={TASKS_PANEL_WIDTH_MAX}
+                    aria-label={language.t("session.tasks.resize")}
+                    onResize={(width) => {
+                      props.size.touch()
+                      layout.tasks.resize(width)
+                    }}
+                  />
+                </div>
                 <div class="h-full overflow-y-auto">
                   <SubagentList sessionID={() => params.id ?? ""} />
                 </div>

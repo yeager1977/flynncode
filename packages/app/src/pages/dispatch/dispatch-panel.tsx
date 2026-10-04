@@ -129,13 +129,18 @@ export function DispatchPanel() {
         text,
       })
       .then(
-        () => setDesk("tasks", (current) => completeDispatch(current, created.id)),
+        () => {
+          setDesk("tasks", (current) => completeDispatch(current, created.id))
+          // Success clears the composed text; a failure keeps it so the
+          // user can retry without retyping.
+          setState({ sending: false, text: "" })
+        },
         () => {
           setDesk("tasks", (current) => failDispatch(current, created.id))
           setState("error", language.t("dispatch.sendFailed"))
+          setState({ sending: false, text })
         },
       )
-    setState({ sending: false, text: "" })
   }
 
   const liveStatus = (task: DispatchTask) => {

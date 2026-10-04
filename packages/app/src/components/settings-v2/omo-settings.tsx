@@ -303,10 +303,22 @@ export const SettingsOmoV2: Component<{ directory: Accessor<string | undefined> 
     setPin(kind, name, nextPin)
   }
 
+  // providerID -> served model IDs, so chained fallback labels only name a
+  // provider/model pair the connected provider actually serves.
+  const providerModelIDs = createMemo(() => {
+    const map = new Map<string, Set<string>>()
+    for (const id of connectedProviderIDs()) {
+      const provider = serverSync().data.provider.all.get(id)
+      if (!provider) continue
+      map.set(id, new Set(Object.keys(provider.models ?? {})))
+    }
+    return map
+  })
+
   const fallbackText = (kind: "agent" | "category", name: string) => {
     const chain = fallbackChain(kind, name)
     if (chain.length === 0) return null
-    const label = fallbackLabel(chain, connectedSet())
+    const label = fallbackLabel(chain, connectedSet(), providerModelIDs())
     return language.t(label.connected ? "settings.omo.fallback" : "settings.omo.fallback.offline", {
       model: label.model,
     })

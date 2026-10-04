@@ -45,6 +45,9 @@ export function ArtifactPreview(props: { path: string }) {
         <Show when={kind() === "image" && image()}>
           <img class="max-w-full" src={image()} alt={props.path} />
         </Show>
+        <Show when={kind() === undefined || (!text() && !image())}>
+          <p class="text-12-regular text-text-weak">{language.t("common.previewUnavailable")}</p>
+        </Show>
       </Show>
       </Show>
     </div>

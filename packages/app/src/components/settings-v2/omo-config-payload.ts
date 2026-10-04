@@ -40,8 +40,19 @@ export function openCodeBans(input: PayloadInput): string[] {
   return result
 }
 
-export function fallbackLabel(chain: FallbackChain, connected: ReadonlySet<string>) {
+export function fallbackLabel(
+  chain: FallbackChain,
+  connected: ReadonlySet<string>,
+  providerModels?: ReadonlyMap<string, ReadonlySet<string>>,
+) {
   for (const entry of chain) {
+    // Prefer a connected provider that actually serves the entry's model, so the
+    // label never names a provider/model pair the user cannot run.
+    if (providerModels) {
+      const serving = entry.providers.find((id) => connected.has(id) && providerModels.get(id)?.has(entry.model))
+      if (serving !== undefined) return { model: `${serving}/${entry.model}`, connected: true }
+      continue
+    }
     const provider = entry.providers.find((id) => connected.has(id))
     if (provider !== undefined) return { model: `${provider}/${entry.model}`, connected: true }
   }

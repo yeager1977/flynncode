@@ -36,9 +36,14 @@ export function citationFromTarget(target: EventTarget | null): Citation | undef
 }
 
 /** Center the cited review line once its diff row renders; polls like the comment focus scroll. */
+let citationScrollToken = 0
 export function scrollCitationLine(line: number | undefined, attempt = 0): void {
   if (line === undefined || attempt >= 120) return
+  // A newer click cancels an older poll chain so overlapping scrolls cannot
+  // race; only the latest citation wins the final scrollTop.
+  const token = ++citationScrollToken
   requestAnimationFrame(() => {
+    if (token !== citationScrollToken) return
     const root = document.querySelector('[data-slot="session-review-v2-diff-scroll"]')
     const row = root?.querySelector(`[data-line="${line}"]`)
     if (!(row instanceof HTMLElement) || !(root instanceof HTMLElement)) {

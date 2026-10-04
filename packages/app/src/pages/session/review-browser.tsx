@@ -38,6 +38,14 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
     }
     setState({ width: x - state.x, height: y - state.y, marked: true })
   }
+  const stripHash = (url: string) => {
+    const hash = url.indexOf("#")
+    return hash === -1 ? url : url.slice(0, hash)
+  }
+  const hashOf = (url: string) => {
+    const hash = url.indexOf("#")
+    return hash === -1 ? "" : url.slice(hash)
+  }
 
   return (
     <div data-component="review-browser" class="flex min-h-0 flex-col border-t border-border-weak-base">
@@ -110,17 +118,27 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
           <div class="relative h-64 min-h-0">
             <iframe
               class="size-full"
-              src={`${state.loaded}${state.loaded.includes("?") ? "&" : "?"}reload=${state.frame}`}
+              // A hash on the loaded URL would swallow a query cache-buster;
+              // put the reset counter in the hash position instead.
+              src={`${stripHash(state.loaded)}${stripHash(state.loaded).includes("?") ? "&" : "?"}reload=${state.frame}${hashOf(state.loaded)}`}
               title={language.t("session.review.browserUrl")}
+              sandbox="allow-scripts allow-forms"
             />
             <Show when={state.marking}>
               <div
-                class="absolute inset-0 cursor-crosshair"
+                class="absolute inset-0 cursor-crosshair touch-none"
                 data-action="review-browser-mark"
-                onPointerDown={(event) => mark(event, event.currentTarget, false)}
+                onPointerDown={(event) => {
+                  event.currentTarget.setPointerCapture(event.pointerId)
+                  mark(event, event.currentTarget, false)
+                }}
                 onPointerMove={(event) => {
                   if (event.buttons !== 1) return
                   mark(event, event.currentTarget, true)
+                }}
+                onPointerUp={(event) => {
+                  if (event.currentTarget.hasPointerCapture(event.pointerId))
+                    event.currentTarget.releasePointerCapture(event.pointerId)
                 }}
               >
                 <Show when={state.marked}>

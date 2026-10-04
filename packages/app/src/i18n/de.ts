@@ -8,11 +8,13 @@ import { routinesFallback } from "./routines-fallback"
 import { artifactsSidebarFallback } from "./artifacts-sidebar-fallback"
 import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
+import { sessionReviewFallback } from "./session-review-fallback"
 
 type Keys = keyof typeof en
 
 export const dict = {
   ...modelRouterFallback,
+  ...sessionReviewFallback,
   ...omoSettingsFallback,
   ...providerEditFallback,
   ...importSessionsFallback,

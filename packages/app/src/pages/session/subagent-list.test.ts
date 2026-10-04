@@ -12,6 +12,8 @@ describe("Tasks visibility boundary", () => {
     expect(sidePanel).not.toContain("sessionShowsSubagents")
     expect(sidePanel.match(/<Tabs\.Content value="tasks"/g) ?? []).toHaveLength(0)
     expect(sidePanel).toContain('id="tasks-panel"')
+    expect(sidePanel).toContain('aria-label={language.t("session.tasks.resize")}')
+    expect(sidePanel).toContain('edge="start"')
     const header = readFileSync(new URL("../../components/session/session-header.tsx", import.meta.url), "utf8")
     expect(header.match(/data-action="session-tasks-toggle"/g)).toHaveLength(2)
     expect(sidePanel).not.toMatch(/<Show when=\{tasksSelected\(\)\}>\s*<Tabs\.Content value="tasks"/)

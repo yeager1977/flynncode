@@ -2,7 +2,7 @@ import { dict } from "./en"
 
 // Pending translation. Locale entries override this English source.
 export const sessionBulkFallback = Object.fromEntries(
-  Object.entries(dict).filter(([key]) => key.startsWith("session.bulk.")),
+  Object.entries(dict).filter(([key]) => key.startsWith("session.bulk.") || key === "session.tasks.resize"),
 )
 
 export const sessionBulkPluralFallback = {

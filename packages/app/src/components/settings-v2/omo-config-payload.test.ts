@@ -85,4 +85,42 @@ describe("fallbackLabel", () => {
       connected: false,
     })
   })
+
+  test("skips a connected provider that does not serve the entry model", () => {
+    const chain: { providers: string[]; model: string }[] = [
+      { providers: ["anthropic", "openai"], model: "gpt-6-astra" },
+      { providers: ["openai"], model: "gpt-6-sol" },
+    ]
+    const models = new Map([
+      ["anthropic", new Set(["claude-sonnet-5"])],
+      ["openai", new Set(["gpt-6-astra", "gpt-6-sol"])],
+    ])
+    // anthropic is connected but does not serve gpt-6-astra; openai does,
+    // so the same rung resolves through openai.
+    expect(fallbackLabel(chain, new Set(["anthropic", "openai"]), models)).toEqual({
+      model: "openai/gpt-6-astra",
+      connected: true,
+    })
+  })
+
+  test("walks to the next rung when a head provider is connected but does not serve the model", () => {
+    const chain: { providers: string[]; model: string }[] = [
+      { providers: ["anthropic"], model: "gpt-6-astra" },
+      { providers: ["anthropic"], model: "claude-sonnet-5" },
+    ]
+    const models = new Map([["anthropic", new Set(["claude-sonnet-5"])]])
+    expect(fallbackLabel(chain, new Set(["anthropic"]), models)).toEqual({
+      model: "anthropic/claude-sonnet-5",
+      connected: true,
+    })
+  })
+
+  test("reports offline when connected providers serve none of the chain", () => {
+    const chain: { providers: string[]; model: string }[] = [{ providers: ["anthropic"], model: "gpt-6-astra" }]
+    const models = new Map([["anthropic", new Set(["claude-sonnet-5"])]] as const)
+    expect(fallbackLabel(chain, new Set(["anthropic"]), models as ReadonlyMap<string, ReadonlySet<string>>)).toEqual({
+      model: "anthropic/gpt-6-astra",
+      connected: false,
+    })
+  })
 })

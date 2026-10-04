@@ -81,10 +81,11 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { restorePromptModel, syncPromptModel, syncSessionModel } from "@/pages/session/session-model-helpers"
 import {
   clampSessionPanelWidth,
+  clampTasksPanelWidth,
   SESSION_PANEL_WIDTH_MIN,
   sessionPanelWidthMax,
 } from "@/pages/session/session-panel-width"
-import { SessionSidePanel } from "@/pages/session/session-side-panel"
+import { FILE_TREE_WIDTH_MIN, SessionSidePanel } from "@/pages/session/session-side-panel"
 import { sessionPanelLayout } from "@/pages/session/session-panel-layout"
 import { SessionReviewEmptyChangesV2 } from "@opencode-ai/session-ui/v2/session-review-empty-changes-v2"
 import { SessionReviewEmptyNoGitV2 } from "@opencode-ai/session-ui/v2/session-review-empty-no-git-v2"
@@ -508,10 +509,13 @@ export default function Page() {
     if (width === undefined) return undefined
     return width - (settings.general.newLayoutDesigns() ? 8 : 0)
   })
+  // Reserve room for the open tasks panel so the review pane keeps its
+  // minimum width when the chat panel is dragged to its max.
+  const tasksReserved = createMemo(() => (desktopTasksOpen() ? clampTasksPanelWidth(layout.tasks.width()) : 0))
   const sessionPanelMax = createMemo(() => {
     const available = sessionPanelAvailable()
     if (available === undefined) return 1000
-    return sessionPanelWidthMax({ available, split: splitReview() })
+    return sessionPanelWidthMax({ available, split: splitReview(), tasks: tasksReserved() })
   })
   // Clamp at render time so window or sidebar resizes squeeze the chat panel
   // instead of the review pane, without overwriting the persisted width.
@@ -520,12 +524,17 @@ export default function Page() {
       width: layout.session.width(),
       available: sessionPanelAvailable(),
       split: splitReview(),
+      tasks: tasksReserved(),
     }),
   )
   const sessionPanelWidth = createMemo(() => {
     if (!desktopSidePanelOpen()) return "100%"
     if (desktopSessionResizeOpen()) return `${sessionPanelResizedWidth()}px`
-    return `calc(100% - ${layout.fileTree.width()}px)`
+    // Use the same clamped widths the panels render so the calc never runs
+    // wider than the row; stored layout widths are unclamped.
+    const file = desktopFileTreeOpen() ? Math.max(FILE_TREE_WIDTH_MIN, layout.fileTree.width()) : 0
+    const tasks = desktopTasksOpen() ? clampTasksPanelWidth(layout.tasks.width()) : 0
+    return `calc(100% - ${file + tasks}px)`
   })
   const centered = createMemo(() => isDesktop() && (newSessionDesign() || !desktopReviewOpen()))
   const desktopV2PanelLayout = createMemo(() =>

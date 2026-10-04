@@ -56,7 +56,8 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const sessionArchive = useSessionArchive()
   const openDialog = async <T,>(load: () => Promise<T>, show: (value: T) => void) => {
     const owner = sessionOwnership.capture()
-    const value = await load()
+    const value = await load().catch(() => undefined)
+    if (value === undefined) return
     owner.run(() => show(value))
   }
   const runCommand = async <T,>(input: {
@@ -411,6 +412,8 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     await sdk().api.session.compact({
       sessionID,
       model: { providerID: model.provider.id, modelID: model.id },
+    }).catch(() => {
+      showToast({ title: language.t("common.requestFailed") })
     })
   }
 

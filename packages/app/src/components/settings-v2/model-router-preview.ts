@@ -1,9 +1,68 @@
 import {
   DEFAULT_TASK_WEIGHTS,
+  type ModelFamily,
   type ModelRouterFormState,
   type TaskName,
   type TaskWeights,
 } from "./model-router-payload"
+
+// Mirrors the plugin's provider-family contract (contract tests keep the two
+// in sync); the app bundle cannot import opencode-internal modules.
+type FamilyTier = "flagship" | "balanced" | "balanced-writing" | "fast"
+
+const APP_TIER_MODELS: Record<"openai" | "anthropic", Record<FamilyTier, string>> = {
+  openai: {
+    flagship: "gpt-6-astra",
+    balanced: "gpt-6-sol",
+    "balanced-writing": "gpt-6-sol",
+    fast: "gpt-6-luna",
+  },
+  anthropic: {
+    flagship: "claude-opus-5-5",
+    balanced: "claude-sonnet-5",
+    "balanced-writing": "claude-fable-5-1",
+    fast: "claude-sonnet-5",
+  },
+}
+
+const APP_TASK_TIERS: Record<TaskName, FamilyTier> = {
+  coding: "balanced",
+  planning: "balanced-writing",
+  review: "flagship",
+  architecture: "flagship",
+  lookup: "fast",
+  writing: "balanced-writing",
+  "long-context": "fast",
+}
+
+const APP_FAMILY_ORDER: Exclude<ModelFamily, "auto">[] = ["ollama", "openai", "anthropic"]
+
+const APP_FAMILY_PROVIDERS: Record<Exclude<ModelFamily, "auto">, string[]> = {
+  ollama: ["ollama"],
+  openai: ["openai", "github-copilot", "vercel", "opencode"],
+  anthropic: ["anthropic", "anthropic-api", "opencode", "vercel"],
+}
+
+// Same walk the plugin does at runtime: the selected family's tier model
+// first, then FAMILY_ORDER. An explicit providers list suppresses the family
+// scope, matching candidates.ts.
+function previewFamilyWinner(form: ModelRouterFormState, catalog: RouterModel[], task: TaskName) {
+  if (form.modelFamily === "auto" || form.providers.length > 0) return undefined
+  const tierModels = form.modelFamily === "ollama" ? undefined : APP_TIER_MODELS[form.modelFamily]
+  if (!tierModels) return undefined
+  const model = tierModels[APP_TASK_TIERS[task]]
+  if (!model) return undefined
+  for (const family of [form.modelFamily, ...APP_FAMILY_ORDER.filter((f) => f !== form.modelFamily)]) {
+    const tierModel = family === form.modelFamily ? model : APP_TIER_MODELS[family as "openai" | "anthropic"]?.[APP_TASK_TIERS[task]]
+    if (!tierModel) continue
+    for (const providerID of APP_FAMILY_PROVIDERS[family]) {
+      const entry = catalog.find((candidate) => candidate.key === `${providerID}/${tierModel}`)
+      if (!entry || entry.disabled || !entry.enabled) continue
+      return entry.key
+    }
+  }
+  return undefined
+}
 
 export type RouterSource = {
   provider?: Record<string, { name?: string; models?: Record<string, { name?: string }> } | undefined>
@@ -53,15 +112,22 @@ export function previewTask(form: ModelRouterFormState, catalog: RouterModel[], 
   const scores = new Map(form.models.map((model) => [model.key, model]))
   const weights = normalized(form.taskWeights[task])
   const pinned = form.taskModels[task]
+  const familyWinner = previewFamilyWinner(form, catalog, task)
   return catalog
     .filter((model) => modelAvailability(form, model) === "available")
     .flatMap((model) => {
       const entry = scores.get(model.key)
       const isPinned = pinned === model.key
-      // The plugin ranks a pinned model even when it is unscored or tagged away.
-      if (!isPinned) {
+      const isFamilyWinner = familyWinner === model.key
+      // The plugin ranks the pin and the model_family winner even when they
+      // are unscored or tagged away.
+      if (!isPinned && !isFamilyWinner) {
         if (!entry && !form.allowUnscored) return []
         if (entry?.tags.length && !entry.tags.includes(task)) return []
+      } else if (pinnedIndex(pinned, model.key) !== -1) {
+        return []
+      } else if (isFamilyWinner && pinned) {
+        return []
       }
       const value = entry ?? { capability: 5, price: 5, speed: 5 }
       return [
@@ -75,6 +141,7 @@ export function previewTask(form: ModelRouterFormState, catalog: RouterModel[], 
     .sort(
       (a, b) =>
         pinnedIndex(pinned, a.model.key) - pinnedIndex(pinned, b.model.key) ||
+        winnerIndex(familyWinner, a.model.key) - winnerIndex(familyWinner, b.model.key) ||
         b.score - a.score ||
         (scores.get(a.model.key)?.price ?? 10) - (scores.get(b.model.key)?.price ?? 10) ||
         (scores.get(b.model.key)?.speed ?? 0) - (scores.get(a.model.key)?.speed ?? 0) ||
@@ -84,6 +151,10 @@ export function previewTask(form: ModelRouterFormState, catalog: RouterModel[], 
 
 function pinnedIndex(pinned: string | undefined, key: string) {
   return pinned === key ? -1 : 0
+}
+
+function winnerIndex(winner: string | undefined, key: string) {
+  return winner === key ? -1 : 0
 }
 
 export const PRIORITIES = ["recommended", "balanced", "quality", "cost", "speed"] as const
