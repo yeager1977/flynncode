@@ -758,7 +758,6 @@ export const dict = {
   "session.messages.loading": "جارٍ تحميل الرسائل...",
   "session.messages.jumpToLatest": "الانتقال إلى الأحدث",
   "session.context.addToContext": "إضافة {{selection}} إلى السياق",
-  "session.todo.title": "المهام",
   "session.todo.collapse": "طي",
   "session.todo.expand": "توسيع",
   "session.question.minimize": "تصغير السؤال",

@@ -756,7 +756,6 @@ export const dict = {
   "session.messages.loading": "Načítavam správy...",
   "session.messages.jumpToLatest": "Prejsť na najnovšie",
   "session.context.addToContext": "Pridať {{selection}} do kontextu",
-  "session.todo.title": "Úlohy",
   "session.todo.collapse": "Zbaliť",
   "session.todo.expand": "Rozbaliť",
   "session.todo.progress": "{{done}} z {{total}} úloh dokončených",

@@ -755,7 +755,6 @@ export const dict = {
   "session.messages.loading": "Memuat mesej...",
   "session.messages.jumpToLatest": "Lompat ke terkini",
   "session.context.addToContext": "Tambah {{selection}} ke konteks",
-  "session.todo.title": "Senarai Tugasan",
   "session.todo.collapse": "Runtuhkan",
   "session.todo.expand": "Kembangkan",
   "session.todo.progress": "{{done}} daripada {{total}} tugasan selesai",

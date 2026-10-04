@@ -766,7 +766,6 @@ export const dict = {
   "session.messages.loading": "سنیہے لوڈ ہو رۓ...",
   "session.messages.jumpToLatest": "تازہ ترین تے جاؤ",
   "session.context.addToContext": "سیاق و سباق چ {{selection}} شامل کرو",
-  "session.todo.title": "ٹوڈوس",
   "session.todo.collapse": "سمیٹو",
   "session.todo.expand": "کھولو",
   "session.todo.progress": "{{done}} دے {{total}} کم مکمل ہو گئے",

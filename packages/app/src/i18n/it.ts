@@ -692,7 +692,6 @@ export const dict = {
   "session.messages.loading": "Caricamento messaggi...",
   "session.messages.jumpToLatest": "Vai all'ultimo",
   "session.context.addToContext": "Aggiungi {{selection}} al contesto",
-  "session.todo.title": "Attività",
   "session.todo.collapse": "Comprimi",
   "session.todo.expand": "Espandi",
   "session.todo.progress": "{{done}} di {{total}} attività completate",

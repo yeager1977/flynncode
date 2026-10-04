@@ -760,7 +760,6 @@ export const dict = {
   "session.messages.loading": "Se încarcă mesajele...",
   "session.messages.jumpToLatest": "Sari la cele mai recente",
   "session.context.addToContext": "Adaugă {{selection}} la context",
-  "session.todo.title": "Sarcini",
   "session.todo.collapse": "Restrânge",
   "session.todo.expand": "Extinde",
   "session.todo.progress": "{{done}} din {{total}} sarcini finalizate",

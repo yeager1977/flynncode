@@ -765,7 +765,6 @@ export const dict = {
   "session.messages.loading": "မက်ဆေ့ချ်များကို ဖွင့်နေသည်...",
   "session.messages.jumpToLatest": "နောက်ဆုံးသို့ ခုန်ပါ။",
   "session.context.addToContext": "{{selection}} ကို ဆက်စပ်အကြောင်းအရာထဲ ထည့်ပါ။",
-  "session.todo.title": "လုပ်စရာများ",
   "session.todo.collapse": "ခေါက်သိမ်းပါ။",
   "session.todo.expand": "ချဲ့ပါ။",
   "session.todo.progress": "{{total}} todos များ၏ {{done}} ပြီးပါပြီ။",

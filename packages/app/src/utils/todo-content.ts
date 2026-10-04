@@ -7,8 +7,15 @@ const MAX_SUMMARY_LENGTH = 120
 // Matches `<path>: <action> - expect <result>`; the token before the colon must be path-like (contains `/` or `.`)
 const PATH_ACTION_PATTERN = /^(\S*[/.]\S*):\s+(.+?)\s+-\s+expect\s+.+$/
 
+// OMO's todo format stamps a one-shot uppercase context tag ("[WHERE]",
+// "[HOW]"...). Real content rarely begins with an all-uppercase bracket tag,
+// and a lowercase or mixed tag (e.g. "[BUG] Fix login") is user content.
+
+// eslint-disable-next-line unicorn/better-regex
+const BRACKET_TAG_PATTERN = /^\[[A-Z][A-Z0-9_]*\]\s*/
+
 export function todoSummary(content: string): string {
-  const stripped = content.replace(/^\[[^\]]*\]\s*/, "")
+  const stripped = content.replace(BRACKET_TAG_PATTERN, "")
   const match = stripped.match(PATH_ACTION_PATTERN)
   if (!match) return stripped
   const action = match[2]

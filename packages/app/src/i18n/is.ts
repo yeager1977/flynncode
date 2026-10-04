@@ -759,7 +759,6 @@ export const dict = {
   "session.messages.loading": "Hleður skilaboð...",
   "session.messages.jumpToLatest": "Farðu í nýjasta",
   "session.context.addToContext": "Bættu {{selection}} við samhengi",
-  "session.todo.title": "Verkefnalisti",
   "session.todo.collapse": "Hrun",
   "session.todo.expand": "Stækkaðu",
   "session.todo.progress": "{{done}} af {{total}} verkefnum lokið",

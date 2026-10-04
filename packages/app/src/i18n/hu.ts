@@ -763,7 +763,6 @@ export const dict = {
   "session.messages.loading": "Üzenetek betöltése...",
   "session.messages.jumpToLatest": "Ugrás a legújabbra",
   "session.context.addToContext": "Adja hozzá a {{selection}}-t a kontextushoz",
-  "session.todo.title": "Feladatok",
   "session.todo.collapse": "Összeomlás",
   "session.todo.expand": "Bontsa ki",
   "session.todo.progress": "{{done}}/{{total}} todos elkészült",

@@ -681,7 +681,6 @@ export const dict = {
 
   "session.messages.jumpToLatest": "Gå til seneste",
   "session.context.addToContext": "Tilføj {{selection}} til kontekst",
-  "session.todo.title": "Opgaver",
   "session.todo.collapse": "Skjul",
   "session.todo.expand": "Udvid",
   "session.question.minimize": "Minimer spørgsmål",

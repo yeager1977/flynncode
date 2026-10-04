@@ -760,7 +760,6 @@ export const dict = {
   "session.messages.loading": "Notiek ziņojumu ielāde...",
   "session.messages.jumpToLatest": "Pāriet uz jaunāko",
   "session.context.addToContext": "Pievienot {{selection}} kontekstam",
-  "session.todo.title": "Darāmais",
   "session.todo.collapse": "Sakļaut",
   "session.todo.expand": "Izvērst",
   "session.todo.progress": "{{done}} no {{total}} darbiem izpildīti",

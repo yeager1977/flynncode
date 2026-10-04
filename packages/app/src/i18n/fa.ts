@@ -756,7 +756,6 @@ export const dict = {
   "session.messages.loading": "در حال بارگیری پیام ها...",
   "session.messages.jumpToLatest": "پرش به آخرین",
   "session.context.addToContext": "{{selection}} را به متن اضافه کنید",
-  "session.todo.title": "کارهای انجام‌دادنی",
   "session.todo.collapse": "فرو ریختن",
   "session.todo.expand": "گسترش دهید",
   "session.todo.progress": "{{done}} از کارهای {{total}} تکمیل شد",

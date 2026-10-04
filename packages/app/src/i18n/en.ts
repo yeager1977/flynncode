@@ -720,7 +720,6 @@ export const dict = {
   "session.messages.jumpToLatest": "Jump to latest",
 
   "session.context.addToContext": "Add {{selection}} to context",
-  "session.todo.title": "Todos",
   "session.todo.collapse": "Collapse",
   "session.todo.expand": "Expand",
   "session.todo.progress": "{{done}} of {{total}} todos completed",
@@ -1123,6 +1122,7 @@ export const dict = {
   "settings.modelRouter.family.ollama": "Ollama",
   "settings.modelRouter.family.openai": "OpenAI",
   "settings.modelRouter.family.anthropic": "Anthropic",
+  "settings.modelRouter.family.unavailable": "No connected provider serves this family's models. Routing falls back to the first family that has one.",
   "settings.mcp.add": "Add server",
   "settings.mcp.type.local": "Local",
   "settings.mcp.type.remote": "Remote",
@@ -1458,6 +1458,7 @@ export const dict = {
   "session.bulk.cleanup.match.other": "{{count}} sessions not updated in {{period}}.",
   "session.bulk.cleanup.skipped.one": "{{count}} skipped because it is open or running.",
   "session.bulk.cleanup.skipped.other": "{{count}} skipped because they are open or running.",
+  "session.bulk.cleanup.scopeHome": "Sessions from every directory on this server are included, not only the ones listed here.",
   "session.bulk.failed.one": "Could not finish. {{count}} session was not changed.",
   "session.bulk.failed.other": "Could not finish. {{count}} sessions were not changed.",
 

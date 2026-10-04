@@ -763,7 +763,6 @@ export const dict = {
   "session.messages.loading": "Мессежүүдийг ачаалж байна...",
   "session.messages.jumpToLatest": "Сүүлийнх рүү шилжих",
   "session.context.addToContext": "Контекст {{selection}} нэмнэ үү",
-  "session.todo.title": "Тодос",
   "session.todo.collapse": "Нурах",
   "session.todo.expand": "Өргөтгөх",
   "session.todo.progress": "{{total}} хийхээс {{done}} нь дууссан",

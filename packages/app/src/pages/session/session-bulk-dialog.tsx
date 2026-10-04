@@ -9,6 +9,7 @@ export function BulkConfirmDialog(props: {
   count: number
   matchLabel?: string
   skippedLabel?: string
+  scopeLabel?: string
   empty?: boolean
   busy: boolean
   onCancel: () => void
@@ -34,6 +35,9 @@ export function BulkConfirmDialog(props: {
         <Show when={props.matchLabel}>
           <span class="text-14-regular text-text-strong">{props.matchLabel}</span>
         </Show>
+        <Show when={props.scopeLabel}>
+          <span class="text-12-regular text-text-weak">{props.scopeLabel}</span>
+        </Show>
         <Show when={props.skippedLabel}>
           <span class="text-12-regular text-text-weak">{props.skippedLabel}</span>
         </Show>
@@ -52,7 +56,14 @@ export function BulkConfirmDialog(props: {
             {language.t("session.bulk.cancel")}
           </Button>
           <Show when={!props.empty && !dual()}>
-            <Button variant="primary" size="large" disabled={props.busy || props.count === 0} onClick={props.onConfirm}>
+            {/* Delete is the destructive branch of the two-step cleanup; keep
+                it visually secondary so archive reads as the safe choice. */}
+            <Button
+              variant={props.op === "delete" ? "ghost" : "primary"}
+              size="large"
+              disabled={props.busy || props.count === 0}
+              onClick={props.onConfirm}
+            >
               {title()}
             </Button>
           </Show>
@@ -66,7 +77,7 @@ export function BulkConfirmDialog(props: {
               {language.t("session.bulk.archive")}
             </Button>
             <Button
-              variant="primary"
+              variant="ghost"
               size="large"
               disabled={props.busy || props.count === 0}
               onClick={() => props.onDelete?.()}

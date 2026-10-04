@@ -753,7 +753,6 @@ export const dict = {
   "session.messages.loading": "Sõnumite laadimine...",
   "session.messages.jumpToLatest": "Hüppa uusimale",
   "session.context.addToContext": "Lisage konteksti {{selection}}",
-  "session.todo.title": "Ülesanded",
   "session.todo.collapse": "Ahenda",
   "session.todo.expand": "Laienda",
   "session.todo.progress": "{{done}} ülesannet {{total}}-st lõpetatud",

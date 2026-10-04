@@ -758,7 +758,6 @@ export const dict = {
   "session.messages.loading": "Načítání zpráv...",
   "session.messages.jumpToLatest": "Přejít na nejnovější",
   "session.context.addToContext": "Přidejte {{selection}} do kontextu",
-  "session.todo.title": "Úkoly",
   "session.todo.collapse": "kolaps",
   "session.todo.expand": "Rozbalit",
   "session.todo.progress": "Dokončeno {{done}} z {{total}} úkolů",

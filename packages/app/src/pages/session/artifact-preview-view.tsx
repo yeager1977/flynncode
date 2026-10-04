@@ -26,6 +26,9 @@ export function ArtifactPreview(props: { path: string }) {
     if (!value || value.encoding !== "base64") return
     return `data:${value.mimeType ?? artifactMime(props.path)};base64,${value.content}`
   }
+  // A text-encoded SVG has no base64 data URL and no markdown/html body; show
+  // the unavailable notice instead of a blank pane.
+  const noPreview = () => kind() === undefined || (!text() && !image())
 
   return (
     <div class="size-full overflow-auto bg-background-base p-3" data-component="artifact-preview">
@@ -45,7 +48,7 @@ export function ArtifactPreview(props: { path: string }) {
         <Show when={kind() === "image" && image()}>
           <img class="max-w-full" src={image()} alt={props.path} />
         </Show>
-        <Show when={kind() === undefined || (!text() && !image())}>
+        <Show when={noPreview()}>
           <p class="text-12-regular text-text-weak">{language.t("common.previewUnavailable")}</p>
         </Show>
       </Show>

@@ -762,7 +762,6 @@ export const dict = {
   "session.messages.loading": "Xabarlar yuklanmoqda...",
   "session.messages.jumpToLatest": "Eng oxirgisiga oʻtish",
   "session.context.addToContext": "Kontekstga {{selection}} qo'shing",
-  "session.todo.title": "Vazifalar",
   "session.todo.collapse": "Yiqilish",
   "session.todo.expand": "Kengaytirish",
   "session.todo.progress": "{{done}} {{total}} todos yakunlandi",

@@ -764,7 +764,6 @@ export const dict = {
   "session.messages.loading": "Įkeliami pranešimai...",
   "session.messages.jumpToLatest": "Pereiti prie naujausio",
   "session.context.addToContext": "Pridėkite {{selection}} prie konteksto",
-  "session.todo.title": "Užduotys",
   "session.todo.collapse": "Sutraukti",
   "session.todo.expand": "Išskleisti",
   "session.todo.progress": "{{done}} iš {{total}} todos baigtas",

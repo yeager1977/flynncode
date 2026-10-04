@@ -271,6 +271,7 @@ function CleanupConfirm(props: {
   count: number
   matchLabel: string
   skippedLabel?: string
+  scopeLabel?: string
   busy: boolean
   onCancel: () => void
   onRun: (op: BulkOp) => void
@@ -285,6 +286,7 @@ function CleanupConfirm(props: {
           count={props.count}
           matchLabel={props.matchLabel}
           skippedLabel={props.skippedLabel}
+          scopeLabel={props.scopeLabel}
           busy={props.busy}
           onCancel={props.onCancel}
           onConfirm={() => {}}
@@ -299,6 +301,7 @@ function CleanupConfirm(props: {
           count={props.count}
           matchLabel={props.matchLabel}
           skippedLabel={props.skippedLabel}
+          scopeLabel={props.scopeLabel}
           busy={props.busy}
           onCancel={props.onCancel}
           onConfirm={() => props.onRun(op())}

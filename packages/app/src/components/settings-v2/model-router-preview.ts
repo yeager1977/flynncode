@@ -43,6 +43,21 @@ const APP_FAMILY_PROVIDERS: Record<Exclude<ModelFamily, "auto">, string[]> = {
   anthropic: ["anthropic", "anthropic-api", "opencode", "vercel"],
 }
 
+// True when the selected family has no routing-candidate model in the catalog
+// (no tier model served by any family provider). Ollama-only pools always
+// yield by definition.
+export function familyModelUnavailable(form: ModelRouterFormState, catalog: RouterModel[], task: TaskName) {
+  if (form.modelFamily === "auto" || form.providers.length > 0) return false
+  const tierModels = form.modelFamily === "ollama" ? undefined : APP_TIER_MODELS[form.modelFamily]
+  if (!tierModels) return false
+  for (const providerID of APP_FAMILY_PROVIDERS[form.modelFamily]) {
+    const entry = catalog.find((candidate) => candidate.key === `${providerID}/${tierModels[APP_TASK_TIERS[task]]}`)
+    if (!entry || entry.disabled || !entry.enabled) continue
+    return false
+  }
+  return true
+}
+
 // Same walk the plugin does at runtime: the selected family's tier model
 // first, then FAMILY_ORDER. An explicit providers list suppresses the family
 // scope, matching candidates.ts.

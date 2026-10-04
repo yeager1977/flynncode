@@ -754,7 +754,6 @@ export const dict: Record<string, string> = {
   "session.messages.loading": "පණිවිඩ පූරණය කරමින්...",
   "session.messages.jumpToLatest": "නවතම වෙත පනින්න",
   "session.context.addToContext": "සන්දර්භය වෙත {{selection}} එක් කරන්න",
-  "session.todo.title": "ටෝඩෝස්",
   "session.todo.collapse": "හකුළන්න",
   "session.todo.expand": "පුළුල් කරන්න",
   "session.todo.progress": "{{total}} න් {{done}} සම්පූර්ණයි",

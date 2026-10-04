@@ -754,7 +754,6 @@ export const dict = {
   "session.messages.loading": "កំពុងផ្ទុកសារ...",
   "session.messages.jumpToLatest": "លោតទៅចុងក្រោយបំផុត។",
   "session.context.addToContext": "បន្ថែម {{selection}} ទៅបរិបទ",
-  "session.todo.title": "អ្វីដែលត្រូវធ្វើ",
   "session.todo.collapse": "ដួលរលំ",
   "session.todo.expand": "ពង្រីក",
   "session.todo.progress": "{{done}} នៃ {{total}} ការងារត្រូវធ្វើបានបញ្ចប់",

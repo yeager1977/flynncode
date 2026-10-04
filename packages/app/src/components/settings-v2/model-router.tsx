@@ -22,6 +22,7 @@ import {
 } from "./model-router-payload"
 import { hasOmoPlugin, setOmoPlugin } from "./omo-plugin"
 import {
+  familyModelUnavailable,
   parseWeight,
   priorityWeights,
   routerCatalog,
@@ -95,6 +96,9 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
       provider: serverSync().data.provider.all.get(model.providerID)?.name ?? model.provider,
     })),
   )
+  // Review is the family's flagship tier; if no connected provider serves it,
+  // routing silently falls back — tell the user rather than implying success.
+  const familyUnavailable = createMemo(() => familyModelUnavailable(form, catalog(), "review"))
   const providers = createMemo(() =>
     Array.from(
       new Set([
@@ -299,6 +303,11 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
                 onSelect={(family) => family && setForm("modelFamily", family)}
               />
             </div>
+            <Show when={familyUnavailable()}>
+              <p class="model-router-notice" data-action="settings-model-family-unavailable">
+                {language.t("settings.modelRouter.family.unavailable")}
+              </p>
+            </Show>
             <Show when={!form.models.length && !form.allowUnscored}>
               <div class="model-router-empty">
                 <h3>{language.t("settings.modelRouter.start.title")}</h3>

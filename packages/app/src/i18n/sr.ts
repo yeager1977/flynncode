@@ -759,7 +759,6 @@ export const dict = {
   "session.messages.loading": "Учитавање порука...",
   "session.messages.jumpToLatest": "Скочи на најновије",
   "session.context.addToContext": "Додајте {{selection}} у контекст",
-  "session.todo.title": "Тодос",
   "session.todo.collapse": "Скупи",
   "session.todo.expand": "Прошири",
   "session.todo.progress": "{{done}} од {{total}} задатака је завршено",

@@ -825,7 +825,6 @@ export const dict = {
   "session.messages.jumpToLatest": "Ir al mensaje más reciente",
 
   "session.context.addToContext": "Añadir {{selection}} al contexto",
-  "session.todo.title": "Tareas",
   "session.todo.collapse": "Contraer",
   "session.todo.expand": "Expandir",
   "session.question.minimize": "Minimizar pregunta",

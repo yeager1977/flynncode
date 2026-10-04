@@ -757,7 +757,6 @@ export const dict: Record<string, string> = {
   "session.messages.loading": "বার্তা লোড হচ্ছে...",
   "session.messages.jumpToLatest": "সর্বশেষে ঝাঁপ দাও",
   "session.context.addToContext": "প্রসঙ্গে {{selection}} যোগ করুন",
-  "session.todo.title": "টোডোস",
   "session.todo.collapse": "সঙ্কুচিত",
   "session.todo.expand": "প্রসারিত করুন",
   "session.todo.progress": "{{done}} এর মধ্যে {{total}} todos সম্পন্ন হয়েছে",

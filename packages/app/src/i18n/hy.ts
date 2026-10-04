@@ -762,7 +762,6 @@ export const dict = {
   "session.messages.loading": "Բեռնվում է հաղորդագրություններ...",
   "session.messages.jumpToLatest": "Անցնել վերջին",
   "session.context.addToContext": "Ավելացնել {{selection}} համատեքստում",
-  "session.todo.title": "Անելիքներ",
   "session.todo.collapse": "Ծալել",
   "session.todo.expand": "Ընդարձակել",
   "session.todo.progress": "{{done}}՝ {{total}} գործերից ավարտված",

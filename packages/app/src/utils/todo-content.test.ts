@@ -13,6 +13,10 @@ describe("todoSummary", () => {
     expect(todoSummary("Add dark mode")).toBe("Add dark mode")
   })
 
+  test("keeps a mixed-case bracket tag that is real content", () => {
+    expect(todoSummary("[Bug] Fix login")).toBe("[Bug] Fix login")
+  })
+
   test("returns content unchanged when the expect marker is missing", () => {
     expect(todoSummary("src/utils/validation.ts: Add validateEmail() for input sanitization")).toBe(
       "src/utils/validation.ts: Add validateEmail() for input sanitization",

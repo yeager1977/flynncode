@@ -805,7 +805,6 @@ export const dict = {
 
   "session.messages.jumpToLatest": "跳到最新",
   "session.context.addToContext": "將 {{selection}} 新增到上下文",
-  "session.todo.title": "待辦事項",
   "session.todo.collapse": "收合",
   "session.todo.expand": "展開",
   "session.question.minimize": "最小化問題",

@@ -762,7 +762,6 @@ export const dict = {
   "session.messages.loading": "Läser in meddelanden...",
   "session.messages.jumpToLatest": "Hoppa till senaste",
   "session.context.addToContext": "Lägg till {{selection}} i kontexten",
-  "session.todo.title": "Att göra",
   "session.todo.collapse": "Fäll ihop",
   "session.todo.expand": "Fäll ut",
   "session.todo.progress": "{{done}} av {{total}} uppgifter slutförda",

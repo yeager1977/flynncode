@@ -2153,6 +2153,9 @@ export default function Page() {
         onClick={(event) => {
           const citation = citationFromTarget(event.target)
           if (!citation) return
+          // Same-origin #L anchors would otherwise navigate, leaving a junk
+          // hash fragment in the URL.
+          if ((event.target as Element | null)?.closest("a")) event.preventDefault()
           view().review.openPath(citation.path)
           scrollCitationLine(citation.line)
         }}

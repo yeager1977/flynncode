@@ -757,7 +757,6 @@ export const dict = {
   "session.messages.loading": "Heinta boð...",
   "session.messages.jumpToLatest": "Hopp til nýggjasta",
   "session.context.addToContext": "Legg {{selection}} til samanhang",
-  "session.todo.title": "Uppgávur",
   "session.todo.collapse": "Kollaps",
   "session.todo.expand": "Víðka",
   "session.todo.progress": "{{done}} av {{total}} todos liðugt",

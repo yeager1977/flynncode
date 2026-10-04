@@ -424,11 +424,15 @@ export function createHomeSessionsController(home: HomeController) {
     const matchLabel = language.plural("session.bulk.cleanup.match", found.match.length, { period })
     const skippedLabel =
       found.skipped.length > 0 ? language.plural("session.bulk.cleanup.skipped", found.skipped.length) : undefined
+    // The home cleanup scans the whole server index while the home list is
+    // project-filtered, so the dialog must disclose the wider scope.
+    const scopeLabel = language.t("session.bulk.cleanup.scopeHome")
     showConfirm(() => (
       <CleanupConfirm
         count={ids.length}
         matchLabel={matchLabel}
         skippedLabel={skippedLabel}
+        scopeLabel={scopeLabel}
         busy={bulk.busy}
         onCancel={dismissConfirm}
         onRun={(op) => {
@@ -597,6 +601,7 @@ function CleanupConfirm(props: {
   count: number
   matchLabel: string
   skippedLabel?: string
+  scopeLabel?: string
   busy: boolean
   onCancel: () => void
   onRun: (op: BulkOp) => void
@@ -611,6 +616,7 @@ function CleanupConfirm(props: {
           count={props.count}
           matchLabel={props.matchLabel}
           skippedLabel={props.skippedLabel}
+          scopeLabel={props.scopeLabel}
           busy={props.busy}
           onCancel={props.onCancel}
           onConfirm={() => {}}
@@ -625,6 +631,7 @@ function CleanupConfirm(props: {
           count={props.count}
           matchLabel={props.matchLabel}
           skippedLabel={props.skippedLabel}
+          scopeLabel={props.scopeLabel}
           busy={props.busy}
           onCancel={props.onCancel}
           onConfirm={() => props.onRun(op())}

@@ -7,6 +7,7 @@ export const sessionReviewFallback = Object.fromEntries(
     ([key]) =>
       key === "common.reconnect" ||
       key === "common.previewUnavailable" ||
+      key === "settings.modelRouter.family.unavailable" ||
       key === "dispatch.needsInput" ||
       key === "dispatch.blocked" ||
       key === "session.review.annotate.add" ||

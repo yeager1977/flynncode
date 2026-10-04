@@ -824,7 +824,6 @@ export const dict = {
   "session.messages.jumpToLatest": "En sona atla",
 
   "session.context.addToContext": "{{selection}} bağlama ekle",
-  "session.todo.title": "Görevler",
   "session.todo.collapse": "Daralt",
   "session.todo.expand": "Genişlet",
   "session.question.minimize": "Soruyu küçült",

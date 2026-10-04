@@ -657,7 +657,6 @@ export const dict = {
   "session.messages.loading": "Nachrichten werden geladen…",
   "session.messages.jumpToLatest": "Zur neuesten Nachricht springen",
   "session.context.addToContext": "{{selection}} zum Kontext hinzufügen",
-  "session.todo.title": "Aufgaben",
   "session.todo.collapse": "Einklappen",
   "session.todo.expand": "Ausklappen",
   "session.question.minimize": "Frage minimieren",

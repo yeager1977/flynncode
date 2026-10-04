@@ -843,7 +843,6 @@ export const dict = {
   "session.messages.jumpToLatest": "Lompat ke pesan terbaru",
 
   "session.context.addToContext": "Tambahkan {{selection}} ke konteks",
-  "session.todo.title": "Tugas",
   "session.todo.collapse": "Ciutkan",
   "session.todo.expand": "Bentangkan",
   "session.todo.progress": "{{done}} dari {{total}} tugas selesai",

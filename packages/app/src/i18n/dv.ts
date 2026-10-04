@@ -769,7 +769,6 @@ export const dict = {
   "session.messages.loading": "މެސެޖުތައް ލޯޑް ކުރަނީ...",
   "session.messages.jumpToLatest": "އެންމެ ފަހުގެ ވާހަކައަށް ފުންމާލާށެވެ",
   "session.context.addToContext": "ކޮންޓެކްސްޓަށް {{selection}} އިތުރުކުރުން",
-  "session.todo.title": "ޓޮޑޯސް އެވެ",
   "session.todo.collapse": "ހޭނެތިގެން ވެއްޓުން",
   "session.todo.expand": "އިތުރުކުރުން",
   "session.todo.progress": "{{done}} ގެ {{total}} ޓޯޑޯސް ނިމިއްޖެއެވެ",

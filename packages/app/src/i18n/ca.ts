@@ -764,7 +764,6 @@ export const dict = {
   "session.messages.loading": "S'estan carregant els missatges...",
   "session.messages.jumpToLatest": "Ves a l'últim",
   "session.context.addToContext": "Afegeix {{selection}} al context",
-  "session.todo.title": "Tots",
   "session.todo.collapse": "Col·lapse",
   "session.todo.expand": "Expandir",
   "session.todo.progress": "{{done}} de {{total}} tots completats",

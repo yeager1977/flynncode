@@ -655,7 +655,6 @@ export const dict = {
   "session.messages.loading": "Ladataan viestejä...",
   "session.messages.jumpToLatest": "Siirry uusimpaan",
   "session.context.addToContext": "Lisää {{selection}} kontekstiin",
-  "session.todo.title": "Tehtävät",
   "session.todo.collapse": "Kutista",
   "session.todo.expand": "Laajenna",
   "session.todo.progress": "{{done}}/{{total}} tehtävää suoritettu",

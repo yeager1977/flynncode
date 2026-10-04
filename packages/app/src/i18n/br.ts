@@ -748,7 +748,6 @@ export const dict = {
   "session.messages.loading": "Carregando mensagens...",
   "session.messages.jumpToLatest": "Ir para a mais recente",
   "session.context.addToContext": "Adicionar {{selection}} ao contexto",
-  "session.todo.title": "Tarefas",
   "session.todo.collapse": "Recolher",
   "session.todo.expand": "Expandir",
   "session.question.minimize": "Minimizar pergunta",

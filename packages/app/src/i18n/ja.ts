@@ -760,7 +760,6 @@ export const dict = {
   "session.messages.loading": "メッセージを読み込み中...",
   "session.messages.jumpToLatest": "最新へジャンプ",
   "session.context.addToContext": "{{selection}}をコンテキストに追加",
-  "session.todo.title": "ToDo",
   "session.todo.collapse": "折りたたむ",
   "session.todo.expand": "展開",
   "session.question.minimize": "質問を最小化",
