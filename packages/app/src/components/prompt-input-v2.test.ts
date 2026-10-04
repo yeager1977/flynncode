@@ -11,4 +11,10 @@ describe("PromptInputV2Composer project control", () => {
     expect(source).toContain('language.plural("session.project.sessions"')
     expect(source).toContain('language.t("session.project.path")')
   })
+
+  test("shows the project's total sessions only after the sessions query loads", () => {
+    expect(source).toContain("sessionTotal")
+    expect(source).toContain('queryOptions().sessions(pathKey(')
+    expect(source).toContain("fetching() && store.sessionTotal === 0")
+  })
 })

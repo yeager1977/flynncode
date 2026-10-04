@@ -2,6 +2,7 @@ import { ImagePreview } from "@opencode-ai/ui/image-preview"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Popover } from "@opencode-ai/ui/popover"
+import { useQueryClient } from "@tanstack/solid-query"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { Icon } from "@opencode-ai/ui/v2/icon"
 import { KeybindV2 } from "@opencode-ai/ui/v2/keybind-v2"
@@ -27,11 +28,12 @@ import { usePermission } from "@/context/permission"
 import { type ImageAttachmentPart, usePrompt } from "@/context/prompt"
 import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
-import { useServerSync } from "@/context/server-sync"
+import { useQueryOptions, useServerSync } from "@/context/server-sync"
 import { useSync } from "@/context/sync"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { displayName, getProjectAvatarSource } from "@/pages/layout/helpers"
 import { getProjectAvatarVariant, type ProjectAvatarVariant } from "@/context/layout"
+import { pathKey } from "@/utils/path-key"
 import { showToast } from "@/utils/toast"
 import { PromptInputV2, type PromptInputV2Suggestion } from "@opencode-ai/session-ui/v2/prompt-input"
 import {
@@ -58,18 +60,29 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
   const sdk = useSDK()
   const layout = useLayout()
   const serverSync = useServerSync()
+  const queryOptions = useQueryOptions()
+  const queryClient = useQueryClient()
 
   const project = createMemo(() => {
     const directory = sdk().directory
     if (!directory) return undefined
     return layout.projects.list().find((p) => p.worktree === directory || p.sandboxes?.includes(directory))
   })
-  const sessions = createMemo(() => {
+  const child = createMemo(() => {
     const target = project()
     if (!target) return undefined
-    return serverSync().child(target.worktree, { bootstrap: false })[0].session ?? []
+    return serverSync().child(target.worktree, { bootstrap: false })[0]
   })
-  const activeCount = createMemo(() => sessions()?.filter((session) => session.time.archived === undefined).length)
+  const fetching = createMemo(() => {
+    const worktree = project()?.worktree
+    if (!worktree) return false
+    return queryClient.isFetching(queryOptions().sessions(pathKey(worktree))) > 0
+  })
+  const activeCount = createMemo(() => {
+    const store = child()
+    if (!store || (fetching() && store.sessionTotal === 0)) return undefined
+    return store.sessionTotal
+  })
 
   return (
     <div class="flex flex-col gap-3">
