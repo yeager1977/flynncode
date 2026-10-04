@@ -19,6 +19,76 @@ export const sessionReviewFallback = Object.fromEntries(
       key === "session.todo.status.in_progress" ||
       key === "session.todo.status.completed" ||
       key === "session.todo.status.cancelled" ||
-      key === "session.tasks.resize",
+      key === "session.tasks.resize" ||
+      key.startsWith("session.project."),
   ),
 )
+
+// Pending translation. Locale entries override this English source. Plural
+// families beyond `.one`/`.other` need locale-specific categories.
+export const sessionProjectPluralFallback = {
+  es: {
+    "session.project.sessions.many": "{{count}} sessions",
+  },
+  fr: {
+    "session.project.sessions.many": "{{count}} sessions",
+  },
+  pl: {
+    "session.project.sessions.few": "{{count}} sessions",
+    "session.project.sessions.many": "{{count}} sessions",
+  },
+  ru: {
+    "session.project.sessions.few": "{{count}} sessions",
+    "session.project.sessions.many": "{{count}} sessions",
+  },
+  uk: {
+    "session.project.sessions.few": "{{count}} sessions",
+    "session.project.sessions.many": "{{count}} sessions",
+  },
+  bs: {
+    "session.project.sessions.few": "{{count}} sessions",
+  },
+  ar: {
+    "session.project.sessions.zero": "{{count}} sessions",
+    "session.project.sessions.two": "{{count}} sessions",
+    "session.project.sessions.few": "{{count}} sessions",
+    "session.project.sessions.many": "{{count}} sessions",
+  },
+  br: {
+    "session.project.sessions.many": "{{count}} sessions",
+  },
+  it: {
+    "session.project.sessions.many": "{{count}} sessions",
+  },
+  ca: {
+    "session.project.sessions.many": "{{count}} sessions",
+  },
+  cs: {
+    "session.project.sessions.few": "{{count}} sessions",
+    "session.project.sessions.many": "{{count}} sessions",
+  },
+  hr: {
+    "session.project.sessions.few": "{{count}} sessions",
+  },
+  lt: {
+    "session.project.sessions.few": "{{count}} sessions",
+    "session.project.sessions.many": "{{count}} sessions",
+  },
+  lv: {
+    "session.project.sessions.zero": "{{count}} sessions",
+  },
+  ro: {
+    "session.project.sessions.few": "{{count}} sessions",
+  },
+  sk: {
+    "session.project.sessions.few": "{{count}} sessions",
+    "session.project.sessions.many": "{{count}} sessions",
+  },
+  sl: {
+    "session.project.sessions.two": "{{count}} sessions",
+    "session.project.sessions.few": "{{count}} sessions",
+  },
+  sr: {
+    "session.project.sessions.few": "{{count}} sessions",
+  },
+} as const

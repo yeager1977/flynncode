@@ -1462,6 +1462,11 @@ export const dict = {
   "session.bulk.failed.one": "Could not finish. {{count}} session was not changed.",
   "session.bulk.failed.other": "Could not finish. {{count}} sessions were not changed.",
 
+  "session.project.open": "Project",
+  "session.project.path": "Worktree",
+  "session.project.sessions.one": "{{count}} session",
+  "session.project.sessions.other": "{{count}} sessions",
+
   "session.delete.failed.title": "Failed to delete session",
   "session.delete.title": "Delete session",
   "session.delete.confirm": 'Delete session "{{name}}"?',
