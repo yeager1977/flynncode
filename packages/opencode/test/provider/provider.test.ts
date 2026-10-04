@@ -17,6 +17,7 @@ import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import { Env } from "../../src/env"
 import { Plugin } from "../../src/plugin/index"
 import { Provider } from "@/provider/provider"
+import { asModelFamily } from "@/plugin/ollama-model-router/provider-family"
 
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Filesystem } from "@/util/filesystem"
@@ -374,8 +375,13 @@ test("config schema accepts model_family and preserves the value", () => {
   expect(parsed.model_family).toBe("openai")
 })
 
-test("config schema rejects unknown model_family values", () => {
-  expect(() => ConfigParse.schema(ConfigV1.Info, { model_family: "mistral" }, "test:config")).toThrow()
+test("config schema tolerates unknown model_family values instead of failing load", () => {
+  const parsed = ConfigParse.schema(ConfigV1.Info, { model_family: "mistral" }, "test:config")
+  expect(parsed.model_family).toBe("mistral")
+  // Unknown values degrade to auto at use sites via asModelFamily.
+  expect(asModelFamily("mistral")).toBe("auto")
+  expect(asModelFamily("ollama")).toBe("ollama")
+  expect(asModelFamily(undefined)).toBe("auto")
 })
 
 it.instance(

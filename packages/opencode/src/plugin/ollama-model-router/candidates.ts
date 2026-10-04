@@ -61,12 +61,19 @@ export function resolveCatalog(cfg: ConfigLike, catalog?: CatalogLike): CatalogL
 }
 
 // A family scope is "available" when at least one of its providers is
-// connected with at least one model.
+// connected with at least one model AND is not disabled in disabled_providers.
+// A family whose providers are all disabled must yield nothing so the
+// fallback walks on instead of routing into a provider the user turned off.
 function familyYieldsModels(family: ModelFamily, cfg: ConfigLike, catalog?: CatalogLike): boolean {
   const predicate = familyPredicate(family)
   if (!predicate) return false
+  const disabled = new Set(cfg.disabled_providers ?? [])
   return providerSources(cfg, catalog).some(
-    ([providerID, provider]) => predicate(providerID) && provider?.models && Object.keys(provider.models).length > 0,
+    ([providerID, provider]) =>
+      !disabled.has(providerID) &&
+      predicate(providerID) &&
+      provider?.models &&
+      Object.keys(provider.models).length > 0,
   )
 }
 

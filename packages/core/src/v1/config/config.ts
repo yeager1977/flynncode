@@ -84,11 +84,9 @@ export const Info = Schema.Struct({
   small_model: Schema.optional(Schema.String).annotate({
     description: "Small model to use for tasks like title generation in the format of provider/model",
   }),
-  model_family: Schema.optional(
-    Schema.Literals(["auto", "ollama", "openai", "anthropic"]),
-  ).annotate({
+  model_family: Schema.optional(Schema.String).annotate({
     description:
-      "Preferred model family for default and per-task model selection. Ollama, OpenAI, or Anthropic. Defaults to auto, which preserves current behavior",
+      "Preferred model family for default and per-task model selection. Ollama, OpenAI, or Anthropic. Defaults to auto, which preserves current behavior. Unknown values degrade to auto at use sites instead of failing config load",
   }),
   default_agent: Schema.optional(Schema.String).annotate({
     description:

@@ -34,7 +34,13 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { ModelStatus } from "./model-status"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderError } from "./error"
-import { FAMILY_ORDER, resolveFamilyModel, type FamilyTier, type ModelFamily } from "@/plugin/ollama-model-router/provider-family"
+import {
+  asModelFamily,
+  FAMILY_ORDER,
+  resolveFamilyModel,
+  type FamilyTier,
+  type ModelFamily,
+} from "@/plugin/ollama-model-router/provider-family"
 
 const OPENAI_HEADER_TIMEOUT_DEFAULT = 300_000
 
@@ -2053,7 +2059,7 @@ const layer = Layer.effect(
 
       if (cfg.model_family && cfg.model_family !== "auto" && cfg.model_family !== "ollama") {
         const winner = familyWinner({
-          family: cfg.model_family,
+          family: asModelFamily(cfg.model_family) as Exclude<ModelFamily, "auto">,
           tier: "fast",
           providers: s.providers,
           available: providerModelKeys(s.providers),
@@ -2129,7 +2135,12 @@ const layer = Layer.effect(
 
       if (cfg.model_family && cfg.model_family !== "auto" && cfg.model_family !== "ollama") {
         const available = providerModelKeys(s.providers)
-        const winner = familyWinner({ family: cfg.model_family, tier: "balanced", providers: s.providers, available })
+        const winner = familyWinner({
+          family: asModelFamily(cfg.model_family) as Exclude<ModelFamily, "auto">,
+          tier: "balanced",
+          providers: s.providers,
+          available,
+        })
         if (winner) return winner
       }
 
@@ -2165,9 +2176,11 @@ const layer = Layer.effect(
 
     // ModelsDev polls and rebuilds the catalog, but this state is built once per
     // directory. Invalidate on Refreshed so list() and discovery pick up new models.
+    // Layer-init fibers have no InstanceRef, so invalidateCurrent drops all
+    // cached entries instead of dying on `directory`.
     const events = yield* EventV2.Service
     yield* events.subscribe(ModelsDev.Event.Refreshed).pipe(
-      Stream.runForEach(() => InstanceState.invalidate(state)),
+      Stream.runForEach(() => InstanceState.invalidateCurrent(state)),
       Effect.forkScoped({ startImmediately: true }),
     )
 

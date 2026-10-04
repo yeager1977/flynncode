@@ -6,12 +6,21 @@ export type FamilyTier = "flagship" | "balanced" | "balanced-writing" | "fast"
 
 export const MODEL_FAMILIES: ModelFamily[] = ["auto", "ollama", "openai", "anthropic"]
 
+// config.model_family is a plain string (unknown values must not fail config
+// load), so validate before using it anywhere. Unknown values degrade to auto.
+export function asModelFamily(value: string | undefined): ModelFamily {
+  if (value && (MODEL_FAMILIES as string[]).includes(value)) return value as ModelFamily
+  return "auto"
+}
+
 const TIER_MODELS: Record<"openai" | "anthropic", Record<FamilyTier, string>> = {
   openai: {
     flagship: "gpt-6-astra",
     balanced: "gpt-6-sol",
     "balanced-writing": "gpt-6-sol",
-    fast: "gpt-6-sol-fast",
+    // Only model IDs the openai provider itself serves count: gpt-6-sol-fast
+    // exists on vercel as vercel/openai/gpt-6-sol-fast, a different ID.
+    fast: "gpt-6-luna",
   },
   anthropic: {
     flagship: "claude-opus-5-5",

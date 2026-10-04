@@ -34,11 +34,11 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
   // same source the model picker uses. Raw config is the fallback so headless
   // and unit-test callers keep working.
   let catalog: CatalogLike | undefined
-  let catalogLoaded = false
   const getCatalog = (): CatalogLike | undefined => catalog
+  // A transient provider.list() failure must not permanently disable the
+  // catalog; retry on the next call until one succeeds.
   const loadCatalog = async () => {
-    if (catalogLoaded) return
-    catalogLoaded = true
+    if (catalog) return
     try {
       const result = await input.client.provider.list()
       const all = result.data?.all ?? []
@@ -47,7 +47,6 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
       ) as CatalogLike
     } catch (error) {
       console.warn(`${PREFIX} connected catalog unavailable; using config providers`, error)
-      catalog = undefined
     }
   }
 
