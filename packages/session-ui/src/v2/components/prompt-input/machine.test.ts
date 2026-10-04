@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
 import type { PromptInputV2PersistedState, PromptInputV2Suggestion } from "./types"
 import { createPromptInputV2InteractionState, transitionPromptInputV2 } from "./machine"
 
@@ -7,6 +8,15 @@ const command: PromptInputV2Suggestion = {
   kind: "command",
   label: "/review",
 }
+
+const source = readFileSync(new URL("./index.tsx", import.meta.url), "utf8")
+
+describe("PromptInputV2 projectControl slot", () => {
+  test("renders the project control before the add menu", () => {
+    expect(source).toContain('projectControl?: JSX.Element')
+    expect(source.indexOf("props.projectControl")).toBeLessThan(source.indexOf("<PromptInputV2AddMenu"))
+  })
+})
 
 function persisted(value = ""): PromptInputV2PersistedState {
   return {

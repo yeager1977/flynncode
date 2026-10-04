@@ -42,6 +42,7 @@ export type PromptInputV2Props = {
   borderUnderlay?: boolean
   class?: string
   modelControl?: JSX.Element
+  projectControl?: JSX.Element
   variantControlVisible?: boolean
   attachKeybind?: string[]
   attachShortcut?: string
@@ -203,6 +204,9 @@ export function PromptInputV2(props: PromptInputV2Props) {
             inert={state.mode === "shell" ? true : undefined}
             style={buttons()}
           >
+            <Show when={props.projectControl} keyed>
+              {(control) => control}
+            </Show>
             <PromptInputV2AddMenu
               disabled={state.mode === "shell"}
               title={i18n.t("ui.promptInput.add")}
