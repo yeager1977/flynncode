@@ -11,6 +11,7 @@ import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
 import { worktreeFallback } from "./worktree-fallback"
 import { previewFallback } from "./preview-fallback"
+import { ciStatusFallback } from "./ci-status-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -118,6 +119,7 @@ export const dict = {
   "desktop.picker.error.sizeLimit": "የተመረጡት ዓባሪዎች ከ{{limit}}ሜባ ገደቡ በላይ",
   ...worktreeFallback,
   ...previewFallback,
+  ...ciStatusFallback,
   "command.category.suggested": "የሚመከር",
   "command.category.view": "እይታ",
   "command.category.project": "ፕሮጀክት",

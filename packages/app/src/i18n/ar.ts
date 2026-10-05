@@ -11,6 +11,7 @@ import { sessionReviewFallback, sessionProjectPluralFallback } from "./session-r
 import { sessionHandoffFallback } from "./session-handoff-fallback"
 import { worktreeFallback } from "./worktree-fallback"
 import { previewFallback } from "./preview-fallback"
+import { ciStatusFallback } from "./ci-status-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -126,6 +127,7 @@ export const dict = {
 
   ...worktreeFallback,
   ...previewFallback,
+  ...ciStatusFallback,
   "command.category.suggested": "مقترح",
   "command.category.view": "عرض",
   "command.category.project": "مشروع",

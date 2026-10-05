@@ -11,6 +11,7 @@ import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
 import { worktreeFallback } from "./worktree-fallback"
 import { previewFallback } from "./preview-fallback"
+import { ciStatusFallback } from "./ci-status-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -118,6 +119,7 @@ export const dict = {
   "desktop.picker.error.sizeLimit": "Valdar viðheftir fara upp um {{limit}} MB markið",
   ...worktreeFallback,
   ...previewFallback,
+  ...ciStatusFallback,
   "command.category.suggested": "Tillagað",
   "command.category.view": "Vís",
   "command.category.project": "Verkætlan",

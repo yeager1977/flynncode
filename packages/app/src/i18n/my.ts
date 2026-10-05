@@ -11,6 +11,7 @@ import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
 import { worktreeFallback } from "./worktree-fallback"
 import { previewFallback } from "./preview-fallback"
+import { ciStatusFallback } from "./ci-status-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -120,6 +121,7 @@ export const dict = {
   "desktop.picker.error.sizeLimit": "ရွေးချယ်ထားသော ပူးတွဲပါဖိုင်များသည် {{limit}} MB ကန့်သတ်ချက်ထက် ကျော်လွန်ပါသည်။",
   ...worktreeFallback,
   ...previewFallback,
+  ...ciStatusFallback,
   "command.category.suggested": "အကြံပြုထားသည်။",
   "command.category.view": "ကြည့်ရန်",
   "command.category.project": "ပရောဂျက်",

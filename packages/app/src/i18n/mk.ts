@@ -11,6 +11,7 @@ import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
 import { worktreeFallback } from "./worktree-fallback"
 import { previewFallback } from "./preview-fallback"
+import { ciStatusFallback } from "./ci-status-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -119,6 +120,7 @@ export const dict = {
   "desktop.picker.error.sizeLimit": "Избраните прилози ја надминуваат границата {{limit}} MB",
   ...worktreeFallback,
   ...previewFallback,
+  ...ciStatusFallback,
   "command.category.suggested": "Предложено",
   "command.category.view": "Прикажи",
   "command.category.project": "Проект",

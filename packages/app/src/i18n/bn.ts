@@ -11,6 +11,7 @@ import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
 import { worktreeFallback } from "./worktree-fallback"
 import { previewFallback } from "./preview-fallback"
+import { ciStatusFallback } from "./ci-status-fallback"
 
 export const dict: Record<string, string> = {
   ...modelRouterFallback,
@@ -119,6 +120,7 @@ export const dict: Record<string, string> = {
   "desktop.picker.error.sizeLimit": "নির্বাচিত সংযুক্তিগুলি {{limit}} MB সীমা অতিক্রম করেছে৷",
   ...worktreeFallback,
   ...previewFallback,
+  ...ciStatusFallback,
   "command.category.suggested": "প্রস্তাবিত",
   "command.category.view": "দেখুন",
   "command.category.project": "প্রকল্প",

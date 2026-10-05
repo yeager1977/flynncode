@@ -12,6 +12,7 @@ import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
 import { worktreeFallback } from "./worktree-fallback"
 import { previewFallback } from "./preview-fallback"
+import { ciStatusFallback } from "./ci-status-fallback"
 
 type Keys = keyof typeof en
 
@@ -127,6 +128,7 @@ export const dict = {
 
   ...worktreeFallback,
   ...previewFallback,
+  ...ciStatusFallback,
   "command.category.suggested": "建议",
   "command.category.view": "视图",
   "command.category.project": "项目",

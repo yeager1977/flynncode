@@ -50,8 +50,13 @@ export interface Settings {
   permissions: {
     autoApprove: boolean
   }
+  cleanup: CleanupSettings
   notifications: NotificationSettings
   sounds: SoundSettings
+}
+
+export interface CleanupSettings {
+  autoArchiveAfterPrClose: boolean
 }
 
 export const monoDefault = "System Mono"
@@ -205,6 +210,9 @@ const defaultSettings: Settings = {
   keybinds: {},
   permissions: {
     autoApprove: false,
+  },
+  cleanup: {
+    autoArchiveAfterPrClose: false,
   },
   notifications: {
     agent: true,
@@ -497,6 +505,15 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         autoApprove: withFallback(() => store.permissions?.autoApprove, defaultSettings.permissions.autoApprove),
         setAutoApprove(value: boolean) {
           setStore("permissions", "autoApprove", value)
+        },
+      },
+      cleanup: {
+        autoArchiveAfterPrClose: withFallback(
+          () => store.cleanup?.autoArchiveAfterPrClose,
+          defaultSettings.cleanup.autoArchiveAfterPrClose,
+        ),
+        setAutoArchiveAfterPrClose(value: boolean) {
+          setStore("cleanup", "autoArchiveAfterPrClose", value)
         },
       },
       notifications: {

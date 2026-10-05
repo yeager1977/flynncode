@@ -11,6 +11,7 @@ import { sessionReviewFallback, sessionProjectPluralFallback } from "./session-r
 import { sessionHandoffFallback } from "./session-handoff-fallback"
 import { worktreeFallback } from "./worktree-fallback"
 import { previewFallback } from "./preview-fallback"
+import { ciStatusFallback } from "./ci-status-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -120,6 +121,7 @@ export const dict = {
   "desktop.picker.error.sizeLimit": "Izvēlētie pielikumi pārsniedz {{limit}} MB ierobežojumu",
   ...worktreeFallback,
   ...previewFallback,
+  ...ciStatusFallback,
   "command.category.suggested": "Ieteikts",
   "command.category.view": "Skats",
   "command.category.project": "Projekts",

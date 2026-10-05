@@ -11,6 +11,7 @@ import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
 import { worktreeFallback } from "./worktree-fallback"
 import { previewFallback } from "./preview-fallback"
+import { ciStatusFallback } from "./ci-status-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -119,6 +120,7 @@ export const dict = {
   "desktop.picker.error.sizeLimit": "پیوست های انتخابی بیش از حد مجاز {{limit}} مگابایت است",
   ...worktreeFallback,
   ...previewFallback,
+  ...ciStatusFallback,
   "command.category.suggested": "پیشنهاد شده است",
   "command.category.view": "مشاهده کنید",
   "command.category.project": "پروژه",
