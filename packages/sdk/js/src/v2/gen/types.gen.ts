@@ -2638,6 +2638,32 @@ export type ProviderAuthError1 = {
   }
 }
 
+export type GhPrInfo = {
+  number: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  state: string
+  mergeable?: string
+  url: string
+  headRefName?: string
+}
+
+export type GhCheck = {
+  name: string
+  state: "SUCCESS" | "FAILURE" | "PENDING" | "SKIPPED" | "CANCELLED" | "ERROR"
+  detail?: string
+}
+
+export type GhPrStatus = {
+  pr: GhPrInfo
+  checks: Array<GhCheck>
+}
+
+export type PullRequestError = {
+  name: "GhMissingError" | "GhAuthError" | "GhNoPrError" | "GhCommandError"
+  data: {
+    message: string
+  }
+}
+
 export type NotFoundError = {
   name: "NotFoundError"
   data: {
@@ -9820,6 +9846,62 @@ export type ProviderOauthCallbackResponses = {
 }
 
 export type ProviderOauthCallbackResponse = ProviderOauthCallbackResponses[keyof ProviderOauthCallbackResponses]
+
+export type PullRequestStatusData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/pull-request/status"
+}
+
+export type PullRequestStatusErrors = {
+  /**
+   * PullRequestError | InvalidRequestError
+   */
+  400: PullRequestError | InvalidRequestError
+}
+
+export type PullRequestStatusError = PullRequestStatusErrors[keyof PullRequestStatusErrors]
+
+export type PullRequestStatusResponses = {
+  /**
+   * PR and CI-check snapshot for the current branch
+   */
+  200: GhPrStatus
+}
+
+export type PullRequestStatusResponse = PullRequestStatusResponses[keyof PullRequestStatusResponses]
+
+export type PullRequestMergeData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/pull-request/merge"
+}
+
+export type PullRequestMergeErrors = {
+  /**
+   * PullRequestError | InvalidRequestError
+   */
+  400: PullRequestError | InvalidRequestError
+}
+
+export type PullRequestMergeError = PullRequestMergeErrors[keyof PullRequestMergeErrors]
+
+export type PullRequestMergeResponses = {
+  /**
+   * Auto-merge scheduled
+   */
+  200: boolean
+}
+
+export type PullRequestMergeResponse = PullRequestMergeResponses[keyof PullRequestMergeResponses]
 
 export type SessionListData = {
   body?: never

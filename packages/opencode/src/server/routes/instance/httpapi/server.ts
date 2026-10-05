@@ -15,6 +15,7 @@ import { Env } from "@/env"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Format } from "@/format"
 import { Git } from "@/git"
+import { Gh } from "@/git/gh"
 import { Installation } from "@/installation"
 import { LSP } from "@/lsp/lsp"
 import { MCP } from "@/mcp"
@@ -98,6 +99,7 @@ import { previewHandlers } from "./handlers/preview"
 import { projectHandlers } from "./handlers/project"
 import { projectCopyHandlers } from "./handlers/project-copy"
 import { providerHandlers } from "./handlers/provider"
+import { pullRequestHandlers } from "./handlers/pull-request"
 import { ptyConnectHandlers, ptyHandlers } from "./handlers/pty"
 import { questionHandlers } from "./handlers/question"
 import { sessionHandlers } from "./handlers/session"
@@ -169,6 +171,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     permissionHandlers,
     previewHandlers,
     providerHandlers,
+    pullRequestHandlers,
     sessionHandlers,
     syncHandlers,
     tuiHandlers,
@@ -223,6 +226,7 @@ const app = LayerNode.group([
   Config.node,
   Env.node,
   Git.node,
+  Gh.node,
   Ripgrep.node,
   Storage.node,
   Snapshot.node,

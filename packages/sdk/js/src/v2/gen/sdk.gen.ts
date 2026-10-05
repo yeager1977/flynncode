@@ -189,6 +189,10 @@ import type {
   PtyShellsResponses,
   PtyUpdateErrors,
   PtyUpdateResponses,
+  PullRequestMergeErrors,
+  PullRequestMergeResponses,
+  PullRequestStatusErrors,
+  PullRequestStatusResponses,
   QuestionAnswer,
   QuestionListErrors,
   QuestionListResponses,
@@ -3746,6 +3750,68 @@ export class Provider extends HeyApiClient {
   private _oauth?: Oauth
   get oauth(): Oauth {
     return (this._oauth ??= new Oauth({ client: this.client }))
+  }
+}
+
+export class PullRequest extends HeyApiClient {
+  /**
+   * Get pull request status
+   *
+   * Detect the pull request for the current branch of the routed directory and return its state, URL, and CI-check rollup. Fails with a typed error when gh is missing or unauthenticated, or the branch has no PR.
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<PullRequestStatusResponses, PullRequestStatusErrors, ThrowOnError>({
+      url: "/pull-request/status",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Schedule auto-merge
+   *
+   * Run `gh pr merge --squash --auto` for the routed directory's current branch. Requires the repository's auto-merge setting to be enabled on GitHub.
+   */
+  public merge<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<PullRequestMergeResponses, PullRequestMergeErrors, ThrowOnError>({
+      url: "/pull-request/merge",
+      ...options,
+      ...params,
+    })
   }
 }
 
@@ -7740,6 +7806,11 @@ export class OpencodeClient extends HeyApiClient {
   private _provider?: Provider
   get provider(): Provider {
     return (this._provider ??= new Provider({ client: this.client }))
+  }
+
+  private _pullRequest?: PullRequest
+  get pullRequest(): PullRequest {
+    return (this._pullRequest ??= new PullRequest({ client: this.client }))
   }
 
   private _session?: Session2
