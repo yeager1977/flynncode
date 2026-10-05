@@ -1,5 +1,5 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { path } from "@opencode-ai/core/effect/app-node-platform"
+import { path, filesystem } from "@opencode-ai/core/effect/app-node-platform"
 import { Global } from "@opencode-ai/core/global"
 import { InstanceStore } from "@/project/instance-store"
 import { Project } from "@/project/project"
@@ -11,7 +11,7 @@ import { Slug } from "@opencode-ai/core/util/slug"
 import { errorMessage } from "../util/error"
 import { GlobalBus } from "@/bus/global"
 import { Git } from "@/git"
-import { Effect, Layer, Path, Schema, Scope, Context } from "effect"
+import { Effect, FileSystem, Layer, Path, Schema, Scope, Context } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { AppProcess } from "@opencode-ai/core/process"
@@ -45,6 +45,12 @@ export const ResetInput = Schema.Struct({
   directory: Schema.String,
 }).annotate({ identifier: "WorktreeResetInput" })
 export type ResetInput = Schema.Schema.Type<typeof ResetInput>
+
+export const HandoffInput = Schema.Struct({
+  from: Schema.String,
+  to: Schema.String,
+}).annotate({ identifier: "WorktreeHandoffInput" })
+export type HandoffInput = Schema.Schema.Type<typeof HandoffInput>
 
 export class NotGitError extends Schema.TaggedErrorClass<NotGitError>()("WorktreeNotGitError", {
   message: Schema.String,
@@ -80,6 +86,10 @@ export class ListFailedError extends Schema.TaggedErrorClass<ListFailedError>()(
   message: Schema.String,
 }) {}
 
+export class HandoffFailedError extends Schema.TaggedErrorClass<HandoffFailedError>()("WorktreeHandoffFailedError", {
+  message: Schema.String,
+}) {}
+
 export type Error =
   | NotGitError
   | NameGenerationFailedError
@@ -88,6 +98,7 @@ export type Error =
   | RemoveFailedError
   | ResetFailedError
   | ListFailedError
+  | HandoffFailedError
 
 function slugify(input: string) {
   return input
@@ -113,6 +124,19 @@ function failedRemoves(...chunks: string[]) {
   )
 }
 
+// Paths from `git status --porcelain=v1 -z`: two XY status bytes per record,
+// then a NUL, then the path. Rename records (XY + NUL + new + NUL + old) yield
+// only the new path — the checkout surface already decodes octal-escaped
+// legacy porcelain output the same way.
+function parseStatusZ(text: string) {
+  const out: string[] = []
+  for (const record of text.split("\0")) {
+    if (record.length <= 3) continue
+    out.push(record.slice(3))
+  }
+  return out
+}
+
 // ---------------------------------------------------------------------------
 // Effect service
 // ---------------------------------------------------------------------------
@@ -124,6 +148,7 @@ export interface Interface {
   readonly list: () => Effect.Effect<(Omit<Info, "branch"> & { branch?: string })[], Error>
   readonly remove: (input: RemoveInput) => Effect.Effect<boolean, Error>
   readonly reset: (input: ResetInput) => Effect.Effect<boolean, Error>
+  readonly handoff: (input: HandoffInput) => Effect.Effect<boolean, Error>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Worktree") {}
@@ -134,6 +159,7 @@ const layer: Layer.Layer<
   Service,
   never,
   | FSUtil.Service
+  | FileSystem.FileSystem
   | Path.Path
   | AppProcess.Service
   | Git.Service
@@ -145,6 +171,7 @@ const layer: Layer.Layer<
   Effect.gen(function* () {
     const scope = yield* Scope.Scope
     const fs = yield* FSUtil.Service
+    const rawFs = yield* FileSystem.FileSystem
     const pathSvc = yield* Path.Path
     const appProcess = yield* AppProcess.Service
     const { db } = yield* Database.Service
@@ -661,14 +688,75 @@ const layer: Layer.Layer<
       return info
     })
 
-    return Service.of({ makeWorktreeInfo, createFromInfo, create: createAndRetain, list, remove, reset })
+    // Hand off a session between two existing worktrees. `from` must be a
+    // known worktree of this project, `to` must exist on disk, and the paths
+    // must differ. Session row rebinding happens at the HTTP handler
+    // boundary, which owns the schema/service dependency split.
+    const handoff = Effect.fn("Worktree.handoff")(function* (input: HandoffInput) {
+      const ctx = yield* InstanceState.context
+      if (ctx.project.vcs !== "git") {
+        return yield* new NotGitError({ message: "Worktrees are only supported for git projects" })
+      }
+
+      const source = yield* canonical(input.from)
+      const target = yield* canonical(input.to)
+      if (source === target) {
+        return yield* new HandoffFailedError({ message: "Cannot hand off a worktree to itself" })
+      }
+
+      const exists = yield* fs.exists(target).pipe(Effect.orDie)
+      if (!exists) {
+        return yield* new HandoffFailedError({ message: "Destination worktree does not exist" })
+      }
+
+      const result = yield* git(["worktree", "list", "--porcelain"], { cwd: ctx.worktree })
+      if (result.code !== 0) {
+        return yield* new ListFailedError({ message: result.stderr || result.text || "Failed to read git worktrees" })
+      }
+
+      const primary = yield* canonical(ctx.worktree)
+      const entry = yield* locateWorktree(parseWorktreeList(result.text), source)
+      if (source !== primary && !entry?.path) {
+        return yield* new HandoffFailedError({ message: "Source worktree not found" })
+      }
+
+      // Carry uncommitted source state to the destination: enumerate the
+      // dirty paths and copy each one over (cp -r semantics), keeping files
+      // the destination already has in its checked-out tree.
+      const status = yield* git(
+        ["-c", "core.fsmonitor=false", "status", "--porcelain=v1", "--untracked-files=all", "--no-renames", "-z"],
+        { cwd: entry?.path ?? input.from },
+      )
+      if (status.code !== 0) {
+        return yield* new HandoffFailedError({
+          message: status.stderr || status.text || "Failed to read source worktree status",
+        })
+      }
+      const dirty = parseStatusZ(status.text)
+      yield* Effect.forEach(
+        dirty,
+        (item) =>
+          Effect.gen(function* () {
+            const fromPath = pathSvc.join(source, item)
+            const toPath = pathSvc.join(target, item)
+            yield* fs.makeDirectory(pathSvc.dirname(toPath), { recursive: true }).pipe(Effect.orDie)
+            yield* rawFs.copy(fromPath, toPath, { overwrite: true }).pipe(Effect.orDie)
+          }),
+        { concurrency: "unbounded", discard: true },
+      )
+
+      yield* project.addSandbox(ctx.project.id, input.to).pipe(Effect.catch(() => Effect.void))
+      return true
+    })
+
+    return Service.of({ makeWorktreeInfo, createFromInfo, create: createAndRetain, list, remove, reset, handoff })
   }),
 )
 
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [FSUtil.node, path, AppProcess.node, Git.node, Project.node, InstanceStore.node, Database.node],
+  deps: [FSUtil.node, filesystem, path, AppProcess.node, Git.node, Project.node, InstanceStore.node, Database.node],
 })
 
 export * as Worktree from "."

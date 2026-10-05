@@ -9,6 +9,7 @@ import { artifactsSidebarFallback } from "./artifacts-sidebar-fallback"
 import { sessionBulkFallback, sessionBulkPluralFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback, sessionProjectPluralFallback } from "./session-review-fallback"
+import { sessionHandoffFallback } from "./session-handoff-fallback"
 
 const desktop = [
   "OpenCode",
@@ -106,6 +107,7 @@ const desktop = [
 export const dict = {
   ...modelRouterFallback,
   ...sessionReviewFallback,
+  ...sessionHandoffFallback,
   ...sessionProjectPluralFallback.lt,
   ...omoSettingsFallback,
   ...providerEditFallback,

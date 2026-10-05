@@ -763,6 +763,8 @@ export const dict = {
   "session.new.worktree.main": "Main branch",
   "session.new.worktree.mainWithBranch": "Main branch ({{branch}})",
   "session.new.worktree.create": "Create new worktree",
+  "session.handoff.movedWithoutSession.title": "Moved without the original session",
+  "session.handoff.movedWithoutSession.description": "The original session could not be found, so a new session was started in the destination workspace.",
   "session.new.workspace.runIn": "Run session in",
   "session.new.workspace.triggerLocal": "Local",
   "session.new.workspace.local": "Local repository",

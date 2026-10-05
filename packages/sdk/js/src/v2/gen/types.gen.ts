@@ -2210,6 +2210,7 @@ export type WorktreeError = {
     | "WorktreeRemoveFailedError"
     | "WorktreeResetFailedError"
     | "WorktreeListFailedError"
+    | "WorktreeHandoffFailedError"
   data: {
     message: string
   }
@@ -2235,6 +2236,11 @@ export type WorktreeRemoveInput = {
 
 export type WorktreeResetInput = {
   directory: string
+}
+
+export type WorktreeHandoffInput = {
+  from: string
+  to: string
 }
 
 export type ProjectSummary = {
@@ -7960,6 +7966,34 @@ export type WorktreeResetResponses = {
 }
 
 export type WorktreeResetResponse = WorktreeResetResponses[keyof WorktreeResetResponses]
+
+export type WorktreeHandoffData = {
+  body?: WorktreeHandoffInput
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/worktree/handoff"
+}
+
+export type WorktreeHandoffErrors = {
+  /**
+   * WorktreeError | InvalidRequestError
+   */
+  400: WorktreeError | InvalidRequestError
+}
+
+export type WorktreeHandoffError = WorktreeHandoffErrors[keyof WorktreeHandoffErrors]
+
+export type WorktreeHandoffResponses = {
+  /**
+   * Worktree handoff
+   */
+  200: boolean
+}
+
+export type WorktreeHandoffResponse = WorktreeHandoffResponses[keyof WorktreeHandoffResponses]
 
 export type ExperimentalSessionListData = {
   body?: never

@@ -73,6 +73,7 @@ const WorktreeErrorName = Schema.Union([
   Schema.Literal("WorktreeRemoveFailedError"),
   Schema.Literal("WorktreeResetFailedError"),
   Schema.Literal("WorktreeListFailedError"),
+  Schema.Literal("WorktreeHandoffFailedError"),
 ])
 export class WorktreeApiError extends Schema.ErrorClass<WorktreeApiError>("WorktreeError")(
   {
@@ -100,6 +101,7 @@ export const ExperimentalPaths = {
   toolIDs: "/experimental/tool/ids",
   worktree: "/experimental/worktree",
   worktreeReset: "/experimental/worktree/reset",
+  worktreeHandoff: "/experimental/worktree/handoff",
   session: "/experimental/session",
   sessionBackground: "/experimental/session/:sessionID/background",
   resource: "/experimental/resource",
@@ -223,6 +225,19 @@ export const ExperimentalApi = HttpApi.make("experimental")
             identifier: "worktree.reset",
             summary: "Reset worktree",
             description: "Reset a worktree branch to the primary default branch.",
+          }),
+        ),
+        HttpApiEndpoint.post("worktreeHandoff", ExperimentalPaths.worktreeHandoff, {
+          query: WorkspaceRoutingQuery,
+          payload: Worktree.HandoffInput,
+          success: described(Schema.Boolean, "Worktree handoff"),
+          error: WorktreeApiError,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "worktree.handoff",
+            summary: "Hand off worktree",
+            description:
+              "Rebind a session-relevant handoff between two existing worktrees of the current project, carrying the source session state to the destination.",
           }),
         ),
         HttpApiEndpoint.get("session", ExperimentalPaths.session, {

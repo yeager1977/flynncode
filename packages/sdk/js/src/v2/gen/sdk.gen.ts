@@ -416,6 +416,9 @@ import type {
   WorktreeCreateErrors,
   WorktreeCreateInput,
   WorktreeCreateResponses,
+  WorktreeHandoffErrors,
+  WorktreeHandoffInput,
+  WorktreeHandoffResponses,
   WorktreeListErrors,
   WorktreeListResponses,
   WorktreeRemoveErrors,
@@ -1850,6 +1853,43 @@ export class Worktree extends HeyApiClient {
     )
     return (options?.client ?? this.client).post<WorktreeResetResponses, WorktreeResetErrors, ThrowOnError>({
       url: "/experimental/worktree/reset",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Hand off worktree
+   *
+   * Rebind a session-relevant handoff between two existing worktrees of the current project, carrying the source session state to the destination.
+   */
+  public handoff<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      worktreeHandoffInput?: WorktreeHandoffInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "worktreeHandoffInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<WorktreeHandoffResponses, WorktreeHandoffErrors, ThrowOnError>({
+      url: "/experimental/worktree/handoff",
       ...options,
       ...params,
       headers: {

@@ -8,10 +8,12 @@ import { artifactsSidebarFallback } from "./artifacts-sidebar-fallback"
 import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
+import { sessionHandoffFallback } from "./session-handoff-fallback"
 
 export const dict = {
   ...modelRouterFallback,
   ...sessionReviewFallback,
+  ...sessionHandoffFallback,
   ...omoSettingsFallback,
   ...providerEditFallback,
   ...importSessionsFallback,

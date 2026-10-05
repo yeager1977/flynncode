@@ -20,6 +20,7 @@ import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
 import { useServerSDK } from "@/context/server-sdk"
+import { useSDK } from "@/context/sdk"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
@@ -28,7 +29,7 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { messageAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
 import { pathKey } from "@/utils/path-key"
-import { checkoutHandoff } from "@/pages/session/checkout-handoff"
+import { checkoutHandoff, carryHandoffContext, firstPromptText } from "@/pages/session/checkout-handoff"
 import { fileManagerApp } from "@/utils/file-manager"
 import { Persist, persisted } from "@/utils/persist"
 import { StatusPopover, StatusPopoverV2 } from "../status-popover"
@@ -154,6 +155,7 @@ export function SessionHeader() {
   const { params, view } = useSessionLayout()
   const navigate = useNavigate()
   const serverSDK = useServerSDK()
+  const sdk = useSDK()
 
   const projectDirectory = createMemo(() => decode64(params.dir) ?? "")
   const project = createMemo(() => {
@@ -220,6 +222,21 @@ export function SessionHeader() {
     return pathKey(projectDirectory()) === pathKey(root)
   })
 
+  // Handoff payload: the source session's messages with their parts, so the
+  // destination session can be bound to the same first prompt text.
+  const sessionPayload = createMemo(() => {
+    const id = params.id
+    if (!id) return { messages: [] as { id: string; role: string; parts: { type: string; text?: string; synthetic?: boolean }[] }[] }
+    const messages = sync().data.message[id] ?? []
+    return {
+      messages: messages.map((message) => ({
+        id: message.id,
+        role: message.role,
+        parts: sync().data.part[message.id] ?? [],
+      })),
+    }
+  })
+
   const handoff = async () => {
     const current = projectDirectory()
     const root = project()?.worktree
@@ -267,6 +284,48 @@ export function SessionHeader() {
       return
     }
     const id = params.id
+    // A move into an already-existing worktree carries the conversation: the
+    // endpoint copies session-relevant state, a fresh destination session is
+    // bound to the same first prompt, and the source session is archived.
+    const session = id ? sync().session.get(id) : undefined
+    if (!decision.create && id) {
+      const moved = await carryHandoffContext({
+        clients: {
+          handoffEndpoint: (input) =>
+            serverSDK()
+              .client.worktree.handoff({ directory: root, worktreeHandoffInput: input })
+              .then((result) => result.data),
+          createSession: (input) =>
+            sdk()
+              .api.session.create({ location: { directory: input.directory } })
+              .then((result) => ({ id: result.id })),
+          archiveSession: (input) =>
+            serverSDK().client.session.update({
+              sessionID: input.sessionID,
+              directory: input.directory,
+              time: { archived: Date.now() },
+            }),
+        },
+        from: current,
+        to: created,
+        sourceSessionID: session?.id,
+      }).catch(() => undefined)
+      if (!moved) {
+        showToast({
+          title: language.t("workspace.create.failed.title"),
+          description: language.t("common.requestFailed"),
+        })
+        return
+      }
+      if (!moved.movedSessionID) {
+        showToast({
+          title: language.t("session.handoff.movedWithoutSession.title"),
+          description: language.t("session.handoff.movedWithoutSession.description"),
+        })
+      }
+      navigate(`/${base64Encode(moved.directory)}/session?prompt=${encodeURIComponent(firstPromptText(sessionPayload()))}`)
+      return
+    }
     navigate(id ? `/${base64Encode(created)}/session/${id}` : `/${base64Encode(created)}/session`)
   }
 
