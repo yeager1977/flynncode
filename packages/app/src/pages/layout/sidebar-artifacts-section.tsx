@@ -9,20 +9,53 @@ import { useLanguage } from "@/context/language"
 import { getRelativeTime } from "@/utils/time"
 import { sessionTitle } from "@/utils/session-title"
 import { pathKey } from "@/utils/path-key"
-import { artifactSessionHref, groupSessionArtifacts, type ArtifactGroup } from "./sidebar-artifacts"
+import {
+  artifactSessionHref,
+  filterArtifactGroups,
+  groupSessionArtifacts,
+  loadArtifactFilter,
+  loadStoredArtifacts,
+  saveArtifactFilter,
+  type Artifact,
+  type ArtifactFilter,
+  type ArtifactGroup,
+} from "./sidebar-artifacts"
+
+const FILTERS = [
+  { id: "all", label: "sidebar.artifacts.filter.all" },
+  { id: "changed", label: "sidebar.artifacts.filter.changed" },
+  { id: "screenshots", label: "sidebar.artifacts.filter.screenshots" },
+  { id: "notes", label: "sidebar.artifacts.filter.notes" },
+] as const satisfies readonly { id: ArtifactFilter; label: string }[]
+
+const artifactIcon = (artifact: Artifact) => {
+  if (artifact.type === "screenshot") return "photo"
+  if (artifact.type === "note") return "comment"
+  return "file-tree"
+}
+
+const artifactLabel = (artifact: Artifact) => {
+  if (artifact.type === "diff" || artifact.type === "file") return getFilename(artifact.file)
+  if (artifact.type === "screenshot") return artifact.note ?? artifact.url
+  return artifact.text
+}
 
 const ArtifactRow = (props: {
   group: ArtifactGroup
-  file: ArtifactGroup["files"][number]
+  artifact: Artifact
   slug: string
   sidebarExpanded: Accessor<boolean>
   clearHoverProjectSoon: () => void
   language: ReturnType<typeof useLanguage>
 }): JSX.Element => {
-  const href = artifactSessionHref(props.slug, props.group.sessionID, props.file.file)
+  const href = createMemo(() => {
+    if (props.artifact.type === "diff" || props.artifact.type === "file")
+      return artifactSessionHref(props.slug, props.group.sessionID, props.artifact.file)
+    return `/${props.slug}/session/${props.group.sessionID}`
+  })
   return (
     <A
-      href={href}
+      href={href()}
       class="flex items-center gap-2 min-w-0 w-full text-left focus:outline-none py-0.5"
       onClick={() => {
         if (props.sidebarExpanded()) return
@@ -30,10 +63,15 @@ const ArtifactRow = (props: {
       }}
     >
       <div class="shrink-0 size-6 flex items-center justify-center">
-        <Icon name="file-tree" size="small" class="text-icon-base" />
+        <Show
+          when={props.artifact.type === "screenshot" ? props.artifact.thumbnail : undefined}
+          fallback={<Icon name={artifactIcon(props.artifact)} size="small" class="text-icon-base" />}
+        >
+          {(thumbnail) => <img src={thumbnail()} alt="" class="size-6 rounded-sm object-cover" />}
+        </Show>
       </div>
-      <span class="text-14-regular text-text-strong min-w-0 flex-1 truncate">{getFilename(props.file.file)}</span>
-      <span class="text-12-regular text-text-weak shrink-0" title={props.file.file}>
+      <span class="text-14-regular text-text-strong min-w-0 flex-1 truncate">{artifactLabel(props.artifact)}</span>
+      <span class="text-12-regular text-text-weak shrink-0" title={artifactLabel(props.artifact)}>
         {getRelativeTime(new Date(props.group.updated).toISOString(), props.language.t)}
       </span>
     </A>
@@ -61,13 +99,13 @@ const ArtifactSessionGroup = (props: {
         onClick={close}
       >
         <span class="text-12-medium text-text-weak min-w-0 flex-1 truncate">{label()}</span>
-        <span class="text-12-regular text-text-weak shrink-0">{props.group.files.length}</span>
+        <span class="text-12-regular text-text-weak shrink-0">{props.group.artifacts.length}</span>
       </A>
-      <For each={props.group.files}>
-        {(file) => (
+      <For each={props.group.artifacts}>
+        {(artifact) => (
           <ArtifactRow
             group={props.group}
-            file={file}
+            artifact={artifact}
             slug={props.slug}
             sidebarExpanded={props.sidebarExpanded}
             clearHoverProjectSoon={props.clearHoverProjectSoon}
@@ -87,6 +125,11 @@ export const SidebarArtifacts = (props: {
   const serverSync = useServerSync()
   const language = useLanguage()
   const [open, setOpen] = createSignal(false)
+  const [filter, setFilterState] = createSignal<ArtifactFilter>(loadArtifactFilter())
+  const setFilter = (next: ArtifactFilter) => {
+    saveArtifactFilter(next)
+    setFilterState(next)
+  }
   const slug = createMemo(() => {
     const dir = props.directory()
     if (!dir) return ""
@@ -96,9 +139,10 @@ export const SidebarArtifacts = (props: {
     const dir = props.directory()
     if (!dir) return []
     const [store] = serverSync().child(dir, { bootstrap: false })
-    return groupSessionArtifacts(store, pathKey(dir) ?? dir)
+    return groupSessionArtifacts(store, pathKey(dir) ?? dir, loadStoredArtifacts(dir))
   })
-  const count = createMemo(() => groups().reduce((total, group) => total + group.files.length, 0))
+  const filtered = createMemo(() => filterArtifactGroups(groups(), filter()))
+  const count = createMemo(() => groups().reduce((total, group) => total + group.artifacts.length, 0))
 
   return (
     <Show when={groups().length > 0}>
@@ -124,7 +168,26 @@ export const SidebarArtifacts = (props: {
         </button>
         <Show when={open()}>
           <div class="flex flex-col gap-2 pb-1">
-            <For each={groups()}>
+            <div class="flex items-center gap-1 px-2" data-action="sidebar-artifacts-filter">
+              <For each={FILTERS}>
+                {(item) => (
+                  <button
+                    type="button"
+                    class="px-1.5 py-0.5 rounded-md text-12-medium transition-colors focus:outline-none"
+                    classList={{
+                      "bg-surface-raised-base-active text-text-strong": filter() === item.id,
+                      "text-text-weak hover:bg-surface-raised-base-hover": filter() !== item.id,
+                    }}
+                    aria-pressed={filter() === item.id}
+                    data-filter={item.id}
+                    onClick={() => setFilter(item.id)}
+                  >
+                    {language.t(item.label)}
+                  </button>
+                )}
+              </For>
+            </div>
+            <For each={filtered()}>
               {(group) => (
                 <ArtifactSessionGroup
                   group={group}
