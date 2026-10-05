@@ -17,4 +17,23 @@ describe("DispatchPanel", () => {
     expect(source).toContain("useServerSDK")
     expect(source).toContain("useModels")
   })
+
+  test("renders memoized filters and an unread badge", () => {
+    const source = readFileSync(new URL("./dispatch-panel.tsx", import.meta.url), "utf8")
+    expect(source).toContain("createMemo")
+    expect(source).toContain('"all", "unread", "running", "waiting"')
+    expect(source).toContain("dispatch.filterUnread")
+    expect(source).toContain("dispatch.filterRunning")
+    expect(source).toContain("dispatch.filterWaiting")
+    expect(source).toContain("unreadCount()")
+    expect(source).toContain("filteredTasks()")
+  })
+
+  test("marks tasks read on open and notifies on terminal transitions", () => {
+    const source = readFileSync(new URL("./dispatch-panel.tsx", import.meta.url), "utf8")
+    expect(source).toContain("markDispatchRead")
+    expect(source).toContain("platform.notify")
+    expect(source).toContain("resolvedTransition")
+    expect(source).toContain("previous")
+  })
 })

@@ -5,6 +5,7 @@ export type DispatchTask = {
   title: string
   status: DispatchStatus
   directory: string
+  unread: boolean
 }
 
 const LIMIT = 40
@@ -14,11 +15,23 @@ export function addDispatch(tasks: readonly DispatchTask[], task: DispatchTask) 
 }
 
 export function completeDispatch(tasks: readonly DispatchTask[], sessionID: string) {
-  return tasks.map((task) => (task.sessionID === sessionID ? { ...task, status: "done" as const } : task))
+  return tasks.map((task) =>
+    task.sessionID === sessionID
+      ? { ...task, status: "done" as const, unread: task.unread || resolvedTransition(task.status, "done") }
+      : task,
+  )
 }
 
 export function failDispatch(tasks: readonly DispatchTask[], sessionID: string) {
-  return tasks.map((task) => (task.sessionID === sessionID ? { ...task, status: "failed" as const } : task))
+  return tasks.map((task) =>
+    task.sessionID === sessionID
+      ? { ...task, status: "failed" as const, unread: task.unread || resolvedTransition(task.status, "failed") }
+      : task,
+  )
+}
+
+export function markDispatchRead(tasks: readonly DispatchTask[], sessionID: string) {
+  return tasks.map((task) => (task.sessionID === sessionID ? { ...task, unread: false } : task))
 }
 
 export function reconcileDispatch(tasks: readonly DispatchTask[], active: ReadonlySet<string>) {
@@ -26,7 +39,7 @@ export function reconcileDispatch(tasks: readonly DispatchTask[], active: Readon
   const next = tasks.map((task) => {
     if (task.status !== "running" || active.has(task.sessionID)) return task
     changed = true
-    return { ...task, status: "done" as const }
+    return { ...task, status: "done" as const, unread: task.unread || resolvedTransition(task.status, "done") }
   })
   return changed ? next : tasks
 }
@@ -39,8 +52,16 @@ export function parseDispatch(raw: unknown): DispatchTask[] {
     const status = dispatchStatus(row.status)
     if (!status || typeof row.sessionID !== "string" || typeof row.title !== "string" || typeof row.directory !== "string")
       return []
-    return [{ sessionID: row.sessionID, title: row.title, status, directory: row.directory }]
+    return [
+      { sessionID: row.sessionID, title: row.title, status, directory: row.directory, unread: row.unread === true },
+    ]
   }).slice(0, LIMIT)
+}
+
+export function resolvedTransition(prev: DispatchStatus, next: DispatchStatus) {
+  const wasActive = prev === "running" || prev === "blocked" || prev === "needs-input"
+  const isTerminal = next === "done" || next === "failed"
+  return wasActive && isTerminal
 }
 
 function dispatchStatus(value: unknown): DispatchStatus | undefined {

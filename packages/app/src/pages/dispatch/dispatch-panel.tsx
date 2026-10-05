@@ -4,11 +4,12 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog, DialogTitle } from "@opencode-ai/ui/v2/dialog-v2"
 import { createQuery } from "@tanstack/solid-query"
 import { useNavigate } from "@solidjs/router"
-import { createEffect, For, Show } from "solid-js"
+import { createEffect, createMemo, For, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useModels } from "@/context/models"
+import { usePlatform } from "@/context/platform"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useProviders } from "@/hooks/use-providers"
@@ -20,8 +21,10 @@ import {
   addDispatch,
   completeDispatch,
   failDispatch,
+  markDispatchRead,
   migrateDispatch,
   reconcileDispatch,
+  resolvedTransition,
   type DispatchStatus,
   type DispatchTask,
 } from "./dispatch-store"
@@ -48,7 +51,9 @@ export function DispatchPanel() {
     directory: "",
     agent: "build",
     model: "",
+    filter: "all" as DispatchFilter,
   })
+  const platform = usePlatform()
   const projects = () => layout.projects.list()
   const modelOptions = () => models.list()
   const agentsQuery = createQuery(() => {
@@ -119,7 +124,7 @@ export function DispatchPanel() {
     }
     setDesk(
       "tasks",
-      (current) => addDispatch(current, { sessionID: created.id, title: text, status: "running", directory }),
+      (current) => addDispatch(current, { sessionID: created.id, title: text, status: "running", directory, unread: false }),
     )
     await serverSDK()
       .api.session.prompt({
@@ -152,14 +157,68 @@ export function DispatchPanel() {
     return inboxStatus(task.status, { type: status.type, blocked: waiting })
   }
 
+  const filteredTasks = createMemo(() => {
+    const tasks = desk.tasks
+    switch (state.filter) {
+      case "unread":
+        return tasks.filter((task) => task.unread)
+      case "running":
+        return tasks.filter((task) => liveStatus(task) === "running")
+      case "waiting":
+        return tasks.filter((task) => {
+          const status = liveStatus(task)
+          return status === "needs-input" || status === "blocked"
+        })
+      default:
+        return tasks
+    }
+  })
+  const unreadCount = createMemo(() => desk.tasks.filter((task) => task.unread).length)
+  const previous = new Map<string, DispatchStatus>()
+  let primed = false
+
+  createEffect(() => {
+    const current = new Map<string, DispatchStatus>()
+    let changed = false
+    for (const task of desk.tasks) {
+      const status = liveStatus(task)
+      current.set(task.sessionID, status)
+      const before = previous.get(task.sessionID)
+      if (!primed || !before || before === status) continue
+      if (!resolvedTransition(before, status)) continue
+      changed = true
+      void platform.notify(language.t(statusKey(status)), task.title, () => openTask(task))
+    }
+    if (changed) {
+      setDesk("tasks", (existing) =>
+        existing.map((task) => {
+          const status = current.get(task.sessionID)
+          if (!status || !resolvedTransition(previous.get(task.sessionID) ?? status, status)) return task
+          return { ...task, unread: true }
+        }),
+      )
+    }
+    previous.clear()
+    current.forEach((status, id) => previous.set(id, status))
+    primed = true
+  })
+
   const openTask = (task: DispatchTask) => {
+    setDesk("tasks", (current) => markDispatchRead(current, task.sessionID))
     dialog.close()
     navigate(`/${base64Encode(task.directory)}/session/${task.sessionID}`)
   }
 
   return (
     <Dialog>
-      <DialogTitle>{language.t("dispatch.title")}</DialogTitle>
+      <DialogTitle>
+        {language.t("dispatch.title")}
+        <Show when={unreadCount() > 0}>
+          <span class="ml-2 rounded-full bg-surface-raised px-2 py-0.5 text-12-regular text-text-strong">
+            {unreadCount()}
+          </span>
+        </Show>
+      </DialogTitle>
       <div class="flex flex-col gap-3 p-4">
         <label class="flex flex-col gap-1 text-12-regular text-text-weak">
           {language.t("dispatch.project")}
@@ -215,12 +274,30 @@ export function DispatchPanel() {
         <Show when={state.error}>
           <p class="text-text-critical">{state.error}</p>
         </Show>
+        <div class="flex flex-row gap-1" role="tablist">
+          <For each={["all", "unread", "running", "waiting"] as const}>
+            {(tab) => (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={state.filter === tab}
+                class={tab === state.filter ? "rounded px-2 py-1 text-12-regular bg-surface-raised text-text-strong" : "rounded px-2 py-1 text-12-regular text-text-weak"}
+                onClick={() => setState("filter", tab)}
+              >
+                {language.t(filterKey(tab))}
+              </button>
+            )}
+          </For>
+        </div>
         <ul class="flex flex-col gap-1">
-          <For each={desk.tasks}>
+          <For each={filteredTasks()}>
             {(task) => (
               <li>
                 <button type="button" class="w-full truncate text-left text-14-regular" onClick={() => openTask(task)}>
                   {task.title} · {language.t(statusKey(liveStatus(task)))}
+                  <Show when={task.unread}>
+                    <span class="ml-1 font-medium text-text-strong">•</span>
+                  </Show>
                 </button>
               </li>
             )}
@@ -229,6 +306,21 @@ export function DispatchPanel() {
       </div>
     </Dialog>
   )
+}
+
+type DispatchFilter = "all" | "unread" | "running" | "waiting"
+
+function filterKey(tab: DispatchFilter) {
+  switch (tab) {
+    case "all":
+      return "dispatch.filterAll" as const
+    case "unread":
+      return "dispatch.filterUnread" as const
+    case "running":
+      return "dispatch.filterRunning" as const
+    case "waiting":
+      return "dispatch.filterWaiting" as const
+  }
 }
 
 function statusKey(status: DispatchStatus) {
