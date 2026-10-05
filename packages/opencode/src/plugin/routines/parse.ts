@@ -4,6 +4,7 @@ export type Routine = {
   prompt: string
   enabled: boolean
   dailyAt?: string
+  interval?: string
   lastRun?: string
 }
 
@@ -12,6 +13,22 @@ export type RoutinesFile = {
 }
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
+
+export const INTERVALS = ["15m", "1h", "6h", "1d", "1w"] as const
+
+export type Interval = (typeof INTERVALS)[number]
+
+const INTERVAL_MS: Record<Interval, number> = {
+  "15m": 15 * 60_000,
+  "1h": 60 * 60_000,
+  "6h": 6 * 60 * 60_000,
+  "1d": 24 * 60 * 60_000,
+  "1w": 7 * 24 * 60 * 60_000,
+}
+
+export function intervalMs(interval: string) {
+  return INTERVAL_MS[interval as Interval]
+}
 
 export function parseRoutines(raw: unknown): { ok: true; value: RoutinesFile } | { ok: false; errors: string[] } {
   const items = routineItems(raw)
@@ -44,29 +61,54 @@ function parseRoutine(item: unknown, index: number, errors: string[]) {
   if (typeof row.id !== "string" || row.id.trim() === "") errors.push(`routines.${index}.id must be a string`)
   if (typeof row.name !== "string" || row.name.trim() === "") errors.push(`routines.${index}.name must be a string`)
   if (typeof row.prompt !== "string" || row.prompt.trim() === "") errors.push(`routines.${index}.prompt must be a string`)
-  const dailyAt = readDailyAt(row.schedule, index, errors)
+  const schedule = readSchedule(row.schedule, index, errors)
   if (errors.some((error) => error.startsWith(`routines.${index}`))) return
+  if (!schedule) return
   return {
     id: row.id as string,
     name: row.name as string,
     prompt: row.prompt as string,
     enabled: typeof row.enabled === "boolean" ? row.enabled : true,
-    dailyAt,
+    dailyAt: schedule.dailyAt,
+    interval: schedule.interval,
     lastRun: typeof row.lastRun === "string" ? row.lastRun : undefined,
   }
 }
 
-function readDailyAt(schedule: unknown, index: number, errors: string[]) {
-  if (schedule === undefined) return undefined
+function readSchedule(schedule: unknown, index: number, errors: string[]) {
+  if (schedule === undefined || schedule === "manual") return {}
+  if (typeof schedule === "string") {
+    errors.push(`routines.${index}.schedule must be "manual", { dailyAt }, or { interval }`)
+    return
+  }
   if (!schedule || typeof schedule !== "object" || Array.isArray(schedule)) {
     errors.push(`routines.${index}.schedule must be an object`)
     return
   }
-  const dailyAt = (schedule as Record<string, unknown>).dailyAt
+  const row = schedule as Record<string, unknown>
+  const dailyAt = readDailyAt(row.dailyAt, index, errors)
+  const interval = readInterval(row.interval, index, errors)
+  if (dailyAt !== undefined && interval !== undefined) {
+    errors.push(`routines.${index}.schedule must not set both dailyAt and interval`)
+    return
+  }
+  return { dailyAt, interval }
+}
+
+function readDailyAt(dailyAt: unknown, index: number, errors: string[]) {
   if (dailyAt === undefined) return undefined
   if (typeof dailyAt !== "string" || !TIME.test(dailyAt)) {
     errors.push(`routines.${index}.schedule.dailyAt must be HH:MM`)
-    return
+    return undefined
   }
   return dailyAt
+}
+
+function readInterval(interval: unknown, index: number, errors: string[]) {
+  if (interval === undefined) return undefined
+  if (typeof interval !== "string" || !(INTERVALS as readonly string[]).includes(interval)) {
+    errors.push(`routines.${index}.schedule.interval must be one of ${INTERVALS.join("|")}`)
+    return undefined
+  }
+  return interval
 }

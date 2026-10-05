@@ -21,7 +21,7 @@ function stored(routine: Routine) {
     prompt: routine.prompt,
     enabled: routine.enabled,
     lastRun: routine.lastRun,
-    schedule: routine.dailyAt ? { dailyAt: routine.dailyAt } : undefined,
+    schedule: routine.dailyAt ? { dailyAt: routine.dailyAt } : routine.interval ? { interval: routine.interval } : undefined,
   }
 }
 
@@ -93,13 +93,51 @@ export async function markRan(loaded: { source: "config" | "file"; routines: Rou
   return Effect.runPromise(Effect.scoped(markRanEffect(loaded, ids, now)))
 }
 
+const RUNS_FILE = path.join(Global.Path.state, "routines-runs.jsonl")
+const MAX_RUNS = 200
+
+export type RoutineRun = {
+  routineId: string
+  sessionID?: string
+  agent: string
+  startedAt: string
+  endedAt: string
+  state: "ok" | "error"
+  error?: string
+}
+
+export function parseRunRecords(text: string): RoutineRun[] {
+  return text
+    .split("\n")
+    .flatMap((line) => {
+      const trimmed = line.trim()
+      if (!trimmed) return []
+      try {
+        const parsed = JSON.parse(trimmed) as RoutineRun
+        if (typeof parsed !== "object" || parsed === null || typeof parsed.routineId !== "string") return []
+        return [parsed]
+      } catch {
+        // Skip corrupt lines instead of failing the whole rewrite.
+        return []
+      }
+    })
+    .slice(-MAX_RUNS)
+}
+
+export async function recordRoutineRun(record: RoutineRun, file: string = RUNS_FILE) {
+  const existing = (await Bun.file(file).exists()) ? await Bun.file(file).text() : ""
+  const records = [...parseRunRecords(existing), record].slice(-MAX_RUNS)
+  await Bun.write(file, records.map((row) => JSON.stringify(row)).join("\n") + "\n")
+  return records
+}
+
 async function runOne(client: Client, directory: string, routine: Routine) {
   const created = await client.session.create({
     body: { title: routine.name },
     query: { directory },
   })
   const session = created.data
-  if (!session?.id) return
+  if (!session?.id) return { sessionID: undefined as string | undefined }
   await client.session.promptAsync({
     path: { id: session.id },
     query: { directory },
@@ -108,6 +146,7 @@ async function runOne(client: Client, directory: string, routine: Routine) {
       parts: [{ type: "text", text: routine.prompt }],
     },
   })
+  return { sessionID: session.id as string | undefined }
 }
 
 export function startScheduler(client: Client, directory: string) {
@@ -125,9 +164,30 @@ export function startScheduler(client: Client, directory: string) {
       // later tick re-fire the whole batch.
       const results = await Promise.allSettled(
         due.map(async (routine) => {
-          await runOne(client, directory, routine)
-          const saved = await markRan(loaded, [routine.id], new Date())
-          return saved
+          const startedAt = new Date()
+          try {
+            const { sessionID } = await runOne(client, directory, routine)
+            await recordRoutineRun({
+              routineId: routine.id,
+              sessionID,
+              agent: "build",
+              startedAt: startedAt.toISOString(),
+              endedAt: new Date().toISOString(),
+              state: "ok",
+            })
+            const saved = await markRan(loaded, [routine.id], new Date())
+            return saved
+          } catch (error) {
+            await recordRoutineRun({
+              routineId: routine.id,
+              agent: "build",
+              startedAt: startedAt.toISOString(),
+              endedAt: new Date().toISOString(),
+              state: "error",
+              error: error instanceof Error ? error.message : String(error),
+            }).catch((recordError) => console.warn(`${PREFIX} failed to record run`, recordError))
+            throw error
+          }
         }),
       )
       for (const result of results) {
