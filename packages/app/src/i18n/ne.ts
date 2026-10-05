@@ -10,6 +10,7 @@ import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
 import { worktreeFallback } from "./worktree-fallback"
+import { previewFallback } from "./preview-fallback"
 
 export const dict: Record<string, string> = {
   ...modelRouterFallback,
@@ -117,6 +118,7 @@ export const dict: Record<string, string> = {
   "desktop.picker.error.notSelected": "फाइल चयनकर्ता द्वारा चयन गरिएको थिएन",
   "desktop.picker.error.sizeLimit": "चयन गरिएका संलग्नहरू {{limit}} MB सीमा नाघ्छन्",
   ...worktreeFallback,
+  ...previewFallback,
   "command.category.suggested": "सिफारिस गर्नुभयो",
   "command.category.view": "हेर्नुहोस्",
   "command.category.project": "परियोजना",

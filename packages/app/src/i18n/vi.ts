@@ -10,6 +10,7 @@ import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
 import { worktreeFallback } from "./worktree-fallback"
+import { previewFallback } from "./preview-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -123,6 +124,7 @@ export const dict = {
   "desktop.picker.error.sizeLimit": "Các tệp đính kèm đã chọn vượt quá giới hạn {{limit}} MB",
 
   ...worktreeFallback,
+  ...previewFallback,
   "command.category.suggested": "Đề xuất",
   "command.category.view": "Xem",
   "command.category.project": "Dự án",

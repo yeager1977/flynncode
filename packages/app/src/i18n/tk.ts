@@ -10,6 +10,7 @@ import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
 import { worktreeFallback } from "./worktree-fallback"
+import { previewFallback } from "./preview-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -117,6 +118,7 @@ export const dict = {
   "desktop.picker.error.notSelected": "Faýl saýlaýjy tarapyndan saýlanmady",
   "desktop.picker.error.sizeLimit": "Saýlanan goşundylar {{limit}} MB çäginden ýokary",
   ...worktreeFallback,
+  ...previewFallback,
   "command.category.suggested": "Teklip edilýär",
   "command.category.view": "Gör",
   "command.category.project": "Taslama",

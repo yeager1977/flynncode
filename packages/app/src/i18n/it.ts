@@ -10,6 +10,7 @@ import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback, sessionProjectPluralFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
 import { worktreeFallback } from "./worktree-fallback"
+import { previewFallback } from "./preview-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -26,6 +27,7 @@ export const dict = {
   ...sessionBulkPluralFallback.it,
   ...mcpRegistryFallback,
   ...worktreeFallback,
+  ...previewFallback,
   "command.category.suggested": "Suggeriti",
   "command.category.view": "Visualizzazione",
   "command.category.project": "Progetto",

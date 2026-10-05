@@ -10,6 +10,7 @@ import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback, sessionProjectPluralFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
 import { worktreeFallback } from "./worktree-fallback"
+import { previewFallback } from "./preview-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -119,6 +120,7 @@ export const dict = {
   "desktop.picker.error.notSelected": "Бирач није изабрао датотеку",
   "desktop.picker.error.sizeLimit": "Изабрани прилози премашују ограничење од {{limit}} МБ",
   ...worktreeFallback,
+  ...previewFallback,
   "command.category.suggested": "Предложено",
   "command.category.view": "Приказ",
   "command.category.project": "Пројекат",

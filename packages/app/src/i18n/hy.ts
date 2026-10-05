@@ -10,6 +10,7 @@ import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
 import { worktreeFallback } from "./worktree-fallback"
+import { previewFallback } from "./preview-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -118,6 +119,7 @@ export const dict = {
   "desktop.picker.error.notSelected": "Ֆայլը ընտրողի կողմից ընտրված չէ",
   "desktop.picker.error.sizeLimit": "Ընտրված հավելվածները գերազանցում են {{limit}} ՄԲ սահմանաչափը",
   ...worktreeFallback,
+  ...previewFallback,
   "command.category.suggested": "Առաջարկված",
   "command.category.view": "Դիտել",
   "command.category.project": "Նախագիծ",

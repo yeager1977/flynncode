@@ -1,15 +1,23 @@
-import { Show } from "solid-js"
+import { For, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
+import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
+import { Icon } from "@opencode-ai/ui/icon"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { createResource } from "solid-js"
 import { useLanguage } from "@/context/language"
+import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
 import { useSessionLayout } from "./session-layout"
 import { storeArtifact } from "@/pages/layout/sidebar-artifacts"
 import { browserAnnotation } from "./hunk-revert"
+import { previewDotClass, previewErrorDetail, previewManaged, type PreviewServerState } from "./preview-server"
 
 export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) {
   const language = useLanguage()
   const sdk = useSDK()
+  const platform = usePlatform()
+  const dialog = useDialog()
   const layout = useSessionLayout()
   const [state, setState] = createStore({
     url: "http://127.0.0.1:3000",
@@ -23,7 +31,54 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
     height: 0,
     marked: false,
     frame: 0,
+    menu: false,
+    busy: "",
+    actionError: "",
   })
+  // Lane A: preview servers come from the new /preview/servers endpoint.
+  const [servers, serversActions] = createResource(
+    () => true,
+    async () => {
+      try {
+        const result = await sdk().client.preview.servers.list({ directory: sdk().directory })
+        return (result.data ?? []) as PreviewServerState[]
+      } catch {
+        return []
+      }
+    },
+  )
+  const selected = () => servers()?.[0]
+  const runServerAction = async (action: "start" | "stop" | "restart", server: PreviewServerState) => {
+    setState("busy", server.name)
+    try {
+      const result = await sdk().client.preview.servers[action](
+        { directory: sdk().directory, previewStartPayload: { name: server.name } },
+        { throwOnError: true },
+      )
+      const info = result.data
+      if (info?.url) setState({ url: info.url, loaded: info.url })
+      await serversActions.refetch()
+      if (info?.url) setState("open", true)
+    } catch (error) {
+      setState("actionError", previewErrorDetail(error) ?? language.t("preview.error.actionFailed"))
+    } finally {
+      setState("busy", "")
+    }
+  }
+  const openAttachUrl = (server: PreviewServerState) => {
+    if (!previewManaged(server) && server.url) {
+      setState({ url: server.url, loaded: server.url, open: true })
+      return
+    }
+    if (server.url) platform.openExternal(server.url)
+  }
+  // "Edit config" opens the settings dialog on the preview tab, matching how
+  // other panes deep-link into settings dialogs.
+  const openEditConfig = async () => {
+    setState("menu", false)
+    const module = await import("@/components/settings-v2")
+    void dialog.show(() => <module.DialogSettings defaultValue="preview" />)
+  }
   const local = () => {
     try {
       const parsed = new URL(state.loaded)
@@ -125,6 +180,76 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
   return (
     <div data-component="review-browser" class="flex min-h-0 flex-col border-t border-border-weak-base">
       <div class="flex gap-2 p-2">
+        <Show when={(servers() ?? []).length > 0}>
+          <DropdownMenu gutter={4} placement="bottom-start" open={state.menu} onOpenChange={(open) => setState("menu", open)}>
+            <DropdownMenu.Trigger
+              as={Button}
+              size="small"
+              variant="ghost"
+              aria-label={language.t("preview.servers.menu")}
+            >
+              <span aria-hidden="true" data-slot="preview-state-dot" class={`size-2 rounded-full ${previewDotClass(selected()?.state ?? "stopped")}`} />
+              {selected()?.name ?? language.t("preview.servers.title")}
+              <Icon name="chevron-down" size="small" class="text-icon-weak" />
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content>
+                <DropdownMenu.Group>
+                  <DropdownMenu.GroupLabel>{language.t("preview.servers.title")}</DropdownMenu.GroupLabel>
+                  <For each={servers() ?? []}>
+                    {(server) => (
+                      <DropdownMenu.Item
+                        disabled={state.busy === server.name}
+                        onSelect={() => {
+                          setState("menu", false)
+                          if (previewManaged(server)) {
+                            if (server.state === "running" || server.state === "starting") {
+                              void runServerAction("stop", server)
+                              return
+                            }
+                            void runServerAction("start", server)
+                            return
+                          }
+                          openAttachUrl(server)
+                        }}
+                      >
+                        <span aria-hidden="true" class={`size-2 rounded-full ${previewDotClass(server.state)}`} />
+                        <DropdownMenu.ItemLabel>
+                          {previewManaged(server)
+                            ? server.state === "running" || server.state === "starting"
+                              ? language.t("preview.action.stop")
+                              : language.t("preview.action.start")
+                            : language.t("preview.action.openUrl")}
+                        </DropdownMenu.ItemLabel>
+                        <DropdownMenu.ItemLabel class="text-text-weak">{server.name}</DropdownMenu.ItemLabel>
+                      </DropdownMenu.Item>
+                    )}
+                  </For>
+                  <DropdownMenu.Separator />
+                  <DropdownMenu.Item
+                    disabled={!selected() || state.busy !== "" || !previewManaged(selected()!)}
+                    onSelect={() => {
+                      const server = selected()
+                      if (!server) return
+                      setState("menu", false)
+                      void runServerAction("restart", server)
+                    }}
+                  >
+                    {language.t("preview.action.restart")}
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item
+                    onSelect={() => {
+                      setState("menu", false)
+                      void openEditConfig()
+                    }}
+                  >
+                    {language.t("preview.action.editConfig")}
+                  </DropdownMenu.Item>
+                </DropdownMenu.Group>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu>
+        </Show>
         <Button type="button" size="small" variant={state.open ? "primary" : "ghost"} onClick={() => setState("open", !state.open)}>
           {language.t("common.open")}
         </Button>
@@ -150,6 +275,9 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
           {language.t("common.goForward")}
         </Button>
       </div>
+      <Show when={state.actionError}>
+        <div class="px-2 pb-2 text-12-regular text-text-critical">{state.actionError}</div>
+      </Show>
       <Show when={state.open}>
         <form
           class="flex gap-2 px-2 pb-2"

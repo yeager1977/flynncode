@@ -10,6 +10,7 @@ import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
 import { worktreeFallback } from "./worktree-fallback"
+import { previewFallback } from "./preview-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -116,6 +117,7 @@ export const dict = {
   "desktop.picker.error.notSelected": "ፋይሉ በመራጭው አልተመረጠም",
   "desktop.picker.error.sizeLimit": "የተመረጡት ዓባሪዎች ከ{{limit}}ሜባ ገደቡ በላይ",
   ...worktreeFallback,
+  ...previewFallback,
   "command.category.suggested": "የሚመከር",
   "command.category.view": "እይታ",
   "command.category.project": "ፕሮጀክት",

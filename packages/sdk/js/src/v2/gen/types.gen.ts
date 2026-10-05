@@ -1934,6 +1934,10 @@ export type Config = {
   model_router?: {
     [key: string]: unknown
   }
+  preview?: {
+    servers?: Array<unknown>
+    autoVerify?: boolean
+  }
   routines?: {
     [key: string]: unknown
   }
@@ -2546,6 +2550,38 @@ export type PermissionNotFoundError = {
   _tag: "PermissionNotFoundError"
   requestID: string
   message: string
+}
+
+export type PreviewServer = {
+  name: string
+  state: "running" | "stopped" | "starting" | "failed"
+  port?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  url?: string
+  pid?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  attach?: boolean
+  autoVerify?: boolean
+}
+
+export type PreviewStartPayload = {
+  name: string
+}
+
+export type PreviewError = {
+  name: "PreviewUnknownServerError" | "PreviewStartFailedError" | "PreviewNoRunningServerError"
+  data: {
+    message: string
+  }
+}
+
+export type PreviewVerifyPayload = {
+  name?: string
+}
+
+export type PreviewVerifyResult = {
+  url: string
+  httpStatus: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  title?: string
+  errorCount?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
 }
 
 export type ProviderAuthMethod = {
@@ -9506,6 +9542,146 @@ export type PermissionReplyResponses = {
 }
 
 export type PermissionReplyResponse = PermissionReplyResponses[keyof PermissionReplyResponses]
+
+export type PreviewServersListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/preview/servers"
+}
+
+export type PreviewServersListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type PreviewServersListError = PreviewServersListErrors[keyof PreviewServersListErrors]
+
+export type PreviewServersListResponses = {
+  /**
+   * Preview servers and their lifecycle state
+   */
+  200: Array<PreviewServer>
+}
+
+export type PreviewServersListResponse = PreviewServersListResponses[keyof PreviewServersListResponses]
+
+export type PreviewServersStartData = {
+  body?: PreviewStartPayload
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/preview/servers/start"
+}
+
+export type PreviewServersStartErrors = {
+  /**
+   * PreviewError | InvalidRequestError
+   */
+  400: PreviewError | InvalidRequestError
+}
+
+export type PreviewServersStartError = PreviewServersStartErrors[keyof PreviewServersStartErrors]
+
+export type PreviewServersStartResponses = {
+  /**
+   * Started preview server
+   */
+  200: PreviewServer
+}
+
+export type PreviewServersStartResponse = PreviewServersStartResponses[keyof PreviewServersStartResponses]
+
+export type PreviewServersStopData = {
+  body?: PreviewStartPayload
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/preview/servers/stop"
+}
+
+export type PreviewServersStopErrors = {
+  /**
+   * PreviewError | InvalidRequestError
+   */
+  400: PreviewError | InvalidRequestError
+}
+
+export type PreviewServersStopError = PreviewServersStopErrors[keyof PreviewServersStopErrors]
+
+export type PreviewServersStopResponses = {
+  /**
+   * Stopped preview server
+   */
+  200: PreviewServer
+}
+
+export type PreviewServersStopResponse = PreviewServersStopResponses[keyof PreviewServersStopResponses]
+
+export type PreviewServersRestartData = {
+  body?: PreviewStartPayload
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/preview/servers/restart"
+}
+
+export type PreviewServersRestartErrors = {
+  /**
+   * PreviewError | InvalidRequestError
+   */
+  400: PreviewError | InvalidRequestError
+}
+
+export type PreviewServersRestartError = PreviewServersRestartErrors[keyof PreviewServersRestartErrors]
+
+export type PreviewServersRestartResponses = {
+  /**
+   * Restarted preview server
+   */
+  200: PreviewServer
+}
+
+export type PreviewServersRestartResponse = PreviewServersRestartResponses[keyof PreviewServersRestartResponses]
+
+export type PreviewServersVerifyData = {
+  body?: PreviewVerifyPayload
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/preview/servers/verify"
+}
+
+export type PreviewServersVerifyErrors = {
+  /**
+   * PreviewError | InvalidRequestError
+   */
+  400: PreviewError | InvalidRequestError
+}
+
+export type PreviewServersVerifyError = PreviewServersVerifyErrors[keyof PreviewServersVerifyErrors]
+
+export type PreviewServersVerifyResponses = {
+  /**
+   * Verification of the running preview server
+   */
+  200: PreviewVerifyResult
+}
+
+export type PreviewServersVerifyResponse = PreviewServersVerifyResponses[keyof PreviewServersVerifyResponses]
 
 export type ProviderListData = {
   body?: never

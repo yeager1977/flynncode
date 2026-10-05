@@ -11,6 +11,7 @@ import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
 import { worktreeFallback } from "./worktree-fallback"
+import { previewFallback } from "./preview-fallback"
 
 type Keys = keyof typeof en
 
@@ -125,6 +126,7 @@ export const dict = {
   "desktop.picker.error.sizeLimit": "所選附件超過 {{limit}} MB 的限制",
 
   ...worktreeFallback,
+  ...previewFallback,
   "command.category.suggested": "建議",
   "command.category.view": "檢視",
   "command.category.project": "專案",

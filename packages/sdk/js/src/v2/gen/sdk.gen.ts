@@ -140,6 +140,18 @@ import type {
   PermissionRuleset,
   PermissionV2Reply,
   PermissionV2Source,
+  PreviewServersListErrors,
+  PreviewServersListResponses,
+  PreviewServersRestartErrors,
+  PreviewServersRestartResponses,
+  PreviewServersStartErrors,
+  PreviewServersStartResponses,
+  PreviewServersStopErrors,
+  PreviewServersStopResponses,
+  PreviewServersVerifyErrors,
+  PreviewServersVerifyResponses,
+  PreviewStartPayload,
+  PreviewVerifyPayload,
   ProjectCommands,
   ProjectCurrentErrors,
   ProjectCurrentResponses,
@@ -3376,6 +3388,203 @@ export class Permission extends HeyApiClient {
         ...params.headers,
       },
     })
+  }
+}
+
+export class Servers extends HeyApiClient {
+  /**
+   * List preview servers
+   *
+   * Get the configured preview servers, their state, and any running process metadata.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<PreviewServersListResponses, PreviewServersListErrors, ThrowOnError>({
+      url: "/preview/servers",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Start a preview server
+   *
+   * Start a configured managed preview server, or mark an attach-only server as active.
+   */
+  public start<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      previewStartPayload?: PreviewStartPayload
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "previewStartPayload", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<PreviewServersStartResponses, PreviewServersStartErrors, ThrowOnError>(
+      {
+        url: "/preview/servers/start",
+        ...options,
+        ...params,
+        headers: {
+          "Content-Type": "application/json",
+          ...options?.headers,
+          ...params.headers,
+        },
+      },
+    )
+  }
+
+  /**
+   * Stop a preview server
+   *
+   * Stop a running preview server and kill its process group.
+   */
+  public stop<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      previewStartPayload?: PreviewStartPayload
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "previewStartPayload", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<PreviewServersStopResponses, PreviewServersStopErrors, ThrowOnError>({
+      url: "/preview/servers/stop",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Restart a preview server
+   *
+   * Stop and start a configured preview server.
+   */
+  public restart<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      previewStartPayload?: PreviewStartPayload
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "previewStartPayload", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      PreviewServersRestartResponses,
+      PreviewServersRestartErrors,
+      ThrowOnError
+    >({
+      url: "/preview/servers/restart",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Verify a preview server
+   *
+   * Fetch the running preview server URL and return the HTTP status, page title, and a heuristic console-error count.
+   */
+  public verify<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      previewVerifyPayload?: PreviewVerifyPayload
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "previewVerifyPayload", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      PreviewServersVerifyResponses,
+      PreviewServersVerifyErrors,
+      ThrowOnError
+    >({
+      url: "/preview/servers/verify",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Preview extends HeyApiClient {
+  private _servers?: Servers
+  get servers(): Servers {
+    return (this._servers ??= new Servers({ client: this.client }))
   }
 }
 
@@ -7521,6 +7730,11 @@ export class OpencodeClient extends HeyApiClient {
   private _permission?: Permission
   get permission(): Permission {
     return (this._permission ??= new Permission({ client: this.client }))
+  }
+
+  private _preview?: Preview
+  get preview(): Preview {
+    return (this._preview ??= new Preview({ client: this.client }))
   }
 
   private _provider?: Provider

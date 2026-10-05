@@ -10,6 +10,7 @@ import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
 import { worktreeFallback } from "./worktree-fallback"
+import { previewFallback } from "./preview-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -117,6 +118,7 @@ export const dict = {
   "desktop.picker.error.notSelected": "Ingen fil valdes i filväljaren",
   "desktop.picker.error.sizeLimit": "De valda bilagorna överskrider gränsen på {{limit}} MB",
   ...worktreeFallback,
+  ...previewFallback,
   "command.category.suggested": "Föreslagna",
   "command.category.view": "Visa",
   "command.category.project": "Projekt",

@@ -10,12 +10,14 @@ import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback, sessionProjectPluralFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
 import { worktreeFallback } from "./worktree-fallback"
+import { previewFallback } from "./preview-fallback"
 
 export const dict = {
   ...modelRouterFallback,
   ...sessionReviewFallback,
   ...sessionHandoffFallback,
   ...worktreeFallback,
+  ...previewFallback,
   ...sessionProjectPluralFallback.fr,
   ...omoSettingsFallback,
   ...providerEditFallback,

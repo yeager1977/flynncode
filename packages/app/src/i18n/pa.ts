@@ -10,6 +10,7 @@ import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
 import { worktreeFallback } from "./worktree-fallback"
+import { previewFallback } from "./preview-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -122,6 +123,7 @@ export const dict = {
   "desktop.picker.error.sizeLimit": "چنیاں منسلک فائلاں {{limit}} MB دی حد توں ودھ نیں",
 
   ...worktreeFallback,
+  ...previewFallback,
   "command.category.suggested": "تجویز کیتا گیا",
   "command.category.view": "نظارہ",
   "command.category.project": "پروجیکٹ",

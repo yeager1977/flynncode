@@ -10,6 +10,7 @@ import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback, sessionProjectPluralFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
 import { worktreeFallback } from "./worktree-fallback"
+import { previewFallback } from "./preview-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -118,6 +119,7 @@ export const dict = {
   "desktop.picker.error.notSelected": "Izbirnik ni izbral datoteke",
   "desktop.picker.error.sizeLimit": "Izbrane priloge presegajo omejitev {{limit}} MB",
   ...worktreeFallback,
+  ...previewFallback,
   "command.category.suggested": "Predlagano",
   "command.category.view": "Pogled",
   "command.category.project": "Projekt",
