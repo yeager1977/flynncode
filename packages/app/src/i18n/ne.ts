@@ -12,6 +12,7 @@ import { sessionHandoffFallback } from "./session-handoff-fallback"
 import { worktreeFallback } from "./worktree-fallback"
 import { previewFallback } from "./preview-fallback"
 import { ciStatusFallback } from "./ci-status-fallback"
+import { sideChatFallback } from "./side-chat-fallback"
 
 export const dict: Record<string, string> = {
   ...modelRouterFallback,
@@ -121,6 +122,7 @@ export const dict: Record<string, string> = {
   ...worktreeFallback,
   ...previewFallback,
   ...ciStatusFallback,
+  ...sideChatFallback,
   "command.category.suggested": "सिफारिस गर्नुभयो",
   "command.category.view": "हेर्नुहोस्",
   "command.category.project": "परियोजना",

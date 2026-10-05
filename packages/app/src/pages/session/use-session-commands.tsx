@@ -21,6 +21,7 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { useSessionArchive } from "@/pages/session/session-archive"
 import { createSessionOwnership } from "./session-ownership"
 import { useLocal } from "@/context/local"
+import { useSideChat } from "./composer/session-side-chat-context"
 
 export type SessionCommandContext = {
   navigateMessageByOffset: (offset: number) => void
@@ -51,6 +52,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const layout = useLayout()
   const local = useLocal()
   const navigate = useNavigate()
+  const sideChat = useSideChat()
   const { params, sessionKey, tabs, view } = useSessionLayout()
   const sessionOwnership = createSessionOwnership(sessionKey)
   const sessionArchive = useSessionArchive()
@@ -628,7 +630,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       id: "mcp.toggle",
       title: language.t("command.mcp.toggle"),
       description: language.t("command.mcp.toggle.description"),
-      keybind: "mod+;",
       slash: "mcp",
       onSelect: chooseMcp,
     }),
@@ -646,6 +647,31 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     }),
   ]
 
+  // In-session keybind scope: session-registered commands shadow the same
+  // keybind outside the session page (palette-level global owners stay).
+  const sideChatCmds = () => [
+    sessionCommand({
+      id: "session.sidechat",
+      title: language.t("command.session.btw"),
+      description: language.t("command.session.btw.description"),
+      keybind: "mod+;",
+      slash: "btw",
+      disabled: !params.id,
+      onSelect: () => sideChat.open(),
+    }),
+  ]
+
+  const viewModeCmds = () => [
+    viewCommand({
+      id: "session.viewMode.cycle",
+      title: language.t("session.viewMode.next"),
+      description: language.t("session.viewMode.next.description"),
+      keybind: "ctrl+o",
+      disabled: !params.id,
+      onSelect: () => view().cycleViewMode(),
+    }),
+  ]
+
   command.register("session", () => [
     ...sessionCmds(),
     ...shareCmds(),
@@ -656,5 +682,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     ...messageCmds(),
     ...mcpCmds(),
     ...permissionsCmds(),
+    ...sideChatCmds(),
+    ...viewModeCmds(),
   ])
 }

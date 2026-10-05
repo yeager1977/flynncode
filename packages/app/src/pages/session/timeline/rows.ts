@@ -8,6 +8,8 @@ import { compareMessages } from "@/utils/session-message"
 
 export { TimelineRow, type SummaryDiff } from "./timeline-row"
 
+export type TimelineViewMode = "normal" | "thinking" | "verbose"
+
 export type TimelineRowMap = {
   TurnGap: { userMessageID: string }
   CommentStrip: {
@@ -25,6 +27,7 @@ export type TimelineRowMap = {
     userMessageID: string
     group: PartGroup
     previousAssistantPart: boolean
+    verbose?: boolean
   }
   Thinking: { userMessageID: string; reasoningHeading?: string }
   Retry: { userMessageID: string }
@@ -41,6 +44,7 @@ export namespace Timeline {
     status: SessionStatus["type"],
     inlineComments: boolean,
     projectedUserMessages: UserMessage[],
+    viewMode: TimelineViewMode = "normal",
   ) {
     const turns: { user: UserMessage; assistants: AssistantMessage[] }[] = []
     const turnByUserID = new Map<string, (typeof turns)[number]>()
@@ -93,6 +97,7 @@ export namespace Timeline {
           status,
           turn.user.id === activeMessageID,
           inlineComments,
+          viewMode,
         ),
       ),
     }
@@ -108,6 +113,9 @@ export namespace Timeline {
     isActive: boolean,
     // v2 renders comments inside the user message attachments row instead of a strip row
     inlineComments: boolean,
+    // View mode: normal collapses everything (current default), thinking also
+    // shows reasoning blocks, verbose also keeps every tool part expanded-listed.
+    viewMode: TimelineViewMode = "normal",
   ) {
     const rows: TimelineRow.TimelineRow[] = []
 
@@ -126,7 +134,7 @@ export namespace Timeline {
 
     const assistantPartRefs = assistantMessages.flatMap((message, messageIndex) =>
       getMessageParts(message.id)
-        .filter((part) => renderable(part, showReasoning))
+        .filter((part) => renderable(part, showReasoning || viewMode !== "normal"))
         .map((part) => ({ messageID: message.id, messageIndex, part })),
     )
     const assistantItems =
@@ -198,12 +206,18 @@ export namespace Timeline {
           userMessageID: userMessage.id,
           group: item.group,
           previousAssistantPart: assistantGroupIndex > 0,
+          verbose: viewMode === "verbose",
         }),
       )
       assistantGroupIndex += 1
     })
 
-    if (isActive && status === "busy" && !error && (showReasoning ? assistantPartRefs.length === 0 : true)) {
+    if (
+      isActive &&
+      status === "busy" &&
+      !error &&
+      (viewMode === "normal" ? (showReasoning ? assistantPartRefs.length === 0 : true) : assistantPartRefs.length === 0)
+    ) {
       const heading = assistantMessages
         .flatMap((message) => getMessageParts(message.id))
         .map((part) => (part.type === "reasoning" && part.text ? reasoningHeading(part.text) : undefined))
@@ -212,7 +226,7 @@ export namespace Timeline {
       rows.push(
         new TimelineRow.Thinking({
           userMessageID: userMessage.id,
-          reasoningHeading: heading,
+          reasoningHeading: viewMode === "normal" ? heading : undefined,
         }),
       )
     }

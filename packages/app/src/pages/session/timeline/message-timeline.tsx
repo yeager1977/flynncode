@@ -62,6 +62,7 @@ import { shouldMarkBoundaryGesture, normalizeWheelDelta } from "@/pages/session/
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
+import { useLayout, type SessionTimelineViewMode } from "@/context/layout"
 import { useSessionKey } from "@/pages/session/session-layout"
 import { useSessionArchive } from "@/pages/session/session-archive"
 import { useServerSDK } from "@/context/server-sdk"
@@ -235,6 +236,43 @@ function TimelineDiffView(props: { diff: SummaryDiff }) {
   )
 }
 
+function TimelineViewModeSelect(props: {
+  mode: SessionTimelineViewMode
+  onChange: (mode: SessionTimelineViewMode) => void
+  disabled?: boolean
+}) {
+  const language = useLanguage()
+  const modes: SessionTimelineViewMode[] = ["normal", "thinking", "verbose"]
+  const label = (mode: SessionTimelineViewMode) => language.t(`session.viewMode.${mode}` as "session.viewMode.normal")
+
+  return (
+    <MenuV2 gutter={6} placement="bottom-end">
+      <MenuV2.Trigger
+        as={IconButtonV2}
+        icon={<IconV2 name="outline-sliders" />}
+        variant="ghost-muted"
+        size="large"
+        disabled={props.disabled}
+        data-component="session-view-mode-select"
+        aria-label={language.t("session.viewMode.select")}
+      />
+      <MenuV2.Portal>
+        <MenuV2.Content style={{ width: "140px", "min-width": "140px" }}>
+          <MenuV2.RadioGroup value={props.mode}>
+            <For each={modes}>
+              {(mode) => (
+                <MenuV2.RadioItem value={mode} onSelect={() => props.onChange(mode)}>
+                  {label(mode)}
+                </MenuV2.RadioItem>
+              )}
+            </For>
+          </MenuV2.RadioGroup>
+        </MenuV2.Content>
+      </MenuV2.Portal>
+    </MenuV2>
+  )
+}
+
 export function MessageTimeline(props: {
   actions?: UserActions
   scroll: { overflow: boolean; bottom: boolean; jump: boolean }
@@ -266,6 +304,7 @@ export function MessageTimeline(props: {
   const dialog = useDialog()
   const sessionArchive = useSessionArchive()
   const language = useLanguage()
+  const layout = useLayout()
   const { params, sessionKey } = useSessionKey()
   const ownerSessionKey = sessionKey()
   const cached = timelineCache.get(ownerSessionKey)
@@ -330,6 +369,7 @@ export function MessageTimeline(props: {
     return language.t("command.session.new")
   })
   const showHeader = createMemo(() => !!(titleValue() || parentID()))
+  const viewMode = createMemo(() => layout.view(sessionKey()).viewMode())
   const projection = createTimelineProjection({
     messages: sessionMessages,
     userMessages: () => props.userMessages,
@@ -338,6 +378,7 @@ export function MessageTimeline(props: {
     status: sessionStatus,
     showReasoningSummaries: settings.general.showReasoningSummaries,
     inlineComments: settings.general.newLayoutDesigns,
+    viewMode,
   })
   const activeMessageID = projection.activeMessageID
   const assistantMessagesByParent = projection.assistantMessagesByParent
@@ -1012,6 +1053,7 @@ export function MessageTimeline(props: {
     const defaultOpen = createMemo(() => {
       const item = part()
       if (!item) return
+      if (row().verbose) return true
       return partDefaultOpen(item, settings.general.shellToolPartsExpanded(), settings.general.editToolPartsExpanded())
     })
 
@@ -1027,7 +1069,7 @@ export function MessageTimeline(props: {
                 turnDurationMs={turnDurationMs(row().userMessageID)}
                 useV2Actions={settings.general.newLayoutDesigns()}
                 defaultOpen={defaultOpen()}
-                toolOpen={toolOpen[part().id] ?? defaultOpen()}
+                toolOpen={row().verbose || toolOpen[part().id] === undefined ? defaultOpen() : toolOpen[part().id]}
                 onToolOpenChange={(open) => setToolOpen(part().id, open)}
                 deferToolContent
                 virtualizeDiff={false}
@@ -1479,6 +1521,17 @@ export function MessageTimeline(props: {
                       "gap-3": !settings.general.newLayoutDesigns(),
                     }}
                   >
+                    <Show when={!parentID() && settings.general.newLayoutDesigns()}>
+                      <TimelineViewModeSelect
+                        mode={viewMode()}
+                        onChange={(mode) => {
+                          const id = sessionID()
+                          if (!id) return
+                          layout.view(sessionKey()).setViewMode(mode)
+                        }}
+                        disabled={!sessionID()}
+                      />
+                    </Show>
                     <SessionContextUsage
                       placement="bottom"
                       buttonAppearance={settings.general.newLayoutDesigns() ? "v2" : "default"}

@@ -71,6 +71,7 @@ import {
   createSessionComposerRegionController,
   SessionComposerRegion,
 } from "@/pages/session/composer"
+import { SideChatProvider } from "@/pages/session/composer/session-side-chat-context"
 import { createOpenReviewFile, createSessionTabs, createSizing, shellPtyID, shouldShowFileTree } from "@/pages/session/helpers"
 import { MessageTimeline } from "@/pages/session/timeline/message-timeline"
 import { createTimelineModel } from "@/pages/session/timeline/model"
@@ -328,7 +329,9 @@ function SessionProviders(props: ParentProps) {
     <TerminalProvider>
       <FileProvider>
         <PromptProvider>
-          <CommentsProvider>{props.children}</CommentsProvider>
+          <SideChatProvider>
+            <CommentsProvider>{props.children}</CommentsProvider>
+          </SideChatProvider>
         </PromptProvider>
       </FileProvider>
     </TerminalProvider>

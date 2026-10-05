@@ -2,7 +2,7 @@ import type { SessionMessageInfo } from "@opencode-ai/client/promise"
 import type { AssistantMessage, Message, Part, SessionStatus, UserMessage } from "@opencode-ai/sdk/v2"
 import { createMemo, type Accessor } from "solid-js"
 import { reuseTimelineRows } from "./row-reconciliation"
-import { Timeline, TimelineRow } from "./rows"
+import { Timeline, TimelineRow, type TimelineViewMode } from "./rows"
 
 export { reuseTimelineRows } from "./row-reconciliation"
 
@@ -14,6 +14,7 @@ export function createTimelineProjection(input: {
   status: Accessor<SessionStatus>
   showReasoningSummaries: Accessor<boolean>
   inlineComments: Accessor<boolean>
+  viewMode?: Accessor<TimelineViewMode | undefined>
 }) {
   const messageByID = createMemo(() => new Map(input.messages().map((message) => [message.id, message] as const)))
   const assistantMessagesByParent = createMemo(() => {
@@ -38,6 +39,7 @@ export function createTimelineProjection(input: {
       input.status().type,
       input.inlineComments(),
       input.userMessages(),
+      input.viewMode?.() ?? "normal",
     ),
   )
   const activeMessageID = createMemo(() => projection().activeMessageID)

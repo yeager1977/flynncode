@@ -12,6 +12,7 @@ import { sessionHandoffFallback } from "./session-handoff-fallback"
 import { worktreeFallback } from "./worktree-fallback"
 import { previewFallback } from "./preview-fallback"
 import { ciStatusFallback } from "./ci-status-fallback"
+import { sideChatFallback } from "./side-chat-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -121,6 +122,7 @@ export const dict = {
   ...worktreeFallback,
   ...previewFallback,
   ...ciStatusFallback,
+  ...sideChatFallback,
   "command.category.suggested": "Föreslagna",
   "command.category.view": "Visa",
   "command.category.project": "Projekt",

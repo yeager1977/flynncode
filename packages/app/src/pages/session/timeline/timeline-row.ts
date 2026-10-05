@@ -23,6 +23,8 @@ export namespace TimelineRow {
     userMessageID: string
     group: PartGroup
     previousAssistantPart: boolean
+    // Verbose view mode: tool parts in this group render with details forced open.
+    verbose?: boolean
   }> {}
   export class Thinking extends Data.TaggedClass("Thinking")<{
     userMessageID: string

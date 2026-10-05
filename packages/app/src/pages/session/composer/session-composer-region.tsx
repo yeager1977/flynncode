@@ -6,6 +6,9 @@ import { SessionQuestionDock } from "@/pages/session/composer/session-question-d
 import { SessionFollowupDock } from "@/pages/session/composer/session-followup-dock"
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
+import { SessionSideChatDock } from "@/pages/session/composer/session-side-chat-dock"
+import { useSideChat } from "@/pages/session/composer/session-side-chat-context"
+import { useSideChatDockState } from "@/pages/session/composer/session-side-chat-dock-state"
 import type { SessionComposerRegionController } from "./session-composer-region-controller"
 
 export function SessionComposerRegion(props: {
@@ -15,6 +18,8 @@ export function SessionComposerRegion(props: {
   const language = useLanguage()
   const controller = props.controller
   const settings = useSettings()
+  const sideChat = useSideChat()
+  const sideChatDock = useSideChatDockState(sideChat)
   const rolled = () => {
     const revert = controller.revert()
     return revert?.items.length ? revert : undefined
@@ -36,6 +41,24 @@ export function SessionComposerRegion(props: {
           "md:max-w-200 md:mx-auto 2xl:max-w-[1000px]": controller.centered(),
         }}
       >
+        <Show when={sideChatDock.ready()}>
+          <SessionSideChatDock
+            closeLabel={language.t("session.sidechat.close")}
+            label={language.t("session.sidechat.label")}
+            hint={language.t("session.sidechat.hint")}
+            inputPlaceholder={language.t("session.sidechat.placeholder")}
+            sendLabel={language.t("session.sidechat.send")}
+            starting={sideChatDock.starting()}
+            sending={sideChatDock.sending()}
+            canSend={sideChatDock.canSend()}
+            draft={sideChatDock.draft()}
+            turns={sideChatDock.turns()}
+            onDraftChange={sideChatDock.onDraftChange}
+            onSend={sideChatDock.onSend}
+            onClose={sideChatDock.onClose}
+          />
+        </Show>
+
         <Show when={controller.state.questionRequest()} keyed>
           {(request) => (
             <div>

@@ -66,6 +66,8 @@ export function getProjectAvatarVariant(key?: string): ProjectAvatarVariant {
   return "gray"
 }
 
+export type SessionTimelineViewMode = "normal" | "thinking" | "verbose"
+
 type SessionView = {
   scroll: Record<string, SessionScroll>
   reviewOpen?: string[]
@@ -77,6 +79,7 @@ type SessionView = {
   tasksOpened?: boolean
   subagentExpandedID?: string
   subagentFinishedOpen?: boolean
+  viewMode?: SessionTimelineViewMode
 }
 
 type TabHandoff = {
@@ -837,6 +840,27 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         const terminalOpened = createMemo(() => store.terminal?.opened ?? false)
         const reviewPanelOpened = createMemo(() => store.review?.panelOpened ?? DEFAULT_REVIEW_PANEL_OPENED)
         const reviewPanelSource = createMemo(() => (reviewPanelOpened() ? ephemeral.reviewPanelSource : "other"))
+        const viewMode = createMemo<SessionTimelineViewMode>(() => {
+          const mode = s().viewMode
+          if (mode === "thinking" || mode === "verbose") return mode
+          return "normal"
+        })
+
+        function setViewMode(mode: SessionTimelineViewMode) {
+          const session = key()
+          if (viewMode() === mode) return
+          const current = store.sessionView[session]
+          if (!current) {
+            setStore("sessionView", session, { scroll: {}, viewMode: mode })
+            return
+          }
+          setStore("sessionView", session, "viewMode", mode)
+        }
+
+        function cycleViewMode() {
+          const modes: SessionTimelineViewMode[] = ["normal", "thinking", "verbose"]
+          setViewMode(modes[(modes.indexOf(viewMode()) + 1) % modes.length]!)
+        }
 
         function setTerminalOpened(next: boolean) {
           const current = store.terminal
@@ -879,6 +903,9 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           setScroll(tab: string, pos: SessionScroll) {
             scroll.setScroll(key(), tab, pos)
           },
+          viewMode,
+          setViewMode,
+          cycleViewMode,
           todoCollapsed: {
             get: () => s().todoCollapsed ?? false,
             set(collapsed: boolean) {
