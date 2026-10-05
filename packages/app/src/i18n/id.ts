@@ -9,6 +9,7 @@ import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -122,6 +123,7 @@ export const dict = {
   "desktop.picker.error.notSelected": "Berkas tidak dipilih melalui pemilih",
   "desktop.picker.error.sizeLimit": "Lampiran yang dipilih melebihi batas {{limit}} MB",
 
+  ...worktreeFallback,
   "command.category.suggested": "Disarankan",
   "command.category.view": "Tampilan",
   "command.category.project": "Proyek",

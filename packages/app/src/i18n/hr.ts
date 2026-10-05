@@ -10,6 +10,7 @@ import { sessionBulkFallback, sessionBulkPluralFallback } from "./session-bulk-f
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback, sessionProjectPluralFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 const desktop = [
   "OpenCode",
@@ -119,6 +120,7 @@ export const dict = {
   ...sessionBulkPluralFallback.hr,
   ...mcpRegistryFallback,
   ...Object.fromEntries(DESKTOP_NATIVE_KEYS.map((key, index) => [key, desktop[index]])),
+  ...worktreeFallback,
   "command.category.suggested": "Predloženo",
   "command.category.view": "Prikaz",
   "command.category.project": "Projekt",

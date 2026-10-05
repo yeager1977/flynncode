@@ -9,6 +9,7 @@ import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -114,6 +115,7 @@ export const dict = {
   "desktop.wsl.error.failedPort": "პორტის მიღება ვერ მოხერხდა",
   "desktop.picker.error.notSelected": "ფაილი არ იყო არჩეული ამომრჩევლის მიერ",
   "desktop.picker.error.sizeLimit": "არჩეული დანართები აღემატება {{limit}} MB ლიმიტს",
+  ...worktreeFallback,
   "command.category.suggested": "შემოთავაზებულია",
   "command.category.view": "ნახვა",
   "command.category.project": "პროექტი",

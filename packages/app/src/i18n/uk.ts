@@ -9,6 +9,7 @@ import { sessionBulkFallback, sessionBulkPluralFallback } from "./session-bulk-f
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback, sessionProjectPluralFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -124,6 +125,7 @@ export const dict = {
   "desktop.picker.error.notSelected": "Засіб вибору не повернув вибраний файл",
   "desktop.picker.error.sizeLimit": "Вибрані вкладення перевищують обмеження в {{limit}} МБ",
 
+  ...worktreeFallback,
   "command.category.suggested": "Рекомендовані",
   "command.category.view": "Вигляд",
   "command.category.project": "Проєкт",

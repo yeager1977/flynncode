@@ -9,6 +9,7 @@ import { sessionBulkFallback, sessionBulkPluralFallback } from "./session-bulk-f
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback, sessionProjectPluralFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -116,6 +117,7 @@ export const dict = {
   "desktop.wsl.error.failedPort": "Vrat ni bilo mogoče pridobiti",
   "desktop.picker.error.notSelected": "Izbirnik ni izbral datoteke",
   "desktop.picker.error.sizeLimit": "Izbrane priloge presegajo omejitev {{limit}} MB",
+  ...worktreeFallback,
   "command.category.suggested": "Predlagano",
   "command.category.view": "Pogled",
   "command.category.project": "Projekt",

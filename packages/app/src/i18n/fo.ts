@@ -9,6 +9,7 @@ import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -114,6 +115,7 @@ export const dict = {
   "desktop.wsl.error.failedPort": "Tað eydnaðist ikki at fáa havn",
   "desktop.picker.error.notSelected": "Fíla varð ikki vald av veljaranum",
   "desktop.picker.error.sizeLimit": "Valdar viðheftir fara upp um {{limit}} MB markið",
+  ...worktreeFallback,
   "command.category.suggested": "Tillagað",
   "command.category.view": "Vís",
   "command.category.project": "Verkætlan",

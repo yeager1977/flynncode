@@ -14,6 +14,7 @@ import { SettingsImportSessionsV2 } from "./import-sessions"
 import { SettingsModelRouterV2 } from "./model-router"
 import { SettingsOmoV2 } from "./omo-settings"
 import { SettingsRoutinesV2 } from "./routines"
+import { SettingsWorktreeV2 } from "./worktree"
 import "./settings-v2.css"
 import { SettingsServersV2 } from "./servers"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -99,6 +100,10 @@ export const DialogSettings: Component<{
                       <Icon name="archive" />
                       {language.t("settings.tab.routines")}
                     </TabsV2.Trigger>
+                    <TabsV2.Trigger value="worktree">
+                      <Icon name="folder" />
+                      {language.t("settings.tab.worktree")}
+                    </TabsV2.Trigger>
                   </div>
                 </div>
 
@@ -163,6 +168,9 @@ export const DialogSettings: Component<{
         </TabsV2.Content>
         <TabsV2.Content value="routines" class="settings-v2-panel">
           <SettingsRoutinesV2 />
+        </TabsV2.Content>
+        <TabsV2.Content value="worktree" class="settings-v2-panel">
+          <SettingsWorktreeV2 directory={directory()} />
         </TabsV2.Content>
       </TabsV2>
     </Dialog>

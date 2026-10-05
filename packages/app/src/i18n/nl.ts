@@ -9,6 +9,7 @@ import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -114,6 +115,7 @@ export const dict = {
   "desktop.wsl.error.failedPort": "Kan poort niet ophalen",
   "desktop.picker.error.notSelected": "Er is geen bestand geselecteerd in de bestandskiezer",
   "desktop.picker.error.sizeLimit": "De geselecteerde bijlagen overschrijden de limiet van {{limit}} MB",
+  ...worktreeFallback,
   "command.category.suggested": "Voorgesteld",
   "command.category.view": "Weergave",
   "command.category.project": "Project",

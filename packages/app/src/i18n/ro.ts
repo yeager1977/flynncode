@@ -9,6 +9,7 @@ import { sessionBulkFallback, sessionBulkPluralFallback } from "./session-bulk-f
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback, sessionProjectPluralFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -116,6 +117,7 @@ export const dict = {
   "desktop.wsl.error.failedPort": "Nu s-a putut obține portul",
   "desktop.picker.error.notSelected": "Fișierul nu a fost selectat din selector",
   "desktop.picker.error.sizeLimit": "Atașamentele selectate depășesc limita de {{limit}} MB",
+  ...worktreeFallback,
   "command.category.suggested": "Sugerat",
   "command.category.view": "Vizualizare",
   "command.category.project": "Proiect",

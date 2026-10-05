@@ -10,6 +10,7 @@ import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 type Keys = keyof typeof en
 
@@ -123,6 +124,7 @@ export const dict = {
   "desktop.picker.error.notSelected": "文件选择器未选择文件",
   "desktop.picker.error.sizeLimit": "所选附件超过 {{limit}} MB 的限制",
 
+  ...worktreeFallback,
   "command.category.suggested": "建议",
   "command.category.view": "视图",
   "command.category.project": "项目",

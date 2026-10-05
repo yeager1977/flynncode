@@ -9,6 +9,7 @@ import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict: Record<string, string> = {
   ...modelRouterFallback,
@@ -114,6 +115,7 @@ export const dict: Record<string, string> = {
   "desktop.wsl.error.failedPort": "වරාය ලබා ගැනීමට අසමත් විය",
   "desktop.picker.error.notSelected": "ගොනුව තෝරන්නා විසින් තෝරාගෙන නොමැත",
   "desktop.picker.error.sizeLimit": "තෝරාගත් ඇමුණුම් {{limit}} MB සීමාව ඉක්මවයි",
+  ...worktreeFallback,
   "command.category.suggested": "යෝජනා කර ඇත",
   "command.category.view": "බලන්න",
   "command.category.project": "ව්යාපෘතිය",

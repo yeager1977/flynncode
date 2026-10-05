@@ -9,6 +9,7 @@ import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -115,6 +116,7 @@ export const dict = {
   "desktop.wsl.error.failedPort": "Αποτυχία λήψης θύρας",
   "desktop.picker.error.notSelected": "Το αρχείο δεν επιλέχθηκε από τον επιλογέα",
   "desktop.picker.error.sizeLimit": "Τα επιλεγμένα συνημμένα υπερβαίνουν το όριο των {{limit}} MB",
+  ...worktreeFallback,
   "command.category.suggested": "Προτεινόμενο",
   "command.category.view": "Προβολή",
   "command.category.project": "Έργο",

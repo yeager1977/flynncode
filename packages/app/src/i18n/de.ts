@@ -10,6 +10,7 @@ import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 type Keys = keyof typeof en
 
@@ -25,6 +26,7 @@ export const dict = {
   ...artifactsSidebarFallback,
   ...sessionBulkFallback,
   ...mcpRegistryFallback,
+  ...worktreeFallback,
   "command.category.suggested": "Vorgeschlagen",
   "command.category.view": "Ansicht",
   "command.category.project": "Projekt",

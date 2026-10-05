@@ -9,6 +9,7 @@ import { sessionBulkFallback, sessionBulkPluralFallback } from "./session-bulk-f
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback, sessionProjectPluralFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -124,6 +125,7 @@ export const dict = {
   "desktop.picker.error.notSelected": "O arquivo não foi selecionado pelo seletor",
   "desktop.picker.error.sizeLimit": "Os anexos selecionados excedem o limite de {{limit}} MB",
 
+  ...worktreeFallback,
   "command.category.suggested": "Sugerido",
   "command.category.view": "Visualizar",
   "command.category.project": "Projeto",

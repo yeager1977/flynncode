@@ -9,6 +9,7 @@ import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -115,6 +116,7 @@ export const dict = {
   "desktop.wsl.error.failedPort": "پورت دریافت نشد",
   "desktop.picker.error.notSelected": "فایل توسط انتخاب کننده انتخاب نشده است",
   "desktop.picker.error.sizeLimit": "پیوست های انتخابی بیش از حد مجاز {{limit}} مگابایت است",
+  ...worktreeFallback,
   "command.category.suggested": "پیشنهاد شده است",
   "command.category.view": "مشاهده کنید",
   "command.category.project": "پروژه",

@@ -9,6 +9,7 @@ import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -115,6 +116,7 @@ export const dict = {
   "desktop.wsl.error.failedPort": "Dështoi në marrjen e portit",
   "desktop.picker.error.notSelected": "Skedari nuk u zgjodh nga zgjedhësi",
   "desktop.picker.error.sizeLimit": "Bashkëngjitjet e zgjedhura tejkalojnë kufirin {{limit}} MB",
+  ...worktreeFallback,
   "command.category.suggested": "Sugjeruar",
   "command.category.view": "Shiko",
   "command.category.project": "Projekti",

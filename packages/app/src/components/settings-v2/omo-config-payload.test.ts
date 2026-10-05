@@ -68,6 +68,33 @@ describe("omo catalog gpt-6 baseline", () => {
     expect(fallbackChain("category", "quick")[0]?.model).toBe("gpt-6-luna")
     expect(fallbackChain("category", "unspecified-low")[0]?.model).toBe("gpt-5.6-terra")
   })
+
+  test("gpt-6.1-sol rungs sit above gpt-6-sol rungs with astra still flagship", () => {
+    for (const name of ["hephaestus", "prometheus", "metis", "momus", "atlas", "sisyphus-junior"]) {
+      const chain = fallbackChain("agent", name)
+      expect(chain[0]).toEqual({ providers: ["openai", "vercel", "opencode"], model: "gpt-6.1-sol" })
+      expect(chain.some((entry) => entry.model === "gpt-6-sol")).toBe(true)
+    }
+    for (const name of ["ultrabrain", "deep", "unspecified-high", "writing"]) {
+      expect(fallbackChain("category", name)[0]).toEqual({
+        providers: ["openai", "vercel", "opencode"],
+        model: "gpt-6.1-sol",
+      })
+    }
+    // Astra-pinned chains keep their astra head and got 6.1-sol below it.
+    for (const name of ["sisyphus", "oracle"]) {
+      const chain = fallbackChain("agent", name)
+      expect(chain[0]?.model).toBe("gpt-6-astra")
+      const index = chain.findIndex((entry, position) => position > 0 && entry.model === "gpt-6.1-sol")
+      expect(index).toBeGreaterThan(0)
+      expect(chain[index]).toEqual({ providers: ["openai", "vercel", "opencode"], model: "gpt-6.1-sol" })
+    }
+    for (const name of ["visual-engineering", "artistry"] as const) {
+      const chain = fallbackChain("category", name)
+      expect(chain[0]?.model).toBe("gpt-6-astra")
+      expect(chain[1]).toEqual({ providers: ["openai", "vercel", "opencode"], model: "gpt-6.1-sol" })
+    }
+  })
 })
 
 describe("fallbackLabel", () => {

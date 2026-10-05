@@ -9,6 +9,7 @@ import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -115,6 +116,7 @@ export const dict = {
   "desktop.wsl.error.failedPort": "Port alyp bilmedi",
   "desktop.picker.error.notSelected": "Faýl saýlaýjy tarapyndan saýlanmady",
   "desktop.picker.error.sizeLimit": "Saýlanan goşundylar {{limit}} MB çäginden ýokary",
+  ...worktreeFallback,
   "command.category.suggested": "Teklip edilýär",
   "command.category.view": "Gör",
   "command.category.project": "Taslama",

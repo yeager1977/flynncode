@@ -9,6 +9,7 @@ import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -114,6 +115,7 @@ export const dict = {
   "desktop.wsl.error.failedPort": "ລົ້ມເຫລວໃນການເອົາພອດ",
   "desktop.picker.error.notSelected": "ໄຟລ໌ບໍ່ໄດ້ຖືກເລືອກໂດຍຕົວເລືອກ",
   "desktop.picker.error.sizeLimit": "ໄຟລ໌ແນບທີ່ເລືອກເກີນຂີດຈຳກັດ {{limit}} MB",
+  ...worktreeFallback,
   "command.category.suggested": "ແນະນຳ",
   "command.category.view": "ເບິ່ງ",
   "command.category.project": "ໂຄງການ",

@@ -9,6 +9,7 @@ import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -115,6 +116,7 @@ export const dict = {
   "desktop.wsl.error.failedPort": "Не успеа да се добие порта",
   "desktop.picker.error.notSelected": "Датотеката не беше избрана од избирачот",
   "desktop.picker.error.sizeLimit": "Избраните прилози ја надминуваат границата {{limit}} MB",
+  ...worktreeFallback,
   "command.category.suggested": "Предложено",
   "command.category.view": "Прикажи",
   "command.category.project": "Проект",

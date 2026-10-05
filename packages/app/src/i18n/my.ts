@@ -9,6 +9,7 @@ import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -116,6 +117,7 @@ export const dict = {
   "desktop.wsl.error.failedPort": "ဆိပ်ကမ်းကို ရယူရန် မအောင်မြင်ပါ။",
   "desktop.picker.error.notSelected": "ဖိုင်ကို ရွေးချယ်သူမှ ရွေးချယ်မထားပါ။",
   "desktop.picker.error.sizeLimit": "ရွေးချယ်ထားသော ပူးတွဲပါဖိုင်များသည် {{limit}} MB ကန့်သတ်ချက်ထက် ကျော်လွန်ပါသည်။",
+  ...worktreeFallback,
   "command.category.suggested": "အကြံပြုထားသည်။",
   "command.category.view": "ကြည့်ရန်",
   "command.category.project": "ပရောဂျက်",

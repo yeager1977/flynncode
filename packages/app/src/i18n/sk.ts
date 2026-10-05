@@ -9,6 +9,7 @@ import { sessionBulkFallback, sessionBulkPluralFallback } from "./session-bulk-f
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback, sessionProjectPluralFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -116,6 +117,7 @@ export const dict = {
   "desktop.wsl.error.failedPort": "Nepodarilo sa získať port",
   "desktop.picker.error.notSelected": "Súbor nebol vybraný v dialógu",
   "desktop.picker.error.sizeLimit": "Vybrané prílohy presahujú limit {{limit}} MB",
+  ...worktreeFallback,
   "command.category.suggested": "Navrhované",
   "command.category.view": "Zobrazenie",
   "command.category.project": "Projekt",

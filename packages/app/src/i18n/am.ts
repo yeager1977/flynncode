@@ -9,6 +9,7 @@ import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -114,6 +115,7 @@ export const dict = {
   "desktop.wsl.error.failedPort": "ወደብ ማግኘት አልተሳካም",
   "desktop.picker.error.notSelected": "ፋይሉ በመራጭው አልተመረጠም",
   "desktop.picker.error.sizeLimit": "የተመረጡት ዓባሪዎች ከ{{limit}}ሜባ ገደቡ በላይ",
+  ...worktreeFallback,
   "command.category.suggested": "የሚመከር",
   "command.category.view": "እይታ",
   "command.category.project": "ፕሮጀክት",

@@ -9,6 +9,7 @@ import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict: Record<string, string> = {
   ...modelRouterFallback,
@@ -117,6 +118,7 @@ export const dict: Record<string, string> = {
   "desktop.wsl.error.failedPort": "འདྲེན་ལམ་ཐོབ་ནི་ལུ་འཐུས་ཤོར་འབྱུང་ཡོདཔ།",
   "desktop.picker.error.notSelected": "ཡིག་སྣོད་འདི་ སེལ་འཐུ་འབད་མི་གིས་ སེལ་འཐུ་མ་འབད་བས།",
   "desktop.picker.error.sizeLimit": "སེལ་འཐུ་འབད་ཡོད་པའི་མཉམ་སྦྲགས་ཚུ་གིས་ {{limit}} ཨེམ་བི་ཚད་ལས་བརྒལཝ་ཨིན།",
+  ...worktreeFallback,
   "command.category.suggested": "བསམ་འཆར།",
   "command.category.view": "བསམ༌འཆར",
   "command.category.project": "ལས༌འགུལ",

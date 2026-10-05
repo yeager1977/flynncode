@@ -9,6 +9,7 @@ import { sessionBulkFallback, sessionBulkPluralFallback } from "./session-bulk-f
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback, sessionProjectPluralFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -118,6 +119,7 @@ export const dict = {
   "desktop.wsl.error.failedPort": "No s'ha pogut obtenir el port",
   "desktop.picker.error.notSelected": "El selector no ha seleccionat el fitxer",
   "desktop.picker.error.sizeLimit": "Els fitxers adjunts seleccionats superen el límit de {{limit}} MB",
+  ...worktreeFallback,
   "command.category.suggested": "Suggerit",
   "command.category.view": "Veure",
   "command.category.project": "Projecte",

@@ -9,6 +9,7 @@ import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -120,6 +121,7 @@ export const dict = {
   "desktop.picker.error.notSelected": "چونکار ولوں فائل نئیں چنی گئی",
   "desktop.picker.error.sizeLimit": "چنیاں منسلک فائلاں {{limit}} MB دی حد توں ودھ نیں",
 
+  ...worktreeFallback,
   "command.category.suggested": "تجویز کیتا گیا",
   "command.category.view": "نظارہ",
   "command.category.project": "پروجیکٹ",

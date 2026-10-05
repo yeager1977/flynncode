@@ -9,6 +9,7 @@ import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -116,6 +117,7 @@ export const dict = {
   "desktop.wsl.error.failedPort": "Portu əldə etmək mümkün olmadı",
   "desktop.picker.error.notSelected": "Seçim vasitəsində fayl seçilməyib",
   "desktop.picker.error.sizeLimit": "Seçilmiş əlavələr {{limit}} MB limitini aşır",
+  ...worktreeFallback,
   "command.category.suggested": "Təklif olunan",
   "command.category.view": "Görünüş",
   "command.category.project": "Layihə",

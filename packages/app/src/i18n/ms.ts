@@ -9,6 +9,7 @@ import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -114,6 +115,7 @@ export const dict = {
   "desktop.wsl.error.failedPort": "Gagal mendapatkan port",
   "desktop.picker.error.notSelected": "Fail tidak dipilih oleh pemilih",
   "desktop.picker.error.sizeLimit": "Lampiran yang dipilih melebihi had {{limit}} MB",
+  ...worktreeFallback,
   "command.category.suggested": "Dicadangkan",
   "command.category.view": "Paparan",
   "command.category.project": "Projek",

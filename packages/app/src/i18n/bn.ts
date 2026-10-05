@@ -9,6 +9,7 @@ import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict: Record<string, string> = {
   ...modelRouterFallback,
@@ -115,6 +116,7 @@ export const dict: Record<string, string> = {
   "desktop.wsl.error.failedPort": "পোর্ট পেতে ব্যর্থ",
   "desktop.picker.error.notSelected": "ফাইল পিকার দ্বারা নির্বাচন করা হয়নি",
   "desktop.picker.error.sizeLimit": "নির্বাচিত সংযুক্তিগুলি {{limit}} MB সীমা অতিক্রম করেছে৷",
+  ...worktreeFallback,
   "command.category.suggested": "প্রস্তাবিত",
   "command.category.view": "দেখুন",
   "command.category.project": "প্রকল্প",

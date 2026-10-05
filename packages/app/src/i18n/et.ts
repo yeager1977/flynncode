@@ -9,6 +9,7 @@ import { sessionBulkFallback } from "./session-bulk-fallback"
 import { mcpRegistryFallback } from "./mcp-registry-fallback"
 import { sessionReviewFallback } from "./session-review-fallback"
 import { sessionHandoffFallback } from "./session-handoff-fallback"
+import { worktreeFallback } from "./worktree-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -114,6 +115,7 @@ export const dict = {
   "desktop.wsl.error.failedPort": "Pordi hankimine ebaõnnestus",
   "desktop.picker.error.notSelected": "Valija ei valinud faili",
   "desktop.picker.error.sizeLimit": "Valitud manused ületavad {{limit}} MB piirangut",
+  ...worktreeFallback,
   "command.category.suggested": "Soovitatud",
   "command.category.view": "Vaade",
   "command.category.project": "Projekt",
