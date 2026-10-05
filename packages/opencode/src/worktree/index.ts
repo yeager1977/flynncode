@@ -1,13 +1,15 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { path, filesystem } from "@opencode-ai/core/effect/app-node-platform"
-import { Global } from "@opencode-ai/core/global"
 import { InstanceStore } from "@/project/instance-store"
 import { Project } from "@/project/project"
+import { Config } from "@/config/config"
+import { ConfigWorktree } from "@/config/worktree"
 import { Database } from "@opencode-ai/core/database/database"
 import { eq } from "drizzle-orm"
 import { ProjectTable } from "@opencode-ai/core/project/sql"
 import type { ProjectV2 } from "@opencode-ai/core/project"
 import { Slug } from "@opencode-ai/core/util/slug"
+import { Glob } from "@opencode-ai/core/util/glob"
 import { errorMessage } from "../util/error"
 import { GlobalBus } from "@/bus/global"
 import { Git } from "@/git"
@@ -100,6 +102,11 @@ export type Error =
   | ListFailedError
   | HandoffFailedError
 
+// Per-worktree include manifest, modeled on `.gitignore` syntax (comments and
+// one path pattern per line). Lines naming gitignored/untracked files are
+// copied from the primary checkout into each new worktree.
+const INCLUDE_FILE = ".worktreeinclude"
+
 function slugify(input: string) {
   return input
     .trim()
@@ -170,6 +177,7 @@ const layer: Layer.Layer<
   | Project.Service
   | InstanceStore.Service
   | Database.Service
+  | Config.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -182,6 +190,7 @@ const layer: Layer.Layer<
     const gitSvc = yield* Git.Service
     const project = yield* Project.Service
     const store = yield* InstanceStore.Service
+    const configSvc = yield* Config.Service
 
     const git = Effect.fnUntraced(
       function* (args: string[], opts?: { cwd?: string }) {
@@ -206,13 +215,14 @@ const layer: Layer.Layer<
     const MAX_NAME_ATTEMPTS = 26
     const candidate = Effect.fn("Worktree.candidate")(function* (input: {
       root: string
+      branchPrefix: string
       name?: string
       detached?: boolean
     }) {
       const ctx = yield* InstanceState.context
       for (const attempt of Array.from({ length: MAX_NAME_ATTEMPTS }, (_, i) => i)) {
         const name = input.name ? (attempt === 0 ? input.name : `${input.name}-${Slug.create()}`) : Slug.create()
-        const branch = input.detached ? undefined : `opencode/${name}`
+        const branch = input.detached ? undefined : `${input.branchPrefix}/${name}`
         const directory = pathSvc.join(input.root, name)
 
         if (yield* fs.exists(directory).pipe(Effect.orDie)) continue
@@ -237,10 +247,33 @@ const layer: Layer.Layer<
         return yield* new NotGitError({ message: "Worktrees are only supported for git projects" })
       }
 
-      const root = pathSvc.join(Global.Path.data, "worktree", ctx.project.id)
+      // The configured location is relative to the project root; an absolute
+      // location is honored as-is. When the parent ends up inside the primary
+      // checkout, keep it out of git so `git clean -ffdx` cannot sweep it away.
+      const wt = ConfigWorktree.settings(yield* configSvc.get())
+      const inRepo = !pathSvc.isAbsolute(wt.location)
+      const root = inRepo ? pathSvc.join(ctx.worktree, wt.location) : pathSvc.normalize(wt.location)
       yield* fs.makeDirectory(root, { recursive: true }).pipe(Effect.orDie)
+      if (inRepo) yield* ignoreWorktreeRoot(ctx.worktree, wt.location)
 
-      return yield* candidate({ root, name: input?.name ? slugify(input.name) : "", detached: input?.detached })
+      return yield* candidate({
+        root,
+        branchPrefix: wt.branchPrefix,
+        name: input?.name ? slugify(input.name) : "",
+        detached: input?.detached,
+      })
+    })
+
+    const ignoreWorktreeRoot = Effect.fn("Worktree.ignoreWorktreeRoot")(function* (projectRoot: string, location: string) {
+      const gitignore = pathSvc.join(projectRoot, ".gitignore")
+      const entry = `${location.replace(/\/+$/, "")}/`
+      const existing = (yield* fs.readFileStringSafe(gitignore).pipe(Effect.catch(() => Effect.succeed("")))) ?? ""
+      // Match the entry as a whole line so repeated saves do not stack copies.
+      if (existing.split("\n").some((line) => line.trim() === entry || line.trim() === entry.replace(/\/$/, ""))) return
+      const prefix = existing && !existing.endsWith("\n") ? "\n" : ""
+      yield* fs.writeFileString(gitignore, `${existing}${prefix}# git worktrees (config.worktree.location)\n${entry}\n`).pipe(
+        Effect.catch(() => Effect.void),
+      )
     })
 
     const setup = Effect.fnUntraced(function* (info: Info) {
@@ -312,10 +345,76 @@ const layer: Layer.Layer<
 
     const createFromInfo = Effect.fn("Worktree.createFromInfo")(function* (info: Info, startCommand?: string) {
       yield* setup(info)
+      yield* carryIncludedFiles(info.directory).pipe(
+        Effect.catchCause((cause) => Effect.logWarning("worktree include carry failed", { cause })),
+      )
       yield* boot(info, startCommand).pipe(
         Effect.catchCause((cause) => Effect.logError("worktree bootstrap failed", { cause })),
         Effect.forkIn(scope),
       )
+    })
+
+    // Carry gitignored files listed in `<project-root>/.worktreeinclude` from
+    // the primary checkout into a freshly created worktree. Only ignored files
+    // are carried — tracked files already arrive via the checkout. Patterns
+    // support exact paths and simple `*` globs; any failure is a warning, never
+    // a failed create.
+    const carryIncludedFiles = Effect.fn("Worktree.carryIncludedFiles")(function* (target: string) {
+      const ctx = yield* InstanceState.context
+      const includeFile = pathSvc.join(ctx.worktree, INCLUDE_FILE)
+      const text = yield* rawFs.readFileString(includeFile).pipe(Effect.catch(() => Effect.succeed(undefined)))
+      if (text === undefined) return
+
+      const tracked = yield* trackedFiles(ctx.worktree)
+      const trackedSet = new Set(tracked)
+
+      for (const line of text.split("\n")) {
+        const pattern = line.trim()
+        if (!pattern || pattern.startsWith("#")) continue
+        const matches = yield* Effect.tryPromise({
+          try: () =>
+            Glob.scan(pattern, {
+              cwd: ctx.worktree,
+              absolute: true,
+              dot: true,
+              include: "file",
+            }),
+          catch: (error) => error,
+        }).pipe(
+          Effect.map((items) => items),
+          Effect.catch(() => Effect.succeed([] as string[])),
+        )
+        for (const absolute of matches) {
+          const relative = pathSvc.relative(ctx.worktree, absolute)
+          if (!relative || relative.startsWith("..") || pathSvc.isAbsolute(relative)) continue
+          // Only carry files the checkout cannot already provide: tracked
+          // files land in the new worktree through `git reset --hard`.
+          if (trackedSet.has(relative)) continue
+          yield* copyIntoWorktree(ctx.worktree, target, relative).pipe(
+            Effect.catch((error) =>
+              Effect.logWarning("failed to carry included file", {
+                file: relative,
+                message: errorMessage(error),
+              }),
+            ),
+          )
+        }
+      }
+    })
+
+    const trackedFiles = Effect.fnUntraced(function* (worktree: string) {
+      const result = yield* git(["ls-files", "--full-name", "-z"], { cwd: worktree })
+      if (result.code !== 0) return []
+      return result.text.split("\0").filter(Boolean)
+    })
+
+    const copyIntoWorktree = Effect.fnUntraced(function* (source: string, target: string, relative: string) {
+      const from = pathSvc.join(source, relative)
+      const to = pathSvc.join(target, relative)
+      const isFile = yield* fs.isFile(from).pipe(Effect.catch(() => Effect.succeed(false)))
+      if (!isFile) return
+      yield* rawFs.makeDirectory(pathSvc.dirname(to), { recursive: true })
+      yield* rawFs.copy(from, to, { overwrite: true })
     })
 
     const create = Effect.fn("Worktree.create")(function* (input?: CreateInput) {
@@ -651,6 +750,7 @@ const layer: Layer.Layer<
 
     const createAndRetain = Effect.fn("Worktree.createAndRetain")(function* (input?: CreateInput) {
       const ctx = yield* InstanceState.context
+      const retain = ConfigWorktree.settings(yield* configSvc.get()).keep
       const info = yield* create(input)
       const entries = yield* list().pipe(Effect.catch(() => Effect.succeed([] as Info[])))
       // Canonicalize once: canonical() lowercases on Windows while
@@ -673,6 +773,7 @@ const layer: Layer.Layer<
           open: entry.directory === info.directory,
           running: loadedKeys.has(entryKeys[index] ?? ""),
         })),
+        retain,
       )
       for (const directory of drop) {
         const key = yield* canonical(directory)
@@ -764,7 +865,17 @@ const layer: Layer.Layer<
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [FSUtil.node, filesystem, path, AppProcess.node, Git.node, Project.node, InstanceStore.node, Database.node],
+  deps: [
+    FSUtil.node,
+    filesystem,
+    path,
+    AppProcess.node,
+    Git.node,
+    Project.node,
+    InstanceStore.node,
+    Database.node,
+    Config.node,
+  ],
 })
 
 export * as Worktree from "."

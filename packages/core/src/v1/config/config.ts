@@ -78,6 +78,20 @@ export const Info = Schema.Struct({
   enabled_providers: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
     description: "When set, ONLY these providers will be enabled. All other providers will be ignored",
   }),
+  worktree: Schema.optional(
+    Schema.Struct({
+      location: Schema.optional(Schema.String).annotate({
+        description:
+          "Directory where new git worktrees are created, relative to the project root or absolute (default: .opencode/worktrees)",
+      }),
+      branch_prefix: Schema.optional(Schema.String).annotate({
+        description: "Prefix for worktree branch names (default: opencode)",
+      }),
+      keep: Schema.optional(NonNegativeInt).annotate({
+        description: "Maximum number of idle worktrees to retain before pruning the oldest (default: 15)",
+      }),
+    }),
+  ).annotate({ description: "Git worktree creation and retention settings" }),
   model: Schema.optional(Schema.String).annotate({
     description: "Model to use in the format of provider/model, eg anthropic/claude-2",
   }),

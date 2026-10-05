@@ -1938,6 +1938,11 @@ export type Config = {
     [key: string]: unknown
   }
   enabled_providers?: Array<string>
+  worktree?: {
+    location?: string
+    branch_prefix?: string
+    keep?: number
+  }
   model?: string
   small_model?: string
   model_family?: string

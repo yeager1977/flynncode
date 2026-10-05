@@ -15,4 +15,23 @@ describe("worktreesToRemove", () => {
     expect(remove).not.toContain("open")
     expect(remove).not.toContain("wt-15")
   })
+
+  test("honors a custom keep limit from config", () => {
+    const entries: WorktreeRetentionEntry[] = Array.from({ length: 5 }, (_, index) => ({
+      directory: `wt-${index}`,
+      updated: index,
+    }))
+    const remove = worktreesToRemove(entries, 2)
+    // Newest stay, oldest past the limit are dropped.
+    expect(remove.sort()).toEqual(["wt-0", "wt-1", "wt-2"])
+  })
+
+  test("a keep limit of zero still protects open and running worktrees", () => {
+    const entries: WorktreeRetentionEntry[] = [
+      { directory: "open", updated: 3, open: true },
+      { directory: "running", updated: 2, running: true },
+      { directory: "idle", updated: 1 },
+    ]
+    expect(worktreesToRemove(entries, 0).sort()).toEqual(["idle"])
+  })
 })
