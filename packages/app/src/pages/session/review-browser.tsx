@@ -46,6 +46,57 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
     const hash = url.indexOf("#")
     return hash === -1 ? "" : url.slice(hash)
   }
+  const pagePath = (url: string) => {
+    try {
+      return new URL(url).pathname
+    } catch {
+      return undefined
+    }
+  }
+  const capture = async () => {
+    const result = await window.api?.capturePage?.()
+    if (typeof result !== "string" || !result.startsWith("data:")) return undefined
+    return result
+  }
+  const annotate = async () => {
+    const text = state.note.trim()
+    if (!text) {
+      setState("loaded", state.url)
+      return
+    }
+    const thumbnail = state.marked ? await capture() : undefined
+    const comment = state.marked
+      ? browserAnnotation({
+          url: state.loaded,
+          path: pagePath(state.loaded),
+          note: text,
+          x: state.x,
+          y: state.y,
+          width: state.width,
+          height: state.height,
+          thumbnail,
+        })
+      : `${state.loaded}: ${text}`
+    props.onAnnotate(comment)
+    setState({ note: "", marked: false, width: 0, height: 0 })
+  }
+  const recheck = async () => {
+    const text = state.note.trim()
+    if (!text || !state.marked) return
+    const thumbnail = await capture()
+    props.onAnnotate(
+      browserAnnotation({
+        url: state.loaded,
+        path: pagePath(state.loaded),
+        note: text,
+        x: state.x,
+        y: state.y,
+        width: state.width,
+        height: state.height,
+        thumbnail,
+      }),
+    )
+  }
 
   return (
     <div data-component="review-browser" class="flex min-h-0 flex-col border-t border-border-weak-base">
@@ -62,6 +113,15 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
         >
           {language.t("common.reset")}
         </Button>
+        <Button
+          type="button"
+          size="small"
+          variant="ghost"
+          disabled={!state.open || !state.marked || state.note.trim().length === 0}
+          onClick={() => void recheck()}
+        >
+          {language.t("session.review.recheckPage")}
+        </Button>
         <Button type="button" size="small" variant="ghost" disabled={!state.open} onClick={() => setState("loaded", state.url)}>
           {language.t("common.goForward")}
         </Button>
@@ -71,23 +131,7 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
           class="flex gap-2 px-2 pb-2"
           onSubmit={(event) => {
             event.preventDefault()
-            const text = state.note.trim()
-            if (!text) {
-              setState("loaded", state.url)
-              return
-            }
-            const comment = state.marked
-              ? browserAnnotation({
-                  url: state.loaded,
-                  note: text,
-                  x: state.x,
-                  y: state.y,
-                  width: state.width,
-                  height: state.height,
-                })
-              : `${state.loaded}: ${text}`
-            props.onAnnotate(comment)
-            setState({ note: "", marked: false, width: 0, height: 0 })
+            void annotate()
           }}
         >
           <input

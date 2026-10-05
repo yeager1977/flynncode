@@ -738,6 +738,7 @@ export const dict = {
   "session.review.stageHunk": "Stage hunk",
   "session.review.unstageHunk": "Unstage hunk",
   "session.review.markPreview": "Mark preview",
+  "session.review.recheckPage": "Re-check page",
   "session.question.progress": "{{current}} of {{total}} questions",
   "session.question.minimize": "Minimize question",
   "session.question.restore": "Restore question",

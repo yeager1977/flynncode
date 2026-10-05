@@ -15,6 +15,7 @@ export const sessionReviewFallback = Object.fromEntries(
       key === "session.review.stageHunk" ||
       key === "session.review.unstageHunk" ||
       key === "session.review.markPreview" ||
+      key === "session.review.recheckPage" ||
       key === "session.todo.status.pending" ||
       key === "session.todo.status.in_progress" ||
       key === "session.todo.status.completed" ||

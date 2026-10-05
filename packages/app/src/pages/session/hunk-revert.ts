@@ -34,11 +34,15 @@ export function browserAnnotation(input: {
   y: number
   width: number
   height: number
+  path?: string
+  thumbnail?: string
 }) {
   const start = `${Math.round(input.x)}%,${Math.round(input.y)}%`
   const end = `${Math.round(input.x + input.width)}%,${Math.round(input.y + input.height)}%`
   const mark = input.width < 1 && input.height < 1 ? start : `${start}-${end}`
-  return `${input.url} ${mark}: ${input.note}`
+  const body = input.path ? `${input.path} - ${input.note} - ${mark}` : `${input.url} ${mark}: ${input.note}`
+  if (!input.thumbnail) return body
+  return `${body} - ${input.thumbnail}`
 }
 
 function reverseHunkHeader(line: string) {
