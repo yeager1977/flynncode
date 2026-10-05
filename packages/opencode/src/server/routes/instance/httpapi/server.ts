@@ -58,6 +58,7 @@ import { EventV2 } from "@opencode-ai/core/event"
 import { ModelsDev } from "@opencode-ai/core/models-dev"
 import { Npm } from "@opencode-ai/core/npm"
 import { PermissionSaved } from "@opencode-ai/core/permission/saved"
+import { Preview } from "@/preview/preview"
 import { ProjectV2 } from "@opencode-ai/core/project"
 import { ProjectCopy } from "@opencode-ai/core/project/copy"
 import { PtyTicket } from "@opencode-ai/core/pty/ticket"
@@ -93,6 +94,7 @@ import { globalHandlers } from "./handlers/global"
 import { instanceHandlers } from "./handlers/instance"
 import { mcpHandlers } from "./handlers/mcp"
 import { permissionHandlers } from "./handlers/permission"
+import { previewHandlers } from "./handlers/preview"
 import { projectHandlers } from "./handlers/project"
 import { projectCopyHandlers } from "./handlers/project-copy"
 import { providerHandlers } from "./handlers/provider"
@@ -165,6 +167,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     ptyHandlers,
     questionHandlers,
     permissionHandlers,
+    previewHandlers,
     providerHandlers,
     sessionHandlers,
     syncHandlers,
@@ -233,6 +236,7 @@ const app = LayerNode.group([
   Question.node,
   Permission.node,
   PermissionSaved.node,
+  Preview.node,
   Todo.node,
   Session.node,
   SessionProjector.node,

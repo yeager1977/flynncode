@@ -72,6 +72,18 @@ export const Info = Schema.Struct({
     description:
       "Options for the built-in Ollama model router plugin (scorecard, task weights, per-task pins, model exclusions, agent routing)",
   }),
+  // Tolerant tunnel like model_router: entries are validated by the preview
+  // server-side parser, which skips invalid server entries with a logged
+  // warning instead of failing config load.
+  preview: Schema.optional(
+    Schema.Struct({
+      servers: Schema.optional(Schema.mutable(Schema.Array(Schema.Unknown))),
+      autoVerify: Schema.optional(Schema.Boolean),
+    }),
+  ).annotate({
+    description:
+      "Preview servers for the review browser. Entries are { name, command?, args?, cwd?, port?, url?, autoPort?, autoVerify? }; a managed server declares command, an attach-only server declares url.",
+  }),
   routines: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)).annotate({
     description: "Repeatable agent jobs. Shape is { routines: [{ id, name, prompt, enabled, schedule }] }.",
   }),

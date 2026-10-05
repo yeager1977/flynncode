@@ -23,6 +23,7 @@ import { XaiAuthPlugin } from "./xai"
 import { CerebrasPlugin } from "./cerebras"
 import { SnowflakeCortexAuthPlugin } from "./snowflake-cortex"
 import { OllamaModelRouterPlugin } from "./ollama-model-router"
+import { PreviewPlugin } from "./preview"
 import { RoutinesPlugin } from "./routines"
 import { Effect, Layer, Context } from "effect"
 import { EffectBridge } from "@/effect/bridge"
@@ -86,6 +87,7 @@ function internalPlugins(flags: RuntimeFlags.Info): PluginInstance[] {
     XaiAuthPlugin,
     CerebrasPlugin,
     OllamaModelRouterPlugin,
+    PreviewPlugin,
     RoutinesPlugin,
   ]
 }
