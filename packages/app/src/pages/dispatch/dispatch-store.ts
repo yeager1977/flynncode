@@ -10,6 +10,8 @@ export type DispatchTask = {
 
 const LIMIT = 40
 
+export type DispatchFilter = "all" | "unread" | "running" | "waiting"
+
 export function addDispatch(tasks: readonly DispatchTask[], task: DispatchTask) {
   return [task, ...tasks.filter((item) => item.sessionID !== task.sessionID)].slice(0, LIMIT)
 }

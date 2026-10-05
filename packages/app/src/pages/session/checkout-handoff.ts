@@ -84,3 +84,26 @@ export function firstPromptText(input: {
     .join("")
     .trim()
 }
+
+export type HandoffPromptOutcome = "carry" | "empty-loaded" | "empty-unresolved"
+
+// Decides how the handoff treats the source prompt. A real prompt carries
+// over; an empty one is only silent when messages have actually loaded (the
+// session has no prompt). When the session is missing or its messages have
+// not loaded yet, the move proceeds empty but the caller must surface the
+// moved-without-session toast so nothing is lost silently.
+export function handoffPromptOutcome(input: { sessionFound: boolean; messagesLoaded: boolean; prompt: string }): HandoffPromptOutcome {
+  if (input.prompt) return "carry"
+  if (input.sessionFound && input.messagesLoaded) return "empty-loaded"
+  return "empty-unresolved"
+}
+
+// Extracts the endpoint's own message from a WorktreeError-shaped rejection
+// ({ name, data: { message } }) so the UI can surface the real failure reason.
+export function handoffErrorMessage(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return undefined
+  const row = error as Record<string, unknown>
+  const data = typeof row.data === "object" && row.data !== null ? (row.data as Record<string, unknown>) : undefined
+  const message = data?.message
+  return typeof message === "string" && message.trim() ? message.trim() : undefined
+}

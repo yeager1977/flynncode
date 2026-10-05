@@ -125,10 +125,17 @@ export function parseRunRecords(text: string): RoutineRun[] {
 }
 
 export async function recordRoutineRun(record: RoutineRun, file: string = RUNS_FILE) {
-  const existing = (await Bun.file(file).exists()) ? await Bun.file(file).text() : ""
-  const records = [...parseRunRecords(existing), record].slice(-MAX_RUNS)
-  await Bun.write(file, records.map((row) => JSON.stringify(row)).join("\n") + "\n")
-  return records
+  // Serialize read-append-rewrite across concurrent runs (Promise.allSettled
+  // scheduler) so parallel records cannot drop each other's writes.
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      yield* Flock.effect(`routines-runs:${file}`, { staleMs: 10_000, timeoutMs: 30_000 })
+      const existing = (yield* Effect.promise(() => Bun.file(file).exists())) ? yield* Effect.promise(() => Bun.file(file).text()) : ""
+      const records = [...parseRunRecords(existing), record].slice(-MAX_RUNS)
+      yield* Effect.promise(() => Bun.write(file, records.map((row) => JSON.stringify(row)).join("\n") + "\n"))
+      return records
+    }).pipe(Effect.scoped),
+  )
 }
 
 async function runOne(client: Client, directory: string, routine: Routine) {
@@ -136,17 +143,17 @@ async function runOne(client: Client, directory: string, routine: Routine) {
     body: { title: routine.name },
     query: { directory },
   })
-  const session = created.data
-  if (!session?.id) return { sessionID: undefined as string | undefined }
+  const sessionID = created.data?.id
+  if (!sessionID) return { sessionID: undefined }
   await client.session.promptAsync({
-    path: { id: session.id },
+    path: { id: sessionID },
     query: { directory },
     body: {
       agent: "build",
       parts: [{ type: "text", text: routine.prompt }],
     },
   })
-  return { sessionID: session.id as string | undefined }
+  return { sessionID }
 }
 
 export function startScheduler(client: Client, directory: string) {

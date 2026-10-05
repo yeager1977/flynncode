@@ -9,22 +9,20 @@ import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useModels } from "@/context/models"
-import { usePlatform } from "@/context/platform"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useProviders } from "@/hooks/use-providers"
 import { resolveDefaultModel } from "@/hooks/provider-catalog"
-import { Persist, persisted } from "@/utils/persist"
 import { pathKey } from "@/utils/path-key"
 import { inboxStatus } from "./activity-status"
+import { useDispatchActivity } from "./dispatch-activity"
 import {
   addDispatch,
   completeDispatch,
   failDispatch,
   markDispatchRead,
-  migrateDispatch,
   reconcileDispatch,
-  resolvedTransition,
+  type DispatchFilter,
   type DispatchStatus,
   type DispatchTask,
 } from "./dispatch-store"
@@ -37,13 +35,11 @@ export function DispatchPanel() {
   const serverSync = useServerSync()
   const dialog = useDialog()
   const navigate = useNavigate()
+  const activity = useDispatchActivity()
   // Sidebar dialogs render under server-scoped providers only — no
   // SDKProvider/LocalProvider here, so resolve models from the global catalog.
   const providers = useProviders(() => undefined)
-  const [desk, setDesk, , ready] = persisted(
-    { ...Persist.global("dispatch.v1"), migrate: migrateDispatch },
-    createStore({ tasks: [] as DispatchTask[] }),
-  )
+  const { desk, setDesk, ready } = activity
   const [state, setState] = createStore({
     text: "",
     sending: false,
@@ -53,7 +49,6 @@ export function DispatchPanel() {
     model: "",
     filter: "all" as DispatchFilter,
   })
-  const platform = usePlatform()
   const projects = () => layout.projects.list()
   const modelOptions = () => models.list()
   const agentsQuery = createQuery(() => {
@@ -173,35 +168,7 @@ export function DispatchPanel() {
         return tasks
     }
   })
-  const unreadCount = createMemo(() => desk.tasks.filter((task) => task.unread).length)
-  const previous = new Map<string, DispatchStatus>()
-  let primed = false
-
-  createEffect(() => {
-    const current = new Map<string, DispatchStatus>()
-    let changed = false
-    for (const task of desk.tasks) {
-      const status = liveStatus(task)
-      current.set(task.sessionID, status)
-      const before = previous.get(task.sessionID)
-      if (!primed || !before || before === status) continue
-      if (!resolvedTransition(before, status)) continue
-      changed = true
-      void platform.notify(language.t(statusKey(status)), task.title, () => openTask(task))
-    }
-    if (changed) {
-      setDesk("tasks", (existing) =>
-        existing.map((task) => {
-          const status = current.get(task.sessionID)
-          if (!status || !resolvedTransition(previous.get(task.sessionID) ?? status, status)) return task
-          return { ...task, unread: true }
-        }),
-      )
-    }
-    previous.clear()
-    current.forEach((status, id) => previous.set(id, status))
-    primed = true
-  })
+  const unreadCount = createMemo(() => activity.unreadCount())
 
   const openTask = (task: DispatchTask) => {
     setDesk("tasks", (current) => markDispatchRead(current, task.sessionID))
@@ -307,8 +274,6 @@ export function DispatchPanel() {
     </Dialog>
   )
 }
-
-type DispatchFilter = "all" | "unread" | "running" | "waiting"
 
 function filterKey(tab: DispatchFilter) {
   switch (tab) {

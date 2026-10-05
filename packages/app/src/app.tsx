@@ -60,6 +60,7 @@ import { WslServersProvider } from "@/wsl/context"
 import DirectoryLayout, { DirectoryDataProvider } from "@/pages/directory-layout"
 import LegacyLayout from "@/pages/layout"
 import NewLayout from "@/pages/layout-new"
+import { DispatchActivityProvider } from "@/pages/dispatch/dispatch-activity"
 import { ErrorPage } from "./pages/error"
 import { useCheckServerHealth } from "./utils/server-health"
 import { legacySessionHref, legacySessionServer, requireServerKey, sessionHref } from "./utils/session-route"
@@ -355,6 +356,9 @@ type ServerScopedShellProps = ParentProps<{
 function ServerScopedProviders(props: ServerScopedShellProps) {
   return (
     <LayoutProvider>
+      {/* Persistently mounted dispatch activity watcher: flags transitions and
+          notifies while the dispatch panel is closed. */}
+      <DispatchActivityProvider />
       {props.serverScoped}
       <ModelsProvider directory={props.directory}>{props.children}</ModelsProvider>
     </LayoutProvider>

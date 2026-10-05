@@ -1,5 +1,6 @@
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import type { FileDiffInfo } from "@opencode-ai/client/promise"
+import { createSignal } from "solid-js"
 import { pathKey } from "@/utils/path-key"
 import { compareSessionTime } from "./helpers"
 
@@ -145,6 +146,14 @@ export function loadStoredArtifacts(directory: string): StoredArtifact[] {
   return parseStored(localStorage.getItem(storageKey(directory)))
 }
 
+// Bumped on every storeArtifact write so reactive consumers (the sidebar) can
+// re-read the non-reactive localStorage store without switching directories.
+const [artifactVersion, setArtifactVersion] = createSignal(0)
+
+export function artifactVersionSignal() {
+  return artifactVersion()
+}
+
 export function storeArtifact(directory: string, artifact: ArtifactInput): StoredArtifact | undefined {
   if (typeof localStorage !== "object") return undefined
   const stored: StoredArtifact = {
@@ -154,6 +163,7 @@ export function storeArtifact(directory: string, artifact: ArtifactInput): Store
   }
   const next = [stored, ...loadStoredArtifacts(directory)].slice(0, MAX_STORED)
   localStorage.setItem(storageKey(directory), JSON.stringify(next))
+  setArtifactVersion((version) => version + 1)
   return stored
 }
 

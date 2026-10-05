@@ -29,11 +29,24 @@ describe("DispatchPanel", () => {
     expect(source).toContain("filteredTasks()")
   })
 
-  test("marks tasks read on open and notifies on terminal transitions", () => {
+  test("marks tasks read on open and reads transition state from the activity context", () => {
     const source = readFileSync(new URL("./dispatch-panel.tsx", import.meta.url), "utf8")
     expect(source).toContain("markDispatchRead")
-    expect(source).toContain("platform.notify")
+    // Transition detection and OS notification moved to the persistently
+    // mounted DispatchActivityProvider; the panel only renders store state.
+    expect(source).toContain("useDispatchActivity")
+    expect(source).not.toContain("platform.notify")
+    expect(source).not.toContain("resolvedTransition")
+  })
+})
+
+describe("DispatchActivity", () => {
+  test("watches transitions globally and notifies through the platform", () => {
+    const source = readFileSync(new URL("./dispatch-activity.tsx", import.meta.url), "utf8")
+    expect(source).toContain("createEffect")
     expect(source).toContain("resolvedTransition")
-    expect(source).toContain("previous")
+    expect(source).toContain("platform.notify")
+    expect(source).toContain("markDispatchRead")
+    expect(source).toContain('Persist.global("dispatch.v1")')
   })
 })

@@ -29,7 +29,7 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { messageAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
 import { pathKey } from "@/utils/path-key"
-import { checkoutHandoff, carryHandoffContext, firstPromptText } from "@/pages/session/checkout-handoff"
+import { checkoutHandoff, carryHandoffContext, firstPromptText, handoffErrorMessage, handoffPromptOutcome } from "@/pages/session/checkout-handoff"
 import { fileManagerApp } from "@/utils/file-manager"
 import { Persist, persisted } from "@/utils/persist"
 import { StatusPopover, StatusPopoverV2 } from "../status-popover"
@@ -309,18 +309,28 @@ export function SessionHeader() {
         from: current,
         to: created,
         sourceSessionID: session?.id,
-      }).catch(() => undefined)
-      if (!moved) {
+      }).catch((error: unknown) => {
         showToast({
-          title: language.t("workspace.create.failed.title"),
-          description: language.t("common.requestFailed"),
+          title: language.t("session.handoff.failed.title"),
+          // Surface the endpoint's own failure reason instead of a generic
+          // request-failed toast; WorktreeError carries { data: { message } }.
+          description:
+            language.t("session.handoff.failed.description", {
+              message: handoffErrorMessage(error) ?? language.t("common.requestFailed"),
+            }),
         })
-        return
-      }
-      if (!moved.movedSessionID) {
+        return undefined
+      })
+      if (!moved) return
+      const loaded = id ? sync().data.message[id] !== undefined : false
+      if (handoffPromptOutcome({
+        sessionFound: !!session,
+        messagesLoaded: loaded,
+        prompt: firstPromptText(sessionPayload()),
+      }) === "empty-unresolved") {
         showToast({
           title: language.t("session.handoff.movedWithoutSession.title"),
-          description: language.t("session.handoff.movedWithoutSession.description"),
+          description: language.t("session.handoff.emptyPromptMoved.description"),
         })
       }
       navigate(`/${base64Encode(moved.directory)}/session?prompt=${encodeURIComponent(firstPromptText(sessionPayload()))}`)

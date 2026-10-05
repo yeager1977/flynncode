@@ -2,10 +2,15 @@ import { Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { useLanguage } from "@/context/language"
+import { useSDK } from "@/context/sdk"
+import { useSessionLayout } from "./session-layout"
+import { storeArtifact } from "@/pages/layout/sidebar-artifacts"
 import { browserAnnotation } from "./hunk-revert"
 
 export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) {
   const language = useLanguage()
+  const sdk = useSDK()
+  const layout = useSessionLayout()
   const [state, setState] = createStore({
     url: "http://127.0.0.1:3000",
     loaded: "http://127.0.0.1:3000",
@@ -58,6 +63,23 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
     if (typeof result !== "string" || !result.startsWith("data:")) return undefined
     return result
   }
+  // Lane 2 → Lane 4 wiring: an annotation also lands in the sidebar artifact
+  // store as a screenshot so the picture survives the session transcript.
+  const storeAnnotation = (input: { url: string; note: string; thumbnail?: string }) => {
+    const sessionID = layout.params.id
+    if (!sessionID) return
+    const directory = sdk().directory
+    if (!directory) return
+    storeArtifact(directory, {
+      type: "screenshot",
+      sessionID,
+      url: input.url,
+      note: input.note,
+      path: pagePath(input.url),
+      rect: { x: state.x, y: state.y, width: state.width, height: state.height },
+      thumbnail: input.thumbnail,
+    })
+  }
   const annotate = async () => {
     const text = state.note.trim()
     if (!text) {
@@ -78,6 +100,7 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
         })
       : `${state.loaded}: ${text}`
     props.onAnnotate(comment)
+    storeAnnotation({ url: state.loaded, note: text, thumbnail: state.marked ? thumbnail : undefined })
     setState({ note: "", marked: false, width: 0, height: 0 })
   }
   const recheck = async () => {
@@ -96,6 +119,7 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
         thumbnail,
       }),
     )
+    storeAnnotation({ url: state.loaded, note: text, thumbnail })
   }
 
   return (

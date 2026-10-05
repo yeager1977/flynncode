@@ -128,11 +128,15 @@ function failedRemoves(...chunks: string[]) {
 // then a NUL, then the path. Rename records (XY + NUL + new + NUL + old) yield
 // only the new path — the checkout surface already decodes octal-escaped
 // legacy porcelain output the same way.
+// Deleted paths carry no source to copy, so they are dropped here: the
+// destination's fresh checkout already has the file when it was never deleted
+// there, which matches carrying the source's working state.
 function parseStatusZ(text: string) {
-  const out: string[] = []
+  const out: { path: string; deleted: boolean }[] = []
   for (const record of text.split("\0")) {
     if (record.length <= 3) continue
-    out.push(record.slice(3))
+    const status = record.slice(0, 2)
+    out.push({ path: record.slice(3), deleted: status.includes("D") })
   }
   return out
 }
@@ -732,15 +736,19 @@ const layer: Layer.Layer<
           message: status.stderr || status.text || "Failed to read source worktree status",
         })
       }
-      const dirty = parseStatusZ(status.text)
+      const dirty = parseStatusZ(status.text).filter((item) => !item.deleted)
       yield* Effect.forEach(
         dirty,
         (item) =>
           Effect.gen(function* () {
-            const fromPath = pathSvc.join(source, item)
-            const toPath = pathSvc.join(target, item)
-            yield* fs.makeDirectory(pathSvc.dirname(toPath), { recursive: true }).pipe(Effect.orDie)
-            yield* rawFs.copy(fromPath, toPath, { overwrite: true }).pipe(Effect.orDie)
+            const fromPath = pathSvc.join(source, item.path)
+            const toPath = pathSvc.join(target, item.path)
+            yield* fs.makeDirectory(pathSvc.dirname(toPath), { recursive: true }).pipe(
+              Effect.mapError((error) => new HandoffFailedError({ message: errorMessage(error) })),
+            )
+            yield* rawFs.copy(fromPath, toPath, { overwrite: true }).pipe(
+              Effect.mapError((error) => new HandoffFailedError({ message: errorMessage(error) })),
+            )
           }),
         { concurrency: "unbounded", discard: true },
       )

@@ -117,4 +117,50 @@ describe("Worktree.handoff", () => {
       }),
     { git: true },
   )
+
+  wintest(
+    "skips deleted files instead of crashing the handoff",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const fsMod = yield* FSUtil.Service
+        const svc = yield* Worktree.Service
+        const name = `handoff-del-${Date.now().toString(36)}`
+        const branch = `opencode/${name}`
+        const source = path.join(test.directory, name)
+        const destination = path.join(test.directory, "handoff-deleted-destination")
+
+        yield* git(test.directory, ["worktree", "add", "--no-checkout", "-b", branch, source])
+        yield* git(source, ["reset", "--hard"])
+        yield* git(test.directory, ["worktree", "add", "--no-checkout", "--detach", destination, "HEAD"])
+        yield* git(destination, ["reset", "--hard"])
+
+        // A tracked file deleted in the worktree (unstaged) and one with a
+        // staged deletion both enumerate in `git status -z`; neither has a
+        // source to copy.
+        yield* Effect.promise(() => Bun.write(path.join(source, "tracked.txt"), "tracked"))
+        yield* git(source, ["add", "tracked.txt"])
+        yield* git(source, ["commit", "-m", "seed tracked file"])
+        yield* Effect.promise(() => Bun.file(path.join(source, "tracked.txt")).unlink())
+
+        yield* Effect.promise(() => Bun.write(path.join(source, "staged-deleted.txt"), "staged"))
+        yield* git(source, ["add", "staged-deleted.txt"])
+        yield* git(source, ["commit", "-m", "seed staged deletion"])
+        yield* git(source, ["rm", "staged-deleted.txt"])
+
+        // A live uncommitted file must still be carried alongside the deletions.
+        yield* Effect.promise(() => Bun.write(path.join(source, "kept.txt"), "kept"))
+
+        const ok = yield* svc.handoff({ from: source, to: destination })
+
+        expect(ok).toBe(true)
+        expect(yield* fsMod.exists(path.join(destination, "kept.txt"))).toBe(true)
+        expect(yield* fsMod.exists(path.join(destination, "tracked.txt"))).toBe(false)
+        expect(yield* fsMod.exists(path.join(destination, "staged-deleted.txt"))).toBe(false)
+
+        yield* svc.remove({ directory: source })
+        yield* svc.remove({ directory: destination })
+      }),
+    { git: true },
+  )
 })

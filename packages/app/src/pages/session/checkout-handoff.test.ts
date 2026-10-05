@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { carryHandoffContext, checkoutHandoff, firstPromptText } from "./checkout-handoff"
+import { carryHandoffContext, checkoutHandoff, firstPromptText, handoffErrorMessage, handoffPromptOutcome } from "./checkout-handoff"
 
 describe("checkoutHandoff", () => {
   test("stays on the primary checkout when the directory is not git", () => {
@@ -147,5 +147,34 @@ describe("firstPromptText", () => {
 
   test("returns an empty string when there are no user messages", () => {
     expect(firstPromptText({ messages: [{ id: "msg_1", role: "assistant", parts: [] }] })).toBe("")
+  })
+})
+
+describe("handoffPromptOutcome", () => {
+  test("carries a real prompt", () => {
+    expect(handoffPromptOutcome({ sessionFound: true, messagesLoaded: true, prompt: "fix login" })).toBe("carry")
+  })
+
+  test("stays silent when the session legitimately has no prompt", () => {
+    expect(handoffPromptOutcome({ sessionFound: true, messagesLoaded: true, prompt: "" })).toBe("empty-loaded")
+  })
+
+  test("flags an unresolved prompt when the session is missing or messages are unloaded", () => {
+    expect(handoffPromptOutcome({ sessionFound: false, messagesLoaded: false, prompt: "" })).toBe("empty-unresolved")
+    expect(handoffPromptOutcome({ sessionFound: true, messagesLoaded: false, prompt: "" })).toBe("empty-unresolved")
+  })
+})
+
+describe("handoffErrorMessage", () => {
+  test("extracts the endpoint message from a WorktreeError shape", () => {
+    expect(handoffErrorMessage({ name: "WorktreeHandoffFailedError", data: { message: "Destination worktree does not exist" } })).toBe(
+      "Destination worktree does not exist",
+    )
+  })
+
+  test("returns undefined for non-WorktreeError shapes", () => {
+    expect(handoffErrorMessage(new Error("boom"))).toBeUndefined()
+    expect(handoffErrorMessage({ data: {} })).toBeUndefined()
+    expect(handoffErrorMessage(undefined)).toBeUndefined()
   })
 })

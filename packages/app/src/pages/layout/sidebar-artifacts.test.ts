@@ -4,6 +4,7 @@ import type { FileDiffInfo } from "@opencode-ai/client/promise"
 import {
   artifactMatchesFilter,
   artifactSessionHref,
+  artifactVersionSignal,
   filterArtifactGroups,
   groupSessionArtifacts,
   loadArtifactFilter,
@@ -282,6 +283,14 @@ describe("artifact persistence", () => {
     expect(loaded.length).toBe(100)
     expect(loaded[0]?.type === "note" && loaded[0].text).toBe("n104")
     expect(loaded.some((item) => item.type === "note" && item.text === "n0")).toBe(false)
+  })
+
+  test("bumps the version signal on each storeArtifact write", () => {
+    const before = artifactVersionSignal()
+    storeArtifact("/proj", { type: "note", sessionID: "s1", text: "versioned" })
+    expect(artifactVersionSignal()).toBeGreaterThan(before)
+    storeArtifact("/proj", { type: "note", sessionID: "s1", text: "versioned again" })
+    expect(artifactVersionSignal()).toBeGreaterThan(before + 1)
   })
 })
 

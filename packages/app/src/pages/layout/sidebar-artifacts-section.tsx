@@ -11,6 +11,7 @@ import { sessionTitle } from "@/utils/session-title"
 import { pathKey } from "@/utils/path-key"
 import {
   artifactSessionHref,
+  artifactVersionSignal,
   filterArtifactGroups,
   groupSessionArtifacts,
   loadArtifactFilter,
@@ -138,6 +139,9 @@ export const SidebarArtifacts = (props: {
   const groups = createMemo(() => {
     const dir = props.directory()
     if (!dir) return []
+    // Track the store version so a freshly stored screenshot or note shows up
+    // reactively; localStorage itself is read non-reactively per directory.
+    artifactVersionSignal()
     const [store] = serverSync().child(dir, { bootstrap: false })
     return groupSessionArtifacts(store, pathKey(dir) ?? dir, loadStoredArtifacts(dir))
   })
