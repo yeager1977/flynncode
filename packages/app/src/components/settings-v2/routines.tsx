@@ -13,7 +13,7 @@ export function SettingsRoutinesV2() {
   const serverSync = useServerSync()
   const serverSDK = useServerSDK()
   const layout = useLayout()
-  const [draft, setDraft] = createStore({ name: "", prompt: "", dailyAt: "", error: "", saving: false })
+  const [draft, setDraft] = createStore({ name: "", prompt: "", dailyAt: "", interval: "", error: "", saving: false })
   const routines = createMemo(() => routinesFromConfig(serverSync().data.config.routines))
   const directory = createMemo(() => layout.projects.list()[0]?.worktree ?? "")
 
@@ -32,8 +32,12 @@ export function SettingsRoutinesV2() {
       setDraft("error", language.t("settings.routines.timeInvalid"))
       return
     }
-    void save(addRoutine(routines(), { name: draft.name, prompt: draft.prompt, dailyAt: draft.dailyAt || undefined }))
-    setDraft({ name: "", prompt: "", dailyAt: "" })
+    if (draft.interval && !["15m", "1h", "6h", "1d", "1w"].includes(draft.interval)) {
+      setDraft("error", language.t("settings.routines.intervalInvalid"))
+      return
+    }
+    void save(addRoutine(routines(), { name: draft.name, prompt: draft.prompt, dailyAt: draft.dailyAt || undefined, interval: draft.dailyAt ? undefined : draft.interval || undefined }))
+    setDraft({ name: "", prompt: "", dailyAt: "", interval: "" })
   }
 
   const run = async (id: string) => {
@@ -81,6 +85,13 @@ export function SettingsRoutinesV2() {
           value={draft.dailyAt}
           onInput={(event) => setDraft("dailyAt", event.currentTarget.value)}
         />
+        <input
+          class="rounded border border-border-weak bg-surface-base px-2 py-1 text-14-regular"
+          aria-label={language.t("settings.routines.interval")}
+          placeholder={language.t("settings.routines.interval")}
+          value={draft.interval}
+          onInput={(event) => setDraft("interval", event.currentTarget.value)}
+        />
         <ButtonV2 disabled={draft.saving || !draft.name.trim() || !draft.prompt.trim()} onClick={create}>
           {language.t("settings.routines.add")}
         </ButtonV2>
@@ -95,7 +106,7 @@ export function SettingsRoutinesV2() {
               <div class="min-w-0 flex-1">
                 <div class="truncate text-14-medium">{routine.name}</div>
                 <div class="truncate text-12-regular text-text-weak" dir="ltr">
-                  {routine.dailyAt ?? language.t("settings.routines.manual")}
+                  {routine.dailyAt ?? routine.interval ?? language.t("settings.routines.manual")}
                   {routine.lastRun ? ` · ${routine.lastRun}` : ""}
                 </div>
               </div>

@@ -5,9 +5,11 @@ export type StoredRoutine = {
   enabled: boolean
   lastRun?: string
   dailyAt?: string
+  interval?: string
 }
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
+const INTERVALS = new Set(["15m", "1h", "6h", "1d", "1w"])
 
 export function routinesFromConfig(raw: unknown): StoredRoutine[] {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return []
@@ -22,6 +24,10 @@ export function routinesFromConfig(raw: unknown): StoredRoutine[] {
       schedule && typeof schedule === "object" && !Array.isArray(schedule)
         ? (schedule as { dailyAt?: unknown }).dailyAt
         : undefined
+    const interval =
+      schedule && typeof schedule === "object" && !Array.isArray(schedule)
+        ? (schedule as { interval?: unknown }).interval
+        : undefined
     return [
       {
         id: row.id,
@@ -30,6 +36,7 @@ export function routinesFromConfig(raw: unknown): StoredRoutine[] {
         enabled: row.enabled !== false,
         lastRun: typeof row.lastRun === "string" ? row.lastRun : undefined,
         dailyAt: typeof dailyAt === "string" && TIME.test(dailyAt) ? dailyAt : undefined,
+        interval: typeof interval === "string" && INTERVALS.has(interval) ? interval : undefined,
       },
     ]
   })
@@ -43,7 +50,7 @@ export function routinesToConfig(routines: StoredRoutine[]) {
       prompt: routine.prompt,
       enabled: routine.enabled,
       lastRun: routine.lastRun,
-      schedule: routine.dailyAt ? { dailyAt: routine.dailyAt } : undefined,
+      schedule: routine.dailyAt ? { dailyAt: routine.dailyAt } : routine.interval ? { interval: routine.interval } : undefined,
     })),
   }
 }
@@ -57,7 +64,7 @@ export function routineId(name: string, taken: readonly string[]) {
   }
 }
 
-export function addRoutine(routines: StoredRoutine[], input: { name: string; prompt: string; dailyAt?: string }) {
+export function addRoutine(routines: StoredRoutine[], input: { name: string; prompt: string; dailyAt?: string; interval?: string }) {
   return [
     ...routines,
     {
@@ -66,6 +73,7 @@ export function addRoutine(routines: StoredRoutine[], input: { name: string; pro
       prompt: input.prompt.trim(),
       enabled: true,
       dailyAt: input.dailyAt,
+      interval: input.interval,
     },
   ]
 }

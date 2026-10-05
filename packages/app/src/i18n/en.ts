@@ -915,6 +915,8 @@ export const dict = {
   "settings.routines.add": "Add routine",
   "settings.routines.saveFailed": "Could not save routines",
   "settings.routines.timeInvalid": "Use a 24-hour time like 09:00",
+  "settings.routines.interval": "Interval (15m, 1h, 6h, 1d, 1w)",
+  "settings.routines.intervalInvalid": "Use 15m, 1h, 6h, 1d, or 1w",
   "settings.routines.runFailed": "Could not run the routine",
   "settings.routines.manual": "Manual",
   "settings.routines.run": "Run",
