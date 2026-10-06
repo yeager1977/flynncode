@@ -1,4 +1,5 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { useParams } from "@solidjs/router"
 import { batch, createEffect, createMemo, startTransition } from "solid-js"
@@ -14,6 +15,9 @@ import { useSDK } from "./sdk"
 import { useSync } from "./sync"
 import { useServerSDK } from "./server-sdk"
 import { ScopedKey, type ServerScope } from "@/utils/server-scope"
+import { DialogMetaContributor } from "@/components/dialog-meta-contributor"
+import { useContributorAck } from "@/utils/contributor-ack"
+import { isContributorModel } from "@/utils/contributor-models"
 
 export type ModelKey = { providerID: string; modelID: string; variant?: string }
 
@@ -66,6 +70,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const providers = useProviders(() => sdk().directory)
     const models = useModels()
     const settings = useSettings()
+    const dialog = useDialog()
+    const ack = useContributorAck()
 
     const id = createMemo(() => params.id || undefined)
     const list = createMemo(() => sync().data.agent.filter((item) => item.mode !== "subagent" && !item.hidden))
@@ -277,6 +283,24 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
     const recent = createMemo(() => models.recent.list().map(models.find).filter(Boolean))
 
+    const applySet = (item: ModelKey | undefined, options?: { recent?: boolean; silent?: boolean }) => {
+      startTransition(() =>
+        batch(() => {
+          setStore("last", {
+            type: "model",
+            agent: agent.current()?.name,
+            model: item ?? null,
+            variant: selected(),
+          })
+          write({ model: item })
+          if (!item) return
+          models.setVisibility(item, true)
+          if (!options?.recent) return
+          models.recent.push(item)
+        }),
+      )
+    }
+
     const model = {
       ready: models.ready,
       current,
@@ -298,22 +322,26 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         if (!entry) return
         model.set({ providerID: entry.provider.id, modelID: entry.id })
       },
-      set(item: ModelKey | undefined, options?: { recent?: boolean }) {
-        startTransition(() =>
-          batch(() => {
-            setStore("last", {
-              type: "model",
-              agent: agent.current()?.name,
-              model: item ?? null,
-              variant: selected(),
-            })
-            write({ model: item })
-            if (!item) return
-            models.setVisibility(item, true)
-            if (!options?.recent) return
-            models.recent.push(item)
-          }),
-        )
+      set(item: ModelKey | undefined, options?: { recent?: boolean; silent?: boolean }) {
+        if (item && !options?.silent && isContributorModel(item.providerID, item.modelID) && !ack.acked(ack.scopeKey())) {
+          const pending = { ...item }
+          queueMicrotask(() => {
+            dialog.show(
+              () => (
+                <DialogMetaContributor
+                  onContinue={() => {
+                    ack.record(ack.scopeKey())
+                    applySet(pending, options)
+                  }}
+                  onCancel={() => {}}
+                />
+              ),
+              () => {},
+            )
+          })
+          return
+        }
+        applySet(item, options)
       },
       visible(item: ModelKey) {
         return models.visible(item)

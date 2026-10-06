@@ -1,4 +1,5 @@
 import { batch, createMemo, startTransition } from "solid-js"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useModels } from "@/context/models"
 import type { ModelKey, ModelSelection } from "@/context/local"
 import { cycleModelVariant, getConfiguredAgentVariant, resolveModelVariant } from "@/context/model-variant"
@@ -7,6 +8,9 @@ import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { useProviders } from "@/hooks/use-providers"
 import { resolveDefaultModel } from "@/hooks/provider-catalog"
+import { DialogMetaContributor } from "@/components/dialog-meta-contributor"
+import { useContributorAck } from "@/utils/contributor-ack"
+import { isContributorModel } from "@/utils/contributor-models"
 
 export function createPromptModelSelection(input: { agent: () => { model?: ModelKey; variant?: string } | undefined }) {
   const sdk = useSDK()
@@ -15,6 +19,8 @@ export function createPromptModelSelection(input: { agent: () => { model?: Model
   const prompt = usePrompt()
   const providers = useProviders(() => sdk().directory)
   const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
+  const dialog = useDialog()
+  const ack = useContributorAck()
 
   const valid = (model: ModelKey) => {
     const provider = providers.all().get(model.providerID)
@@ -50,6 +56,17 @@ export function createPromptModelSelection(input: { agent: () => { model?: Model
       .filter((item): item is NonNullable<typeof item> => !!item),
   )
 
+  const applySet = (item: ModelKey | undefined, options?: { recent?: boolean; silent?: boolean }) => {
+    startTransition(() =>
+      batch(() => {
+        prompt.model.set(item ? { ...item, variant: prompt.model.current()?.variant } : undefined)
+        if (!item) return
+        models.setVisibility(item, true)
+        if (options?.recent) models.recent.push(item)
+      }),
+    )
+  }
+
   const selection = {
     ready: models.ready,
     current,
@@ -64,15 +81,25 @@ export function createPromptModelSelection(input: { agent: () => { model?: Model
       const next = items[(index + direction + items.length) % items.length]
       if (next) selection.set({ providerID: next.provider.id, modelID: next.id })
     },
-    set(item: ModelKey | undefined, options?: { recent?: boolean }) {
-      startTransition(() =>
-        batch(() => {
-          prompt.model.set(item ? { ...item, variant: prompt.model.current()?.variant } : undefined)
-          if (!item) return
-          models.setVisibility(item, true)
-          if (options?.recent) models.recent.push(item)
-        }),
-      )
+    set(item: ModelKey | undefined, options?: { recent?: boolean; silent?: boolean }) {
+      if (item && !options?.silent && isContributorModel(item.providerID, item.modelID) && !ack.acked(ack.scopeKey())) {
+        const pending = { ...item }
+        queueMicrotask(() => {
+          dialog.show(
+            () =>
+              DialogMetaContributor({
+                onContinue: () => {
+                  ack.record(ack.scopeKey())
+                  applySet(pending, options)
+                },
+                onCancel: () => {},
+              }),
+            () => {},
+          )
+        })
+        return
+      }
+      applySet(item, options)
     },
     visible: models.visible,
     setVisibility: models.setVisibility,
