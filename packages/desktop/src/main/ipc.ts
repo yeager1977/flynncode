@@ -26,6 +26,17 @@ import { createDesktopDraftStore } from "./draft-store"
 import { nativeT } from "./native-translations"
 import { registerPluginManager } from "./plugin-manager"
 
+const MOBILE_GATEWAY_PORT = 4097
+const MOBILE_GATEWAY_STATUS_URL = "http://127.0.0.1:4097/flynncode-mobile-status"
+
+function stoppedMobileGatewayStatus() {
+  return { running: false, port: MOBILE_GATEWAY_PORT, lanUrls: [], launcherUrls: [] }
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string")
+}
+
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
   return [{ name: nativeT("desktop.dialog.files"), extensions: ext }]
@@ -87,14 +98,17 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("muse-auth-sync", () => deps.museAuthSync())
   ipcMain.handle("get-mobile-gateway-status", async () => {
     try {
-      const response = await fetch("http://127.0.0.1:4097/flynncode-mobile-status", {
+      const response = await fetch(MOBILE_GATEWAY_STATUS_URL, {
         signal: AbortSignal.timeout(2000),
       })
-      if (!response.ok) return { running: false, port: 4097, lanUrls: [], launcherUrls: [] }
-      const data = (await response.json()) as { port: number; lanUrls: string[]; launcherUrls: string[] }
-      return { running: true, ...data }
+      if (!response.ok) return stoppedMobileGatewayStatus()
+      const data = (await response.json()) as { port?: unknown; lanUrls?: unknown; launcherUrls?: unknown }
+      if (typeof data.port !== "number" || !isStringArray(data.lanUrls) || !isStringArray(data.launcherUrls)) {
+        return stoppedMobileGatewayStatus()
+      }
+      return { running: true, port: data.port, lanUrls: data.lanUrls, launcherUrls: data.launcherUrls }
     } catch {
-      return { running: false, port: 4097, lanUrls: [], launcherUrls: [] }
+      return stoppedMobileGatewayStatus()
     }
   })
   ipcMain.handle("updater-subscribe", (event) => {

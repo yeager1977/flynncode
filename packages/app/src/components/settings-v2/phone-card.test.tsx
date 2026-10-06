@@ -8,7 +8,7 @@ describe("phone launcher url", () => {
   test("required i18n keys exist in en module", async () => {
     const mod = (await import("@/i18n/en")) as Record<string, unknown>
     const text = JSON.stringify(mod)
-    for (const key of ["server.phone.title", "server.phone.hint", "server.phone.copy", "server.phone.stopped"]) {
+    for (const key of ["server.phone.title", "server.phone.hint", "server.phone.copy", "server.phone.stopped", "server.phone.noWifi"]) {
       expect(text.includes(key), key).toBe(true)
     }
   })

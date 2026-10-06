@@ -486,6 +486,8 @@ export const dict = {
   "server.phone.hint": "Scan the QR code with your phone camera. Both devices must be on the same Wi-Fi network.",
   "server.phone.copy": "Copy",
   "server.phone.stopped": "Phone access is unavailable while the mobile gateway is stopped.",
+  "server.phone.noWifi":
+    "No Wi-Fi connection found. Connect this computer and your phone to the same Wi-Fi network to link your phone.",
 
   "dialog.project.edit.title": "Edit project",
   "dialog.project.edit.name": "Name",

@@ -54,8 +54,12 @@ export function createGateway(input: { options: GatewayOptions }) {
   }
 
   return async function handle(request: Request): Promise<Response> {
-    if (new URL(request.url, "http://localhost").pathname === "/flynncode-mobile-status") {
-      const host = new URL(request.url, "http://localhost").hostname
+    const parsed = new URL(request.url, "http://localhost")
+    if (parsed.pathname === "/flynncode-mobile-status") {
+      // WHATWG URL keeps IPv6 brackets in hostname ("[::1]"), so strip them.
+      // The payload carries only the port and LAN URLs (no secrets); localhost
+      // gating keeps it off the LAN rather than protecting sensitive data.
+      const host = parsed.hostname.replace(/^\[|\]$/g, "")
       if (host !== "127.0.0.1" && host !== "localhost" && host !== "::1") {
         return new Response("Not found", { status: 404 })
       }

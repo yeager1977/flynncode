@@ -183,9 +183,25 @@ describe("createGateway", () => {
     const handle = createGateway({ options })
     const response = await handle(new Request("http://127.0.0.1/flynncode-mobile-status"))
     expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toBe("application/json")
     const body = (await response.json()) as { port: number; lanUrls: string[]; launcherUrls: string[] }
     expect(body.port).toBe(options.port)
+    expect(Array.isArray(body.lanUrls)).toBe(true)
     expect(body.launcherUrls.every((url) => url.endsWith("/m"))).toBe(true)
+    expect(upstreamRequests).toEqual([])
+  })
+
+  test("serves mobile status for bracketed IPv6 loopback", async () => {
+    const handle = createGateway({ options })
+    const response = await handle(new Request("http://[::1]/flynncode-mobile-status"))
+    expect(response.status).toBe(200)
+  })
+
+  test("rejects mobile status from a LAN host", async () => {
+    upstreamRequests = []
+    const handle = createGateway({ options })
+    const response = await handle(new Request("http://192.168.1.42/flynncode-mobile-status"))
+    expect(response.status).toBe(404)
     expect(upstreamRequests).toEqual([])
   })
 })
