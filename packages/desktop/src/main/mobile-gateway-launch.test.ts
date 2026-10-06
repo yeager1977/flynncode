@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { createServer } from "node:http"
 import {
   MOBILE_GATEWAY_PORT,
   mobileGatewayEnv,
@@ -44,5 +45,34 @@ describe("startMobileGateway", () => {
     expect(response.status).toBe(200)
     const body = (await response.json()) as { launcherUrls: unknown }
     expect(Array.isArray(body.launcherUrls)).toBe(true)
+  })
+
+  test("resolves undefined when the port is occupied", async () => {
+    const blocker = createServer((_req, res) => res.end())
+    await new Promise<void>((resolve) => blocker.listen(0, "127.0.0.1", resolve))
+    try {
+      const address = blocker.address()
+      const occupiedPort = typeof address === "object" && address ? address.port : 0
+      expect(occupiedPort).toBeGreaterThan(0)
+      const handle = await startMobileGateway({
+        serverPassword: "upstream-secret",
+        phonePassword: "phone-secret",
+        port: occupiedPort,
+        upstream: "http://127.0.0.1:9",
+      })
+      expect(handle).toBeUndefined()
+    } finally {
+      await new Promise<void>((resolve) => blocker.close(() => resolve()))
+    }
+  })
+
+  test("resolves undefined when disabled by empty server password", async () => {
+    const handle = await startMobileGateway({
+      serverPassword: "",
+      phonePassword: "phone-secret",
+      port: 0,
+      upstream: "http://127.0.0.1:9",
+    })
+    expect(handle).toBeUndefined()
   })
 })

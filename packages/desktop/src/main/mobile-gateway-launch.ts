@@ -23,12 +23,12 @@ export async function startMobileGateway(input: {
   port: number
   upstream: string
 }): Promise<MobileGatewayHandle | undefined> {
-  const resolved = resolveOptions(mobileGatewayEnv(input), input.upstream)
-  if (!resolved.ok) {
-    console.warn(`[mobile-gateway] disabled: ${resolved.reason}`)
-    return
-  }
   try {
+    const resolved = resolveOptions(mobileGatewayEnv(input), input.upstream)
+    if (!resolved.ok) {
+      console.warn(`[mobile-gateway] disabled: ${resolved.reason}`)
+      return
+    }
     const gateway = await startGateway({ options: resolved.value })
     console.log(`[mobile-gateway] listening on http://${resolved.value.host}:${gateway.port}`)
     return gateway

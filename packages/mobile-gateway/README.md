@@ -40,7 +40,7 @@ The Flynncode desktop app auto-starts this gateway inside its sidecar server:
 no plugin config needed. The phone password is generated once, stored in the
 desktop settings store, and stays stable across restarts, while the upstream
 server password keeps rotating each launch. The gateway binds port 4097 on the
-LAN and logs `phone:` URLs on startup. If the port is taken, the gateway stays
+LAN and logs its listen URL on startup. If the port is taken, the gateway stays
 down and the desktop Phone card reports stopped; the sidecar itself keeps
 running.
 
