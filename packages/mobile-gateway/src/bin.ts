@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { resolveOptions } from "./config.ts"
 import { startGateway } from "./gateway.ts"
+import { buildLauncherUrls, listLanIPv4 } from "./lan-ips.ts"
 
 const resolved = resolveOptions(process.env)
 if (!resolved.ok) {
@@ -10,6 +11,9 @@ if (!resolved.ok) {
 
 const gateway = await startGateway({ options: resolved.value })
 console.log(`[mobile-gateway] listening on http://${resolved.value.host}:${gateway.port}`)
+for (const url of buildLauncherUrls(listLanIPv4(), gateway.port)) {
+  console.log(`[mobile-gateway] phone: ${url}`)
+}
 console.log(`[mobile-gateway] upstream ${resolved.value.upstream}`)
 
 const shutdown = () => {

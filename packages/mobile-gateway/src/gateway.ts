@@ -6,6 +6,7 @@ import { envAuthHeader, type GatewayOptions } from "./config.ts"
 import { streamThrough } from "./proxy.ts"
 import { createSessionStore } from "./session.ts"
 import { Upstream, upstreamHeaders, upstreamUrl } from "./upstream.ts"
+import { buildStatusPayload, listLanIPv4 } from "./lan-ips.ts"
 import { loadLauncher } from "./launcher.ts"
 import { renderLauncher, renderUnauthorized, renderUnreachable } from "./launcher-html.ts"
 
@@ -53,6 +54,18 @@ export function createGateway(input: { options: GatewayOptions }) {
   }
 
   return async function handle(request: Request): Promise<Response> {
+    if (new URL(request.url, "http://localhost").pathname === "/flynncode-mobile-status") {
+      const host = new URL(request.url, "http://localhost").hostname
+      if (host !== "127.0.0.1" && host !== "localhost" && host !== "::1") {
+        return new Response("Not found", { status: 404 })
+      }
+      const payload = buildStatusPayload({ port: options.port, ips: listLanIPv4() })
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })
+    }
+
     const token = readCookie(request.headers.get("cookie"), SESSION_COOKIE)
     const cookieValid = token !== undefined && sessions.verify(token)
 

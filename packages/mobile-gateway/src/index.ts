@@ -1,6 +1,7 @@
 import type { Hooks, PluginInput, PluginOptions } from "@opencode-ai/plugin"
 import { resolveOptions } from "./config.ts"
 import { startGateway } from "./gateway.ts"
+import { buildLauncherUrls, listLanIPv4 } from "./lan-ips.ts"
 
 const id = "@flynncode/mobile-gateway"
 
@@ -15,6 +16,9 @@ async function server(input: PluginInput, options?: PluginOptions): Promise<Hook
   try {
     const gateway = await startGateway({ options: resolved.value })
     console.log(`[mobile-gateway] listening on http://${resolved.value.host}:${gateway.port}`)
+    for (const url of buildLauncherUrls(listLanIPv4(), gateway.port)) {
+      console.log(`[mobile-gateway] phone: ${url}`)
+    }
     return {
       async dispose() {
         gateway.stop()

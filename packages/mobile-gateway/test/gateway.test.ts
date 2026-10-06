@@ -177,6 +177,17 @@ describe("createGateway", () => {
     expect(response.status).toBe(503)
     expect(response.headers.get("www-authenticate")).toBeNull()
   })
+
+  test("serves localhost mobile status without upstream contact", async () => {
+    upstreamRequests = []
+    const handle = createGateway({ options })
+    const response = await handle(new Request("http://127.0.0.1/flynncode-mobile-status"))
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { port: number; lanUrls: string[]; launcherUrls: string[] }
+    expect(body.port).toBe(options.port)
+    expect(body.launcherUrls.every((url) => url.endsWith("/m"))).toBe(true)
+    expect(upstreamRequests).toEqual([])
+  })
 })
 
 describe("startGateway", () => {
