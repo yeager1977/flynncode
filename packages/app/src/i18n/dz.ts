@@ -14,6 +14,7 @@ import { previewFallback } from "./preview-fallback"
 import { ciStatusFallback } from "./ci-status-fallback"
 import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
+import { metaContributorFallback } from "./meta-contributor-fallback"
 
 export const dict: Record<string, string> = {
   ...modelRouterFallback,
@@ -127,6 +128,7 @@ export const dict: Record<string, string> = {
   ...ciStatusFallback,
   ...sideChatFallback,
   ...sessionManageFallback,
+  ...metaContributorFallback,
   "command.category.suggested": "བསམ་འཆར།",
   "command.category.view": "བསམ༌འཆར",
   "command.category.project": "ལས༌འགུལ",

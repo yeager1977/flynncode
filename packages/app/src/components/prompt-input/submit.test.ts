@@ -138,6 +138,21 @@ beforeAll(async () => {
 
   mock.module("@opencode-ai/core/util/encode", () => ({
     base64Encode: (value: string) => value,
+    checksum: (value: string) => value,
+  }))
+
+  mock.module("@opencode-ai/ui/context/dialog", () => ({
+    useDialog: () => ({
+      show: () => undefined,
+    }),
+  }))
+
+  mock.module("@/utils/contributor-ack", () => ({
+    useContributorAck: () => ({
+      scopeKey: () => "session:test",
+      acked: () => true,
+      record: () => undefined,
+    }),
   }))
 
   mock.module("@/context/local", () => ({
