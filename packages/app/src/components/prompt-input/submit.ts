@@ -3,7 +3,11 @@ import { showToast } from "@/utils/toast"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { Binary } from "@opencode-ai/core/util/binary"
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router"
-import { batch, startTransition, type Accessor } from "solid-js"
+import { batch, createComponent, startTransition, type Accessor } from "solid-js"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { DialogMetaContributor } from "@/components/dialog-meta-contributor"
+import { useContributorAck } from "@/utils/contributor-ack"
+import { isContributorModel } from "@/utils/contributor-models"
 import { useTabs } from "@/context/tabs"
 import { useServerSync, type ServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
@@ -244,6 +248,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const params = useParams()
   const [search] = useSearchParams<{ draftId?: string }>()
   const tabs = useTabs()
+  const dialog = useDialog()
+  const ack = useContributorAck()
   const pendingKey = (sessionID: string) => ScopedKey.from(sdk().scope, sessionID)
 
   const errorMessage = (err: unknown) => {
@@ -347,6 +353,25 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return
     }
 
+    if (isContributorModel(currentModel.provider.id, currentModel.id) && !ack.acked(ack.scopeKey())) {
+      const proceed = await new Promise<boolean>((resolve) => {
+        queueMicrotask(() => {
+          dialog.show(
+            () =>
+              createComponent(DialogMetaContributor, {
+                onContinue: () => {
+                  ack.record(ack.scopeKey())
+                  resolve(true)
+                },
+                onCancel: () => resolve(false),
+              }),
+            () => resolve(false),
+          )
+        })
+      })
+      if (!proceed) return
+    }
+
     input.addToHistory(currentPrompt, mode)
     input.resetHistoryNavigation()
 
@@ -439,6 +464,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         description: language.t("prompt.toast.promptSendFailed.description"),
       })
       return
+    }
+
+    if (isContributorModel(currentModel.provider.id, currentModel.id)) {
+      ack.record(`session:${session.id}`)
     }
 
     const model = {

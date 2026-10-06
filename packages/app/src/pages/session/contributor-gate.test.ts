@@ -23,4 +23,26 @@ describe("contributor selection gate", () => {
     expect(local).toContain("silent")
     expect(selection).toContain("silent")
   })
+
+  test("submit gate blocks send before input is cleared", () => {
+    const submit = readFileSync(
+      new URL("../../components/prompt-input/submit.ts", import.meta.url),
+      "utf8",
+    )
+    expect(submit).toContain("isContributorModel")
+    expect(submit).toContain("DialogMetaContributor")
+    const gateAt = submit.indexOf("isContributorModel")
+    const clearAt = submit.indexOf("clearInput()")
+    expect(gateAt).toBeGreaterThan(-1)
+    expect(clearAt).toBeGreaterThan(-1)
+    expect(gateAt).toBeLessThan(clearAt)
+  })
+
+  test("new sessions migrate the ack to the created session ID", () => {
+    const submit = readFileSync(
+      new URL("../../components/prompt-input/submit.ts", import.meta.url),
+      "utf8",
+    )
+    expect(submit).toContain("`session:${session.id}`")
+  })
 })
