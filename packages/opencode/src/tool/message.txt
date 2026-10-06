@@ -11,3 +11,19 @@ Notes:
 2. The message is delivered as a synthetic peer message. The target agent's
    next assistant text is sent back to your session as a peer reply.
 3. You are not blocked. Do not wait in this turn for the reply.
+
+Task suggestions (only when the session_manage tool is available in this
+session):
+
+When you notice out-of-scope work worth doing, do not switch topics and do not
+start it yourself. Emit a suggestion envelope as a standalone line at the end
+of your reply, mirroring the peer message envelope style:
+
+<task-suggestion title="Short chip label" prompt="The first prompt for a new session">Optional one line why this is worth its own session.</task-suggestion>
+
+Rules:
+1. Emit at most one suggestion per reply, and only when the work is genuinely
+   separable; never suggest follow-up work for its own sake.
+2. The prompt must be self-contained: a new session sees none of this context.
+3. Keep the title to a few words; it renders as a clickable task chip.
+4. Do not wrap the envelope in code fences.

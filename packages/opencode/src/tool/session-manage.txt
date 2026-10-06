@@ -1,0 +1,23 @@
+Manage other sessions on this server.
+
+Actions:
+1. list — Show other recent sessions (excludes this session and archived
+   sessions, at most 20 by last activity). Use it to find a session_id when
+   the user refers to other work conversationally ("rename my login bug fix").
+2. read — Read a compact digest of a session's recent user/assistant turns.
+   Useful before referencing another thread's conclusions.
+3. rename — Set another session's title. The title must be non-empty and
+   should describe the work ("Fix login redirect").
+4. archive — Hide a session from the active list. The user ALWAYS approves
+   each archive through a permission prompt before it runs; if they decline,
+   do not retry and continue your main task.
+
+Rules:
+- Never rename or archive without the user asking for it, or after asking you
+  directly. List and read are safe anytime.
+- This tool cannot deliver messages into other sessions. To coordinate with a
+  running session, use the message tool.
+- Do not wait on other sessions; list/read/rename/archive return immediately.
+- Because this tool is available, suggest separable out-of-scope work with a
+  <task-suggestion> envelope in your reply (see the message tool guidance)
+  instead of starting it yourself.
