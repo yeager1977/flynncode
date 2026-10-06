@@ -1,5 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
+import { Dialog } from "@opencode-ai/ui/dialog"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
@@ -87,8 +89,11 @@ function Row(props: {
   const language = useLanguage()
   const sdk = useSDK()
   const { view } = useSessionLayout()
+  const dialog = useDialog()
   const expanded = () => view().subagents.expandedID() === props.child.id
   const [steer, setSteer] = createSignal("")
+  const [rename, setRename] = createSignal<string | undefined>()
+  const [archiving, setArchiving] = createSignal(false)
   const status = () =>
     props.child.status === "busy" || props.child.status === "retry"
       ? language.t("session.subagents.running")
@@ -99,6 +104,65 @@ function Row(props: {
       (sync().data.part[message.id] ?? []).flatMap((part) => (part.type === "text" ? [part.text] : [])),
     )
   })
+
+  const commitRename = () => {
+    const draft = rename()
+    if (draft === undefined) return
+    setRename(undefined)
+    const next = draft.trim()
+    if (!next || next === props.child.title) return
+    void sdk()
+      .api.session.rename({ sessionID: props.child.id, title: next })
+      .catch(() => {
+        // Keep the previous title visible on failure; the rename affordance
+        // simply closes without erroring the panel.
+      })
+  }
+
+  const archiveChild = async () => {
+    if (archiving()) return
+    setArchiving(true)
+    try {
+      await sdk().client.session.update({
+        sessionID: props.child.id,
+        time: { archived: Date.now() },
+      })
+      if (expanded()) props.open(props.child, props.finished)
+    } catch {
+      // Archive failures leave the row untouched; the list refreshes from sync.
+    } finally {
+      setArchiving(false)
+    }
+  }
+
+  const confirmArchive = () => {
+    dialog.show(() => (
+      <Dialog title={language.t("session.subagents.archive.title")} fit>
+        <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
+          <span class="text-14-regular text-text-strong">
+            {language.t("session.subagents.archive.confirm", { title: props.child.title })}
+          </span>
+          <div class="flex justify-end gap-2">
+            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+              {language.t("common.cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              size="large"
+              disabled={archiving()}
+              onClick={() => {
+                dialog.close()
+                void archiveChild()
+              }}
+            >
+              {language.t("session.subagents.archive")}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    ))
+  }
+
   return (
     <div
       class="flex flex-col gap-1 rounded-md border border-border-weak-base bg-v2-background-bg-layer-02 px-2 py-1.5"
@@ -111,9 +175,35 @@ function Row(props: {
         aria-expanded={expanded()}
         onClick={() => props.open(props.child, props.finished)}
       >
-        <div dir="auto" class="text-14-regular text-text-strong" style={{ "font-weight": "560" }}>
-          <bdi>{props.child.title}</bdi>
-        </div>
+        <Show
+          when={rename() !== undefined}
+          fallback={
+            <div dir="auto" class="text-14-regular text-text-strong" style={{ "font-weight": "560" }}>
+              <bdi>{props.child.title}</bdi>
+            </div>
+          }
+        >
+          <input
+            data-slot="subagent-rename-input"
+            class="min-w-0 flex-1 rounded-md border border-border-weak-base bg-transparent px-2 py-1 text-14-regular text-text-strong"
+            value={rename()}
+            aria-label={language.t("common.rename")}
+            onInput={(event) => setRename(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              event.stopPropagation()
+              if (event.key === "Enter") {
+                event.preventDefault()
+                commitRename()
+                return
+              }
+              if (event.key === "Escape") {
+                event.preventDefault()
+                setRename(undefined)
+              }
+            }}
+            onBlur={commitRename}
+          />
+        </Show>
         <span class="text-text-weak"> {status()}</span>
         <Show when={!expanded() && subagentPreview(props.child.text)}>
           <div class="text-text-weak line-clamp-2">
@@ -121,6 +211,32 @@ function Row(props: {
           </div>
         </Show>
       </button>
+      <Show when={expanded() && rename() === undefined}>
+        <div class="flex gap-1">
+          <Button
+            type="button"
+            size="small"
+            variant="ghost"
+            onClick={() => {
+              setRename(props.child.title)
+            }}
+          >
+            {language.t("common.rename")}
+          </Button>
+          <Show when={props.finished}>
+            <Button
+              type="button"
+              size="small"
+              variant="ghost"
+              disabled={archiving()}
+              data-action="subagent-archive"
+              onClick={confirmArchive}
+            >
+              {archiving() ? language.t("session.subagents.archiving") : language.t("session.subagents.archive")}
+            </Button>
+          </Show>
+        </div>
+      </Show>
       <Show when={expanded() && (props.child.status === "busy" || props.child.status === "retry")}>
         <Button
           type="button"

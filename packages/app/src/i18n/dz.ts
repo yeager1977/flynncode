@@ -13,6 +13,7 @@ import { worktreeFallback } from "./worktree-fallback"
 import { previewFallback } from "./preview-fallback"
 import { ciStatusFallback } from "./ci-status-fallback"
 import { sideChatFallback } from "./side-chat-fallback"
+import { sessionManageFallback } from "./session-manage-fallback"
 
 export const dict: Record<string, string> = {
   ...modelRouterFallback,
@@ -125,6 +126,7 @@ export const dict: Record<string, string> = {
   ...previewFallback,
   ...ciStatusFallback,
   ...sideChatFallback,
+  ...sessionManageFallback,
   "command.category.suggested": "བསམ་འཆར།",
   "command.category.view": "བསམ༌འཆར",
   "command.category.project": "ལས༌འགུལ",

@@ -14,6 +14,7 @@ import { worktreeFallback } from "./worktree-fallback"
 import { previewFallback } from "./preview-fallback"
 import { ciStatusFallback } from "./ci-status-fallback"
 import { sideChatFallback } from "./side-chat-fallback"
+import { sessionManageFallback } from "./session-manage-fallback"
 
 type Keys = keyof typeof en
 
@@ -131,6 +132,7 @@ export const dict = {
   ...previewFallback,
   ...ciStatusFallback,
   ...sideChatFallback,
+  ...sessionManageFallback,
   "command.category.suggested": "建議",
   "command.category.view": "檢視",
   "command.category.project": "專案",

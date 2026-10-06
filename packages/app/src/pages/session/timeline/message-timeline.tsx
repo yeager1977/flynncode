@@ -55,6 +55,10 @@ import type {
 import { showToast } from "@/utils/toast"
 import { downloadSessionExport, fetchSessionExport, sessionExportFilename } from "@/utils/session-export"
 import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
+import { base64Encode } from "@opencode-ai/core/util/encode"
+import { setSessionHandoff } from "@/pages/session/handoff"
+import { SessionRouteKey, SessionStateKey } from "@/utils/server-scope"
+import { Worktree as WorktreeState } from "@/utils/worktree"
 import { Popover as KobaltePopover } from "@kobalte/core/popover"
 import { normalize } from "@opencode-ai/session-ui/session-diff"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
@@ -66,6 +70,7 @@ import { useLayout, type SessionTimelineViewMode } from "@/context/layout"
 import { useSessionKey } from "@/pages/session/session-layout"
 import { useSessionArchive } from "@/pages/session/session-archive"
 import { useServerSDK } from "@/context/server-sdk"
+import { useServerSync } from "@/context/server-sync"
 import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
 import { legacySessionHref, requireServerKey, sessionHref } from "@/utils/session-route"
@@ -98,7 +103,6 @@ const taskDescription = (part: PartType, sessionID: string) => {
   const value = part.state.input?.description
   if (typeof value === "string" && value) return value
 }
-
 const boundaryTarget = (root: HTMLElement, target: EventTarget | null) => {
   const current = target instanceof Element ? target : undefined
   const nested = current?.closest("[data-scrollable]")
@@ -300,6 +304,7 @@ export function MessageTimeline(props: {
   const serverSDK = useServerSDK()
   const sdk = useSDK()
   const sync = useSync()
+  const serverSync = useServerSync()
   const settings = useSettings()
   const dialog = useDialog()
   const sessionArchive = useSessionArchive()
@@ -927,6 +932,36 @@ export function MessageTimeline(props: {
     )
   }
 
+  // Chip click: start a follow-up session in its own worktree with the
+  // suggested prompt. Reuses the workspace-creation flow: worktree.create on
+  // the project root, pending-state marking, then the new-session route whose
+  // draft controller consumes ?prompt=.
+  const startTaskSession = async (prompt: string) => {
+    const root = sync().project?.worktree
+    if (!root) return
+    const created = await serverSDK()
+      .client.worktree.create({ directory: root })
+      .then((result) => result.data)
+      .catch((err) => {
+        showToast({
+          title: language.t("prompt.toast.worktreeCreateFailed.title"),
+          description: errorMessage(err),
+        })
+        return undefined
+      })
+    if (!created?.directory) return
+    WorktreeState.pending(serverSDK().scope, created.directory)
+    serverSync().child(created.directory)
+    layout.projects.open(created.directory)
+    const slug = base64Encode(created.directory)
+    setSessionHandoff(SessionStateKey.from(serverSDK().scope, SessionRouteKey.fromLegacy(slug)), {
+      prompt,
+      // Chips pre-populate the composer; no pending file selections.
+      files: {},
+    })
+    navigate(`/${slug}/session?prompt=${encodeURIComponent(prompt)}`)
+  }
+
   function DialogDeleteSession(props: { sessionID: string }) {
     const name = createMemo(
       () => sessionTitle(sync().session.get(props.sessionID)?.title) ?? language.t("command.session.new"),
@@ -1266,6 +1301,29 @@ export function MessageTimeline(props: {
               <Card variant="error" class="error-card">
                 {errorRow().text}
               </Card>
+            </div>
+          </TimelineRowFrame>
+        )
+      }
+      case "TaskSuggestion": {
+        const chipRow = row as Accessor<TimelineRowByTag<"TaskSuggestion">>
+        return (
+          <TimelineRowFrame row={chipRow}>
+            <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5 pb-1">
+              <button
+                type="button"
+                data-action="session-task-chip"
+                data-slot="session-task-suggestion"
+                class="flex max-w-[82%] items-center gap-2 rounded-[6px] border border-border-weak-base bg-background-stronger px-2.5 py-2 text-start transition-colors hover:border-border-strong"
+                title={chipRow().prompt}
+                onClick={() => void startTaskSession(chipRow().prompt)}
+              >
+                <Icon name="branch" size="small" class="shrink-0 text-icon-base" />
+                <span class="min-w-0 truncate text-12-medium text-text-strong">{chipRow().title}</span>
+                <Show when={chipRow().note}>
+                  {(note) => <span class="min-w-0 truncate text-12-regular text-text-weak">{note()}</span>}
+                </Show>
+              </button>
             </div>
           </TimelineRowFrame>
         )

@@ -10,6 +10,63 @@ export { TimelineRow, type SummaryDiff } from "./timeline-row"
 
 export type TimelineViewMode = "normal" | "thinking" | "verbose"
 
+// Task-chip envelope the model may emit (see the message tool guidance).
+// Attributes are XML-style; quotes and ampersands inside values use entities.
+export namespace TaskSuggestion {
+  export type Suggestion = {
+    title: string
+    prompt: string
+    note?: string
+  }
+
+  const ENTITY: Record<string, string> = {
+    "&quot;": '"',
+    "&#34;": '"',
+    "&apos;": "'",
+    "&#39;": "'",
+    "&lt;": "<",
+    "&gt;": ">",
+    "&amp;": "&",
+  }
+
+  const decode = (value: string) =>
+    value
+      .replace(/\\([<>&"])/g, "$1")
+      .replace(/\\n/g, "\n")
+      .replace(/&(?:quot|#34|apos|#39|lt|gt|amp);/g, (key) => ENTITY[key] ?? key)
+
+  const attributes = (source: string) => {
+    const result: Record<string, string> = {}
+    for (const match of source.matchAll(/([a-zA-Z_][\w-]*)="((?:[^"\\]|\\.)*)"/g)) {
+      const name = match[1]
+      if (!name) continue
+      result[name] = decode(match[2] ?? "")
+    }
+    return result
+  }
+
+  export const parse = (text: string): Suggestion | undefined => {
+    const match = text.match(/<task-suggestion\b([^>]*)>([\s\S]*?)<\/task-suggestion>/)
+    if (!match) return
+    const attrs = attributes(match[1] ?? "")
+    const title = (attrs.title ?? "").trim()
+    const prompt = (attrs.prompt ?? "").trim()
+    if (!title || !prompt) return
+    const note = (match[2] ?? "").trim()
+    return note ? { title, prompt, note } : { title, prompt }
+  }
+
+  // Suggestions live at the very end of an assistant reply (the guidance says
+  // standalone trailing line), so only the last text part is scanned.
+  export const fromParts = (parts: readonly Part[]): Suggestion | undefined => {
+    for (const part of parts.toReversed()) {
+      if (part.type !== "text" || !part.text?.trim()) continue
+      return parse(part.text)
+    }
+    return
+  }
+}
+
 export type TimelineRowMap = {
   TurnGap: { userMessageID: string }
   CommentStrip: {
@@ -33,6 +90,7 @@ export type TimelineRowMap = {
   Retry: { userMessageID: string }
   DiffSummary: { userMessageID: string; diffs: SummaryDiff[] }
   Error: { userMessageID: string; text: string }
+  TaskSuggestion: { userMessageID: string; title: string; prompt: string; note?: string }
 }
 
 export namespace Timeline {
@@ -212,6 +270,23 @@ export namespace Timeline {
       assistantGroupIndex += 1
     })
 
+    // Task chip: the model-suggested follow-up renders after the turn's parts
+    // once the turn has settled (not while it is still streaming).
+    const settled = !(isActive && status === "busy")
+    const suggestion = settled
+      ? MessageComment.taskSuggestionFromMessages(assistantMessages, getMessageParts)
+      : undefined
+    if (suggestion) {
+      rows.push(
+        new TimelineRow.TaskSuggestion({
+          userMessageID: userMessage.id,
+          title: suggestion.title,
+          prompt: suggestion.prompt,
+          note: suggestion.note,
+        }),
+      )
+    }
+
     if (
       isActive &&
       status === "busy" &&
@@ -369,5 +444,21 @@ export namespace MessageComment {
           }
         : undefined,
     }
+  }
+
+  // First task-suggestion envelope across a turn's assistant messages, in
+  // chronological order; later messages win only when earlier ones lack one.
+  export const taskSuggestionFromMessages = (
+    assistantMessages: readonly AssistantMessage[],
+    getMessageParts: (messageID: string) => Part[],
+  ): TaskSuggestion.Suggestion | undefined => {
+    for (const message of [...assistantMessages].reverse()) {
+      const parts = getMessageParts(message.id)
+      const text = parts.toReversed().find((part) => part.type === "text" && !!part.text?.trim())
+      if (!text || text.type !== "text") continue
+      const suggestion = TaskSuggestion.parse(text.text ?? "")
+      if (suggestion) return suggestion
+    }
+    return
   }
 }
