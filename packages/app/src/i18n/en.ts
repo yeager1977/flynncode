@@ -175,6 +175,8 @@ export const dict = {
   "provider.connect.museImport.loginHint": "Muse CLI is installed but not logged in. Run `muse login`, then reopen this dialog.",
   "provider.connect.museImport.retry": "Retry",
   "provider.connect.museImport.failed": "Import failed.",
+  "provider.connect.museImport.errorNotFound": "Muse CLI import helper not found. Install muse-opencode-auth first.",
+  "provider.connect.museImport.errorFailed": "Muse CLI import failed.",
 
   "provider.custom.title": "Custom provider",
   "provider.custom.unavailable": "Custom providers are unavailable on this server",

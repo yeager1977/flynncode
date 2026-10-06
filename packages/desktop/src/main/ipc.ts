@@ -48,7 +48,7 @@ type Deps = {
   checkAppExists: (appName: string) => Promise<boolean> | boolean
   resolveAppPath: (appName: string) => Promise<string | null>
   museAuthStatus: () => Promise<{ installed: boolean; loggedIn: boolean }>
-  museAuthSync: () => Promise<{ ok: boolean; output: string }>
+  museAuthSync: () => Promise<{ ok: boolean; output: string; code?: "not-found" | "failed" }>
   updater: UpdaterController
   showUpdater: () => Promise<void> | void
   setBackgroundColor: (color: string) => void

@@ -115,7 +115,7 @@ type PlatformBase = {
   checkAppExists?(appName: string): Promise<boolean>
 
   museAuthStatus?(): Promise<{ installed: boolean; loggedIn: boolean }>
-  museAuthSync?(): Promise<{ ok: boolean; output: string }>
+  museAuthSync?(): Promise<{ ok: boolean; output: string; code?: "not-found" | "failed" }>
 
   /** Read image from clipboard (desktop only) */
   readClipboardImage?(): Promise<File | null>

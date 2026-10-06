@@ -33,4 +33,15 @@ describe("muse import action", () => {
     expect(dialog).toContain("provider.connect.museImport")
     expect(dialog).not.toMatch(/>(Import from Muse CLI|Muse CLI)[^<]*</)
   })
+
+  test("sync errors map machine-readable codes to i18n keys", () => {
+    expect(dialog).toContain("provider.connect.museImport.errorNotFound")
+    expect(dialog).toContain("provider.connect.museImport.errorFailed")
+    expect(dialog).toContain("not-found")
+  })
+
+  test("import rejection resets pending via finally", () => {
+    expect(dialog).toContain("try {")
+    expect(dialog).toContain("} finally {")
+  })
 })

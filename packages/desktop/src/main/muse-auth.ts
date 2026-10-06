@@ -1,13 +1,15 @@
 import { execFile } from "node:child_process"
 import { constants } from "node:fs"
-import { access, readFile } from "node:fs/promises"
+import { access, readFile, stat } from "node:fs/promises"
 import { join } from "node:path"
 import { promisify } from "node:util"
 
 const execFileAsync = promisify(execFile)
 
+const SYNC_OUTPUT_LIMIT = 2000
+
 export type MuseAuthStatus = { installed: boolean; loggedIn: boolean }
-export type MuseAuthSyncResult = { ok: boolean; output: string }
+export type MuseAuthSyncResult = { ok: boolean; output: string; code?: "not-found" | "failed" }
 
 type Deps = {
   home?: string
@@ -20,8 +22,8 @@ const pathDirs = (deps?: Deps) => deps?.pathDirs ?? (process.env.PATH ?? "").spl
 
 async function exists(file: string): Promise<boolean> {
   try {
-    await access(file, constants.F_OK)
-    return true
+    await access(file, constants.X_OK)
+    return (await stat(file)).isFile()
   } catch {
     return false
   }
@@ -31,7 +33,7 @@ export async function findMuseAuthScript(deps?: Deps): Promise<string | undefine
   const home = homedir(deps)
   const local = home ? join(home, ".local", "bin", "muse-opencode-auth") : ""
   if (local && (await exists(local))) return local
-  for (const dir of pathDirs(deps)) {
+  for (const dir of pathDirs(deps).filter(Boolean)) {
     const candidate = join(dir, "muse-opencode-auth")
     if (await exists(candidate)) return candidate
   }
@@ -48,6 +50,9 @@ async function defaultHasMuseBinary(): Promise<boolean> {
 }
 
 export async function museAuthStatus(deps?: Deps): Promise<MuseAuthStatus> {
+  // POSIX-only feature: script lookup uses HOME, colon-separated PATH, and
+  // ~/.local/bin plus ~/.config paths, so Windows is explicitly unsupported.
+  if (process.platform === "win32") return { installed: false, loggedIn: false }
   const installed = await (deps?.hasMuseBinary ?? defaultHasMuseBinary)()
   if (!installed) return { installed: false, loggedIn: false }
   try {
@@ -67,13 +72,18 @@ export async function museAuthStatus(deps?: Deps): Promise<MuseAuthStatus> {
 
 export async function runMuseAuthSync(deps?: { script?: string } & Deps): Promise<MuseAuthSyncResult> {
   const script = deps?.script ?? (await findMuseAuthScript(deps))
-  if (!script) return { ok: false, output: "muse-opencode-auth not found. Install it first." }
+  if (!script) return { ok: false, output: "", code: "not-found" }
   try {
     const { stdout, stderr } = await execFileAsync(script, { timeout: 120_000 })
-    return { ok: true, output: [stdout, stderr].filter(Boolean).join("\n") }
+    return { ok: true, output: truncateTail([stdout, stderr].filter(Boolean).join("\n")) }
   } catch (error) {
     const err = error as { stdout?: string; stderr?: string; message?: string }
     const output = [err.stdout, err.stderr, err.message].filter(Boolean).join("\n")
-    return { ok: false, output: output || "muse-opencode-auth failed." }
+    return { ok: false, output: truncateTail(output), code: "failed" }
   }
+}
+
+function truncateTail(value: string) {
+  if (value.length <= SYNC_OUTPUT_LIMIT) return value
+  return "..." + value.slice(-SYNC_OUTPUT_LIMIT)
 }

@@ -51,7 +51,26 @@ describe("runMuseAuthSync", () => {
       const script = await stubScript(dir, 'echo "FAILED"; exit 3')
       const result = await runMuseAuthSync({ script })
       expect(result.ok).toBe(false)
+      expect(result.code).toBe("failed")
       expect(result.output).toContain("FAILED")
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("returns not-found code when the script is absent", async () => {
+    const result = await runMuseAuthSync({ home: "/nonexistent-home", pathDirs: [] })
+    expect(result).toEqual({ ok: false, output: "", code: "not-found" })
+  })
+
+  test("truncates unbounded script output to the tail", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "opencode-muse-"))
+    try {
+      const script = await stubScript(dir, "i=0; while [ \"$i\" -lt 5000 ]; do printf 'x'; i=$((i + 1)); done")
+      const result = await runMuseAuthSync({ script })
+      expect(result.ok).toBe(true)
+      expect(result.output.length).toBeLessThanOrEqual(2003)
+      expect(result.output.endsWith("x".repeat(100))).toBe(true)
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
@@ -79,6 +98,37 @@ describe("museAuthStatus", () => {
   test("reports logged out when the credential is absent", async () => {
     const status = await museAuthStatus({ home: "/nonexistent-home", hasMuseBinary: async () => true })
     expect(status).toEqual({ installed: true, loggedIn: false })
+  })
+
+  test("reports logged out when auth.json is malformed", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "opencode-muse-"))
+    try {
+      const home = join(dir, "home")
+      const { mkdir } = await import("node:fs/promises")
+      await mkdir(join(home, ".config", "muse"), { recursive: true })
+      await writeFile(join(home, ".config", "muse", "auth.json"), "not json{")
+      const status = await museAuthStatus({ home, hasMuseBinary: async () => true })
+      expect(status).toEqual({ installed: true, loggedIn: false })
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  test("reports logged out when the api key is empty", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "opencode-muse-"))
+    try {
+      const home = join(dir, "home")
+      const { mkdir } = await import("node:fs/promises")
+      await mkdir(join(home, ".config", "muse"), { recursive: true })
+      await writeFile(
+        join(home, ".config", "muse", "auth.json"),
+        JSON.stringify({ providers: { meta: { api_key: "" } } }),
+      )
+      const status = await museAuthStatus({ home, hasMuseBinary: async () => true })
+      expect(status).toEqual({ installed: true, loggedIn: false })
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 
   test("reports not installed when the binary is missing", async () => {

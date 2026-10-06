@@ -816,6 +816,7 @@ function ProviderConnection(props: {
       loggedIn: false,
       pending: false,
       output: undefined as string | undefined,
+      code: undefined as "not-found" | "failed" | undefined,
     })
 
     onMount(() => {
@@ -833,15 +834,21 @@ function ProviderConnection(props: {
     async function handleImport() {
       const sync = platform.museAuthSync
       if (!sync) return
-      setImportStore({ pending: true, output: undefined })
-      const result = await sync()
-      if (!alive.value) return
-      setImportStore("pending", false)
-      if (result.ok) {
-        await complete()
-        return
+      setImportStore({ pending: true, output: undefined, code: undefined })
+      try {
+        const result = await sync()
+        if (!alive.value) return
+        if (result.ok) {
+          await complete()
+          return
+        }
+        setImportStore({ output: result.output || undefined, code: result.code ?? "failed" })
+      } catch {
+        if (!alive.value) return
+        setImportStore({ output: undefined, code: "failed" })
+      } finally {
+        setImportStore("pending", false)
       }
-      setImportStore("output", result.output)
     }
 
     function ImportButton() {
@@ -883,11 +890,14 @@ function ProviderConnection(props: {
         >
           <div class="flex flex-col items-start gap-2">
             <ImportButton />
-            <Show when={importStore.output}>
-              {(output) => (
+            <Show when={importStore.code}>
+              {(code) => (
                 <div role="alert" class="text-14-regular text-text-base flex flex-col items-start gap-2">
                   <span>
-                    {language.t("provider.connect.museImport.failed")} {output()}
+                    {code() === "not-found"
+                      ? language.t("provider.connect.museImport.errorNotFound")
+                      : language.t("provider.connect.museImport.errorFailed")}{" "}
+                    {importStore.output}
                   </span>
                   <button type="button" class="underline" onClick={() => void handleImport()}>
                     {language.t("provider.connect.museImport.retry")}
