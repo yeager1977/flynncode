@@ -19,7 +19,7 @@ import {
   type ToolResultPart,
 } from "../schema"
 import { JsonObject, optionalArray, optionalNull, ProviderShared } from "./shared"
-import { isContextOverflow } from "../provider-error"
+import { classifyInvalidRequest } from "../provider-error"
 import { OpenAIOptions } from "./utils/openai-options"
 import { Lifecycle } from "./utils/lifecycle"
 import { ToolSchemaProjection } from "./utils/tool-schema"
@@ -275,7 +275,7 @@ const lowerToolChoice = (toolChoice: NonNullable<LLMRequest["toolChoice"]>) =>
 
 const lowerToolCall = (part: ToolCallPart): OpenAIResponsesInputItem => ({
   type: "function_call",
-  call_id: part.id,
+  call_id: ProviderShared.toolCallIdForWire(part.id),
   name: part.name,
   arguments: ProviderShared.encodeJson(part.input),
 })
@@ -437,7 +437,7 @@ const lowerMessages = Effect.fn("OpenAIResponses.lowerMessages")(function* (requ
         return yield* ProviderShared.unsupportedContent("OpenAI Responses", "tool", ["tool-result"])
       input.push({
         type: "function_call_output",
-        call_id: part.id,
+        call_id: ProviderShared.toolCallIdForWire(part.id),
         output: yield* lowerToolResultOutput(part),
       })
     }
@@ -906,7 +906,7 @@ const providerError = (event: OpenAIResponsesEvent, fallback: string) => {
   const message = providerErrorMessage(event, fallback)
   return LLMEvent.providerError({
     message,
-    classification: code === "context_length_exceeded" || isContextOverflow(message) ? "context-overflow" : undefined,
+    classification: code === "context_length_exceeded" ? "context-overflow" : classifyInvalidRequest(message),
   })
 }
 

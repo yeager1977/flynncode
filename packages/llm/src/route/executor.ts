@@ -22,7 +22,7 @@ import {
   TransportReason,
   UnknownProviderReason,
 } from "../schema"
-import { isContextOverflow } from "../provider-error"
+import { classifyInvalidRequest } from "../provider-error"
 
 export interface Interface {
   readonly execute: (
@@ -259,7 +259,7 @@ const statusReason = (input: {
   ) {
     return new InvalidRequestReason({
       message: input.message,
-      classification: isContextOverflow(body) ? "context-overflow" : undefined,
+      classification: classifyInvalidRequest(body),
       http: input.http,
     })
   }

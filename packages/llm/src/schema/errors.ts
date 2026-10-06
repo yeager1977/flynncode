@@ -1,7 +1,10 @@
 import { Schema } from "effect"
 import { ModelID, ProviderID, ProviderMetadata, RouteID } from "./ids"
 
-export const ProviderFailureClassification = Schema.Literal("context-overflow")
+// "repetitive-content" is not a provider-recognized class; it marks request
+// failures caused by accumulated session state (oversized IDs, runaway
+// transcripts) whose recovery is compaction, not retry.
+export const ProviderFailureClassification = Schema.Literals(["context-overflow", "repetitive-content"])
 export type ProviderFailureClassification = typeof ProviderFailureClassification.Type
 
 export class HttpRequestDetails extends Schema.Class<HttpRequestDetails>("LLM.HttpRequestDetails")({

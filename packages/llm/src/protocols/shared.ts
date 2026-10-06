@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer"
+import { createHash } from "node:crypto"
 import { Effect, Schema, Stream } from "effect"
 import * as Sse from "effect/unstable/encoding/Sse"
 import { Headers, HttpClientRequest } from "effect/unstable/http"
@@ -339,5 +340,24 @@ export const jsonPost = (input: { readonly url: string; readonly body: string; r
     HttpClientRequest.setHeaders(Headers.set(Headers.fromInput(input.headers), "content-type", "application/json")),
     HttpClientRequest.bodyText(input.body, "application/json"),
   )
+
+// Some providers cap tool-call ID length (OpenAI Responses validates call_id
+// and chat tool_call_id at 64). IDs longer than the cap are folded to
+// `ocl-` + a 24-hex SHA-256 prefix, so the same transcript ID always maps to
+// the same wire ID and call/result pairing stays consistent. Within-cap IDs
+// pass through untouched.
+const MAX_TOOL_CALL_ID = 64
+const foldedToolCallIds = new Map<string, string>()
+
+export const toolCallIdForWire = (id: string): string => {
+  if (id.length <= MAX_TOOL_CALL_ID) return id
+  const cached = foldedToolCallIds.get(id)
+  if (cached) return cached
+  const folded = `ocl-${createHash("sha256").update(id).digest("hex").slice(0, 24)}`
+  // Bound the cache; deep transcripts revisit recent ids, never huge sets.
+  if (foldedToolCallIds.size > 10_000) foldedToolCallIds.clear()
+  foldedToolCallIds.set(id, folded)
+  return folded
+}
 
 export * as ProviderShared from "./shared"
