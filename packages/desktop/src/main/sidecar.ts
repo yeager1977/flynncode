@@ -1,5 +1,10 @@
 import * as http from "node:http"
 import * as tls from "node:tls"
+import {
+  mobileGatewayUpstream,
+  startMobileGateway,
+  type MobileGatewayHandle,
+} from "./mobile-gateway-launch"
 
 type NodeHttpWithEnvProxy = typeof http & {
   setGlobalProxyFromEnv: () => void
@@ -16,6 +21,7 @@ type StartCommand = {
   port: number
   password: string
   userDataPath: string
+  mobile: { password: string; port: number }
 }
 
 type StopCommand = { type: "stop" }
@@ -37,6 +43,7 @@ type Listener = {
 
 const parentPort = getParentPort()
 let listener: Listener | undefined
+let mobileGateway: MobileGatewayHandle | undefined
 
 parentPort.on("message", (event) => {
   const command = parseCommand(event.data)
@@ -63,6 +70,12 @@ async function start(command: StartCommand) {
       password: command.password,
       cors: ["oc://renderer"],
     })
+    mobileGateway = await startMobileGateway({
+      serverPassword: command.password,
+      phonePassword: command.mobile.password,
+      port: command.mobile.port,
+      upstream: mobileGatewayUpstream(command.hostname, command.port),
+    })
     parentPort.postMessage({ type: "ready" })
   } catch (error) {
     parentPort.postMessage({ type: "error", error: serializeError(error) })
@@ -72,6 +85,8 @@ async function start(command: StartCommand) {
 
 async function stop() {
   try {
+    mobileGateway?.stop()
+    mobileGateway = undefined
     await listener?.stop()
   } finally {
     listener = undefined
@@ -136,12 +151,21 @@ function parseCommand(value: unknown): SidecarCommand | undefined {
   if (typeof command.port !== "number") return
   if (typeof command.password !== "string") return
   if (typeof command.userDataPath !== "string") return
+  const mobile = (command as { mobile?: unknown }).mobile
+  if (!mobile || typeof mobile !== "object") return
+  const mobilePassword = (mobile as { password?: unknown }).password
+  const mobilePort = (mobile as { port?: unknown }).port
+  if (typeof mobilePassword !== "string" || mobilePassword === "") return
+  if (typeof mobilePort !== "number" || !Number.isInteger(mobilePort) || mobilePort < 0 || mobilePort > 65535) {
+    return
+  }
   return {
     type: "start",
     hostname: command.hostname,
     port: command.port,
     password: command.password,
     userDataPath: command.userDataPath,
+    mobile: { password: mobilePassword, port: mobilePort },
   }
 }
 

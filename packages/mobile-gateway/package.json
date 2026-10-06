@@ -10,7 +10,8 @@
   },
   "exports": {
     ".": "./src/config.ts",
-    "./server": "./src/index.ts"
+    "./server": "./src/index.ts",
+    "./gateway": "./src/gateway.ts"
   },
   "files": [
     "src"

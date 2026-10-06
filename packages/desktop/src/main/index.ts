@@ -50,6 +50,9 @@ import { cleanupStoreFiles } from "./store-cleanup"
 import { startBackgroundCli } from "./background-cli"
 import { setNativeTranslations } from "./native-translations"
 import { museAuthStatus, runMuseAuthSync } from "./muse-auth"
+import { MOBILE_PHONE_PASSWORD_KEY } from "./store-keys"
+import { getOrCreateMobilePhonePassword } from "./mobile-password"
+import { getStore } from "./store"
 
 const APP_NAMES: Record<string, string> = {
   dev: "OpenCode Dev",
@@ -383,11 +386,24 @@ const main = Effect.gen(function* () {
     const hostname = "127.0.0.1"
     const url = `http://${hostname}:${port}`
     const password = randomUUID()
+    const persisted = getStore()
+    const mobilePassword = getOrCreateMobilePhonePassword(
+      {
+        get: (key) => {
+          const value = persisted.get(key)
+          return typeof value === "string" && value ? value : undefined
+        },
+        set: (key, value) => persisted.set(key, value),
+      },
+      MOBILE_PHONE_PASSWORD_KEY,
+      randomUUID,
+    )
 
     logger.log("spawning sidecar", { url })
     const { listener, health } = yield* Effect.promise(() =>
       spawnLocalServer(hostname, port, password, {
         userDataPath: app.getPath("userData"),
+        mobilePassword,
         onStdout: (message) => writeLog("server", "stdout", { message }),
         onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
         onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),

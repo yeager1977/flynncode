@@ -6,6 +6,7 @@ import { getLogger } from "./logging"
 import { getUserShell, loadShellEnv } from "./shell-env"
 import { getStore } from "./store"
 import { DEFAULT_SERVER_URL_KEY } from "./store-keys"
+import { MOBILE_GATEWAY_PORT } from "./mobile-gateway-launch"
 
 export type HealthCheck = { wait: Promise<void> }
 
@@ -22,6 +23,7 @@ const SIDECAR_STOP_TIMEOUT = 6_000
 
 type SpawnLocalServerOptions = {
   userDataPath: string
+  mobilePassword: string
   onStdout?: (message: string) => void
   onStderr?: (message: string) => void
   onExit?: (code: number) => void
@@ -135,6 +137,7 @@ export async function spawnLocalServer(
       port,
       password,
       userDataPath: options.userDataPath,
+      mobile: { password: options.mobilePassword, port: MOBILE_GATEWAY_PORT },
     })
   }).catch((error) => {
     if (!exited) child.kill()
