@@ -86,14 +86,15 @@ export function createPromptModelSelection(input: { agent: () => { model?: Model
         const pending = { ...item }
         queueMicrotask(() => {
           dialog.show(
-            () =>
-              DialogMetaContributor({
-                onContinue: () => {
+            () => (
+              <DialogMetaContributor
+                onContinue={() => {
                   ack.record(ack.scopeKey())
                   applySet(pending, options)
-                },
-                onCancel: () => {},
-              }),
+                }}
+                onCancel={() => {}}
+              />
+            ),
             () => {},
           )
         })
