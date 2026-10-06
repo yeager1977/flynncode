@@ -69,6 +69,7 @@ const api: ElectronAPI = {
   resolveAppPath: (appName) => ipcRenderer.invoke("resolve-app-path", appName),
   museAuthStatus: () => ipcRenderer.invoke("muse-auth-status"),
   museAuthSync: () => ipcRenderer.invoke("muse-auth-sync"),
+  getMobileGatewayStatus: () => ipcRenderer.invoke("get-mobile-gateway-status"),
   storeGet: (name, key) => ipcRenderer.invoke("store-get", name, key),
   storeSet: (name, key, value) => ipcRenderer.invoke("store-set", name, key, value),
   storeDelete: (name, key) => ipcRenderer.invoke("store-delete", name, key),

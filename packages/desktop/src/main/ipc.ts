@@ -85,6 +85,18 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("resolve-app-path", (_event: IpcMainInvokeEvent, appName: string) => deps.resolveAppPath(appName))
   ipcMain.handle("muse-auth-status", () => deps.museAuthStatus())
   ipcMain.handle("muse-auth-sync", () => deps.museAuthSync())
+  ipcMain.handle("get-mobile-gateway-status", async () => {
+    try {
+      const response = await fetch("http://127.0.0.1:4097/flynncode-mobile-status", {
+        signal: AbortSignal.timeout(2000),
+      })
+      if (!response.ok) return { running: false, port: 4097, lanUrls: [], launcherUrls: [] }
+      const data = (await response.json()) as { port: number; lanUrls: string[]; launcherUrls: string[] }
+      return { running: true, ...data }
+    } catch {
+      return { running: false, port: 4097, lanUrls: [], launcherUrls: [] }
+    }
+  })
   ipcMain.handle("updater-subscribe", (event) => {
     const id = event.sender.id
     updaterSubscriptions.set(

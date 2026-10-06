@@ -47,6 +47,13 @@ export type FatalRendererError = {
   os?: string
 }
 
+export type MobileGatewayStatus = {
+  running: boolean
+  port: number
+  lanUrls: string[]
+  launcherUrls: string[]
+}
+
 export type ElectronAPI = {
   killSidecar: () => Promise<void>
   installCli: () => Promise<string>
@@ -65,6 +72,7 @@ export type ElectronAPI = {
   resolveAppPath: (appName: string) => Promise<string | null>
   museAuthStatus: () => Promise<{ installed: boolean; loggedIn: boolean }>
   museAuthSync: () => Promise<{ ok: boolean; output: string; code?: "not-found" | "failed" }>
+  getMobileGatewayStatus: () => Promise<MobileGatewayStatus>
   storeGet: (name: string, key: string) => Promise<string | null>
   storeSet: (name: string, key: string, value: string) => Promise<void>
   storeDelete: (name: string, key: string) => Promise<void>
