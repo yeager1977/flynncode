@@ -16,6 +16,7 @@ import { ciStatusFallback } from "./ci-status-fallback"
 import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
+import { museImportFallback } from "./muse-import-fallback"
 
 type Keys = keyof typeof en
 
@@ -37,6 +38,7 @@ export const dict = {
   ...sideChatFallback,
   ...sessionManageFallback,
   ...metaContributorFallback,
+  ...museImportFallback,
   "command.category.suggested": "Vorgeschlagen",
   "command.category.view": "Ansicht",
   "command.category.project": "Projekt",

@@ -15,6 +15,7 @@ import { ciStatusFallback } from "./ci-status-fallback"
 import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
+import { museImportFallback } from "./muse-import-fallback"
 
 export const dict: Record<string, string> = {
   ...modelRouterFallback,
@@ -127,6 +128,7 @@ export const dict: Record<string, string> = {
   ...sideChatFallback,
   ...sessionManageFallback,
   ...metaContributorFallback,
+  ...museImportFallback,
   "command.category.suggested": "सिफारिस गर्नुभयो",
   "command.category.view": "हेर्नुहोस्",
   "command.category.project": "परियोजना",

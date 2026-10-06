@@ -171,6 +171,10 @@ export const dict = {
   "provider.connect.oauth.auto.confirmationCode": "Confirmation code",
   "provider.connect.toast.connected.title": "{{provider}} connected",
   "provider.connect.toast.connected.description": "{{provider}} models are now available to use.",
+  "provider.connect.museImport.action": "Import from Muse CLI",
+  "provider.connect.museImport.loginHint": "Muse CLI is installed but not logged in. Run `muse login`, then reopen this dialog.",
+  "provider.connect.museImport.retry": "Retry",
+  "provider.connect.museImport.failed": "Import failed.",
 
   "provider.custom.title": "Custom provider",
   "provider.custom.unavailable": "Custom providers are unavailable on this server",

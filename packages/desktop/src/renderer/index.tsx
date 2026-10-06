@@ -317,6 +317,14 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
       return window.api.checkAppExists(appName)
     },
 
+    museAuthStatus: async () => {
+      return window.api.museAuthStatus()
+    },
+
+    museAuthSync: async () => {
+      return window.api.museAuthSync()
+    },
+
     async readClipboardImage() {
       const image = await window.api.readClipboardImage().catch(() => null)
       if (!image) return null

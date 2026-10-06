@@ -810,6 +810,97 @@ function ProviderConnection(props: {
     )
   }
 
+  function MuseImportAction() {
+    const [importStore, setImportStore] = createStore({
+      status: "unknown" as "unknown" | "ready" | "unavailable",
+      loggedIn: false,
+      pending: false,
+      output: undefined as string | undefined,
+    })
+
+    onMount(() => {
+      const status = platform.museAuthStatus
+      if (!status) return
+      void status().then(
+        (result) => {
+          if (!alive.value) return
+          setImportStore({ status: result.installed ? "ready" : "unavailable", loggedIn: result.loggedIn })
+        },
+        () => undefined,
+      )
+    })
+
+    async function handleImport() {
+      const sync = platform.museAuthSync
+      if (!sync) return
+      setImportStore({ pending: true, output: undefined })
+      const result = await sync()
+      if (!alive.value) return
+      setImportStore("pending", false)
+      if (result.ok) {
+        await complete()
+        return
+      }
+      setImportStore("output", result.output)
+    }
+
+    function ImportButton() {
+      if (newLayout())
+        return (
+          <ButtonV2
+            type="button"
+            variant="contrast"
+            disabled={importStore.pending}
+            aria-busy={importStore.pending}
+            onClick={() => void handleImport()}
+          >
+            {language.t("provider.connect.museImport.action")}
+          </ButtonV2>
+        )
+      return (
+        <Button
+          type="button"
+          size="large"
+          variant="primary"
+          disabled={importStore.pending}
+          aria-busy={importStore.pending}
+          onClick={() => void handleImport()}
+        >
+          {language.t("provider.connect.museImport.action")}
+        </Button>
+      )
+    }
+
+    return (
+      <Show when={importStore.status === "ready"}>
+        <Show
+          when={importStore.loggedIn}
+          fallback={
+            <div class="text-14-regular text-text-base">
+              {language.t("provider.connect.museImport.loginHint")}
+            </div>
+          }
+        >
+          <div class="flex flex-col items-start gap-2">
+            <ImportButton />
+            <Show when={importStore.output}>
+              {(output) => (
+                <div role="alert" class="text-14-regular text-text-base flex flex-col items-start gap-2">
+                  <span>
+                    {language.t("provider.connect.museImport.failed")} {output()}
+                  </span>
+                  <button type="button" class="underline" onClick={() => void handleImport()}>
+                    {language.t("provider.connect.museImport.retry")}
+                  </button>
+                </div>
+              )}
+            </Show>
+          </div>
+        </Show>
+      </Show>
+    )
+  }
+
   function ApiAuthView() {
     let apiKey: HTMLInputElement | undefined
     const errorID = createUniqueId()
@@ -866,6 +957,9 @@ function ProviderConnection(props: {
               </div>
             </div>
           </Show>
+          <Show when={provider().id === "meta" && platform.museAuthStatus}>
+            <MuseImportAction />
+          </Show>
           <form onSubmit={handleSubmit} class="flex flex-col items-start gap-5 self-stretch">
             <label class="flex w-full flex-col gap-1 font-[530] leading-4 text-v2-text-text-base">
               {language.t("provider.connect.apiKey.label", { provider: provider().name })}
@@ -920,6 +1014,9 @@ function ProviderConnection(props: {
             </div>
           </Match>
         </Switch>
+        <Show when={provider().id === "meta" && platform.museAuthStatus}>
+          <MuseImportAction />
+        </Show>
         <form onSubmit={handleSubmit} class="flex flex-col items-start gap-4">
           <TextField
             autofocus={!newLayout()}

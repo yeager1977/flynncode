@@ -114,6 +114,9 @@ type PlatformBase = {
   /** Check if an editor app exists (desktop only) */
   checkAppExists?(appName: string): Promise<boolean>
 
+  museAuthStatus?(): Promise<{ installed: boolean; loggedIn: boolean }>
+  museAuthSync?(): Promise<{ ok: boolean; output: string }>
+
   /** Read image from clipboard (desktop only) */
   readClipboardImage?(): Promise<File | null>
 

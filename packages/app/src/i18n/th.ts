@@ -15,6 +15,7 @@ import { ciStatusFallback } from "./ci-status-fallback"
 import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
+import { museImportFallback } from "./muse-import-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -132,6 +133,7 @@ export const dict = {
   ...sideChatFallback,
   ...sessionManageFallback,
   ...metaContributorFallback,
+  ...museImportFallback,
   "command.category.suggested": "แนะนำ",
   "command.category.view": "มุมมอง",
   "command.category.project": "โปรเจกต์",

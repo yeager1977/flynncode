@@ -16,6 +16,7 @@ import { ciStatusFallback } from "./ci-status-fallback"
 import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
+import { museImportFallback } from "./muse-import-fallback"
 
 const desktop = [
   "OpenCode",
@@ -129,6 +130,7 @@ export const dict = {
   ...sideChatFallback,
   ...sessionManageFallback,
   ...metaContributorFallback,
+  ...museImportFallback,
   "command.category.suggested": "Javasolt",
   "command.category.view": "Nézet",
   "command.category.project": "Projekt",
