@@ -15,10 +15,20 @@ describe("isContributorModel", () => {
   })
 
   test("memory ack round-trips", () => {
+    const ackKey = `session:ack-${crypto.randomUUID()}`
     const key = contributorModelKey("meta", "muse-spark-1.3-contributor")
-    expect(isContributorAcked("session:abc")).toBe(false)
-    markContributorAcked("session:abc")
-    expect(isContributorAcked("session:abc")).toBe(true)
+    expect(isContributorAcked(ackKey)).toBe(false)
+    markContributorAcked(ackKey)
+    expect(isContributorAcked(ackKey)).toBe(true)
     expect(key).toBe("meta/muse-spark-1.3-contributor")
+  })
+
+  test("distinct draft scopes do not share acks", () => {
+    const first = `draft:ack-${crypto.randomUUID()}`
+    const second = `draft:ack-${crypto.randomUUID()}`
+    expect(isContributorAcked(second)).toBe(false)
+    markContributorAcked(first)
+    expect(isContributorAcked(first)).toBe(true)
+    expect(isContributorAcked(second)).toBe(false)
   })
 })

@@ -45,4 +45,28 @@ describe("contributor selection gate", () => {
     )
     expect(submit).toContain("`session:${session.id}`")
   })
+
+  test("draft acks stay memory-only and uniquely scoped", () => {
+    const ack = readFileSync(new URL("../../utils/contributor-ack.ts", import.meta.url), "utf8")
+    expect(ack).toContain('startsWith("draft:")')
+    expect(ack).toContain('startsWith("session:")')
+    expect(ack).toContain("draftId")
+    const guardAt = ack.indexOf('startsWith("session:")')
+    const persistAt = ack.indexOf("setStore(key, Date.now())")
+    expect(guardAt).toBeGreaterThan(-1)
+    expect(persistAt).toBeGreaterThan(-1)
+    expect(guardAt).toBeLessThan(persistAt)
+  })
+
+  test("ack scope key is captured once per gate", () => {
+    const submit = readFileSync(
+      new URL("../../components/prompt-input/submit.ts", import.meta.url),
+      "utf8",
+    )
+    expect(submit).toContain("const key = ack.scopeKey()")
+    expect(submit).not.toContain("ack.acked(ack.scopeKey())")
+    expect(submit).not.toContain("ack.record(ack.scopeKey())")
+    expect(local).toContain("const key = ack.scopeKey()")
+    expect(selection).toContain("const key = ack.scopeKey()")
+  })
 })

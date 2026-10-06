@@ -82,14 +82,15 @@ export function createPromptModelSelection(input: { agent: () => { model?: Model
       if (next) selection.set({ providerID: next.provider.id, modelID: next.id })
     },
     set(item: ModelKey | undefined, options?: { recent?: boolean; silent?: boolean }) {
-      if (item && !options?.silent && isContributorModel(item.providerID, item.modelID) && !ack.acked(ack.scopeKey())) {
+      const key = ack.scopeKey()
+      if (item && !options?.silent && isContributorModel(item.providerID, item.modelID) && !ack.acked(key)) {
         const pending = { ...item }
         queueMicrotask(() => {
           dialog.show(
             () => (
               <DialogMetaContributor
                 onContinue={() => {
-                  ack.record(ack.scopeKey())
+                  ack.record(key)
                   applySet(pending, options)
                 }}
                 onCancel={() => {}}

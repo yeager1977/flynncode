@@ -104,6 +104,8 @@ const money = new Intl.NumberFormat("en-US", {
 const DRAFT_RETENTION_MIN_CHARS = 20
 
 // Canonical list: packages/app/src/utils/contributor-models.ts
+// Process-lifetime set: one entry per session ID (plus a single "draft" key
+// for unsaved drafts). Growth is negligible; no eviction needed.
 const contributorLogged = new Set<string>()
 
 function randomIndex(count: number) {

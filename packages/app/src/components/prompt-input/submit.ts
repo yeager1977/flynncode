@@ -353,14 +353,15 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return
     }
 
-    if (isContributorModel(currentModel.provider.id, currentModel.id) && !ack.acked(ack.scopeKey())) {
+    const key = ack.scopeKey()
+    if (isContributorModel(currentModel.provider.id, currentModel.id) && !ack.acked(key)) {
       const proceed = await new Promise<boolean>((resolve) => {
         queueMicrotask(() => {
           dialog.show(
             () =>
               createComponent(DialogMetaContributor, {
                 onContinue: () => {
-                  ack.record(ack.scopeKey())
+                  ack.record(key)
                   resolve(true)
                 },
                 onCancel: () => resolve(false),

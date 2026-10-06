@@ -323,14 +323,15 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         model.set({ providerID: entry.provider.id, modelID: entry.id })
       },
       set(item: ModelKey | undefined, options?: { recent?: boolean; silent?: boolean }) {
-        if (item && !options?.silent && isContributorModel(item.providerID, item.modelID) && !ack.acked(ack.scopeKey())) {
+        const key = ack.scopeKey()
+        if (item && !options?.silent && isContributorModel(item.providerID, item.modelID) && !ack.acked(key)) {
           const pending = { ...item }
           queueMicrotask(() => {
             dialog.show(
               () => (
                 <DialogMetaContributor
                   onContinue={() => {
-                    ack.record(ack.scopeKey())
+                    ack.record(key)
                     applySet(pending, options)
                   }}
                   onCancel={() => {}}
