@@ -494,6 +494,8 @@ export const dict = {
   "dialog.releaseNotes.action.hideFuture": "Don't show these in the future",
   "dialog.releaseNotes.media.alt": "Release preview",
   "dialog.usageExceeded.dontShowAgain": "Don't show again",
+  "dialog.metaContributor.title": "Share data with Meta?",
+  "dialog.metaContributor.description": "Muse Spark Contributor models share your prompts and generated content with Meta, and Meta may use them to train future models. Only continue if you're comfortable sending this session's content and context to Meta.",
 
   "context.breakdown.title": "Context Breakdown",
   "context.breakdown.note": 'Approximate breakdown of input tokens. "Other" includes tool definitions and overhead.',
