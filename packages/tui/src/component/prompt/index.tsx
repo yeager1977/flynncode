@@ -103,6 +103,9 @@ const money = new Intl.NumberFormat("en-US", {
 
 const DRAFT_RETENTION_MIN_CHARS = 20
 
+// Canonical list: packages/app/src/utils/contributor-models.ts
+const contributorLogged = new Set<string>()
+
 function randomIndex(count: number) {
   if (count <= 0) return 0
   return Math.floor(Math.random() * count)
@@ -969,6 +972,19 @@ export function Prompt(props: PromptProps) {
     if (!selectedModel) {
       void promptModelWarning()
       return false
+    }
+    if (
+      selectedModel.providerID === "meta" &&
+      (selectedModel.modelID === "muse-spark-1.2-contributor" ||
+        selectedModel.modelID === "muse-spark-1.3-contributor")
+    ) {
+      const key = props.sessionID ?? "draft"
+      if (!contributorLogged.has(key)) {
+        contributorLogged.add(key)
+        console.log(
+          "Warning: Muse Spark Contributor models share your prompts and generated content with Meta for training future models.",
+        )
+      }
     }
 
     const workspaceSession = props.sessionID ? sync.session.get(props.sessionID) : undefined
