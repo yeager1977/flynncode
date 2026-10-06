@@ -36,21 +36,23 @@ bin instead.
 
 ## Run in the desktop app
 
-The Flynncode desktop app loads this package as a plugin and the gateway starts
-with the app. Plugins are dynamic-imported at runtime by path, so the app can
-load this package's source directly from disk — no rebuild or bundling required.
+The Flynncode desktop app auto-starts this gateway inside its sidecar server:
+no plugin config needed. The phone password is generated once, stored in the
+desktop settings store, and stays stable across restarts, while the upstream
+server password keeps rotating each launch. The gateway binds port 4097 on the
+LAN and logs `phone:` URLs on startup. If the port is taken, the gateway stays
+down and the desktop Phone card reports stopped; the sidecar itself keeps
+running.
 
-The gateway uses only `node:http`, `node:stream`, and `node:stream/promises`.
-Under the desktop's Electron Node runtime there is no `Bun` global; the same
-code runs under both Bun and Electron's Node, which the package's Node runtime
-test verifies by serving a real request through Electron with
-`ELECTRON_RUN_AS_NODE=1`. The test is skipped when no Electron binary can be
-found on the machine.
+The gateway uses only `node:http`, `node:stream`, `node:stream/promises`,
+`node:os`, and the global `fetch`/`Buffer`, so the same code runs under Bun
+and Electron's Node runtime (the package's Node runtime test verifies this by
+serving a real request through Electron with `ELECTRON_RUN_AS_NODE=1`; skipped
+when no Electron binary is found).
 
-The desktop app binds the opencode server to a random port each launch and
-rotates `OPENCODE_SERVER_PASSWORD`, so leave `OPENCODE_MOBILE_UPSTREAM` unset and
-let the plugin follow the server URL. Give the phone its own stable credential
-via `OPENCODE_MOBILE_PASSWORD` or the plugin `password` option; see Security.
+Desktop Settings > Servers shows a Phone card with the LAN URLs and a QR code
+for `/m`, plus copy buttons. Enter the stable phone credential once on the
+phone; the session cookie persists after that.
 
 ## Run standalone
 

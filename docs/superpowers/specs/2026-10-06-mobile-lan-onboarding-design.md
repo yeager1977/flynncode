@@ -97,3 +97,14 @@ Out of scope: password in QR, auto-login tokens, WebSocket PTY proxying.
   QR scans to `/m`, launcher loads, prompt send works from phone Safari.
 - No phone-hardware e2e.
 - Success criteria: desktop → scan → monitor + prompt without typing an IP.
+
+## Update (2026-10-06): sidecar auto-start replaces plugin loading
+
+The Architecture section above assumed the desktop loads this package as a
+plugin. That was never implemented: no desktop code referenced the package and
+no user config includes it, so port 4097 stayed closed and the Phone card
+correctly showed stopped. The desktop now auto-starts the gateway inside its
+sidecar (`packages/desktop/src/main/sidecar.ts` via
+`mobile-gateway-launch.ts`) with a stable phone password persisted in the
+desktop settings store. The `mdnsUrl` field remains deferred as documented in
+the final review.
