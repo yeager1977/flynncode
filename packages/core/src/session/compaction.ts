@@ -11,6 +11,7 @@ import { Token } from "../util/token"
 
 const DEFAULT_BUFFER = 20_000
 const DEFAULT_KEEP_TOKENS = 8_000
+const DEFAULT_THRESHOLD = 0.9
 const TOOL_OUTPUT_MAX_CHARS = 2_000
 const SUMMARY_OUTPUT_TOKENS = 4_096
 const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <template> and keep the section order unchanged. Do not include the <template> tags in your response.
@@ -63,6 +64,7 @@ type Settings = {
   readonly auto: boolean
   readonly buffer: number
   readonly tokens: number
+  readonly threshold: number | undefined
 }
 
 type Dependencies = {
@@ -129,8 +131,9 @@ const settings = (documents: readonly Config.Entry[]) => {
       auto: current.auto ?? result.auto,
       buffer: current.buffer ?? result.buffer,
       tokens: current.keep?.tokens ?? result.tokens,
+      threshold: current.threshold ?? result.threshold,
     }),
-    { auto: true, buffer: DEFAULT_BUFFER, tokens: DEFAULT_KEEP_TOKENS },
+    { auto: true, buffer: DEFAULT_BUFFER, tokens: DEFAULT_KEEP_TOKENS, threshold: DEFAULT_THRESHOLD },
   )
 }
 
@@ -243,11 +246,17 @@ export const make = (dependencies: Dependencies) => {
     const context = input.model.route.defaults.limits?.context
     if (context === undefined || context <= 0) return false
     const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
-    if (
-      estimate({ system: input.request.system, messages: input.request.messages, tools: input.request.tools }) <=
-      context - Math.max(output, config.buffer)
-    )
-      return false
+    const estimateTokens = estimate({ system: input.request.system, messages: input.request.messages, tools: input.request.tools })
+    const ceiling = context - Math.max(output, config.buffer)
+    if (estimateTokens <= ceiling) {
+      // Compact proactively past the soft threshold (default 90% of context,
+      // config compaction.threshold) so long sessions compact before they
+      // hit the hard overflow and lose a turn to the provider error.
+      const ratio = config.threshold ?? DEFAULT_THRESHOLD
+      if (ratio <= 0 || ratio >= 1) return false
+      if (estimateTokens < Math.floor(context * ratio)) return false
+      return yield* summarize({ ...input, reason: "auto" })
+    }
     return yield* compactAfterOverflow(input)
   })
   return {

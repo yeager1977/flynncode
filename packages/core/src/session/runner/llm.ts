@@ -5,7 +5,7 @@ import {
   LLMEvent,
   Message,
   SystemPart,
-  isContextOverflowFailure,
+  isCompactWorthyFailure,
   type ProviderErrorEvent,
 } from "@opencode-ai/llm"
 import { Cause, DateTime, Effect, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
@@ -243,7 +243,7 @@ const layer = Layer.effect(
           Effect.gen(function* () {
             if (overflowFailure || publisher.hasProviderError()) return
             if (LLMEvent.is.providerError(event)) {
-              if (isContextOverflowFailure(event) && !publisher.hasAssistantStarted()) {
+              if (isCompactWorthyFailure(event) && !publisher.hasAssistantStarted()) {
                 overflowFailure = event
                 return
               }
@@ -291,7 +291,7 @@ const layer = Layer.effect(
           if (
             recoverOverflow &&
             !publisher.hasAssistantStarted() &&
-            isContextOverflowFailure(overflowFailure ?? failure) &&
+            isCompactWorthyFailure(overflowFailure ?? failure) &&
             (yield* restore(recoverOverflow({ sessionID: session.id, entries, model, request })))
           )
             return yield* Effect.die(continueAfterOverflowCompaction(currentStep))
