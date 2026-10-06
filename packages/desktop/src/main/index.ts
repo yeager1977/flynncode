@@ -49,6 +49,7 @@ import { migrate } from "./migrate"
 import { cleanupStoreFiles } from "./store-cleanup"
 import { startBackgroundCli } from "./background-cli"
 import { setNativeTranslations } from "./native-translations"
+import { museAuthStatus, runMuseAuthSync } from "./muse-auth"
 
 const APP_NAMES: Record<string, string> = {
   dev: "OpenCode Dev",
@@ -309,6 +310,8 @@ const main = Effect.gen(function* () {
     setDisplayBackend: async () => undefined,
     checkAppExists: (appName) => checkAppExists(appName),
     resolveAppPath: async (appName) => resolveAppPath(appName),
+    museAuthStatus: () => museAuthStatus(),
+    museAuthSync: () => runMuseAuthSync(),
     updater,
     showUpdater: () => showUpdaterDialog(updater, true),
     setBackgroundColor: (color) => setBackgroundColor(color),

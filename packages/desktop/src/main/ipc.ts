@@ -47,6 +47,8 @@ type Deps = {
   setDisplayBackend: (backend: string | null) => Promise<void> | void
   checkAppExists: (appName: string) => Promise<boolean> | boolean
   resolveAppPath: (appName: string) => Promise<string | null>
+  museAuthStatus: () => Promise<{ installed: boolean; loggedIn: boolean }>
+  museAuthSync: () => Promise<{ ok: boolean; output: string }>
   updater: UpdaterController
   showUpdater: () => Promise<void> | void
   setBackgroundColor: (color: string) => void
@@ -81,6 +83,8 @@ export function registerIpcHandlers(deps: Deps) {
   )
   ipcMain.handle("check-app-exists", (_event: IpcMainInvokeEvent, appName: string) => deps.checkAppExists(appName))
   ipcMain.handle("resolve-app-path", (_event: IpcMainInvokeEvent, appName: string) => deps.resolveAppPath(appName))
+  ipcMain.handle("muse-auth-status", () => deps.museAuthStatus())
+  ipcMain.handle("muse-auth-sync", () => deps.museAuthSync())
   ipcMain.handle("updater-subscribe", (event) => {
     const id = event.sender.id
     updaterSubscriptions.set(
