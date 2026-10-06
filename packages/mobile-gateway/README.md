@@ -84,17 +84,27 @@ track.
 
 ## On the phone
 
-1. Ensure the phone is on the same network as the machine running opencode.
-2. Open `http://<machine-lan-ip>:4097` in Safari.
-3. Enter the gateway username and the phone password when prompted.
-4. Share -> Add to Home Screen.
+1. Ensure the phone is on the same Wi-Fi network as the machine running the desktop app.
+2. On the desktop, open Settings > Servers and find the Phone card. It lists
+   the phone launcher URLs and shows a QR code for the first one.
+3. Scan the QR code with the phone camera (or type the URL — no IP hunting:
+   the card shows the exact `http://<machine-lan-ip>:4097/m` address). The QR
+   points at `/m`, the session launcher.
+4. Enter the phone password once when prompted (Safari remembers it for the session).
+5. Share -> Add to Home Screen.
 
 Live updates arrive while the app is open. Push notifications are unavailable
 because iOS requires HTTPS for them; plain LAN HTTP does not qualify.
 
+`http://flynncode.local:4097/m` may work as a best-effort fallback on networks
+where mDNS resolves, but prefer the QR code or the exact LAN URL from the
+Phone card — mDNS is not reliable on every router.
+
 ## Session launcher
 
-The gateway serves a session launcher at `http://<machine-lan-ip>:4097/m`. It
+The gateway serves a session launcher at `/m` (full address
+`http://<machine-lan-ip>:4097/m` — scan the QR code on the desktop Phone card
+instead of typing it). It
 requires the same phone credential as every other gateway path. Add `/m` to the
 home screen instead of `/` and you get a two-tap flow: tap the icon, tap a
 session.
