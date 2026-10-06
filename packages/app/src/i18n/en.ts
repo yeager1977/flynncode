@@ -482,6 +482,10 @@ export const dict = {
   "help.tabs.worktrees":
     "The new design does not support Git Worktrees yet, it's coming soon. So if you'd prefer to continue using the previous layout, you can switch between layouts in Settings. Just keep in mind that the new layout will become permanent in a few weeks.",
   "server.row.noUsername": "no username",
+  "server.phone.title": "Phone",
+  "server.phone.hint": "Scan the QR code with your phone camera. Both devices must be on the same Wi-Fi network.",
+  "server.phone.copy": "Copy",
+  "server.phone.stopped": "Phone access is unavailable while the mobile gateway is stopped.",
 
   "dialog.project.edit.title": "Edit project",
   "dialog.project.edit.name": "Name",
