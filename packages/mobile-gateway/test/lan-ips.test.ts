@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { buildLauncherUrls, listLanIPv4 } from "../src/lan-ips"
 
 describe("listLanIPv4", () => {
-  test("keeps LAN IPv4, drops loopback, internal, and IPv6", () => {
+  test("keeps 192.168.x.x only, drops loopback, container bridges, and IPv6", () => {
     const result = listLanIPv4({
       lo: [{ address: "127.0.0.1", family: "IPv4", internal: true } as never],
       eth0: [
@@ -10,8 +10,10 @@ describe("listLanIPv4", () => {
         { address: "fe80::1", family: "IPv6", internal: false } as never,
       ],
       docker0: [{ address: "172.17.0.1", family: "IPv4", internal: false } as never],
+      eth1: [{ address: "10.0.0.5", family: "IPv4", internal: false } as never,
+      ],
     })
-    expect(result).toEqual(["172.17.0.1", "192.168.1.42"])
+    expect(result).toEqual(["192.168.1.42"])
   })
 
   test("builds launcher urls with /m path", () => {

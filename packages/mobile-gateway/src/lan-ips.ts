@@ -8,8 +8,9 @@ export function listLanIPv4(interfaces: NodeJS.Dict<NetworkInterfaceInfo[]> = ne
     for (const info of list) {
       if (info.family !== "IPv4") continue
       if (info.internal) continue
-      if (info.address.startsWith("127.")) continue
-      if (info.address.startsWith("169.254.")) continue
+      // Only 192.168.x.x is listed: Docker bridges (172.16/12) and other
+      // ranges are unreachable from the phone and would poison the QR code.
+      if (!info.address.startsWith("192.168.")) continue
       found.push(info.address)
     }
   }
