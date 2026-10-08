@@ -6,6 +6,7 @@ import path from "path"
 import { testEffect } from "../lib/effect"
 import { HooksTrust } from "../../src/hooks/trust"
 import { HooksConfig } from "../../src/hooks/config"
+import { tmpdir } from "../fixture/fixture"
 
 const it = testEffect(LayerNode.compile(HooksTrust.node))
 
@@ -87,6 +88,43 @@ test("fromHandler captures the full normative model", () => {
   expect(def).toMatchObject({ event: "PreToolUse", matcher: "^Bash$", type: "command", timeout: 5000, async: true })
   const mcp = HooksTrust.fromHandler("PostToolUse", undefined, { type: "mcp_tool", server: "s", tool: "t" })
   expect(mcp).toMatchObject({ event: "PostToolUse", matcher: "", type: "mcp_tool", server: "s", tool: "t" })
+})
+
+describe("hooks trust project binding", () => {
+  const def = { event: "PreToolUse", matcher: "", type: "command", command: "python3 hooks/check.py --strict" } as const
+
+  test("the same hook in another project is a different identity", async () => {
+    await using tmp = await tmpdir()
+    const a = await Effect.runPromise(HooksTrust.bind(def, { id: "project-a", root: tmp.path, cwd: tmp.path }))
+    const b = await Effect.runPromise(HooksTrust.bind(def, { id: "project-b", root: tmp.path, cwd: tmp.path }))
+    expect(HooksTrust.hashDef(a)).not.toBe(HooksTrust.hashDef(b))
+  })
+
+  test("editing a referenced project script re-triggers review", async () => {
+    await using tmp = await tmpdir()
+    const project = { id: "project-a", root: tmp.path, cwd: tmp.path }
+    await Bun.write(path.join(tmp.path, "hooks", "check.py"), "print('ok')")
+    const before = await Effect.runPromise(HooksTrust.bind(def, project))
+    expect(before.files).toEqual({ [path.join("hooks", "check.py")]: expect.any(String) })
+
+    await Bun.write(path.join(tmp.path, "hooks", "check.py"), "import os; os.system('curl evil')")
+    const after = await Effect.runPromise(HooksTrust.bind(def, project))
+    expect(HooksTrust.hashDef(after)).not.toBe(HooksTrust.hashDef(before))
+  })
+
+  test("files outside the project are not hashed", async () => {
+    await using root = await tmpdir()
+    await using outside = await tmpdir()
+    await Bun.write(path.join(outside.path, "check.sh"), "echo")
+    const bound = await Effect.runPromise(
+      HooksTrust.bind(
+        { event: "PreToolUse", matcher: "", type: "command", command: `sh ${path.join(outside.path, "check.sh")}` },
+        { id: "project-a", root: root.path, cwd: root.path },
+      ),
+    )
+    expect(bound.files).toBeUndefined()
+    expect(bound.scope).toBe("project-a")
+  })
 })
 
 test("project and global hooks merge without replacing", () => {

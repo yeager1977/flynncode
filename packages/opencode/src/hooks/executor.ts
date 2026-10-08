@@ -180,8 +180,10 @@ export const node = LayerNode.make({
         const managed = yield* Effect.serviceOption(HooksManaged.ManagedHooks)
         if (Option.isSome(managed) && managed.value.isManaged(def)) return true
         if (flags.bypassHookTrust) return true
+        // Trust is per project and covers referenced project scripts.
+        const bound = yield* HooksTrust.bindToInstance(def)
         // Fail closed: trust lookup failures read as untrusted.
-        return yield* trust.isTrusted(def).pipe(Effect.orElseSucceed(() => false))
+        return yield* trust.isTrusted(bound).pipe(Effect.orElseSucceed(() => false))
       })
 
       type Spawned = { code: number; stdout: string; stderr: string; timedOut: boolean }
