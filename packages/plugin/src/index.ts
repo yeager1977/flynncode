@@ -332,4 +332,36 @@ export interface Hooks {
    * Modify tool definitions (description and parameters) sent to LLM
    */
   "tool.definition"?: (input: { toolID: string }, output: { description: string; parameters: any }) => Promise<void>
+  "tool.permission"?: (
+    input: { tool: string; sessionID: string; callID: string; args: Record<string, unknown> },
+    output: { decision: "allow" | "deny" | "undecided"; message?: string; updatedInput?: Record<string, unknown> },
+  ) => Promise<void>
+  "session.start"?: (
+    input: { sessionID: string; source: "startup" | "resume" | "clear" | "compact" },
+    output: { additionalContext?: string; systemMessage?: string },
+  ) => Promise<void>
+  "session.end"?: (
+    input: { sessionID: string; reason: "other" },
+    output: { systemMessage?: string },
+  ) => Promise<void>
+  "session.prompt"?: (
+    input: { sessionID: string; prompt: string },
+    output: { additionalContext?: string; systemMessage?: string },
+  ) => Promise<void>
+  "session.compact"?: (
+    input: { sessionID: string; trigger: "manual" | "auto"; phase: "pre" | "post" },
+    output: { additionalContext?: string; systemMessage?: string; continue?: boolean },
+  ) => Promise<void>
+  "session.idle"?: (
+    input: { sessionID: string },
+    output: { additionalContext?: string; systemMessage?: string },
+  ) => Promise<void>
+  "subagent.start"?: (
+    input: { sessionID: string; agentID: string; agentType: string },
+    output: { additionalContext?: string; systemMessage?: string },
+  ) => Promise<void>
+  "subagent.stop"?: (
+    input: { sessionID: string; agentID: string; agentType: string },
+    output: { additionalContext?: string; systemMessage?: string; continue?: boolean; stopReason?: string },
+  ) => Promise<void>
 }

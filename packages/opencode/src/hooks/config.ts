@@ -11,6 +11,12 @@ export function filterGroups(groups: Array<ConfigHooksV1.HookGroup>, toolOrSourc
   return groups.filter((group) => matchesMatcher(toolOrSource, group.matcher))
 }
 
+export function matchHooks(toolOrSource: string, matcher: string | undefined): boolean
+export function matchHooks(
+  event: string,
+  name: string | undefined,
+  groups: Array<ConfigHooksV1.HookGroup>,
+): Array<ConfigHooksV1.HookGroup>
 export function matchHooks(
   eventOrTool: string,
   nameOrMatcher: string | undefined,
