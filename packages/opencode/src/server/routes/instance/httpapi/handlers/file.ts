@@ -1,4 +1,5 @@
 import * as InstanceState from "@/effect/instance-state"
+import { containsPath } from "@/project/instance-context"
 import { FileSystem } from "@opencode-ai/core/filesystem"
 import { LocationServiceMap, locationServiceMapLayer } from "@opencode-ai/core/location-services"
 import { Ripgrep } from "@opencode-ai/core/ripgrep"
@@ -97,12 +98,10 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
       const instance = yield* InstanceState.context
       const directory = instance.directory
       const file = path.resolve(directory, ctx.query.path)
-      // Multifold: content reads accept the primary folder plus attached
-      // extras. The worktree posture is unchanged.
-      const attached =
-        FSUtil.contains(directory, file) ||
-        instance.additionalDirectories.some((root) => FSUtil.contains(root, file))
-      if (!attached) return yield* Effect.die(new Error("Path escapes the location"))
+      // Multifold: content reads accept attached folders through the central
+      // boundary check. The worktree-"/" guard stays inside containsPath, so
+      // non-git projects keep external_directory permissions intact.
+      if (!containsPath(file, instance)) return yield* Effect.die(new Error("Path escapes the location"))
       if (!(yield* FSUtil.Service.use((fs) => fs.existsSafe(file)))) return { type: "text" as const, content: "" }
       return yield* filesystem(
         FileSystem.Service.use((fs) => fs.read({ path: RelativePath.make(ctx.query.path) })),

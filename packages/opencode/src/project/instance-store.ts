@@ -6,9 +6,14 @@ import { WorkspaceContext } from "@/control-plane/workspace-context"
 import { InstanceRef } from "@/effect/instance-ref"
 import { disposeInstance as runDisposers } from "@/effect/instance-registry"
 import { FSUtil } from "@opencode-ai/core/fs-util"
+import { Watcher } from "@opencode-ai/core/filesystem/watcher"
+import { normalizeFolders } from "@opencode-ai/core/project/folders"
 import { Context, Deferred, Duration, Effect, Exit, Layer, Scope } from "effect"
 import { type InstanceContext } from "./instance-context"
 import { InstanceBootstrap } from "./bootstrap-service"
+import { InstanceState } from "@/effect/instance-state"
+import { EffectBridge } from "@/effect/bridge"
+import { EventV2Bridge } from "@/event-v2-bridge"
 import * as Project from "./project"
 
 export interface LoadInput {
@@ -37,35 +42,76 @@ interface Entry {
   readonly deferred: Deferred.Deferred<InstanceContext>
 }
 
-const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Service> = Layer.effect(
-  Service,
-  Effect.gen(function* () {
-    const project = yield* Project.Service
-    const bootstrap = yield* InstanceBootstrap.Service
-    const scope = yield* Scope.Scope
-    const cache = new Map<string, Entry>()
+const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Service | EventV2Bridge.Service> =
+  Layer.effect(
+    Service,
+    Effect.gen(function* () {
+      const project = yield* Project.Service
+      const bootstrap = yield* InstanceBootstrap.Service
+      const events = yield* EventV2Bridge.Service
+      const scope = yield* Scope.Scope
+      const cache = new Map<string, Entry>()
 
-    const boot = (input: LoadInput & { directory: string }) =>
-      Effect.gen(function* () {
-        const ctx: InstanceContext =
-          input.project && input.worktree
-            ? {
-                directory: input.directory,
-                worktree: input.worktree,
-                project: input.project,
-                additionalDirectories: input.additionalDirectories ?? [],
-              }
-            : yield* project.fromDirectory(input.directory, input.additionalDirectories).pipe(
-                Effect.map((result) => ({
+      const extraSubs = yield* InstanceState.make(
+        Effect.fn("InstanceStore.extraRoots")(function* () {
+          const subscribed = new Map<string, () => Promise<void>>()
+          yield* Effect.addFinalizer(() =>
+            Effect.promise(() =>
+              Promise.allSettled([...subscribed.values()].map((unsubscribe) => unsubscribe())),
+            ).pipe(Effect.asVoid, Effect.ignore),
+          )
+          return { subscribed }
+        }),
+      )
+
+      // Multifold: extra roots get native file-watcher subscriptions without
+      // Location nodes. Location.Ref stays the sole placement key; this only
+      // forwards file events into the instance stream. Extras attached through
+      // the V2 server surface do not reach this sync (separate package, no
+      // instance concept); they are covered on the next instance boot.
+      const syncExtraRoots = Effect.fn("InstanceStore.syncExtraRoots")(function* () {
+        const ctx = yield* InstanceState.context
+        const state = yield* InstanceState.get(extraSubs)
+        const bridge = yield* EffectBridge.make()
+        const wanted = new Set(normalizeFolders(ctx.directory, ctx.additionalDirectories))
+        for (const [root, unsubscribe] of state.subscribed) {
+          if (wanted.has(root)) continue
+          yield* Effect.promise(() => unsubscribe()).pipe(Effect.ignore)
+          state.subscribed.delete(root)
+        }
+        const fresh = [...wanted].filter((root) => !state.subscribed.has(root))
+        if (fresh.length === 0) return
+        const cleanups = yield* Watcher.subscribeRoots(fresh, (update) => {
+          bridge.fork(events.publish(Watcher.Event.Updated, { file: update.file, event: update.event }))
+        })
+        for (const [root, unsubscribe] of cleanups) state.subscribed.set(root, unsubscribe)
+      })
+
+      const boot = (input: LoadInput & { directory: string }) =>
+        Effect.gen(function* () {
+          const ctx: InstanceContext =
+            input.project && input.worktree
+              ? {
                   directory: input.directory,
-                  worktree: result.sandbox,
-                  project: result.project,
+                  worktree: input.worktree,
+                  project: input.project,
                   additionalDirectories: input.additionalDirectories ?? [],
-                })),
-              )
+                }
+              : yield* project.fromDirectory(input.directory, input.additionalDirectories).pipe(
+                  Effect.map((result) => ({
+                    directory: input.directory,
+                    worktree: result.sandbox,
+                    project: result.project,
+                    additionalDirectories: input.additionalDirectories ?? [],
+                  })),
+                )
         yield* bootstrap.run.pipe(Effect.provideService(InstanceRef, ctx))
+        yield* syncExtraRoots().pipe(
+          Effect.provideService(InstanceRef, ctx),
+          Effect.catchCause((cause) => Effect.logWarning("extra roots watch failed", { cause })),
+        )
         return ctx
-      }).pipe(Effect.withSpan("InstanceStore.boot"))
+        }).pipe(Effect.withSpan("InstanceStore.boot"))
 
     const removeEntry = (directory: string, entry: Entry) =>
       Effect.sync(() => {
@@ -202,6 +248,10 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
     ) {
       const ctx = yield* load({ directory })
       ctx.additionalDirectories = [...extras]
+      yield* syncExtraRoots().pipe(
+        Effect.provideService(InstanceRef, ctx),
+        Effect.catchCause((cause) => Effect.logWarning("extra roots watch failed", { cause })),
+      )
       return ctx
     })
 
@@ -225,7 +275,7 @@ export const bootstrapNode = LayerNode.unbound(InstanceBootstrap.Service, Node.t
 export const node = makeGlobalNode({
   service: Service,
   layer: layer,
-  deps: [Project.node, bootstrapNode],
+  deps: [Project.node, bootstrapNode, EventV2Bridge.node],
 })
 
 export * as InstanceStore from "./instance-store"
