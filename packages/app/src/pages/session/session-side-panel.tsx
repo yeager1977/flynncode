@@ -44,6 +44,7 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useSDK } from "@/context/sdk"
 import { useSettings } from "@/context/settings"
+import { useSync } from "@/context/sync"
 import { createFileTabListSync } from "@/pages/session/file-tab-scroll"
 import { FileTabContent } from "@/pages/session/file-tabs"
 import {
@@ -55,8 +56,10 @@ import {
   type Sizing,
 } from "@/pages/session/helpers"
 import { setSessionHandoff } from "@/pages/session/handoff"
+import { SessionHistoryPanel } from "@/pages/session/history/session-history-panel"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { SubagentList } from "@/pages/session/subagent-list-view"
+import { artifactVersionSignal, loadStoredArtifacts } from "@/pages/layout/sidebar-artifacts"
 import { SessionFileBrowserTab, type SessionFileBrowserState } from "@/pages/session/v2/session-file-browser-tab"
 
 type ReviewDiff = FileDiffInfo | SnapshotFileDiff | VcsFileDiff
@@ -93,6 +96,7 @@ export function SessionSidePanel(props: {
   const command = useCommand()
   const dialog = useDialog()
   const sdk = useSDK()
+  const sync = useSync()
   const { sessionKey, tabs, view, params } = useSessionLayout()
   const tasksOpen = createMemo(() => view().tasks.opened())
   const projectDirectory = createMemo(() => sdk().directory)
@@ -122,6 +126,25 @@ export function SessionSidePanel(props: {
 
   const diffs = createMemo(() => props.diffs().filter(renderDiff))
   const diffFiles = createMemo(() => diffs().map((d) => d.file))
+  const historySessionID = createMemo(() => params.id ?? "")
+  const historyMessages = createMemo(() => {
+    const id = historySessionID()
+    if (!id) return []
+    return (sync().data.message[id] ?? []).map((info) => ({ info, parts: sync().data.part[info.id] ?? [] }))
+  })
+  const historyDiffs = createMemo((): FileDiffInfo[] =>
+    diffs().map((diff) => ({
+      file: diff.file,
+      patch: diff.patch ?? "",
+      additions: diff.additions,
+      deletions: diff.deletions,
+      status: diff.status ?? "modified",
+    })),
+  )
+  const historyStored = createMemo(() => {
+    artifactVersionSignal()
+    return loadStoredArtifacts(projectDirectory())
+  })
   const kinds = createMemo(() => {
     const merge = (a: "add" | "del" | "mix" | undefined, b: "add" | "del" | "mix") => {
       if (!a) return b
@@ -827,6 +850,12 @@ export function SessionSidePanel(props: {
                                 draggable={false}
                                 active={props.activeDiff}
                                 onFileClick={(node) => props.focusReviewDiff(node.path)}
+                              />
+                              <SessionHistoryPanel
+                                sessionID={historySessionID()}
+                                messages={historyMessages()}
+                                diffs={historyDiffs()}
+                                stored={historyStored()}
                               />
                             </Show>
                           </Match>
