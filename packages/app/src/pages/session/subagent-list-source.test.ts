@@ -7,7 +7,7 @@ describe("subagent list rename + archive wiring", () => {
   test("child rows get an inline rename input committed through the rename API", () => {
     expect(viewSource).toContain('data-slot="subagent-rename-input"')
     expect(viewSource).toContain("api.session.rename")
-    expect(viewSource).toContain('onKeyDown={(event) => {')
+    expect(viewSource).toContain("onKeyDown={(event) => {")
     // Cancel on Escape, commit on Enter/blur.
     expect(viewSource).toContain('"Escape"')
     expect(viewSource).toContain("onBlur={commitRename}")
@@ -29,7 +29,10 @@ describe("subagent list rename + archive wiring", () => {
 
   test("archive only shows for finished children", () => {
     expect(viewSource).toContain("<Show when={props.finished}>")
-    const archiveButton = viewSource.slice(viewSource.indexOf('data-action="subagent-archive"') - 400, viewSource.indexOf('data-action="subagent-archive"'))
+    const archiveButton = viewSource.slice(
+      viewSource.indexOf('data-action="subagent-archive"') - 400,
+      viewSource.indexOf('data-action="subagent-archive"'),
+    )
     expect(archiveButton).toContain("props.finished")
   })
 
@@ -68,5 +71,21 @@ describe("subagent list stop + steer wiring", () => {
   test("stop and steer copy is i18n keys, no hardcoded English", () => {
     expect(viewSource).not.toMatch(/>\s*Stop\s*</)
     expect(viewSource).not.toMatch(/>\s*Steer\s*</)
+  })
+})
+
+describe("subagent row interactions", () => {
+  test("the rename input is not nested in the row toggle button", () => {
+    const button = viewSource.slice(viewSource.indexOf("<button"), viewSource.indexOf("</button>"))
+    expect(button).not.toContain("subagent-rename-input")
+  })
+
+  test("clicking the output pane does not collapse the row", () => {
+    const output = viewSource.slice(viewSource.indexOf('data-slot="session-task-output"'))
+    expect(output.slice(0, output.indexOf(">"))).not.toContain("onClick")
+  })
+
+  test("expanding a row loads the child transcript", () => {
+    expect(viewSource).toContain("sync().session.sync(result.expandedID)")
   })
 })

@@ -6,13 +6,19 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { useLanguage } from "@/context/language"
 import type { ApprovalMode, SandboxLevel } from "@/context/permission"
 
-const SANDBOX_BADGE_KEY: Record<SandboxLevel, "sandbox.badge.readonly" | "sandbox.badge.workspace" | "sandbox.badge.full"> = {
+const SANDBOX_BADGE_KEY: Record<
+  SandboxLevel,
+  "sandbox.badge.readonly" | "sandbox.badge.workspace" | "sandbox.badge.full"
+> = {
   readonly: "sandbox.badge.readonly",
   "workspace-write": "sandbox.badge.workspace",
   "full-access": "sandbox.badge.full",
 }
 
-const APPROVAL_MODE_KEY: Record<ApprovalMode, "approval.mode.manual" | "approval.mode.acceptEdits" | "approval.mode.auto"> = {
+const APPROVAL_MODE_KEY: Record<
+  ApprovalMode,
+  "approval.mode.manual" | "approval.mode.acceptEdits" | "approval.mode.auto"
+> = {
   manual: "approval.mode.manual",
   "accept-edits": "approval.mode.acceptEdits",
   auto: "approval.mode.auto",
@@ -62,7 +68,12 @@ export function SessionPermissionDock(props: {
           <div />
           <div data-slot="permission-footer-actions">
             <Show when={props.blockedBySandbox !== true}>
-              <Button variant="ghost" size="normal" onClick={() => props.onDecide("reject")} disabled={props.responding}>
+              <Button
+                variant="ghost"
+                size="normal"
+                onClick={() => props.onDecide("reject")}
+                disabled={props.responding}
+              >
                 {language.t("ui.permission.deny")}
               </Button>
               <Show when={props.request.permission !== "computer_use"}>
@@ -75,7 +86,12 @@ export function SessionPermissionDock(props: {
                   {language.t("ui.permission.allowAlways")}
                 </Button>
               </Show>
-              <Button variant="primary" size="normal" onClick={() => props.onDecide("once")} disabled={props.responding}>
+              <Button
+                variant="primary"
+                size="normal"
+                onClick={() => props.onDecide("once")}
+                disabled={props.responding}
+              >
                 {language.t("ui.permission.allowOnce")}
               </Button>
             </Show>
@@ -143,27 +159,6 @@ export function SessionPermissionDock(props: {
         <div data-slot="permission-row">
           <span data-slot="permission-spacer" aria-hidden="true" />
           <div data-slot="permission-hint">{language.t("computerUse.consent.note")}</div>
-        </div>
-        <div data-slot="permission-row">
-          <span data-slot="permission-spacer" aria-hidden="true" />
-          <div data-slot="permission-footer-actions">
-            <Button
-              variant="ghost"
-              size="normal"
-              onClick={() => props.onDecide("reject")}
-              disabled={props.responding}
-            >
-              {language.t("computerUse.consent.deny")}
-            </Button>
-            <Button
-              variant="primary"
-              size="normal"
-              onClick={() => props.onDecide("once")}
-              disabled={props.responding}
-            >
-              {language.t("computerUse.consent.allowOnce")}
-            </Button>
-          </div>
         </div>
       </Show>
     </DockPrompt>

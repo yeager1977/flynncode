@@ -17,13 +17,10 @@ import { useLayout } from "@/context/layout"
 import { useSettings } from "@/context/settings"
 import { useTerminal } from "@/context/terminal"
 import { useSDK } from "@/context/sdk"
-import { useSync } from "@/context/sync"
-import { sessionShowsSubagents } from "@/pages/session/subagent-list"
 import { terminalTabLabel } from "@/pages/session/terminal-label"
 import { createSizing, focusTerminalById } from "@/pages/session/helpers"
 import { getTerminalHandoff, setTerminalHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
-import { SubagentList } from "@/pages/session/subagent-list-view"
 
 export function TerminalPanel() {
   const delays = [120, 240]
@@ -33,18 +30,9 @@ export function TerminalPanel() {
   const language = useLanguage()
   const command = useCommand()
   const settings = useSettings()
-  const sync = useSync()
-  const { workspaceKey, view, params } = useSessionLayout()
-  const tasksOpen = createMemo(() =>
-    sessionShowsSubagents(
-      params.id ?? "",
-      Object.values(sync().data.session ?? {}),
-      sync().data.message,
-      sync().data.part,
-    ),
-  )
+  const { workspaceKey, view } = useSessionLayout()
+
   const opened = createMemo(() => view().terminal.opened())
-  const dockOpen = createMemo(() => opened() || tasksOpen())
   const size = createSizing()
   const height = createMemo(() => layout.terminal.height())
   const close = () => view().terminal.close()
@@ -214,14 +202,14 @@ export function TerminalPanel() {
       id="terminal-panel"
       role="region"
       aria-label={language.t("terminal.title")}
-      aria-hidden={!dockOpen()}
-      inert={!dockOpen()}
+      aria-hidden={!opened()}
+      inert={!opened()}
       class="relative w-full shrink-0 bg-background-stronger"
       classList={{
         "transition-[height] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[height] motion-reduce:transition-none":
           !size.active(),
       }}
-      style={{ height: opened() ? `${pane()}px` : tasksOpen() ? "auto" : "0px" }}
+      style={{ height: opened() ? `${pane()}px` : "0px" }}
     >
       <div class="hidden md:block" onPointerDown={() => size.start()}>
         <ResizeHandle
@@ -240,17 +228,11 @@ export function TerminalPanel() {
           onCollapse={close}
         />
       </div>
-      <Show when={!opened() && tasksOpen()}>
-        <div class="max-h-64 overflow-y-auto border-t border-border-weak-base">
-          <SubagentList sessionID={() => params.id ?? ""} />
-        </div>
-      </Show>
       <div
         class="absolute inset-x-0 top-0 flex flex-col overflow-hidden"
         classList={{
           "border-t border-border-weak-base": opened(),
           "pointer-events-none": !opened(),
-          hidden: !opened(),
         }}
         style={{ height: `${pane()}px` }}
       >
@@ -313,7 +295,6 @@ export function TerminalPanel() {
                 </Tabs.List>
               </Tabs>
               <div class="flex-1 min-h-0 relative">
-                <SubagentList sessionID={() => params.id ?? ""} />
                 <Show when={opened() && terminal.active()} keyed>
                   {(id) => {
                     const ops = terminal.bind()

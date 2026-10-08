@@ -23,9 +23,9 @@ describe("session side chat commands", () => {
     expect(commandsSource).toContain("sideChat.open()")
   })
 
-  test("ctrl+o cycles transcript view modes through the layout store", () => {
+  test("mod+shift+m cycles transcript view modes through the layout store", () => {
     expect(commandsSource).toContain('id: "session.viewMode.cycle"')
-    expect(commandsSource).toContain('keybind: "ctrl+o"')
+    expect(commandsSource).toContain('keybind: "mod+shift+m"')
     expect(commandsSource).toContain("view().cycleViewMode()")
   })
 
@@ -46,7 +46,7 @@ describe("side chat non-persistence", () => {
 
   test("closing removes the record and removes the transient forked session", () => {
     expect(controllerSource).toContain("sideChatStore.close(key)")
-    expect(controllerSource).toContain("api.session.fork")
+    expect(controllerSource).toContain(".fork({ sessionID: id })")
     expect(controllerSource).toContain("api.session.remove")
     expect(controllerSource).not.toContain("session.prompt(")
   })
