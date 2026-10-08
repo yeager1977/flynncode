@@ -228,13 +228,13 @@ const WorkspaceActions = (props: {
             disabled={props.local() || props.busy()}
             onSelect={() => props.showResetWorkspaceDialog(props.root, props.directory)}
           >
-            <DropdownMenu.ItemLabel>{props.language.t("common.reset")}</DropdownMenu.ItemLabel>
+            <DropdownMenu.ItemLabel>{props.language.t("session.worktree.reset")}</DropdownMenu.ItemLabel>
           </DropdownMenu.Item>
           <DropdownMenu.Item
             disabled={props.local() || props.busy()}
             onSelect={() => props.showDeleteWorkspaceDialog(props.root, props.directory)}
           >
-            <DropdownMenu.ItemLabel>{props.language.t("common.delete")}</DropdownMenu.ItemLabel>
+            <DropdownMenu.ItemLabel>{props.language.t("session.worktree.remove")}</DropdownMenu.ItemLabel>
           </DropdownMenu.Item>
           <Show
             when={worktreeMenuActions({

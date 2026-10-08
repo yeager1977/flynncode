@@ -10,6 +10,7 @@ export function PromptWorkspaceSelector(props: {
   value: string
   projectRoot: string
   workspaces: string[]
+  keep?: number
   branch?: string
   onChange: (value: string) => void
   onDone: () => void
@@ -96,10 +97,12 @@ export function PromptWorkspaceSelector(props: {
                       )}
                     </For>
                     <div class="px-2 py-1 text-12-regular text-text-weak">
-                      {language.t("session.worktree.retainedCount", {
-                        count: props.workspaces.length,
-                        keep: props.workspaces.length,
-                      })}
+                      {props.keep === undefined
+                        ? language.t("session.worktree.worktreeCount", { count: props.workspaces.length })
+                        : language.t("session.worktree.retainedCount", {
+                            count: props.workspaces.length,
+                            keep: props.keep,
+                          })}
                     </div>
                   </MenuV2.SubContent>
                 </MenuV2.Portal>

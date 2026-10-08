@@ -31,6 +31,7 @@ export function NewSessionView(props: {
   project: PromptProjectController
   workspace: NewSessionWorkspaceController
 }) {
+  const language = useLanguage()
   return (
     <div class="@container relative flex flex-col min-h-0 h-full flex-1">
       <div
@@ -64,6 +65,11 @@ export function NewSessionView(props: {
                     />
                   </Show>
                 </div>
+                <Show when={props.workspace.disposable()}>
+                  <div class="text-[13px] leading-5 text-v2-text-text-faint">
+                    {language.t("session.worktree.disposableDescription")}
+                  </div>
+                </Show>
               </Show>
             </div>
           </div>

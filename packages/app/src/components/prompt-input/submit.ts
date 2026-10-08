@@ -443,13 +443,21 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         })
       if (created) {
         if (disposableWorktree) {
+          // Fail loud: without the binding, dispose-on-archive never fires
+          // and the worktree is silently retained. The session itself is
+          // usable, so continue after warning instead of orphaning it.
           await client.session
             .update({
               sessionID: created.id,
               directory: sessionDirectory,
               metadata: { worktree: sessionDirectory, disposable: true },
             })
-            .catch(() => undefined)
+            .catch((err: unknown) => {
+              showToast({
+                title: language.t("prompt.toast.disposableFlagFailed.title"),
+                description: errorMessage(err),
+              })
+            })
         }
         seed(sessionDirectory, created)
         session = created

@@ -55,6 +55,7 @@ export function createNewSessionWorkspaceController() {
       worktreeBranch: (worktree) => serverSync().child(worktree)[0].vcs?.branch,
     }),
   )
+  const disposable = createMemo(() => value() === "disposable")
 
   return {
     selection: {
@@ -63,6 +64,7 @@ export function createNewSessionWorkspaceController() {
       set: (worktree: string) =>
         setWorktree(normalizeNewSessionWorktree(worktree, sdk().directory, sync().project?.worktree)),
     },
+    disposable,
     project: {
       root: projectRoot,
       workspaces: () => sync().project?.sandboxes ?? [],
