@@ -97,7 +97,82 @@ describe("discoverFromHome", () => {
   })
 })
 
+describe("discoverFromHome summaries", () => {
+  const claudeLine = (sessionId: string, cwd: string, content: string, timestamp: string) =>
+    line({ type: "user", sessionId, cwd, timestamp, message: { role: "user", content } })
+
+  it("filters by cwd, including nested directories, for both sources", async () => {
+    const root = await mkdtemp(join(tmpdir(), "import-cwd-"))
+    await mkdir(join(root, ".claude", "projects", "-repo"), { recursive: true })
+    await mkdir(join(root, ".claude", "projects", "-repo-sub"), { recursive: true })
+    await mkdir(join(root, ".claude", "projects", "-other"), { recursive: true })
+    await writeFile(join(root, ".claude", "projects", "-repo", "a.jsonl"), claudeLine("a", "/repo", "A", "2026-01-01T00:00:00.000Z"))
+    await writeFile(join(root, ".claude", "projects", "-repo-sub", "b.jsonl"), claudeLine("b", "/repo/sub", "B", "2026-01-02T00:00:00.000Z"))
+    await writeFile(join(root, ".claude", "projects", "-other", "c.jsonl"), claudeLine("c", "/other", "C", "2026-01-03T00:00:00.000Z"))
+    await mkdir(join(root, ".codex", "sessions", "2026"), { recursive: true })
+    await writeFile(
+      join(root, ".codex", "sessions", "2026", "r1.jsonl"),
+      [
+        line({ type: "session_meta", payload: { id: "r1", cwd: "/repo" } }),
+        line({ type: "event_msg", payload: { type: "user_message", message: "Hi" } }),
+      ].join("\n"),
+    )
+    await writeFile(
+      join(root, ".codex", "sessions", "2026", "r2.jsonl"),
+      [
+        line({ type: "session_meta", payload: { id: "r2", cwd: "/repository" } }),
+        line({ type: "event_msg", payload: { type: "user_message", message: "Hi" } }),
+      ].join("\n"),
+    )
+
+    const claude = await discoverFromHome({ source: "claude-code", home: root, cwd: "/repo" })
+    expect(claude.map((item) => item.sourceSessionID)).toEqual(["b", "a"])
+    expect(claude[0]).toMatchObject({ messageCount: 1, time: Date.parse("2026-01-02T00:00:00.000Z"), cwd: "/repo/sub" })
+    const codex = await discoverFromHome({ source: "codex", home: root, cwd: "/repo" })
+    expect(codex.map((item) => item.sourceSessionID)).toEqual(["r1"])
+    expect((await discoverFromHome({ source: "claude-code", home: root })).map((item) => item.sourceSessionID)).toEqual([
+      "c",
+      "b",
+      "a",
+    ])
+    await rm(root, { recursive: true, force: true })
+  })
+
+  it("re-reads a file only after it changes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "import-cache-"))
+    const file = join(root, ".claude", "projects", "-work", "s.jsonl")
+    await mkdir(join(root, ".claude", "projects", "-work"), { recursive: true })
+    await writeFile(file, claudeLine("s", "/work", "First", "2026-01-01T00:00:00.000Z"))
+    expect((await discoverFromHome({ source: "claude-code", home: root }))[0]?.messageCount).toBe(1)
+    await writeFile(
+      file,
+      [
+        claudeLine("s", "/work", "First", "2026-01-01T00:00:00.000Z"),
+        claudeLine("s", "/work", "Second", "2026-01-01T00:01:00.000Z"),
+      ].join("\n"),
+    )
+    expect((await discoverFromHome({ source: "claude-code", home: root }))[0]?.messageCount).toBe(2)
+    await rm(root, { recursive: true, force: true })
+  })
+})
+
 describe("resolveSourceFile", () => {
+  it.skipIf(!symlinksSupported)("accepts files under a symlinked source root", async () => {
+    const real = await mkdtemp(join(tmpdir(), "import-real-claude-"))
+    const linkedHome = await mkdtemp(join(tmpdir(), "import-linked-home-"))
+    await mkdir(join(real, "projects", "-work"), { recursive: true })
+    await writeFile(join(real, "projects", "-work", "s.jsonl"), line({ type: "user" }))
+    await symlink(real, join(linkedHome, ".claude"))
+    const resolved = await resolveSourceFile({
+      source: "claude-code",
+      home: linkedHome,
+      path: join(linkedHome, ".claude", "projects", "-work", "s.jsonl"),
+    })
+    expect(resolved?.path.endsWith("s.jsonl")).toBe(true)
+    await rm(real, { recursive: true, force: true })
+    await rm(linkedHome, { recursive: true, force: true })
+  })
+
   it("accepts a jsonl file inside the source store", async () => {
     const resolved = await resolveSourceFile({
       source: "claude-code",

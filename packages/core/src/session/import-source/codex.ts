@@ -1,6 +1,6 @@
 export * as Codex from "./codex"
 
-import type { ImportedMessage, ParsedSession } from "./types.js"
+import type { ImportedMessage, ParsedSession, SessionReader } from "./types.js"
 
 type Record_ = Record<string, unknown>
 
@@ -25,59 +25,82 @@ function responseText(content: unknown): string | undefined {
 
 const TITLE_LIMIT = 80
 
+// Only session metadata, user messages, and message response items matter;
+// other records (reasoning, tool calls and outputs) skip JSON.parse.
+const RELEVANT = /"type"\s*:\s*"(session_meta|user_message|message)"/
+
 export function parseCodex(input: { readonly path: string; readonly text: string }): ParsedSession {
-  let sessionID = ""
-  let cwd = ""
-  let time = 0
+  const reader = codexReader(input.path, { keepMessages: true })
+  for (const raw of input.text.split("\n")) reader.push(raw)
+  return reader.finish()
+}
+
+// Incremental parser; see claudeCodeReader for the `keepMessages` contract.
+export function codexReader(path: string, options: { readonly keepMessages: boolean }): SessionReader {
+  const state = {
+    sessionID: "",
+    cwd: "",
+    time: 0,
+    firstTime: undefined as number | undefined,
+    count: 0,
+    firstUser: undefined as string | undefined,
+  }
   const messages: ImportedMessage[] = []
 
-  for (const raw of input.text.split("\n")) {
-    if (!raw.trim()) continue
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(raw)
-    } catch {
-      continue
-    }
-    const record = asRecord(parsed)
-    if (!record) continue
+  const add = (role: "user" | "assistant", text: string) => {
+    if (role === "user") state.firstUser ??= text
+    state.firstTime ??= state.time
+    state.count++
+    if (options.keepMessages) messages.push({ role, text, time: state.time })
+  }
+
+  const push = (raw: string) => {
+    if (!RELEVANT.test(raw)) return
+    const record = asRecord(parseLine(raw))
+    if (!record) return
     const payload = asRecord(record.payload)
-    if (!payload) continue
+    if (!payload) return
     const stamp = asString(record.timestamp)
     const parsedTime = stamp ? Date.parse(stamp) : Number.NaN
-    if (Number.isFinite(parsedTime)) time = parsedTime
+    if (Number.isFinite(parsedTime)) state.time = parsedTime
 
     if (record.type === "session_meta") {
-      sessionID = asString(payload.id) ?? asString(payload.session_id) ?? ""
-      cwd = asString(payload.cwd) ?? ""
-      continue
+      state.sessionID = asString(payload.id) ?? asString(payload.session_id) ?? ""
+      state.cwd = asString(payload.cwd) ?? ""
+      return
     }
 
     if (record.type === "event_msg") {
-      if (payload.type === "user_message") {
-        const text = asString(payload.message)
-        if (text?.trim()) messages.push({ role: "user", text, time })
-      }
-      continue
+      const text = payload.type === "user_message" ? asString(payload.message) : undefined
+      if (text?.trim()) add("user", text)
+      return
     }
 
     if (record.type === "response_item" && payload.type === "message") {
       const role = asString(payload.role)
-      if (role !== "user" && role !== "assistant") continue
+      if (role !== "user" && role !== "assistant") return
       const text = responseText(payload.content)
-      if (!text) continue
-      messages.push({ role, text, time })
+      if (text) add(role, text)
     }
   }
 
-  const firstUser = messages.find((message) => message.role === "user")
-  const title = (firstUser?.text ?? input.path.split("/").at(-1) ?? input.path).slice(0, TITLE_LIMIT)
-
-  return {
-    sourceSessionID: sessionID || input.path,
-    sourcePath: input.path,
-    cwd,
-    title,
+  const finish = (): ParsedSession => ({
+    sourceSessionID: state.sessionID || path,
+    sourcePath: path,
+    cwd: state.cwd,
+    title: (state.firstUser ?? path.split("/").at(-1) ?? path).slice(0, TITLE_LIMIT),
     messages,
+    messageCount: state.count,
+    time: state.firstTime ?? 0,
+  })
+
+  return { push, finish, cwd: () => state.cwd || undefined }
+}
+
+function parseLine(raw: string): unknown {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return undefined
   }
 }
