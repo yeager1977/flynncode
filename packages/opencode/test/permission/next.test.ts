@@ -5,6 +5,7 @@ import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Permission } from "../../src/permission"
+import { HooksRunner } from "../../src/hooks/runner"
 import { InstanceBootstrap } from "../../src/project/bootstrap"
 import { InstanceStore } from "../../src/project/instance-store"
 import { TestInstance, tmpdirScoped } from "../fixture/fixture"
@@ -14,9 +15,13 @@ import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
+const passthroughHooks = HooksRunner.testLayerWithHooks([])
 const env = AppNodeBuilder.build(
   LayerNode.group([Permission.node, EventV2Bridge.node, CrossSpawnSpawner.node, InstanceStore.node]),
-  [[InstanceStore.bootstrapNode, noopBootstrap]],
+  [
+    [InstanceStore.bootstrapNode, noopBootstrap],
+    [HooksRunner.node, passthroughHooks],
+  ],
 )
 const it = testEffect(env)
 
@@ -1169,6 +1174,90 @@ it.instance(
       const exit = yield* Fiber.await(fiber)
       expect(Exit.isFailure(exit)).toBe(true)
       if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(PermissionV1.RejectedError)
+    }),
+  { git: true },
+)
+
+const hookAllowEnv = AppNodeBuilder.build(
+  LayerNode.group([Permission.node, EventV2Bridge.node, CrossSpawnSpawner.node, InstanceStore.node]),
+  [
+    [InstanceStore.bootstrapNode, noopBootstrap],
+    [
+      HooksRunner.node,
+      HooksRunner.testLayerWithHooks([
+        {
+          "tool.permission": async (input, output) => {
+            const patterns = input.args["patterns"]
+            if (Array.isArray(patterns) && patterns.includes("echo hi")) output.decision = "allow"
+          },
+        },
+      ]),
+    ],
+  ],
+)
+
+const hookDenyEnv = AppNodeBuilder.build(
+  LayerNode.group([Permission.node, EventV2Bridge.node, CrossSpawnSpawner.node, InstanceStore.node]),
+  [
+    [InstanceStore.bootstrapNode, noopBootstrap],
+    [
+      HooksRunner.node,
+      HooksRunner.testLayerWithHooks([
+        {
+          "tool.permission": async (input, output) => {
+            const patterns = input.args["patterns"]
+            if (Array.isArray(patterns) && patterns.some((p) => typeof p === "string" && p.includes("rm -rf"))) {
+              output.decision = "deny"
+              output.message = "Denied by hook"
+            }
+          },
+        },
+      ]),
+    ],
+  ],
+)
+
+const hookAllowIt = testEffect(hookAllowEnv)
+const hookDenyIt = testEffect(hookDenyEnv)
+
+hookAllowIt.instance(
+  "hook allow skips prompt",
+  () =>
+    Effect.gen(function* () {
+      const svc = yield* Permission.Service
+      yield* svc.ask({
+        permission: "bash",
+        patterns: ["echo hi"],
+        sessionID: SessionID.make("ses_hook_allow"),
+        metadata: {},
+        always: [],
+        tool: { messageID: MessageID.make("msg_hook_allow"), callID: "call_hook_allow" },
+        ruleset: [],
+      })
+      expect(yield* svc.list()).toHaveLength(0)
+    }),
+  { git: true },
+)
+
+hookDenyIt.instance(
+  "hook deny wins over allow ruleset",
+  () =>
+    Effect.gen(function* () {
+      const svc = yield* Permission.Service
+      const exit = yield* svc
+        .ask({
+          permission: "bash",
+          patterns: ["rm -rf /"],
+          sessionID: SessionID.make("ses_hook_deny"),
+          metadata: {},
+          always: [],
+          tool: { messageID: MessageID.make("msg_hook_deny"), callID: "call_hook_deny" },
+          ruleset: [{ permission: "bash", pattern: "*", action: "allow" }],
+        })
+        .pipe(Effect.exit)
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(PermissionV1.DeniedError)
+      expect(yield* svc.list()).toHaveLength(0)
     }),
   { git: true },
 )

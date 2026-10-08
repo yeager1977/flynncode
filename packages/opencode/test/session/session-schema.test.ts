@@ -53,8 +53,7 @@ describe("Session schema", () => {
     expect(Object.hasOwn(encoded.project as Record<string, unknown>, "name")).toBe(false)
   })
 
-  test("encodes nested undefined optional session fields as omitted keys", () => {
-    const encoded = Schema.encodeUnknownSync(Session.Info)({
+  test("encodes nested undefined optional session fields as omitted keys", () => {    const encoded = Schema.encodeUnknownSync(Session.Info)({
       ...info,
       summary: {
         additions: 1,
@@ -74,5 +73,12 @@ describe("Session schema", () => {
     for (const key of ["partID", "snapshot", "diff"]) {
       expect(Object.hasOwn(encoded.revert as Record<string, unknown>, key)).toBe(false)
     }
+  })
+
+  test("create input decodes an explicit start source and omits it otherwise", () => {
+    const decoded = Schema.decodeUnknownSync(Session.CreateInput)({ source: "clear" })
+    expect(decoded?.source).toBe("clear")
+    const empty = Schema.decodeUnknownSync(Session.CreateInput)({})
+    expect(empty?.source).toBeUndefined()
   })
 })

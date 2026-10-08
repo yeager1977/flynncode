@@ -20,6 +20,12 @@ import type {
   Config as Config3,
   ConfigGetErrors,
   ConfigGetResponses,
+  ConfigHooksTrustApproveErrors,
+  ConfigHooksTrustApproveResponses,
+  ConfigHooksTrustListErrors,
+  ConfigHooksTrustListResponses,
+  ConfigHooksTrustRevokeErrors,
+  ConfigHooksTrustRevokeResponses,
   ConfigOmoGetErrors,
   ConfigOmoGetResponses,
   ConfigOmoUpdateErrors,
@@ -96,6 +102,7 @@ import type {
   GlobalOmoConfigUpdateResponses,
   GlobalUpgradeErrors,
   GlobalUpgradeResponses,
+  HooksHashInput,
   ImportedMessage,
   InstanceDisposeErrors,
   InstanceDisposeResponses,
@@ -1567,6 +1574,131 @@ export class Omo extends HeyApiClient {
   }
 }
 
+export class Trust extends HeyApiClient {
+  /**
+   * List hooks trust state
+   *
+   * List configured file hooks with their trust state for review in settings. Managed hooks are trusted by policy and cannot be disabled.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      ConfigHooksTrustListResponses,
+      ConfigHooksTrustListErrors,
+      ThrowOnError
+    >({
+      url: "/config/hooks/trust",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Trust a hook
+   *
+   * Pin the current hash of a hook definition as trusted after review.
+   */
+  public approve<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      hooksHashInput?: HooksHashInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "hooksHashInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ConfigHooksTrustApproveResponses,
+      ConfigHooksTrustApproveErrors,
+      ThrowOnError
+    >({
+      url: "/config/hooks/trust",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Revoke hook trust
+   *
+   * Remove trust for a hook hash. Managed hooks cannot be revoked.
+   */
+  public revoke<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      hooksHashInput?: HooksHashInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "hooksHashInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ConfigHooksTrustRevokeResponses,
+      ConfigHooksTrustRevokeErrors,
+      ThrowOnError
+    >({
+      url: "/config/hooks/revoke",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Hooks extends HeyApiClient {
+  private _trust?: Trust
+  get trust(): Trust {
+    return (this._trust ??= new Trust({ client: this.client }))
+  }
+}
+
 export class Config2 extends HeyApiClient {
   /**
    * Get configuration
@@ -1668,6 +1800,11 @@ export class Config2 extends HeyApiClient {
   private _omo?: Omo
   get omo(): Omo {
     return (this._omo ??= new Omo({ client: this.client }))
+  }
+
+  private _hooks?: Hooks
+  get hooks(): Hooks {
+    return (this._hooks ??= new Hooks({ client: this.client }))
   }
 }
 
@@ -3880,6 +4017,7 @@ export class Session2 extends HeyApiClient {
       }
       permission?: PermissionRuleset
       workspaceID?: string
+      source?: "startup" | "resume" | "clear" | "compact"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3897,6 +4035,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "metadata" },
             { in: "body", key: "permission" },
             { in: "body", key: "workspaceID" },
+            { in: "body", key: "source" },
           ],
         },
       ],

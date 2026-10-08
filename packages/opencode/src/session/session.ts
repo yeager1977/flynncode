@@ -47,6 +47,9 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { SessionMessage } from "@opencode-ai/schema/session-message"
+import { HooksRunner } from "@/hooks/runner"
+import { HooksContext } from "@/hooks/context"
+import { HooksExecutor } from "@/hooks/executor"
 
 const parentTitlePrefix = "New session - "
 const childTitlePrefix = "Child session - "
@@ -270,6 +273,7 @@ export const CreateInput = Schema.optional(
     permission: Schema.optional(PermissionV1.Ruleset),
     workspaceID: Schema.optional(WorkspaceV2.ID),
     additionalDirectories: optional(Schema.Array(Schema.String)),
+    source: Schema.optional(Schema.Literals(["startup", "resume", "clear", "compact"])),
   }),
 )
 export type CreateInput = Types.DeepMutable<Schema.Schema.Type<typeof CreateInput>>
@@ -434,6 +438,7 @@ export interface Interface {
     permission?: PermissionV1.Ruleset
     workspaceID?: WorkspaceV2.ID
     additionalDirectories?: string[]
+    source?: "startup" | "resume" | "clear" | "compact"
   }) => Effect.Effect<Info, MultifoldError>
   readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info, NotFound | MultifoldError>
   readonly touch: (sessionID: SessionID) => Effect.Effect<void>
@@ -535,6 +540,7 @@ const layer: Layer.Layer<
       metadata?: typeof Metadata.Type
       permission?: PermissionV1.Ruleset
       additionalDirectories?: string[]
+      source?: "startup" | "resume" | "clear" | "compact"
     }) {
       const ctx = yield* InstanceState.context
       // Multifold: extras ride as an additive session-level field. The
@@ -567,6 +573,16 @@ const layer: Layer.Layer<
       yield* Effect.logInfo("created", result)
 
       yield* events.publish(SessionV1.Event.Created, { sessionID: result.id, info: result })
+      // Observe-only SessionStart hook; failures are advisory and never block creation.
+      // Returned context is stored for system-prompt injection on later turns.
+      const maybeStartHooks = yield* Effect.serviceOption(HooksRunner.Service)
+      if (Option.isSome(maybeStartHooks)) {
+        yield* HooksContext.observeAndStore(
+          "hooks.session.start",
+          result.id,
+          maybeStartHooks.value.runSessionStart({ sessionID: result.id, source: input.source ?? "startup" }),
+        )
+      }
 
       for (const extra of extras) {
         yield* projectDirectories
@@ -664,6 +680,20 @@ const layer: Layer.Layer<
         }
 
         yield* events.publish(SessionV1.Event.Deleted, { sessionID, info: session })
+        // SessionEnd is always synchronous with a 3s cap; output is advisory only.
+        // Stored hook context is cleared and background hook fibers are cancelled.
+        const maybeEndHooks = yield* Effect.serviceOption(HooksRunner.Service)
+        if (Option.isSome(maybeEndHooks) && hasInstance) {
+          yield* HooksContext.observeAndStore(
+            "hooks.session.end",
+            sessionID,
+            maybeEndHooks.value.runSessionEnd({ sessionID }),
+          ).pipe(Effect.timeout("3 seconds"), Effect.ignore)
+          const maybeStore = yield* Effect.serviceOption(HooksContext.Service)
+          if (Option.isSome(maybeStore)) yield* maybeStore.value.clear(sessionID)
+          const maybeExecutor = yield* Effect.serviceOption(HooksExecutor.Service)
+          if (Option.isSome(maybeExecutor)) yield* maybeExecutor.value.cancelSession(sessionID)
+        }
         yield* events.remove(sessionID)
       } catch (error) {
         yield* Effect.logError("failed to remove session", { sessionID, error })
@@ -717,6 +747,7 @@ const layer: Layer.Layer<
       permission?: PermissionV1.Ruleset
       workspaceID?: WorkspaceV2.ID
       additionalDirectories?: string[]
+      source?: "startup" | "resume" | "clear" | "compact"
     }) {
       const ctx = yield* InstanceState.context
       const workspace = yield* InstanceState.workspaceID
@@ -731,6 +762,7 @@ const layer: Layer.Layer<
         permission: input?.permission,
         workspaceID: input?.workspaceID ?? workspace,
         additionalDirectories: input?.additionalDirectories,
+        source: input?.source,
       })
     })
 
@@ -744,6 +776,8 @@ const layer: Layer.Layer<
         workspaceID: original.workspaceID,
         title,
         metadata: structuredClone(original.metadata),
+        // A fork carries resumed history into a new session.
+        source: "resume",
       })
       const msgs = yield* messages({ sessionID: input.sessionID })
       const idMap = new Map<string, MessageID>()

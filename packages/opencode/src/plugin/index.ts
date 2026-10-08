@@ -57,6 +57,10 @@ export interface Interface {
     input: Input,
     output: Output,
   ) => Effect.Effect<Output>
+  readonly triggerDecision: (
+    input: { tool: string; sessionID: string; callID: string; args: Record<string, unknown> },
+    output: { decision: "allow" | "deny" | "undecided"; message?: string; updatedInput?: Record<string, unknown> },
+  ) => Effect.Effect<{ decision: "allow" | "deny" | "undecided"; message?: string; updatedInput?: Record<string, unknown> }>
   readonly list: () => Effect.Effect<Hooks[]>
   readonly init: () => Effect.Effect<void>
 }
@@ -311,11 +315,47 @@ const layer = Layer.effect(
       return s.hooks
     })
 
+    const triggerDecision = Effect.fn("Plugin.triggerDecision")(function* (
+      input: { tool: string; sessionID: string; callID: string; args: Record<string, unknown> },
+      output: { decision: "allow" | "deny" | "undecided"; message?: string; updatedInput?: Record<string, unknown> },
+    ) {
+      const s = yield* InstanceState.get(state)
+      // Aggregate across decision sources with isolated per-hook outputs:
+      // any deny wins (first deny short-circuits), allows merge updatedInput
+      // left-to-right, undecided hooks change nothing.
+      const mergedUpdated: Record<string, unknown> = {}
+      let sawRewrite = false
+      for (const hook of s.hooks) {
+        const fn = hook["tool.permission"]
+        if (!fn) continue
+        const perHook: {
+          decision: "allow" | "deny" | "undecided"
+          message?: string
+          updatedInput?: Record<string, unknown>
+        } = { decision: "undecided" }
+        yield* Effect.promise(async () => fn(input, perHook))
+        // Fail closed: first deny short-circuits, never silently continue.
+        if (perHook.decision === "deny") {
+          output.decision = "deny"
+          output.message = perHook.message
+          return output
+        }
+        if (perHook.decision !== "allow") continue
+        output.decision = "allow"
+        if (perHook.updatedInput) {
+          sawRewrite = true
+          Object.assign(mergedUpdated, perHook.updatedInput)
+        }
+      }
+      if (sawRewrite) output.updatedInput = mergedUpdated
+      return output
+    })
+
     const init = Effect.fn("Plugin.init")(function* () {
       yield* InstanceState.get(state)
     })
 
-    return Service.of({ trigger, list, init })
+    return Service.of({ trigger, triggerDecision, list, init })
   }),
 )
 

@@ -120,6 +120,12 @@ export const TuiThreadCommand = cmd({
         hidden: true,
         default: false,
       })
+      .option("dangerously-bypass-hook-trust", {
+        type: "boolean",
+        hidden: true,
+        default: false,
+        describe: "run file hooks without persisted trust for one invocation",
+      })
       .option("mini", {
         type: "boolean",
         describe: "start the minimal interactive interface",
@@ -142,6 +148,8 @@ export const TuiThreadCommand = cmd({
         hidden: true,
       }),
   handler: async (args) => {
+    const { RuntimeFlags } = await import("@/effect/runtime-flags")
+    RuntimeFlags.applyDangerouslyBypassHookTrust(args)
     if (args.replay === true) {
       UI.error("--replay is not supported; replay is enabled by default")
       process.exitCode = 1
@@ -171,6 +179,7 @@ export const TuiThreadCommand = cmd({
         replay: noReplay ? false : undefined,
         replayLimit: args.replayLimit,
         demo: args.demo,
+        bypassHookTrust: args["dangerously-bypass-hook-trust"],
       })
       return
     }

@@ -10,8 +10,10 @@ import { Agent } from "../agent/agent"
 import { deriveSubagentSessionPermission, sandboxRules } from "../agent/subagent-permissions"
 import type { SessionPrompt } from "../session/prompt"
 import { Config } from "@/config/config"
-import { Effect, Exit, Schema, Scope } from "effect"
+import { Effect, Exit, Option, Schema, Scope } from "effect"
 import { EffectBridge } from "@/effect/bridge"
+import { HooksRunner } from "@/hooks/runner"
+import { HooksContext } from "@/hooks/context"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Database } from "@opencode-ai/core/database/database"
 import { Worktree } from "@/worktree"
@@ -190,6 +192,19 @@ export const TaskTool = Tool.define(
           agent: next.name,
           permission: childRules,
         }))
+      // Observe-only SubagentStart hook; continue:false is parsed but ignored.
+      const maybeSubagentHooks = yield* Effect.serviceOption(HooksRunner.Service)
+      if (Option.isSome(maybeSubagentHooks)) {
+        yield* HooksContext.observeAndStore(
+          "hooks.subagent.start",
+          nextSession.id,
+          maybeSubagentHooks.value.runSubagentStart({
+            sessionID: nextSession.id,
+            agentID: nextSession.id,
+            agentType: next.name,
+          }),
+        )
+      }
       // The child runs in the temp worktree: rebind its session row to the
       // worktree directory (the disposable binding also travels in metadata,
       // since there is no new session table), then append the sandbox profile
@@ -385,6 +400,20 @@ export const TaskTool = Tool.define(
             if (result?.metadata?.background === true) return backgroundResult()
             if (result?.status === "error") return yield* Effect.fail(new Error(result.error ?? "Task failed"))
             if (result?.status === "cancelled") return yield* Effect.fail(new Error("Task cancelled"))
+            // Observe-only SubagentStop hook; interruption reuses the existing
+            // user-interrupt path via ops.cancel (no parallel mechanism).
+            const maybeStopHooks = yield* Effect.serviceOption(HooksRunner.Service)
+            if (Option.isSome(maybeStopHooks)) {
+              yield* HooksContext.observeAndStore(
+                "hooks.subagent.stop",
+                nextSession.id,
+                maybeStopHooks.value.runSubagentStop({
+                  sessionID: nextSession.id,
+                  agentID: nextSession.id,
+                  agentType: next.name,
+                }),
+              )
+            }
             return {
               title: params.description,
               metadata,

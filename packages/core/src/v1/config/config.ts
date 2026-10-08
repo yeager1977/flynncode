@@ -9,6 +9,7 @@ import { ConfigMemoryV1 } from "./memory"
 import { ConfigAttachmentV1 } from "./attachment"
 import { ConfigCommandV1 } from "./command"
 import { ConfigFormatterV1 } from "./formatter"
+import { ConfigHooksV1 } from "./hooks"
 import { ConfigLayoutV1 } from "./layout"
 import { ConfigLSPV1 } from "./lsp"
 import { ConfigMCPV1 } from "./mcp"
@@ -164,6 +165,10 @@ export const Info = Schema.Struct({
   }),
   layout: Schema.optional(ConfigLayoutV1.Layout).annotate({ description: "@deprecated Always uses stretch layout." }),
   permission: Schema.optional(ConfigPermissionV1.Info),
+  hooks: Schema.optional(ConfigHooksV1.Info).annotate({
+    description:
+      "Lifecycle hooks: PreToolUse, PermissionRequest, PostToolUse, SessionStart/End, Pre/PostCompact, UserPromptSubmit, SubagentStart/Stop, Stop, Interrupt",
+  }),
   tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
   attachment: Schema.optional(ConfigAttachmentV1.Info).annotate({
     description: "Attachment processing configuration, including image size limits and resizing behavior",

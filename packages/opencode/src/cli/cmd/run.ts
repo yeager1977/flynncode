@@ -264,6 +264,12 @@ export const RunCommand = effectCmd({
         hidden: true,
         default: false,
       })
+      .option("dangerously-bypass-hook-trust", {
+        type: "boolean",
+        hidden: true,
+        default: false,
+        describe: "run file hooks without persisted trust for one invocation",
+      })
       .option("demo", {
         type: "boolean",
         default: false,
@@ -273,6 +279,7 @@ export const RunCommand = effectCmd({
   handler: Effect.fn("Cli.run")(function* (args) {
     const { Agent } = yield* Effect.promise(() => import("@/agent/agent"))
     const { RuntimeFlags } = yield* Effect.promise(() => import("@/effect/runtime-flags"))
+    RuntimeFlags.applyDangerouslyBypassHookTrust(args)
     const { InstanceRef } = yield* Effect.promise(() => import("@/effect/instance-ref"))
     const { ServerAuth } = yield* Effect.promise(() => import("@/server/auth"))
     const agentSvc = yield* Agent.Service
@@ -572,7 +579,12 @@ export const RunCommand = effectCmd({
 
       async function createFreshSession(
         sdk: OpencodeClient,
-        input: { agent: string | undefined; model: ModelInput | undefined; variant: string | undefined },
+        input: {
+          agent: string | undefined
+          model: ModelInput | undefined
+          variant: string | undefined
+          source?: "startup" | "resume" | "clear" | "compact"
+        },
       ): Promise<SessionInfo> {
         const result = await sdk.session.create({
           title: args.title !== undefined && args.title !== "" ? args.title : undefined,
@@ -585,6 +597,7 @@ export const RunCommand = effectCmd({
               }
             : undefined,
           permission: [...rules],
+          source: input.source,
         })
         const id = result.data?.id
         if (!id) {
@@ -1023,6 +1036,7 @@ type MiniCommandInput = {
   replay?: boolean
   replayLimit?: number
   demo?: boolean
+  bypassHookTrust?: boolean
 }
 
 export async function runMini(input: MiniCommandInput) {
@@ -1060,6 +1074,8 @@ export async function runMini(input: MiniCommandInput) {
     yolo: false,
     "dangerously-skip-permissions": false,
     dangerouslySkipPermissions: false,
+    "dangerously-bypass-hook-trust": input.bypassHookTrust ?? false,
+    dangerouslyBypassHookTrust: input.bypassHookTrust ?? false,
     demo: input.demo ?? false,
   })
 }

@@ -1,9 +1,13 @@
 import { Config } from "@/config/config"
 import { ConfigOmoFiles } from "@/config/omo-files"
 import { Provider } from "@/provider/provider"
+import { HooksTrust } from "@/hooks/trust"
+import { HooksExecutor, enumerateHooks } from "@/hooks/executor"
+import { HooksManaged } from "@/hooks/managed"
+import { RuntimeFlags } from "@/effect/runtime-flags"
 import * as InstanceState from "@/effect/instance-state"
-import { Effect } from "effect"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { Effect, Option } from "effect"
+import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { ApiOmoConfigWriteError, OmoConfigPatch } from "../groups/global"
 import { markInstanceForDisposal } from "../lifecycle"
@@ -12,6 +16,8 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
   Effect.gen(function* () {
     const providerSvc = yield* Provider.Service
     const configSvc = yield* Config.Service
+    const trustSvc = yield* HooksTrust.Service
+    const flags = yield* RuntimeFlags.Service
 
     const get = Effect.fn("ConfigHttpApi.get")(function* () {
       return yield* configSvc.get()
@@ -53,11 +59,68 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
       )
     })
 
+    const hooksEntries = Effect.fn("ConfigHttpApi.hooksEntries")(function* () {
+      const cfg = yield* configSvc.get()
+      const stored = yield* trustSvc.list()
+      const byHash = new Map(stored.map((entry) => [entry.hash, entry.trustedAt]))
+      const maybeManaged = yield* Effect.serviceOption(HooksManaged.ManagedHooks)
+      return {
+        entries: enumerateHooks(cfg.hooks).map((item) => {
+          const managed = Option.isSome(maybeManaged) && maybeManaged.value.isManaged(item.def)
+          const trustedAt = byHash.get(item.hash)
+          return {
+            hash: item.hash,
+            event: item.event,
+            matcher: item.matcher,
+            summary: item.summary,
+            trusted: managed || trustedAt !== undefined,
+            trustedAt,
+            managed,
+          }
+        }),
+        managed: (def: HooksTrust.HookDef) =>
+          Option.isSome(maybeManaged) && maybeManaged.value.isManaged(def),
+      }
+    })
+
+    const hooksTrust = Effect.fn("ConfigHttpApi.hooksTrust")(function* () {
+      const listed = yield* hooksEntries()
+      return { hooks: listed.entries, bypass: flags.bypassHookTrust }
+    })
+
+    const hooksTrustOne = Effect.fn("ConfigHttpApi.hooksTrustOne")(function* (ctx: { payload: { hash: string } }) {
+      const cfg = yield* configSvc.get()
+      const found = enumerateHooks(cfg.hooks).find((item) => item.hash === ctx.payload.hash)
+      if (!found) return yield* Effect.fail(new HttpApiError.BadRequest({}))
+      yield* trustSvc.trust(found.def)
+      const listed = yield* hooksEntries()
+      const entry = listed.entries.find((item) => item.hash === ctx.payload.hash)
+      if (!entry) return yield* Effect.fail(new HttpApiError.BadRequest({}))
+      return entry
+    })
+
+    const hooksRevoke = Effect.fn("ConfigHttpApi.hooksRevoke")(function* (ctx: { payload: { hash: string } }) {
+      const cfg = yield* configSvc.get()
+      const found = enumerateHooks(cfg.hooks).find((item) => item.hash === ctx.payload.hash)
+      if (!found) return yield* Effect.fail(new HttpApiError.BadRequest({}))
+      const listed = yield* hooksEntries()
+      // Managed hooks are trusted by policy and cannot be disabled.
+      if (listed.managed(found.def)) return yield* Effect.fail(new HttpApiError.BadRequest({}))
+      yield* trustSvc.revoke(ctx.payload.hash)
+      const refreshed = yield* hooksEntries()
+      const entry = refreshed.entries.find((item) => item.hash === ctx.payload.hash)
+      if (!entry) return yield* Effect.fail(new HttpApiError.BadRequest({}))
+      return entry
+    })
+
     return handlers
       .handle("get", get)
       .handle("update", update)
       .handle("providers", providers)
       .handle("omoGet", omoGet)
       .handle("omoPut", omoPut)
+      .handle("hooksTrust", hooksTrust)
+      .handle("hooksTrustOne", hooksTrustOne)
+      .handle("hooksRevoke", hooksRevoke)
   }),
 )

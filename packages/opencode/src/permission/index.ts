@@ -6,6 +6,7 @@ import { Deferred, Effect, Layer, Context } from "effect"
 import os from "os"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { EventV2Bridge } from "@/event-v2-bridge"
+import { HooksRunner } from "@/hooks/runner"
 
 export const Event = PermissionV1.Event
 
@@ -45,6 +46,7 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const events = yield* EventV2Bridge.Service
+    const hooksRunner = yield* HooksRunner.Service
     const state = yield* InstanceState.make<State>(
       Effect.fn("Permission.state")(function* (ctx) {
         void ctx
@@ -72,6 +74,22 @@ const layer = Layer.effect(
       const { approved, pending } = yield* InstanceState.get(state)
       const { ruleset, approval: approvalRaw, ...request } = input
       const approval = approvalRaw ?? "manual"
+
+      const verdict = yield* hooksRunner.runPermissionRequest({
+        sessionID: request.sessionID,
+        tool: request.permission,
+        callID: request.tool?.callID ?? request.id ?? "unknown",
+        args: { patterns: request.patterns, metadata: request.metadata },
+      })
+      // Fail closed: deny wins and throws DeniedError; allow short-circuits
+      // the prompt; undecided falls through to ruleset evaluation.
+      // updatedInput/interrupt fields on PermissionRequest are ignored (log and continue).
+      if (verdict.behavior === "deny") {
+        return yield* new PermissionV1.DeniedError({
+          ruleset: ruleset.filter((rule) => rule.permission === request.permission),
+        })
+      }
+      if (verdict.behavior === "allow") return
       let needsAsk = false
 
       for (const pattern of request.patterns) {
@@ -227,6 +245,6 @@ export function visibleTools<T>(tools: Record<string, T>, ruleset: PermissionV1.
   return Object.fromEntries(Object.entries(tools).filter(([name]) => !hidden.has(name)))
 }
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [EventV2Bridge.node] })
+export const node = LayerNode.make({ service: Service, layer: layer, deps: [EventV2Bridge.node, HooksRunner.node] })
 
 export * as Permission from "."

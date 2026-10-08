@@ -57,6 +57,8 @@ import { eq } from "drizzle-orm"
 import { SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
+import { HooksRunner } from "@/hooks/runner"
+import { HooksContext } from "@/hooks/context"
 import { LLMEvent } from "@opencode-ai/llm"
 import { Memory } from "@/memory/memory"
 import { MemoryExtract } from "@/memory/extract"
@@ -185,6 +187,8 @@ const layer = Layer.effect(
     const llm = yield* LLM.Service
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
+    const hooksRunner = yield* HooksRunner.Service
+    const hooksContext = yield* HooksContext.Service
     const database = yield* Database.Service
     const { db } = database
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
@@ -197,6 +201,16 @@ const layer = Layer.effect(
 
     const cancel = Effect.fn("SessionPrompt.cancel")(function* (sessionID: SessionID) {
       yield* Effect.logInfo("cancel", { "session.id": sessionID })
+      // Interrupt hook reuses the existing user-interrupt path: advisory
+      // observe-only, no parallel interruption mechanism.
+      const maybeInterruptHooks = yield* Effect.serviceOption(HooksRunner.Service)
+      if (Option.isSome(maybeInterruptHooks)) {
+        yield* HooksContext.observeAndStore(
+          "hooks.session.interrupt",
+          sessionID,
+          maybeInterruptHooks.value.runInterrupt({ sessionID }),
+        )
+      }
       yield* state.cancel(sessionID)
     })
 
@@ -1106,6 +1120,36 @@ const layer = Layer.effect(
     const prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error> = Effect.fn(
       "SessionPrompt.prompt",
     )(function* (input: PromptInput) {
+      // UserPromptSubmit hook runs before admission. A blocking hook aborts
+      // the turn with a hook error (fail closed — never silently continue).
+      const maybePromptHooks = yield* Effect.serviceOption(HooksRunner.Service)
+      if (Option.isSome(maybePromptHooks)) {
+        const text = input.parts
+          .filter((part) => part.type === "text")
+          .map((part) => part.text)
+          .join("\n")
+        const hookExit = yield* maybePromptHooks.value
+          .runSessionPrompt({ sessionID: input.sessionID, prompt: text })
+          .pipe(Effect.exit)
+        if (Exit.isFailure(hookExit)) {
+          const cause = Cause.squash(hookExit.cause)
+          throw cause instanceof HooksRunner.HookDeniedError
+            ? cause
+            : new HooksRunner.HookDeniedError(cause instanceof Error ? cause.message : "Prompt blocked by hook")
+        }
+        if (Exit.isSuccess(hookExit)) {
+          if (hookExit.value.systemMessage) {
+            yield* Effect.logWarning("hooks.session.prompt", { systemMessage: hookExit.value.systemMessage })
+          }
+          // Admitted prompt context is stored for system-prompt injection.
+          if (hookExit.value.additionalContext) {
+            const maybeStore = yield* Effect.serviceOption(HooksContext.Service)
+            if (Option.isSome(maybeStore)) {
+              yield* maybeStore.value.append(input.sessionID, hookExit.value.additionalContext)
+            }
+          }
+        }
+      }
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       yield* revert.cleanup(session)
       const message = yield* createUserMessage(input)
@@ -1393,6 +1437,7 @@ const layer = Layer.effect(
               promptOps,
             }).pipe(
               Effect.provideService(Plugin.Service, plugin),
+              Effect.provideService(HooksRunner.Service, hooksRunner),
               Effect.provideService(Permission.Service, permission),
               Effect.provideService(Config.Service, config),
               Effect.provideService(Project.Service, project),
@@ -1416,19 +1461,23 @@ const layer = Layer.effect(
 
             yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
-            const [skills, env, instructions, mcpInstructions, modelMsgs] = yield* Effect.all([
+            const [skills, env, instructions, mcpInstructions, modelMsgs, hookContext] = yield* Effect.all([
               sys.skills(agent),
               sys.environment(model),
               instruction.system().pipe(Effect.orDie),
               sys.mcp(agent, session.permission),
               MessageV2.toModelMessagesEffect(msgs, model),
+              hooksContext.get(sessionID),
             ])
-            const system = [
-              ...env,
-              ...instructions,
-              ...(mcpInstructions ? [mcpInstructions] : []),
-              ...(skills ? [skills] : []),
-            ]
+            const system = HooksContext.assembleSystem(
+              [
+                ...env,
+                ...instructions,
+                ...(mcpInstructions ? [mcpInstructions] : []),
+                ...(skills ? [skills] : []),
+              ],
+              hookContext,
+            )
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
             const result = yield* handle.process({
@@ -1810,6 +1859,8 @@ export const node = LayerNode.make({
     LLM.node,
     EventV2Bridge.node,
     RuntimeFlags.node,
+    HooksRunner.node,
+    HooksContext.node,
     Database.node,
   ],
 })

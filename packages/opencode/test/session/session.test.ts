@@ -16,6 +16,7 @@ import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { InstanceStore } from "@/project/instance-store"
 import { InstanceBootstrap } from "@/project/bootstrap"
+import { HooksRunner } from "@/hooks/runner"
 
 const it = testEffect(
   AppNodeBuilder.build(
@@ -41,6 +42,37 @@ const awaitDeferred = <T>(deferred: Deferred.Deferred<T>, message: string) =>
     Deferred.await(deferred),
     Effect.sleep("2 seconds").pipe(Effect.flatMap(() => Effect.fail(new Error(message)))),
   )
+
+const seenStartSources: Array<string> = []
+const hookIt = testEffect(
+  AppNodeBuilder.build(
+    LayerNode.group([
+      SessionNs.node,
+      EventV2Bridge.node,
+      SessionProjector.node,
+      CrossSpawnSpawner.node,
+      InstanceStore.node,
+      HooksRunner.node,
+    ]),
+    [
+      [RuntimeFlags.node, RuntimeFlags.layer({ experimentalWorkspaces: false })],
+      [
+        InstanceBootstrap.node,
+        Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void })),
+      ],
+      [
+        HooksRunner.node,
+        Layer.mock(HooksRunner.Service)({
+          runSessionStart: (input: { sessionID: string; source: "startup" | "resume" | "clear" | "compact" }) =>
+            Effect.sync(() => {
+              seenStartSources.push(input.source)
+            }).pipe(Effect.as({})),
+          runSessionEnd: () => Effect.void,
+        }),
+      ],
+    ],
+  ),
+)
 
 const remove = (id: SessionID) => SessionNs.use.remove(id)
 
@@ -280,6 +312,27 @@ describe("Session", () => {
 
       expect(created.metadata).toBeUndefined()
       expect(saved.metadata).toBeUndefined()
+    }),
+  )
+})
+
+describe("session start source", () => {
+  hookIt.instance("create defaults to startup, honors clear, fork resumes", () =>
+    Effect.gen(function* () {
+      seenStartSources.length = 0
+      const session = yield* SessionNs.Service
+      const a = yield* Effect.acquireRelease(session.create({}), (info) =>
+        session.remove(info.id).pipe(Effect.ignore),
+      )
+      const b = yield* Effect.acquireRelease(session.create({ source: "clear" }), (info) =>
+        session.remove(info.id).pipe(Effect.ignore),
+      )
+      const f = yield* Effect.acquireRelease(session.fork({ sessionID: a.id }), (info) =>
+        session.remove(info.id).pipe(Effect.ignore),
+      )
+      expect(b.id).not.toBe(a.id)
+      expect(f.id).not.toBe(a.id)
+      expect(seenStartSources).toEqual(["startup", "clear", "resume"])
     }),
   )
 })

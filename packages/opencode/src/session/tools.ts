@@ -15,7 +15,7 @@ import { ToolJsonSchema } from "@/tool/json-schema"
 import { ToolRegistry } from "@/tool/registry"
 import { Truncate } from "@/tool/truncate"
 
-import { Plugin } from "@/plugin"
+import { HooksRunner } from "@/hooks/runner"
 import type { TaskPromptOps } from "@/tool/task"
 import { type Tool as AITool, tool, jsonSchema, type ToolExecutionOptions, asSchema } from "ai"
 import { Effect } from "effect"
@@ -54,7 +54,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
 }) {
   const tools: Record<string, AITool> = {}
   const run = yield* EffectBridge.make()
-  const plugin = yield* Plugin.Service
+  const hooksRunner = yield* HooksRunner.Service
   const permission = yield* Permission.Service
   const config = yield* Config.Service
   const project = yield* Project.Service
@@ -134,12 +134,17 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         return run.promise(
           Effect.gen(function* () {
             const ctx = context(args, options)
-            yield* plugin.trigger(
-              "tool.execute.before",
-              { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
-              { args },
-            )
-            const result = yield* item.execute(args, ctx)
+            const decision = yield* hooksRunner.runPreToolUse({
+              sessionID: ctx.sessionID,
+              tool: item.id,
+              callID: options.toolCallId ?? ctx.callID ?? "unknown",
+              args: toRecord(args),
+            })
+            if (decision.behavior === "deny") throw new HooksRunner.HookDeniedError(decision.message)
+            const resolved = resolveEffectiveArgs(item.id, args, decision)
+            if (resolved.warning) yield* Effect.logWarning(resolved.warning, { toolID: item.id })
+            const effectiveArgs = resolved.effective
+            const result = yield* item.execute(effectiveArgs, ctx)
             const output = {
               ...result,
               attachments: result.attachments?.map((attachment) => ({
@@ -149,15 +154,18 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                 messageID: input.processor.message.id,
               })),
             }
-            yield* plugin.trigger(
-              "tool.execute.after",
-              { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID, args },
-              output,
-            )
+            const post = yield* hooksRunner.runPostToolUse({
+              sessionID: ctx.sessionID,
+              tool: item.id,
+              callID: options.toolCallId ?? ctx.callID ?? "unknown",
+              args: toRecord(effectiveArgs),
+              output: output.output,
+            })
+            const finalOutput = post.blocked ? { ...output, output: post.reason } : output
             if (options.abortSignal?.aborted) {
-              yield* input.processor.completeToolCall(options.toolCallId, output)
+              yield* input.processor.completeToolCall(options.toolCallId, finalOutput)
             }
-            return output
+            return finalOutput
           }),
         )
       },
@@ -203,11 +211,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             const permissionPatterns = parsed.server
               ? [`mcp:${parsed.server}:*`]
               : resourceServers.map((server) => `mcp:${server}:*`)
-            yield* plugin.trigger(
-              "tool.execute.before",
-              { tool: MCP_RESOURCE_TOOLS.list, sessionID: ctx.sessionID, callID: opts.toolCallId },
-              { args },
-            )
+            const preList = yield* hooksRunner.runPreToolUse({
+              sessionID: ctx.sessionID,
+              tool: MCP_RESOURCE_TOOLS.list,
+              callID: opts.toolCallId,
+              args: toRecord(args),
+            })
+            if (preList.behavior === "deny") throw new HooksRunner.HookDeniedError(preList.message)
             yield* ctx.ask({
               permission: "read",
               metadata: parsed.server ? { server: parsed.server } : {},
@@ -236,15 +246,18 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               },
               output: truncated.content,
             }
-            yield* plugin.trigger(
-              "tool.execute.after",
-              { tool: MCP_RESOURCE_TOOLS.list, sessionID: ctx.sessionID, callID: opts.toolCallId, args },
-              output,
-            )
+            const postList = yield* hooksRunner.runPostToolUse({
+              sessionID: ctx.sessionID,
+              tool: MCP_RESOURCE_TOOLS.list,
+              callID: opts.toolCallId,
+              args: toRecord(args),
+              output: output.output,
+            })
+            const finalList = postList.blocked ? { ...output, output: postList.reason } : output
             if (opts.abortSignal?.aborted) {
-              yield* input.processor.completeToolCall(opts.toolCallId, output)
+              yield* input.processor.completeToolCall(opts.toolCallId, finalList)
             }
-            return output
+            return finalList
           }),
         )
       },
@@ -286,11 +299,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             const permissionPatterns = parsed.server
               ? [`mcp:${parsed.server}:*`]
               : resourceServers.map((server) => `mcp:${server}:*`)
-            yield* plugin.trigger(
-              "tool.execute.before",
-              { tool: MCP_RESOURCE_TOOLS.listTemplates, sessionID: ctx.sessionID, callID: opts.toolCallId },
-              { args },
-            )
+            const preTemplates = yield* hooksRunner.runPreToolUse({
+              sessionID: ctx.sessionID,
+              tool: MCP_RESOURCE_TOOLS.listTemplates,
+              callID: opts.toolCallId,
+              args: toRecord(args),
+            })
+            if (preTemplates.behavior === "deny") throw new HooksRunner.HookDeniedError(preTemplates.message)
             yield* ctx.ask({
               permission: "read",
               metadata: parsed.server ? { server: parsed.server } : {},
@@ -319,15 +334,18 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               },
               output: truncated.content,
             }
-            yield* plugin.trigger(
-              "tool.execute.after",
-              { tool: MCP_RESOURCE_TOOLS.listTemplates, sessionID: ctx.sessionID, callID: opts.toolCallId, args },
-              output,
-            )
+            const postTemplates = yield* hooksRunner.runPostToolUse({
+              sessionID: ctx.sessionID,
+              tool: MCP_RESOURCE_TOOLS.listTemplates,
+              callID: opts.toolCallId,
+              args: toRecord(args),
+              output: output.output,
+            })
+            const finalTemplates = postTemplates.blocked ? { ...output, output: postTemplates.reason } : output
             if (opts.abortSignal?.aborted) {
-              yield* input.processor.completeToolCall(opts.toolCallId, output)
+              yield* input.processor.completeToolCall(opts.toolCallId, finalTemplates)
             }
-            return output
+            return finalTemplates
           }),
         )
       },
@@ -366,11 +384,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             if (!client.getServerCapabilities()?.resources) {
               throw new Error(`MCP server "${parsed.server}" does not support resources`)
             }
-            yield* plugin.trigger(
-              "tool.execute.before",
-              { tool: MCP_RESOURCE_TOOLS.read, sessionID: ctx.sessionID, callID: opts.toolCallId },
-              { args },
-            )
+            const preRead = yield* hooksRunner.runPreToolUse({
+              sessionID: ctx.sessionID,
+              tool: MCP_RESOURCE_TOOLS.read,
+              callID: opts.toolCallId,
+              args: toRecord(args),
+            })
+            if (preRead.behavior === "deny") throw new HooksRunner.HookDeniedError(preRead.message)
             yield* ctx.ask({
               permission: "read",
               metadata: { server: parsed.server, uri: parsed.uri },
@@ -401,15 +421,18 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
                 messageID: input.processor.message.id,
               })),
             }
-            yield* plugin.trigger(
-              "tool.execute.after",
-              { tool: MCP_RESOURCE_TOOLS.read, sessionID: ctx.sessionID, callID: opts.toolCallId, args },
-              output,
-            )
+            const postRead = yield* hooksRunner.runPostToolUse({
+              sessionID: ctx.sessionID,
+              tool: MCP_RESOURCE_TOOLS.read,
+              callID: opts.toolCallId,
+              args: toRecord(args),
+              output: output.output,
+            })
+            const finalRead = postRead.blocked ? { ...output, output: postRead.reason } : output
             if (opts.abortSignal?.aborted) {
-              yield* input.processor.completeToolCall(opts.toolCallId, output)
+              yield* input.processor.completeToolCall(opts.toolCallId, finalRead)
             }
-            return output
+            return finalRead
           }),
         )
       },
@@ -430,14 +453,19 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       run.promise(
         Effect.gen(function* () {
           const ctx = context(args, opts)
-          yield* plugin.trigger(
-            "tool.execute.before",
-            { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId },
-            { args },
-          )
+          const preMcp = yield* hooksRunner.runPreToolUse({
+            sessionID: ctx.sessionID,
+            tool: key,
+            callID: opts.toolCallId,
+            args: toRecord(args),
+          })
+          if (preMcp.behavior === "deny") throw new HooksRunner.HookDeniedError(preMcp.message)
+          const resolvedMcp = resolveEffectiveArgs(key, args, preMcp)
+          if (resolvedMcp.warning) yield* Effect.logWarning(resolvedMcp.warning, { toolID: key })
+          const effectiveMcp = resolvedMcp.effective
           const result: Awaited<ReturnType<NonNullable<typeof execute>>> = yield* Effect.gen(function* () {
             yield* ctx.ask({ permission: key, metadata: {}, patterns: ["*"], always: ["*"] })
-            return yield* Effect.promise(() => execute(args, opts))
+            return yield* Effect.promise(() => execute(effectiveMcp, opts))
           }).pipe(
             Effect.withSpan("Tool.execute", {
               attributes: {
@@ -448,11 +476,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               },
             }),
           )
-          yield* plugin.trigger(
-            "tool.execute.after",
-            { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId, args },
-            result,
-          )
+          // PostToolUse observe + block-replace runs on the truncated
+          // model-visible output below via runPostToolUse.
 
           const textParts: string[] = []
           const attachments: Omit<SessionV1.FilePart, "id" | "sessionID" | "messageID">[] = []
@@ -511,10 +536,18 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             })),
             content: result.content,
           }
+          const postMcp = yield* hooksRunner.runPostToolUse({
+            sessionID: ctx.sessionID,
+            tool: key,
+            callID: opts.toolCallId,
+            args: toRecord(effectiveMcp),
+            output: output.output,
+          })
+          const finalMcp = postMcp.blocked ? { ...output, output: postMcp.reason } : output
           if (opts.abortSignal?.aborted) {
-            yield* input.processor.completeToolCall(opts.toolCallId, output)
+            yield* input.processor.completeToolCall(opts.toolCallId, finalMcp)
           }
-          return output
+          return finalMcp
         }),
       )
     tools[key] = item
@@ -526,6 +559,24 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
 function toRecord(value: unknown) {
   if (isRecord(value)) return value
   return {}
+}
+
+// Pure: malformed rewrites fall back to the original args and report a
+// warning the caller yields into the stream transport (never forked here).
+export function resolveEffectiveArgs(
+  toolID: string,
+  original: unknown,
+  decision: HooksRunner.PreToolUseDecision,
+): { effective: unknown; warning?: string } {
+  if (decision.behavior !== "allow" || !decision.updatedInput) return { effective: original }
+  const updated = decision.updatedInput
+  if (toolID === "bash" && "command" in updated && typeof updated["command"] !== "string") {
+    return { effective: original, warning: "hook rewrite rejected: bash command must be a string" }
+  }
+  if (toolID === "apply_patch" && "patchText" in updated && typeof updated["patchText"] !== "string") {
+    return { effective: original, warning: "hook rewrite rejected: apply_patch patchText must be a string" }
+  }
+  return { effective: updated }
 }
 
 function parseListMcpResourcesArgs(value: unknown) {

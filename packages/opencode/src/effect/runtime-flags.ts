@@ -20,6 +20,9 @@ export class Service extends ConfigService.Service<Service>()("@opencode/Runtime
   disableEmbeddedWebUi: bool("OPENCODE_DISABLE_EMBEDDED_WEB_UI"),
   disableExternalSkills: bool("OPENCODE_DISABLE_EXTERNAL_SKILLS"),
   disableLspDownload: bool("OPENCODE_DISABLE_LSP_DOWNLOAD"),
+  // One-invocation escape hatch: run file hooks without persisted trust.
+  // Prefer the /hooks-equivalent review flow; this flag is for automation.
+  bypassHookTrust: bool("FLYNNCODE_BYPASS_HOOK_TRUST"),
   disableClaudeCodePrompt: Config.all({
     broad: bool("OPENCODE_DISABLE_CLAUDE_CODE"),
     direct: bool("OPENCODE_DISABLE_CLAUDE_CODE_PROMPT"),
@@ -73,6 +76,12 @@ export const layer = (overrides: Partial<Info> = {}) =>
   ).pipe(Layer.provide(emptyConfigLayer))
 
 export const node = LayerNode.make({ service: Service, layer: Service.layer.pipe(Layer.orDie), deps: [] })
+
+// Applies `--dangerously-bypass-hook-trust` for one invocation by setting the
+// env flag before any layer reads RuntimeFlags. Call at CLI handler start.
+export function applyDangerouslyBypassHookTrust(args: { "dangerously-bypass-hook-trust"?: boolean }) {
+  if (args["dangerously-bypass-hook-trust"] === true) process.env["FLYNNCODE_BYPASS_HOOK_TRUST"] = "1"
+}
 
 export * as RuntimeFlags from "./runtime-flags"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"

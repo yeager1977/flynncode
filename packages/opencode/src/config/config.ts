@@ -2,7 +2,7 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import path from "path"
-import { pathToFileURL } from "url"
+import { fileURLToPath, pathToFileURL } from "url"
 import os from "os"
 import { mergeDeep } from "remeda"
 import { Global } from "@opencode-ai/core/global"
@@ -23,6 +23,8 @@ import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/
 import { EffectFlock } from "@opencode-ai/core/util/effect-flock"
 import { containsPath, type InstanceContext } from "../project/instance-context"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
+import { ConfigHooksV1 } from "@opencode-ai/core/v1/config/hooks"
+import { HooksConfig } from "@/hooks/config"
 import { RemoteAuthError } from "@opencode-ai/core/v1/config/error"
 import { ConfigPermissionV1 } from "@opencode-ai/core/v1/config/permission"
 import { ConfigPluginV1 } from "@opencode-ai/core/v1/config/plugin"
@@ -32,6 +34,7 @@ import { ConfigManaged } from "./managed"
 import { ConfigParse } from "./parse"
 import { ConfigPaths } from "./paths"
 import { ConfigPlugin } from "./plugin"
+import { isPathPluginSpec, resolvePathPluginTarget } from "@/plugin/shared"
 import { ConfigVariable } from "./variable"
 import { ConfigV2Compat } from "./v2-compat"
 import { Npm } from "@opencode-ai/core/npm"
@@ -47,6 +50,11 @@ function mergeConfigConcatArrays(target: Info, source: Info): Info {
   const merged = mergeConfig(target, source)
   if (target.instructions && source.instructions) {
     merged.instructions = Array.from(new Set([...target.instructions, ...source.instructions]))
+  }
+  // Hooks layers concatenate per-event arrays in global, project order;
+  // higher precedence never replaces lower.
+  if (target.hooks || source.hooks) {
+    merged.hooks = HooksConfig.mergeHooksConfigs(target.hooks, source.hooks)
   }
   return merged
 }
@@ -329,6 +337,30 @@ const layer = Layer.effect(
       return yield* loadConfig(text, { path: filepath }, env)
     })
 
+    const decodeHooksFile = Schema.decodeUnknownOption(Schema.fromJsonString(ConfigHooksV1.Info))
+
+    const loadHooksFile = Effect.fnUntraced(function* (filepath: string) {
+      const text = yield* readConfigFile(filepath)
+      if (!text) return undefined
+      const decoded = decodeHooksFile(text)
+      if (Option.isNone(decoded)) {
+        yield* Effect.logWarning("ignoring invalid hooks file", { path: filepath })
+        return undefined
+      }
+      return decoded.value
+    })
+
+    // A single layer may declare hooks twice (hooks.json file plus the inline
+    // hooks table). Both apply; merging them logs one warning per layer.
+    const mergeHooksLayer = Effect.fnUntraced(function* (filepath: string, inline: Info["hooks"]) {
+      const fileHooks = yield* loadHooksFile(filepath)
+      if (fileHooks && inline) {
+        yield* Effect.logWarning("both hooks.json and inline hooks table present; merging both", { path: filepath })
+      }
+      if (!fileHooks && !inline) return undefined
+      return HooksConfig.mergeHooksConfigs(fileHooks, inline)
+    })
+
     const loadGlobal = Effect.fnUntraced(function* (env?: Record<string, string>) {
       let result: Info = {}
       // Seed the default global config with the schema for editor completion, but avoid writing when the user
@@ -344,6 +376,8 @@ const layer = Layer.effect(
       result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "config.json"), env))
       result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "opencode.json"), env))
       result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "opencode.jsonc"), env))
+      const globalHooks = yield* mergeHooksLayer(path.join(Global.Path.config, "hooks.json"), result.hooks)
+      if (globalHooks) result.hooks = globalHooks
 
       const legacy = path.join(Global.Path.config, "config")
       if (existsSync(legacy)) {
@@ -518,6 +552,10 @@ const layer = Layer.effect(
               result.mode ??= {}
               result.plugin ??= []
             }
+            // Project-local hooks.json entries apply alongside the inline
+            // hooks table; higher precedence layers never replace lower ones.
+            const dirHooks = yield* loadHooksFile(path.join(dir, "hooks.json"))
+            if (dirHooks) result.hooks = HooksConfig.mergeHooksConfigs(result.hooks, dirHooks)
           }
 
           yield* ensureGitignore(dir).pipe(Effect.orDie)
@@ -550,6 +588,19 @@ const layer = Layer.effect(
           // returns normalized Specs and we only need to attach origin metadata here.
           const list = yield* Effect.promise(() => ConfigPlugin.load(dir))
           yield* mergePluginOrigins(dir, list)
+        }
+
+        // Plugin-bundled hooks (<plugin-root>/hooks/hooks.json) apply after
+        // project hooks. Only path-like specs resolve to a readable root.
+        for (const origin of result.plugin_origins ?? []) {
+          const spec = ConfigPlugin.pluginSpecifier(origin.spec)
+          if (!isPathPluginSpec(spec)) continue
+          const target = yield* Effect.promise(() => resolvePathPluginTarget(spec).catch(() => undefined))
+          if (!target) continue
+          const targetPath = fileURLToPath(target)
+          const root = existsSync(path.join(targetPath, "package.json")) ? targetPath : path.dirname(targetPath)
+          const bundled = yield* loadHooksFile(path.join(root, "hooks", "hooks.json"))
+          if (bundled) result.hooks = HooksConfig.mergeHooksConfigs(result.hooks, bundled)
         }
 
         if (process.env.OPENCODE_CONFIG_CONTENT) {

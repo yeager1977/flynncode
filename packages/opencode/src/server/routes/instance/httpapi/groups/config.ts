@@ -2,11 +2,32 @@ import { Config } from "@/config/config"
 import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import { Provider } from "@/provider/provider"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { Schema } from "effect"
 import { ApiOmoConfigWriteError, OmoConfigInfo, OmoConfigPatch } from "./global"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
 import { WorkspaceRoutingMiddleware, WorkspaceRoutingQuery } from "../middleware/workspace-routing"
 import { described } from "./metadata"
+
+export const HooksTrustEntry = Schema.Struct({
+  hash: Schema.String,
+  event: Schema.String,
+  matcher: Schema.String,
+  summary: Schema.String,
+  trusted: Schema.Boolean,
+  trustedAt: Schema.optional(Schema.Number),
+  managed: Schema.Boolean,
+}).annotate({ identifier: "HooksTrustEntry" })
+export type HooksTrustEntry = Schema.Schema.Type<typeof HooksTrustEntry>
+
+export const HooksTrustList = Schema.Struct({
+  hooks: Schema.Array(HooksTrustEntry),
+  bypass: Schema.Boolean,
+}).annotate({ identifier: "HooksTrustList" })
+
+export const HooksHashInput = Schema.Struct({
+  hash: Schema.String,
+}).annotate({ identifier: "HooksHashInput" })
 
 const root = "/config"
 
@@ -68,6 +89,41 @@ export const ConfigApi = HttpApi.make("config")
             summary: "Update project Oh My OpenCode configuration",
             description:
               "Update project Oh My OpenCode plugin configuration and OpenCode disabled providers in one call.",
+          }),
+        ),
+        HttpApiEndpoint.get("hooksTrust", `${root}/hooks/trust`, {
+          query: WorkspaceRoutingQuery,
+          success: described(HooksTrustList, "List hooks with trust state"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "config.hooks.trust.list",
+            summary: "List hooks trust state",
+            description:
+              "List configured file hooks with their trust state for review in settings. Managed hooks are trusted by policy and cannot be disabled.",
+          }),
+        ),
+        HttpApiEndpoint.post("hooksTrustOne", `${root}/hooks/trust`, {
+          query: WorkspaceRoutingQuery,
+          payload: HooksHashInput,
+          success: described(HooksTrustEntry, "Trusted hook entry"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "config.hooks.trust.approve",
+            summary: "Trust a hook",
+            description: "Pin the current hash of a hook definition as trusted after review.",
+          }),
+        ),
+        HttpApiEndpoint.post("hooksRevoke", `${root}/hooks/revoke`, {
+          query: WorkspaceRoutingQuery,
+          payload: HooksHashInput,
+          success: described(HooksTrustEntry, "Revoked hook entry"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "config.hooks.trust.revoke",
+            summary: "Revoke hook trust",
+            description: "Remove trust for a hook hash. Managed hooks cannot be revoked.",
           }),
         ),
       )

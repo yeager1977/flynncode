@@ -1696,6 +1696,8 @@ export type AgentConfig = {
   description?: string
   mode?: "subagent" | "primary" | "all"
   hidden?: boolean
+  isolation?: unknown
+  sandbox?: unknown
   options?: {
     [key: string]: unknown
   }
@@ -1717,6 +1719,7 @@ export type AgentConfig = {
     | "subagent"
     | "primary"
     | "all"
+    | unknown
     | {
         [key: string]: unknown
       }
@@ -2019,6 +2022,284 @@ export type Config = {
   instructions?: Array<string>
   layout?: LayoutConfig
   permission?: PermissionConfig
+  hooks?: {
+    PreToolUse?: Array<{
+      matcher?: string
+      hooks: Array<
+        | {
+            type: "command"
+            command: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+            async?: boolean
+            additionalContextLimit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          }
+        | {
+            type: "mcp_tool"
+            server: string
+            tool: string
+            input?: {
+              [key: string]: unknown
+            }
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+      >
+    }>
+    PermissionRequest?: Array<{
+      matcher?: string
+      hooks: Array<
+        | {
+            type: "command"
+            command: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+            async?: boolean
+            additionalContextLimit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          }
+        | {
+            type: "mcp_tool"
+            server: string
+            tool: string
+            input?: {
+              [key: string]: unknown
+            }
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+      >
+    }>
+    PostToolUse?: Array<{
+      matcher?: string
+      hooks: Array<
+        | {
+            type: "command"
+            command: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+            async?: boolean
+            additionalContextLimit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          }
+        | {
+            type: "mcp_tool"
+            server: string
+            tool: string
+            input?: {
+              [key: string]: unknown
+            }
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+      >
+    }>
+    SessionStart?: Array<{
+      matcher?: string
+      hooks: Array<
+        | {
+            type: "command"
+            command: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+            async?: boolean
+            additionalContextLimit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          }
+        | {
+            type: "mcp_tool"
+            server: string
+            tool: string
+            input?: {
+              [key: string]: unknown
+            }
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+      >
+    }>
+    SessionEnd?: Array<{
+      matcher?: string
+      hooks: Array<
+        | {
+            type: "command"
+            command: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+            async?: boolean
+            additionalContextLimit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          }
+        | {
+            type: "mcp_tool"
+            server: string
+            tool: string
+            input?: {
+              [key: string]: unknown
+            }
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+      >
+    }>
+    PreCompact?: Array<{
+      matcher?: string
+      hooks: Array<
+        | {
+            type: "command"
+            command: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+            async?: boolean
+            additionalContextLimit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          }
+        | {
+            type: "mcp_tool"
+            server: string
+            tool: string
+            input?: {
+              [key: string]: unknown
+            }
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+      >
+    }>
+    PostCompact?: Array<{
+      matcher?: string
+      hooks: Array<
+        | {
+            type: "command"
+            command: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+            async?: boolean
+            additionalContextLimit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          }
+        | {
+            type: "mcp_tool"
+            server: string
+            tool: string
+            input?: {
+              [key: string]: unknown
+            }
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+      >
+    }>
+    UserPromptSubmit?: Array<{
+      matcher?: string
+      hooks: Array<
+        | {
+            type: "command"
+            command: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+            async?: boolean
+            additionalContextLimit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          }
+        | {
+            type: "mcp_tool"
+            server: string
+            tool: string
+            input?: {
+              [key: string]: unknown
+            }
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+      >
+    }>
+    SubagentStart?: Array<{
+      matcher?: string
+      hooks: Array<
+        | {
+            type: "command"
+            command: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+            async?: boolean
+            additionalContextLimit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          }
+        | {
+            type: "mcp_tool"
+            server: string
+            tool: string
+            input?: {
+              [key: string]: unknown
+            }
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+      >
+    }>
+    SubagentStop?: Array<{
+      matcher?: string
+      hooks: Array<
+        | {
+            type: "command"
+            command: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+            async?: boolean
+            additionalContextLimit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          }
+        | {
+            type: "mcp_tool"
+            server: string
+            tool: string
+            input?: {
+              [key: string]: unknown
+            }
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+      >
+    }>
+    Stop?: Array<{
+      matcher?: string
+      hooks: Array<
+        | {
+            type: "command"
+            command: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+            async?: boolean
+            additionalContextLimit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          }
+        | {
+            type: "mcp_tool"
+            server: string
+            tool: string
+            input?: {
+              [key: string]: unknown
+            }
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+      >
+    }>
+    Interrupt?: Array<{
+      matcher?: string
+      hooks: Array<
+        | {
+            type: "command"
+            command: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+            async?: boolean
+            additionalContextLimit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          }
+        | {
+            type: "mcp_tool"
+            server: string
+            tool: string
+            input?: {
+              [key: string]: unknown
+            }
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+      >
+    }>
+  }
   tools?: {
     [key: string]: boolean
   }
@@ -2036,6 +2317,10 @@ export type Config = {
     tail_turns?: number
     preserve_recent_tokens?: number
     reserved?: number
+    /**
+     * Fraction of the context window at which compaction proactively runs instead of waiting for a hard overflow, between 0 and 1 (default: 0.9). Values outside (0,1) disable proactive compaction
+     */
+    threshold?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   }
   experimental?: {
     disable_paste_summary?: boolean
@@ -2179,6 +2464,25 @@ export type Provider = {
   models: {
     [key: string]: Model
   }
+}
+
+export type HooksTrustEntry = {
+  hash: string
+  event: string
+  matcher: string
+  summary: string
+  trusted: boolean
+  trustedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  managed: boolean
+}
+
+export type HooksTrustList = {
+  hooks: Array<HooksTrustEntry>
+  bypass: boolean
+}
+
+export type HooksHashInput = {
+  hash: string
 }
 
 export type ExperimentalCapabilities = {
@@ -7736,6 +8040,90 @@ export type ConfigOmoUpdateResponses = {
 
 export type ConfigOmoUpdateResponse = ConfigOmoUpdateResponses[keyof ConfigOmoUpdateResponses]
 
+export type ConfigHooksTrustListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/config/hooks/trust"
+}
+
+export type ConfigHooksTrustListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ConfigHooksTrustListError = ConfigHooksTrustListErrors[keyof ConfigHooksTrustListErrors]
+
+export type ConfigHooksTrustListResponses = {
+  /**
+   * List hooks with trust state
+   */
+  200: HooksTrustList
+}
+
+export type ConfigHooksTrustListResponse = ConfigHooksTrustListResponses[keyof ConfigHooksTrustListResponses]
+
+export type ConfigHooksTrustApproveData = {
+  body?: HooksHashInput
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/config/hooks/trust"
+}
+
+export type ConfigHooksTrustApproveErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type ConfigHooksTrustApproveError = ConfigHooksTrustApproveErrors[keyof ConfigHooksTrustApproveErrors]
+
+export type ConfigHooksTrustApproveResponses = {
+  /**
+   * Trusted hook entry
+   */
+  200: HooksTrustEntry
+}
+
+export type ConfigHooksTrustApproveResponse = ConfigHooksTrustApproveResponses[keyof ConfigHooksTrustApproveResponses]
+
+export type ConfigHooksTrustRevokeData = {
+  body?: HooksHashInput
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/config/hooks/revoke"
+}
+
+export type ConfigHooksTrustRevokeErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type ConfigHooksTrustRevokeError = ConfigHooksTrustRevokeErrors[keyof ConfigHooksTrustRevokeErrors]
+
+export type ConfigHooksTrustRevokeResponses = {
+  /**
+   * Revoked hook entry
+   */
+  200: HooksTrustEntry
+}
+
+export type ConfigHooksTrustRevokeResponse = ConfigHooksTrustRevokeResponses[keyof ConfigHooksTrustRevokeResponses]
+
 export type ExperimentalCapabilitiesGetData = {
   body?: never
   path?: never
@@ -9952,6 +10340,7 @@ export type SessionCreateData = {
     }
     permission?: PermissionRuleset
     workspaceID?: string
+    source?: "startup" | "resume" | "clear" | "compact"
   }
   path?: never
   query?: {
