@@ -198,7 +198,10 @@ const layer = Layer.effect(
       // observe-only, no parallel interruption mechanism.
       const maybeInterruptHooks = yield* Effect.serviceOption(HooksRunner.Service)
       if (Option.isSome(maybeInterruptHooks)) {
-        yield* maybeInterruptHooks.value.runInterrupt({ sessionID }).pipe(Effect.ignore)
+        yield* HooksRunner.reportObserve(
+          "hooks.session.interrupt",
+          maybeInterruptHooks.value.runInterrupt({ sessionID }),
+        )
       }
       yield* state.cancel(sessionID)
     })
@@ -1125,6 +1128,9 @@ const layer = Layer.effect(
           throw cause instanceof HooksRunner.HookDeniedError
             ? cause
             : new HooksRunner.HookDeniedError(cause instanceof Error ? cause.message : "Prompt blocked by hook")
+        }
+        if (Exit.isSuccess(hookExit) && hookExit.value.systemMessage) {
+          yield* Effect.logWarning("hooks.session.prompt", { systemMessage: hookExit.value.systemMessage })
         }
       }
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)

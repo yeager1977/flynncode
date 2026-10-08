@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import os from "os"
 import path from "path"
 import { testEffect } from "../lib/effect"
 import { HooksTrust } from "../../src/hooks/trust"
+import { HooksConfig } from "../../src/hooks/config"
 
 const it = testEffect(LayerNode.compile(HooksTrust.node))
 
@@ -36,4 +37,25 @@ describe("hooks trust", () => {
       expect(yield* svc.isTrusted(def)).toBe(false)
     }),
   )
+
+  it.effect("changed definition requires re-review", () =>
+    Effect.gen(function* () {
+      const svc = yield* HooksTrust.Service
+      const before = { event: "PreToolUse", matcher: "^Bash$", type: "command", command: "python3 hooks/check.py" }
+      const after = { event: "PreToolUse", matcher: "^Bash$", type: "command", command: "python3 hooks/check.py --strict" }
+      yield* svc.trust(before)
+      expect(yield* svc.isTrusted(before)).toBe(true)
+      // Fail closed: edited command has a different hash and is untrusted.
+      expect(yield* svc.isTrusted(after)).toBe(false)
+      yield* svc.revoke(svc.hashDef(before))
+    }),
+  )
+})
+
+test("project and global hooks merge without replacing", () => {
+  const merged = HooksConfig.mergeHooksConfigs(
+    { PreToolUse: [{ matcher: "^Bash$", hooks: [{ type: "command", command: "global.py" }] }] },
+    { PreToolUse: [{ matcher: "^Bash$", hooks: [{ type: "command", command: "project.py" }] }] },
+  )
+  expect(merged.PreToolUse?.length).toBe(2)
 })

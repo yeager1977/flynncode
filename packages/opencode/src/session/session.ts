@@ -538,7 +538,10 @@ const layer: Layer.Layer<
       // Observe-only SessionStart hook; failures are advisory and never block creation.
       const maybeStartHooks = yield* Effect.serviceOption(HooksRunner.Service)
       if (Option.isSome(maybeStartHooks)) {
-        yield* maybeStartHooks.value.runSessionStart({ sessionID: result.id, source: "startup" }).pipe(Effect.ignore)
+        yield* HooksRunner.reportObserve(
+          "hooks.session.start",
+          maybeStartHooks.value.runSessionStart({ sessionID: result.id, source: "startup" }),
+        )
       }
 
       return result
@@ -630,9 +633,10 @@ const layer: Layer.Layer<
         // SessionEnd is always synchronous with a 3s cap; output is advisory only.
         const maybeEndHooks = yield* Effect.serviceOption(HooksRunner.Service)
         if (Option.isSome(maybeEndHooks) && hasInstance) {
-          yield* maybeEndHooks.value
-            .runSessionEnd({ sessionID })
-            .pipe(Effect.timeout("3 seconds"), Effect.ignore)
+          yield* HooksRunner.reportObserve(
+            "hooks.session.end",
+            maybeEndHooks.value.runSessionEnd({ sessionID }),
+          ).pipe(Effect.timeout("3 seconds"), Effect.ignore)
         }
         yield* events.remove(sessionID)
       } catch (error) {

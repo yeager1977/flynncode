@@ -87,6 +87,20 @@ export function denyWins(decisions: Array<PreToolUseDecision>): PreToolUseDecisi
   return { behavior: "undecided" }
 }
 
+// Surfaces hook systemMessage warnings through logs (the CLI stream transport
+// renders log warnings; dedicated TUI surfacing is a follow-up). Failures
+// stay advisory: observe hooks never block the lifecycle event they annotate.
+export function reportObserve(label: string, self: Effect.Effect<SessionObserve | void>) {
+  return self.pipe(
+    Effect.tap((out) =>
+      out && typeof out === "object" && out.systemMessage
+        ? Effect.logWarning(label, { systemMessage: out.systemMessage })
+        : Effect.void,
+    ),
+    Effect.ignore,
+  )
+}
+
 type TriggerLike = {
   trigger: Plugin.Interface["trigger"]
   triggerDecision: Plugin.Interface["triggerDecision"]

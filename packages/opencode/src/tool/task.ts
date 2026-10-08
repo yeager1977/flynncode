@@ -194,9 +194,14 @@ export const TaskTool = Tool.define(
       // Observe-only SubagentStart hook; continue:false is parsed but ignored.
       const maybeSubagentHooks = yield* Effect.serviceOption(HooksRunner.Service)
       if (Option.isSome(maybeSubagentHooks)) {
-        yield* maybeSubagentHooks.value
-          .runSubagentStart({ sessionID: nextSession.id, agentID: nextSession.id, agentType: next.name })
-          .pipe(Effect.ignore)
+        yield* HooksRunner.reportObserve(
+          "hooks.subagent.start",
+          maybeSubagentHooks.value.runSubagentStart({
+            sessionID: nextSession.id,
+            agentID: nextSession.id,
+            agentType: next.name,
+          }),
+        )
       }
       // The child runs in the temp worktree: rebind its session row to the
       // worktree directory (the disposable binding also travels in metadata,
@@ -397,9 +402,14 @@ export const TaskTool = Tool.define(
             // user-interrupt path via ops.cancel (no parallel mechanism).
             const maybeStopHooks = yield* Effect.serviceOption(HooksRunner.Service)
             if (Option.isSome(maybeStopHooks)) {
-              yield* maybeStopHooks.value
-                .runSubagentStop({ sessionID: nextSession.id, agentID: nextSession.id, agentType: next.name })
-                .pipe(Effect.ignore)
+              yield* HooksRunner.reportObserve(
+                "hooks.subagent.stop",
+                maybeStopHooks.value.runSubagentStop({
+                  sessionID: nextSession.id,
+                  agentID: nextSession.id,
+                  agentType: next.name,
+                }),
+              )
             }
             return {
               title: params.description,

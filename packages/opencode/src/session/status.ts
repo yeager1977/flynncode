@@ -45,7 +45,7 @@ const layer = Layer.effect(
         // Observe-only Stop hook on idle transition; advisory, never blocks.
         const maybeHooks = yield* Effect.serviceOption(HooksRunner.Service)
         if (Option.isSome(maybeHooks)) {
-          yield* maybeHooks.value.runIdle({ sessionID }).pipe(Effect.ignore)
+          yield* HooksRunner.reportObserve("hooks.session.idle", maybeHooks.value.runIdle({ sessionID }))
         }
         data.delete(sessionID)
         return

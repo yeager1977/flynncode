@@ -373,9 +373,14 @@ const layer = Layer.effect(
       // Allow plugins to inject context or replace compaction prompt.
       const maybeCompactHooks = yield* Effect.serviceOption(HooksRunner.Service)
       if (Option.isSome(maybeCompactHooks)) {
-        yield* maybeCompactHooks.value
-          .runCompact({ sessionID: input.sessionID, trigger: input.auto ? "auto" : "manual", phase: "pre" })
-          .pipe(Effect.ignore)
+        yield* HooksRunner.reportObserve(
+          "hooks.session.compact",
+          maybeCompactHooks.value.runCompact({
+            sessionID: input.sessionID,
+            trigger: input.auto ? "auto" : "manual",
+            phase: "pre",
+          }),
+        )
       }
       const compacting = yield* plugin.trigger(
         "experimental.session.compacting",
@@ -561,9 +566,14 @@ const layer = Layer.effect(
         yield* events.publish(Event.Compacted, { sessionID: input.sessionID })
         const maybePostHooks = yield* Effect.serviceOption(HooksRunner.Service)
         if (Option.isSome(maybePostHooks)) {
-          yield* maybePostHooks.value
-            .runCompact({ sessionID: input.sessionID, trigger: input.auto ? "auto" : "manual", phase: "post" })
-            .pipe(Effect.ignore)
+          yield* HooksRunner.reportObserve(
+            "hooks.session.compact",
+            maybePostHooks.value.runCompact({
+              sessionID: input.sessionID,
+              trigger: input.auto ? "auto" : "manual",
+              phase: "post",
+            }),
+          )
         }
       }
       return result

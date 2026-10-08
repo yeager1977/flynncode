@@ -24,22 +24,22 @@ export type HookHandler = Schema.Schema.Type<typeof HookHandler>
 
 export const HookGroup = Schema.Struct({
   matcher: Schema.optional(Schema.String),
-  hooks: Schema.Array(HookHandler),
+  hooks: Schema.mutable(Schema.Array(HookHandler)),
 })
 export type HookGroup = Schema.Schema.Type<typeof HookGroup>
 
 export const Info = Schema.Struct({
-  PreToolUse: Schema.optional(Schema.Array(HookGroup)),
-  PermissionRequest: Schema.optional(Schema.Array(HookGroup)),
-  PostToolUse: Schema.optional(Schema.Array(HookGroup)),
-  SessionStart: Schema.optional(Schema.Array(HookGroup)),
-  SessionEnd: Schema.optional(Schema.Array(HookGroup)),
-  PreCompact: Schema.optional(Schema.Array(HookGroup)),
-  PostCompact: Schema.optional(Schema.Array(HookGroup)),
-  UserPromptSubmit: Schema.optional(Schema.Array(HookGroup)),
-  SubagentStart: Schema.optional(Schema.Array(HookGroup)),
-  SubagentStop: Schema.optional(Schema.Array(HookGroup)),
-  Stop: Schema.optional(Schema.Array(HookGroup)),
-  Interrupt: Schema.optional(Schema.Array(HookGroup)),
+  PreToolUse: Schema.optional(Schema.mutable(Schema.Array(HookGroup))),
+  PermissionRequest: Schema.optional(Schema.mutable(Schema.Array(HookGroup))),
+  PostToolUse: Schema.optional(Schema.mutable(Schema.Array(HookGroup))),
+  SessionStart: Schema.optional(Schema.mutable(Schema.Array(HookGroup))),
+  SessionEnd: Schema.optional(Schema.mutable(Schema.Array(HookGroup))),
+  PreCompact: Schema.optional(Schema.mutable(Schema.Array(HookGroup))),
+  PostCompact: Schema.optional(Schema.mutable(Schema.Array(HookGroup))),
+  UserPromptSubmit: Schema.optional(Schema.mutable(Schema.Array(HookGroup))),
+  SubagentStart: Schema.optional(Schema.mutable(Schema.Array(HookGroup))),
+  SubagentStop: Schema.optional(Schema.mutable(Schema.Array(HookGroup))),
+  Stop: Schema.optional(Schema.mutable(Schema.Array(HookGroup))),
+  Interrupt: Schema.optional(Schema.mutable(Schema.Array(HookGroup))),
 })
 export type Info = Schema.Schema.Type<typeof Info>
