@@ -1,6 +1,5 @@
 import { Database } from "@opencode-ai/core/database/database"
 import { EventV2 } from "@opencode-ai/core/event"
-import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Global } from "@opencode-ai/core/global"
 import { SessionSchema } from "@opencode-ai/core/session/schema"
 import { SessionV2 } from "@opencode-ai/core/session"
@@ -89,7 +88,9 @@ export const ImportHandler = HttpApiBuilder.group(Api, "server.import", (handler
         "import.sources",
         Effect.fn(function* (ctx) {
           const candidates = yield* Effect.promise(() =>
-            discoverFromHome({ source: ctx.query.source, home: Global.Path.home }),
+            // Only sessions recorded in this directory (or below it) belong to
+            // the project being imported into.
+            discoverFromHome({ source: ctx.query.source, home: Global.Path.home, cwd: ctx.query.directory }),
           )
           const imported = yield* SessionImportRegistry.findImported(database.db, {
             source: ctx.query.source,
@@ -97,19 +98,15 @@ export const ImportHandler = HttpApiBuilder.group(Api, "server.import", (handler
           })
           const known = new Set(imported.map((item) => item.sourceSessionID))
           return {
-            // Only sessions recorded in this directory (or below it) belong to
-            // the project being imported into.
-            data: candidates
-              .filter((item) => item.cwd !== "" && FSUtil.contains(ctx.query.directory, item.cwd))
-              .map((item) => ({
-                path: item.path,
-                sourceSessionID: item.sourceSessionID,
-                title: item.title,
-                cwd: item.cwd,
-                time: Number.isFinite(item.time) ? Math.max(0, Math.floor(item.time)) : 0,
-                messageCount: item.messageCount,
-                imported: known.has(item.sourceSessionID),
-              })),
+            data: candidates.map((item) => ({
+              path: item.path,
+              sourceSessionID: item.sourceSessionID,
+              title: item.title,
+              cwd: item.cwd,
+              time: Number.isFinite(item.time) ? Math.max(0, Math.floor(item.time)) : 0,
+              messageCount: item.messageCount,
+              imported: known.has(item.sourceSessionID),
+            })),
           }
         }),
       )
