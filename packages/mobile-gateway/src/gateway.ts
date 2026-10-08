@@ -8,6 +8,7 @@ import { createSessionStore } from "./session.ts"
 import { Upstream, upstreamHeaders, upstreamUrl } from "./upstream.ts"
 import { buildStatusPayload, listLanIPv4 } from "./lan-ips.ts"
 import { loadLauncher } from "./launcher.ts"
+import { listNeedsInput } from "./inbox.ts"
 import { renderLauncher, renderUnauthorized, renderUnreachable } from "./launcher-html.ts"
 
 const UNAUTHORIZED = 'Basic realm="opencode-mobile"'
@@ -84,6 +85,19 @@ export function createGateway(input: { options: GatewayOptions }) {
       }
       if (!probe.ok) return unauthorized()
       issued = sessions.issue()
+    }
+
+    const inboxPath = new URL(request.url, "http://localhost").pathname
+    if (inboxPath === "/flynncode-mobile-inbox") {
+      const loaded = await listNeedsInput({ upstream: options.upstream, authorization })
+      if (loaded.kind === "unauthorized") return unauthorized()
+      if (loaded.kind === "unreachable") return new Response("Upstream server unreachable", { status: 503 })
+      const response = new Response(JSON.stringify({ items: loaded.items }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })
+      if (issued !== undefined) response.headers.set("set-cookie", sessionCookie(issued))
+      return response
     }
 
     if (isLauncherPath(request.url)) {

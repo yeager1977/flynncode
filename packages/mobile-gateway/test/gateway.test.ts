@@ -655,3 +655,65 @@ describe("launcher route", () => {
     upstream.stop(true)
   })
 })
+
+describe("inbox route", () => {
+  const withInboxUpstream = async () => {
+    const upstream = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (request) => {
+        const url = new URL(request.url)
+        if (request.headers.get("authorization") !== basic("opencode", "secret")) {
+          return new Response("unauthorized", { status: 401 })
+        }
+        if (url.pathname === "/api/permission/request") {
+          return Response.json({ location: { directory: "/", workspaceID: undefined, project: { id: "pro_1", directory: "/" } }, data: [{ id: "per_1", sessionID: "ses_1" }] })
+        }
+        if (url.pathname === "/api/question/request") {
+          return Response.json({ location: { directory: "/", workspaceID: undefined, project: { id: "pro_1", directory: "/" } }, data: [] })
+        }
+        if (url.pathname === "/api/session") {
+          return Response.json({
+            data: [{ id: "ses_1", title: "Fix login", location: { directory: "/repo/app" }, time: { updated: 100 } }],
+          })
+        }
+        if (url.pathname === "/api/session/active") return Response.json({ data: {} })
+        return new Response("not found", { status: 404 })
+      },
+    })
+    const running = await startGateway({
+      options: {
+        host: "127.0.0.1",
+        port: 0,
+        upstream: `http://127.0.0.1:${upstream.port}`,
+        username: "opencode",
+        password: "secret",
+        upstreamPassword: "secret",
+      },
+    })
+    return { upstream, running }
+  }
+
+  test("requires credentials", async () => {
+    const { upstream, running } = await withInboxUpstream()
+    const response = await fetch(`http://127.0.0.1:${running.port}/flynncode-mobile-inbox`)
+    expect(response.status).toBe(401)
+    stopGateway()
+    upstream.stop(true)
+  })
+
+  test("returns joined inbox items without secrets", async () => {
+    const { upstream, running } = await withInboxUpstream()
+    const response = await fetch(`http://127.0.0.1:${running.port}/flynncode-mobile-inbox`, {
+      headers: { authorization: basic("opencode", "secret") },
+    })
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { items: Array<Record<string, unknown>> }
+    expect(body.items).toEqual([
+      { sessionID: "ses_1", directory: "/repo/app", title: "Fix login", kind: "permission", updated: 100 },
+    ])
+    expect(JSON.stringify(body)).not.toContain("secret")
+    stopGateway()
+    upstream.stop(true)
+  })
+})
