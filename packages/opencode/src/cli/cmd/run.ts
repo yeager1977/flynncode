@@ -747,6 +747,7 @@ export const RunCommand = effectCmd({
               if (part.type === "tool" && (part.state.status === "completed" || part.state.status === "error")) {
                 const output = readStructuredResult(part)
                 if (output !== undefined) structuredOutput = output
+                if (schema && part.tool === "StructuredOutput" && part.state.status === "completed") continue
                 if (emit("tool_use", { part })) continue
                 if (part.state.status === "completed") {
                   await tool(part)
