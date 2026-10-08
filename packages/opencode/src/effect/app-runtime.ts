@@ -38,6 +38,10 @@ import { Command } from "@/command"
 import { Truncate } from "@/tool/truncate"
 import { ToolRegistry } from "@/tool/registry"
 import { Format } from "@/format"
+import { SessionExecution } from "@opencode-ai/core/session/execution"
+import { SessionExecutionLocal } from "@opencode-ai/core/session/execution/local"
+import { LocationServiceMap } from "@opencode-ai/core/location-service-map"
+import { locationServiceMapLayer } from "@opencode-ai/core/location-services"
 import { InstanceStore } from "@/project/instance-store"
 import { Project } from "@/project/project"
 import { Vcs } from "@/project/vcs"
@@ -105,7 +109,12 @@ export const AppLayer = AppNodeBuilderV1.build(
     Installation.node,
     ShareNext.node,
     SessionShare.node,
+    SessionExecutionLocal.node,
   ]),
+  [
+    [SessionExecution.node, SessionExecutionLocal.node],
+    [LocationServiceMap.node, locationServiceMapLayer],
+  ],
 ).pipe(Layer.provideMerge(AppNodeBuilderV1.build(Ripgrep.node)), Layer.provideMerge(Observability.layer))
 
 const rt = ManagedRuntime.make(AppLayer, { memoMap })
