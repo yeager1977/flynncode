@@ -32,10 +32,13 @@ const TIER_MODELS: Record<"openai" | "anthropic", Record<FamilyTier, string>> = 
 
 export const FAMILY_ORDER: Exclude<ModelFamily, "auto">[] = ["ollama", "openai", "anthropic"]
 
-export function nextFamily(family: Exclude<ModelFamily, "auto">): Exclude<ModelFamily, "auto"> | undefined {
-  const index = FAMILY_ORDER.indexOf(family)
-  if (index < 0 || index === FAMILY_ORDER.length - 1) return undefined
-  return FAMILY_ORDER[index + 1]
+// The families with a tier ladder. Anything else (auto, ollama, or an unknown
+// config value) must skip family resolution entirely rather than fall through
+// to the cross-family walk.
+export function tieredFamily(value: string | undefined): "openai" | "anthropic" | undefined {
+  const family = asModelFamily(value)
+  if (family === "openai" || family === "anthropic") return family
+  return undefined
 }
 
 export function familyProviders(family: Exclude<ModelFamily, "auto">): string[] {

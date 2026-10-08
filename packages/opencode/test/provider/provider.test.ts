@@ -421,6 +421,31 @@ it.instance(
 )
 
 it.instance(
+  "defaultModel ignores an unknown model_family instead of walking families",
+  Effect.gen(function* () {
+    const model = yield* Provider.use.defaultModel()
+    expect(String(model.providerID)).toBe("custom-provider")
+    expect(String(model.modelID)).toBe("solo-model")
+  }),
+  {
+    config: {
+      model_family: "mistral",
+      enabled_providers: ["custom-provider", "openai"],
+      provider: {
+        "custom-provider": {
+          name: "Custom Provider",
+          npm: "@ai-sdk/openai-compatible",
+          api: "https://api.custom.com/v1",
+          models: { "solo-model": { name: "Solo Model", tool_call: true, limit: { context: 128000, output: 4096 } } },
+          options: { apiKey: "custom-key" },
+        },
+        openai: { models: { "gpt-6-sol": { name: "GPT-6 Sol" } } },
+      },
+    },
+  },
+)
+
+it.instance(
   "defaultModel with model_family ollama keeps existing behavior",
   Effect.gen(function* () {
     const model = yield* Provider.use.defaultModel()
