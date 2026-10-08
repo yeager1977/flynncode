@@ -39,7 +39,10 @@ import { SessionID, MessageID, PartID } from "./schema"
 import type { Provider } from "@/provider/provider"
 import { Global } from "@opencode-ai/core/global"
 import { Effect, Layer, Option, Context, Schema, Types } from "effect"
-import { NonNegativeInt, optional } from "@opencode-ai/core/schema"
+import { NonNegativeInt, optional, AbsolutePath } from "@opencode-ai/core/schema"
+import { normalizeFolders, MaxExtras } from "@opencode-ai/core/project/folders"
+import { ProjectDirectories } from "@opencode-ai/core/project/directories"
+import { FSUtil } from "@opencode-ai/core/fs-util"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
@@ -266,6 +269,7 @@ export const CreateInput = Schema.optional(
     metadata: Schema.optional(Metadata),
     permission: Schema.optional(PermissionV1.Ruleset),
     workspaceID: Schema.optional(WorkspaceV2.ID),
+    additionalDirectories: optional(Schema.Array(Schema.String)),
   }),
 )
 export type CreateInput = Types.DeepMutable<Schema.Schema.Type<typeof CreateInput>>
@@ -408,6 +412,14 @@ export class BusyError extends Schema.TaggedErrorClass<BusyError>()("SessionBusy
   sessionID: SessionID,
 }) {}
 
+// Duplicates of the primary directory and non-absolute entries are filtered
+// during normalization, never rejected. Only missing paths ("missing") and
+// more than MaxExtras entries ("limit") fail.
+export class MultifoldError extends Schema.TaggedErrorClass<MultifoldError>()("SessionMultifoldError", {
+  reason: Schema.Literals(["missing", "limit"]),
+  path: optional(Schema.String),
+}) {}
+
 export type NotFound = NotFoundError
 
 export interface Interface {
@@ -421,8 +433,9 @@ export interface Interface {
     metadata?: typeof Metadata.Type
     permission?: PermissionV1.Ruleset
     workspaceID?: WorkspaceV2.ID
-  }) => Effect.Effect<Info>
-  readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info, NotFound>
+    additionalDirectories?: string[]
+  }) => Effect.Effect<Info, MultifoldError>
+  readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info, NotFound | MultifoldError>
   readonly touch: (sessionID: SessionID) => Effect.Effect<void>
   readonly get: (id: SessionID) => Effect.Effect<Info, NotFound>
   readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
@@ -487,7 +500,7 @@ export type Patch = Omit<Partial<Info>, "time" | "share" | "summary" | "revert" 
 const layer: Layer.Layer<
   Service,
   never,
-  BackgroundJob.Service | RuntimeFlags.Service | Database.Service | EventV2Bridge.Service
+  BackgroundJob.Service | RuntimeFlags.Service | Database.Service | EventV2Bridge.Service | FSUtil.Service | ProjectDirectories.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -496,6 +509,19 @@ const layer: Layer.Layer<
     const background = yield* BackgroundJob.Service
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
+    const fs = yield* FSUtil.Service
+    const projectDirectories = yield* ProjectDirectories.Service
+
+    const requireExtras = Effect.fn("Session.requireExtras")(function* (directory: string, raw?: string[]) {
+      const extras = normalizeFolders(directory, raw ?? [])
+      if (extras.length > MaxExtras) return yield* new MultifoldError({ reason: "limit" })
+      for (const extra of extras) {
+        if (yield* fs.exists(extra).pipe(Effect.orElseSucceed(() => false)))
+          continue
+        return yield* new MultifoldError({ reason: "missing", path: extra })
+      }
+      return extras
+    })
 
     const createNext = Effect.fn("Session.createNext")(function* (input: {
       id?: SessionID
@@ -508,8 +534,15 @@ const layer: Layer.Layer<
       path?: string
       metadata?: typeof Metadata.Type
       permission?: PermissionV1.Ruleset
+      additionalDirectories?: string[]
     }) {
       const ctx = yield* InstanceState.context
+      // Multifold: extras ride as an additive session-level field. The
+      // primary directory stays the sole placement key; extras only widen
+      // file access and never change project id, worktree, or drain routing.
+      // Validation runs here so every createNext caller is gated; persistence
+      // below stays best-effort so a directory-row hiccup never fails create.
+      const extras = yield* requireExtras(input.directory, input.additionalDirectories)
       const result: Info = {
         id: SessionID.descending(input.id),
         slug: Slug.create(),
@@ -534,6 +567,16 @@ const layer: Layer.Layer<
       yield* Effect.logInfo("created", result)
 
       yield* events.publish(SessionV1.Event.Created, { sessionID: result.id, info: result })
+
+      for (const extra of extras) {
+        yield* projectDirectories
+          .create({ directory: AbsolutePath.make(extra), projectID: result.projectID })
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("session extra directory persistence failed", { sessionID: result.id, cause }),
+            ),
+          )
+      }
 
       return result
     })
@@ -673,6 +716,7 @@ const layer: Layer.Layer<
       metadata?: typeof Metadata.Type
       permission?: PermissionV1.Ruleset
       workspaceID?: WorkspaceV2.ID
+      additionalDirectories?: string[]
     }) {
       const ctx = yield* InstanceState.context
       const workspace = yield* InstanceState.workspaceID
@@ -686,6 +730,7 @@ const layer: Layer.Layer<
         metadata: input?.metadata,
         permission: input?.permission,
         workspaceID: input?.workspaceID ?? workspace,
+        additionalDirectories: input?.additionalDirectories,
       })
     })
 
@@ -1019,7 +1064,7 @@ function listByProject(
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [BackgroundJob.node, RuntimeFlags.node, Database.node, EventV2Bridge.node],
+  deps: [BackgroundJob.node, RuntimeFlags.node, Database.node, EventV2Bridge.node, FSUtil.node, ProjectDirectories.node],
 })
 
 export * as Session from "./session"

@@ -3,7 +3,7 @@ import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { WordmarkV2 } from "@opencode-ai/ui/v2/wordmark-v2"
-import { Show, createMemo, createSignal, type Accessor } from "solid-js"
+import { For, Show, createMemo, createSignal, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Portal } from "solid-js/web"
 import createPresence from "solid-presence"
@@ -15,11 +15,16 @@ import {
   type PromptProjectController,
 } from "@/components/prompt-project-selector"
 import { StatusPopoverV2 } from "@/components/status-popover"
+import { useDirectoryPicker } from "@/components/directory-picker"
+import { MaxSessionExtraFolders } from "@/components/session-folders"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
+import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { useProviders } from "@/hooks/use-providers"
 import { NEW_SESSION_CONTENT_WIDTH } from "@/pages/session/new-session-layout"
+import { homeProjectDirectories } from "@/pages/layout/helpers"
+import { showToast } from "@/utils/toast"
 import { Persist, persisted } from "@/utils/persist"
 import type { NewSessionDraftController } from "./new-session-draft-controller"
 import type { NewSessionWorkspaceController } from "./new-session-workspace-controller"
@@ -70,6 +75,7 @@ export function NewSessionView(props: {
                     {language.t("session.worktree.disposableDescription")}
                   </div>
                 </Show>
+                <NewSessionFolders workspace={props.workspace} />
               </Show>
             </div>
           </div>
@@ -80,7 +86,64 @@ export function NewSessionView(props: {
   )
 }
 
+function NewSessionFolders(props: { workspace: NewSessionWorkspaceController }) {
+  const language = useLanguage()
+  const sdk = useSDK()
+  const server = useServer()
+  const pickDirectory = useDirectoryPicker()
+
+  const primary = createMemo(() => sdk().directory)
+  const add = () => {
+    const conn = server.current
+    if (!conn) return
+    pickDirectory({
+      server: conn,
+      title: language.t("session.folders.add"),
+      multiple: true,
+      onSelect: (result) => {
+        for (const directory of homeProjectDirectories(result)) {
+          const extras = props.workspace.folders.extras()
+          if (directory === primary() || extras.includes(directory)) {
+            showToast({ title: language.t("session.folders.duplicate") })
+            continue
+          }
+          if (extras.length >= MaxSessionExtraFolders) {
+            showToast({ title: language.t("session.folders.limit", { max: MaxSessionExtraFolders }) })
+            continue
+          }
+          props.workspace.folders.add(directory)
+        }
+      },
+    })
+  }
+
+  return (
+    <div class="flex min-h-7 min-w-0 flex-col items-center justify-center gap-1 text-[13px] leading-5 text-v2-text-text-faint">
+      <span>{language.t("session.new.folders.label")}</span>
+      <For each={props.workspace.folders.extras()}>
+        {(directory) => (
+          <div class="flex min-w-0 items-center gap-2">
+            <span class="truncate">{directory}</span>
+            <button
+              type="button"
+              class="shrink-0 underline"
+              aria-label={language.t("session.folders.remove")}
+              onClick={() => props.workspace.folders.remove(directory)}
+            >
+              {language.t("session.folders.remove")}
+            </button>
+          </div>
+        )}
+      </For>
+      <button type="button" class="shrink-0 underline" onClick={add}>
+        {language.t("session.folders.add")}
+      </button>
+    </div>
+  )
+}
+
 export function NewSessionStatus(props: { mount: Accessor<HTMLElement | null>; visible: Accessor<boolean> }) {
+
   const language = useLanguage()
 
   return (

@@ -272,25 +272,36 @@ export type SessionsCreateInput = {
     readonly agent?: string | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
+    readonly additionalDirectories?: ReadonlyArray<string> | null
   }["id"]
   readonly agent?: {
     readonly id?: string | null
     readonly agent?: string | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
+    readonly additionalDirectories?: ReadonlyArray<string> | null
   }["agent"]
   readonly model?: {
     readonly id?: string | null
     readonly agent?: string | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
+    readonly additionalDirectories?: ReadonlyArray<string> | null
   }["model"]
   readonly location?: {
     readonly id?: string | null
     readonly agent?: string | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
+    readonly additionalDirectories?: ReadonlyArray<string> | null
   }["location"]
+  readonly additionalDirectories?: {
+    readonly id?: string | null
+    readonly agent?: string | null
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
+    readonly additionalDirectories?: ReadonlyArray<string> | null
+  }["additionalDirectories"]
 }
 
 export type SessionsCreateOutput = {
@@ -1752,6 +1763,17 @@ export type SessionsMessageOutput = {
         readonly time: { readonly created: number }
       }
 }["data"]
+
+export type SessionsFoldersInput = { readonly sessionID: { readonly sessionID: string }["sessionID"] }
+
+export type SessionsFoldersOutput = { readonly primary: string; readonly extras: ReadonlyArray<string> }
+
+export type SessionsUpdateInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly extras?: { readonly extras?: ReadonlyArray<string> | undefined }["extras"]
+}
+
+export type SessionsUpdateOutput = { readonly primary: string; readonly extras: ReadonlyArray<string> }
 
 export type ImportsSessionInput = {
   readonly source: {

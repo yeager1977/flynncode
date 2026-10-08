@@ -25,6 +25,9 @@ export const ProjectDirectoryTable = sqliteTable(
       .notNull()
       .references(() => ProjectTable.id, { onDelete: "cascade" }),
     directory: DatabasePath.absoluteColumn().notNull(),
+    // Multifold usage: primary folder rows use "main", extra attached
+    // folders use "root". Session listing and placement read the primary
+    // only; extras are resolved via ProjectDirectories.list filtering.
     type: text().$type<"main" | "root" | "git_worktree">(),
     strategy: text(),
     time_created: integer()

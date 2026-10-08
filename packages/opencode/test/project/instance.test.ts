@@ -1,7 +1,12 @@
 import { describe, expect } from "bun:test"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
-import { Deferred, Effect, Fiber, Layer } from "effect"
+import { EventV2 } from "@opencode-ai/core/event"
+import { Watcher } from "@opencode-ai/core/filesystem/watcher"
+import { Deferred, Effect, Fiber, Layer, Option } from "effect"
+import * as Stream from "effect/Stream"
+import fs from "node:fs/promises"
+import path from "node:path"
 import { InstanceRef } from "../../src/effect/instance-ref"
 import { registerDisposer } from "../../src/effect/instance-registry"
 import { InstanceBootstrap } from "../../src/project/bootstrap"
@@ -16,7 +21,7 @@ const noopBootstrap = Layer.succeed(
 )
 
 const it = testEffect(
-  LayerNode.compile(LayerNode.group([InstanceStore.node, CrossSpawnSpawner.node]), [
+  LayerNode.compile(LayerNode.group([InstanceStore.node, CrossSpawnSpawner.node, EventV2.node]), [
     [InstanceStore.bootstrapNode, noopBootstrap],
   ]),
 )
@@ -243,6 +248,47 @@ describe("InstanceStore", () => {
       yield* store.load({ directory: dir2 })
       yield* store.disposeAll()
       expect(disposed).toEqual([dir1, dir2])
+    }),
+  )
+
+  it.live("carries additionalDirectories without reboot", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+      const extra = yield* tmpdirScoped()
+      const store = yield* InstanceStore.Service
+
+      const first = yield* store.load({ directory: dir, additionalDirectories: [extra] })
+      expect(first.additionalDirectories).toEqual([extra])
+
+      const second = yield* store.setAdditionalDirectories(dir, [extra])
+      expect(second).toBe(first)
+      expect(second.additionalDirectories).toEqual([extra])
+    }),
+  )
+
+  it.live("publishes watcher events for extra roots", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+      const extra = yield* tmpdirScoped()
+      const store = yield* InstanceStore.Service
+      const events = yield* EventV2.Service
+      const file = path.join(extra, "live.txt")
+
+      const seen = yield* Deferred.make<string>()
+      const fiber = yield* events.subscribe(Watcher.Event.Updated).pipe(
+        Stream.runForEach((event) => {
+          if (event.data.file !== file) return Effect.void
+          return Deferred.succeed(seen, event.data.file).pipe(Effect.asVoid)
+        }),
+        Effect.forkScoped,
+      )
+      yield* Effect.yieldNow
+      yield* store.load({ directory: dir, additionalDirectories: [extra] })
+      yield* Effect.promise(() => fs.writeFile(file, "live"))
+
+      const found = yield* Deferred.await(seen).pipe(Effect.timeoutOption("10 seconds"))
+      expect(Option.isSome(found)).toBe(true)
+      yield* Fiber.interrupt(fiber)
     }),
   )
 })

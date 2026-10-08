@@ -1,4 +1,11 @@
 import { SessionV2 } from "@opencode-ai/core/session"
+import { ProjectV2 } from "@opencode-ai/core/project"
+import { ProjectDirectories } from "@opencode-ai/core/project/directories"
+import { SessionTable } from "@opencode-ai/core/session/sql"
+import { Database } from "@opencode-ai/core/database/database"
+import { eq } from "drizzle-orm"
+import { FSUtil } from "@opencode-ai/core/fs-util"
+import { MaxExtras, normalizeFolders } from "@opencode-ai/core/project/folders"
 import { DateTime, Effect, Stream } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
@@ -6,6 +13,7 @@ import { SessionsCursor } from "@opencode-ai/protocol/groups/session"
 import {
   ConflictError,
   InvalidCursorError,
+  InvalidRequestError,
   MessageNotFoundError,
   ServiceUnavailableError,
   SessionNotFoundError,
@@ -19,6 +27,53 @@ const DefaultSessionHistoryLimit = 50
 export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handlers) =>
   Effect.gen(function* () {
     const session = yield* SessionV2.Service
+    const projects = yield* ProjectV2.Service
+    const projectDirectories = yield* ProjectDirectories.Service
+    const fs = yield* FSUtil.Service
+    const { db } = yield* Database.Service
+
+    const notFound = (sessionID: string) =>
+      new SessionNotFoundError({ sessionID, message: `Session not found: ${sessionID}` })
+
+    const requireSession = Effect.fn("SessionHandler.requireSession")(function* (sessionID: SessionV2.ID) {
+      return yield* session.get(sessionID).pipe(
+        Effect.catchTag("Session.NotFoundError", (error) => Effect.fail(notFound(error.sessionID))),
+      )
+    })
+
+    // Multifold: the V2 projected Info carries no directory, so the primary
+    // folder is read from the session row like session-location does.
+    const primaryDirectory = Effect.fn("SessionHandler.primaryDirectory")(function* (sessionID: SessionV2.ID) {
+      yield* requireSession(sessionID)
+      const row = yield* db
+        .select({ directory: SessionTable.directory })
+        .from(SessionTable)
+        .where(eq(SessionTable.id, sessionID))
+        .get()
+        .pipe(Effect.orDie)
+      if (!row) return yield* Effect.fail(notFound(sessionID))
+      return row.directory
+    })
+
+    // Multifold: extras ride as an additive session-level field persisted in
+    // project_directory rows. Location.Ref stays the sole placement key.
+    const requireExtras = Effect.fn("SessionHandler.requireExtras")(function* (primary: string, raw?: readonly string[]) {
+      const extras = normalizeFolders(primary, raw ? [...raw] : [])
+      if (extras.length > MaxExtras)
+        return yield* new InvalidRequestError({ message: `Up to ${MaxExtras} extra folders`, field: "additionalDirectories" })
+      for (const extra of extras) {
+        if (yield* fs.exists(extra).pipe(Effect.orElseSucceed(() => false)))
+          continue
+        return yield* new InvalidRequestError({ message: `Folder not found: ${extra}`, field: "additionalDirectories" })
+      }
+      return extras
+    })
+
+    const persistExtras = Effect.fn("SessionHandler.persistExtras")(function* (projectID: ProjectV2.ID, extras: string[]) {
+      for (const extra of extras) {
+        yield* projectDirectories.create({ directory: AbsolutePath.make(extra), projectID }).pipe(Effect.ignore)
+      }
+    })
 
     return handlers
       .handle(
@@ -67,6 +122,10 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       .handle(
         "session.create",
         Effect.fn(function* (ctx) {
+          const location = ctx.payload.location ?? { directory: AbsolutePath.make(process.cwd()) }
+          const extras = yield* requireExtras(location.directory, ctx.payload.additionalDirectories)
+          const project = yield* projects.resolve(AbsolutePath.make(location.directory))
+          yield* persistExtras(project.id, extras)
           return {
             data: yield* session.create({
               id: ctx.payload.id,
@@ -419,6 +478,47 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
             messageID: ctx.params.messageID,
             message: `Message not found: ${ctx.params.messageID}`,
           })
+        }),
+      )
+      // Multifold folders: this V2 protocol route manages extras only. The
+      // primary folder is unchanged here; switching primary (with instance
+      // reboot and session rebinding) lives on the V1 instance folders
+      // route, because V2 has no directory-mutation primitive and a direct
+      // row rebind would bypass the event projector.
+      .handle(
+        "session.folders",
+        Effect.fn(function* (ctx) {
+          const primary = yield* primaryDirectory(ctx.params.sessionID)
+          const project = yield* projects.resolve(AbsolutePath.make(primary))
+          const rows = yield* projectDirectories.list(project.id)
+          return {
+            primary: AbsolutePath.make(primary),
+            extras: rows
+              .map((row) => row.directory)
+              .filter((dir) => dir !== primary)
+              .map((dir) => AbsolutePath.make(dir)),
+          }
+        }),
+      )
+      .handle(
+        "session.folders.update",
+        Effect.fn(function* (ctx) {
+          const primary = yield* primaryDirectory(ctx.params.sessionID)
+          const project = yield* projects.resolve(AbsolutePath.make(primary))
+          const resolved = ctx.payload.extras
+            ? yield* Effect.forEach(ctx.payload.extras, (dir) => fs.resolve(dir))
+            : []
+          const extras = yield* requireExtras(primary, resolved)
+          const current = new Set((yield* projectDirectories.list(project.id)).map((row) => row.directory))
+          yield* persistExtras(project.id, extras)
+          for (const dir of current) {
+            if (dir === primary || extras.includes(dir)) continue
+            yield* projectDirectories.remove({ directory: dir, projectID: project.id }).pipe(Effect.ignore)
+          }
+          return {
+            primary: AbsolutePath.make(primary),
+            extras: extras.map((dir) => AbsolutePath.make(dir)),
+          }
         }),
       )
   }),

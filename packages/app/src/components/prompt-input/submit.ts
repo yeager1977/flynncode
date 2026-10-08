@@ -228,6 +228,9 @@ type PromptSubmitInput = {
   setPopover: (popover: "at" | "slash" | null) => void
   newSessionWorktree?: Accessor<string | undefined>
   onNewSessionWorktreeReset?: () => void
+  newSessionExtraFolders?: Accessor<readonly string[] | undefined>
+  onNewSessionExtraFoldersReset?: () => void
+  onNewSessionCreated?: (session: { id: string; directory: string }) => void | Promise<void>
   shouldQueue?: Accessor<boolean>
   onQueue?: (draft: FollowupDraft) => void
   onAbort?: () => void
@@ -423,6 +426,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       }
 
       input.onNewSessionWorktreeReset?.()
+      input.onNewSessionExtraFoldersReset?.()
     }
 
     let session = input.info()
@@ -442,6 +446,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           return undefined
         })
       if (created) {
+        await input.onNewSessionCreated?.({ id: created.id, directory: sessionDirectory })
         if (disposableWorktree) {
           // Fail loud: without the binding, dispose-on-archive never fires
           // and the worktree is silently retained. The session itself is

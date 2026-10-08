@@ -6,6 +6,7 @@ export interface InstanceContext {
   directory: string
   worktree: string
   project: Project.Info
+  additionalDirectories: string[]
 }
 
 export const context = LocalContext.create<InstanceContext>("instance")
@@ -17,6 +18,9 @@ export const context = LocalContext.create<InstanceContext>("instance")
  */
 export function containsPath(filepath: string, ctx: InstanceContext): boolean {
   if (FSUtil.contains(ctx.directory, filepath)) return true
+  for (const root of ctx.additionalDirectories) {
+    if (FSUtil.contains(root, filepath)) return true
+  }
   // Non-git projects set worktree to "/" which would match ANY absolute path.
   // Skip worktree check in this case to preserve external_directory permissions.
   if (ctx.worktree === "/") return false

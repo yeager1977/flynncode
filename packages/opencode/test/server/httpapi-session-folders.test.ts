@@ -1,0 +1,257 @@
+import { afterEach, describe, expect } from "bun:test"
+import { NodeHttpServer, NodeServices } from "@effect/platform-node"
+import fs from "node:fs/promises"
+import path from "node:path"
+import { Cause, Config, Effect, Exit, Layer } from "effect"
+import { HttpClient, HttpClientRequest, HttpClientResponse, HttpRouter, HttpServer } from "effect/unstable/http"
+import { layerWebSocketConstructorGlobal } from "effect/unstable/socket/Socket"
+import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import { Flag } from "@opencode-ai/core/flag/flag"
+import { Ripgrep } from "@opencode-ai/core/ripgrep"
+import { InstanceBootstrap as InstanceBootstrapService } from "../../src/project/bootstrap-service"
+import { InstanceStore } from "../../src/project/instance-store"
+import { containsPath } from "../../src/project/instance-context"
+import { Project } from "../../src/project/project"
+import { Session } from "@/session/session"
+import { Workspace } from "../../src/control-plane/workspace"
+import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
+import { SessionPaths } from "../../src/server/routes/instance/httpapi/groups/session"
+import { Database } from "@opencode-ai/core/database/database"
+import { disposeAllInstances, tmpdirScoped } from "../fixture/fixture"
+import { resetDatabase } from "../fixture/db"
+import { TestInstance } from "../fixture/fixture"
+import { testEffect } from "../lib/effect"
+
+const originalWorkspaces = Flag.OPENCODE_EXPERIMENTAL_WORKSPACES
+const noopBootstrapLayer = Layer.succeed(
+  InstanceBootstrapService.Service,
+  InstanceBootstrapService.Service.of({ run: Effect.void }),
+)
+const appLayer = AppNodeBuilder.build(
+  LayerNode.group([InstanceStore.node, Project.node, Session.node, Workspace.node, Database.node, Ripgrep.node]),
+  [[InstanceStore.bootstrapNode, noopBootstrapLayer]],
+)
+const servedRoutes: Layer.Layer<never, Config.ConfigError, HttpServer.HttpServer> = HttpRouter.serve(
+  HttpApiApp.routes,
+  {
+    disableListenLog: true,
+    disableLogger: true,
+  },
+)
+const httpApiLayer = servedRoutes.pipe(
+  Layer.provide(layerWebSocketConstructorGlobal),
+  Layer.provideMerge(NodeHttpServer.layerTest),
+  Layer.provideMerge(NodeServices.layer),
+)
+const it = testEffect(Layer.mergeAll(appLayer, httpApiLayer))
+
+function pathFor(path: string, params: Record<string, string>) {
+  return Object.entries(params).reduce((result, [key, value]) => result.replace(`:${key}`, value), path)
+}
+
+function request(path: string, init?: RequestInit) {
+  const url = new URL(path, "http://localhost")
+  return HttpClientRequest.fromWeb(new Request(url, init)).pipe(
+    HttpClientRequest.setUrl(url.pathname),
+    HttpClient.execute,
+  )
+}
+
+function json<T>(response: HttpClientResponse.HttpClientResponse) {
+  if (response.status !== 200) return response.text.pipe(Effect.flatMap((text) => Effect.die(new Error(text))))
+  return response.json.pipe(Effect.map((value) => value as T))
+}
+
+function requestJson<T>(path: string, init?: RequestInit) {
+  return request(path, init).pipe(Effect.flatMap(json<T>))
+}
+
+function postFolders(sessionID: string, directory: string, body: unknown) {
+  return request(pathFor(SessionPaths.folders, { sessionID }), {
+    method: "POST",
+    headers: { "x-opencode-directory": directory, "content-type": "application/json" },
+    body: JSON.stringify(body),
+  })
+}
+
+afterEach(async () => {
+  Flag.OPENCODE_EXPERIMENTAL_WORKSPACES = originalWorkspaces
+  await disposeAllInstances()
+  await resetDatabase()
+})
+
+describe("session folders HttpApi", () => {
+  it.instance(
+    "rejects missing extra paths without creating a session",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const missing = path.join(test.directory, "no-such-folder")
+        const before = yield* Session.use.list()
+
+        const exit = yield* Session.use
+          .create({ title: "missing-extra", additionalDirectories: [missing] })
+          .pipe(Effect.exit)
+        expect(Exit.isFailure(exit)).toBe(true)
+        if (Exit.isFailure(exit)) {
+          expect(Cause.squash(exit.cause)).toMatchObject({
+            _tag: "SessionMultifoldError",
+            reason: "missing",
+            path: missing,
+          })
+        }
+        expect((yield* Session.use.list()).length).toBe(before.length)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "rejects more than 8 extras",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const extras = yield* Effect.forEach(
+          Array.from({ length: 9 }, (_, index) => path.join(test.directory, `extra-${index}`)),
+          (dir) => Effect.promise(() => fs.mkdir(dir, { recursive: true })).pipe(Effect.as(dir)),
+        )
+        const before = yield* Session.use.list()
+
+        const exit = yield* Session.use
+          .create({ title: "too-many-extras", additionalDirectories: extras })
+          .pipe(Effect.exit)
+        expect(Exit.isFailure(exit)).toBe(true)
+        if (Exit.isFailure(exit)) {
+          expect(Cause.squash(exit.cause)).toMatchObject({ _tag: "SessionMultifoldError", reason: "limit" })
+        }
+        expect((yield* Session.use.list()).length).toBe(before.length)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "filters duplicate and primary entries on create",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const extra = path.join(test.directory, "docs")
+        yield* Effect.promise(() => fs.mkdir(extra, { recursive: true }))
+        const headers = { "x-opencode-directory": test.directory }
+
+        const session = yield* Session.use.create({
+          title: "deduped-extras",
+          additionalDirectories: [extra, test.directory, extra],
+        })
+        expect((yield* Session.use.get(session.id)).directory).toBe(test.directory)
+
+        const folders = yield* requestJson<{ primary: string; extras: string[] }>(
+          pathFor(SessionPaths.folders, { sessionID: session.id }),
+          { headers },
+        )
+        expect(folders).toEqual({ primary: test.directory, extras: [extra] })
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "same-primary update does not reboot the instance",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory }
+        const store = yield* InstanceStore.Service
+        const session = yield* Session.use.create({ title: "same-primary" })
+
+        const before = yield* store.load({ directory: test.directory })
+        const response = yield* postFolders(session.id, test.directory, { primary: test.directory })
+        expect(response.status).toBe(200)
+        const after = yield* store.load({ directory: test.directory })
+        expect(after).toBe(before)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "primary switch rebinds the session and demotes the old primary",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory }
+        const next = path.join(test.directory, "packages", "app")
+        yield* Effect.promise(() => fs.mkdir(next, { recursive: true }))
+        const session = yield* Session.use.create({ title: "switch-primary" })
+
+        const response = yield* postFolders(session.id, test.directory, { primary: next })
+        expect(response.status).toBe(200)
+        expect(yield* response.json).toEqual({ primary: next, extras: [test.directory] })
+        expect((yield* Session.use.get(session.id)).directory).toBe(next)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "combined primary and extras uses provided extras verbatim",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory }
+        const next = path.join(test.directory, "packages", "app")
+        const third = path.join(test.directory, "packages", "core")
+        yield* Effect.promise(() => fs.mkdir(next, { recursive: true }))
+        yield* Effect.promise(() => fs.mkdir(third, { recursive: true }))
+        const session = yield* Session.use.create({ title: "combined-folders" })
+
+        const response = yield* postFolders(session.id, test.directory, { primary: next, extras: [third] })
+        expect(response.status).toBe(200)
+        expect(yield* response.json).toEqual({ primary: next, extras: [third] })
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "rejects cross-project primary switch",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory }
+        const other = yield* tmpdirScoped({ git: true })
+        const session = yield* Session.use.create({ title: "cross-project" })
+
+        const response = yield* postFolders(session.id, test.directory, { primary: other })
+        expect(response.status).toBe(400)
+        expect(yield* response.json).toMatchObject({ message: expect.stringContaining("same project") })
+        expect((yield* Session.use.get(session.id)).directory).toBe(test.directory)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "deny-after-remove closes the live boundary for detached extras",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory }
+        const extra = yield* tmpdirScoped()
+        const secret = path.join(extra, "secret.txt")
+        yield* Effect.promise(() => fs.writeFile(secret, "top-secret"))
+        const store = yield* InstanceStore.Service
+        const session = yield* Session.use.create({ title: "deny-after-remove" })
+
+        const attach = yield* postFolders(session.id, test.directory, { extras: [extra] })
+        expect(attach.status).toBe(200)
+        const attachedCtx = yield* store.load({ directory: test.directory })
+        expect(attachedCtx.additionalDirectories).toEqual([extra])
+        expect(containsPath(secret, attachedCtx)).toBe(true)
+
+        const detach = yield* postFolders(session.id, test.directory, { extras: [] })
+        expect(detach.status).toBe(200)
+        expect(yield* detach.json).toEqual({ primary: test.directory, extras: [] })
+        const detachedCtx = yield* store.load({ directory: test.directory })
+        expect(detachedCtx).toBe(attachedCtx)
+        expect(detachedCtx.additionalDirectories).toEqual([])
+        expect(containsPath(secret, detachedCtx)).toBe(false)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+})

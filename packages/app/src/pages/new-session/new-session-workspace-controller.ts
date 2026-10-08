@@ -2,6 +2,15 @@ import { createMemo, createSignal } from "solid-js"
 import { useSDK } from "@/context/sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useSync } from "@/context/sync"
+import {
+  MaxSessionExtraFolders,
+  addSessionFolder,
+  normalizeSessionFolders,
+  promoteSessionFolder,
+  removeSessionFolder,
+} from "@/components/session-folders"
+
+export { MaxSessionExtraFolders, addSessionFolder, normalizeSessionFolders, promoteSessionFolder, removeSessionFolder }
 
 const workspaceBarEnabled = import.meta.env.VITE_OPENCODE_CHANNEL !== "prod"
 
@@ -57,7 +66,18 @@ export function createNewSessionWorkspaceController() {
   )
   const disposable = createMemo(() => value() === "disposable")
 
+  // Multifold: extra folders attached at session create. The first selected
+  // folder stays primary; extras ride as an additive session-level field.
+  const [extraFolders, setExtraFolders] = createSignal<string[]>([])
+  const folders = {
+    extras: extraFolders,
+    add: (directory: string) => setExtraFolders((current) => addSessionFolder(sdk().directory, current, directory)),
+    remove: (directory: string) => setExtraFolders((current) => removeSessionFolder(current, directory)),
+    reset: () => setExtraFolders([]),
+  }
+
   return {
+    folders,
     selection: {
       value,
       reset: () => setWorktree(),

@@ -264,3 +264,43 @@ describeWatcher("Watcher", () => {
     )
   })
 })
+
+describeWatcher("subscribeRoots", () => {
+  it.live("forwards add events for extra roots without a Location", () =>
+    Effect.gen(function* () {
+      const fs = yield* FSUtil.Service
+      const tmp = yield* Effect.acquireRelease(
+        Effect.promise(() => tmpdir()),
+        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+      )
+      const seen = yield* Deferred.make<Watcher.ExtraRootUpdate>()
+      const cleanups = yield* Watcher.subscribeRoots([tmp.path], (update) => {
+        Effect.runFork(Deferred.succeed(seen, update))
+      })
+      yield* Effect.addFinalizer(() =>
+        Effect.promise(async () => {
+          for (const unsubscribe of cleanups.values()) await unsubscribe()
+        }),
+      )
+      expect(cleanups.has(tmp.path)).toBe(true)
+      const file = path.join(tmp.path, "extra.txt")
+      yield* fs.writeFileString(file, "extra")
+      const first = yield* Deferred.await(seen).pipe(Effect.timeoutOption("5 seconds"))
+      expect(Option.isSome(first)).toBe(true)
+      if (Option.isSome(first)) expect(first.value.file).toBe(file)
+    }).pipe(Effect.provide(AppNodeBuilder.build(LayerNode.group([FSUtil.node])))),
+  )
+})
+
+describe("subscribeRoots without a native binding", () => {
+  it.live("returns an empty map instead of throwing for missing roots", () =>
+    Effect.gen(function* () {
+      const cleanups = yield* Watcher.subscribeRoots(
+        [`/nonexistent-extra-root-${Math.random().toString(36).slice(2)}`],
+        () => {},
+      )
+      expect(cleanups).toBeInstanceOf(Map)
+      expect(cleanups.size).toBe(0)
+    }),
+  )
+})
