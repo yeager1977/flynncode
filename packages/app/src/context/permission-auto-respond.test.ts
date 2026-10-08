@@ -152,7 +152,6 @@ describe("autoRespondsPermission", () => {
   })
 })
 
-
 describe("isDirectoryAutoAccepting", () => {
   test("returns true when directory key is set", () => {
     const directory = "/tmp/project"
@@ -227,9 +226,9 @@ describe("computer_use", () => {
     const approvalMode = { [`${base64Encode(directory)}/root`]: "auto" as const }
 
     for (const id of ["root", "child"]) {
-      expect(autoRespondVerdict({ autoAccept, approvalMode, session: sessions, permission: request(id), directory })).toBe(
-        false,
-      )
+      expect(
+        autoRespondVerdict({ autoAccept, approvalMode, session: sessions, permission: request(id), directory }),
+      ).toBe(false)
       expect(autoRespondsPermission(autoAccept, sessions, request(id), directory)).toBe(false)
       expect(sessionAutoAccept(autoAccept, sessions, request(id), directory)).toBe(false)
     }

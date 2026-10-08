@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
-import { expandSubagent, groupSubagents, mergeSubagents, subagentListState, subagentPreview, tasksFromParts } from "./subagent-list"
+import {
+  expandSubagent,
+  groupSubagents,
+  mergeSubagents,
+  subagentListState,
+  subagentPreview,
+  tasksFromParts,
+} from "./subagent-list"
 
 describe("Tasks visibility boundary", () => {
   test("mounts the task list only in the header Tasks side panel", () => {
@@ -25,12 +32,13 @@ describe("Tasks visibility boundary", () => {
   })
 })
 
-const child = (
-  id: string,
-  status: "busy" | "retry" | "idle" | undefined,
-  updated: number,
-  text = "",
-) => ({ id, title: id, updated, status, text })
+const child = (id: string, status: "busy" | "retry" | "idle" | undefined, updated: number, text = "") => ({
+  id,
+  title: id,
+  updated,
+  status,
+  text,
+})
 
 describe("groupSubagents", () => {
   test("puts busy and retry above idle, newest first", () => {
