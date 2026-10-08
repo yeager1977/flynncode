@@ -8,6 +8,7 @@ import {
   onCleanup,
   Suspense,
   Show,
+  For,
   Match,
   Switch,
   createMemo,
@@ -37,6 +38,10 @@ import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
 import { previewSelectedLines } from "@opencode-ai/session-ui/pierre/selection-bridge"
 import { Button } from "@opencode-ai/ui/button"
+import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
+import { Icon } from "@opencode-ai/ui/icon"
+import { IconButton } from "@opencode-ai/ui/icon-button"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { showToast } from "@/utils/toast"
 import { base64Encode, checksum } from "@opencode-ai/core/util/encode"
 import { useLocation, useNavigate, useParams, useSearchParams } from "@solidjs/router"
@@ -72,7 +77,13 @@ import {
   SessionComposerRegion,
 } from "@/pages/session/composer"
 import { SideChatProvider } from "@/pages/session/composer/session-side-chat-context"
-import { createOpenReviewFile, createSessionTabs, createSizing, shellPtyID, shouldShowFileTree } from "@/pages/session/helpers"
+import {
+  createOpenReviewFile,
+  createSessionTabs,
+  createSizing,
+  shellPtyID,
+  shouldShowFileTree,
+} from "@/pages/session/helpers"
 import { MessageTimeline } from "@/pages/session/timeline/message-timeline"
 import { createTimelineModel } from "@/pages/session/timeline/model"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
@@ -513,7 +524,9 @@ export default function Page() {
     newSessionDesign() ? desktopV2ReviewOpen() || desktopTerminalOpen() : desktopReviewOpen(),
   )
   const desktopTasksOpen = createMemo(() => view().tasks.opened())
-  const desktopSidePanelOpen = createMemo(() => desktopSessionResizeOpen() || desktopFileTreeOpen() || desktopTasksOpen())
+  const desktopSidePanelOpen = createMemo(
+    () => desktopSessionResizeOpen() || desktopFileTreeOpen() || desktopTasksOpen(),
+  )
   let panelRow: HTMLDivElement | undefined
   const [panelRowWidth, setPanelRowWidth] = createSignal<number>()
   createResizeObserver(
@@ -1255,7 +1268,6 @@ export default function Page() {
   const hasComments = () => comments.all().length > 0
 
   type ReviewPresetOption = "uncommitted" | "base-branch" | "commit"
-  const [reviewPreset, setReviewPreset] = createSignal<ReviewPresetOption>("uncommitted")
   const [reviewDetached, setReviewDetached] = createSignal(false)
   const reviewPresetOptions = () => {
     const options: ReviewPresetOption[] = ["uncommitted"]
@@ -1276,6 +1288,8 @@ export default function Page() {
     const text = buildDetachedReviewText(reviewPresetArgsText(preset))
     prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
   }
+  // Detached review forks the session and lands on the fork with the /review
+  // prompt prefilled (consumed by the prefill effect above).
   const runReviewDetached = (preset: ReviewPresetOption) => {
     const id = params.id
     if (!id) return
@@ -1293,14 +1307,53 @@ export default function Page() {
         })
       })
   }
-  const onSelectReviewPreset = (preset: ReviewPresetOption | undefined | null) => {
-    if (!preset) return
-    setReviewPreset(preset)
-    if (reviewDetached()) runReviewDetached(preset)
-    else fillReviewPrompt(preset)
+  // Presets are one-shot actions, not a persisted selection: every pick runs,
+  // including re-picking the same preset.
+  const runReviewPreset = (preset: ReviewPresetOption) => {
+    if (reviewDetached()) {
+      runReviewDetached(preset)
+      return
+    }
+    fillReviewPrompt(preset)
   }
-  const reviewDetachedLabel = () =>
-    reviewDetached() ? language.t("session.review.detached.attached") : language.t("session.review.detached")
+
+  const reviewActionsMenu = () => (
+    <DropdownMenu gutter={4} placement="bottom-end">
+      <Tooltip placement="bottom" value={language.t("session.review.actions")}>
+        <DropdownMenu.Trigger
+          as={IconButton}
+          icon="dot-grid"
+          variant="ghost"
+          class="size-6 rounded-md"
+          data-action="session-review-actions"
+          aria-label={language.t("session.review.actions")}
+        />
+      </Tooltip>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content>
+          <DropdownMenu.Item disabled={!hasComments()} onSelect={addressComments}>
+            <DropdownMenu.ItemLabel>{language.t("session.review.addressComments")}</DropdownMenu.ItemLabel>
+          </DropdownMenu.Item>
+          <DropdownMenu.Separator />
+          <DropdownMenu.Group>
+            <For each={reviewPresetOptions()}>
+              {(preset) => (
+                <DropdownMenu.Item onSelect={() => runReviewPreset(preset)}>
+                  <DropdownMenu.ItemLabel>{reviewPresetLabel(preset)}</DropdownMenu.ItemLabel>
+                </DropdownMenu.Item>
+              )}
+            </For>
+            <DropdownMenu.CheckboxItem checked={reviewDetached()} onChange={setReviewDetached} closeOnSelect={false}>
+              <DropdownMenu.ItemLabel>{language.t("session.review.detached")}</DropdownMenu.ItemLabel>
+              <DropdownMenu.ItemIndicator>
+                <Icon name="check-small" size="small" />
+              </DropdownMenu.ItemIndicator>
+            </DropdownMenu.CheckboxItem>
+          </DropdownMenu.Group>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu>
+  )
 
   const changesTitle = () => {
     if (!canReview()) {
@@ -1318,21 +1371,7 @@ export default function Page() {
           size="small"
           valueClass="text-14-medium"
         />
-        <Button size="small" variant="ghost" onClick={addressComments} disabled={!hasComments()} title={hasComments() ? undefined : language.t("session.review.addressCommentsDisabled")}>
-          {language.t("session.review.addressComments")}
-        </Button>
-        <Select
-          options={reviewPresetOptions()}
-          current={reviewPreset()}
-          label={reviewPresetLabel}
-          onSelect={onSelectReviewPreset}
-          variant="ghost"
-          size="small"
-          valueClass="text-14-medium"
-        />
-        <Button size="small" variant="ghost" onClick={() => setReviewDetached(!reviewDetached())}>
-          {reviewDetachedLabel()}
-        </Button>
+        {reviewActionsMenu()}
       </div>
     )
   }
@@ -1343,7 +1382,7 @@ export default function Page() {
     }
 
     return (
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-1">
         <SelectV2
           appearance="inline"
           options={changesOptions()}
@@ -1353,21 +1392,7 @@ export default function Page() {
           gutter={6}
           onSelect={(option) => option && view().review.setMode(option)}
         />
-        <Button size="small" variant="ghost" onClick={addressComments} disabled={!hasComments()} title={hasComments() ? undefined : language.t("session.review.addressCommentsDisabled")}>
-          {language.t("session.review.addressComments")}
-        </Button>
-        <SelectV2
-          appearance="inline"
-          options={reviewPresetOptions()}
-          current={reviewPreset()}
-          label={reviewPresetLabel}
-          placement="bottom-start"
-          gutter={6}
-          onSelect={onSelectReviewPreset}
-        />
-        <Button size="small" variant="ghost" onClick={() => setReviewDetached(!reviewDetached())}>
-          {reviewDetachedLabel()}
-        </Button>
+        {reviewActionsMenu()}
       </div>
     )
   }

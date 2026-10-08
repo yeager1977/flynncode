@@ -1,4 +1,12 @@
 import { Button } from "@opencode-ai/ui/button"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
+import { Icon } from "@opencode-ai/ui/icon"
+import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
+import { DialogFooter, DialogHeader, DialogTitleGroup, DialogV2 } from "@opencode-ai/ui/v2/dialog-v2"
+import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
+import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
+import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { createMemo, createResource, createSignal, For, Show, type JSX } from "solid-js"
 import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
 import type { FileDiffInfo } from "@opencode-ai/client/promise"
@@ -66,6 +74,9 @@ export type ReviewPanelV2Props = {
 export function ReviewPanelV2(props: ReviewPanelV2Props) {
   const sdk = useSDK()
   const language = useLanguage()
+  const dialog = useDialog()
+  // The browser pane mounts only on demand so it never squeezes the diff.
+  const [browserOpen, setBrowserOpen] = createSignal(false)
 
   const diffs = createMemo(() => props.diffs().filter(filterRenderableDiff))
   const filteredFiles = createMemo(() =>
@@ -164,6 +175,73 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
     void run()
   }
 
+  // Revert runs `git apply -R` on the working tree; there is no undo, so it
+  // always asks first.
+  const confirmRevert = (input: { title: string; description: string; action: string; run: () => void }) => {
+    dialog.show(() => (
+      <DialogV2 fit>
+        <DialogHeader hideClose>
+          <DialogTitleGroup title={input.title} description={input.description} />
+        </DialogHeader>
+        <DialogFooter>
+          <ButtonV2 variant="ghost" onClick={() => dialog.close()}>
+            {language.t("common.cancel")}
+          </ButtonV2>
+          <ButtonV2
+            variant="danger"
+            onClick={() => {
+              dialog.close()
+              input.run()
+            }}
+          >
+            {input.action}
+          </ButtonV2>
+        </DialogFooter>
+      </DialogV2>
+    ))
+  }
+  const confirmRevertFile = () => {
+    const file = activeDiff()
+    if (!file) return
+    confirmRevert({
+      title: language.t("session.review.revertFile.title"),
+      action: language.t("session.review.revertFile"),
+      description: language.t("session.review.revertFile.description", { file }),
+      run: revertHunks,
+    })
+  }
+  const confirmRevertHunk = (hunk: string, index: number) => {
+    const file = activeDiff()
+    if (!file) return
+    confirmRevert({
+      title: language.t("session.review.revertHunk.title"),
+      action: language.t("session.review.revertHunk"),
+      description: language.t("session.review.revertHunk.description", { file, index }),
+      run: () => revertSingleHunk(hunk),
+    })
+  }
+
+  const browserLabel = () =>
+    browserOpen() ? language.t("session.review.browserPane.close") : language.t("session.review.browserPane.open")
+  const headerTitle = () => (
+    <div class="flex min-w-0 items-center gap-1">
+      {props.title}
+      <TooltipV2 class="shrink-0" placement="bottom" value={browserLabel()}>
+        <IconButtonV2
+          type="button"
+          variant="ghost-muted"
+          size="small"
+          data-action="review-browser-toggle"
+          state={browserOpen() ? "pressed" : undefined}
+          aria-pressed={browserOpen()}
+          aria-label={browserLabel()}
+          onClick={() => setBrowserOpen(!browserOpen())}
+          icon={<IconV2 name="monitor" />}
+        />
+      </TooltipV2>
+    </div>
+  )
+
   const readFile = async (path: string) =>
     sdk()
       .client.file.read({ path })
@@ -174,118 +252,137 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
       })
 
   return (
-    <div class="flex h-full min-h-0">
-    <SessionReviewV2
-      title={props.title}
-      stats={<DiffChanges changes={diffs()} />}
-      empty={props.empty}
-      sidebarOpen={props.state.sidebarOpened()}
-      sidebar={
-        // Always mounted: the sidebar header hosts the changes-mode dropdown,
-        // which must stay reachable when the current mode has zero diffs.
-        <ReviewPanelV2Sidebar
-      title={
-        <div class="flex items-center gap-2">
-          {props.title}
-          <Show when={props.indexActions && patch()}>
-            <Button size="small" variant="ghost" onClick={stageHunks}>
-              {language.t("session.review.stageHunk")}
-            </Button>
-            <Button size="small" variant="ghost" onClick={unstageHunks}>
-              {language.t("session.review.unstageHunk")}
-            </Button>
-          </Show>
-          <Show when={patch()}>
-            <Button size="small" variant="ghost" onClick={revertHunks}>
-              {language.t("session.review.revertHunk")}
-            </Button>
-          </Show>
-        </div>
-      }
-          state={props.state}
-          diffsReady={props.diffsReady}
+    <div class="flex h-full min-h-0 flex-col">
+      <div class="min-h-0 flex-1">
+        <SessionReviewV2
+          title={headerTitle()}
+          stats={<DiffChanges changes={diffs()} />}
+          empty={props.empty}
+          sidebarOpen={props.state.sidebarOpened()}
+          sidebar={
+            // Always mounted: the sidebar header hosts the changes-mode dropdown,
+            // which must stay reachable when the current mode has zero diffs.
+            <ReviewPanelV2Sidebar
+              title={headerTitle()}
+              state={props.state}
+              diffsReady={props.diffsReady}
+              onSelectFile={props.onSelectFile}
+              diffs={diffs}
+              filteredFiles={filteredFiles}
+              searching={searching}
+              kinds={treeKinds}
+              activeDiff={activeDiff}
+            />
+          }
+          activeFile={activeDiff()}
+          files={filteredFiles()}
           onSelectFile={props.onSelectFile}
-          diffs={diffs}
-          filteredFiles={filteredFiles}
-          searching={searching}
-          kinds={treeKinds}
-          activeDiff={activeDiff}
-        />
-      }
-      activeFile={activeDiff()}
-      files={filteredFiles()}
-      onSelectFile={props.onSelectFile}
-      diffStyle={props.diffStyle}
-      onDiffStyleChange={props.onDiffStyleChange}
-      expandMode={props.state.expandMode()}
-      onExpandModeChange={props.state.setExpandMode}
-      hasDiffs={diffs().length > 0}
-      preview={
-        <div class="flex h-full min-h-0 flex-col">
-        <Show when={hunks().length > 1}>
-          <div class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
-            <For each={hunks()}>
-              {(hunk, index) => (
-                <div class="flex items-center gap-1">
-                  <span class="text-12-regular text-text-weak">
-                    {language.t("session.review.hunk.label", { index: index() + 1 })}
-                  </span>
+          diffStyle={props.diffStyle}
+          onDiffStyleChange={props.onDiffStyleChange}
+          expandMode={props.state.expandMode()}
+          onExpandModeChange={props.state.setExpandMode}
+          hasDiffs={diffs().length > 0}
+          preview={
+            <div class="flex h-full min-h-0 flex-col">
+              <Show when={patch()}>
+                <div data-slot="review-file-actions" class="flex flex-wrap items-center gap-1 px-3 py-1.5">
                   <Show when={props.indexActions}>
-                    <Button size="small" variant="ghost" onClick={() => stageSingleHunk(hunk)}>
-                      {language.t("session.review.stageHunk")}
+                    <Button size="small" variant="ghost" onClick={stageHunks}>
+                      {language.t("session.review.stageFile")}
                     </Button>
-                    <Button size="small" variant="ghost" onClick={() => unstageSingleHunk(hunk)}>
-                      {language.t("session.review.unstageHunk")}
+                    <Button size="small" variant="ghost" onClick={unstageHunks}>
+                      {language.t("session.review.unstageFile")}
                     </Button>
                   </Show>
-                  <Button size="small" variant="ghost" onClick={() => revertSingleHunk(hunk)}>
-                    {language.t("session.review.revertHunk")}
+                  <Button size="small" variant="ghost" onClick={confirmRevertFile}>
+                    {language.t("session.review.revertFile")}
                   </Button>
+                  <Show when={hunks().length > 1}>
+                    <For each={hunks()}>
+                      {(hunk, index) => (
+                        <DropdownMenu gutter={4} placement="bottom-start">
+                          <DropdownMenu.Trigger as={Button} size="small" variant="ghost">
+                            {language.t("session.review.hunk.label", { index: index() + 1 })}
+                            <Icon name="chevron-down" size="small" class="text-icon-weak" />
+                          </DropdownMenu.Trigger>
+                          <DropdownMenu.Portal>
+                            <DropdownMenu.Content>
+                              <Show when={props.indexActions}>
+                                <DropdownMenu.Item onSelect={() => stageSingleHunk(hunk)}>
+                                  <DropdownMenu.ItemLabel>
+                                    {language.t("session.review.stageHunk")}
+                                  </DropdownMenu.ItemLabel>
+                                </DropdownMenu.Item>
+                                <DropdownMenu.Item onSelect={() => unstageSingleHunk(hunk)}>
+                                  <DropdownMenu.ItemLabel>
+                                    {language.t("session.review.unstageHunk")}
+                                  </DropdownMenu.ItemLabel>
+                                </DropdownMenu.Item>
+                              </Show>
+                              <DropdownMenu.Item onSelect={() => confirmRevertHunk(hunk, index() + 1)}>
+                                <DropdownMenu.ItemLabel>
+                                  {language.t("session.review.revertHunk")}
+                                </DropdownMenu.ItemLabel>
+                              </DropdownMenu.Item>
+                            </DropdownMenu.Content>
+                          </DropdownMenu.Portal>
+                        </DropdownMenu>
+                      )}
+                    </For>
+                  </Show>
                 </div>
-              )}
-            </For>
-          </div>
-        </Show>
-        {/* Key on the file path, not the diff object identity, so refreshed diff data
-        updates the mounted preview instead of remounting the whole viewer. */}
-        <Show when={activeDiff()} keyed>
-          {(file) => (
-            <Show when={artifactPreviewKind(file)} fallback={
-            <Show when={activeItem()}>
-              {(diff) => (
-                <SessionReviewFilePreviewV2
-                  file={file}
-                  diff={diff()}
-                  diffStyle={props.diffStyle}
-                  expandMode={props.state.expandMode()}
-                  readFile={readFile}
-                  onLineComment={props.onLineComment}
-                  onLineCommentUpdate={props.onLineCommentUpdate}
-                  onLineCommentDelete={props.onLineCommentDelete}
-                  lineCommentActions={props.lineCommentActions}
-                  comments={props.comments}
-                  focusedComment={props.focusedComment}
-                  onFocusedCommentChange={props.onFocusedCommentChange}
-                />
-              )}
-            </Show>
-            }>
-              <ArtifactPreview path={file} />
-            </Show>
-          )}
-        </Show>
+              </Show>
+              {/* Key on the file path, not the diff object identity, so refreshed diff data
+              updates the mounted preview instead of remounting the whole viewer. */}
+              <Show when={activeDiff()} keyed>
+                {(file) => (
+                  <Show
+                    when={artifactPreviewKind(file)}
+                    fallback={
+                      <Show when={activeItem()}>
+                        {(diff) => (
+                          <SessionReviewFilePreviewV2
+                            file={file}
+                            diff={diff()}
+                            diffStyle={props.diffStyle}
+                            expandMode={props.state.expandMode()}
+                            readFile={readFile}
+                            onLineComment={props.onLineComment}
+                            onLineCommentUpdate={props.onLineCommentUpdate}
+                            onLineCommentDelete={props.onLineCommentDelete}
+                            lineCommentActions={props.lineCommentActions}
+                            comments={props.comments}
+                            focusedComment={props.focusedComment}
+                            onFocusedCommentChange={props.onFocusedCommentChange}
+                          />
+                        )}
+                      </Show>
+                    }
+                  >
+                    <ArtifactPreview path={file} />
+                  </Show>
+                )}
+              </Show>
+            </div>
+          }
+        />
+      </div>
+      <Show when={browserOpen()}>
+        <div class="flex min-h-0 flex-1 flex-col">
+          <ReviewBrowser
+            onClose={() => setBrowserOpen(false)}
+            // The prompt context only carries file comments, so a browser note
+            // rides along as a comment on the reviewed file (or "preview").
+            onAnnotate={(comment) =>
+              props.onLineComment?.({
+                file: props.activeFile ?? "preview",
+                selection: { start: 1, end: 1 },
+                comment,
+              })
+            }
+          />
         </div>
-      }
-    />
-    <ReviewBrowser
-      onAnnotate={(comment) =>
-        props.onLineComment?.({
-          file: props.activeFile ?? "preview",
-          selection: { start: 1, end: 1 },
-          comment,
-        })
-      }
-    />
+      </Show>
     </div>
   )
 }
