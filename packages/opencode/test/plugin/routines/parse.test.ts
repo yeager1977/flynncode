@@ -127,3 +127,35 @@ describe("rrule schedule", () => {
     expect(result.ok).toBe(false)
   })
 })
+
+describe("recentRuns", () => {
+  test("keeps valid summaries and drops bad entries", () => {
+    const result = parseRoutines({
+      routines: [
+        {
+          id: "a",
+          name: "A",
+          prompt: "go",
+          schedule: { dailyAt: "09:00" },
+          recentRuns: [
+            { startedAt: "2026-09-22T09:00:00.000Z", endedAt: "2026-09-22T09:01:00.000Z", state: "ok" },
+            "nope",
+            { startedAt: "2026-09-22T09:00:00.000Z", endedAt: "2026-09-22T09:01:00.000Z", state: "bogus" },
+          ],
+        },
+      ],
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.routines[0].recentRuns?.length).toBe(1)
+  })
+
+  test("omits recentRuns when empty", () => {
+    const result = parseRoutines({
+      routines: [{ id: "a", name: "A", prompt: "go", schedule: { dailyAt: "09:00" } }],
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.routines[0].recentRuns).toBeUndefined()
+  })
+})

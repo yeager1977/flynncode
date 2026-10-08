@@ -1,5 +1,13 @@
 import { RRule } from "rrule"
 
+export type RoutineRunSummary = {
+  sessionID?: string
+  startedAt: string
+  endedAt: string
+  state: "ok" | "error"
+  error?: string
+}
+
 export type Routine = {
   id: string
   name: string
@@ -9,6 +17,7 @@ export type Routine = {
   interval?: string
   rrule?: string
   lastRun?: string
+  recentRuns?: RoutineRunSummary[]
 }
 
 export type RoutinesFile = {
@@ -65,6 +74,7 @@ function parseRoutine(item: unknown, index: number, errors: string[]) {
   if (typeof row.name !== "string" || row.name.trim() === "") errors.push(`routines.${index}.name must be a string`)
   if (typeof row.prompt !== "string" || row.prompt.trim() === "") errors.push(`routines.${index}.prompt must be a string`)
   const schedule = readSchedule(row.schedule, index, errors)
+  const recentRuns = readRecentRuns(row.recentRuns)
   if (errors.some((error) => error.startsWith(`routines.${index}`))) return
   if (!schedule) return
   return {
@@ -76,6 +86,7 @@ function parseRoutine(item: unknown, index: number, errors: string[]) {
     interval: schedule.interval,
     rrule: schedule.rrule,
     lastRun: typeof row.lastRun === "string" ? row.lastRun : undefined,
+    recentRuns,
   }
 }
 
@@ -132,4 +143,24 @@ function readRrule(rrule: unknown, index: number, errors: string[]) {
     return undefined
   }
   return rrule
+}
+
+function readRecentRuns(recentRuns: unknown) {
+  if (!Array.isArray(recentRuns)) return undefined
+  const kept = recentRuns.flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return []
+    const row = entry as Record<string, unknown>
+    if (typeof row.startedAt !== "string" || typeof row.endedAt !== "string") return []
+    if (row.state !== "ok" && row.state !== "error") return []
+    const summary: RoutineRunSummary = {
+      startedAt: row.startedAt,
+      endedAt: row.endedAt,
+      state: row.state,
+    }
+    if (typeof row.sessionID === "string") summary.sessionID = row.sessionID
+    if (typeof row.error === "string") summary.error = row.error
+    return [summary]
+  })
+  const tail = kept.slice(-10)
+  return tail.length > 0 ? tail : undefined
 }
