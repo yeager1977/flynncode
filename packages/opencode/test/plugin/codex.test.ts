@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createServer, type IncomingMessage } from "node:http"
 import { type AddressInfo } from "node:net"
+import path from "node:path"
 import { WebSocketServer } from "ws"
 import {
   CodexAuthPlugin,
@@ -11,6 +12,8 @@ import {
   renderOAuthError,
   type IdTokenClaims,
 } from "../../src/plugin/openai/codex"
+import { parseCodexAuth } from "../../src/auth/vendor-import"
+import { tmpdir } from "../fixture/fixture"
 
 function createTestJwt(payload: object): string {
   const header = Buffer.from(JSON.stringify({ alg: "none" })).toString("base64url")
@@ -468,6 +471,56 @@ describe("plugin.codex", () => {
       { authorization: `Bearer ${refreshedAccess}`, accountId: "acc-123", residency: "eu" },
       { authorization: `Bearer ${refreshedAccess}`, accountId: "acc-123", residency: "eu" },
     ])
+  })
+})
+
+describe("codex cli import", () => {
+  test("maps Codex CLI file to oauth success payload", () => {
+    const imported = parseCodexAuth({ tokens: { access_token: "a", refresh_token: "r" } })
+    expect(imported).toMatchObject({ vendor: "openai", kind: "oauth" })
+  })
+
+  test("import method reads Codex CLI credentials from home directory", async () => {
+    await using tmp = await tmpdir({
+      init: async (dir) => {
+        await Bun.write(
+          path.join(dir, ".codex", "auth.json"),
+          JSON.stringify({ tokens: { access_token: "a1", refresh_token: "r1", id_token: "h.e.s" } }),
+        )
+      },
+    })
+    const previousHome = process.env.HOME
+    process.env.HOME = tmp.path
+    try {
+      const hooks = await CodexAuthPlugin({} as never)
+      const method = hooks.auth!.methods.find((entry) => entry.label === "Import from Codex CLI")
+      expect(method).toBeDefined()
+      const pending = await method!.authorize!({})
+      if (!("callback" in pending) || pending.method !== "auto") throw new Error("expected oauth authorize payload")
+      expect(pending.url).not.toContain("r1")
+      expect(pending.url).not.toContain("a1")
+      const result = await pending.callback!()
+      if (result.type !== "success" || !("refresh" in result)) throw new Error("expected oauth success payload")
+      expect(result.refresh).toBe("r1")
+      expect(result.access).toBe("a1")
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME
+      else process.env.HOME = previousHome
+    }
+  })
+
+  test("import method throws a redacted error without Codex CLI credentials", async () => {
+    await using tmp = await tmpdir()
+    const previousHome = process.env.HOME
+    process.env.HOME = tmp.path
+    try {
+      const hooks = await CodexAuthPlugin({} as never)
+      const method = hooks.auth!.methods.find((entry) => entry.label === "Import from Codex CLI")
+      await expect(method!.authorize!({})).rejects.toThrow("No Codex CLI credentials found")
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME
+      else process.env.HOME = previousHome
+    }
   })
 })
 
