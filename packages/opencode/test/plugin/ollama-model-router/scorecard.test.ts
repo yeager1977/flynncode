@@ -33,7 +33,7 @@ describe("parseOptions", () => {
     expect(result.options.enabled).toBe(false)
   })
 
-  test("parses bundled xAI defaults with exactly six scored keys", () => {
+  test("parses bundled xAI and vendor subscription defaults", () => {
     const result = parseOptions({})
     expect(result.ok).toBe(true)
     if (!result.ok) return
@@ -44,6 +44,12 @@ describe("parseOptions", () => {
       "xai/grok-4.20-0309-non-reasoning": { capability: 7, price: 3, speed: 7, tags: ["coding", "lookup"] },
       "xai/grok-4.3": { capability: 8, price: 4, speed: 5, tags: ["coding", "long-context"] },
       "xai/grok-build-0.1": { capability: 7, price: 3, speed: 6, tags: ["coding"] },
+      "anthropic/claude-opus-5-5": { capability: 10, price: 6, speed: 5 },
+      "anthropic/claude-sonnet-5": { capability: 9, price: 4, speed: 7 },
+      "anthropic/claude-fable-5-1": { capability: 8, price: 3, speed: 8 },
+      "openai/gpt-6-astra": { capability: 10, price: 6, speed: 5 },
+      "openai/gpt-6-sol": { capability: 9, price: 4, speed: 7 },
+      "openai/gpt-6-luna": { capability: 7, price: 3, speed: 9 },
     })
     expect(result.options.taskModels).toEqual({})
   })
