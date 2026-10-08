@@ -56,6 +56,8 @@ export type MobileGatewayStatus = {
   tailnetLauncherUrls: string[]
 }
 
+export type CaptureRect = { x: number; y: number; width: number; height: number }
+
 export type ComputerUseAPI = {
   click: (appID: string, x: number, y: number) => Promise<void>
   typeText: (appID: string, text: string) => Promise<void>
@@ -150,7 +152,7 @@ export type ElectronAPI = {
   runDesktopMenuAction: (action: DesktopMenuAction) => Promise<void>
   setBackgroundColor: (color: string) => Promise<void>
   exportDebugLogs: () => Promise<string>
-  capturePage: () => Promise<string | undefined>
+  capturePage: (rect?: CaptureRect) => Promise<string | undefined>
   computerUse: ComputerUseAPI
   setForceFocus: (enabled: boolean) => Promise<void>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>

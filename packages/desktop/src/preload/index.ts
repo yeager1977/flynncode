@@ -150,7 +150,7 @@ const api: ElectronAPI = {
   runDesktopMenuAction: (action) => ipcRenderer.invoke("run-desktop-menu-action", action),
   setBackgroundColor: (color: string) => ipcRenderer.invoke("set-background-color", color),
   exportDebugLogs: () => ipcRenderer.invoke("export-debug-logs"),
-  capturePage: () => ipcRenderer.invoke("app:capturePage"),
+  capturePage: (rect) => ipcRenderer.invoke("app:capturePage", rect),
   computerUse: {
     click: (appID, x, y) => ipcRenderer.invoke("computer-use-click", appID, x, y),
     typeText: (appID, text) => ipcRenderer.invoke("computer-use-type", appID, text),

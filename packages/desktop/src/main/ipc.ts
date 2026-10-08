@@ -41,6 +41,18 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string")
 }
 
+// The renderer measures in CSS pixels; capturePage expects DIPs, which differ
+// by the page zoom factor.
+function parseCaptureRect(input: unknown, zoom: number) {
+  if (!input || typeof input !== "object") return
+  const rect = input as Record<string, unknown>
+  const values = [rect.x, rect.y, rect.width, rect.height]
+  if (!values.every((value): value is number => typeof value === "number" && Number.isFinite(value))) return
+  const [x, y, width, height] = values.map((value) => Math.round(value * zoom))
+  if (width <= 0 || height <= 0) return
+  return { x: Math.max(0, x), y: Math.max(0, y), width, height }
+}
+
 function readComputerUseAllowedApps(): string[] {
   try {
     const value = getStore().get(COMPUTER_USE_ALLOWED_APPS_KEY)
@@ -160,11 +172,15 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("updater-install", () => deps.updater.install())
   ipcMain.handle("set-background-color", (_event: IpcMainInvokeEvent, color: string) => deps.setBackgroundColor(color))
   ipcMain.handle("export-debug-logs", () => deps.exportDebugLogs())
-  ipcMain.handle("app:capturePage", (event: IpcMainInvokeEvent) => {
+  ipcMain.handle("app:capturePage", (event: IpcMainInvokeEvent, input: unknown) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win || win.isDestroyed()) return undefined
+    // A rect that is present but malformed is refused rather than widened to
+    // a full-window capture.
+    const rect = input === undefined ? undefined : parseCaptureRect(input, win.webContents.getZoomFactor())
+    if (input !== undefined && !rect) return undefined
     // Native PNG capture: toDataURL already yields a data:image/png;base64 URL.
-    return win.webContents.capturePage().then((image) => (image.isEmpty() ? undefined : image.toDataURL()))
+    return win.webContents.capturePage(rect).then((image) => (image.isEmpty() ? undefined : image.toDataURL()))
   })
   ipcMain.handle("computer-use-click", (event: IpcMainInvokeEvent, appID: string, x: number, y: number) => {
     if (typeof appID !== "string" || typeof x !== "number" || typeof y !== "number") return

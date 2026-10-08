@@ -125,8 +125,17 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
       return undefined
     }
   }
+  let frame: HTMLIFrameElement | undefined
+  // Capture only the browser pane, never the whole window (chat, sidebar).
   const capture = async () => {
-    const result = await window.api?.capturePage?.()
+    const box = frame?.getBoundingClientRect()
+    if (!box || box.width === 0 || box.height === 0) return undefined
+    const result = await window.api?.capturePage?.({
+      x: Math.round(box.x),
+      y: Math.round(box.y),
+      width: Math.round(box.width),
+      height: Math.round(box.height),
+    })
     if (typeof result !== "string" || !result.startsWith("data:")) return undefined
     return result
   }
@@ -368,6 +377,9 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
         <Show when={local()} fallback={<div class="p-3 text-12-regular text-text-weak">{language.t("session.review.browserLocalOnly")}</div>}>
           <div class="relative h-64 min-h-0">
             <iframe
+              ref={(element) => {
+                frame = element
+              }}
               class="size-full"
               // A hash on the loaded URL would swallow a query cache-buster;
               // put the reset counter in the hash position instead.
