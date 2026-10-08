@@ -22,6 +22,7 @@ import {
   type HomeSessionRecord,
   type OpenSessionOptions,
 } from "./home-sessions-controller"
+import { isKnowledgeSession, type SessionKindFilter } from "./home-kind-filter"
 
 const SHOW_HOME_SESSION_ARCHIVE = false
 const HOME_SECTION_LABEL = "text-v2-text-text-muted [font-weight:440]"
@@ -43,6 +44,8 @@ function isBackgroundOpen(event: MouseEvent) {
 export type HomeSessionsViewProps = {
   language: ReturnType<typeof useLanguage>
   groups: Accessor<HomeSessionGroup[]>
+  kindFilter: Accessor<SessionKindFilter>
+  onKindFilter: (next: SessionKindFilter) => void
   showProjectName: Accessor<boolean>
   server: Accessor<ServerConnection.Key>
   canCreateSession: Accessor<boolean>
@@ -256,6 +259,11 @@ export function HomeSessionsView(props: HomeSessionsViewProps) {
             }
           >
             <div ref={props.onSetContent} class="flex flex-col pt-3 pr-3 pb-16">
+              <HomeKindFilterChips
+                language={props.language}
+                kindFilter={props.kindFilter}
+                onKindFilter={props.onKindFilter}
+              />
               <For each={props.groups()}>
                 {(group, index) => (
                   <>
@@ -527,6 +535,37 @@ function HomeSessionSearchResultRow(
   )
 }
 
+function HomeKindFilterChips(props: {
+  language: HomeSessionsViewProps["language"]
+  kindFilter: Accessor<SessionKindFilter>
+  onKindFilter: (next: SessionKindFilter) => void
+}) {
+  const options = [
+    { id: "all" as const, label: props.language.t("home.filter.all") },
+    { id: "code" as const, label: props.language.t("home.filter.code") },
+    { id: "knowledge" as const, label: props.language.t("home.filter.knowledge") },
+  ]
+  return (
+    <div class="flex items-center gap-1 pb-2 pl-3" role="group" aria-label={props.language.t("session.new.kind.label")}>
+      <For each={options}>
+        {(option) => (
+          <ButtonV2
+            data-action={`home-kind-filter-${option.id}`}
+            variant="ghost-muted"
+            size="normal"
+            class="pointer-events-auto h-7 px-2 [font-weight:530]"
+            aria-pressed={props.kindFilter() === option.id}
+            data-active={props.kindFilter() === option.id}
+            onClick={() => props.onKindFilter(option.id)}
+          >
+            {option.label}
+          </ButtonV2>
+        )}
+      </For>
+    </div>
+  )
+}
+
 function HomeSessionGroupHeader(props: {
   title: string
   titleOpacity: number
@@ -622,6 +661,11 @@ function HomeSessionRow(props: HomeSessionsViewProps & { record: HomeSessionReco
           revealProjectOnHover={!!showProjectName()}
         />
         <HomeSessionTitle title={title()} showProjectName={!!showProjectName()} />
+        <Show when={isKnowledgeSession(props.record.session)}>
+          <span class="shrink-0 rounded-[4px] bg-v2-background-bg-layer-03 px-1.5 text-[11px] leading-4 text-v2-text-text-muted [font-weight:530]">
+            {props.language.t("home.knowledge.badge")}
+          </span>
+        </Show>
         <Show when={showProjectName()}>
           <HomeSessionProjectName name={props.record.projectName} />
         </Show>

@@ -51,7 +51,7 @@ export type HomeProjectsViewProps = {
   onMoveProject: (server: ServerConnection.Any, worktree: string, index: number) => void
   onSelectProject: (server: ServerConnection.Any, directory: string) => void
   onAddProjects: (server: ServerConnection.Any, directories: string[]) => void
-  onOpenProjectNewSession: (server: ServerConnection.Any, directory: string) => void
+  onOpenProjectNewSession: (server: ServerConnection.Any, directory: string, kind?: "code" | "knowledge") => void
   onEditProject: (server: ServerConnection.Any, project: LocalProject) => void
   onRevealProject: (server: ServerConnection.Any, project: LocalProject) => void
   onClearNotifications: (server: ServerConnection.Any, project: LocalProject) => void
@@ -547,6 +547,11 @@ function HomeProjectRow(
             <MenuV2.Content>
               <MenuV2.Item onSelect={() => props.onOpenProjectNewSession(props.server, props.project.worktree)}>
                 {props.language.t("command.session.new")}
+              </MenuV2.Item>
+              <MenuV2.Item
+                onSelect={() => props.onOpenProjectNewSession(props.server, props.project.worktree, "knowledge")}
+              >
+                {props.language.t("home.project.newKnowledgeSession")}
               </MenuV2.Item>
               <MenuV2.Item onSelect={() => props.onEditProject(props.server, props.project)}>
                 {props.language.t("dialog.project.edit.title")}

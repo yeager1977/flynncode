@@ -27,6 +27,7 @@ import { ServerConnection } from "@/context/server"
 import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
 import { sessionHasOpenTab, useTabs } from "@/context/tabs"
 import { compareSessionTime, displayName, errorMessage, projectForSession } from "@/pages/layout/helpers"
+import { filterSessionsByKind, type SessionKindFilter } from "./home-kind-filter"
 import { useSessionTabAvatarState } from "@/pages/layout/project-avatar-state"
 import { pathKey } from "@/utils/path-key"
 import { showToast } from "@/utils/toast"
@@ -121,6 +122,17 @@ export function createHomeSessionsController(home: HomeController) {
   )
   const records = createMemo(() => allRecords().slice(0, HOME_SESSION_LIMIT))
   const groups = createMemo(() => groupSessions(records(), language))
+  const [kindState, setKindState] = createStore({ kindFilter: "all" as SessionKindFilter })
+  const filteredGroups = createMemo(() => {
+    const visible = groups()
+    const filter = kindState.kindFilter
+    if (filter === "all") return visible
+    return visible.flatMap((group) => {
+      const sessions = filterSessionsByKind(group.sessions, filter, (record) => record.session)
+      if (sessions.length === 0) return []
+      return [{ ...group, sessions }]
+    })
+  })
   const prefetched = new Set<string>()
 
   createEffect(() => {
@@ -506,6 +518,7 @@ export function createHomeSessionsController(home: HomeController) {
     data: {
       records,
       groups,
+      filteredGroups,
       loading: () => sessionLoad.isLoading,
       searchRecords: allRecords,
     },
@@ -575,6 +588,10 @@ export function createHomeSessionsController(home: HomeController) {
     tab: {
       isOpen: (record: HomeSessionRecord) =>
         sessionHasOpenTab(tabs.store, home.selection.value().server, record.session),
+    },
+    filter: {
+      value: () => kindState.kindFilter,
+      set: (next: SessionKindFilter) => setKindState("kindFilter", next),
     },
     select: {
       active: () => bulk.selecting,

@@ -222,6 +222,10 @@ import type {
   SessionDeleteResponses,
   SessionDiffErrors,
   SessionDiffResponses,
+  SessionFoldersErrors,
+  SessionFoldersResponses,
+  SessionFoldersUpdateErrors,
+  SessionFoldersUpdateResponses,
   SessionForkErrors,
   SessionForkResponses,
   SessionGetErrors,
@@ -384,6 +388,10 @@ import type {
   V2SessionCreateResponses,
   V2SessionEventsErrors,
   V2SessionEventsResponses,
+  V2SessionFoldersErrors,
+  V2SessionFoldersResponses,
+  V2SessionFoldersUpdateErrors,
+  V2SessionFoldersUpdateResponses,
   V2SessionGetErrors,
   V2SessionGetResponses,
   V2SessionHistoryErrors,
@@ -3952,6 +3960,53 @@ export class PullRequest extends HeyApiClient {
   }
 }
 
+export class Folders extends HeyApiClient {
+  /**
+   * Update session folders
+   *
+   * Attach extra folders or switch the primary folder. Switching primary reboots the instance and rebinds the session directory.
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      extras?: Array<string>
+      primary?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "extras" },
+            { in: "body", key: "primary" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionFoldersUpdateResponses,
+      SessionFoldersUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/folders",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Session2 extends HeyApiClient {
   /**
    * List sessions
@@ -4007,6 +4062,7 @@ export class Session2 extends HeyApiClient {
       parentID?: string
       title?: string
       agent?: string
+      kind?: "code" | "knowledge"
       model?: {
         id: string
         providerID: string
@@ -4017,6 +4073,7 @@ export class Session2 extends HeyApiClient {
       }
       permission?: PermissionRuleset
       workspaceID?: string
+      additionalDirectories?: Array<string>
       source?: "startup" | "resume" | "clear" | "compact"
     },
     options?: Options<never, ThrowOnError>,
@@ -4031,10 +4088,12 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "parentID" },
             { in: "body", key: "title" },
             { in: "body", key: "agent" },
+            { in: "body", key: "kind" },
             { in: "body", key: "model" },
             { in: "body", key: "metadata" },
             { in: "body", key: "permission" },
             { in: "body", key: "workspaceID" },
+            { in: "body", key: "additionalDirectories" },
             { in: "body", key: "source" },
           ],
         },
@@ -4924,6 +4983,43 @@ export class Session2 extends HeyApiClient {
       ...params,
     })
   }
+
+  /**
+   * Get session folders
+   *
+   * Retrieve the primary folder plus extra attached folders. Git, AGENTS.md, and config load from the primary folder only.
+   */
+  public folders<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionFoldersResponses, SessionFoldersErrors, ThrowOnError>({
+      url: "/session/{sessionID}/folders",
+      ...options,
+      ...params,
+    })
+  }
+
+  private _folders?: Folders
+  get folders2(): Folders {
+    return (this._folders ??= new Folders({ client: this.client }))
+  }
 }
 
 export class Part extends HeyApiClient {
@@ -5767,6 +5863,47 @@ export class Revert extends HeyApiClient {
   }
 }
 
+export class Folders2 extends HeyApiClient {
+  /**
+   * Update session folders
+   *
+   * Replace the extra attached folders. The primary folder is unchanged; switching primary is only available on the instance folders route.
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      extras?: Array<string>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "body", key: "extras" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      V2SessionFoldersUpdateResponses,
+      V2SessionFoldersUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/folders",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Permission2 extends HeyApiClient {
   /**
    * List session permission requests
@@ -6074,8 +6211,10 @@ export class Session3 extends HeyApiClient {
     parameters?: {
       id?: string
       agent?: string
+      kind?: "code" | "knowledge"
       model?: ModelRef
       location?: LocationRef
+      additionalDirectories?: Array<string>
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -6086,8 +6225,10 @@ export class Session3 extends HeyApiClient {
           args: [
             { in: "body", key: "id" },
             { in: "body", key: "agent" },
+            { in: "body", key: "kind" },
             { in: "body", key: "model" },
             { in: "body", key: "location" },
+            { in: "body", key: "additionalDirectories" },
           ],
         },
       ],
@@ -6423,6 +6564,25 @@ export class Session3 extends HeyApiClient {
   }
 
   /**
+   * Get session folders
+   *
+   * Retrieve the primary folder plus extra attached folders. Git, AGENTS.md, and config load from the primary folder only.
+   */
+  public folders<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<V2SessionFoldersResponses, V2SessionFoldersErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/folders",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
    * Get session messages
    *
    * Retrieve projected messages for a session. Items keep the requested order across pages; use cursor.next or cursor.previous to move through the ordered timeline.
@@ -6459,6 +6619,11 @@ export class Session3 extends HeyApiClient {
   private _revert?: Revert
   get revert(): Revert {
     return (this._revert ??= new Revert({ client: this.client }))
+  }
+
+  private _folders?: Folders2
+  get folders2(): Folders2 {
+    return (this._folders ??= new Folders2({ client: this.client }))
   }
 
   private _permission?: Permission2

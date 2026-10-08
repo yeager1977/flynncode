@@ -204,6 +204,7 @@ export default {
           \`revert\` text,
           \`permission\` text,
           \`agent\` text,
+          \`kind\` text DEFAULT 'code' NOT NULL,
           \`model\` text,
           \`time_created\` integer NOT NULL,
           \`time_updated\` integer NOT NULL,

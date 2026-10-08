@@ -1,6 +1,6 @@
 export * as Session from "./session"
 
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Agent } from "./agent"
 import { Location } from "./location"
 import { Model } from "./model"
@@ -15,6 +15,11 @@ export type ID = SessionID
 
 export const Event = SessionEvent
 
+export const Kind = Schema.Literals(["code", "knowledge"])
+export type Kind = typeof Kind.Type
+
+const KindWithDefault = Kind.pipe(Schema.optional, Schema.withDecodingDefault(Effect.succeed("code" as const)))
+
 export interface Info extends Schema.Schema.Type<typeof Info> {}
 export const Info = Schema.Struct({
   id: ID,
@@ -22,6 +27,7 @@ export const Info = Schema.Struct({
   projectID: Project.ID,
   agent: Agent.ID.pipe(optional),
   model: Model.Ref.pipe(optional),
+  kind: KindWithDefault,
   cost: Schema.Finite,
   tokens: Schema.Struct({
     input: Schema.Finite,

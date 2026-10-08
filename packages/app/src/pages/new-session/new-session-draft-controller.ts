@@ -1,5 +1,6 @@
 import { useSearchParams } from "@solidjs/router"
 import { createEffect, untrack } from "solid-js"
+import { createStore } from "solid-js/store"
 import { usePromptInputV2Controller } from "@/components/prompt-input-v2"
 import { useComments } from "@/context/comments"
 import { useLanguage } from "@/context/language"
@@ -29,7 +30,7 @@ export function createNewSessionDraftController(workspace: {
   const comments = useComments()
   const local = useLocal()
   const route = useSessionKey()
-  const [searchParams, setSearchParams] = useSearchParams<{ draftId?: string; prompt?: string }>()
+  const [searchParams, setSearchParams] = useSearchParams<{ draftId?: string; prompt?: string; draftKind?: string }>()
   const model = createPromptModelSelection({ agent: () => local.agent.current() })
 
   useComposerCommands({ model })
@@ -75,8 +76,41 @@ export function createNewSessionDraftController(workspace: {
     })
   })
 
+  const [kindState, setKindState] = createStore<{ kind: "code" | "knowledge" }>({
+    kind: searchParams.draftKind === "knowledge" ? "knowledge" : "code",
+  })
+
+  const applyKindAgent = () => {
+    const current = local.agent.current()?.name
+    if (kindState.kind === "knowledge") {
+      if (current !== "knowledge" && local.agent.list().some((item) => item.name === "knowledge"))
+        local.agent.set("knowledge")
+      return
+    }
+    if (current === "knowledge" && local.agent.list().some((item) => item.name === "build")) local.agent.set("build")
+  }
+
+  function setKind(next: "code" | "knowledge") {
+    if (kindState.kind === next) return
+    setKindState("kind", next)
+    applyKindAgent()
+    setSearchParams({ ...searchParams, draftKind: next === "knowledge" ? "knowledge" : undefined })
+  }
+
+  let kindAgentSeeded = false
+  createEffect(() => {
+    if (kindAgentSeeded) return
+    if (local.agent.list().length === 0) return
+    untrack(() => {
+      applyKindAgent()
+      kindAgentSeeded = true
+    })
+  })
+
   return {
     input,
+    kind: () => kindState.kind,
+    setKind,
     prompt: {
       ready: prompt.ready,
       readyPromise: () => prompt.ready.promise,

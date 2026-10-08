@@ -238,6 +238,7 @@ export type SessionsListOutput = {
     readonly projectID: string
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly kind?: "code" | "knowledge" | null | null
     readonly cost: number
     readonly tokens: {
       readonly input: number
@@ -270,6 +271,7 @@ export type SessionsCreateInput = {
   readonly id?: {
     readonly id?: string | null
     readonly agent?: string | null
+    readonly kind?: "code" | "knowledge" | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
     readonly additionalDirectories?: ReadonlyArray<string> | null
@@ -277,13 +279,23 @@ export type SessionsCreateInput = {
   readonly agent?: {
     readonly id?: string | null
     readonly agent?: string | null
+    readonly kind?: "code" | "knowledge" | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
     readonly additionalDirectories?: ReadonlyArray<string> | null
   }["agent"]
+  readonly kind?: {
+    readonly id?: string | null
+    readonly agent?: string | null
+    readonly kind?: "code" | "knowledge" | null
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
+    readonly additionalDirectories?: ReadonlyArray<string> | null
+  }["kind"]
   readonly model?: {
     readonly id?: string | null
     readonly agent?: string | null
+    readonly kind?: "code" | "knowledge" | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
     readonly additionalDirectories?: ReadonlyArray<string> | null
@@ -291,6 +303,7 @@ export type SessionsCreateInput = {
   readonly location?: {
     readonly id?: string | null
     readonly agent?: string | null
+    readonly kind?: "code" | "knowledge" | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
     readonly additionalDirectories?: ReadonlyArray<string> | null
@@ -298,6 +311,7 @@ export type SessionsCreateInput = {
   readonly additionalDirectories?: {
     readonly id?: string | null
     readonly agent?: string | null
+    readonly kind?: "code" | "knowledge" | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
     readonly additionalDirectories?: ReadonlyArray<string> | null
@@ -311,6 +325,7 @@ export type SessionsCreateOutput = {
     readonly projectID: string
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly kind?: "code" | "knowledge" | null | null
     readonly cost: number
     readonly tokens: {
       readonly input: number
@@ -349,6 +364,7 @@ export type SessionsGetOutput = {
     readonly projectID: string
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly kind?: "code" | "knowledge" | null | null
     readonly cost: number
     readonly tokens: {
       readonly input: number
@@ -1851,6 +1867,7 @@ export type ImportsSessionOutput = {
     readonly projectID: string
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly kind?: "code" | "knowledge" | null | null
     readonly cost: number
     readonly tokens: {
       readonly input: number
@@ -1949,6 +1966,7 @@ export type ImportsFromSourceOutput = {
     readonly projectID: string
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly kind?: "code" | "knowledge" | null | null
     readonly cost: number
     readonly tokens: {
       readonly input: number

@@ -540,6 +540,9 @@ const SessionModel = Schema.Struct({
   variant: optional(Schema.String),
 })
 
+export const SessionKind = Schema.Literals(["code", "knowledge"])
+export type SessionKind = typeof SessionKind.Type
+
 export const SessionInfo = Schema.Struct({
   id: SessionID,
   slug: Schema.String,
@@ -554,6 +557,7 @@ export const SessionInfo = Schema.Struct({
   share: optional(SessionShare),
   title: Schema.String,
   agent: optional(Schema.String),
+  kind: SessionKind.pipe(Schema.optional, Schema.withDecodingDefault(Effect.succeed("code" as const))),
   model: optional(SessionModel),
   version: Schema.String,
   metadata: optional(Schema.Record(Schema.String, Schema.Any)),

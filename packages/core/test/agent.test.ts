@@ -119,11 +119,22 @@ describe("AgentV2", () => {
         "compaction",
         "explore",
         "general",
+        "knowledge",
         "plan",
         "summary",
         "title",
       ])
       for (const item of agents) {
+        if (String(item.id) === "knowledge") {
+          expect(item.mode).toBe("primary")
+          expect(item.permissions.some((rule) => rule.action === "edit" && rule.effect === "allow")).toBe(true)
+          expect(
+            item.permissions.some(
+              (rule) => (rule.action === "edit" || rule.action === "write") && rule.effect === "allow" && rule.resource === "*",
+            ),
+          ).toBe(false)
+          continue
+        }
         expect(item.permissions.some((rule) => rule.action === "bash" && rule.effect !== "deny")).toBe(false)
       }
     }),

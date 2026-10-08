@@ -4,6 +4,8 @@ import { withTimestampedFallback } from "./session-title"
 
 export function normalizeSessionInfo(input: SessionInfo | Session): Session {
   if (!("location" in input)) return input
+  // The legacy shape carries no kind; V2 sessions always do.
+  const kind = "kind" in input && (input.kind === "code" || input.kind === "knowledge") ? input.kind : undefined
   return {
     id: input.id,
     slug: input.id,
@@ -16,6 +18,7 @@ export function normalizeSessionInfo(input: SessionInfo | Session): Session {
     tokens: input.tokens,
     title: withTimestampedFallback(input),
     agent: input.agent,
+    ...(kind === undefined ? {} : { kind }),
     model: input.model,
     version: "",
     time: input.time,

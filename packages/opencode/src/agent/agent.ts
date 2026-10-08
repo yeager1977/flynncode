@@ -12,6 +12,9 @@ import { ProviderTransform } from "@/provider/transform"
 import PROMPT_GENERATE from "./generate.txt"
 import PROMPT_COMPACTION from "./prompt/compaction.txt"
 import PROMPT_EXPLORE from "./prompt/explore.txt"
+// Single-sourced from core: the V2 knowledge agent uses the same prompt.
+// A .txt here would need manual sync (core's export map cannot serve .txt).
+import { PROMPT_KNOWLEDGE } from "@opencode-ai/core/plugin/agent"
 import PROMPT_SUMMARY from "./prompt/summary.txt"
 import PROMPT_TITLE from "./prompt/title.txt"
 import { Permission } from "@/permission"
@@ -178,6 +181,46 @@ const layer = Layer.effect(
             ),
             mode: "primary",
             native: true,
+          },
+          knowledge: {
+            name: "knowledge",
+            description:
+              "Non-coding knowledge work. Researches folders, summarizes documents, drafts notes. Reads broadly, writes markdown docs only, never edits code.",
+            options: {},
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                question: "allow",
+                edit: {
+                  "*": "deny",
+                  "*.md": "allow",
+                  "*.mdx": "allow",
+                  "*.txt": "allow",
+                  "*.markdown": "allow",
+                },
+                write: {
+                  "*": "deny",
+                  "*.md": "allow",
+                  "*.mdx": "allow",
+                  "*.txt": "allow",
+                  "*.markdown": "allow",
+                },
+                bash: { "*": "ask" },
+                webfetch: "allow",
+                websearch: "allow",
+                read: {
+                  "*": "allow",
+                  "*.env": "ask",
+                  "*.env.*": "ask",
+                  "*.env.example": "allow",
+                },
+                external_directory: readonlyExternalDirectory,
+              }),
+              user,
+            ),
+            mode: "primary",
+            native: true,
+            prompt: PROMPT_KNOWLEDGE,
           },
           general: {
             name: "general",
