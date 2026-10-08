@@ -156,6 +156,8 @@ export interface Interface {
   readonly makeWorktreeInfo: (options?: { name?: string; detached?: boolean }) => Effect.Effect<Info, Error>
   readonly createFromInfo: (info: Info, startCommand?: string) => Effect.Effect<void, Error>
   readonly create: (input?: CreateInput) => Effect.Effect<Info, Error>
+  readonly createDisposable: (input: { sessionID: string; name?: string }) => Effect.Effect<Info, Error>
+  readonly disposeIfIdle: (input: { directory: string }) => Effect.Effect<boolean, Error>
   readonly list: () => Effect.Effect<(Omit<Info, "branch"> & { branch?: string })[], Error>
   readonly remove: (input: RemoveInput) => Effect.Effect<boolean, Error>
   readonly reset: (input: ResetInput) => Effect.Effect<boolean, Error>
@@ -793,6 +795,36 @@ const layer: Layer.Layer<
       return info
     })
 
+    // Disposable worktrees back a single session (chat or isolated subagent).
+    // The branch lands under the configured prefix as
+    // `<prefix>/session-<sessionID slug>` unless an explicit name is given.
+    const createDisposable = Effect.fn("Worktree.createDisposable")(function* (input: {
+      sessionID: string
+      name?: string
+    }) {
+      const name = input.name ? slugify(input.name) : `session-${slugify(input.sessionID)}`
+      const info = yield* makeWorktreeInfo({ name })
+      yield* createFromInfo(info)
+      return info
+    })
+
+    // Remove a disposable worktree only when no loaded instance runs in it.
+    // Returns true when removed, false when still running or active.
+    const disposeIfIdle = Effect.fn("Worktree.disposeIfIdle")(function* (input: { directory: string }) {
+      const ctx = yield* InstanceState.context
+      const directory = yield* canonical(input.directory)
+      if (directory === (yield* canonical(ctx.worktree))) return false
+      const loaded = yield* store
+        .loadedDirectories()
+        .pipe(Effect.catch(() => Effect.succeed(new Set<string>() as ReadonlySet<string>)))
+      const loadedKeys = new Set(
+        yield* Effect.forEach([...loaded], (entry) => canonical(entry), { concurrency: "unbounded" }),
+      )
+      if (loadedKeys.has(directory)) return false
+      yield* remove({ directory })
+      return true
+    })
+
     // Hand off a session between two existing worktrees. `from` must be a
     // known worktree of this project, `to` must exist on disk, and the paths
     // must differ. Session row rebinding happens at the HTTP handler
@@ -858,7 +890,7 @@ const layer: Layer.Layer<
       return true
     })
 
-    return Service.of({ makeWorktreeInfo, createFromInfo, create: createAndRetain, list, remove, reset, handoff })
+    return Service.of({ makeWorktreeInfo, createFromInfo, create: createAndRetain, createDisposable, disposeIfIdle, list, remove, reset, handoff })
   }),
 )
 
