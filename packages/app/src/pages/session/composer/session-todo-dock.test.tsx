@@ -12,7 +12,7 @@ const source = readFileSync(new URL("./session-todo-dock.tsx", import.meta.url),
 describe("SessionTodoDock", () => {
   test("todo rows render as distinct inset task chips", () => {
     expect(source).toContain(
-      '"rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-02 px-2 py-1.5 cursor-pointer":',
+      '"rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-02 px-2 py-1.5": true',
     )
     expect(source).toContain('data-action="session-todo-chip"')
     expect(source).toContain('data-slot="session-todo-output"')
@@ -20,10 +20,10 @@ describe("SessionTodoDock", () => {
   })
 
   test("in_progress items get data-status and accent border", () => {
-    expect(source).toContain('data-status={todo().status}')
+    expect(source).toContain("data-status={todo().status}")
     expect(source).toContain('"border-s-2 ps-2": todo().status === "in_progress"')
-    expect(source).toContain(
-      '"border-inline-start-color": todo().status === "in_progress" ? "var(--v2-icon-icon-accent)" : undefined',
+    expect(source).toMatch(
+      /"border-inline-start-color":\s*todo\(\)\.status === "in_progress" \? "var\(--v2-icon-icon-accent\)" : undefined/,
     )
   })
 
@@ -43,6 +43,20 @@ describe("SessionTodoDock", () => {
     expect(source).toContain('todo().status === "cancelled"')
     expect(source).toContain("text-text-weak")
     expect(source).toContain('"var(--text-strong)"')
+  })
+
+  test("completed and cancelled items use the weak text colour", () => {
+    expect(source).toMatch(
+      /color:\s*todo\(\)\.status === "completed" \|\| todo\(\)\.status === "cancelled"\s*\?\s*"var\(--text-weak\)"/,
+    )
+  })
+
+  test("todos without a detail render no expand chevron", () => {
+    expect(source).toContain("const hasDetail = createMemo(() => parts().detail !== parts().summary)")
+    const toggle = source.indexOf('data-action="session-todo-detail-toggle"')
+    expect(source.lastIndexOf("<Show when={hasDetail()}>", toggle)).toBeGreaterThan(
+      source.lastIndexOf("</Show>", toggle),
+    )
   })
 
   // (e) path-pattern content: TextStrikethrough uses summary from splitTodoContent

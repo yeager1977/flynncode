@@ -7,7 +7,7 @@ import { useSpring } from "@opencode-ai/ui/motion-spring"
 import { TextReveal } from "@opencode-ai/ui/text-reveal"
 import { TextStrikethrough } from "@opencode-ai/ui/text-strikethrough"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
-import { Index, createEffect, createMemo, on } from "solid-js"
+import { Index, Show, createEffect, createMemo, on } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
@@ -253,32 +253,37 @@ function TodoList(props: { todos: Todo[] }) {
         <Index each={props.todos}>
           {(todo, index) => {
             const parts = createMemo(() => splitTodoContent(todo().content))
-            const isExpanded = createMemo(() => !!store.expanded[index])
+            // Only todos whose full text differs from the summary have a detail to reveal.
+            const hasDetail = createMemo(() => parts().detail !== parts().summary)
+            const isExpanded = createMemo(() => hasDetail() && !!store.expanded[index])
+            const toggle = () => setStore("expanded", index, !store.expanded[index])
 
             return (
               <div
                 data-status={todo().status}
                 data-action="session-todo-chip"
-                role="button"
-                tabIndex={0}
-                aria-expanded={isExpanded()}
+                role={hasDetail() ? "button" : undefined}
+                tabIndex={hasDetail() ? 0 : undefined}
+                aria-expanded={hasDetail() ? isExpanded() : undefined}
                 classList={{
-                  "rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-02 px-2 py-1.5 cursor-pointer":
-                    true,
+                  "rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-02 px-2 py-1.5": true,
+                  "cursor-pointer": hasDetail(),
                   "border-s-2 ps-2": todo().status === "in_progress",
                 }}
                 style={{
-                  "border-inline-start-color": todo().status === "in_progress" ? "var(--v2-icon-icon-accent)" : undefined,
+                  "border-inline-start-color":
+                    todo().status === "in_progress" ? "var(--v2-icon-icon-accent)" : undefined,
                 }}
                 onClick={(event) => {
                   event.stopPropagation()
-                  setStore("expanded", index, !store.expanded[index])
+                  if (hasDetail()) toggle()
                 }}
                 onKeyDown={(event) => {
+                  if (!hasDetail()) return
                   if (event.key !== "Enter" && event.key !== " ") return
                   event.preventDefault()
                   event.stopPropagation()
-                  setStore("expanded", index, !store.expanded[index])
+                  toggle()
                 }}
               >
                 <Checkbox
@@ -302,36 +307,44 @@ function TodoList(props: { todos: Todo[] }) {
                     <TextStrikethrough
                       active={todo().status === "completed" || todo().status === "cancelled"}
                       text={parts().summary}
-                      class="text-14-regular text-text-strong min-w-0 line-clamp-2 flex-1"
+                      class="text-14-regular min-w-0 line-clamp-2 flex-1"
                       style={{
                         "font-weight": "560",
                         "line-height": "var(--line-height-normal)",
-                        color: "var(--text-strong)",
+                        transition:
+                          "color 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1)), opacity 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1))",
+                        color:
+                          todo().status === "completed" || todo().status === "cancelled"
+                            ? "var(--text-weak)"
+                            : "var(--text-strong)",
+                        opacity: todo().status === "pending" ? "0.92" : "1",
                       }}
                     />
-                    <IconButton
-                      data-action="session-todo-detail-toggle"
-                      class="pointer-events-auto"
-                      icon="chevron-down"
-                      size="small"
-                      variant="ghost"
-                      style={{ transform: isExpanded() ? "rotate(180deg)" : "rotate(0deg)", "flex-shrink": "0" }}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        setStore("expanded", index, !store.expanded[index])
-                      }}
-                      onMouseDown={(event) => {
-                        event.stopPropagation()
-                      }}
-                      onKeyDown={(event: KeyboardEvent) => {
-                        if (event.key !== "Enter" && event.key !== " ") return
-                        event.preventDefault()
-                        event.stopPropagation()
-                        setStore("expanded", index, !store.expanded[index])
-                      }}
-                      aria-expanded={isExpanded()}
-                      aria-label={language.t(isExpanded() ? "session.todo.collapse" : "session.todo.expand")}
-                    />
+                    <Show when={hasDetail()}>
+                      <IconButton
+                        data-action="session-todo-detail-toggle"
+                        class="pointer-events-auto"
+                        icon="chevron-down"
+                        size="small"
+                        variant="ghost"
+                        style={{ transform: isExpanded() ? "rotate(180deg)" : "rotate(0deg)", "flex-shrink": "0" }}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          toggle()
+                        }}
+                        onMouseDown={(event) => {
+                          event.stopPropagation()
+                        }}
+                        onKeyDown={(event: KeyboardEvent) => {
+                          if (event.key !== "Enter" && event.key !== " ") return
+                          event.preventDefault()
+                          event.stopPropagation()
+                          toggle()
+                        }}
+                        aria-expanded={isExpanded()}
+                        aria-label={language.t(isExpanded() ? "session.todo.collapse" : "session.todo.expand")}
+                      />
+                    </Show>
                   </div>
                 </Checkbox>
                 {isExpanded() && (
