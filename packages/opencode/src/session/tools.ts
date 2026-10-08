@@ -1,10 +1,15 @@
 import { Agent } from "@/agent/agent"
+import { Config } from "@/config/config"
+import { Project } from "@/project/project"
+import { ConfigPermissionV1 } from "@opencode-ai/core/v1/config/permission"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Provider } from "@/provider/provider"
 import { ProviderTransform } from "@/provider/transform"
 import { MCP } from "@/mcp"
 import { McpCatalog } from "@/mcp/catalog"
 import { Permission } from "@/permission"
+import { Sandbox } from "@/permission/sandbox"
+import { Reviewer } from "@/permission/reviewer"
 import { Tool } from "@/tool/tool"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { ToolRegistry } from "@/tool/registry"
@@ -51,10 +56,18 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const run = yield* EffectBridge.make()
   const plugin = yield* Plugin.Service
   const permission = yield* Permission.Service
+  const config = yield* Config.Service
+  const project = yield* Project.Service
   const registry = yield* ToolRegistry.Service
   const mcp = yield* MCP.Service
   const truncate = yield* Truncate.Service
   const flags = yield* RuntimeFlags.Service
+
+  const cfg = yield* config.get()
+  const policy = ConfigPermissionV1.resolveSessionPolicy(cfg.permission ?? {})
+  const sandboxDirs = yield* project
+    .sandboxes(input.session.projectID)
+    .pipe(Effect.catch(() => Effect.succeed([] as string[])))
 
   const context = (args: Record<string, unknown>, options: ToolExecutionOptions): Tool.Context => ({
     sessionID: input.session.id,
@@ -78,15 +91,30 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           },
         }
       }),
-    ask: (req) =>
-      permission
+    ask: (req) => {
+      const ruleset = Permission.merge(input.agent.permission, input.session.permission ?? [])
+      if (req.permission === "edit" || req.permission === "bash" || req.permission === "external_directory") {
+        const target = req.patterns[0] ?? ""
+        if (target !== "" && !Sandbox.isPathAllowed(target, input.session.directory, sandboxDirs, policy.sandbox)) {
+          return Effect.orDie(Effect.fail(new Sandbox.SandboxViolationError({ path: target, level: policy.sandbox })))
+        }
+      }
+      const denied = req.patterns.some(
+        (pattern) => Permission.evaluate(req.permission, pattern, ruleset).action === "deny",
+      )
+      if (!denied && Reviewer.review({ permission: req.permission, patterns: req.patterns }) === "allow") {
+        return Effect.orDie(Effect.void)
+      }
+      return permission
         .ask({
           ...req,
           sessionID: input.session.id,
           tool: { messageID: input.processor.message.id, callID: options.toolCallId },
-          ruleset: Permission.merge(input.agent.permission, input.session.permission ?? []),
+          ruleset,
+          approval: policy.approval,
         })
-        .pipe(Effect.orDie),
+        .pipe(Effect.orDie)
+    },
   })
 
   for (const item of yield* registry.tools({

@@ -29,6 +29,7 @@ import { Command } from "../command"
 import { pathToFileURL, fileURLToPath } from "url"
 import { Config } from "@/config/config"
 import { ConfigMarkdown } from "@/config/markdown"
+import { Project } from "@/project/project"
 import { SessionSummary } from "./summary"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { SessionProcessor } from "./processor"
@@ -160,6 +161,7 @@ const layer = Layer.effect(
     const compaction = yield* SessionCompaction.Service
     const plugin = yield* Plugin.Service
     const commands = yield* Command.Service
+    const project = yield* Project.Service
     const config = yield* Config.Service
     const permission = yield* Permission.Service
     const fsys = yield* FSUtil.Service
@@ -1336,6 +1338,8 @@ const layer = Layer.effect(
             }).pipe(
               Effect.provideService(Plugin.Service, plugin),
               Effect.provideService(Permission.Service, permission),
+              Effect.provideService(Config.Service, config),
+              Effect.provideService(Project.Service, project),
               Effect.provideService(ToolRegistry.Service, registry),
               Effect.provideService(MCP.Service, mcp),
               Effect.provideService(Truncate.Service, truncate),
@@ -1731,6 +1735,7 @@ export const node = LayerNode.make({
     Plugin.node,
     Command.node,
     Config.node,
+    Project.node,
     Permission.node,
     FSUtil.node,
     MCP.node,

@@ -3,8 +3,10 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Agent } from "@/agent/agent"
+import { Config } from "@/config/config"
 import { MCP } from "@/mcp"
 import { Permission } from "@/permission"
+import { Project } from "@/project/project"
 import { Provider } from "@/provider/provider"
 import { Session } from "@/session/session"
 import { MessageID, PartID, SessionID } from "@/session/schema"
@@ -61,9 +63,19 @@ const fakeTruncate = Truncate.Service.of({
   limits: () => Effect.succeed({ maxLines: 2000, maxBytes: 50 * 1024 }),
 } satisfies Truncate.Interface)
 
+const fakeConfig = Config.Service.of({
+  get: () => Effect.succeed({}),
+} as Partial<Config.Interface> as Config.Interface)
+
+const fakeProject = Project.Service.of({
+  sandboxes: () => Effect.succeed([]),
+} as Partial<Project.Interface> as Project.Interface)
+
 const layer = Layer.mergeAll(
   Layer.succeed(Plugin.Service, fakePlugin),
   Layer.succeed(Permission.Service, fakePermission),
+  Layer.succeed(Config.Service, fakeConfig),
+  Layer.succeed(Project.Service, fakeProject),
   Layer.succeed(MCP.Service, fakeMcp()),
   Layer.succeed(Truncate.Service, fakeTruncate),
   RuntimeFlags.layer(),
