@@ -7,9 +7,11 @@ const stripSource = readFileSync(new URL("./ci-status.tsx", import.meta.url), "u
 const helpersSource = readFileSync(new URL("./ci-status-helpers.ts", import.meta.url), "utf8")
 
 describe("ci status strip wiring", () => {
-  test("renders a compact strip under the session header", () => {
-    expect(stripSource).toContain('data-component="ci-status-strip"')
+  test("renders a compact indicator in the titlebar actions, not a strip", () => {
+    expect(stripSource).toContain('data-component="ci-status-indicator"')
+    expect(stripSource).toContain("useTitlebarRightMount")
     expect(stripSource).toContain('data-slot="ci-check-summary"')
+    expect(stripSource).not.toContain('data-component="ci-status-strip"')
   })
 
   test("wires the PR endpoint through the directory-scoped SDK", () => {
@@ -41,9 +43,10 @@ describe("ci status strip wiring", () => {
     expect(helpersSource).toContain('name === "GhNoPrError"')
   })
 
-  test("gh missing links to the official install page opened externally", () => {
-    expect(helpersSource).toContain("https://cli.github.com/")
-    expect(stripSource).toContain("platform.openExternal(GH_DOCS_URL)")
+  test("other load errors are logged and hidden instead of rendered", () => {
+    expect(stripSource).toContain("console.warn")
+    expect(stripSource).not.toContain("session.ci.error.details")
+    expect(stripSource).not.toContain("session.ci.status.noGh")
   })
 
   test("notification path reuses platform.notify behind a focus check", () => {
@@ -52,10 +55,9 @@ describe("ci status strip wiring", () => {
     expect(stripSource).not.toContain("notification.tsx")
   })
 
-  test("auto-archive decision runs app-side off the settings toggle", () => {
-    expect(stripSource).toContain("autoArchiveAfterPrClose")
-    expect(stripSource).toContain("settings.cleanup.autoArchiveAfterPrClose")
-    expect(stripSource).toContain("client.session.update")
+  test("never auto-archives: no session is bound to the branch PR", () => {
+    expect(stripSource).not.toContain("autoArchiveAfterPrClose(")
+    expect(stripSource).not.toContain("client.session.update")
   })
 
   test("user-visible copy uses i18n keys only", () => {

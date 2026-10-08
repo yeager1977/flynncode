@@ -3,6 +3,7 @@ import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
+import { IconButton } from "@opencode-ai/ui/icon-button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
@@ -13,7 +14,7 @@ import { browserAnnotation } from "./hunk-revert"
 import { browserPaneUrlFor, isLocalPreviewUrl, normalizePreviewUrl, setBrowserPaneUrl } from "./browser-pane"
 import { previewDotClass, previewErrorDetail, previewManaged, type PreviewServerState } from "./preview-server"
 
-export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) {
+export function ReviewBrowser(props: { onAnnotate: (comment: string) => void; onClose: () => void }) {
   const language = useLanguage()
   const sdk = useSDK()
   const platform = usePlatform()
@@ -26,7 +27,6 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
     url: browserPaneUrlFor(paneKey(), "http://127.0.0.1:3000"),
     loaded: browserPaneUrlFor(paneKey(), "http://127.0.0.1:3000"),
     note: "",
-    open: false,
     marking: false,
     x: 0,
     y: 0,
@@ -73,7 +73,6 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
       const info = result.data
       if (info?.url) commitUrl(info.url)
       await serversActions.refetch()
-      if (info?.url) setState("open", true)
     } catch (error) {
       setState("actionError", previewErrorDetail(error) ?? language.t("preview.error.actionFailed"))
     } finally {
@@ -83,7 +82,6 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
   const openAttachUrl = (server: PreviewServerState) => {
     if (!previewManaged(server) && server.url) {
       commitUrl(server.url)
-      setState("open", true)
       return
     }
     if (server.url) platform.openExternal(server.url)
@@ -216,18 +214,37 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
   }
 
   return (
-    <div data-component="browser-pane" class="flex min-h-0 flex-col border-t border-border-weak-base">
-      <div class="px-2 pt-2 text-12-regular text-text-weak">{language.t("session.review.browserPane.title")}</div>
+    <div data-component="browser-pane" class="flex h-full min-h-0 flex-col border-t border-border-weak-base">
+      <div class="flex items-center justify-between gap-2 px-2 pt-2">
+        <span class="text-12-regular text-text-weak">{language.t("session.review.browserPane.title")}</span>
+        <IconButton
+          icon="close-small"
+          variant="ghost"
+          size="small"
+          data-action="review-browser-close"
+          aria-label={language.t("session.review.browserPane.close")}
+          onClick={props.onClose}
+        />
+      </div>
       <div class="flex gap-2 p-2">
         <Show when={(servers() ?? []).length > 0}>
-          <DropdownMenu gutter={4} placement="bottom-start" open={state.menu} onOpenChange={(open) => setState("menu", open)}>
+          <DropdownMenu
+            gutter={4}
+            placement="bottom-start"
+            open={state.menu}
+            onOpenChange={(open) => setState("menu", open)}
+          >
             <DropdownMenu.Trigger
               as={Button}
               size="small"
               variant="ghost"
               aria-label={language.t("preview.servers.menu")}
             >
-              <span aria-hidden="true" data-slot="preview-state-dot" class={`size-2 rounded-full ${previewDotClass(selected()?.state ?? "stopped")}`} />
+              <span
+                aria-hidden="true"
+                data-slot="preview-state-dot"
+                class={`size-2 rounded-full ${previewDotClass(selected()?.state ?? "stopped")}`}
+              />
               {selected()?.name ?? language.t("preview.servers.title")}
               <Icon name="chevron-down" size="small" class="text-icon-weak" />
             </DropdownMenu.Trigger>
@@ -292,19 +309,7 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
         <Button
           type="button"
           size="small"
-          variant={state.open ? "primary" : "ghost"}
-          aria-label={
-            state.open ? language.t("session.review.browserPane.close") : language.t("session.review.browserPane.open")
-          }
-          onClick={() => setState("open", !state.open)}
-        >
-          {state.open ? language.t("session.review.browserPane.close") : language.t("session.review.browserPane.open")}
-        </Button>
-        <Button
-          type="button"
-          size="small"
           variant="ghost"
-          disabled={!state.open}
           aria-label={language.t("session.review.browserPane.reload")}
           onClick={() => setState("frame", state.frame + 1)}
         >
@@ -314,7 +319,7 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
           type="button"
           size="small"
           variant="ghost"
-          disabled={!state.open || !state.marked || state.note.trim().length === 0}
+          disabled={!state.marked || state.note.trim().length === 0}
           onClick={() => void recheck()}
         >
           {language.t("session.review.recheckPage")}
@@ -323,102 +328,103 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
           type="button"
           size="small"
           variant="ghost"
-          disabled={!state.open || !selected()?.url}
+          disabled={!selected()?.url}
           aria-label={language.t("session.review.browserPane.verify")}
           onClick={() => verify()}
         >
           {language.t("session.review.browserPane.verify")}
         </Button>
-        <Button type="button" size="small" variant="ghost" disabled={!state.open} onClick={() => commitUrl(state.url)}>
+        <Button type="button" size="small" variant="ghost" onClick={() => commitUrl(state.url)}>
           {language.t("common.goForward")}
         </Button>
       </div>
       <Show when={state.actionError}>
         <div class="px-2 pb-2 text-12-regular text-text-critical">{state.actionError}</div>
       </Show>
-      <Show when={state.open}>
-        <form
-          class="flex gap-2 px-2 pb-2"
-          onSubmit={(event) => {
-            event.preventDefault()
-            void annotate()
-          }}
+      <form
+        class="flex gap-2 px-2 pb-2"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void annotate()
+        }}
+      >
+        <input
+          class="min-w-0 flex-1 rounded-md border border-border-weak-base bg-transparent px-2 py-1 text-12-regular"
+          value={state.url}
+          onInput={(event) => setState("url", event.currentTarget.value)}
+          aria-label={language.t("session.review.browserUrl")}
+          placeholder={language.t("session.review.browserPane.urlPlaceholder")}
+        />
+        <input
+          class="min-w-0 flex-1 rounded-md border border-border-weak-base bg-transparent px-2 py-1 text-12-regular"
+          value={state.note}
+          onInput={(event) => setState({ note: event.currentTarget.value, announced: "" })}
+          aria-label={language.t("session.review.browserNote")}
+        />
+        <Button
+          type="button"
+          size="small"
+          variant={state.marking ? "primary" : "ghost"}
+          aria-pressed={state.marking}
+          aria-label={language.t("session.review.markPreview")}
+          onClick={() => setState("marking", !state.marking)}
         >
-          <input
-            class="min-w-0 flex-1 rounded-md border border-border-weak-base bg-transparent px-2 py-1 text-12-regular"
-            value={state.url}
-            onInput={(event) => setState("url", event.currentTarget.value)}
-            aria-label={language.t("session.review.browserUrl")}
-            placeholder={language.t("session.review.browserPane.urlPlaceholder")}
+          {language.t("session.review.markPreview")}
+        </Button>
+        <Button type="submit" size="small" disabled={state.note.trim().length === 0}>
+          {language.t("session.review.annotate.add")}
+        </Button>
+      </form>
+      <div aria-live="polite" class="sr-only">
+        {state.announced}
+      </div>
+      <Show
+        when={local()}
+        fallback={<div class="p-3 text-12-regular text-text-weak">{language.t("session.review.browserLocalOnly")}</div>}
+      >
+        <div class="relative min-h-0 flex-1">
+          <iframe
+            ref={(element) => {
+              frame = element
+            }}
+            class="size-full"
+            // A hash on the loaded URL would swallow a query cache-buster;
+            // put the reset counter in the hash position instead.
+            src={`${stripHash(state.loaded)}${stripHash(state.loaded).includes("?") ? "&" : "?"}reload=${state.frame}${hashOf(state.loaded)}`}
+            title={language.t("session.review.browserUrl")}
+            sandbox="allow-scripts allow-forms"
           />
-          <input
-            class="min-w-0 flex-1 rounded-md border border-border-weak-base bg-transparent px-2 py-1 text-12-regular"
-            value={state.note}
-            onInput={(event) => setState({ note: event.currentTarget.value, announced: "" })}
-            aria-label={language.t("session.review.browserNote")}
-          />
-          <Button
-            type="button"
-            size="small"
-            variant={state.marking ? "primary" : "ghost"}
-            aria-pressed={state.marking}
-            aria-label={language.t("session.review.markPreview")}
-            onClick={() => setState("marking", !state.marking)}
-          >
-            {language.t("session.review.markPreview")}
-          </Button>
-          <Button type="submit" size="small" disabled={state.note.trim().length === 0}>
-            {language.t("session.review.annotate.add")}
-          </Button>
-        </form>
-        <div aria-live="polite" class="sr-only">
-          {state.announced}
-        </div>
-        <Show when={local()} fallback={<div class="p-3 text-12-regular text-text-weak">{language.t("session.review.browserLocalOnly")}</div>}>
-          <div class="relative h-64 min-h-0">
-            <iframe
-              ref={(element) => {
-                frame = element
+          <Show when={state.marking}>
+            <div
+              class="absolute inset-0 cursor-crosshair touch-none"
+              data-action="review-browser-mark"
+              onPointerDown={(event) => {
+                event.currentTarget.setPointerCapture(event.pointerId)
+                mark(event, event.currentTarget, false)
               }}
-              class="size-full"
-              // A hash on the loaded URL would swallow a query cache-buster;
-              // put the reset counter in the hash position instead.
-              src={`${stripHash(state.loaded)}${stripHash(state.loaded).includes("?") ? "&" : "?"}reload=${state.frame}${hashOf(state.loaded)}`}
-              title={language.t("session.review.browserUrl")}
-              sandbox="allow-scripts allow-forms"
-            />
-            <Show when={state.marking}>
-              <div
-                class="absolute inset-0 cursor-crosshair touch-none"
-                data-action="review-browser-mark"
-                onPointerDown={(event) => {
-                  event.currentTarget.setPointerCapture(event.pointerId)
-                  mark(event, event.currentTarget, false)
-                }}
-                onPointerMove={(event) => {
-                  if (event.buttons !== 1) return
-                  mark(event, event.currentTarget, true)
-                }}
-                onPointerUp={(event) => {
-                  if (event.currentTarget.hasPointerCapture(event.pointerId))
-                    event.currentTarget.releasePointerCapture(event.pointerId)
-                }}
-              >
-                <Show when={state.marked}>
-                  <div
-                    class="absolute border border-border-strong-base bg-surface-warning-base/30"
-                    style={{
-                      left: `${Math.min(state.x, state.x + state.width)}%`,
-                      top: `${Math.min(state.y, state.y + state.height)}%`,
-                      width: `${Math.abs(state.width)}%`,
-                      height: `${Math.abs(state.height)}%`,
-                    }}
-                  />
-                </Show>
-              </div>
-            </Show>
-          </div>
-        </Show>
+              onPointerMove={(event) => {
+                if (event.buttons !== 1) return
+                mark(event, event.currentTarget, true)
+              }}
+              onPointerUp={(event) => {
+                if (event.currentTarget.hasPointerCapture(event.pointerId))
+                  event.currentTarget.releasePointerCapture(event.pointerId)
+              }}
+            >
+              <Show when={state.marked}>
+                <div
+                  class="absolute border border-border-strong-base bg-surface-warning-base/30"
+                  style={{
+                    left: `${Math.min(state.x, state.x + state.width)}%`,
+                    top: `${Math.min(state.y, state.y + state.height)}%`,
+                    width: `${Math.abs(state.width)}%`,
+                    height: `${Math.abs(state.height)}%`,
+                  }}
+                />
+              </Show>
+            </div>
+          </Show>
+        </div>
       </Show>
     </div>
   )

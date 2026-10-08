@@ -3,8 +3,10 @@ export type CheckoutRef = {
   branch?: string
 }
 
+// `targets` lists every destination the user may pick; `create` means there
+// is no other worktree yet, so confirming creates one.
 export type HandoffDecision =
-  | { ok: true; directory: string; create: boolean }
+  | { ok: true; targets: string[]; create: boolean }
   | { ok: false; reason: "not-git" | "occupied" }
 
 export function checkoutHandoff(input: {
@@ -16,14 +18,15 @@ export function checkoutHandoff(input: {
 }): HandoffDecision {
   if (!input.git) return { ok: false, reason: "not-git" }
   const onPrimary = input.current === input.primary
-  const owned = input.worktrees.find((item) => item.directory !== input.primary)
-  const target = onPrimary ? owned?.directory : input.primary
-  if (input.branch && occupied(input.branch, input.current, target, input.worktrees)) {
-    return { ok: false, reason: "occupied" }
-  }
-  if (!onPrimary) return { ok: true, directory: input.primary, create: false }
-  if (owned) return { ok: true, directory: owned.directory, create: false }
-  return { ok: true, directory: input.primary, create: true }
+  const candidates = onPrimary
+    ? input.worktrees.map((item) => item.directory).filter((directory) => directory !== input.primary)
+    : [input.primary]
+  const branch = input.branch
+  const targets = branch
+    ? candidates.filter((target) => !occupied(branch, input.current, target, input.worktrees))
+    : candidates
+  if (candidates.length > 0 && targets.length === 0) return { ok: false, reason: "occupied" }
+  return { ok: true, targets, create: targets.length === 0 }
 }
 
 function occupied(branch: string, current: string, target: string | undefined, worktrees: readonly CheckoutRef[]) {
@@ -32,12 +35,13 @@ function occupied(branch: string, current: string, target: string | undefined, w
   )
 }
 
-// Result of a handoff move: where the conversation now lives, and whether the
-// source session was marked moved (archived) or was missing and left alone.
+// Result of a handoff move: where the conversation now lives. `created` is
+// set when a fresh destination session was started (and the source archived)
+// rather than the source session itself being moved.
 export type HandoffMove = {
   directory: string
   sessionID: string
-  movedSessionID?: string
+  created?: boolean
 }
 
 export type HandoffMoveClients = {
@@ -46,23 +50,28 @@ export type HandoffMoveClients = {
   archiveSession: (input: { sessionID: string; directory: string }) => Promise<unknown>
 }
 
-// Moves the conversation to another worktree: rebinds via the handoff
-// endpoint, starts a destination session bound to the same first prompt, and
-// archives the source session when one exists. A missing source session still
-// allows the move with a fresh session — the caller surfaces that via toast.
+// Moves the conversation to another worktree. The endpoint copies dirty files
+// and, when leaving a non-primary worktree, rebinds that worktree's sessions to
+// the destination, so the source session itself moves and is opened there.
+// Leaving the primary checkout never rebinds: a destination session is started
+// instead and the source is archived. A missing source session still allows
+// the move with a fresh session — the caller surfaces that via toast.
 export async function carryHandoffContext(input: {
   clients: HandoffMoveClients
   from: string
   to: string
+  fromPrimary: boolean
   sourceSessionID?: string
 }): Promise<HandoffMove> {
   await input.clients.handoffEndpoint({ from: input.from, to: input.to })
+  if (input.sourceSessionID && !input.fromPrimary) {
+    return { directory: input.to, sessionID: input.sourceSessionID }
+  }
   const created = await input.clients.createSession({ directory: input.to })
   if (input.sourceSessionID) {
     await input.clients.archiveSession({ sessionID: input.sourceSessionID, directory: input.from })
-    return { directory: input.to, sessionID: created.id, movedSessionID: input.sourceSessionID }
   }
-  return { directory: input.to, sessionID: created.id }
+  return { directory: input.to, sessionID: created.id, created: true }
 }
 
 // First prompt text of a session: the oldest user message's own text parts.

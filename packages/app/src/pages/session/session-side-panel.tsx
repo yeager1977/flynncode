@@ -218,10 +218,14 @@ export function SessionSidePanel(props: {
   const activeFileTab = tabState.activeFileTab
   const panelTab = createMemo(() => activeTab())
 
-  const fileTreeTab = () => layout.fileTree.tab()
+  // A draft has no session history, so a persisted History tab falls back to Changes.
+  const fileTreeTab = () => {
+    const tab = layout.fileTree.tab()
+    return tab === "history" && !historySessionID() ? "changes" : tab
+  }
 
   const setFileTreeTabValue = (value: string) => {
-    if (value !== "changes" && value !== "all") return
+    if (value !== "changes" && value !== "all" && value !== "history") return
     layout.fileTree.setTab(value)
   }
 
@@ -828,6 +832,16 @@ export function SessionSidePanel(props: {
                       <Tabs.Trigger value="all" class="flex-1" classes={{ button: "w-full" }}>
                         {language.t("session.files.all")}
                       </Tabs.Trigger>
+                      <Show when={historySessionID()}>
+                        <Tabs.Trigger
+                          value="history"
+                          class="flex-1"
+                          classes={{ button: "w-full" }}
+                          data-action="session-history-tab"
+                        >
+                          {language.t("history.title")}
+                        </Tabs.Trigger>
+                      </Show>
                     </Tabs.List>
                     <Show when={fileTreeTab() === "changes"}>
                       <Tabs.Content value="changes" class="bg-background-stronger px-3 py-0">
@@ -851,15 +865,19 @@ export function SessionSidePanel(props: {
                                 active={props.activeDiff}
                                 onFileClick={(node) => props.focusReviewDiff(node.path)}
                               />
-                              <SessionHistoryPanel
-                                sessionID={historySessionID()}
-                                messages={historyMessages()}
-                                diffs={historyDiffs()}
-                                stored={historyStored()}
-                              />
                             </Show>
                           </Match>
                         </Switch>
+                      </Tabs.Content>
+                    </Show>
+                    <Show when={fileTreeTab() === "history"}>
+                      <Tabs.Content value="history" class="bg-background-stronger px-3 py-0">
+                        <SessionHistoryPanel
+                          sessionID={historySessionID()}
+                          messages={historyMessages()}
+                          diffs={historyDiffs()}
+                          stored={historyStored()}
+                        />
                       </Tabs.Content>
                     </Show>
                     <Show when={fileTreeTab() === "all"}>
