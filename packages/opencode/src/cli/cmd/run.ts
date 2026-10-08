@@ -25,6 +25,7 @@ import { Filesystem } from "@/util/filesystem"
 import { createOpencodeClient, type OpencodeClient, type ToolPart } from "@opencode-ai/sdk/v2"
 import { FormatError, FormatUnknownError } from "../error"
 import { INTERACTIVE_INPUT_ERROR, resolveInteractiveStdin } from "./run/runtime.stdin"
+import { parseOutputSchema, readStructuredResult } from "./run/output-schema"
 
 type ModelInput = Parameters<OpencodeClient["session"]["prompt"]>[0]["model"]
 
@@ -299,7 +300,6 @@ export const RunCommand = effectCmd({
         const raw = args["output-schema"]
         if (!raw) return undefined
         if (args.command) die("--output-schema cannot be used with --command")
-        const { parseOutputSchema } = await import("./run/output-schema")
         try {
           return await parseOutputSchema(raw)
         } catch (error) {
@@ -745,8 +745,8 @@ export const RunCommand = effectCmd({
               if (part.sessionID !== sessionID) continue
 
               if (part.type === "tool" && (part.state.status === "completed" || part.state.status === "error")) {
-                if (part.tool === "StructuredOutput" && part.state.status === "completed")
-                  structuredOutput = part.state.input
+                const output = readStructuredResult(part)
+                if (output !== undefined) structuredOutput = output
                 if (emit("tool_use", { part })) continue
                 if (part.state.status === "completed") {
                   await tool(part)

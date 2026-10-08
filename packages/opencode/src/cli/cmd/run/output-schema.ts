@@ -1,4 +1,4 @@
-import type { Message, Part } from "@opencode-ai/sdk/v2"
+import type { Part } from "@opencode-ai/sdk/v2"
 
 export async function parseOutputSchema(raw: string): Promise<Record<string, unknown>> {
   if (raw.trim().length === 0) throw new Error("--output-schema must not be empty")
@@ -32,11 +32,9 @@ function toRecord(value: unknown, source: string): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-export function readStructuredResult(message: { info: Message; parts: Part[] }): unknown {
-  if (message.info.role === "assistant" && message.info.structured !== undefined) return message.info.structured
-  const match = message.parts.find(
-    (part) => part.type === "tool" && part.tool === "StructuredOutput" && part.state.status === "completed",
-  )
-  if (!match || match.type !== "tool" || match.state.status !== "completed") return undefined
-  return match.state.input
+export function readStructuredResult(part: Part): unknown {
+  if (part.type !== "tool") return undefined
+  if (part.tool !== "StructuredOutput") return undefined
+  if (part.state.status !== "completed") return undefined
+  return part.state.input
 }
