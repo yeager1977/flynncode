@@ -276,10 +276,15 @@ export const RunCommand = effectCmd({
         hidden: true,
         describe: "enable direct interactive demo slash commands; pass one as the message to run it immediately",
       }),
+  // The bypass must be in place before AppRuntime builds RuntimeFlags and
+  // HooksExecutor; applying it inside the handler was too late to matter.
+  prepare: async (args) => {
+    const { RuntimeFlags } = await import("@/effect/runtime-flags")
+    RuntimeFlags.applyDangerouslyBypassHookTrust(args)
+  },
   handler: Effect.fn("Cli.run")(function* (args) {
     const { Agent } = yield* Effect.promise(() => import("@/agent/agent"))
     const { RuntimeFlags } = yield* Effect.promise(() => import("@/effect/runtime-flags"))
-    RuntimeFlags.applyDangerouslyBypassHookTrust(args)
     const { InstanceRef } = yield* Effect.promise(() => import("@/effect/instance-ref"))
     const { ServerAuth } = yield* Effect.promise(() => import("@/server/auth"))
     const agentSvc = yield* Agent.Service

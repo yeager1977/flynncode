@@ -10,6 +10,11 @@ import { Heap } from "@/cli/heap"
 import { AppRuntime } from "@/effect/app-runtime"
 import { Effect } from "effect"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
+import { RuntimeFlags } from "@/effect/runtime-flags"
+
+// Before anything builds the runtime: take the hook-trust bypass handed over
+// by the TUI thread into memory so spawned processes never inherit it.
+RuntimeFlags.adoptBypassHookTrustEnv()
 
 Heap.start()
 
