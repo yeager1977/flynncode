@@ -1,6 +1,7 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { filesystem, path } from "@opencode-ai/core/effect/app-node-platform"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
+import { parseKnowledgeTitle } from "@opencode-ai/core/session/knowledge"
 import { Context, Effect, FileSystem, Layer, Option, Path, Schema } from "effect"
 import type { PlatformError } from "effect/PlatformError"
 
@@ -113,18 +114,7 @@ function parseFile(content: string, fallback: string) {
   const lines = content.split("\n")
   if (lines[0] === "---") {
     const end = lines.indexOf("---", 1)
-    if (end !== -1) {
-      const title = lines
-        .slice(1, end)
-        .find((line) => line.startsWith("title:"))
-        ?.slice("title:".length)
-        .trim()
-      return {
-        slug: fallback,
-        title: title && title.length > 0 ? title : fallback,
-        body: lines.slice(end + 1).join("\n"),
-      }
-    }
+    if (end !== -1) return { slug: fallback, title: parseKnowledgeTitle(content, fallback), body: lines.slice(end + 1).join("\n") }
   }
   return { slug: fallback, title: fallback, body: content }
 }

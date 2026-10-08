@@ -93,6 +93,15 @@ Rules:
 - If the conversation ends with an unanswered question to the user, preserve that exact question
 - If the conversation ends with an imperative statement or request to the user (e.g. "Now please run the command and paste the console output"), always include that exact request in the summary`
 
+const PROMPT_KNOWLEDGE = `You are a knowledge-work agent for non-coding tasks. Research the folders in scope, summarize documents, and draft markdown notes.
+
+Rules:
+- Read broadly with read, glob, grep, webfetch, and websearch.
+- Write only markdown-family files (.md, .mdx, .txt, .markdown). Never edit source code.
+- Ask before running shell commands that modify anything; prefer read-only inspection.
+- Cite which files you used in your summary.
+- Keep inference and workspace on the local machine; never assume cloud placement.`
+
 export const Plugin = define({
   id: "agent",
   effect: Effect.fn(function* (ctx) {
@@ -146,6 +155,39 @@ export const Plugin = define({
               effect: "allow",
             },
           ]),
+        )
+      })
+
+      draft.update(AgentV2.ID.make("knowledge"), (item) => {
+        item.description =
+          "Non-coding knowledge work. Researches folders, summarizes documents, drafts notes. Reads broadly, writes markdown docs only, never edits code."
+        item.system = PROMPT_KNOWLEDGE
+        item.mode = "primary"
+        item.permissions.push(
+          ...PermissionV2.merge(
+            defaults,
+            [
+              { action: "question", resource: "*", effect: "allow" },
+              { action: "edit", resource: "*", effect: "deny" },
+              { action: "edit", resource: "*.md", effect: "allow" },
+              { action: "edit", resource: "*.mdx", effect: "allow" },
+              { action: "edit", resource: "*.txt", effect: "allow" },
+              { action: "edit", resource: "*.markdown", effect: "allow" },
+              { action: "write", resource: "*", effect: "deny" },
+              { action: "write", resource: "*.md", effect: "allow" },
+              { action: "write", resource: "*.mdx", effect: "allow" },
+              { action: "write", resource: "*.txt", effect: "allow" },
+              { action: "write", resource: "*.markdown", effect: "allow" },
+              { action: "bash", resource: "*", effect: "ask" },
+              { action: "webfetch", resource: "*", effect: "allow" },
+              { action: "websearch", resource: "*", effect: "allow" },
+              { action: "read", resource: "*", effect: "allow" },
+              { action: "read", resource: "*.env", effect: "ask" },
+              { action: "read", resource: "*.env.*", effect: "ask" },
+              { action: "read", resource: "*.env.example", effect: "allow" },
+            ],
+            readonlyExternalDirectory,
+          ),
         )
       })
 

@@ -126,6 +126,14 @@ function NewSessionKindSelector(props: {
         <div class="text-[13px] leading-5 text-v2-text-text-faint">
           {language.t("session.new.kind.knowledgeHint")}
         </div>
+        <div class="flex min-w-0 flex-col items-center justify-center gap-1 text-center">
+          <span class="text-[13px] leading-5 text-v2-text-text-muted [font-weight:530]">
+            {language.t("knowledge.empty.title")}
+          </span>
+          <span class="text-[13px] leading-5 text-v2-text-text-faint">
+            {language.t("knowledge.empty.description")}
+          </span>
+        </div>
       </Show>
     </div>
   )
