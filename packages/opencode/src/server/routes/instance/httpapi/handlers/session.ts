@@ -18,6 +18,7 @@ import { MessageID, PartID, SessionID } from "@/session/schema"
 import { Project } from "@/project/project"
 import { Worktree } from "@/worktree"
 import { shouldDispose } from "@/worktree/session-binding"
+import { boundSessions } from "@/worktree/bound-sessions"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { Cause, Effect, Option, Schema, Scope } from "effect"
 import * as Stream from "effect/Stream"
@@ -76,10 +77,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       const info = yield* session.get(sessionID)
       const meta = (info.metadata ?? {}) as Record<string, unknown>
       if (meta.disposable !== true || typeof meta.worktree !== "string") return
+      const peers = yield* boundSessions(session, meta.worktree)
+      const archived = peers.every((peer) => peer.time.archived != null)
       const binding = { sessionID: info.id, directory: meta.worktree, disposable: true }
-      if (!shouldDispose(binding, { archived: info.time.archived != null, running: false })) return
-      const peers = yield* session.listGlobal({ directory: meta.worktree, limit: 100 })
-      if (peers.some((peer) => peer.time.archived == null)) return
+      if (!shouldDispose(binding, { archived, running: false })) return
       const removed = yield* worktreeSvc.disposeIfIdle({ directory: meta.worktree })
       if (!removed) return
       const inst = yield* InstanceState.context
