@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -128,6 +129,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("am"),
   "command.category.suggested": "የሚመከር",
   "command.category.view": "እይታ",
   "command.category.project": "ፕሮጀክት",
@@ -1004,6 +1006,7 @@ export const dict = {
   "settings.plugins.detail.copy": "የውቅር ነገር መቀየሪያ ቅንጣት ቅዳ",
   "settings.plugins.detail.copied": "ተቀድቷል",
   "settings.plugins.detail.notOnNpm": "በnpm ላይ አልተገኘም — በእጅ ወደ opencode.json ያክሉ",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "ተሰኪ ይጫኑ",
   "settings.plugins.install.description": "{{name}} ወዴት ይጨመር?",
   "settings.plugins.install.global": "አለም አቀፍ (~/.config/opencode)",

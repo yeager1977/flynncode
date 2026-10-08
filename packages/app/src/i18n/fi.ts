@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -36,6 +37,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("fi"),
   "command.category.suggested": "Ehdotetut",
   "command.category.view": "Näytä",
   "command.category.project": "Projekti",
@@ -922,6 +924,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Kopioi määrityskatkelma",
   "settings.plugins.detail.copied": "Kopioitu",
   "settings.plugins.detail.notOnNpm": "Ei löytynyt npm:stä — lisää manuaalisesti opencode.json-tiedostoon",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Asenna liitännäinen",
   "settings.plugins.install.description": "Mihin {{name}} lisätään?",
   "settings.plugins.install.global": "Globaali (~/.config/opencode)",

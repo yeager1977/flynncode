@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict: Record<string, string> = {
   ...modelRouterFallback,
@@ -129,6 +130,7 @@ export const dict: Record<string, string> = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("bn"),
   "command.category.suggested": "প্রস্তাবিত",
   "command.category.view": "দেখুন",
   "command.category.project": "প্রকল্প",
@@ -1021,6 +1023,7 @@ export const dict: Record<string, string> = {
   "settings.plugins.detail.copy": "কনফিগ স্নিপেট কপি করুন",
   "settings.plugins.detail.copied": "কপি হয়েছে",
   "settings.plugins.detail.notOnNpm": "npm-এ পাওয়া যায়নি — opencode.json-এ ম্যানুয়ালি যোগ করুন",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "প্লাগইন ইনস্টল করুন",
   "settings.plugins.install.description": "{{name}} কোথায় যোগ হবে?",
   "settings.plugins.install.global": "গ্লোবাল (~/.config/opencode)",

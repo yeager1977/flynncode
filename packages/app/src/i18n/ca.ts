@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -132,6 +133,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("ca"),
   "command.category.suggested": "Suggerit",
   "command.category.view": "Veure",
   "command.category.project": "Projecte",
@@ -1034,6 +1036,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Copia el fragment de configuració",
   "settings.plugins.detail.copied": "Copiat",
   "settings.plugins.detail.notOnNpm": "No s'ha trobat a npm — afegeix-lo manualment a opencode.json",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Instal·la el complement",
   "settings.plugins.install.description": "On s'ha d'afegir {{name}}?",
   "settings.plugins.install.global": "Global (~/.config/opencode)",

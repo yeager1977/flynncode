@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -130,6 +131,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("bg"),
   "command.category.suggested": "Предложено",
   "command.category.view": "Преглед",
   "command.category.project": "Проект",
@@ -1029,6 +1031,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Копиране на откъс от конфигурацията",
   "settings.plugins.detail.copied": "Копирано",
   "settings.plugins.detail.notOnNpm": "Не е намерена в npm — добавете ръчно в opencode.json",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Инсталиране на приставка",
   "settings.plugins.install.description": "Къде да се добави {{name}}?",
   "settings.plugins.install.global": "Глобално (~/.config/opencode)",

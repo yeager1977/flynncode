@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict: Record<string, string> = {
   ...modelRouterFallback,
@@ -128,6 +129,7 @@ export const dict: Record<string, string> = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("si"),
   "command.category.suggested": "යෝජනා කර ඇත",
   "command.category.view": "බලන්න",
   "command.category.project": "ව්යාපෘතිය",
@@ -1019,6 +1021,7 @@ export const dict: Record<string, string> = {
   "settings.plugins.detail.copy": "වින්‍යාස කැබලිය පිටපත් කරන්න",
   "settings.plugins.detail.copied": "පිටපත් විය",
   "settings.plugins.detail.notOnNpm": "npm හි හමු නොවීයි — opencode.json වෙත අතින් එකතු කරන්න",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "ප්ලගිනය ස්ථාපනය කරන්න",
   "settings.plugins.install.description": "{{name}} කොහෙද එකතු විය යුත්තේ?",
   "settings.plugins.install.global": "ගෝලීය (~/.config/opencode)",

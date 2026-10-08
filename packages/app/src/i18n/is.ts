@@ -17,6 +17,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 const desktop = [
   "OpenCode",
@@ -141,6 +142,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("is"),
   "command.category.suggested": "Tillögur",
   "command.category.view": "Skoða",
   "command.category.project": "Verkefni",
@@ -1034,6 +1036,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Afrita stillingabrot",
   "settings.plugins.detail.copied": "Afritað",
   "settings.plugins.detail.notOnNpm": "Fannst ekki á npm — bættu handvirkt í opencode.json",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Setja upp viðbót",
   "settings.plugins.install.description": "Hvar á að bæta {{name}} við?",
   "settings.plugins.install.global": "Global (~/.config/opencode)",

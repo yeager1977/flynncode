@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -128,6 +129,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("lo"),
   "command.category.suggested": "ແນະນຳ",
   "command.category.view": "ເບິ່ງ",
   "command.category.project": "ໂຄງການ",
@@ -1017,6 +1019,7 @@ export const dict = {
   "settings.plugins.detail.copy": "ສຳເນົາຊິ້ນສ່ວນການຕັ້ງຄ່າ",
   "settings.plugins.detail.copied": "ສຳເນົາແລ້ວ",
   "settings.plugins.detail.notOnNpm": "ບໍ່ພົບໃນ npm — ເພີ່ມລົງ opencode.json ດ້ວຍຕົນເອງ",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "ຕິດຕັ້ງປລັກອິນ",
   "settings.plugins.install.description": "ຈະເພີ່ມ {{name}} ຢູ່ໃສ?",
   "settings.plugins.install.global": "ທົ່ວໄປ (~/.config/opencode)",

@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -131,6 +132,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("sr"),
   "command.category.suggested": "Предложено",
   "command.category.view": "Приказ",
   "command.category.project": "Пројекат",
@@ -1028,6 +1030,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Копирај исечак конфигурације",
   "settings.plugins.detail.copied": "Копирано",
   "settings.plugins.detail.notOnNpm": "Није пронађено на npm — додајте ручно у opencode.json",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Инсталирај додатак",
   "settings.plugins.install.description": "Где додати {{name}}?",
   "settings.plugins.install.global": "Глобално (~/.config/opencode)",

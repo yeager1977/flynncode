@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -130,6 +131,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("hy"),
   "command.category.suggested": "Առաջարկված",
   "command.category.view": "Դիտել",
   "command.category.project": "Նախագիծ",
@@ -1030,6 +1032,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Պատճենել կոնֆիգի հատվածը",
   "settings.plugins.detail.copied": "Պատճենված",
   "settings.plugins.detail.notOnNpm": "Չի գտնվել npm-ում — ձեռքով ավելացրեք opencode.json-ում",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Տեղադրել հավելում",
   "settings.plugins.install.description": "Որտեղ ավելացվի {{name}}-ը?",
   "settings.plugins.install.global": "Գլոբալ (~/.config/opencode)",

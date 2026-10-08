@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -38,6 +39,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("it"),
   "command.category.suggested": "Suggeriti",
   "command.category.view": "Visualizzazione",
   "command.category.project": "Progetto",
@@ -963,6 +965,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Copia snippet di configurazione",
   "settings.plugins.detail.copied": "Copiato",
   "settings.plugins.detail.notOnNpm": "Non trovato su npm — aggiungi manualmente a opencode.json",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Installa plugin",
   "settings.plugins.install.description": "Dove aggiungere {{name}}?",
   "settings.plugins.install.global": "Globale (~/.config/opencode)",

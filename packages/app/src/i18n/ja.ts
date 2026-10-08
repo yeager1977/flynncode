@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -134,6 +135,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("ja"),
   "command.category.suggested": "おすすめ",
   "command.category.view": "表示",
   "command.category.project": "プロジェクト",
@@ -934,6 +936,7 @@ export const dict = {
   "settings.plugins.detail.copy": "設定スニペットをコピー",
   "settings.plugins.detail.copied": "コピーしました",
   "settings.plugins.detail.notOnNpm": "npm に見つかりません — opencode.json に手動で追加してください",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "プラグインをインストール",
   "settings.plugins.install.description": "{{name}} をどこに追加しますか？",
   "settings.plugins.install.global": "グローバル (~/.config/opencode)",

@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -130,6 +131,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("ro"),
   "command.category.suggested": "Sugerat",
   "command.category.view": "Vizualizare",
   "command.category.project": "Proiect",
@@ -1029,6 +1031,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Copiază fragmentul de configurare",
   "settings.plugins.detail.copied": "Copiat",
   "settings.plugins.detail.notOnNpm": "Negăsit pe npm — adaugă manual în opencode.json",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Instalează pluginul",
   "settings.plugins.install.description": "Unde se adaugă {{name}}?",
   "settings.plugins.install.global": "Global (~/.config/opencode)",

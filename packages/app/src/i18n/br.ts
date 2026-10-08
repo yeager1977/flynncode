@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -138,6 +139,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("br"),
   "command.category.suggested": "Sugerido",
   "command.category.view": "Visualizar",
   "command.category.project": "Projeto",
@@ -933,6 +935,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Eilañ ar framm kefluniañ",
   "settings.plugins.detail.copied": "Eilet",
   "settings.plugins.detail.notOnNpm": "N'eo ket bet kavet war npm — ouzhpennañ d'ar c'hefluniañ dre zorn",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Staliañ ar pelestredur",
   "settings.plugins.install.description": "Pelech e vo ouzhpennet {{name}}?",
   "settings.plugins.install.global": "Hollek (~/.config/opencode)",

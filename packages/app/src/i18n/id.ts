@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -136,6 +137,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("id"),
   "command.category.suggested": "Disarankan",
   "command.category.view": "Tampilan",
   "command.category.project": "Proyek",
@@ -1119,6 +1121,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Salin cuplikan konfigurasi",
   "settings.plugins.detail.copied": "Tersalin",
   "settings.plugins.detail.notOnNpm": "Tidak ditemukan di npm — tambahkan manual ke opencode.json",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Pasang plugin",
   "settings.plugins.install.description": "Ke mana {{name}} ditambahkan?",
   "settings.plugins.install.global": "Global (~/.config/opencode)",

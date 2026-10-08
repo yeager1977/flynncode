@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -138,6 +139,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("uk"),
   "command.category.suggested": "Рекомендовані",
   "command.category.view": "Вигляд",
   "command.category.project": "Проєкт",
@@ -1135,6 +1137,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Копіювати фрагмент конфігурації",
   "settings.plugins.detail.copied": "Скопійовано",
   "settings.plugins.detail.notOnNpm": "Не знайдено на npm — додайте вручну до opencode.json",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Встановити плагін",
   "settings.plugins.install.description": "Куди додати {{name}}?",
   "settings.plugins.install.global": "Глобально (~/.config/opencode)",

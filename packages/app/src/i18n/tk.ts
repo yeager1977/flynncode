@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -129,6 +130,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("tk"),
   "command.category.suggested": "Teklip edilýär",
   "command.category.view": "Gör",
   "command.category.project": "Taslama",
@@ -1023,6 +1025,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Konfigurasiýa bölejini göçüriň",
   "settings.plugins.detail.copied": "Göçürildi",
   "settings.plugins.detail.notOnNpm": "npm-de tapylmady — opencode.json-a el bilen goşuň",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Plegin gurnamak",
   "settings.plugins.install.description": "{{name}} nireä goşulmaly?",
   "settings.plugins.install.global": "Global (~/.config/opencode)",

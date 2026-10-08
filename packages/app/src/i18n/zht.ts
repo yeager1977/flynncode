@@ -17,6 +17,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 type Keys = keyof typeof en
 
@@ -137,6 +138,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("zht"),
   "command.category.suggested": "建議",
   "command.category.view": "檢視",
   "command.category.project": "專案",
@@ -990,6 +992,7 @@ export const dict = {
   "settings.plugins.detail.copy": "複製設定片段",
   "settings.plugins.detail.copied": "已複製",
   "settings.plugins.detail.notOnNpm": "在 npm 上找不到 — 請手動加入 opencode.json",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "安裝外掛",
   "settings.plugins.install.description": "要將 {{name}} 加入哪裡？",
   "settings.plugins.install.global": "全域 (~/.config/opencode)",

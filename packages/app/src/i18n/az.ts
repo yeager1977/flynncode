@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -130,6 +131,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("az"),
   "command.category.suggested": "Təklif olunan",
   "command.category.view": "Görünüş",
   "command.category.project": "Layihə",
@@ -1032,6 +1034,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Konfiqurasiya parçasını kopyala",
   "settings.plugins.detail.copied": "Kopyalandı",
   "settings.plugins.detail.notOnNpm": "npm-də tapılmadı — opencode.json-a əl ilə əlavə edin",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Plaqin quraşdır",
   "settings.plugins.install.description": "{{name}} haraya əlavə edilsin?",
   "settings.plugins.install.global": "Qlobal (~/.config/opencode)",

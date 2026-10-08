@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -128,6 +129,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("fo"),
   "command.category.suggested": "Tillagað",
   "command.category.view": "Vís",
   "command.category.project": "Verkætlan",
@@ -1022,6 +1024,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Avrita uppsetingarbrot",
   "settings.plugins.detail.copied": "Avritað",
   "settings.plugins.detail.notOnNpm": "Finst ikki á npm — leggst afturat manuelt í opencode.json",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Set íviðkan upp",
   "settings.plugins.install.description": "Hvar skal {{name}} leggjast afturat?",
   "settings.plugins.install.global": "Fyri alt (~/.config/opencode)",

@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -36,6 +37,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("ko"),
   "command.category.suggested": "추천",
   "command.category.view": "보기",
   "command.category.project": "프로젝트",
@@ -695,6 +697,7 @@ export const dict = {
   "settings.plugins.detail.copy": "설정 스니펫 복사",
   "settings.plugins.detail.copied": "복사됨",
   "settings.plugins.detail.notOnNpm": "npm에서 찾을 수 없음 — opencode.json에 수동으로 추가하세요",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "플러그인 설치",
   "settings.plugins.install.description": "{{name}}을(를) 어디에 추가할까요?",
   "settings.plugins.install.global": "전역 (~/.config/opencode)",

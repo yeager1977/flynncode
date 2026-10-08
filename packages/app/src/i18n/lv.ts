@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -130,6 +131,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("lv"),
   "command.category.suggested": "Ieteikts",
   "command.category.view": "Skats",
   "command.category.project": "Projekts",
@@ -1030,6 +1032,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Kopēt konfigurācijas fragmentu",
   "settings.plugins.detail.copied": "Nokopēts",
   "settings.plugins.detail.notOnNpm": "Nav atrasts npm — pievienojiet manuāli opencode.json",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Uzstādīt spraudni",
   "settings.plugins.install.description": "Kur pievienot {{name}}?",
   "settings.plugins.install.global": "Globāli (~/.config/opencode)",

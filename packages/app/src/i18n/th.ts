@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -134,6 +135,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("th"),
   "command.category.suggested": "แนะนำ",
   "command.category.view": "มุมมอง",
   "command.category.project": "โปรเจกต์",
@@ -981,6 +983,7 @@ export const dict = {
   "settings.plugins.detail.copy": "คัดลอกข้อความคอนฟิก",
   "settings.plugins.detail.copied": "คัดลอกแล้ว",
   "settings.plugins.detail.notOnNpm": "ไม่พบบน npm — เพิ่มลงใน opencode.json ด้วยตนเอง",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "ติดตั้งปลั๊กอิน",
   "settings.plugins.install.description": "จะเพิ่ม {{name}} ที่ไหน?",
   "settings.plugins.install.global": "ทั่วโลก (~/.config/opencode)",

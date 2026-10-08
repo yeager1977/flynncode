@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -135,6 +136,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("vi"),
   "command.category.suggested": "Đề xuất",
   "command.category.view": "Xem",
   "command.category.project": "Dự án",
@@ -1052,6 +1054,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Sao chép đoạn cấu hình",
   "settings.plugins.detail.copied": "Đã sao chép",
   "settings.plugins.detail.notOnNpm": "Không tìm thấy trên npm — thêm thủ công vào opencode.json",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Cài đặt plugin",
   "settings.plugins.install.description": "Thêm {{name}} vào đâu?",
   "settings.plugins.install.global": "Toàn cục (~/.config/opencode)",

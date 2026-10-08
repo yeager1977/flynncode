@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -130,6 +131,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("sk"),
   "command.category.suggested": "Navrhované",
   "command.category.view": "Zobrazenie",
   "command.category.project": "Projekt",
@@ -1028,6 +1030,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Skopíruj úryvok konfigurácie",
   "settings.plugins.detail.copied": "Skopírované",
   "settings.plugins.detail.notOnNpm": "Nenájdené na npm — pridajte ručne do opencode.json",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Inštalovať plugin",
   "settings.plugins.install.description": "Kam pridať {{name}}?",
   "settings.plugins.install.global": "Globálne (~/.config/opencode)",

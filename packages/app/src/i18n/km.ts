@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -128,6 +129,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("km"),
   "command.category.suggested": "បានស្នើ",
   "command.category.view": "មើល",
   "command.category.project": "គម្រោង",
@@ -1020,6 +1022,7 @@ export const dict = {
   "settings.plugins.detail.copy": "ចម្លងកំណត់រចនាសម្ព័ន្ធ",
   "settings.plugins.detail.copied": "បានចម្លង",
   "settings.plugins.detail.notOnNpm": "រកមិនឃើញលើ npm — បន្ថែមដោយដៃទៅ opencode.json",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "ដំឡើងប្លាកអ៊ីន",
   "settings.plugins.install.description": "តើគួរបន្ថែម {{name}} នៅទីណា?",
   "settings.plugins.install.global": "សកល (~/.config/opencode)",

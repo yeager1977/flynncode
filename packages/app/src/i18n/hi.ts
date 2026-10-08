@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -135,6 +136,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("hi"),
   "command.category.suggested": "सुझाए गए",
   "command.category.view": "दृश्य",
   "command.category.project": "प्रोजेक्ट",
@@ -1031,6 +1033,7 @@ export const dict = {
   "settings.plugins.detail.copy": "कॉन्फ़िग स्निपेट कॉपी करें",
   "settings.plugins.detail.copied": "कॉपी किया गया",
   "settings.plugins.detail.notOnNpm": "npm पर नहीं मिला — opencode.json में मैन्युअली जोड़ें",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "प्लगइन इंस्टॉल करें",
   "settings.plugins.install.description": "{{name}} को कहाँ जोड़ा जाए?",
   "settings.plugins.install.global": "ग्लोबल (~/.config/opencode)",

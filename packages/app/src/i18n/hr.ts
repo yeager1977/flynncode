@@ -17,6 +17,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 const desktop = [
   "OpenCode",
@@ -143,6 +144,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("hr"),
   "command.category.suggested": "Predloženo",
   "command.category.view": "Prikaz",
   "command.category.project": "Projekt",
@@ -1042,6 +1044,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Kopiraj isječak konfiguracije",
   "settings.plugins.detail.copied": "Kopirano",
   "settings.plugins.detail.notOnNpm": "Nije pronađeno na npm — dodajte ručno u opencode.json",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Instaliraj dodatak",
   "settings.plugins.install.description": "Gdje dodati {{name}}?",
   "settings.plugins.install.global": "Globalno (~/.config/opencode)",

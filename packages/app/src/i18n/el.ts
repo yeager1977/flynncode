@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -129,6 +130,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("el"),
   "command.category.suggested": "Προτεινόμενο",
   "command.category.view": "Προβολή",
   "command.category.project": "Έργο",
@@ -1033,6 +1035,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Αντιγραφή τμήματος ρυθμίσεων",
   "settings.plugins.detail.copied": "Αντιγράφηκε",
   "settings.plugins.detail.notOnNpm": "Δεν βρέθηκε στο npm — προσθέστε το χειροκίνητα στο opencode.json",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Εγκατάσταση πρόσθετου",
   "settings.plugins.install.description": "Πού θα προστεθεί το {{name}};",
   "settings.plugins.install.global": "Καθολικά (~/.config/opencode)",

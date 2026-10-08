@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -130,6 +131,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("my"),
   "command.category.suggested": "အကြံပြုထားသည်။",
   "command.category.view": "ကြည့်ရန်",
   "command.category.project": "ပရောဂျက်",
@@ -1035,6 +1037,7 @@ export const dict = {
   "settings.plugins.detail.copy": "config အပိုင်းကို ကူးယူ",
   "settings.plugins.detail.copied": "ကူးယူပြီး",
   "settings.plugins.detail.notOnNpm": "npm တွင် မတွေ့ရှိ — opencode.json တွင် ကိုယ်တိုင်ထည့်ပါ",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "ပလပ်ဂင် ထည့်သွင်း",
   "settings.plugins.install.description": "{{name}} ကို ဘယ်မှာ ထည့်မလဲ?",
   "settings.plugins.install.global": "Global (~/.config/opencode)",

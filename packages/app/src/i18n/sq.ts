@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -129,6 +130,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("sq"),
   "command.category.suggested": "Sugjeruar",
   "command.category.view": "Shiko",
   "command.category.project": "Projekti",
@@ -1026,6 +1028,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Kopjo fragmentin e konfigurimit",
   "settings.plugins.detail.copied": "U kopjua",
   "settings.plugins.detail.notOnNpm": "Nuk u gjet në npm — shtoje manualisht në opencode.json",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Instalo shtojcën",
   "settings.plugins.install.description": "Ku të shtohet {{name}}?",
   "settings.plugins.install.global": "Global (~/.config/opencode)",

@@ -17,6 +17,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 const desktop = [
   "OpenCode",
@@ -141,6 +142,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("hu"),
   "command.category.suggested": "Javasolt",
   "command.category.view": "Nézet",
   "command.category.project": "Projekt",
@@ -1040,6 +1042,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Konfigurációrészlet másolása",
   "settings.plugins.detail.copied": "Kimásolva",
   "settings.plugins.detail.notOnNpm": "Nem található az npm-en — add hozzá kézzel az opencode.json fájlhoz",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Plugin telepítése",
   "settings.plugins.install.description": "Hova kerüljön {{name}}?",
   "settings.plugins.install.global": "Globális (~/.config/opencode)",

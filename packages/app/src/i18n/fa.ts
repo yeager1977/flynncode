@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -129,6 +130,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("fa"),
   "command.category.suggested": "پیشنهاد شده است",
   "command.category.view": "مشاهده کنید",
   "command.category.project": "پروژه",
@@ -1020,6 +1022,7 @@ export const dict = {
   "settings.plugins.detail.copy": "کپی قطعه پیکربندی",
   "settings.plugins.detail.copied": "کپی شد",
   "settings.plugins.detail.notOnNpm": "در npm یافت نشد — به‌صورت دستی به opencode.json اضافه کنید",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "نصب افزونه",
   "settings.plugins.install.description": "{{name}} کجا اضافه شود؟",
   "settings.plugins.install.global": "سراسری (~/.config/opencode)",

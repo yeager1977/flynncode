@@ -16,6 +16,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 export const dict = {
   ...modelRouterFallback,
@@ -128,6 +129,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("ka"),
   "command.category.suggested": "შემოთავაზებულია",
   "command.category.view": "ნახვა",
   "command.category.project": "პროექტი",
@@ -1022,6 +1024,7 @@ export const dict = {
   "settings.plugins.detail.copy": "კონფიგურაციის ფრაგმენტის კოპირება",
   "settings.plugins.detail.copied": "დაკოპირდა",
   "settings.plugins.detail.notOnNpm": "npm-ზე ვერ მოიძებნა — ხელით დაამატეთ opencode.json-ში",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "პლაგინის ინსტალაცია",
   "settings.plugins.install.description": "სად დაემატოს {{name}}?",
   "settings.plugins.install.global": "გლობალური (~/.config/opencode)",

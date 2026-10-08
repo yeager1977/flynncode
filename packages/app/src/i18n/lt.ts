@@ -17,6 +17,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 const desktop = [
   "OpenCode",
@@ -143,6 +144,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("lt"),
   "command.category.suggested": "Siūloma",
   "command.category.view": "Rodinys",
   "command.category.project": "Projektas",
@@ -1048,6 +1050,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Kopijuoti konfigūracijos fragmentą",
   "settings.plugins.detail.copied": "Nukopijuota",
   "settings.plugins.detail.notOnNpm": "Nerasta npm — pridėkite rankiniu būdu į opencode.json",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Įdiegti įskiepį",
   "settings.plugins.install.description": "Kur pridėti {{name}}?",
   "settings.plugins.install.global": "Globalu (~/.config/opencode)",
