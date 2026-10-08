@@ -20,6 +20,8 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { MCP } from "@/mcp"
+import { InstanceStore } from "@/project/instance-store"
+import { InstanceBootstrap } from "@/project/bootstrap-service"
 import type { Tool as MCPToolDef } from "@modelcontextprotocol/sdk/types.js"
 
 const configLayer = TestConfig.layer({
@@ -53,14 +55,22 @@ const brokenPluginLayer = Layer.succeed(
 )
 
 const root = LayerNode.group([ToolRegistry.node, Agent.node])
+// The registry graph reaches InstanceStore (via the hooks runner), whose
+// bootstrap is only bound by the app node builder.
+const bootstrap = [
+  InstanceStore.bootstrapNode,
+  Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void })),
+] as const
 const replacements = [
   [Config.node, configLayer],
   [RuntimeFlags.node, RuntimeFlags.layer()],
+  bootstrap,
 ] as const
 
 const it = testEffect(LayerNode.compile(root, replacements))
 const withCodeMode = testEffect(
   LayerNode.compile(root, [
+    bootstrap,
     [Config.node, configLayer],
     [RuntimeFlags.node, RuntimeFlags.layer({ experimentalCodeMode: true })],
     [
@@ -84,6 +94,7 @@ const withCodeMode = testEffect(
 )
 const withEmptyCodeMode = testEffect(
   LayerNode.compile(root, [
+    bootstrap,
     [Config.node, configLayer],
     [RuntimeFlags.node, RuntimeFlags.layer({ experimentalCodeMode: true })],
     [
