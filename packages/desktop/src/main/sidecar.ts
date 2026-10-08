@@ -96,6 +96,10 @@ async function stop() {
     relayPublisher = undefined
     mobileGateway?.stop()
     mobileGateway = undefined
+    // Disposing instances shuts down MCP servers (with their process trees), LSPs and
+    // shells; closing the listener alone leaves them orphaned when this process exits.
+    const { InstanceRuntime } = await import("virtual:opencode-server")
+    await InstanceRuntime.disposeAllInstances()
     await listener?.stop()
   } finally {
     listener = undefined
