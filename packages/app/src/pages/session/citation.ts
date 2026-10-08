@@ -5,8 +5,7 @@ export type Citation = {
 
 // Requires at least one path separator so display text like "bun.sh" does not
 // match; a leading @ acts as a mention boundary (@src/index.ts) and is dropped.
-const pattern =
-  /(?:^|[\s("'@])((?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]+\.[A-Za-z0-9]+)(?::(\d+))?(?::\d+)?/
+const pattern = /(?:^|[\s("'@])((?:[A-Za-z0-9._-]+\/)+[A-Za-z0-9._-]+\.[A-Za-z0-9]+)(?::(\d+))?(?::\d+)?/
 
 export function citationFromText(text: string): Citation | undefined {
   const match = pattern.exec(text.trim())
@@ -16,10 +15,12 @@ export function citationFromText(text: string): Citation | undefined {
   return { path, ...(line ? { line } : {}) }
 }
 
+// Citations are links and inline code inside rendered message markdown only;
+// file tree rows, composer pills and other [data-path] UI are never citations.
 export function citationFromTarget(target: EventTarget | null): Citation | undefined {
   if (!(target instanceof Element)) return
-  const node = target.closest("a, code, [data-path]")
-  if (!node) return
+  const node = target.closest("a, code")
+  if (!node?.closest('[data-component="markdown"]')) return
   if (node instanceof HTMLAnchorElement && node.hash.startsWith("#L")) {
     // Skip external hosts (github.com etc.): they reuse the #L hash convention
     // but their pathname is a remote path, never a local file.
@@ -28,10 +29,6 @@ export function citationFromTarget(target: EventTarget | null): Citation | undef
     const path = node.pathname.replace(/^\//, "") || node.textContent || ""
     return citationFromText(line ? `${path}:${line}` : path)
   }
-  const marked = node.getAttribute("data-path")
-  // data-path is an explicit app-set file marker; it bypasses the text
-  // heuristic so root-level files without a path separator still resolve.
-  if (marked) return { path: marked }
   return citationFromText(node.textContent ?? "")
 }
 
