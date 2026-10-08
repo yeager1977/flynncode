@@ -230,8 +230,8 @@ type PromptSubmitInput = {
   newSessionWorktree?: Accessor<string | undefined>
   onNewSessionWorktreeReset?: () => void
   newSessionExtraFolders?: Accessor<readonly string[] | undefined>
+  newSessionPrimary?: Accessor<string | undefined>
   onNewSessionExtraFoldersReset?: () => void
-  onNewSessionCreated?: (session: { id: string; directory: string }) => void | Promise<void>
   shouldQueue?: Accessor<boolean>
   onQueue?: (draft: FollowupDraft) => void
   onAbort?: () => void
@@ -325,22 +325,34 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     })
   }
 
-  // The compat create targets the legacy route, which cannot persist the
-  // durable session kind. Knowledge sessions on v2 servers go through
-  // client.v2 instead; everything else keeps the existing path.
+  // The compat create cannot carry the durable session kind or extra
+  // folders. Knowledge sessions and sessions with extra folders go through
+  // client.v2 on v2 servers, and through the legacy create (which accepts
+  // extras) on v1 servers; everything else keeps the existing path.
   const createSession = async (value: {
     agent: string
     kind: "code" | "knowledge"
     model: { id: string; providerID: string; variant?: string }
     directory: string
+    additionalDirectories: string[]
   }) => {
-    if (value.kind === "knowledge" && (await sdk().protocol) !== "v1") {
+    const additionalDirectories = value.additionalDirectories.length > 0 ? value.additionalDirectories : undefined
+    const protocol = await sdk().protocol
+    if (protocol === "v1" && additionalDirectories) {
+      const result = await sdk().client.session.create(
+        { directory: value.directory, agent: value.agent, kind: value.kind, model: value.model, additionalDirectories },
+        { throwOnError: true },
+      )
+      return normalizeSessionInfo(result.data)
+    }
+    if (protocol !== "v1" && (value.kind === "knowledge" || additionalDirectories)) {
       const response = await sdk().client.v2.session.create(
         {
           agent: value.agent,
           kind: value.kind,
           model: value.model,
           location: { directory: value.directory },
+          additionalDirectories,
         },
         { throwOnError: true },
       )
@@ -415,13 +427,17 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const isNewSession = !params.id
     const shouldAutoAccept = isNewSession && input.autoAccept()
     const worktreeSelection = input.newSessionWorktree?.() || "main"
-    const disposableWorktree = worktreeSelection === "disposable"
+    // Multifold: read the draft folders before the new-session reset below
+    // clears them. An explicit primary folder replaces the worktree choice.
+    const primaryFolder = isNewSession ? input.newSessionPrimary?.() : undefined
+    const extraFolders = isNewSession ? [...(input.newSessionExtraFolders?.() ?? [])] : []
+    const disposableWorktree = !primaryFolder && worktreeSelection === "disposable"
 
     let sessionDirectory = projectDirectory
     let client = sdk().client
 
     if (isNewSession) {
-      if (worktreeSelection === "create" || disposableWorktree) {
+      if (!primaryFolder && (worktreeSelection === "create" || disposableWorktree)) {
         const createdWorktree = await client.worktree
           .create({ directory: projectDirectory })
           .then((x) => x.data)
@@ -444,9 +460,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         sessionDirectory = createdWorktree.directory
       }
 
-      if (worktreeSelection !== "main" && worktreeSelection !== "create" && !disposableWorktree) {
+      if (!primaryFolder && worktreeSelection !== "main" && worktreeSelection !== "create" && !disposableWorktree) {
         sessionDirectory = worktreeSelection
       }
+
+      if (primaryFolder) sessionDirectory = primaryFolder
 
       if (sessionDirectory !== projectDirectory) {
         client = sdk().createClient({
@@ -468,15 +486,15 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         kind,
         model: { id: currentModel.id, providerID: currentModel.provider.id, variant },
         directory: sessionDirectory,
+        additionalDirectories: extraFolders.filter((directory) => directory !== sessionDirectory),
       }).catch((err) => {
-          showToast({
-            title: language.t("prompt.toast.sessionCreateFailed.title"),
-            description: errorMessage(err),
-          })
-          return undefined
+        showToast({
+          title: language.t("prompt.toast.sessionCreateFailed.title"),
+          description: errorMessage(err),
         })
+        return undefined
+      })
       if (created) {
-        await input.onNewSessionCreated?.({ id: created.id, directory: sessionDirectory })
         if (disposableWorktree) {
           // Fail loud: without the binding, dispose-on-archive never fires
           // and the worktree is silently retained. The session itself is

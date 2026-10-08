@@ -3,30 +3,23 @@ import { createEffect, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
 import { usePromptInputV2Controller } from "@/components/prompt-input-v2"
 import { useComments } from "@/context/comments"
-import { useLanguage } from "@/context/language"
 import { useLocal } from "@/context/local"
-import { usePlatform } from "@/context/platform"
 import { usePrompt } from "@/context/prompt"
-import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { createPromptInputController, createPromptProjectControls } from "@/pages/session/composer"
 import { createPromptModelSelection } from "@/pages/session/composer/prompt-model-selection"
 import { useSessionKey } from "@/pages/session/session-layout"
 import { useComposerCommands } from "@/pages/session/use-composer-commands"
-import { showToast } from "@/utils/toast"
-import { foldersConnection, setSessionExtras } from "@/utils/session-folders-api"
 
 export function createNewSessionDraftController(workspace: {
   worktree: () => string
   resetWorktree: () => void
   extraFolders: () => readonly string[]
+  primaryFolder: () => string | undefined
   resetExtraFolders: () => void
 }) {
   const prompt = usePrompt()
   const serverSync = useServerSync()
-  const server = useServer()
-  const platform = usePlatform()
-  const language = useLanguage()
   const comments = useComments()
   const local = useLocal()
   const route = useSessionKey()
@@ -50,19 +43,15 @@ export function createNewSessionDraftController(workspace: {
       return workspace.worktree()
     },
     onNewSessionWorktreeReset: workspace.resetWorktree,
+    // Multifold: submit reads the draft folders before resetting them and
+    // sends the extras with session create, so they persist atomically.
     get newSessionExtraFolders() {
       return workspace.extraFolders()
     },
-    onNewSessionExtraFoldersReset: workspace.resetExtraFolders,
-    onNewSessionCreated: async (session) => {
-      // Multifold: extras picked on the new-session view attach after
-      // create. The primary directory stays the placement key.
-      const extras = workspace.extraFolders().filter((dir) => dir !== session.directory)
-      if (extras.length === 0) return
-      const conn = foldersConnection(server.current, platform.fetch)
-      const attached = conn ? await setSessionExtras(conn, session.id, extras) : undefined
-      if (!attached) showToast({ title: language.t("common.requestFailed") })
+    get newSessionPrimary() {
+      return workspace.primaryFolder()
     },
+    onNewSessionExtraFoldersReset: workspace.resetExtraFolders,
     onSubmit: comments.clear,
   })
 
