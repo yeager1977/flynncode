@@ -3,10 +3,19 @@ import { readFile } from "node:fs/promises"
 import path from "node:path"
 
 describe("computer-use consent panel", () => {
-  test("session view wires explicit enable plus per-action consent", async () => {
-    const source = await readFile(path.join(import.meta.dir, "..", "session.tsx"), "utf8")
-    expect(source).toContain("computerUse.title")
-    expect(source).toContain("computerUse.consent.allowOnce")
+  test("session header exposes computer use as an icon menu, not an inline panel", async () => {
+    const header = await readFile(path.join(import.meta.dir, "..", "..", "components", "session", "session-header.tsx"), "utf8")
+    const session = await readFile(path.join(import.meta.dir, "..", "session.tsx"), "utf8")
+    expect(header).toContain("<ComputerUseMenu />")
+    expect(session).not.toContain("ComputerUsePanel")
+  })
+
+  test("computer use menu toggles the config the server reads", async () => {
+    const source = await readFile(
+      path.join(import.meta.dir, "..", "..", "components", "session", "computer-use-menu.tsx"),
+      "utf8",
+    )
+    expect(source).toContain("updateConfig({ computer_use: next })")
   })
 
   test("permission dock renders computer-use consent copy", async () => {

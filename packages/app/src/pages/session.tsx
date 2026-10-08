@@ -5,7 +5,6 @@ import { createQuery, skipToken, useMutation, useQueryClient } from "@tanstack/s
 import {
   batch,
   ErrorBoundary,
-  For,
   onCleanup,
   Suspense,
   Show,
@@ -161,95 +160,6 @@ export function SessionPage() {
     <SessionProviders>
       <Page />
     </SessionProviders>
-  )
-}
-
-const COMPUTER_USE_STORE = "opencode.settings"
-const COMPUTER_USE_KEY = "computerUseAllowedApps"
-
-function parseAllowedApps(raw: string | null) {
-  if (!raw) return []
-  try {
-    const value = JSON.parse(raw) as unknown
-    return Array.isArray(value) && value.every((entry) => typeof entry === "string") ? value : []
-  } catch {
-    return []
-  }
-}
-
-function ComputerUsePanel() {
-  const language = useLanguage()
-  const [enabled, setEnabled] = createSignal(false)
-  const [allowedApps, setAllowedApps] = createSignal<string[]>([])
-  const [candidate, setCandidate] = createSignal("")
-  const persist = (next: string[]) => {
-    setAllowedApps(next)
-    void window.api?.storeSet?.(COMPUTER_USE_STORE, COMPUTER_USE_KEY, JSON.stringify(next))
-  }
-  void window.api?.storeGet?.(COMPUTER_USE_STORE, COMPUTER_USE_KEY).then((raw) => {
-    if (typeof raw === "string") setAllowedApps(parseAllowedApps(raw))
-  })
-  const allowCurrent = () => {
-    const id = candidate().trim()
-    if (!id) return
-    persist(allowedApps().includes(id) ? allowedApps() : [...allowedApps(), id])
-    setCandidate("")
-  }
-  const removeApp = (id: string) => persist(allowedApps().filter((app) => app !== id))
-  const stop = () => {
-    setEnabled(false)
-    persist([])
-    setCandidate("")
-  }
-  return (
-    <div data-component="computer-use-panel">
-      <div>{language.t("computerUse.title")}</div>
-      <Show
-        when={enabled()}
-        fallback={
-          <>
-            <div>{language.t("computerUse.disabledHint")}</div>
-            <Button variant="primary" size="normal" onClick={() => setEnabled(true)}>
-              {language.t("computerUse.enable")}
-            </Button>
-          </>
-        }
-      >
-        <Button variant="ghost" size="normal" onClick={() => setEnabled(false)}>
-          {language.t("computerUse.disable")}
-        </Button>
-        <div>{language.t("computerUse.allowlist.label")}</div>
-        <Show
-          when={allowedApps().length > 0}
-          fallback={<div>{language.t("computerUse.allowlist.empty")}</div>}
-        >
-          <For each={allowedApps()}>
-            {(appID) => (
-              <div>
-                <span>{appID}</span>
-                <Button variant="ghost" size="normal" onClick={() => removeApp(appID)}>
-                  {language.t("computerUse.allowlist.remove")}
-                </Button>
-              </div>
-            )}
-          </For>
-        </Show>
-        <input
-          value={candidate()}
-          onInput={(event) => setCandidate(event.currentTarget.value)}
-          aria-label={language.t("computerUse.allowlist.label")}
-        />
-        <Button variant="secondary" size="normal" onClick={allowCurrent}>
-          {language.t("computerUse.allowlist.add")}
-        </Button>
-        <div>
-          {language.t("computerUse.consent.title")} {language.t("computerUse.consent.allowOnce")}
-        </div>
-        <Button variant="ghost" size="normal" onClick={stop}>
-          {language.t("computerUse.stop")}
-        </Button>
-      </Show>
-    </div>
   )
 }
 
@@ -2534,7 +2444,6 @@ export default function Page() {
   return (
     <SessionRouteFrame>
       <SessionHeader />
-      <ComputerUsePanel />
       <div
         ref={panelRow}
         class="flex-1 min-h-0 flex flex-col md:flex-row"
