@@ -94,9 +94,12 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     ask: (req) => {
       const ruleset = Permission.merge(input.agent.permission, input.session.permission ?? [])
       if (req.permission === "edit" || req.permission === "bash" || req.permission === "external_directory") {
-        const target = req.patterns[0] ?? ""
-        if (target !== "" && !Sandbox.isPathAllowed(target, input.session.directory, sandboxDirs, policy.sandbox)) {
-          return Effect.orDie(Effect.fail(new Sandbox.SandboxViolationError({ path: target, level: policy.sandbox })))
+        const blocked = req.patterns.find(
+          (target) =>
+            target !== "" && !Sandbox.isPathAllowed(target, input.session.directory, sandboxDirs, policy.sandbox),
+        )
+        if (blocked !== undefined) {
+          return Effect.orDie(Effect.fail(new Sandbox.SandboxViolationError({ path: blocked, level: policy.sandbox })))
         }
       }
       const denied = req.patterns.some(
