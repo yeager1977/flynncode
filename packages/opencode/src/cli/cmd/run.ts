@@ -572,7 +572,12 @@ export const RunCommand = effectCmd({
 
       async function createFreshSession(
         sdk: OpencodeClient,
-        input: { agent: string | undefined; model: ModelInput | undefined; variant: string | undefined },
+        input: {
+          agent: string | undefined
+          model: ModelInput | undefined
+          variant: string | undefined
+          source?: "startup" | "resume" | "clear" | "compact"
+        },
       ): Promise<SessionInfo> {
         const result = await sdk.session.create({
           title: args.title !== undefined && args.title !== "" ? args.title : undefined,
@@ -585,6 +590,7 @@ export const RunCommand = effectCmd({
               }
             : undefined,
           permission: [...rules],
+          source: input.source,
         })
         const id = result.data?.id
         if (!id) {

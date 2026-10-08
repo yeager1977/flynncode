@@ -37,6 +37,7 @@ type CreateSessionInput = {
   agent: string | undefined
   model: RunInput["model"]
   variant: string | undefined
+  source?: "startup" | "resume" | "clear" | "compact"
 }
 
 type CreateSession = (sdk: RunInput["sdk"], input: CreateSessionInput) => Promise<{ id: string; title?: string }>
@@ -588,6 +589,8 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
                 agent: state.agent,
                 model: state.model,
                 variant: state.activeVariant,
+                // /new clears to a fresh session.
+                source: "clear",
               })
               await footer.idle().catch(() => {})
               await state.stream?.then((item) => item.handle.close()).catch(() => {})

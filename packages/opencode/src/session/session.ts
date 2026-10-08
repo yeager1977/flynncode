@@ -269,6 +269,7 @@ export const CreateInput = Schema.optional(
     metadata: Schema.optional(Metadata),
     permission: Schema.optional(PermissionV1.Ruleset),
     workspaceID: Schema.optional(WorkspaceV2.ID),
+    source: Schema.optional(Schema.Literals(["startup", "resume", "clear", "compact"])),
   }),
 )
 export type CreateInput = Types.DeepMutable<Schema.Schema.Type<typeof CreateInput>>
@@ -424,6 +425,7 @@ export interface Interface {
     metadata?: typeof Metadata.Type
     permission?: PermissionV1.Ruleset
     workspaceID?: WorkspaceV2.ID
+    source?: "startup" | "resume" | "clear" | "compact"
   }) => Effect.Effect<Info>
   readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info, NotFound>
   readonly touch: (sessionID: SessionID) => Effect.Effect<void>
@@ -511,6 +513,7 @@ const layer: Layer.Layer<
       path?: string
       metadata?: typeof Metadata.Type
       permission?: PermissionV1.Ruleset
+      source?: "startup" | "resume" | "clear" | "compact"
     }) {
       const ctx = yield* InstanceState.context
       const result: Info = {
@@ -544,7 +547,7 @@ const layer: Layer.Layer<
         yield* HooksContext.observeAndStore(
           "hooks.session.start",
           result.id,
-          maybeStartHooks.value.runSessionStart({ sessionID: result.id, source: "startup" }),
+          maybeStartHooks.value.runSessionStart({ sessionID: result.id, source: input.source ?? "startup" }),
         )
       }
 
@@ -700,6 +703,7 @@ const layer: Layer.Layer<
       metadata?: typeof Metadata.Type
       permission?: PermissionV1.Ruleset
       workspaceID?: WorkspaceV2.ID
+      source?: "startup" | "resume" | "clear" | "compact"
     }) {
       const ctx = yield* InstanceState.context
       const workspace = yield* InstanceState.workspaceID
@@ -713,6 +717,7 @@ const layer: Layer.Layer<
         metadata: input?.metadata,
         permission: input?.permission,
         workspaceID: input?.workspaceID ?? workspace,
+        source: input?.source,
       })
     })
 
@@ -726,6 +731,8 @@ const layer: Layer.Layer<
         workspaceID: original.workspaceID,
         title,
         metadata: structuredClone(original.metadata),
+        // A fork carries resumed history into a new session.
+        source: "resume",
       })
       const msgs = yield* messages({ sessionID: input.sessionID })
       const idMap = new Map<string, MessageID>()

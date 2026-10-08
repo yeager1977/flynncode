@@ -163,3 +163,49 @@ describe("hooks runner file rewrite", () => {
     }),
   )
 })
+
+const seenIdle: Array<unknown> = []
+const seenStart: Array<unknown> = []
+const reasonIt = testEffect(
+  HooksRunner.testLayerWithHooks([
+    {
+      "session.idle": async (input) => {
+        seenIdle.push(input)
+      },
+      "session.start": async (input) => {
+        seenStart.push(input)
+      },
+    },
+  ]),
+)
+
+describe("hooks runner event fidelity", () => {
+  reasonIt.effect("idle and interrupt emit distinct reasons", () =>
+    Effect.gen(function* () {
+      seenIdle.length = 0
+      const runner = yield* HooksRunner.Service
+      yield* runner.runIdle({ sessionID: "ses_1" })
+      yield* runner.runInterrupt({ sessionID: "ses_1" })
+      expect(seenIdle).toEqual([
+        { sessionID: "ses_1", reason: "idle" },
+        { sessionID: "ses_1", reason: "interrupt" },
+      ])
+    }),
+  )
+
+  reasonIt.effect("session start source passes through", () =>
+    Effect.gen(function* () {
+      seenStart.length = 0
+      const runner = yield* HooksRunner.Service
+      for (const source of ["startup", "resume", "clear", "compact"] as const) {
+        yield* runner.runSessionStart({ sessionID: "ses_1", source })
+      }
+      expect(seenStart.map((item) => (item as { source: string }).source)).toEqual([
+        "startup",
+        "resume",
+        "clear",
+        "compact",
+      ])
+    }),
+  )
+})
