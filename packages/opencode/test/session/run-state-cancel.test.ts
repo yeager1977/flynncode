@@ -24,9 +24,10 @@ const executionStub = Layer.succeed(
 )
 
 const it = testEffect(
-  AppNodeBuilder.build(LayerNode.group([SessionRunState.node, SessionStatus.node]), [
-    [SessionExecution.node, executionStub],
-  ]),
+  Layer.merge(
+    AppNodeBuilder.build(LayerNode.group([SessionRunState.node, SessionStatus.node])),
+    executionStub,
+  ),
 )
 
 describe("run-state cancel", () => {
