@@ -93,7 +93,14 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       }),
     ask: (req) => {
       const ruleset = Permission.merge(input.agent.permission, input.session.permission ?? [])
-      if (req.permission === "edit" || req.permission === "bash" || req.permission === "external_directory") {
+      // Bash patterns are command globs, not paths; the shell tool raises external_directory
+      // for paths it touches, so bash itself is only gated by readonly.
+      if (req.permission === "bash" && policy.sandbox === "readonly") {
+        return Effect.orDie(
+          Effect.fail(new Sandbox.SandboxViolationError({ path: input.session.directory, level: policy.sandbox })),
+        )
+      }
+      if (req.permission === "edit" || req.permission === "external_directory") {
         const blocked = req.patterns.find(
           (target) =>
             target !== "" && !Sandbox.isPathAllowed(target, input.session.directory, sandboxDirs, policy.sandbox),
