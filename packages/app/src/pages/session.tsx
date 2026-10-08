@@ -89,7 +89,7 @@ import { createTimelineModel } from "@/pages/session/timeline/model"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { citationFromTarget, scrollCitationLine } from "@/pages/session/citation"
 import { reviewFollowUp } from "@/pages/session/review-follow-up"
-import { buildDetachedReviewText, reviewDetachedPrefillKey } from "@/pages/session/review-detached"
+import { buildDetachedReviewText, sessionPrefillKey } from "@/pages/session/review-detached"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { restorePromptModel, syncPromptModel, syncSessionModel } from "@/pages/session/session-model-helpers"
 import {
@@ -431,8 +431,8 @@ export default function Page() {
     })
   })
 
-  // Detached review delivery: a forked session lands here with its /review
-  // prompt stashed under its prefill key. Consume it once into the composer.
+  // Prefill delivery: a forked review session or a handed-off session lands
+  // here with its prompt stashed under its prefill key. Consume it once into the composer.
   // The page stays mounted across same-workspace tab switches, so this keys
   // off the session id rather than mount.
   createEffect(() => {
@@ -440,7 +440,7 @@ export default function Page() {
     const id = params.id
     if (!id) return
     untrack(() => {
-      const key = reviewDetachedPrefillKey(id)
+      const key = sessionPrefillKey(id)
       const prefill = sessionStorage.getItem(key)
       if (!prefill) return
       sessionStorage.removeItem(key)
@@ -1300,7 +1300,7 @@ export default function Page() {
     sdk()
       .api.session.fork({ sessionID: id })
       .then((forked) => {
-        sessionStorage.setItem(reviewDetachedPrefillKey(forked.id), text)
+        sessionStorage.setItem(sessionPrefillKey(forked.id), text)
         navigate(`/${base64Encode(sdk().directory)}/session/${forked.id}`)
       })
       .catch(() => {
