@@ -97,6 +97,7 @@ export type RunOpts = SpawnOpts & {
   readonly model?: string
   readonly agent?: string
   readonly format?: "default" | "json"
+  readonly json?: boolean
   readonly command?: string
   readonly printLogs?: boolean
   readonly permission?: Record<string, "ask" | "allow" | "deny">
@@ -254,6 +255,7 @@ export function withCliFixture<A, E>(
       argv.push("--model", opts?.model ?? testModelID)
       if (opts?.agent) argv.push("--agent", opts.agent)
       if (opts?.format) argv.push("--format", opts.format)
+      if (opts?.json) argv.push("--json")
       if (opts?.command) argv.push("--command", opts.command)
       if (opts?.extraArgs) argv.push(...opts.extraArgs)
       argv.push(message)
