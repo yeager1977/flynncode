@@ -1,6 +1,6 @@
 export const SESSION_COOKIE = "oc_mobile_session"
 
-const MAX_AGE_SECONDS = 2592000
+export const MAX_AGE_SECONDS = 2592000
 
 export function readCookie(header: string | null | undefined, name: string) {
   if (!header) return
