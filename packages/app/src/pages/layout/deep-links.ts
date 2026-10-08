@@ -36,6 +36,10 @@ export const collectOpenProjectDeepLinks = (urls: string[]) =>
 export const collectNewSessionDeepLinks = (urls: string[]) =>
   urls.map(parseNewSessionDeepLink).filter((link): link is { directory: string; prompt?: string } => !!link)
 
+export function buildNewSessionDeepLink(directory: string, prompt: string) {
+  return `opencode://new-session?directory=${encodeURIComponent(directory)}&prompt=${encodeURIComponent(prompt)}`
+}
+
 type OpenCodeWindow = Window & {
   __OPENCODE__?: {
     deepLinks?: string[]
