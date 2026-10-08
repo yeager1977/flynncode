@@ -68,6 +68,7 @@ import {
   sortedRootSessions,
 } from "./layout/helpers"
 import {
+  buildNewSessionDeepLink,
   collectNewSessionDeepLinks,
   collectOpenProjectDeepLinks,
   deepLinkEvent,
@@ -1291,7 +1292,6 @@ export default function LegacyLayout(props: ParentProps) {
     handleDeepLinks(drainPendingDeepLinks(window))
     makeEventListener(window, deepLinkEvent, handler as EventListener)
     makeEventListener(window, "opencode:quick-entry", () => {
-      if (!currentDir()) return
       setState("quickEntry", true)
     })
   })
@@ -2289,22 +2289,29 @@ export default function LegacyLayout(props: ParentProps) {
             const directory = currentDir()
             const prompt = state.quickEntryText.trim()
             if (!directory || !prompt) return
-            handleDeepLinks([
-              `opencode://new-session?directory=${encodeURIComponent(directory)}&prompt=${encodeURIComponent(prompt)}`,
-            ])
+            handleDeepLinks([buildNewSessionDeepLink(directory, prompt)])
             setState({ quickEntry: false, quickEntryText: "" })
           }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") setState({ quickEntry: false, quickEntryText: "" })
+          }}
         >
-          <input
-            class="min-w-0 flex-1 rounded-md border border-border-weak-base bg-transparent px-2 py-1 text-14-regular"
-            value={state.quickEntryText}
-            autofocus
-            aria-label={language.t("dispatch.placeholder")}
-            onInput={(event) => setState("quickEntryText", event.currentTarget.value)}
-          />
-          <Button type="submit" size="small">
-            {language.t("dispatch.send")}
-          </Button>
+          <Show
+            when={currentDir()}
+            fallback={<p class="min-w-0 flex-1 px-2 py-1 text-14-regular">{language.t("quickEntry.empty")}</p>}
+          >
+            <input
+              class="min-w-0 flex-1 rounded-md border border-border-weak-base bg-transparent px-2 py-1 text-14-regular"
+              value={state.quickEntryText}
+              ref={(el) => queueMicrotask(() => el.focus())}
+              aria-label={language.t("quickEntry.placeholder")}
+              placeholder={language.t("quickEntry.placeholder")}
+              onInput={(event) => setState("quickEntryText", event.currentTarget.value)}
+            />
+            <Button type="submit" size="small">
+              {language.t("quickEntry.send")}
+            </Button>
+          </Show>
         </form>
       </Show>
       <Titlebar

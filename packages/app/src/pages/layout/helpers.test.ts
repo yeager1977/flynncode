@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  buildNewSessionDeepLink,
   collectNewSessionDeepLinks,
   collectOpenProjectDeepLinks,
   drainPendingDeepLinks,
@@ -98,6 +99,12 @@ describe("layout deep links", () => {
       "opencode://new-session?directory=/c&prompt=ship%20it",
     ])
     expect(result).toEqual([{ directory: "/a" }, { directory: "/c", prompt: "ship it" }])
+  })
+
+  test("builds new-session deep link with encoded prompt", () => {
+    expect(buildNewSessionDeepLink("/tmp/demo", "hello world")).toEqual(
+      "opencode://new-session?directory=%2Ftmp%2Fdemo&prompt=hello%20world",
+    )
   })
 
   test("drains global deep links once", () => {

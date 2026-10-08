@@ -64,6 +64,7 @@ const [updaterState, setUpdaterState] = createSignal<UpdaterState>({ status: "di
 void window.api.updater.subscribe(setUpdaterState)
 
 const deepLinkEvent = "opencode:deep-link"
+const quickEntryEvent = "opencode:quick-entry"
 
 type DesktopWindowState = {
   id?: string
@@ -82,7 +83,7 @@ const listenForDeepLinks = () => {
   return window.api.onDeepLink((urls) => emitDeepLinks(urls))
 }
 
-const listenForQuickEntry = () => window.api.onQuickEntry(() => window.dispatchEvent(new CustomEvent("opencode:quick-entry")))
+const listenForQuickEntry = () => window.api.onQuickEntry(() => window.dispatchEvent(new CustomEvent(quickEntryEvent)))
 
 function windowLastActiveUrlKey(windowID: string) {
   return `opencode.desktop.window.${windowID}.last-active-url`
