@@ -4,7 +4,7 @@ import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { WordmarkV2 } from "@opencode-ai/ui/v2/wordmark-v2"
-import { For, Show, createMemo, createSignal, type Accessor } from "solid-js"
+import { For, Show, createMemo, createResource, createSignal, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Portal } from "solid-js/web"
 import createPresence from "solid-presence"
@@ -29,6 +29,7 @@ import { showToast } from "@/utils/toast"
 import { Persist, persisted } from "@/utils/persist"
 import type { NewSessionDraftController } from "./new-session-draft-controller"
 import type { NewSessionWorkspaceController } from "./new-session-workspace-controller"
+import { knowledgeNotesEmpty } from "./new-session-knowledge"
 
 const providerTipDismissalDuration = 30 * 24 * 60 * 60 * 1000
 
@@ -50,7 +51,11 @@ export function NewSessionView(props: {
           <div class={NEW_SESSION_CONTENT_WIDTH}>
             <WordmarkV2 class="h-auto w-full text-v2-background-bg-inverse" />
             <div class="mt-8 flex flex-col gap-8">
-              <NewSessionKindSelector kind={props.kind} onKind={props.onKind} />
+              <NewSessionKindSelector
+                kind={props.kind}
+                onKind={props.onKind}
+                worktree={() => props.project.selected()?.worktree}
+              />
               <PromptInputV2Composer controller={props.input} />
               <Show when={props.project.empty()}>
                 <PromptProjectAddButton controller={props.project} />
@@ -93,8 +98,24 @@ export function NewSessionView(props: {
 function NewSessionKindSelector(props: {
   kind: NewSessionDraftController["kind"]
   onKind: NewSessionDraftController["setKind"]
+  worktree: Accessor<string | undefined>
 }) {
   const language = useLanguage()
+  const sdk = useSDK()
+  // The empty state asserts on real data: list the selected project's
+  // knowledge folder and show it only when no markdown notes resolve.
+  // While loading (or with no project yet) only the hint shows.
+  const [notesEmpty] = createResource(
+    () => (props.kind() === "knowledge" ? (props.worktree() ?? null) : null),
+    async (root) => {
+      try {
+        const result = await sdk().api.file.list({ path: ".opencode/knowledge", location: { directory: root } })
+        return knowledgeNotesEmpty([result.data.map((entry) => entry.path)])
+      } catch {
+        return true
+      }
+    },
+  )
   return (
     <div class="flex min-h-7 min-w-0 flex-col items-center justify-center gap-1">
       <span class="text-[13px] leading-5 text-v2-text-text-faint">{language.t("session.new.kind.label")}</span>
@@ -126,14 +147,16 @@ function NewSessionKindSelector(props: {
         <div class="text-[13px] leading-5 text-v2-text-text-faint">
           {language.t("session.new.kind.knowledgeHint")}
         </div>
-        <div class="flex min-w-0 flex-col items-center justify-center gap-1 text-center">
-          <span class="text-[13px] leading-5 text-v2-text-text-muted [font-weight:530]">
-            {language.t("knowledge.empty.title")}
-          </span>
-          <span class="text-[13px] leading-5 text-v2-text-text-faint">
-            {language.t("knowledge.empty.description")}
-          </span>
-        </div>
+        <Show when={notesEmpty() === true}>
+          <div class="flex min-w-0 flex-col items-center justify-center gap-1 text-center">
+            <span class="text-[13px] leading-5 text-v2-text-text-muted [font-weight:530]">
+              {language.t("knowledge.empty.title")}
+            </span>
+            <span class="text-[13px] leading-5 text-v2-text-text-faint">
+              {language.t("knowledge.empty.description")}
+            </span>
+          </div>
+        </Show>
       </Show>
     </div>
   )
