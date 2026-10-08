@@ -30,7 +30,7 @@ const MOBILE_GATEWAY_PORT = 4097
 const MOBILE_GATEWAY_STATUS_URL = "http://127.0.0.1:4097/flynncode-mobile-status"
 
 function stoppedMobileGatewayStatus() {
-  return { running: false, port: MOBILE_GATEWAY_PORT, lanUrls: [], launcherUrls: [] }
+  return { running: false, port: MOBILE_GATEWAY_PORT, lanUrls: [], launcherUrls: [], tailnetUrls: [], tailnetLauncherUrls: [] }
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -102,11 +102,13 @@ export function registerIpcHandlers(deps: Deps) {
         signal: AbortSignal.timeout(2000),
       })
       if (!response.ok) return stoppedMobileGatewayStatus()
-      const data = (await response.json()) as { port?: unknown; lanUrls?: unknown; launcherUrls?: unknown }
+      const data = (await response.json()) as { port?: unknown; lanUrls?: unknown; launcherUrls?: unknown; tailnetUrls?: unknown; tailnetLauncherUrls?: unknown }
       if (typeof data.port !== "number" || !isStringArray(data.lanUrls) || !isStringArray(data.launcherUrls)) {
         return stoppedMobileGatewayStatus()
       }
-      return { running: true, port: data.port, lanUrls: data.lanUrls, launcherUrls: data.launcherUrls }
+      const tailnetUrls = isStringArray(data.tailnetUrls) ? data.tailnetUrls : []
+      const tailnetLauncherUrls = isStringArray(data.tailnetLauncherUrls) ? data.tailnetLauncherUrls : []
+      return { running: true, port: data.port, lanUrls: data.lanUrls, launcherUrls: data.launcherUrls, tailnetUrls, tailnetLauncherUrls }
     } catch {
       return stoppedMobileGatewayStatus()
     }

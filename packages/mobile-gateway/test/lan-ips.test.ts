@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { buildLauncherUrls, listLanIPv4 } from "../src/lan-ips"
+import { buildLauncherUrls, listLanIPv4, listTailnetIPv4 } from "../src/lan-ips"
 
 describe("listLanIPv4", () => {
   test("keeps 192.168.x.x only, drops loopback, container bridges, and IPv6", () => {
@@ -18,5 +18,20 @@ describe("listLanIPv4", () => {
 
   test("builds launcher urls with /m path", () => {
     expect(buildLauncherUrls(["192.168.1.42"], 4097)).toEqual(["http://192.168.1.42:4097/m"])
+  })
+})
+
+describe("listTailnetIPv4", () => {
+  test("lists only 100.64/10 addresses", () => {
+    const nic = (address: string) => ({
+      address,
+      family: "IPv4",
+      internal: false,
+      mac: "00:00:00:00:00:00",
+      netmask: "255.0.0.0",
+      cidr: null,
+    }) as never
+    const found = listTailnetIPv4({ tailscale0: [nic("100.90.1.2")], eth0: [nic("192.168.1.5")] })
+    expect(found).toEqual(["100.90.1.2"])
   })
 })
