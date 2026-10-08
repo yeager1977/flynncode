@@ -319,6 +319,17 @@ export const DESKTOP_NATIVE_ENGLISH = {
 
   "desktop.picker.error.notSelected": "File was not selected by the picker",
   "desktop.picker.error.sizeLimit": "Selected attachments exceed the {{limit}} MB limit",
+
+  "desktop.vendorAuth.signInClaude": "Sign in with Claude",
+  "desktop.vendorAuth.signInChatGPT": "Sign in with ChatGPT",
+  "desktop.vendorAuth.importClaude": "Import from Claude Code",
+  "desktop.vendorAuth.importCodex": "Import from Codex CLI",
+  "desktop.vendorAuth.signOut": "Sign out",
+  "desktop.vendorAuth.connected": "Connected",
+  "desktop.vendorAuth.notConnected": "Not connected",
+  "desktop.vendorAuth.error.emptySecret": "Secret is empty.",
+  "desktop.vendorAuth.error.noKeychain": "System keychain unavailable; using encrypted file storage.",
+  "desktop.vendorAuth.error.unknownVendor": "Unknown provider.",
 } as const
 
 export type DesktopNativeKey = keyof typeof DESKTOP_NATIVE_ENGLISH

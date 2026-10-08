@@ -109,6 +109,16 @@ const desktop = [
   "Nepavyko gauti prievado",
   "Failas nebuvo pasirinktas failų parinkiklyje",
   "Pasirinkti priedai viršija {{limit}} MB ribą",
+  "Sign in with Claude",
+  "Sign in with ChatGPT",
+  "Import from Claude Code",
+  "Import from Codex CLI",
+  "Sign out",
+  "Connected",
+  "Not connected",
+  "Secret is empty.",
+  "System keychain unavailable; using encrypted file storage.",
+  "Unknown provider.",
 ]
 
 export const dict = {

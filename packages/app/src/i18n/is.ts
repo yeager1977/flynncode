@@ -109,6 +109,16 @@ const desktop = [
   "Ekki tókst að sækja gátt",
   "Skráin var ekki valin í skráavalinu",
   "Valin viðhengi fara yfir {{limit}} MB hámarkið",
+  "Sign in with Claude",
+  "Sign in with ChatGPT",
+  "Import from Claude Code",
+  "Import from Codex CLI",
+  "Sign out",
+  "Connected",
+  "Not connected",
+  "Secret is empty.",
+  "System keychain unavailable; using encrypted file storage.",
+  "Unknown provider.",
 ]
 
 export const dict = {

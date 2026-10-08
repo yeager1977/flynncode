@@ -1,7 +1,9 @@
 import type { Hooks, PluginInput } from "@opencode-ai/plugin"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { OAUTH_DUMMY_KEY } from "../../auth"
+import { parseCodexAuth } from "../../auth/vendor-import"
 import os from "os"
+import path from "path"
 import { setTimeout as sleep } from "node:timers/promises"
 import { createServer } from "http"
 import { OpenAIWebSocketPool } from "./ws-pool"
@@ -547,6 +549,30 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
                   await sleep(interval + OAUTH_POLLING_SAFETY_MARGIN_MS)
                 }
               },
+            }
+          },
+        },
+        {
+          label: "Import from Codex CLI",
+          type: "oauth",
+          authorize: async () => {
+            const home = process.env.HOME ?? os.homedir()
+            const raw = await Bun.file(path.join(home, ".codex", "auth.json"))
+              .json()
+              .catch(() => undefined)
+            const imported = parseCodexAuth(raw)
+            if (!imported || imported.kind !== "oauth") throw new Error("No Codex CLI credentials found")
+            return {
+              url: "http://localhost/imported",
+              instructions: "Imported Codex CLI credentials from this machine.",
+              method: "auto" as const,
+              callback: async () => ({
+                type: "success" as const,
+                refresh: imported.refresh,
+                access: imported.access,
+                expires: imported.expires,
+                ...(imported.accountId ? { accountId: imported.accountId } : {}),
+              }),
             }
           },
         },

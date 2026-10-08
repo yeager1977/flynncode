@@ -41,6 +41,17 @@ export const DEFAULT_MODELS: Record<string, ScoreEntry> = {
   "xai/grok-4.20-0309-non-reasoning": { capability: 7, price: 3, speed: 7, tags: ["coding", "lookup"] },
   "xai/grok-4.3": { capability: 8, price: 4, speed: 5, tags: ["coding", "long-context"] },
   "xai/grok-build-0.1": { capability: 7, price: 3, speed: 6, tags: ["coding"] },
+  // Vendor subscription models (Claude Pro/Max, ChatGPT Plus/Pro) only appear
+  // as candidates once the vendor is connected; the entries stay inert until
+  // then, exactly like disconnected xAI entries. They carry no tags so a
+  // small connected catalog stays eligible for every task; scoring alone
+  // separates flagship, balanced, and fast tiers.
+  "anthropic/claude-opus-5-5": { capability: 10, price: 6, speed: 5 },
+  "anthropic/claude-sonnet-5": { capability: 9, price: 4, speed: 7 },
+  "anthropic/claude-fable-5-1": { capability: 8, price: 3, speed: 8 },
+  "openai/gpt-6-astra": { capability: 10, price: 6, speed: 5 },
+  "openai/gpt-6-sol": { capability: 9, price: 4, speed: 7 },
+  "openai/gpt-6-luna": { capability: 7, price: 3, speed: 9 },
 }
 
 // Bundled exclusions encode agentic correctness and cannot be removed by a user list.

@@ -1580,6 +1580,8 @@ export const dict = {
   "settings.providers.tag.other": "Other",
   "settings.providers.enabled": "Enabled",
   "settings.providers.enabled.description": "Turn this provider off without removing its key or config. Applies after you quit and restart.",
+  "settings.providers.vendor.signInClaude": "Sign in with Claude",
+  "settings.providers.vendor.signInChatGPT": "Sign in with ChatGPT",
   "settings.models.title": "Models",
   "settings.models.description": "Model settings will be configurable here.",
   "settings.agents.title": "Agents",

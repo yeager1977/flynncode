@@ -25,6 +25,7 @@ import { createUpdaterSubscriptions } from "./updater-subscriptions"
 import { createDesktopDraftStore } from "./draft-store"
 import { nativeT } from "./native-translations"
 import { registerPluginManager } from "./plugin-manager"
+import type { VendorStatus } from "./vendor-keychain"
 
 const MOBILE_GATEWAY_PORT = 4097
 const MOBILE_GATEWAY_STATUS_URL = "http://127.0.0.1:4097/flynncode-mobile-status"
@@ -60,6 +61,8 @@ type Deps = {
   resolveAppPath: (appName: string) => Promise<string | null>
   museAuthStatus: () => Promise<{ installed: boolean; loggedIn: boolean }>
   museAuthSync: () => Promise<{ ok: boolean; output: string; code?: "not-found" | "failed" }>
+  vendorAuthStatus: () => Promise<VendorStatus>
+  vendorAuthSignout: (vendor: string) => Promise<void>
   updater: UpdaterController
   showUpdater: () => Promise<void> | void
   setBackgroundColor: (color: string) => void
@@ -96,6 +99,8 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("resolve-app-path", (_event: IpcMainInvokeEvent, appName: string) => deps.resolveAppPath(appName))
   ipcMain.handle("muse-auth-status", () => deps.museAuthStatus())
   ipcMain.handle("muse-auth-sync", () => deps.museAuthSync())
+  ipcMain.handle("vendor-auth-status", () => deps.vendorAuthStatus())
+  ipcMain.handle("vendor-auth-signout", (_event: IpcMainInvokeEvent, vendor: string) => deps.vendorAuthSignout(vendor))
   ipcMain.handle("get-mobile-gateway-status", async () => {
     try {
       const response = await fetch(MOBILE_GATEWAY_STATUS_URL, {
