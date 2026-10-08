@@ -29,6 +29,11 @@ type PermissionRespondFn = (input: {
   directory?: string
 }) => void
 
+export type ApprovalMode = "manual" | "accept-edits" | "auto"
+export type SandboxLevel = "readonly" | "workspace-write" | "full-access"
+
+const AUTO_EDIT_PERMISSIONS = ["edit", "read", "glob", "grep", "list"]
+
 function isNonAllowRule(rule: unknown) {
   if (!rule) return false
   if (typeof rule === "string") return rule !== "allow"
@@ -180,6 +185,15 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
       isPermissionAllowAll(directory: string) {
         return selected().isPermissionAllowAll(directory)
       },
+      approvalMode(sessionID: string, directory?: string) {
+        return selected().approvalMode(sessionID, directory)
+      },
+      setApprovalMode(sessionID: string, directory: string | undefined, mode: ApprovalMode) {
+        selected().setApprovalMode(sessionID, directory, mode)
+      },
+      sandboxLevel(directory: string) {
+        return selected().sandboxLevel(directory)
+      },
     }
   },
 })
@@ -208,6 +222,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     },
     createStore({
       autoAccept: {} as Record<string, boolean>,
+      approvalMode: {} as Record<string, ApprovalMode>,
     }),
   )
 
@@ -295,7 +310,35 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     return isDirectoryAutoAccepting(store.autoAccept, directory)
   }
 
+  function approvalMode(sessionID: string, directory?: string): ApprovalMode {
+    return store.approvalMode[acceptKey(sessionID, directory)] ?? "manual"
+  }
+
+  function setApprovalMode(sessionID: string, directory: string | undefined, mode: ApprovalMode) {
+    if (meta.disposed) return
+    const key = acceptKey(sessionID, directory)
+    setStore(
+      produce((draft) => {
+        draft.approvalMode[key] = mode
+      }),
+    )
+  }
+
+  function sandboxLevel(directory: string): SandboxLevel {
+    if (meta.disposed) return "workspace-write"
+    const [childStore] = input.sync.child(directory)
+    // Full-access is settings-gated (Codex model): it only activates via an
+    // explicit `sandbox: "full-access"` config value. No UI affordance writes
+    // it, so it stays hidden until explicitly enabled.
+    const level = (childStore.config.permission as Record<string, string> | undefined)?.sandbox
+    if (level === "readonly" || level === "workspace-write" || level === "full-access") return level
+    return "workspace-write"
+  }
+
   function shouldAutoRespond(permission: PermissionRequest, directory?: string) {
+    const mode = approvalMode(permission.sessionID, directory)
+    if (mode === "auto") return true
+    if (mode === "accept-edits" && AUTO_EDIT_PERMISSIONS.includes(permission.permission)) return true
     return autoRespondsPermission(store.autoAccept, sessions(directory), permission, directory)
   }
 
@@ -467,6 +510,16 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
       if (meta.disposed) return false
       const [childStore] = input.sync.child(directory)
       return childStore.config.permission === "allow"
+    },
+    approvalMode(sessionID: string, directory?: string) {
+      if (meta.disposed) return "manual" as ApprovalMode
+      return approvalMode(sessionID, directory)
+    },
+    setApprovalMode(sessionID: string, directory: string | undefined, mode: ApprovalMode) {
+      setApprovalMode(sessionID, directory, mode)
+    },
+    sandboxLevel(directory: string) {
+      return sandboxLevel(directory)
     },
   }
 
