@@ -16,6 +16,11 @@ export type StoredRoutine = {
   interval?: string
   rrule?: string
   recentRuns?: StoredRoutineRun[]
+  // Scheduler-owned fields Settings doesn't edit; carried through untouched so
+  // saving here never drops a routine's trigger, run directory, or RRULE anchor.
+  createdAt?: string
+  directory?: string
+  trigger?: Record<string, unknown>
 }
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
@@ -59,9 +64,16 @@ export function routinesFromConfig(raw: unknown): StoredRoutine[] {
         interval: typeof interval === "string" && INTERVALS.has(interval) ? interval : undefined,
         rrule: typeof rrule === "string" && rrule.startsWith("FREQ=") ? rrule : undefined,
         recentRuns: readRecentRuns(row.recentRuns),
+        createdAt: typeof row.createdAt === "string" ? row.createdAt : undefined,
+        directory: typeof row.directory === "string" ? row.directory : undefined,
+        trigger: isRecord(row.trigger) ? row.trigger : undefined,
       },
     ]
   })
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
 function readRecentRuns(recentRuns: unknown) {
@@ -89,6 +101,9 @@ export function routinesToConfig(routines: StoredRoutine[]) {
       enabled: routine.enabled,
       lastRun: routine.lastRun,
       recentRuns: routine.recentRuns,
+      createdAt: routine.createdAt,
+      directory: routine.directory,
+      trigger: routine.trigger,
       schedule: routine.dailyAt
         ? { dailyAt: routine.dailyAt }
         : routine.interval
