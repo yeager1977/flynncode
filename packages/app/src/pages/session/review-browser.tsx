@@ -1,16 +1,16 @@
-import { For, Show } from "solid-js"
+import { createEffect, createResource, For, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { createResource } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
 import { useSessionLayout } from "./session-layout"
 import { storeArtifact } from "@/pages/layout/sidebar-artifacts"
 import { browserAnnotation } from "./hunk-revert"
+import { browserPaneUrlFor, isLocalPreviewUrl, normalizePreviewUrl, setBrowserPaneUrl } from "./browser-pane"
 import { previewDotClass, previewErrorDetail, previewManaged, type PreviewServerState } from "./preview-server"
 
 export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) {
@@ -19,9 +19,12 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
   const platform = usePlatform()
   const dialog = useDialog()
   const layout = useSessionLayout()
+  // The pane URL persists per session: switching sessions restores each
+  // session's URL from the module record instead of resetting to default.
+  const paneKey = () => layout.params.id ?? sdk().directory ?? "default"
   const [state, setState] = createStore({
-    url: "http://127.0.0.1:3000",
-    loaded: "http://127.0.0.1:3000",
+    url: browserPaneUrlFor(paneKey(), "http://127.0.0.1:3000"),
+    loaded: browserPaneUrlFor(paneKey(), "http://127.0.0.1:3000"),
     note: "",
     open: false,
     marking: false,
@@ -34,6 +37,17 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
     menu: false,
     busy: "",
     actionError: "",
+  })
+  // Normalizes raw URL-bar input against the currently loaded URL and
+  // remembers the result for this session.
+  const commitUrl = (raw: string) => {
+    const normalized = normalizePreviewUrl(raw, state.loaded)
+    setBrowserPaneUrl(paneKey(), normalized)
+    setState({ url: normalized, loaded: normalized })
+  }
+  createEffect(() => {
+    const stored = browserPaneUrlFor(paneKey(), state.loaded)
+    if (stored !== state.loaded) setState({ url: stored, loaded: stored })
   })
   // Lane A: preview servers come from the new /preview/servers endpoint.
   const [servers, serversActions] = createResource(
@@ -56,7 +70,7 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
         { throwOnError: true },
       )
       const info = result.data
-      if (info?.url) setState({ url: info.url, loaded: info.url })
+      if (info?.url) commitUrl(info.url)
       await serversActions.refetch()
       if (info?.url) setState("open", true)
     } catch (error) {
@@ -67,7 +81,8 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
   }
   const openAttachUrl = (server: PreviewServerState) => {
     if (!previewManaged(server) && server.url) {
-      setState({ url: server.url, loaded: server.url, open: true })
+      commitUrl(server.url)
+      setState("open", true)
       return
     }
     if (server.url) platform.openExternal(server.url)
@@ -79,14 +94,10 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
     const module = await import("@/components/settings-v2")
     void dialog.show(() => <module.DialogSettings defaultValue="preview" />)
   }
-  const local = () => {
-    try {
-      const parsed = new URL(state.loaded)
-      return parsed.protocol === "http:" || parsed.protocol === "https:"
-    } catch {
-      return false
-    }
-  }
+  // The sandboxed iframe keeps an opaque origin, so only loopback http(s)
+  // targets can load; anything needing cookies/localStorage waits for a
+  // future native host.
+  const local = () => isLocalPreviewUrl(state.loaded)
   const mark = (event: PointerEvent, el: HTMLElement, drag: boolean) => {
     const box = el.getBoundingClientRect()
     if (box.width === 0 || box.height === 0) return
@@ -138,7 +149,7 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
   const annotate = async () => {
     const text = state.note.trim()
     if (!text) {
-      setState("loaded", state.url)
+      commitUrl(state.url)
       return
     }
     const thumbnail = state.marked ? await capture() : undefined
@@ -178,7 +189,8 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
   }
 
   return (
-    <div data-component="review-browser" class="flex min-h-0 flex-col border-t border-border-weak-base">
+    <div data-component="browser-pane" class="flex min-h-0 flex-col border-t border-border-weak-base">
+      <div class="px-2 pt-2 text-12-regular text-text-weak">{language.t("session.review.browserPane.title")}</div>
       <div class="flex gap-2 p-2">
         <Show when={(servers() ?? []).length > 0}>
           <DropdownMenu gutter={4} placement="bottom-start" open={state.menu} onOpenChange={(open) => setState("menu", open)}>
@@ -250,17 +262,26 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
             </DropdownMenu.Portal>
           </DropdownMenu>
         </Show>
-        <Button type="button" size="small" variant={state.open ? "primary" : "ghost"} onClick={() => setState("open", !state.open)}>
-          {language.t("common.open")}
+        <Button
+          type="button"
+          size="small"
+          variant={state.open ? "primary" : "ghost"}
+          aria-label={
+            state.open ? language.t("session.review.browserPane.close") : language.t("session.review.browserPane.open")
+          }
+          onClick={() => setState("open", !state.open)}
+        >
+          {state.open ? language.t("session.review.browserPane.close") : language.t("session.review.browserPane.open")}
         </Button>
         <Button
           type="button"
           size="small"
           variant="ghost"
           disabled={!state.open}
+          aria-label={language.t("session.review.browserPane.reload")}
           onClick={() => setState("frame", state.frame + 1)}
         >
-          {language.t("common.reset")}
+          {language.t("session.review.browserPane.reload")}
         </Button>
         <Button
           type="button"
@@ -271,7 +292,7 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
         >
           {language.t("session.review.recheckPage")}
         </Button>
-        <Button type="button" size="small" variant="ghost" disabled={!state.open} onClick={() => setState("loaded", state.url)}>
+        <Button type="button" size="small" variant="ghost" disabled={!state.open} onClick={() => commitUrl(state.url)}>
           {language.t("common.goForward")}
         </Button>
       </div>
@@ -291,6 +312,7 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
             value={state.url}
             onInput={(event) => setState("url", event.currentTarget.value)}
             aria-label={language.t("session.review.browserUrl")}
+            placeholder={language.t("session.review.browserPane.urlPlaceholder")}
           />
           <input
             class="min-w-0 flex-1 rounded-md border border-border-weak-base bg-transparent px-2 py-1 text-12-regular"
@@ -302,6 +324,8 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
             type="button"
             size="small"
             variant={state.marking ? "primary" : "ghost"}
+            aria-pressed={state.marking}
+            aria-label={language.t("session.review.markPreview")}
             onClick={() => setState("marking", !state.marking)}
           >
             {language.t("session.review.markPreview")}

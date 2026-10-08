@@ -57,3 +57,24 @@ describe("preview-server helpers", () => {
     expect(previewErrorDetail(undefined)).toBeUndefined()
   })
 })
+
+describe("browser pane docking", () => {
+  const paneSource = readFileSync(new URL("./review-browser.tsx", import.meta.url), "utf8")
+
+  test("URL bar normalizes input through the pane helpers", () => {
+    expect(paneSource).toContain("normalizePreviewUrl")
+    expect(paneSource).toContain("isLocalPreviewUrl")
+  })
+
+  test("pane exposes docked data-component with i18n title", () => {
+    expect(paneSource).toContain('data-component="browser-pane"')
+    expect(paneSource).toContain('language.t("session.review.browserPane.title")')
+  })
+
+  test("pane URL persists per session and mounts beside the diff", () => {
+    expect(paneSource).toContain("browserPaneUrlFor")
+    expect(paneSource).toContain("setBrowserPaneUrl")
+    const panelSource = readFileSync(new URL("./v2/review-panel-v2.tsx", import.meta.url), "utf8")
+    expect(panelSource).toContain("ReviewBrowser")
+  })
+})
