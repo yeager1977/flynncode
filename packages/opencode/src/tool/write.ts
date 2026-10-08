@@ -61,7 +61,9 @@ export const WriteTool = Tool.define(
             },
           })
 
-          const mode = restrictiveMode(filepath, contentNew)
+          // Only a newly created file gets a mode; an existing file keeps its
+          // own permissions (exec bits included).
+          const mode = exists ? undefined : restrictiveMode(filepath, contentNew)
           yield* fs.writeWithDirs(filepath, Bom.join(contentNew, desiredBom), mode)
           if (yield* format.file(filepath)) {
             yield* Bom.syncFile(fs, filepath, desiredBom)
@@ -105,11 +107,12 @@ export const WriteTool = Tool.define(
   }),
 )
 
-// Group-writable umasks (0002) would otherwise leave secrets at 0664.
-// chmod after write is required because create mode is masked.
+// New secret-looking files are owner-only; permissive umasks would otherwise
+// leave them group/world readable. chmod after write is required because the
+// create mode is masked.
 function restrictiveMode(filepath: string, content: string) {
   const name = path.basename(filepath)
-  if (SENSITIVE_NAME.test(name) || SENSITIVE_CONTENT.test(content)) return 0o644
+  if (SENSITIVE_NAME.test(name) || SENSITIVE_CONTENT.test(content)) return 0o600
   return undefined
 }
 

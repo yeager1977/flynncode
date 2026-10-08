@@ -173,7 +173,7 @@ describe("tool.write", () => {
   })
 
   describe("file permissions", () => {
-    it.instance("sets file permissions when writing sensitive data", () =>
+    it.instance("creates new sensitive files owner-only", () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
         const filepath = path.join(test.directory, "sensitive.json")
@@ -181,7 +181,22 @@ describe("tool.write", () => {
 
         if (process.platform !== "win32") {
           const stats = yield* Effect.promise(() => fs.stat(filepath))
-          expect(stats.mode & 0o777).toBe(0o644)
+          expect(stats.mode & 0o777).toBe(0o600)
+        }
+      }),
+    )
+
+    it.instance("never changes the mode of an existing file", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "deploy-token.sh")
+        yield* Effect.promise(() => fs.writeFile(filepath, "#!/bin/sh\necho old\n", "utf-8"))
+        yield* Effect.promise(() => fs.chmod(filepath, 0o755))
+        yield* run({ filePath: filepath, content: '#!/bin/sh\npassword="x"\necho new\n' })
+
+        if (process.platform !== "win32") {
+          const stats = yield* Effect.promise(() => fs.stat(filepath))
+          expect(stats.mode & 0o777).toBe(0o755)
         }
       }),
     )
