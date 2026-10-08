@@ -1,23 +1,30 @@
 export * as ProjectFolders from "./folders"
 
+import path from "path"
+import { FSUtil } from "../fs-util"
+import { AbsolutePath } from "../schema"
+
 export const MaxExtras = 8
 
 export function normalizeFolders(primary: string, extras: string[]): string[] {
-  const seen = new Set<string>([primary])
+  const base = AbsolutePath.make(FSUtil.normalizePath(primary))
+  const seen = new Set<string>([base])
   const out: string[] = []
   for (const item of extras) {
-    if (!item.startsWith("/")) continue
-    if (seen.has(item)) continue
-    seen.add(item)
-    out.push(item)
+    const normalized = FSUtil.normalizePath(item)
+    if (!path.isAbsolute(normalized)) continue
+    const absolute = AbsolutePath.make(normalized)
+    if (seen.has(absolute)) continue
+    seen.add(absolute)
+    out.push(absolute)
   }
   return out
 }
 
 export function isAttached(filepath: string, primary: string, extras: string[]): boolean {
-  if (filepath === primary || filepath.startsWith(primary + "/")) return true
+  if (FSUtil.contains(primary, filepath)) return true
   for (const root of extras) {
-    if (filepath === root || filepath.startsWith(root + "/")) return true
+    if (FSUtil.contains(root, filepath)) return true
   }
   return false
 }

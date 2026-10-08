@@ -54,6 +54,43 @@ export interface Interface {}
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/v2/FileWatcher") {}
 
+export type ExtraRootUpdate = { file: string; event: "add" | "change" | "unlink" }
+
+// Multifold: subscribe session-level extra roots without creating Location
+// nodes. Location.Ref stays the sole placement key; this only forwards native
+// file events for roots the caller already owns. Attribution to an instance
+// stream happens at the publish boundary, never here.
+export const subscribeRoots = (
+  roots: readonly string[],
+  onEvent: (update: ExtraRootUpdate) => void,
+): Effect.Effect<Map<string, () => Promise<void>>> =>
+  Effect.gen(function* () {
+    const cleanups = new Map<string, () => Promise<void>>()
+    const w = watcher()
+    const backend = getBackend()
+    if (!w || !backend) {
+      yield* Effect.logInfo("extra roots watcher unavailable", { count: roots.length })
+      return cleanups
+    }
+    const callback: ParcelWatcher.SubscribeCallback = (_error, updates) => {
+      for (const update of updates) {
+        if (update.type === "create") onEvent({ file: update.path, event: "add" })
+        if (update.type === "update") onEvent({ file: update.path, event: "change" })
+        if (update.type === "delete") onEvent({ file: update.path, event: "unlink" })
+      }
+    }
+    for (const root of roots) {
+      const pending = w.subscribe(root, callback, { ignore: Ignore.PATTERNS, backend })
+      const subscription = yield* Effect.promise(() => pending).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("failed to subscribe extra root", { root, cause }).pipe(Effect.as(undefined)),
+        ),
+      )
+      if (subscription) cleanups.set(root, () => subscription.unsubscribe())
+    }
+    return cleanups
+  })
+
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
