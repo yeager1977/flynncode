@@ -15,6 +15,8 @@ export default function NewSessionPage() {
   const draft = createNewSessionDraftController({
     worktree: workspace.selection.value,
     resetWorktree: workspace.selection.reset,
+    extraFolders: workspace.folders.extras,
+    resetExtraFolders: workspace.folders.reset,
   })
   const project = createPromptProjectController({
     controls: draft.project.controls,

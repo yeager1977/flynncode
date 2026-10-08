@@ -48,6 +48,9 @@ export interface PromptInputProps {
   ref?: (el: HTMLDivElement) => void
   newSessionWorktree?: string
   onNewSessionWorktreeReset?: () => void
+  newSessionExtraFolders?: readonly string[]
+  onNewSessionExtraFoldersReset?: () => void
+  onNewSessionCreated?: (session: { id: string; directory: string }) => void | Promise<void>
   edit?: { id: string; prompt: Prompt; context: FollowupDraft["context"] }
   onEditLoaded?: () => void
   shouldQueue?: () => boolean

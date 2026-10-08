@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from "@solidjs/router"
-import { createEffect, createMemo, For, onCleanup, Show, type Accessor, type JSX } from "solid-js"
+import { createEffect, createMemo, createResource, For, onCleanup, Show, type Accessor, type JSX } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { createSortable } from "@thisbeyond/solid-dnd"
 import { createMediaQuery } from "@solid-primitives/media"
@@ -20,11 +20,24 @@ import { type Session } from "@opencode-ai/sdk/v2/client"
 import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
 import { type LocalProject } from "@/context/layout"
 import { useLanguage } from "@/context/language"
+import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync, useQueryOptions } from "@/context/server-sync"
 import { sessionHasOpenTab, useTabs } from "@/context/tabs"
 import { pathKey } from "@/utils/path-key"
+import { useDirectoryPicker } from "@/components/directory-picker"
+import {
+  foldersConnection,
+  getSessionFolders,
+  setSessionExtras,
+  setSessionPrimary,
+} from "@/utils/session-folders-api"
+import {
+  MaxSessionExtraFolders,
+  normalizeSessionFolders,
+  removeSessionFolder,
+} from "@/components/session-folders"
 import { listAllSessions, normalizeSessionInfo } from "@/utils/session"
 import { showToast } from "@/utils/toast"
 import {
@@ -42,7 +55,7 @@ import {
 import { BulkConfirmDialog } from "../session/session-bulk-dialog"
 import { runSessionBulk, type BulkOp } from "../session/session-bulk-run"
 import { NewSessionItem, SessionItem, SessionSkeleton } from "./sidebar-items"
-import { sortedRootSessions, errorMessage } from "./helpers"
+import { sortedRootSessions, errorMessage, homeProjectDirectories } from "./helpers"
 import { handoffErrorMessage } from "../session/checkout-handoff"
 import { useIsFetching } from "@tanstack/solid-query"
 
@@ -876,6 +889,127 @@ const WorkspaceSessionList = (props: {
   </nav>
 )
 
+// Multifold: folder list for the open session. The primary folder owns Git,
+// AGENTS.md, and config; extras only widen file access. Switching primary
+// reboots the instance via the instance folders route.
+function WorkspaceFolders(props: { directory: string }) {
+  const params = useParams()
+  const language = useLanguage()
+  const platform = usePlatform()
+  const server = useServer()
+  const pickDirectory = useDirectoryPicker()
+  const sessionID = createMemo(() => params.id as string | undefined)
+  const conn = createMemo(() => foldersConnection(server.current, platform.fetch))
+  const [folders, { refetch }] = createResource(sessionID, (id) => {
+    const connection = conn()
+    if (!connection) return Promise.resolve(undefined)
+    return getSessionFolders(connection, id)
+  })
+  const attached = createMemo(() => {
+    const data = folders()
+    if (!data || data.primary !== props.directory) return undefined
+    return { primary: data.primary, extras: normalizeSessionFolders(data.primary, data.extras) }
+  })
+
+  const updateExtras = async (extras: string[]) => {
+    const id = sessionID()
+    const connection = conn()
+    if (!id || !connection) return
+    const updated = await setSessionExtras(connection, id, extras)
+    if (!updated) {
+      showToast({ title: language.t("common.requestFailed") })
+      return
+    }
+    showToast({ title: language.t("toast.folders.updated") })
+    await refetch()
+  }
+
+  const setPrimary = async (next: string) => {
+    const id = sessionID()
+    const connection = conn()
+    if (!id || !connection) return
+    const updated = await setSessionPrimary(connection, id, props.directory, next)
+    if (!updated) {
+      showToast({ title: language.t("common.requestFailed") })
+      return
+    }
+    showToast({ title: language.t("toast.folders.updated") })
+    await refetch()
+  }
+
+  const add = () => {
+    const conn = server.current
+    const data = attached()
+    if (!conn || !data) return
+    pickDirectory({
+      server: conn,
+      title: language.t("session.folders.add"),
+      multiple: true,
+      onSelect: (result) => {
+        const known = [data.primary, ...data.extras]
+        const fresh = homeProjectDirectories(result).filter((directory) => {
+          if (known.includes(directory)) {
+            showToast({ title: language.t("session.folders.duplicate") })
+            return false
+          }
+          return true
+        })
+        if (fresh.length === 0) return
+        if (data.extras.length + fresh.length > MaxSessionExtraFolders) {
+          showToast({ title: language.t("session.folders.limit", { max: MaxSessionExtraFolders }) })
+          return
+        }
+        void updateExtras([...data.extras, ...fresh])
+      },
+    })
+  }
+
+  return (
+    <Show when={attached()} keyed>
+      {(data) => (
+        <div class="flex flex-col gap-1 px-2 py-1">
+          <span class="text-12-regular text-text-weak">{language.t("session.folders.title")}</span>
+          <span class="text-12-regular text-text-weak">{language.t("session.folders.primaryNote")}</span>
+          <For each={[data.primary, ...data.extras]}>
+            {(directory, index) => (
+              <div class="flex min-w-0 items-center gap-1">
+                <span class="text-14-regular text-text-base min-w-0 flex-1 truncate">{directory}</span>
+                <Show
+                  when={index() === 0}
+                  fallback={
+                    <>
+                      <button
+                        type="button"
+                        class="text-12-regular text-text-weak underline"
+                        onClick={() => void setPrimary(directory)}
+                      >
+                        {language.t("session.folders.setPrimary")}
+                      </button>
+                      <button
+                        type="button"
+                        class="text-12-regular text-text-weak underline"
+                        aria-label={language.t("session.folders.remove")}
+                        onClick={() => void updateExtras(removeSessionFolder(data.extras, directory))}
+                      >
+                        {language.t("session.folders.remove")}
+                      </button>
+                    </>
+                  }
+                >
+                  <span class="text-12-regular text-text-weak">{language.t("session.folders.primary")}</span>
+                </Show>
+              </div>
+            )}
+          </For>
+          <button type="button" class="text-12-regular text-text-weak self-start underline" onClick={add}>
+            {language.t("session.folders.add")}
+          </button>
+        </div>
+      )}
+    </Show>
+  )
+}
+
 export const SortableWorkspace = (props: {
   ctx: WorkspaceSidebarContext
   directory: string
@@ -1046,6 +1180,7 @@ export const SortableWorkspace = (props: {
         </div>
 
         <Collapsible.Content>
+          <WorkspaceFolders directory={props.directory} />
           <SessionBulkBar
             selecting={bulk.store.selecting}
             count={bulk.store.selected.length}
@@ -1116,6 +1251,7 @@ export const LocalWorkspace = (props: {
       ref={(el) => props.ctx.setScrollContainerRef(el, props.mobile)}
       class="size-full flex flex-col py-2 overflow-y-auto no-scrollbar [overflow-anchor:none]"
     >
+      <WorkspaceFolders directory={props.project.worktree} />
       <SessionBulkBar
         selecting={bulk.store.selecting}
         count={bulk.store.selected.length}
