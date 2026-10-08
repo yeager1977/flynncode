@@ -33,6 +33,7 @@ import { checkoutHandoff, carryHandoffContext, firstPromptText, handoffErrorMess
 import { fileManagerApp } from "@/utils/file-manager"
 import { Persist, persisted } from "@/utils/persist"
 import { StatusPopover, StatusPopoverV2 } from "../status-popover"
+import { ComputerUseMenu } from "./computer-use-menu"
 import { CiStatusStrip } from "./ci-status"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
@@ -379,6 +380,7 @@ export function SessionHeader() {
     reviewVisible: isDesktop(),
     reviewOpened: view().reviewPanel.opened(),
     onReviewToggle: () => view().reviewPanel.toggle(),
+    computerUseVisible: platform.platform === "desktop",
     tasksLabel: language.t("session.subagents.tasks"),
     tasksOpened: view().tasks.opened(),
     onTasksToggle: () => view().tasks.toggle(),
@@ -645,6 +647,9 @@ export function SessionHeader() {
                           </div>
                         </Button>
                       </TooltipKeybind>
+                      <Show when={platform.platform === "desktop"}>
+                        <ComputerUseMenu />
+                      </Show>
                       <Tooltip placement="bottom" value={language.t("session.subagents.tasks")}>
                         <Button
                           variant="ghost"
@@ -702,6 +707,7 @@ type SessionHeaderV2ActionsState = {
   reviewVisible: boolean
   reviewOpened: boolean
   onReviewToggle: () => void
+  computerUseVisible: boolean
   tasksLabel: string
   tasksOpened: boolean
   onTasksToggle: () => void
@@ -771,6 +777,9 @@ function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
             icon={<IconV2 name="sidebar-right" />}
           />
         </TooltipV2>
+        <Show when={props.state.computerUseVisible}>
+          <ComputerUseMenu />
+        </Show>
         <TooltipV2 class="shrink-0" placement="bottom" value={props.state.tasksLabel}>
           <IconButtonV2
             type="button"
