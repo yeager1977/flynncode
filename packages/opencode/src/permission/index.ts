@@ -185,7 +185,7 @@ function expand(pattern: string): string {
 
 export function fromConfig(permission: ConfigPermissionV1.Info) {
   const ruleset: PermissionV1.Rule[] = []
-  for (const [key, value] of Object.entries(permission)) {
+  for (const [key, value] of Object.entries(ConfigPermissionV1.stripPolicyKeys(permission) as ConfigPermissionV1.Info)) {
     if (typeof value === "string") {
       ruleset.push({ permission: key, action: value, pattern: "*" })
       continue
