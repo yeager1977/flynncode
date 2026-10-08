@@ -767,14 +767,8 @@ export const RunCommand = effectCmd({
                 if (emit("reasoning", { part })) continue
                 const text = part.text.trim()
                 if (!text) continue
-                const line = `Thinking: ${text}`
-                if (process.stdout.isTTY) {
-                  UI.empty()
-                  UI.println(`${UI.Style.TEXT_DIM}\u001b[3m${line}\u001b[0m${UI.Style.TEXT_NORMAL}`)
-                  UI.empty()
-                  continue
-                }
-                process.stdout.write(line + EOL)
+                UI.println(`${UI.Style.TEXT_DIM}\u001b[3mThinking: ${text}\u001b[0m${UI.Style.TEXT_NORMAL}`)
+                continue
               }
             }
 

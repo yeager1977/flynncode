@@ -52,12 +52,26 @@ describe("opencode run (non-interactive subprocess)", () => {
         yield* llm.reason("  considering  ", { text: "  answer  " })
         const thinking = yield* opencode.run("think", { extraArgs: ["--thinking"] })
         opencode.expectExit(thinking, 0)
-        expect(thinking.stdout).toBe("Thinking: considering\nanswer\n")
+        expect(thinking.stdout).toBe("answer\n")
+        expect(thinking.stderr).toContain("Thinking: considering")
 
         yield* llm.reason("hidden", { text: "visible" })
         const plain = yield* opencode.run("think again")
         opencode.expectExit(plain, 0)
         expect(plain.stdout).toBe("visible\n")
+      }),
+    60_000,
+  )
+
+  cliIt.concurrent(
+    "default mode keeps stdout to final text only (reasoning goes to stderr)",
+    ({ llm, opencode }) =>
+      Effect.gen(function* () {
+        yield* llm.reason("  private chain  ", { text: "  public answer  " })
+        const result = yield* opencode.run("think out loud", { extraArgs: ["--thinking"] })
+        opencode.expectExit(result, 0)
+        expect(result.stdout).toBe("public answer\n")
+        expect(result.stderr).toContain("Thinking: private chain")
       }),
     60_000,
   )
