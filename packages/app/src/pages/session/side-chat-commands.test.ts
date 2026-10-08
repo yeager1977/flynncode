@@ -46,7 +46,7 @@ describe("side chat non-persistence", () => {
 
   test("closing removes the record and removes the transient forked session", () => {
     expect(controllerSource).toContain("sideChatStore.close(key)")
-    expect(controllerSource).toContain("api.session.fork")
+    expect(controllerSource).toContain(".fork({ sessionID: id })")
     expect(controllerSource).toContain("api.session.remove")
     expect(controllerSource).not.toContain("session.prompt(")
   })

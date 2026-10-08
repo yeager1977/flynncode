@@ -24,18 +24,22 @@ export function createSideChatController() {
     const key = sessionKey()
     const id = params.id
     if (!key || !id || starting() || isOpen()) return
+    const client = sdk()
     sideChatStore.start(key)
-    sdk()
-      .api.session.fork({ sessionID: id })
+    // The store record is keyed by the captured session, so it is updated even
+    // if the user switched tabs meanwhile; only UI feedback follows the tab.
+    client.api.session
+      .fork({ sessionID: id })
       .then((forked) => {
-        if (sessionKey() !== key) {
-          void sdk().api.session.remove({ sessionID: forked.id }).catch(() => {})
+        if (sideChatStore.get(key)?.open) {
+          sideChatStore.ready(key, forked.id)
           return
         }
-        sideChatStore.ready(key, forked.id)
+        void client.api.session.remove({ sessionID: forked.id }).catch(() => {})
       })
       .catch(() => {
         sideChatStore.close(key)
+        if (sessionKey() !== key) return
         showToast({ title: language.t("session.sidechat.startFailed") })
       })
   }
@@ -60,17 +64,16 @@ export function createSideChatController() {
     void sdk()
       .api.session.generate({ sessionID: id, prompt: text })
       .then((answer) => {
-        if (sessionKey() !== key) return
         sideChatStore.setSending(key, false)
         if (!answer.text.trim()) return
         sideChatStore.appendTurn(key, "assistant", answer.text)
       })
       .catch(() => {
-        if (sessionKey() !== key) return
         sideChatStore.setSending(key, false)
+        if (sessionKey() !== key) return
         showToast({ title: language.t("session.sidechat.sendFailed") })
       })
   }
 
-  return { state, open, isOpen, starting, sending, sideID, turns, close, send }
+  return { key: sessionKey, state, open, isOpen, starting, sending, sideID, turns, close, send }
 }
