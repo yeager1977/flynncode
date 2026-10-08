@@ -71,7 +71,7 @@ const layer = Layer.effect(
       return found.slice(0, limit)
     })
 
-    const load = Effect.fn("Memory.load")(function* (): Effect.Effect<LoadedMemory[]> {
+    const load = Effect.fn("Memory.load")(function* () {
       if (!(yield* isEnabled())) return []
       const cap = (yield* settings()).max_chars_per_file
       const files = yield* list()

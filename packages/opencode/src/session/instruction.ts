@@ -49,7 +49,7 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/In
 const layer: Layer.Layer<
   Service,
   never,
-  FSUtil.Service | Config.Service | Global.Service | HttpClient.HttpClient | RuntimeFlags.Service
+  FSUtil.Service | Config.Service | Global.Service | Memory.Service | HttpClient.HttpClient | RuntimeFlags.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
