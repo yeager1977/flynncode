@@ -55,3 +55,33 @@ describe("review browser artifact wiring", () => {
     expect(section).toContain("artifactVersionSignal")
   })
 })
+
+describe("annotate-to-chat prefill", () => {
+  test("annotation text carries page path, rect mark, and note", async () => {
+    const { browserAnnotation } = await import("./hunk-revert")
+    const text = browserAnnotation({
+      url: "http://127.0.0.1:3000/settings",
+      path: "/settings",
+      note: "button overflows",
+      x: 10,
+      y: 20,
+      width: 30,
+      height: 15,
+    })
+    expect(text).toContain("/settings")
+    expect(text).toContain("button overflows")
+    expect(text).toContain("10%,20%")
+  })
+
+  test("empty note does not produce an annotation", () => {
+    const source = readFileSync(new URL("./review-browser.tsx", import.meta.url), "utf8")
+    expect(source).toContain("state.note.trim()")
+  })
+
+  test("sent annotation announces confirmation for assistive tech", () => {
+    const source = readFileSync(new URL("./review-browser.tsx", import.meta.url), "utf8")
+    expect(source).toContain('language.t("session.review.browserPane.annotateSent")')
+    expect(source).toContain('language.t("session.review.browserPane.emptyNote")')
+    expect(source).toContain('aria-live="polite"')
+  })
+})

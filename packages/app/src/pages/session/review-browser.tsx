@@ -37,6 +37,7 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
     menu: false,
     busy: "",
     actionError: "",
+    announced: "",
   })
   // Normalizes raw URL-bar input against the currently loaded URL and
   // remembers the result for this session.
@@ -148,7 +149,14 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
   }
   const annotate = async () => {
     const text = state.note.trim()
+    // An empty submit with an unchanged URL is an annotation attempt without
+    // a note; a changed URL is a navigation submit and still loads.
     if (!text) {
+      if (state.url === state.loaded) {
+        setState("actionError", language.t("session.review.browserPane.emptyNote"))
+        return
+      }
+      setState("actionError", "")
       commitUrl(state.url)
       return
     }
@@ -167,7 +175,8 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
       : `${state.loaded}: ${text}`
     props.onAnnotate(comment)
     storeAnnotation({ url: state.loaded, note: text, thumbnail: state.marked ? thumbnail : undefined })
-    setState({ note: "", marked: false, width: 0, height: 0 })
+    setState({ note: "", marked: false, width: 0, height: 0, actionError: "" })
+    setState("announced", language.t("session.review.browserPane.annotateSent"))
   }
   const recheck = async () => {
     const text = state.note.trim()
@@ -186,6 +195,7 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
       }),
     )
     storeAnnotation({ url: state.loaded, note: text, thumbnail })
+    setState("announced", language.t("session.review.browserPane.annotateSent"))
   }
 
   return (
@@ -317,7 +327,7 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
           <input
             class="min-w-0 flex-1 rounded-md border border-border-weak-base bg-transparent px-2 py-1 text-12-regular"
             value={state.note}
-            onInput={(event) => setState("note", event.currentTarget.value)}
+            onInput={(event) => setState({ note: event.currentTarget.value, announced: "" })}
             aria-label={language.t("session.review.browserNote")}
           />
           <Button
@@ -334,6 +344,9 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
             {language.t("session.review.annotate.add")}
           </Button>
         </form>
+        <div aria-live="polite" class="sr-only">
+          {state.announced}
+        </div>
         <Show when={local()} fallback={<div class="p-3 text-12-regular text-text-weak">{language.t("session.review.browserLocalOnly")}</div>}>
           <div class="relative h-64 min-h-0">
             <iframe

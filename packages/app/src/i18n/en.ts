@@ -778,6 +778,8 @@ export const dict = {
   "session.review.browserPane.close": "Close browser",
   "session.review.browserPane.reload": "Reload page",
   "session.review.browserPane.urlPlaceholder": "Preview URL",
+  "session.review.browserPane.annotateSent": "Note added to review comments",
+  "session.review.browserPane.emptyNote": "Write a note before annotating",
   "session.review.browserLocalOnly": "Only local preview URLs can be shown here.",
   "session.review.annotate.add": "Add note",
   "session.review.revertHunk": "Revert hunk",
