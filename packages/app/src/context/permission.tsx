@@ -16,12 +16,13 @@ import type { ServerScope } from "@/utils/server-scope"
 import { normalizePermissionRequest } from "./global-sync/utils"
 import {
   acceptKey,
-  approvalAutoRespond,
   type ApprovalMode,
   directoryAcceptKey,
   isDirectoryAutoAccepting,
   autoRespondsPermission,
-  resolveAutoRespond,
+  autoRespondVerdict,
+  resolveApprovalMode,
+  rootSessionID,
   sessionAutoAccept,
 } from "./permission-auto-respond"
 export type { ApprovalMode }
@@ -312,17 +313,29 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
   }
 
   function approvalMode(sessionID: string, directory?: string): ApprovalMode {
-    return store.approvalMode[acceptKey(sessionID, directory)] ?? "manual"
+    return resolveApprovalMode(store.approvalMode, sessions(directory), sessionID, directory)
   }
 
   function setApprovalMode(sessionID: string, directory: string | undefined, mode: ApprovalMode) {
     if (meta.disposed) return
-    const key = acceptKey(sessionID, directory)
+    const key = acceptKey(rootSessionID(sessions(directory), sessionID), directory)
     setStore(
       produce((draft) => {
         draft.approvalMode[key] = mode
       }),
     )
+    if (!directory) return
+
+    // Like enable(): answer requests that were already waiting when the mode changed.
+    list(directory)
+      .then((permissions) => {
+        if (meta.disposed) return
+        if (store.approvalMode[key] !== mode) return
+        for (const permission of permissions) {
+          void respondPending(permission, directory, () => store.approvalMode[key] === mode)
+        }
+      })
+      .catch(() => undefined)
   }
 
   function sandboxLevel(directory: string): SandboxLevel {
@@ -345,11 +358,13 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
   }
 
   function shouldAutoRespond(permission: PermissionRequest, directory?: string) {
-    return resolveAutoRespond(
-      explicitOverride(permission, directory),
-      approvalAutoRespond(approvalMode(permission.sessionID, directory), permission.permission),
-      autoRespondsPermission(store.autoAccept, sessions(directory), permission, directory),
-    )
+    return autoRespondVerdict({
+      autoAccept: store.autoAccept,
+      approvalMode: store.approvalMode,
+      session: sessions(directory),
+      permission,
+      directory,
+    })
   }
 
   function isPending(permission: PermissionRequest) {

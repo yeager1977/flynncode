@@ -1,7 +1,15 @@
 import { describe, expect, test } from "bun:test"
 import type { PermissionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import { base64Encode } from "@opencode-ai/core/util/encode"
-import { autoRespondsPermission, approvalAutoRespond, isDirectoryAutoAccepting, resolveAutoRespond, sessionAutoAccept } from "./permission-auto-respond"
+import {
+  autoRespondsPermission,
+  autoRespondVerdict,
+  approvalAutoRespond,
+  isDirectoryAutoAccepting,
+  resolveApprovalMode,
+  resolveAutoRespond,
+  sessionAutoAccept,
+} from "./permission-auto-respond"
 
 const session = (input: { id: string; parentID?: string }) =>
   ({
@@ -202,5 +210,54 @@ describe("resolveAutoRespond", () => {
   test("falls back to the directory default", () => {
     expect(resolveAutoRespond(undefined, undefined, true)).toBe(true)
     expect(resolveAutoRespond(undefined, undefined, false)).toBe(false)
+  })
+})
+
+describe("computer_use", () => {
+  const directory = "/tmp/project"
+  const sessions = [session({ id: "root" }), session({ id: "child", parentID: "root" })]
+  const request = (sessionID: string) => ({ sessionID, permission: "computer_use" })
+
+  test("auto mode and accept-all never auto-respond", () => {
+    const autoAccept = {
+      [`${base64Encode(directory)}/*`]: true,
+      [`${base64Encode(directory)}/root`]: true,
+      root: true,
+    }
+    const approvalMode = { [`${base64Encode(directory)}/root`]: "auto" as const }
+
+    for (const id of ["root", "child"]) {
+      expect(autoRespondVerdict({ autoAccept, approvalMode, session: sessions, permission: request(id), directory })).toBe(
+        false,
+      )
+      expect(autoRespondsPermission(autoAccept, sessions, request(id), directory)).toBe(false)
+      expect(sessionAutoAccept(autoAccept, sessions, request(id), directory)).toBe(false)
+    }
+    expect(approvalAutoRespond("auto", "computer_use")).toBe(false)
+    expect(approvalAutoRespond("accept-edits", "computer_use")).toBe(false)
+  })
+
+  test("other permissions still follow auto mode", () => {
+    const approvalMode = { [`${base64Encode(directory)}/root`]: "auto" as const }
+    expect(
+      autoRespondVerdict({
+        autoAccept: {},
+        approvalMode,
+        session: sessions,
+        permission: { sessionID: "child", permission: "bash" },
+        directory,
+      }),
+    ).toBe(true)
+  })
+})
+
+describe("resolveApprovalMode", () => {
+  test("a subagent follows its root session's mode", () => {
+    const directory = "/tmp/project"
+    const sessions = [session({ id: "root" }), session({ id: "child", parentID: "root" })]
+    const approvalMode = { [`${base64Encode(directory)}/root`]: "accept-edits" as const }
+    expect(resolveApprovalMode(approvalMode, sessions, "child", directory)).toBe("accept-edits")
+    expect(resolveApprovalMode(approvalMode, sessions, "root", directory)).toBe("accept-edits")
+    expect(resolveApprovalMode({}, sessions, "child", directory)).toBe("manual")
   })
 })
