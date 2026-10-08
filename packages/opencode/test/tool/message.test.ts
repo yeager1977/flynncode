@@ -20,8 +20,9 @@ import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
 import { Truncate } from "@/tool/truncate"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { disposeAllInstances } from "../fixture/fixture"
-import { testEffect } from "../lib/effect"
+import { InstanceState } from "@/effect/instance-state"
+import { disposeAllInstances, tmpdirScoped } from "../fixture/fixture"
+import { pollWithTimeout, testEffect } from "../lib/effect"
 
 afterEach(async () => {
   await disposeAllInstances()
@@ -162,6 +163,37 @@ describe("tool.message", () => {
         yield* def.execute({ session_id: target.id, message: "steer this" }, ctx(sender.id, ops))
 
         expect(calls[0]?.delivery).toBe("steer")
+      }),
+  )
+
+  it.instance(
+    "checks run state and prompts in the target session's instance",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const sender = yield* sessions.create({ title: "lead" })
+        const target = yield* sessions.create({ title: "isolated worker" })
+        const elsewhere = yield* tmpdirScoped()
+        yield* sessions.setDirectory({ sessionID: target.id, directory: elsewhere })
+        const dirs: string[] = []
+        const ops: TaskPromptOps = {
+          ...recordingOps().ops,
+          prompt: (input) =>
+            Effect.gen(function* () {
+              dirs.push(yield* InstanceState.directory)
+              return { info: { id: "msg", role: "user", sessionID: input.sessionID } as never, parts: [] as never }
+            }),
+        }
+        const info = yield* MessageTool
+        const def = yield* Tool.init(info)
+
+        yield* def.execute({ session_id: target.id, message: "hello" }, ctx(sender.id, ops))
+        yield* pollWithTimeout(
+          Effect.sync(() => (dirs.length > 0 ? true : undefined)),
+          "peer prompt never ran",
+        )
+
+        expect(dirs).toEqual([elsewhere])
       }),
   )
 

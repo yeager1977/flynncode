@@ -1169,4 +1169,50 @@ describe("tool.task", () => {
       }),
     { git: true },
   )
+
+  it.instance(
+    "isolated tasks record the disposable binding, release their instance and resume in the worktree",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const store = yield* InstanceStore.Service
+        const { chat, assistant } = yield* seed()
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        const promptDirs: string[] = []
+        const promptOps: TaskPromptOps = {
+          ...stubOps(),
+          prompt: (input) =>
+            Effect.gen(function* () {
+              promptDirs.push(yield* InstanceState.directory)
+              return reply(input, "isolated")
+            }),
+        }
+        const ctx = {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        }
+
+        const first = yield* def.execute(
+          { description: "scan", prompt: "scan", subagent_type: "general", isolation: "worktree", cleanup: "dispose" },
+          ctx,
+        )
+        const child = yield* sessions.get(first.metadata.sessionId)
+        expect(child.metadata).toMatchObject({ worktree: child.directory, disposable: true })
+        expect(yield* store.loadedDirectories()).not.toContain(child.directory)
+
+        yield* def.execute(
+          { description: "scan", prompt: "again", subagent_type: "general", task_id: child.id },
+          ctx,
+        )
+        expect(promptDirs).toEqual([child.directory, child.directory])
+      }),
+    { git: true },
+  )
 })

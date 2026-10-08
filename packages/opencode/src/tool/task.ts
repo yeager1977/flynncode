@@ -221,7 +221,27 @@ export const TaskTool = Tool.define(
             ...sandboxRules({ sandbox: sandbox ?? "inherit", directory: worktreeInfo.directory }),
           ],
         })
+        // The archive handler reads this binding to dispose the worktree.
+        yield* sessions.setMetadata({
+          sessionID: nextSession.id,
+          metadata: {
+            ...nextSession.metadata,
+            worktree: worktreeInfo.directory,
+            disposable: cleanup === "dispose",
+          },
+        })
       }
+      // The child runs in its own instance when it lives elsewhere: a fresh
+      // isolated worktree, or the worktree a resumed isolated task is bound
+      // to. Prompt, cancel and teardown all target that instance.
+      const childDirectory =
+        worktreeInfo?.directory ?? (nextSession.directory !== parent.directory ? nextSession.directory : undefined)
+      const inChild = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        childDirectory ? store.provide({ directory: childDirectory }, effect) : effect
+      const disposable = worktreeInfo ? cleanup === "dispose" : nextSession.metadata?.disposable === true
+      // Unload a disposable worktree's instance once the task finishes so the
+      // archive path can remove it (it skips directories still loaded).
+      const release = childDirectory && disposable ? store.disposeDirectory(childDirectory) : Effect.void
 
       const msg = yield* MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }).pipe(
         Effect.provideService(Database.Service, database),
@@ -251,6 +271,9 @@ export const TaskTool = Tool.define(
 
       const ops = ctx.extra?.promptOps as TaskPromptOps
       if (!ops) return yield* Effect.fail(new Error("TaskTool requires promptOps in ctx.extra"))
+      // Cancelling loads the child instance to reach its run state, so
+      // release it again afterwards.
+      const cancel = inChild(ops.cancel(nextSession.id)).pipe(Effect.ensuring(release))
 
       const runTask = Effect.fn("TaskTool.runTask")(function* () {
         const parts = yield* ops.resolvePromptParts(params.prompt)
@@ -265,13 +288,10 @@ export const TaskTool = Tool.define(
           agent: next.name,
           parts,
         })
-        // Run the child under the temp worktree's instance so its tools and
-        // working directory resolve there. Prompt-part resolution stays in
-        // the parent (the prompt was authored against the parent checkout),
-        // and cancellation stays parent-scoped via the closed-over promptOps.
-        const result = worktreeInfo
-          ? yield* store.provide({ directory: worktreeInfo.directory }, prompt)
-          : yield* prompt
+        // Run the child under its own instance so its tools and working
+        // directory resolve there. Prompt-part resolution stays in the parent
+        // (the prompt was authored against the parent checkout).
+        const result = yield* inChild(prompt).pipe(Effect.ensuring(release))
         if (result.info.role === "assistant" && result.info.error) {
           const message =
             "message" in result.info.error.data && typeof result.info.error.data.message === "string"
@@ -355,7 +375,7 @@ export const TaskTool = Tool.define(
           }),
           notify(nextSession.id),
         ]),
-        run: runTask().pipe(Effect.onInterrupt(() => ops.cancel(nextSession.id))),
+        run: runTask().pipe(Effect.onInterrupt(() => cancel)),
       })
 
       function backgroundResult() {
@@ -381,7 +401,6 @@ export const TaskTool = Tool.define(
       }
 
       const runCancel = yield* EffectBridge.make()
-      const cancel = ops.cancel(nextSession.id)
 
       function onAbort() {
         runCancel.fork(cancel)
