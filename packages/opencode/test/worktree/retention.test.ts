@@ -35,3 +35,28 @@ describe("worktreesToRemove", () => {
     expect(worktreesToRemove(entries, 0).sort()).toEqual(["idle"])
   })
 })
+
+describe("worktreesToRemove disposable", () => {
+  test("never removes open or running entries and evicts stale disposables first", () => {
+    const entries = [
+      { directory: "/w/keep-open", updated: 1, open: true },
+      { directory: "/w/keep-running", updated: 2, running: true },
+      { directory: "/w/old", updated: 3 },
+      { directory: "/w/new", updated: 4 },
+      { directory: "/w/disposable", updated: 5, disposable: true, lastUsedAt: 0 },
+    ]
+    // NOTE: plan draft expected ["/w/disposable", "/w/old"], but under the
+    // keep-first-`limit`-plus-protected logic /w/new and /w/old fill the two
+    // keep slots, so only the stale disposable is evicted.
+    expect(worktreesToRemove(entries, 2)).toEqual(["/w/disposable"])
+  })
+
+  test("orders disposables by lastUsedAt when past the limit", () => {
+    const entries = [
+      { directory: "/w/new", updated: 4 },
+      { directory: "/w/old", updated: 3 },
+      { directory: "/w/disposable", updated: 5, disposable: true, lastUsedAt: 0 },
+    ]
+    expect(worktreesToRemove(entries, 1)).toEqual(["/w/old", "/w/disposable"])
+  })
+})

@@ -3,10 +3,13 @@ export type WorktreeRetentionEntry = {
   updated: number
   open?: boolean
   running?: boolean
+  disposable?: boolean
+  lastUsedAt?: number
 }
 
 export function worktreesToRemove(entries: readonly WorktreeRetentionEntry[], limit = 15) {
-  const ordered = [...entries].sort((a, b) => b.updated - a.updated)
+  const recency = (entry: WorktreeRetentionEntry) => entry.lastUsedAt ?? entry.updated
+  const ordered = [...entries].sort((a, b) => recency(b) - recency(a))
   const kept = new Set<string>()
   const remove: string[] = []
   for (const entry of ordered) {
