@@ -6,7 +6,7 @@ import {
   routineRows,
   sessionRows,
   type InboxRow,
-} from "./activity-inbox"
+} from "./activity-inbox-rows"
 
 describe("dispatchRows", () => {
   test("keeps unread flags and resolves live status", () => {
