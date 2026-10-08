@@ -5,7 +5,8 @@ import { Effect } from "effect"
 import { applyEdits, modify, parse } from "jsonc-parser"
 import type { Hooks, PluginInput } from "@opencode-ai/plugin"
 import { dueRoutines } from "./due"
-import { parseRoutines, type Routine } from "./parse"
+import { parseRoutines, type Routine, type RoutineRunSummary } from "./parse"
+import { githubDue, triggerDue } from "./trigger"
 
 // Mirrors globalConfigFile() precedence so we patch the file OpenCode loads.
 const CONFIG_CANDIDATES = ["opencode.jsonc", "opencode.json", "config.json"]
@@ -21,7 +22,15 @@ function stored(routine: Routine) {
     prompt: routine.prompt,
     enabled: routine.enabled,
     lastRun: routine.lastRun,
-    schedule: routine.dailyAt ? { dailyAt: routine.dailyAt } : routine.interval ? { interval: routine.interval } : undefined,
+    recentRuns: routine.recentRuns,
+    trigger: routine.trigger,
+    schedule: routine.dailyAt
+      ? { dailyAt: routine.dailyAt }
+      : routine.interval
+        ? { interval: routine.interval }
+        : routine.rrule
+          ? { rrule: routine.rrule }
+          : undefined,
   }
 }
 
@@ -65,7 +74,7 @@ export async function loadRoutines() {
 
 export const markRanEffect = Effect.fn("Routines.markRan")(function* (
   loaded: { source: "config" | "file"; routines: Routine[] },
-  ids: string[],
+  runs: { id: string; summary: RoutineRunSummary }[],
   now: Date,
 ) {
   // Serialize read-modify-write across processes: reload state under a lock so
@@ -74,9 +83,12 @@ export const markRanEffect = Effect.fn("Routines.markRan")(function* (
   yield* Flock.effect(`routines:${configFile()}`, { staleMs: 10_000, timeoutMs: 30_000 })
   const fresh = yield* Effect.promise(() => loadRoutines())
   const byID = new Map(fresh.routines.map((routine) => [routine.id, routine]))
+  const summaries = new Map(runs.map((run) => [run.id, run.summary]))
   const next = loaded.routines.map((routine) => {
     const current = byID.get(routine.id) ?? routine
-    return ids.includes(routine.id) ? { ...current, lastRun: now.toISOString() } : routine
+    const summary = summaries.get(routine.id)
+    if (!summary) return routine
+    return { ...current, lastRun: now.toISOString(), recentRuns: [...(current.recentRuns ?? []), summary].slice(-10) }
   })
   const storedRoutines = next.map(stored)
   if (fresh.source === "file") {
@@ -89,8 +101,12 @@ export const markRanEffect = Effect.fn("Routines.markRan")(function* (
   return next
 })
 
-export async function markRan(loaded: { source: "config" | "file"; routines: Routine[] }, ids: string[], now: Date) {
-  return Effect.runPromise(Effect.scoped(markRanEffect(loaded, ids, now)))
+export async function markRan(
+  loaded: { source: "config" | "file"; routines: Routine[] },
+  runs: { id: string; summary: RoutineRunSummary }[],
+  now: Date,
+) {
+  return Effect.runPromise(Effect.scoped(markRanEffect(loaded, runs, now)))
 }
 
 const RUNS_FILE = path.join(Global.Path.state, "routines-runs.jsonl")
@@ -166,6 +182,24 @@ export function startScheduler(client: Client, directory: string) {
     try {
       const loaded = await loadRoutines()
       const due = dueRoutines(loaded.routines, new Date())
+      const dueIDs = new Set(due.map((routine) => routine.id))
+      const token = process.env.GITHUB_TOKEN
+      const polled = await Promise.all(
+        loaded.routines.map(async (routine) => {
+          if (dueIDs.has(routine.id)) return undefined
+          const fileFired = await triggerDue(routine, directory).catch(() => false)
+          if (fileFired) return routine
+          if (!routine.trigger?.github) return undefined
+          const githubFired = await githubDue(routine, token).catch(() => false)
+          return githubFired ? routine : undefined
+        }),
+      )
+      for (const routine of polled) {
+        if (routine && !dueIDs.has(routine.id)) {
+          dueIDs.add(routine.id)
+          due.push(routine)
+        }
+      }
       if (due.length === 0) return
       // Record each routine individually so one failure does not make every
       // later tick re-fire the whole batch.
@@ -174,25 +208,57 @@ export function startScheduler(client: Client, directory: string) {
           const startedAt = new Date()
           try {
             const { sessionID } = await runOne(client, directory, routine)
+            const endedAt = new Date()
             await recordRoutineRun({
               routineId: routine.id,
               sessionID,
               agent: "build",
               startedAt: startedAt.toISOString(),
-              endedAt: new Date().toISOString(),
+              endedAt: endedAt.toISOString(),
               state: "ok",
             })
-            const saved = await markRan(loaded, [routine.id], new Date())
+            const saved = await markRan(
+              loaded,
+              [
+                {
+                  id: routine.id,
+                  summary: {
+                    sessionID,
+                    startedAt: startedAt.toISOString(),
+                    endedAt: endedAt.toISOString(),
+                    state: "ok",
+                  },
+                },
+              ],
+              endedAt,
+            )
             return saved
           } catch (error) {
+            const endedAt = new Date()
+            const message = error instanceof Error ? error.message : String(error)
             await recordRoutineRun({
               routineId: routine.id,
               agent: "build",
               startedAt: startedAt.toISOString(),
-              endedAt: new Date().toISOString(),
+              endedAt: endedAt.toISOString(),
               state: "error",
-              error: error instanceof Error ? error.message : String(error),
+              error: message,
             }).catch((recordError) => console.warn(`${PREFIX} failed to record run`, recordError))
+            await markRan(
+              loaded,
+              [
+                {
+                  id: routine.id,
+                  summary: {
+                    startedAt: startedAt.toISOString(),
+                    endedAt: endedAt.toISOString(),
+                    state: "error",
+                    error: message,
+                  },
+                },
+              ],
+              endedAt,
+            ).catch((markError) => console.warn(`${PREFIX} failed to record run`, markError))
             throw error
           }
         }),

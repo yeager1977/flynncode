@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { addRoutine, removeRoutine, routinesFromConfig, routinesToConfig, toggleRoutine } from "./routines-edit"
+import { addRoutine, isValidRrule, removeRoutine, routinesFromConfig, routinesToConfig, toggleRoutine } from "./routines-edit"
 
 describe("routines editor", () => {
   test("reads and writes the stored shape", () => {
@@ -19,5 +19,13 @@ describe("routines editor", () => {
     expect(added[0]?.id).toBe("triage")
     expect(toggleRoutine(added, "triage")[0]?.enabled).toBe(false)
     expect(removeRoutine(added, "triage")).toEqual([])
+  })
+
+  test("accepts bare and extended RRULE input like the backend", () => {
+    expect(isValidRrule("FREQ=DAILY")).toBe(true)
+    expect(isValidRrule("FREQ=WEEKLY;BYDAY=MO")).toBe(true)
+    expect(isValidRrule("EVERY=monday")).toBe(false)
+    expect(isValidRrule("FREQ=daily")).toBe(false)
+    expect(isValidRrule("FREQ=DAILY extra")).toBe(false)
   })
 })

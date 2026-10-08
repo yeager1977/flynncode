@@ -1,3 +1,24 @@
+import { RRule } from "rrule"
+
+export type RoutineRunSummary = {
+  sessionID?: string
+  startedAt: string
+  endedAt: string
+  state: "ok" | "error"
+  error?: string
+}
+
+export type TriggerGithub = {
+  owner: string
+  repo: string
+  event: "pr" | "issue"
+}
+
+export type RoutineTrigger = {
+  files?: string[]
+  github?: TriggerGithub
+}
+
 export type Routine = {
   id: string
   name: string
@@ -5,7 +26,10 @@ export type Routine = {
   enabled: boolean
   dailyAt?: string
   interval?: string
+  rrule?: string
   lastRun?: string
+  recentRuns?: RoutineRunSummary[]
+  trigger?: RoutineTrigger
 }
 
 export type RoutinesFile = {
@@ -62,6 +86,8 @@ function parseRoutine(item: unknown, index: number, errors: string[]) {
   if (typeof row.name !== "string" || row.name.trim() === "") errors.push(`routines.${index}.name must be a string`)
   if (typeof row.prompt !== "string" || row.prompt.trim() === "") errors.push(`routines.${index}.prompt must be a string`)
   const schedule = readSchedule(row.schedule, index, errors)
+  const recentRuns = readRecentRuns(row.recentRuns)
+  const trigger = readTrigger(row.trigger, index, errors)
   if (errors.some((error) => error.startsWith(`routines.${index}`))) return
   if (!schedule) return
   return {
@@ -71,7 +97,10 @@ function parseRoutine(item: unknown, index: number, errors: string[]) {
     enabled: typeof row.enabled === "boolean" ? row.enabled : true,
     dailyAt: schedule.dailyAt,
     interval: schedule.interval,
+    rrule: schedule.rrule,
     lastRun: typeof row.lastRun === "string" ? row.lastRun : undefined,
+    recentRuns,
+    trigger,
   }
 }
 
@@ -88,11 +117,13 @@ function readSchedule(schedule: unknown, index: number, errors: string[]) {
   const row = schedule as Record<string, unknown>
   const dailyAt = readDailyAt(row.dailyAt, index, errors)
   const interval = readInterval(row.interval, index, errors)
-  if (dailyAt !== undefined && interval !== undefined) {
-    errors.push(`routines.${index}.schedule must not set both dailyAt and interval`)
+  const rrule = readRrule(row.rrule, index, errors)
+  const set = [dailyAt, interval, rrule].filter((entry) => entry !== undefined)
+  if (set.length > 1) {
+    errors.push(`routines.${index}.schedule must set only one of dailyAt, interval, rrule`)
     return
   }
-  return { dailyAt, interval }
+  return { dailyAt, interval, rrule }
 }
 
 function readDailyAt(dailyAt: unknown, index: number, errors: string[]) {
@@ -111,4 +142,94 @@ function readInterval(interval: unknown, index: number, errors: string[]) {
     return undefined
   }
   return interval
+}
+
+function readRrule(rrule: unknown, index: number, errors: string[]) {
+  if (rrule === undefined) return undefined
+  if (typeof rrule !== "string" || rrule.trim() === "") {
+    errors.push(`routines.${index}.schedule.rrule must be an RRULE string like FREQ=WEEKLY;BYDAY=MO`)
+    return undefined
+  }
+  try {
+    RRule.fromString(rrule)
+  } catch {
+    errors.push(`routines.${index}.schedule.rrule must be a valid RRULE string`)
+    return undefined
+  }
+  return rrule
+}
+
+function readTrigger(trigger: unknown, index: number, errors: string[]) {
+  if (trigger === undefined) return undefined
+  if (!trigger || typeof trigger !== "object" || Array.isArray(trigger)) {
+    errors.push(`routines.${index}.trigger must be an object`)
+    return undefined
+  }
+  const row = trigger as Record<string, unknown>
+  const files = readTriggerFiles(row.files, index, errors)
+  const github = readTriggerGithub(row.github, index, errors)
+  if (errors.some((error) => error.startsWith(`routines.${index}.trigger`))) return undefined
+  if (!files && !github) {
+    errors.push(`routines.${index}.trigger must set files or github`)
+    return undefined
+  }
+  const out: RoutineTrigger = {}
+  if (files) out.files = files
+  if (github) out.github = github
+  return out
+}
+
+function readTriggerFiles(files: unknown, index: number, errors: string[]) {
+  if (files === undefined) return undefined
+  if (!Array.isArray(files) || files.length === 0 || files.length > 10) {
+    errors.push(`routines.${index}.trigger.files must be an array of 1-10 glob patterns`)
+    return undefined
+  }
+  for (const pattern of files) {
+    if (typeof pattern !== "string" || pattern.trim() === "" || pattern.startsWith("/") || pattern.split("/").includes("..")) {
+      errors.push(`routines.${index}.trigger.files must be relative globs without .. segments`)
+      return undefined
+    }
+  }
+  return files as string[]
+}
+
+function readTriggerGithub(github: unknown, index: number, errors: string[]) {
+  if (github === undefined) return undefined
+  if (!github || typeof github !== "object" || Array.isArray(github)) {
+    errors.push(`routines.${index}.trigger.github must be an object`)
+    return undefined
+  }
+  const row = github as Record<string, unknown>
+  if (
+    typeof row.owner !== "string" ||
+    row.owner.trim() === "" ||
+    typeof row.repo !== "string" ||
+    row.repo.trim() === "" ||
+    (row.event !== "pr" && row.event !== "issue")
+  ) {
+    errors.push(`routines.${index}.trigger.github must set owner, repo, and event ("pr" or "issue")`)
+    return undefined
+  }
+  return { owner: row.owner, repo: row.repo, event: row.event as "pr" | "issue" }
+}
+
+function readRecentRuns(recentRuns: unknown) {
+  if (!Array.isArray(recentRuns)) return undefined
+  const kept = recentRuns.flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return []
+    const row = entry as Record<string, unknown>
+    if (typeof row.startedAt !== "string" || typeof row.endedAt !== "string") return []
+    if (row.state !== "ok" && row.state !== "error") return []
+    const summary: RoutineRunSummary = {
+      startedAt: row.startedAt,
+      endedAt: row.endedAt,
+      state: row.state,
+    }
+    if (typeof row.sessionID === "string") summary.sessionID = row.sessionID
+    if (typeof row.error === "string") summary.error = row.error
+    return [summary]
+  })
+  const tail = kept.slice(-10)
+  return tail.length > 0 ? tail : undefined
 }

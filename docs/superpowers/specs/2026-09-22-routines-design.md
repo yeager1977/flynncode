@@ -53,3 +53,11 @@ Out of scope:
 - `scheduler.test.ts`: due at HH:MM once per day, skip when disabled, no
   double-run within the same minute.
 - App: payload round-trip test.
+
+## 2026-10-08 WS7 addendum: RRULE cadence + run history + self-hosted triggers
+
+- `schedule` now accepts `{ rrule }` (RFC 5545 via the `rrule` package, expanded locally against `lastRun`; never-run routines anchor at local midnight, mirroring `dailyAt`).
+- `recentRuns` (last 10) persisted per routine with the full 200-entry JSONL log retained; the settings UI renders the history inline.
+- Placement = the server holding the config (sidecar or deepthought, app/host must be awake); the settings form states this in place of a picker.
+- Triggers are poll-only inside the 30s tick: `trigger.files` mtime poll, `trigger.github` REST poll every 5min per routine (token from `GITHUB_TOKEN` env only).
+- Inbound public webhooks remain out.

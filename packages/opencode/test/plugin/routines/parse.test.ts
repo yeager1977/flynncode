@@ -102,3 +102,69 @@ describe("parseRoutines", () => {
     })
   })
 })
+
+describe("rrule schedule", () => {
+  test("parses an RRULE schedule", () => {
+    const result = parseRoutines({
+      routines: [{ id: "a", name: "A", prompt: "go", schedule: { rrule: "FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0" } }],
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.routines[0]).toMatchObject({ id: "a", rrule: "FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0" })
+  })
+
+  test("parses a bare FREQ-only RRULE", () => {
+    const result = parseRoutines({
+      routines: [{ id: "a", name: "A", prompt: "go", schedule: { rrule: "FREQ=DAILY" } }],
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.routines[0]).toMatchObject({ id: "a", rrule: "FREQ=DAILY" })
+  })
+
+  test("rejects an invalid RRULE string", () => {
+    const result = parseRoutines({
+      routines: [{ id: "a", name: "A", prompt: "go", schedule: { rrule: "EVERY=monday" } }],
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  test("rejects rrule combined with dailyAt", () => {
+    const result = parseRoutines({
+      routines: [{ id: "a", name: "A", prompt: "go", schedule: { dailyAt: "09:00", rrule: "FREQ=DAILY" } }],
+    })
+    expect(result.ok).toBe(false)
+  })
+})
+
+describe("recentRuns", () => {
+  test("keeps valid summaries and drops bad entries", () => {
+    const result = parseRoutines({
+      routines: [
+        {
+          id: "a",
+          name: "A",
+          prompt: "go",
+          schedule: { dailyAt: "09:00" },
+          recentRuns: [
+            { startedAt: "2026-09-22T09:00:00.000Z", endedAt: "2026-09-22T09:01:00.000Z", state: "ok" },
+            "nope",
+            { startedAt: "2026-09-22T09:00:00.000Z", endedAt: "2026-09-22T09:01:00.000Z", state: "bogus" },
+          ],
+        },
+      ],
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.routines[0].recentRuns?.length).toBe(1)
+  })
+
+  test("omits recentRuns when empty", () => {
+    const result = parseRoutines({
+      routines: [{ id: "a", name: "A", prompt: "go", schedule: { dailyAt: "09:00" } }],
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.routines[0].recentRuns).toBeUndefined()
+  })
+})

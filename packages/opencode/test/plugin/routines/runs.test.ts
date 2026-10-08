@@ -3,6 +3,17 @@ import path from "path"
 import { parseRunRecords, recordRoutineRun, type RoutineRun } from "../../../src/plugin/routines/index"
 import { tmpdir } from "../../fixture/fixture"
 
+function run(patch: Partial<RoutineRun> = {}): RoutineRun {
+  return {
+    routineId: "triage",
+    agent: "build",
+    startedAt: new Date(2026, 8, 22, 9, 0).toISOString(),
+    endedAt: new Date(2026, 8, 22, 9, 1).toISOString(),
+    state: "ok",
+    ...patch,
+  }
+}
+
 const record = (n: number): RoutineRun => ({
   routineId: `routine-${n}`,
   sessionID: `session-${n}`,
@@ -10,6 +21,22 @@ const record = (n: number): RoutineRun => ({
   startedAt: new Date(2026, 8, 22, 9, n).toISOString(),
   endedAt: new Date(2026, 8, 22, 9, n, 30).toISOString(),
   state: "ok",
+})
+
+describe("parseRunRecords", () => {
+  test("skips corrupt lines and keeps the tail", () => {
+    const text = [JSON.stringify(run()), "not-json", "", JSON.stringify(run({ state: "error" }))].join("\n")
+    const records = parseRunRecords(text)
+    expect(records.length).toBe(2)
+    expect(records[1].state).toBe("error")
+  })
+
+  test("caps at the newest 200", () => {
+    const text = Array.from({ length: 250 }, (_, n) =>
+      JSON.stringify(run({ startedAt: new Date(2026, 8, 22, 9, 0, n).toISOString() })),
+    ).join("\n")
+    expect(parseRunRecords(text).length).toBe(200)
+  })
 })
 
 describe("recordRoutineRun", () => {
