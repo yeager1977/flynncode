@@ -80,7 +80,7 @@ function permissions(info?: ConfigPermissionV1.Info, tools?: Readonly<Record<str
     resource: "*",
     effect: enabled ? ("allow" as const) : ("deny" as const),
   }))
-  for (const [action, rule] of Object.entries(info ?? {})) {
+  for (const [action, rule] of Object.entries(ConfigPermissionV1.stripPolicyKeys(info))) {
     if (!rule) continue
     if (typeof rule === "string") {
       rules.push({ action, resource: "*", effect: rule })

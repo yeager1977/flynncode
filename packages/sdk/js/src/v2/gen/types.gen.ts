@@ -1663,6 +1663,10 @@ export type PermissionObjectConfig = {
 
 export type PermissionRuleConfig = PermissionActionConfig | PermissionObjectConfig
 
+export type SandboxMode = "readonly" | "workspace-write" | "full-access"
+
+export type ApprovalMode = "manual" | "accept-edits" | "auto"
+
 export type PermissionConfig =
   | PermissionActionConfig
   | {
@@ -1681,7 +1685,17 @@ export type PermissionConfig =
       lsp?: PermissionRuleConfig
       doom_loop?: PermissionActionConfig
       skill?: PermissionRuleConfig
-      [key: string]: PermissionRuleConfig | PermissionActionConfig | undefined
+      sandbox?: SandboxMode
+      approval?: ApprovalMode
+      [key: string]:
+        | PermissionRuleConfig
+        | SandboxMode
+        | ApprovalMode
+        | PermissionRuleConfig
+        | PermissionActionConfig
+        | SandboxMode
+        | ApprovalMode
+        | undefined
     }
 
 export type AgentConfig = {
@@ -1944,6 +1958,10 @@ export type Config = {
   }
   routines?: {
     [key: string]: unknown
+  }
+  computer_use?: {
+    enabled?: boolean
+    allowedApps?: Array<string>
   }
   enabled_providers?: Array<string>
   worktree?: {

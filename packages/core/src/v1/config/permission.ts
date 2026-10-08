@@ -11,6 +11,18 @@ export type Object = Schema.Schema.Type<typeof Object>
 export const Rule = Schema.Union([Action, Object]).annotate({ identifier: "PermissionRuleConfig" })
 export type Rule = Schema.Schema.Type<typeof Rule>
 
+export const SandboxMode = Schema.Literals(["readonly", "workspace-write", "full-access"]).annotate({
+  identifier: "SandboxMode",
+})
+export type SandboxMode = Schema.Schema.Type<typeof SandboxMode>
+
+export const ApprovalMode = Schema.Literals(["manual", "accept-edits", "auto"]).annotate({
+  identifier: "ApprovalMode",
+})
+export type ApprovalMode = Schema.Schema.Type<typeof ApprovalMode>
+
+const RESERVED_POLICY_KEYS = ["sandbox", "approval"]
+
 // Known permission keys get explicit types in the Effect schema for generated
 // docs/types. Runtime config parsing uses Effect's `propertyOrder: "original"`
 // parse option so user key order is preserved for permission precedence.
@@ -31,8 +43,12 @@ const InputObject = Schema.StructWithRest(
     lsp: Schema.optional(Rule),
     doom_loop: Schema.optional(Action),
     skill: Schema.optional(Rule),
+    // Session policy keys, not tool rules: stripPolicyKeys removes them before building rulesets.
+    sandbox: Schema.optional(SandboxMode),
+    approval: Schema.optional(ApprovalMode),
   }),
-  [Schema.Record(Schema.String, Rule)],
+  // The rest record also validates the known keys above, so it must admit policy values.
+  [Schema.Record(Schema.String, Schema.Union([Rule, SandboxMode, ApprovalMode]))],
 )
 
 const InputSchema = Schema.Union([Action, InputObject])
@@ -49,16 +65,6 @@ export const Info = InputSchema.pipe(
 type _Info = Schema.Schema.Type<typeof InputObject>
 export type Info = { -readonly [K in keyof _Info]: _Info[K] }
 
-export const SandboxMode = Schema.Literals(["readonly", "workspace-write", "full-access"]).annotate({
-  identifier: "SandboxMode",
-})
-export type SandboxMode = Schema.Schema.Type<typeof SandboxMode>
-
-export const ApprovalMode = Schema.Literals(["manual", "accept-edits", "auto"]).annotate({
-  identifier: "ApprovalMode",
-})
-export type ApprovalMode = Schema.Schema.Type<typeof ApprovalMode>
-
 export const SessionPolicy = Schema.Struct({
   sandbox: Schema.optional(SandboxMode).pipe(Schema.withDecodingDefault(Effect.succeed("workspace-write" as const))),
   approval: Schema.optional(ApprovalMode).pipe(Schema.withDecodingDefault(Effect.succeed("manual" as const))),
@@ -74,9 +80,12 @@ export function resolveSessionPolicy(raw: unknown): { sandbox: SandboxMode; appr
   return { sandbox: decoded.sandbox ?? "workspace-write", approval: decoded.approval ?? "manual" }
 }
 
-const RESERVED_POLICY_KEYS = ["sandbox", "approval"]
-
-export function stripPolicyKeys(raw: unknown): Record<string, unknown> {
-  const record = (raw ?? {}) as Record<string, unknown>
-  return globalThis.Object.fromEntries(globalThis.Object.entries(record).filter(([key]) => !RESERVED_POLICY_KEYS.includes(key)))
+// Also drops policy values misplaced on tool keys (e.g. `bash: "full-access"`), which the
+// rest record admits but which are not permission actions.
+export function stripPolicyKeys(raw: unknown): Record<string, Rule> {
+  return globalThis.Object.fromEntries(
+    globalThis.Object.entries((raw ?? {}) as Record<string, unknown>).filter(
+      (entry): entry is [string, Rule] => !RESERVED_POLICY_KEYS.includes(entry[0]) && Schema.is(Rule)(entry[1]),
+    ),
+  )
 }
