@@ -103,6 +103,18 @@ describe("Home V2 session index", () => {
     ])
   })
 
+  test("preserves the durable session kind on Home session summaries", () => {
+    const result = parseHomeSessionIndex([
+      { ...session({ id: "notes" }), kind: "knowledge" } as SessionV2Info,
+      session({ id: "code" }),
+    ])
+
+    expect(result).toEqual([
+      expect.objectContaining({ id: "notes", kind: "knowledge" }),
+      expect.objectContaining({ id: "code", kind: undefined }),
+    ])
+  })
+
   test("preserves the per-directory Home retention limit", () => {
     const now = 10 * 60 * 60 * 1000
     const sessions = Array.from({ length: 80 }, (_, index) => ({

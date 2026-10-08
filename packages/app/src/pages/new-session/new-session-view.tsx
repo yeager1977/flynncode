@@ -1,5 +1,6 @@
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { WordmarkV2 } from "@opencode-ai/ui/v2/wordmark-v2"
@@ -35,6 +36,8 @@ export function NewSessionView(props: {
   input: NewSessionDraftController["input"]
   project: PromptProjectController
   workspace: NewSessionWorkspaceController
+  kind: NewSessionDraftController["kind"]
+  onKind: NewSessionDraftController["setKind"]
 }) {
   const language = useLanguage()
   return (
@@ -47,6 +50,7 @@ export function NewSessionView(props: {
           <div class={NEW_SESSION_CONTENT_WIDTH}>
             <WordmarkV2 class="h-auto w-full text-v2-background-bg-inverse" />
             <div class="mt-8 flex flex-col gap-8">
+              <NewSessionKindSelector kind={props.kind} onKind={props.onKind} />
               <PromptInputV2Composer controller={props.input} />
               <Show when={props.project.empty()}>
                 <PromptProjectAddButton controller={props.project} />
@@ -75,7 +79,7 @@ export function NewSessionView(props: {
                     {language.t("session.worktree.disposableDescription")}
                   </div>
                 </Show>
-                <NewSessionFolders workspace={props.workspace} />
+                <NewSessionFolders workspace={props.workspace} kind={props.kind} />
               </Show>
             </div>
           </div>
@@ -86,7 +90,48 @@ export function NewSessionView(props: {
   )
 }
 
-function NewSessionFolders(props: { workspace: NewSessionWorkspaceController }) {
+function NewSessionKindSelector(props: {
+  kind: NewSessionDraftController["kind"]
+  onKind: NewSessionDraftController["setKind"]
+}) {
+  const language = useLanguage()
+  return (
+    <div class="flex min-h-7 min-w-0 flex-col items-center justify-center gap-1">
+      <span class="text-[13px] leading-5 text-v2-text-text-faint">{language.t("session.new.kind.label")}</span>
+      <div class="flex items-center gap-1" role="group" aria-label={language.t("session.new.kind.label")}>
+        <ButtonV2
+          data-action="new-session-kind-code"
+          variant="ghost-muted"
+          size="normal"
+          class="h-7 px-2 [font-weight:530]"
+          aria-pressed={props.kind() === "code"}
+          data-active={props.kind() === "code"}
+          onClick={() => props.onKind("code")}
+        >
+          {language.t("session.new.kind.code")}
+        </ButtonV2>
+        <ButtonV2
+          data-action="new-session-kind-knowledge"
+          variant="ghost-muted"
+          size="normal"
+          class="h-7 px-2 [font-weight:530]"
+          aria-pressed={props.kind() === "knowledge"}
+          data-active={props.kind() === "knowledge"}
+          onClick={() => props.onKind("knowledge")}
+        >
+          {language.t("session.new.kind.knowledge")}
+        </ButtonV2>
+      </div>
+      <Show when={props.kind() === "knowledge"}>
+        <div class="text-[13px] leading-5 text-v2-text-text-faint">
+          {language.t("session.new.kind.knowledgeHint")}
+        </div>
+      </Show>
+    </div>
+  )
+}
+
+function NewSessionFolders(props: { workspace: NewSessionWorkspaceController; kind: NewSessionDraftController["kind"] }) {
   const language = useLanguage()
   const sdk = useSDK()
   const server = useServer()
@@ -120,6 +165,9 @@ function NewSessionFolders(props: { workspace: NewSessionWorkspaceController }) 
   return (
     <div class="flex min-h-7 min-w-0 flex-col items-center justify-center gap-1 text-[13px] leading-5 text-v2-text-text-faint">
       <span>{language.t("session.new.folders.label")}</span>
+      <Show when={props.kind() === "knowledge"}>
+        <span>{language.t("knowledge.folders.hint")}</span>
+      </Show>
       <For each={props.workspace.folders.extras()}>
         {(directory) => (
           <div class="flex min-w-0 items-center gap-2">

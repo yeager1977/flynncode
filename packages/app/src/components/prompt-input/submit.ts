@@ -25,6 +25,7 @@ import { formatServerError } from "@/utils/server-errors"
 import { ScopedKey } from "@/utils/server-scope"
 import { createPromptSubmissionState } from "./submission-state"
 import { normalizeSessionInfo } from "@/utils/session"
+import { toLegacySummary } from "@/context/global-sync/home-session-index"
 import { Event } from "@opencode-ai/schema/event"
 import { blobDataUrl } from "@/utils/draft-store"
 
@@ -249,7 +250,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const layout = useLayout()
   const language = useLanguage()
   const params = useParams()
-  const [search] = useSearchParams<{ draftId?: string }>()
+  const [search] = useSearchParams<{ draftId?: string; draftKind?: string }>()
   const tabs = useTabs()
   const dialog = useDialog()
   const ack = useContributorAck()
@@ -322,6 +323,36 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       next.splice(result.index, 0, info)
       return next
     })
+  }
+
+  // The compat create targets the legacy route, which cannot persist the
+  // durable session kind. Knowledge sessions on v2 servers go through
+  // client.v2 instead; everything else keeps the existing path.
+  const createSession = async (value: {
+    agent: string
+    kind: "code" | "knowledge"
+    model: { id: string; providerID: string; variant?: string }
+    directory: string
+  }) => {
+    if (value.kind === "knowledge" && (await sdk().protocol) !== "v1") {
+      const response = await sdk().client.v2.session.create(
+        {
+          agent: value.agent,
+          kind: value.kind,
+          model: value.model,
+          location: { directory: value.directory },
+        },
+        { throwOnError: true },
+      )
+      return toLegacySummary(response.data.data)
+    }
+    return normalizeSessionInfo(
+      await sdk().api.session.create({
+        agent: value.agent,
+        model: value.model,
+        location: { directory: value.directory },
+      }),
+    )
   }
 
   const handleSubmit = async (event: Event) => {
@@ -431,14 +462,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     let session = input.info()
     if (!session && isNewSession) {
-      const created = await sdk()
-        .api.session.create({
-          agent: currentAgent.name,
-          model: { id: currentModel.id, providerID: currentModel.provider.id, variant },
-          location: { directory: sessionDirectory },
-        })
-        .then(normalizeSessionInfo)
-        .catch((err) => {
+      const kind = search.draftKind === "knowledge" ? "knowledge" : "code"
+      const created = await createSession({
+        agent: currentAgent.name,
+        kind,
+        model: { id: currentModel.id, providerID: currentModel.provider.id, variant },
+        directory: sessionDirectory,
+      }).catch((err) => {
           showToast({
             title: language.t("prompt.toast.sessionCreateFailed.title"),
             description: errorMessage(err),

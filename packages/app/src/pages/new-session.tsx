@@ -44,7 +44,7 @@ export default function NewSessionPage() {
       {suspendUntilPromptReady()}
       <NewSessionStatus mount={rightMount} visible={settings.visibility.status} />
       <div class="flex-1 min-h-0 flex flex-col gap-2 p-2">
-        <NewSessionView input={draft.input} project={project} workspace={workspace} />
+        <NewSessionView input={draft.input} project={project} workspace={workspace} kind={draft.kind} onKind={draft.setKind} />
       </div>
     </div>
   )

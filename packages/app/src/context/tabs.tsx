@@ -26,6 +26,7 @@ export type DraftTab = {
   server: ServerConnection.Key
   directory: string
   worktree?: string
+  kind?: "code" | "knowledge"
 }
 
 export type Tab = SessionTab | DraftTab
@@ -39,10 +40,13 @@ type RecentTab = {
   key?: string
 }
 
-export const draftHref = (draftID: string) => `/new-session?draftId=${encodeURIComponent(draftID)}`
+export const draftHref = (draftID: string, kind?: "code" | "knowledge") =>
+  kind === "knowledge"
+    ? `/new-session?draftId=${encodeURIComponent(draftID)}&draftKind=knowledge`
+    : `/new-session?draftId=${encodeURIComponent(draftID)}`
 
 export const tabHref = (tab: Tab) =>
-  tab.type === "draft" ? draftHref(tab.draftID) : sessionHref(tab.server, tab.sessionId)
+  tab.type === "draft" ? draftHref(tab.draftID, tab.kind) : sessionHref(tab.server, tab.sessionId)
 
 export const tabKey = (tab: Tab) => (tab.type === "draft" ? `draft:${tab.draftID}` : `${tab.server}\n${tabHref(tab)}`)
 
@@ -216,7 +220,7 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
               tabs.push(tab)
             }),
           )
-          navigate(draftHref(draftID))
+          navigate(draftHref(draftID, draft.kind))
         })
         return tab
       },
