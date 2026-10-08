@@ -778,7 +778,7 @@ function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
           />
         </TooltipV2>
         <Show when={props.state.computerUseVisible}>
-          <ComputerUseMenu />
+          <ComputerUseMenu variant="v2" />
         </Show>
         <TooltipV2 class="shrink-0" placement="bottom" value={props.state.tasksLabel}>
           <IconButtonV2

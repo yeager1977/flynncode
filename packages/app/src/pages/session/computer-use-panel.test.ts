@@ -19,6 +19,23 @@ describe("computer-use consent panel", () => {
       "utf8",
     )
     expect(source).toContain("updateConfig({ computer_use: next })")
+    // The desktop allowlist mirrors the config only after the server accepted it.
+    expect(source.indexOf("updateConfig(")).toBeLessThan(source.indexOf("storeSet"))
+    expect(source).toContain('language.t("computerUse.saveFailed")')
+  })
+
+  test("v2 header renders the menu with the neighbouring icon button style", async () => {
+    const header = await readFile(
+      path.join(import.meta.dir, "..", "..", "components", "session", "session-header.tsx"),
+      "utf8",
+    )
+    const source = await readFile(
+      path.join(import.meta.dir, "..", "..", "components", "session", "computer-use-menu.tsx"),
+      "utf8",
+    )
+    expect(header).toContain('<ComputerUseMenu variant="v2" />')
+    expect(source).toContain("triggerAs={IconButtonV2}")
+    expect(source).toContain('variant: "ghost-muted"')
   })
 
   test("permission dock renders computer-use consent copy", async () => {
