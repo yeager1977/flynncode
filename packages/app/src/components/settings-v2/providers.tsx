@@ -107,7 +107,7 @@ export const SettingsProvidersV2: Component<{
         providerID={id}
         providerName={name}
         source={live ? source(live) : rowSource(id)}
-        onBack={dialog.close}
+        onBack={props.onBack ?? dialog.close}
       />
     ))
   }
@@ -344,7 +344,7 @@ export const SettingsProvidersV2: Component<{
                   variant="neutral"
                   icon="plus"
                   onClick={() => {
-                    dialog.show(() => <DialogCustomProvider onBack={dialog.close} />)
+                    dialog.show(() => <DialogCustomProvider onBack={props.onBack ?? dialog.close} />)
                   }}
                 >
                   {language.t("common.connect")}
