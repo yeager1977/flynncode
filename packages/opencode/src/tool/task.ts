@@ -218,7 +218,11 @@ export const TaskTool = Tool.define(
           sessionID: nextSession.id,
           permission: [
             ...childRules,
-            ...sandboxRules({ sandbox: sandbox ?? "inherit", directory: worktreeInfo.directory }),
+            ...sandboxRules({
+              sandbox: sandbox ?? "inherit",
+              directory: worktreeInfo.directory,
+              agentPermission: next.permission,
+            }),
           ],
         })
         // The archive handler reads this binding to dispose the worktree.
