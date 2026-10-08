@@ -13,11 +13,14 @@ import { definition, permission, settle, validateName, type AnyTool, type Regist
 import { Tools } from "./tools"
 import { makeLocationNode } from "../effect/app-node"
 
-const supplements = new Map<string, Map<string, AnyTool>>()
-const groupsMap = new Map<string, Map<string, AnyTool>>()
+// Process-global overlays. An overlay registered with a directory belongs to
+// that instance's Location only; unscoped overlays apply everywhere.
+type Overlay = { readonly directory?: string; readonly tools: Map<string, AnyTool> }
+const supplements = new Map<string, Overlay>()
+const groupsMap = new Map<string, Overlay>()
 
-export const replaceGroup = (group: string, tools: Readonly<Record<string, AnyTool>>) => {
-  groupsMap.set(group, new Map(Object.entries(tools)))
+export const replaceGroup = (group: string, tools: Readonly<Record<string, AnyTool>>, directory?: string) => {
+  groupsMap.set(group, { directory, tools: new Map(Object.entries(tools)) })
 }
 
 export const clearGroup = (group: string) => {
@@ -25,10 +28,10 @@ export const clearGroup = (group: string) => {
 }
 
 /** Test-only view of registered groups. */
-export const groups = () => groupsMap
+export const groups = () => new Map(Array.from(groupsMap, ([group, overlay]) => [group, overlay.tools]))
 
-export const replaceSupplements = (owner: string, tools: Readonly<Record<string, AnyTool>>) => {
-  supplements.set(owner, new Map(Object.entries(tools)))
+export const replaceSupplements = (owner: string, tools: Readonly<Record<string, AnyTool>>, directory?: string) => {
+  supplements.set(owner, { directory, tools: new Map(Object.entries(tools)) })
 }
 
 export const clearSupplements = (owner: string) => {
@@ -43,7 +46,11 @@ export type ExecuteInput = {
 }
 
 export interface Interface {
-  readonly materialize: (permissions?: PermissionV2.Ruleset) => Effect.Effect<Materialization>
+  /**
+   * `directory` is the materializing Location's directory; overlays registered
+   * for another directory are left out. Omitted, every overlay applies.
+   */
+  readonly materialize: (permissions?: PermissionV2.Ruleset, directory?: string) => Effect.Effect<Materialization>
   /** Internal registration capability exposed publicly only through Tools.Service. */
   readonly register: (tools: Readonly<Record<string, AnyTool>>) => Effect.Effect<void, RegistrationError, Scope.Scope>
 }
@@ -69,9 +76,15 @@ const registryLayer = Layer.effect(
     type Registration = { readonly identity: object; readonly tool: AnyTool }
     const local = new Map<string, Array<{ readonly token: object; readonly registration: Registration }>>()
 
-    const settleWith = Effect.fn("ToolRegistry.settle")(function* (input: ExecuteInput, advertised?: object) {
+    const settleWith = Effect.fn("ToolRegistry.settle")(function* (
+      input: ExecuteInput,
+      advertised?: object,
+      overlay?: Registration,
+    ) {
+      // Overlay tools live outside `local` and applications, so the advertised
+      // overlay registration is the fallback rather than a stale call.
       const registration =
-        local.get(input.call.name)?.at(-1)?.registration ?? applications.entries().get(input.call.name)
+        local.get(input.call.name)?.at(-1)?.registration ?? applications.entries().get(input.call.name) ?? overlay
       if (!registration)
         return {
           result: {
@@ -125,21 +138,28 @@ const registryLayer = Layer.effect(
           }),
         )
       }),
-      materialize: Effect.fn("ToolRegistry.materialize")(function* (permissions = []) {
+      materialize: Effect.fn("ToolRegistry.materialize")(function* (permissions = [], directory?: string) {
         const registrations = new Map(applications.entries())
+        const overlays = new Set<Registration>()
         // Overlay groups and supplements keep first-wins on display-name collisions.
         const overlay = (name: string, tool: AnyTool) => {
           if (registrations.has(name)) {
             console.warn(`ToolRegistry: duplicate tool name ${name} from another owner was ignored`)
             return
           }
-          registrations.set(name, { identity: {}, tool })
+          const registration = { identity: {}, tool }
+          overlays.add(registration)
+          registrations.set(name, registration)
         }
+        const visible = (entry: Overlay) =>
+          directory === undefined || entry.directory === undefined || entry.directory === directory
         for (const grouped of groupsMap.values()) {
-          for (const [name, tool] of grouped) overlay(name, tool)
+          if (!visible(grouped)) continue
+          for (const [name, tool] of grouped.tools) overlay(name, tool)
         }
         for (const owned of supplements.values()) {
-          for (const [name, tool] of owned) overlay(name, tool)
+          if (!visible(owned)) continue
+          for (const [name, tool] of owned.tools) overlay(name, tool)
         }
         for (const [name, entries] of local) {
           const registration = entries.at(-1)?.registration
@@ -151,7 +171,8 @@ const registryLayer = Layer.effect(
           definitions: Array.from(registrations, ([name, registration]) => definition(name, registration.tool)),
           settle: (input) => {
             const registration = registrations.get(input.call.name)
-            if (registration) return settleWith(input, registration.identity)
+            if (registration)
+              return settleWith(input, registration.identity, overlays.has(registration) ? registration : undefined)
             return Effect.succeed({ result: { type: "error", value: `Unknown tool: ${input.call.name}` } })
           },
         }
