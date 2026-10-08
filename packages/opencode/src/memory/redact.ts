@@ -2,6 +2,7 @@ const patterns: Array<{ kind: string; pattern: RegExp }> = [
   { kind: "github", pattern: /\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{8,}\b/g },
   { kind: "openai", pattern: /\bsk-(?:proj-|test-|live-)?[A-Za-z0-9_-]{8,}\b/g },
   { kind: "aws-key", pattern: /\bAKIA[0-9A-Z]{16}\b/g },
+  { kind: "slack", pattern: /\bxox[baprs]-[A-Za-z0-9-]{8,}\b/g },
   { kind: "private-key", pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g },
   { kind: "bearer", pattern: /Bearer\s+[A-Za-z0-9\-._~+/=]{8,}/g },
   { kind: "url-credentials", pattern: /(https?:\/\/)([^/\s:@]+):([^/\s@]+)@/g },
