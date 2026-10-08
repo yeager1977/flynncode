@@ -51,8 +51,9 @@ import { cleanupStoreFiles } from "./store-cleanup"
 import { startBackgroundCli } from "./background-cli"
 import { setNativeTranslations } from "./native-translations"
 import { museAuthStatus, runMuseAuthSync } from "./muse-auth"
-import { MOBILE_PHONE_PASSWORD_KEY } from "./store-keys"
+import { MOBILE_PHONE_PASSWORD_KEY, RELAY_PUBLISH_URL_KEY, RELAY_TOKEN_KEY } from "./store-keys"
 import { getOrCreateMobilePhonePassword } from "./mobile-password"
+import { generateRelayToken } from "./relay-publisher"
 import { getStore } from "./store"
 
 const APP_NAMES: Record<string, string> = {
@@ -393,6 +394,26 @@ const main = Effect.gen(function* () {
       MOBILE_PHONE_PASSWORD_KEY,
       randomUUID,
     )
+    // The relay token lives in the same settings store as the phone password
+    // and stays stable across restarts. It is forwarded to the sidecar via
+    // env; the deepthought gateway URL is user-configured (Settings > Servers
+    // relay row persists it under RELAY_PUBLISH_URL_KEY).
+    const relayToken = getOrCreateMobilePhonePassword(
+      {
+        get: (key) => {
+          const value = persisted.get(key)
+          return typeof value === "string" && value ? value : undefined
+        },
+        set: (key, value) => persisted.set(key, value),
+      },
+      RELAY_TOKEN_KEY,
+      generateRelayToken,
+    )
+    process.env.OPENCODE_RELAY_TOKEN ??= relayToken
+    const relayPublishUrl = persisted.get(RELAY_PUBLISH_URL_KEY)
+    if (typeof relayPublishUrl === "string" && relayPublishUrl) {
+      process.env.OPENCODE_RELAY_URL ??= relayPublishUrl
+    }
 
     logger.log("spawning sidecar", { url })
     const { listener, health } = yield* Effect.promise(() =>

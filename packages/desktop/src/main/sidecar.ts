@@ -1,10 +1,12 @@
 import * as http from "node:http"
 import * as tls from "node:tls"
+import { hostname } from "node:os"
 import {
   mobileGatewayUpstream,
   startMobileGateway,
   type MobileGatewayHandle,
 } from "./mobile-gateway-launch"
+import { startRelayPublisher } from "./relay-publisher"
 
 type NodeHttpWithEnvProxy = typeof http & {
   setGlobalProxyFromEnv: () => void
@@ -44,6 +46,7 @@ type Listener = {
 const parentPort = getParentPort()
 let listener: Listener | undefined
 let mobileGateway: MobileGatewayHandle | undefined
+let relayPublisher: { stop(): void } | undefined
 
 parentPort.on("message", (event) => {
   const command = parseCommand(event.data)
@@ -76,6 +79,10 @@ async function start(command: StartCommand) {
       port: command.mobile.port,
       upstream: mobileGatewayUpstream(command.hostname, command.port),
     })
+    relayPublisher = startRelayPublisherFromEnv({
+      gatewayPort: mobileGateway?.port,
+      phonePassword: command.mobile.password,
+    })
     parentPort.postMessage({ type: "ready" })
   } catch (error) {
     parentPort.postMessage({ type: "error", error: serializeError(error) })
@@ -85,6 +92,8 @@ async function start(command: StartCommand) {
 
 async function stop() {
   try {
+    relayPublisher?.stop()
+    relayPublisher = undefined
     mobileGateway?.stop()
     mobileGateway = undefined
     await listener?.stop()
@@ -172,6 +181,24 @@ function parseCommand(value: unknown): SidecarCommand | undefined {
 function serializeError(error: unknown) {
   if (error instanceof Error) return { message: error.message, stack: error.stack }
   return { message: String(error) }
+}
+
+// The relay publisher pushes needs-input digests to the deepthought host so
+// the phone sees them while away. It stays off unless the relay token and the
+// deepthought gateway URL are both configured; originID reuses the machine
+// hostname rather than inventing a new identity.
+function startRelayPublisherFromEnv(input: { gatewayPort: number | undefined; phonePassword: string }) {
+  if (input.gatewayPort === undefined) return
+  const relayToken = process.env.OPENCODE_RELAY_TOKEN
+  const relayUrl = process.env.OPENCODE_RELAY_URL?.replace(/\/+$/, "")
+  if (!relayToken || !relayUrl) return
+  return startRelayPublisher({
+    originID: hostname(),
+    localInboxUrl: `http://127.0.0.1:${input.gatewayPort}/flynncode-mobile-inbox`,
+    remotePublishUrl: `${relayUrl}/flynncode-mobile-relay/publish`,
+    phonePassword: input.phonePassword,
+    relayToken,
+  })
 }
 
 function getParentPort() {
