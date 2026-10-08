@@ -1,4 +1,4 @@
-import { For, Show, type Component } from "solid-js"
+import { For, Show, onMount, type Component } from "solid-js"
 import { createStore } from "solid-js/store"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { Switch } from "@opencode-ai/ui/v2/switch-v2"
@@ -19,7 +19,7 @@ export const SettingsPreviewV2: Component<{ directory?: string }> = (props) => {
   const serverSync = useServerSync()
 
   const [store, setStore] = createStore({
-    scope: "project" as "global" | "project",
+    scope: (props.directory ? "project" : "global") as "global" | "project",
     loading: false,
     saving: false,
     error: "",
@@ -38,7 +38,7 @@ export const SettingsPreviewV2: Component<{ directory?: string }> = (props) => {
     if (!props.directory) return
     setStore("loading", true)
     try {
-      const response = await serverSdk().client.config.get({ directory: props.directory })
+      const response = await serverSdk().client.config.project.get({ directory: props.directory })
       const project = previewFromConfig((response.data ?? {}) as Parameters<typeof previewFromConfig>[0])
       setStore({ projectForm: project, projectBaseline: JSON.stringify(project), error: "" })
     } catch {
@@ -47,6 +47,10 @@ export const SettingsPreviewV2: Component<{ directory?: string }> = (props) => {
       setStore("loading", false)
     }
   }
+
+  onMount(() => {
+    if (props.directory) void loadProject()
+  })
 
   const switchScope = (scope: "global" | "project") => {
     setStore({ scope, saved: false, error: "" })
@@ -80,14 +84,10 @@ export const SettingsPreviewV2: Component<{ directory?: string }> = (props) => {
     setStore({ saving: true, error: "", saved: false })
     const next = form()
     try {
+      // Both scopes send only `preview`; the server patches that key into the
+      // scope's config file and leaves every other key untouched.
       if (store.scope === "project") {
-        const response = await serverSdk().client.config.get({ directory: props.directory })
-        const patch = previewToConfig(next)
-        // Both scopes rewrite the parsed config of the file they save: reading
-        // first and setting/clearing only `preview` keeps every other key.
-        const merged = { ...((response.data ?? {}) as Record<string, unknown>), ...patch }
-        if (!patch.preview) delete merged.preview
-        await serverSdk().client.config.update({ directory: props.directory, config: merged as never })
+        await serverSdk().client.config.update({ directory: props.directory, config: previewToConfig(next) })
       } else {
         await serverSync().updateConfig(previewToConfig(next))
       }
