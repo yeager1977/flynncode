@@ -117,6 +117,23 @@ export const TodoTable = sqliteTable(
   ],
 )
 
+// Multifold: extra folders attached to one session. They only widen file
+// access; the session directory stays the sole placement key, so extras never
+// live in project_directory (which tracks the project's own worktrees).
+export const SessionFolderTable = sqliteTable(
+  "session_folder",
+  {
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    directory: DatabasePath.directoryColumn().notNull(),
+    position: integer().notNull(),
+    ...Timestamps,
+  },
+  (table) => [primaryKey({ columns: [table.session_id, table.directory] })],
+)
+
 export const SessionMessageTable = sqliteTable(
   "session_message",
   {

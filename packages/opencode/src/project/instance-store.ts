@@ -8,6 +8,7 @@ import { disposeInstance as runDisposers } from "@/effect/instance-registry"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Watcher } from "@opencode-ai/core/filesystem/watcher"
 import { normalizeFolders } from "@opencode-ai/core/project/folders"
+import { SessionFolders } from "@opencode-ai/core/session/folders"
 import { Context, Deferred, Duration, Effect, Exit, Layer, Scope } from "effect"
 import { type InstanceContext } from "./instance-context"
 import { InstanceBootstrap } from "./bootstrap-service"
@@ -42,11 +43,16 @@ interface Entry {
   readonly deferred: Deferred.Deferred<InstanceContext>
 }
 
-const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Service | EventV2Bridge.Service> =
+const layer: Layer.Layer<
+  Service,
+  never,
+  Project.Service | InstanceBootstrap.Service | EventV2Bridge.Service | SessionFolders.Service
+> =
   Layer.effect(
     Service,
     Effect.gen(function* () {
       const project = yield* Project.Service
+      const folders = yield* SessionFolders.Service
       const bootstrap = yield* InstanceBootstrap.Service
       const events = yield* EventV2Bridge.Service
       const scope = yield* Scope.Scope
@@ -67,8 +73,7 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
       // Multifold: extra roots get native file-watcher subscriptions without
       // Location nodes. Location.Ref stays the sole placement key; this only
       // forwards file events into the instance stream. Extras attached through
-      // the V2 server surface do not reach this sync (separate package, no
-      // instance concept); they are covered on the next instance boot.
+      // the V2 server surface reach this sync through SessionFolders.Live.
       const syncExtraRoots = Effect.fn("InstanceStore.syncExtraRoots")(function* () {
         const ctx = yield* InstanceState.context
         const state = yield* InstanceState.get(extraSubs)
@@ -89,20 +94,23 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
 
       const boot = (input: LoadInput & { directory: string }) =>
         Effect.gen(function* () {
+          // Instances are shared per directory, so the live boundary is the
+          // union of extras attached by every session placed here.
+          const additionalDirectories = input.additionalDirectories ?? (yield* folders.forDirectory(input.directory))
           const ctx: InstanceContext =
             input.project && input.worktree
               ? {
                   directory: input.directory,
                   worktree: input.worktree,
                   project: input.project,
-                  additionalDirectories: input.additionalDirectories ?? [],
+                  additionalDirectories,
                 }
-              : yield* project.fromDirectory(input.directory, input.additionalDirectories).pipe(
+              : yield* project.fromDirectory(input.directory).pipe(
                   Effect.map((result) => ({
                     directory: input.directory,
                     worktree: result.sandbox,
                     project: result.project,
-                    additionalDirectories: input.additionalDirectories ?? [],
+                    additionalDirectories,
                   })),
                 )
         yield* bootstrap.run.pipe(Effect.provideService(InstanceRef, ctx))
@@ -275,7 +283,28 @@ export const bootstrapNode = LayerNode.unbound(InstanceBootstrap.Service, Node.t
 export const node = makeGlobalNode({
   service: Service,
   layer: layer,
-  deps: [Project.node, bootstrapNode, EventV2Bridge.node],
+  deps: [Project.node, bootstrapNode, EventV2Bridge.node, SessionFolders.node],
+})
+
+// Re-applies the per-session folder union to an already running instance.
+// Directories without a loaded instance pick the union up on their next boot.
+export const foldersNode = makeGlobalNode({
+  service: SessionFolders.Live,
+  layer: Layer.effect(
+    SessionFolders.Live,
+    Effect.gen(function* () {
+      const store = yield* Service
+      const folders = yield* SessionFolders.Service
+      return SessionFolders.Live.of({
+        refresh: Effect.fn("InstanceStore.refreshFolders")(function* (input: string) {
+          const directory = FSUtil.resolve(input)
+          if (!(yield* store.loadedDirectories()).has(directory)) return
+          yield* store.setAdditionalDirectories(directory, yield* folders.forDirectory(directory))
+        }),
+      })
+    }),
+  ),
+  deps: [node, SessionFolders.node],
 })
 
 export * as InstanceStore from "./instance-store"

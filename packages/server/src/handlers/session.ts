@@ -1,12 +1,11 @@
 import { SessionV2 } from "@opencode-ai/core/session"
-import { ProjectV2 } from "@opencode-ai/core/project"
-import { ProjectDirectories } from "@opencode-ai/core/project/directories"
+import { SessionFolders } from "@opencode-ai/core/session/folders"
 import { SessionTable } from "@opencode-ai/core/session/sql"
 import { Database } from "@opencode-ai/core/database/database"
 import { eq } from "drizzle-orm"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { MaxExtras, normalizeFolders } from "@opencode-ai/core/project/folders"
-import { DateTime, Effect, Stream } from "effect"
+import { DateTime, Effect, Option, Stream } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
 import { SessionsCursor } from "@opencode-ai/protocol/groups/session"
@@ -27,8 +26,8 @@ const DefaultSessionHistoryLimit = 50
 export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handlers) =>
   Effect.gen(function* () {
     const session = yield* SessionV2.Service
-    const projects = yield* ProjectV2.Service
-    const projectDirectories = yield* ProjectDirectories.Service
+    const folders = yield* SessionFolders.Service
+    const live = yield* Effect.serviceOption(SessionFolders.Live)
     const fs = yield* FSUtil.Service
     const { db } = yield* Database.Service
 
@@ -55,8 +54,8 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       return row.directory
     })
 
-    // Multifold: extras ride as an additive session-level field persisted in
-    // project_directory rows. Location.Ref stays the sole placement key.
+    // Multifold: extras ride as an additive session-level field persisted per
+    // session. Location.Ref stays the sole placement key.
     const requireExtras = Effect.fn("SessionHandler.requireExtras")(function* (primary: string, raw?: readonly string[]) {
       const extras = normalizeFolders(primary, raw ? [...raw] : [])
       if (extras.length > MaxExtras)
@@ -69,10 +68,13 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
       return extras
     })
 
-    const persistExtras = Effect.fn("SessionHandler.persistExtras")(function* (projectID: ProjectV2.ID, extras: string[]) {
-      for (const extra of extras) {
-        yield* projectDirectories.create({ directory: AbsolutePath.make(extra), projectID }).pipe(Effect.ignore)
-      }
+    const persistExtras = Effect.fn("SessionHandler.persistExtras")(function* (
+      sessionID: SessionV2.ID,
+      primary: string,
+      extras: string[],
+    ) {
+      yield* folders.replace(sessionID, extras)
+      if (Option.isSome(live)) yield* live.value.refresh(primary)
     })
 
     return handlers
@@ -124,17 +126,15 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         Effect.fn(function* (ctx) {
           const location = ctx.payload.location ?? { directory: AbsolutePath.make(process.cwd()) }
           const extras = yield* requireExtras(location.directory, ctx.payload.additionalDirectories)
-          const project = yield* projects.resolve(AbsolutePath.make(location.directory))
-          yield* persistExtras(project.id, extras)
-          return {
-            data: yield* session.create({
-              id: ctx.payload.id,
-              agent: ctx.payload.agent,
-              kind: ctx.payload.kind,
-              model: ctx.payload.model,
-              location: ctx.payload.location ?? { directory: AbsolutePath.make(process.cwd()) },
-            }),
-          }
+          const created = yield* session.create({
+            id: ctx.payload.id,
+            agent: ctx.payload.agent,
+            kind: ctx.payload.kind,
+            model: ctx.payload.model,
+            location,
+          })
+          if (extras.length > 0) yield* persistExtras(created.id, location.directory, extras)
+          return { data: created }
         }),
       )
       .handle(
@@ -490,14 +490,9 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         "session.folders",
         Effect.fn(function* (ctx) {
           const primary = yield* primaryDirectory(ctx.params.sessionID)
-          const project = yield* projects.resolve(AbsolutePath.make(primary))
-          const rows = yield* projectDirectories.list(project.id)
           return {
             primary: AbsolutePath.make(primary),
-            extras: rows
-              .map((row) => row.directory)
-              .filter((dir) => dir !== primary)
-              .map((dir) => AbsolutePath.make(dir)),
+            extras: yield* folders.list(ctx.params.sessionID),
           }
         }),
       )
@@ -505,17 +500,11 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         "session.folders.update",
         Effect.fn(function* (ctx) {
           const primary = yield* primaryDirectory(ctx.params.sessionID)
-          const project = yield* projects.resolve(AbsolutePath.make(primary))
           const resolved = ctx.payload.extras
             ? yield* Effect.forEach(ctx.payload.extras, (dir) => fs.resolve(dir))
             : []
           const extras = yield* requireExtras(primary, resolved)
-          const current = new Set((yield* projectDirectories.list(project.id)).map((row) => row.directory))
-          yield* persistExtras(project.id, extras)
-          for (const dir of current) {
-            if (dir === primary || extras.includes(dir)) continue
-            yield* projectDirectories.remove({ directory: dir, projectID: project.id }).pipe(Effect.ignore)
-          }
+          yield* persistExtras(ctx.params.sessionID, primary, extras)
           return {
             primary: AbsolutePath.make(primary),
             extras: extras.map((dir) => AbsolutePath.make(dir)),

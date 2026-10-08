@@ -16,6 +16,7 @@ export default function NewSessionPage() {
     worktree: workspace.selection.value,
     resetWorktree: workspace.selection.reset,
     extraFolders: workspace.folders.extras,
+    primaryFolder: workspace.folders.primaryOverride,
     resetExtraFolders: workspace.folders.reset,
   })
   const project = createPromptProjectController({

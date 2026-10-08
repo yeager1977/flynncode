@@ -25,6 +25,7 @@ import { AbsolutePath } from "@opencode-ai/core/schema"
 import { ProjectV2 } from "@opencode-ai/core/project"
 import { normalizeFolders, MaxExtras } from "@opencode-ai/core/project/folders"
 import { ProjectDirectories } from "@opencode-ai/core/project/directories"
+import { SessionFolders } from "@opencode-ai/core/session/folders"
 import { InstanceStore } from "@/project/instance-store"
 import { Cause, Effect, Option, Schema, Scope } from "effect"
 import * as Stream from "effect/Stream"
@@ -76,6 +77,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const fs = yield* FSUtil.Service
     const projects = yield* ProjectV2.Service
     const projectDirectories = yield* ProjectDirectories.Service
+    const sessionFolders = yield* SessionFolders.Service
+    const liveFolders = yield* SessionFolders.Live
     const instances = yield* InstanceStore.Service
 
     // Dispose-on-archive: a session carrying a disposable worktree binding in
@@ -190,9 +193,11 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     })
 
     const create = Effect.fn("SessionHttpApi.create")(function* (ctx: { payload?: Session.CreateInput }) {
-      return yield* shareSvc.create(ctx.payload).pipe(
-        Effect.catchTag("SessionMultifoldError", () => new HttpApiError.BadRequest({})),
-      )
+      const created = yield* shareSvc
+        .create(ctx.payload)
+        .pipe(Effect.catchTag("SessionMultifoldError", () => new HttpApiError.BadRequest({})))
+      if (ctx.payload?.additionalDirectories?.length) yield* liveFolders.refresh(created.directory)
+      return created
     })
 
     const createRaw = Effect.fn("SessionHttpApi.createRaw")(function* (ctx: {
@@ -240,6 +245,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       if (ctx.payload.time?.archived !== undefined) {
         yield* session.setArchived({ sessionID: ctx.params.sessionID, time: ctx.payload.time.archived })
         yield* disposeArchivedWorktree(ctx.params.sessionID).pipe(Effect.ignore)
+        // Archived sessions drop out of the instance's attached-folder union.
+        yield* liveFolders.refresh(current.directory)
       }
       return yield* requireSession(ctx.params.sessionID)
     })
@@ -459,10 +466,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
 
     const folders = Effect.fn("SessionHttpApi.folders")(function* (ctx: { params: { sessionID: SessionID } }) {
       const info = yield* requireSession(ctx.params.sessionID)
-      const rows = yield* projectDirectories.list(info.projectID)
       return {
         primary: info.directory,
-        extras: rows.map((row) => row.directory).filter((dir) => dir !== info.directory),
+        extras: yield* sessionFolders.list(ctx.params.sessionID),
       }
     })
 
@@ -490,18 +496,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           if (yield* exists(extra)) continue
           return yield* notFound(`Folder not found: ${extra}`)
         }
-        const current = new Set((yield* projectDirectories.list(info.projectID)).map((row) => row.directory))
-        for (const extra of extras) {
-          if (current.has(AbsolutePath.make(extra))) continue
-          yield* projectDirectories
-            .create({ directory: AbsolutePath.make(extra), projectID: info.projectID })
-            .pipe(Effect.ignore)
-        }
-        for (const dir of current) {
-          if (dir === info.directory || extras.includes(dir)) continue
-          yield* projectDirectories.remove({ directory: dir, projectID: info.projectID }).pipe(Effect.ignore)
-        }
-        yield* instances.setAdditionalDirectories(info.directory, extras)
+        yield* sessionFolders.replace(ctx.params.sessionID, extras)
+        yield* instances.setAdditionalDirectories(info.directory, yield* sessionFolders.forDirectory(info.directory))
         return { primary: info.directory, extras }
       })
       if (ctx.payload.primary !== undefined) {
@@ -521,29 +517,27 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
             field: "primary",
           })
         }
-        const rows = yield* projectDirectories.list(info.projectID)
-        const others = rows
-          .map((row) => row.directory)
-          .filter((dir) => dir !== nextPrimary && dir !== info.directory)
+        const others = (yield* sessionFolders.list(ctx.params.sessionID)).filter(
+          (dir) => dir !== nextPrimary && dir !== info.directory,
+        )
         const extras =
           ctx.payload.extras === undefined
             ? [info.directory, ...others]
-            : normalizeFolders(
-                nextPrimary,
-                yield* Effect.forEach(ctx.payload.extras, (dir) => fs.resolve(dir)),
-              )
+            : normalizeFolders(nextPrimary, yield* Effect.forEach(ctx.payload.extras, (dir) => fs.resolve(dir)))
         if (extras.length > MaxExtras) return yield* new HttpApiError.BadRequest({})
         for (const extra of extras) {
           if (yield* exists(extra)) continue
           return yield* notFound(`Folder not found: ${extra}`)
         }
         yield* session.setDirectory({ sessionID: ctx.params.sessionID, directory: nextPrimary })
-        for (const dir of [nextPrimary, ...extras]) {
-          yield* projectDirectories
-            .create({ directory: AbsolutePath.make(dir), projectID: info.projectID })
-            .pipe(Effect.ignore)
-        }
-        yield* instances.reload({ directory: nextPrimary, additionalDirectories: extras })
+        // The new primary is a directory of this same project, so it joins
+        // the project's directory list; extras stay session-scoped.
+        yield* projectDirectories
+          .create({ directory: AbsolutePath.make(nextPrimary), projectID: info.projectID })
+          .pipe(Effect.ignore)
+        yield* sessionFolders.replace(ctx.params.sessionID, extras)
+        yield* liveFolders.refresh(info.directory)
+        yield* instances.reload({ directory: nextPrimary })
         return { primary: nextPrimary, extras }
       }
       if (ctx.payload.extras === undefined) return yield* folders(ctx)

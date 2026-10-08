@@ -40,14 +40,13 @@ export const makeImportGroup = () =>
         }),
         success: Schema.Struct({ data: Session.Info }),
         error: [InvalidRequestError, SessionNotFoundError],
-        })
-        .annotateMerge(
-          OpenApi.annotations({
-            identifier: "v2.import.session",
-            summary: "Import session",
-            description: "Create a session at the requested location and append an imported transcript to it.",
-          }),
-        ),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.import.session",
+          summary: "Import session",
+          description: "Create a session at the requested location and append an imported transcript to it.",
+        }),
+      ),
     )
     .add(
       HttpApiEndpoint.get("import.imported", `${root}/imported`, {
@@ -94,7 +93,8 @@ export const makeImportGroup = () =>
         OpenApi.annotations({
           identifier: "v2.import.sources",
           summary: "List importable sessions",
-          description: "Discover Claude Code and Codex sessions available for import into the given directory.",
+          description:
+            "Discover Claude Code and Codex sessions recorded in the given directory or one of its subdirectories. Sessions from other directories are omitted.",
         }),
       ),
     )

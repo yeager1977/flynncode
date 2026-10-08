@@ -95,6 +95,10 @@ export const SettingsGeneral: Component = () => {
   const updater = useUpdaterAction()
 
   const linux = createMemo(() => platform.platform === "desktop" && platform.os === "linux")
+  // Declared before `accepting`: createMemo runs eagerly, so reading `dir`
+  // ahead of its declaration throws in the temporal dead zone.
+  const sdk = useSDK()
+  const dir = createMemo(() => decode64(params.dir) ?? sdk().directory)
   const accepting = createMemo(() => {
     const value = dir()
     if (!value) return false
@@ -114,8 +118,6 @@ export const SettingsGeneral: Component = () => {
   const serverSync = useServerSync()
   const serverSdk = useServerSDK()
 
-  const sdk = useSDK()
-  const dir = createMemo(() => decode64(params.dir) ?? sdk().directory)
 
   const [shells] = createResource(
     async () => {

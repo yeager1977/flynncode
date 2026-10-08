@@ -39,7 +39,7 @@ import { normalizeProjectInfo } from "@/context/global-sync/utils"
 import { clearWorkspaceTerminals } from "@/context/terminal"
 import { pickSessionCacheEvictions } from "@/context/global-sync/session-cache"
 import { useNotification } from "@/context/notification"
-import { useDispatchActivity } from "@/pages/dispatch/dispatch-activity"
+import { useInboxBadge } from "@/pages/dispatch/activity-inbox-button"
 import { usePermission } from "@/context/permission"
 import { Binary } from "@opencode-ai/core/util/binary"
 import { retry } from "@opencode-ai/core/util/retry"
@@ -117,7 +117,6 @@ export default function LegacyLayout(props: ParentProps) {
   const settings = useSettings()
   const server = useServer()
   const notification = useNotification()
-  const activity = useDispatchActivity()
   const permission = usePermission()
   const navigate = useNavigate()
   const providers = useProviders(() => undefined)
@@ -2249,27 +2248,7 @@ export default function LegacyLayout(props: ParentProps) {
   }
 
   const projects = () => layout.projects.list()
-  // Inbox-wide unread: dispatch flags plus unseen notifications on live
-  // sessions that are not tracked as dispatch rows (e.g. capped-out tasks
-  // still surface here instead of being silently dropped).
-  const inboxBadge = () => {
-    const tasks = activity.desk.tasks
-    const dispatched = new Set(tasks.map((task) => task.sessionID))
-    const dispatchUnread = tasks.filter(
-      (task) => task.unread || notification.session.unseenCount(task.sessionID) > 0,
-    ).length
-    const sessionUnread = projects()
-      .flatMap((project) => serverSync().child(project.worktree, { bootstrap: false })[0].session ?? [])
-      .filter((session) => {
-        if (dispatched.has(session.id)) return false
-        if (session.parentID) return false
-        if (session.time?.archived) return false
-        const live = serverSync().session.data.session_status[session.id]
-        if (!live && notification.session.unseenCount(session.id) === 0) return false
-        return notification.session.unseenCount(session.id) > 0
-      }).length
-    return dispatchUnread + sessionUnread
-  }
+  const inboxBadge = useInboxBadge()
   const projectOverlay = () => <ProjectDragOverlay projects={projects} activeProject={() => store.activeProject} />
   const sidebarContent = (mobile?: boolean) => (
     <SidebarContent

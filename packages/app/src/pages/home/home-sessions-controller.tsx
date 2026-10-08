@@ -120,19 +120,13 @@ export function createHomeSessionsController(home: HomeController) {
       projectByID,
     }),
   )
-  const records = createMemo(() => allRecords().slice(0, HOME_SESSION_LIMIT))
-  const groups = createMemo(() => groupSessions(records(), language))
   const [kindState, setKindState] = createStore({ kindFilter: "all" as SessionKindFilter })
-  const filteredGroups = createMemo(() => {
-    const visible = groups()
-    const filter = kindState.kindFilter
-    if (filter === "all") return visible
-    return visible.flatMap((group) => {
-      const sessions = filterSessionsByKind(group.sessions, filter, (record) => record.session)
-      if (sessions.length === 0) return []
-      return [{ ...group, sessions }]
-    })
-  })
+  // Filter before the row cap so a kind filter still fills the list instead of
+  // only showing matches that happened to land in the first page.
+  const records = createMemo(() =>
+    filterSessionsByKind(allRecords(), kindState.kindFilter, (record) => record.session).slice(0, HOME_SESSION_LIMIT),
+  )
+  const groups = createMemo(() => groupSessions(records(), language))
   const prefetched = new Set<string>()
 
   createEffect(() => {
@@ -380,7 +374,7 @@ export function createHomeSessionsController(home: HomeController) {
       })
       return
     }
-    if (result.pending.length > 0) clearBulk()
+    clearBulk()
   }
   const confirm = (op: BulkOp) => {
     if (bulk.busy) return
@@ -518,7 +512,7 @@ export function createHomeSessionsController(home: HomeController) {
     data: {
       records,
       groups,
-      filteredGroups,
+      hasSessions: () => allRecords().length > 0,
       loading: () => sessionLoad.isLoading,
       searchRecords: allRecords,
     },

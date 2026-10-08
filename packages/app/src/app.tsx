@@ -359,10 +359,12 @@ function ServerScopedProviders(props: ServerScopedShellProps) {
   return (
     <LayoutProvider>
       {/* Persistently mounted dispatch activity watcher: flags transitions and
-          notifies while the dispatch panel is closed. */}
-      <DispatchActivityProvider />
-      {props.serverScoped}
-      <ModelsProvider directory={props.directory}>{props.children}</ModelsProvider>
+          notifies while the inbox is closed. It wraps the shell so the inbox
+          button and panel can read the shared dispatch store. */}
+      <DispatchActivityProvider>
+        {props.serverScoped}
+        <ModelsProvider directory={props.directory}>{props.children}</ModelsProvider>
+      </DispatchActivityProvider>
     </LayoutProvider>
   )
 }

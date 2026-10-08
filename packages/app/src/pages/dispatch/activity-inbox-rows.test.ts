@@ -1,12 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  dispatchRows,
-  filterInbox,
-  inboxUnread,
-  routineRows,
-  sessionRows,
-  type InboxRow,
-} from "./activity-inbox-rows"
+import { dispatchRows, filterInbox, inboxUnread, routineRows, sessionRows, type InboxRow } from "./activity-inbox-rows"
 
 describe("dispatchRows", () => {
   test("keeps unread flags and resolves live status", () => {
@@ -69,10 +62,7 @@ describe("routineRows", () => {
   })
 
   test("maps a routine with no runs onto done and read", () => {
-    const rows = routineRows(
-      [{ id: "morning", name: "Morning", prompt: "run", enabled: true }],
-      () => "manual",
-    )
+    const rows = routineRows([{ id: "morning", name: "Morning", prompt: "run", enabled: true }], () => "manual")
     expect((rows[0] as InboxRow).status).toBe("done")
     expect((rows[0] as InboxRow).unread).toBe(false)
   })
@@ -112,7 +102,11 @@ describe("sessionRows", () => {
   })
 
   test("marks sessions without unseen as read", () => {
-    const rows = sessionRows([{ id: "live2", title: "Quiet", directory: "/repo" }], () => "running", () => 0)
+    const rows = sessionRows(
+      [{ id: "live2", title: "Quiet", directory: "/repo" }],
+      () => "running",
+      () => 0,
+    )
     expect((rows[0] as InboxRow).unread).toBe(false)
     expect((rows[0] as InboxRow).status).toBe("running")
   })
@@ -136,6 +130,12 @@ describe("filterInbox", () => {
     expect(filterInbox(rows, "done").map((row) => row.key)).toEqual(["d"])
     expect(filterInbox(rows, "unread").map((row) => row.key)).toEqual(["b"])
     expect(filterInbox(rows, "all").length).toBe(4)
+  })
+
+  test("filters failed rows on their own tab", () => {
+    const failed: InboxRow = { key: "e", kind: "dispatch", title: "E", subtitle: "", status: "failed", unread: true }
+    expect(filterInbox([...rows, failed], "failed").map((row) => row.key)).toEqual(["e"])
+    expect(filterInbox([...rows, failed], "done").map((row) => row.key)).toEqual(["d"])
   })
 
   test("sorts attention first with unread breaking ties", () => {
@@ -164,7 +164,11 @@ describe("capped dispatch list", () => {
       directory: "/repo",
       unread: false,
     }))
-    const dispatched = dispatchRows(tasks, () => "done", () => 0)
+    const dispatched = dispatchRows(
+      tasks,
+      () => "done",
+      () => 0,
+    )
     const extra = sessionRows(
       [{ id: "live-overflow", title: "Overflow session", directory: "/repo" }],
       () => "running",

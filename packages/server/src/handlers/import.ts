@@ -20,10 +20,31 @@ export const ImportHandler = HttpApiBuilder.group(Api, "server.import", (handler
     const events = yield* EventV2.Service
     const database = yield* Database.Service
 
+    // Importing the same source session into the same directory twice returns
+    // the session created by the first import instead of duplicating it.
+    const existingImport = Effect.fn("ImportHandler.existingImport")(function* (input: {
+      readonly source: "claude-code" | "codex"
+      readonly sourceSessionID: string
+      readonly directory: string
+    }) {
+      const imported = yield* SessionImportRegistry.findImported(database.db, input)
+      const match = imported.find((item) => item.sourceSessionID === input.sourceSessionID)
+      if (!match) return undefined
+      return yield* session
+        .get(SessionSchema.ID.make(match.sessionID))
+        .pipe(Effect.catchTag("Session.NotFoundError", () => Effect.succeed(undefined)))
+    })
+
     return handlers
       .handle(
         "import.session",
         Effect.fn(function* (ctx) {
+          const existing = yield* existingImport({
+            source: ctx.payload.source,
+            sourceSessionID: ctx.payload.sourceSessionID,
+            directory: ctx.payload.location.directory,
+          })
+          if (existing) return { data: existing }
           return {
             data: yield* SessionImport.importSession({
               location: ctx.payload.location,
@@ -67,7 +88,9 @@ export const ImportHandler = HttpApiBuilder.group(Api, "server.import", (handler
         "import.sources",
         Effect.fn(function* (ctx) {
           const candidates = yield* Effect.promise(() =>
-            discoverFromHome({ source: ctx.query.source, home: Global.Path.home }),
+            // Only sessions recorded in this directory (or below it) belong to
+            // the project being imported into.
+            discoverFromHome({ source: ctx.query.source, home: Global.Path.home, cwd: ctx.query.directory }),
           )
           const imported = yield* SessionImportRegistry.findImported(database.db, {
             source: ctx.query.source,
@@ -111,13 +134,21 @@ export const ImportHandler = HttpApiBuilder.group(Api, "server.import", (handler
             })
 
           const parsed =
-            resolved.source === "claude-code" ? parseClaudeCode({ path: resolved.path, text }) : parseCodex({ path: resolved.path, text })
+            resolved.source === "claude-code"
+              ? parseClaudeCode({ path: resolved.path, text })
+              : parseCodex({ path: resolved.path, text })
           if (!parsed.messages.length)
             return yield* new InvalidRequestError({
               message: "Source session has no importable messages",
               field: "sourcePath",
             })
 
+          const existing = yield* existingImport({
+            source: resolved.source,
+            sourceSessionID: parsed.sourceSessionID,
+            directory: ctx.payload.location.directory,
+          })
+          if (existing) return { data: existing }
           return {
             data: yield* SessionImport.importSession({
               location: ctx.payload.location,

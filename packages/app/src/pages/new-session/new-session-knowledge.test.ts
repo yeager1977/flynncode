@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { knowledgeNotesEmpty } from "./new-session-knowledge"
+import { directoryMissing, knowledgeNotesEmpty } from "./new-session-knowledge"
 
 describe("knowledgeNotesEmpty", () => {
   test("empty listing is empty", () => {
@@ -20,5 +20,19 @@ describe("knowledgeNotesEmpty", () => {
 
   test("notes in any listed folder clear the empty state", () => {
     expect(knowledgeNotesEmpty([[], ["a.md"]])).toBe(false)
+  })
+})
+
+describe("directoryMissing", () => {
+  test("parent listing without the folder proves it missing", () => {
+    expect(directoryMissing([".opencode/agents/", ".opencode/config.json"], ".opencode/knowledge")).toBe(true)
+  })
+
+  test("a listed directory is present", () => {
+    expect(directoryMissing([".opencode/knowledge/"], ".opencode/knowledge")).toBe(false)
+  })
+
+  test("windows separators still match", () => {
+    expect(directoryMissing([".opencode\\knowledge\\"], ".opencode/knowledge")).toBe(false)
   })
 })

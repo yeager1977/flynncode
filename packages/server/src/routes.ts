@@ -2,6 +2,7 @@ import { Database } from "@opencode-ai/core/database/database"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { ProjectV2 } from "@opencode-ai/core/project"
 import { ProjectDirectories } from "@opencode-ai/core/project/directories"
+import { SessionFolders } from "@opencode-ai/core/session/folders"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
@@ -31,6 +32,7 @@ const applicationServices = LayerNode.group([
   FSUtil.node,
   ProjectV2.node,
   ProjectDirectories.node,
+  SessionFolders.node,
   EventV2.node,
   httpClient,
   ToolOutputStore.cleanupNode,

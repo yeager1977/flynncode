@@ -44,6 +44,7 @@ function isBackgroundOpen(event: MouseEvent) {
 export type HomeSessionsViewProps = {
   language: ReturnType<typeof useLanguage>
   groups: Accessor<HomeSessionGroup[]>
+  hasSessions: Accessor<boolean>
   kindFilter: Accessor<SessionKindFilter>
   onKindFilter: (next: SessionKindFilter) => void
   showProjectName: Accessor<boolean>
@@ -215,7 +216,7 @@ export function HomeSessionsView(props: HomeSessionsViewProps) {
             </ButtonV2>
           </Show>
           <Suspense>
-            <Show when={props.groups().length > 0 && props.canCreateSession()}>
+            <Show when={props.hasSessions() && props.canCreateSession()}>
               <ButtonV2
                 data-action="home-new-session"
                 variant="ghost-muted"
@@ -250,7 +251,7 @@ export function HomeSessionsView(props: HomeSessionsViewProps) {
           }
         >
           <Show
-            when={props.groups().length > 0}
+            when={props.hasSessions()}
             fallback={
               <HomeSessionsEmpty
                 onNewSession={props.canCreateSession() ? props.onCreateSession : undefined}
@@ -264,6 +265,14 @@ export function HomeSessionsView(props: HomeSessionsViewProps) {
                 kindFilter={props.kindFilter}
                 onKindFilter={props.onKindFilter}
               />
+              <Show when={props.groups().length === 0}>
+                <div
+                  data-component="home-sessions-filter-empty"
+                  class="px-3 pt-6 text-[13px] leading-5 tracking-[-0.04px] text-v2-text-text-muted [font-weight:440]"
+                >
+                  {props.language.t("home.sessions.emptyFilter")}
+                </div>
+              </Show>
               <For each={props.groups()}>
                 {(group, index) => (
                   <>

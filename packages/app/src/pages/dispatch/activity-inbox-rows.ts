@@ -13,7 +13,7 @@ export type InboxRow = {
   directory?: string
 }
 
-export type InboxFilter = "all" | "running" | "needs-input" | "blocked" | "done" | "unread"
+export type InboxFilter = "all" | "running" | "needs-input" | "blocked" | "done" | "failed" | "unread"
 
 export type InboxSession = {
   id: string

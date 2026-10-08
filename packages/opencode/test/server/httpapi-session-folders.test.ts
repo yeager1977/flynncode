@@ -18,6 +18,9 @@ import { Session } from "@/session/session"
 import { Workspace } from "../../src/control-plane/workspace"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { SessionPaths } from "../../src/server/routes/instance/httpapi/groups/session"
+import { FilePaths } from "../../src/server/routes/instance/httpapi/groups/file"
+import { ProjectDirectories } from "@opencode-ai/core/project/directories"
+import { AbsolutePath } from "@opencode-ai/core/schema"
 import { Database } from "@opencode-ai/core/database/database"
 import { disposeAllInstances, tmpdirScoped } from "../fixture/fixture"
 import { resetDatabase } from "../fixture/db"
@@ -30,7 +33,15 @@ const noopBootstrapLayer = Layer.succeed(
   InstanceBootstrapService.Service.of({ run: Effect.void }),
 )
 const appLayer = AppNodeBuilder.build(
-  LayerNode.group([InstanceStore.node, Project.node, Session.node, Workspace.node, Database.node, Ripgrep.node]),
+  LayerNode.group([
+    InstanceStore.node,
+    Project.node,
+    Session.node,
+    Workspace.node,
+    Database.node,
+    Ripgrep.node,
+    ProjectDirectories.node,
+  ]),
   [[InstanceStore.bootstrapNode, noopBootstrapLayer]],
 )
 const servedRoutes: Layer.Layer<never, Config.ConfigError, HttpServer.HttpServer> = HttpRouter.serve(
@@ -251,6 +262,85 @@ describe("session folders HttpApi", () => {
         expect(detachedCtx).toBe(attachedCtx)
         expect(detachedCtx.additionalDirectories).toEqual([])
         expect(containsPath(secret, detachedCtx)).toBe(false)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+  it.instance(
+    "v2 folders route widens the running instance boundary",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const extra = yield* tmpdirScoped()
+        const store = yield* InstanceStore.Service
+        const session = yield* Session.use.create({ title: "v2-attach" })
+        const ctx = yield* store.load({ directory: test.directory })
+
+        const attach = yield* request(`/api/session/${session.id}/folders`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ extras: [extra] }),
+        })
+        expect(attach.status).toBe(200)
+        expect(ctx.additionalDirectories).toEqual([extra])
+
+        const detach = yield* request(`/api/session/${session.id}/folders`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ extras: [] }),
+        })
+        expect(detach.status).toBe(200)
+        expect(ctx.additionalDirectories).toEqual([])
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "extras stay per session and never touch project directory rows",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory }
+        const extra = yield* tmpdirScoped()
+        const sandbox = yield* tmpdirScoped()
+        const directories = yield* ProjectDirectories.Service
+        const first = yield* Session.use.create({ title: "first" })
+        const second = yield* Session.use.create({ title: "second" })
+        const projectID = (yield* Session.use.get(first.id)).projectID
+        yield* directories.create({ projectID, directory: AbsolutePath.make(sandbox) })
+
+        expect((yield* postFolders(first.id, test.directory, { extras: [extra] })).status).toBe(200)
+        const own = yield* requestJson<{ extras: string[] }>(pathFor(SessionPaths.folders, { sessionID: first.id }), {
+          headers,
+        })
+        expect(own.extras).toEqual([extra])
+        const other = yield* requestJson<{ extras: string[] }>(
+          pathFor(SessionPaths.folders, { sessionID: second.id }),
+          { headers },
+        )
+        expect(other.extras).toEqual([])
+
+        expect((yield* postFolders(first.id, test.directory, { extras: [] })).status).toBe(200)
+        expect(yield* directories.contains({ projectID, directory: AbsolutePath.make(sandbox) })).toBe(true)
+        expect(yield* directories.contains({ projectID, directory: AbsolutePath.make(extra) })).toBe(false)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "reads file content under an attached folder",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const extra = yield* tmpdirScoped()
+        yield* Effect.promise(() => fs.writeFile(path.join(extra, "notes.txt"), "attached"))
+        const session = yield* Session.use.create({ title: "attached-read" })
+        expect((yield* postFolders(session.id, test.directory, { extras: [extra] })).status).toBe(200)
+
+        const result = yield* requestJson<{ type: string; content: string }>(
+          `${FilePaths.content}?path=${encodeURIComponent(path.join(extra, "notes.txt"))}`,
+          { headers: { "x-opencode-directory": test.directory } },
+        )
+        expect(result).toMatchObject({ type: "text", content: "attached" })
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )

@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "31bb9575-2fa4-4491-8272-0ecafef260ff",
+  "id": "749bfd80-6b69-4e14-9303-74f95ce85a28",
   "prevIds": [
-    "f14a9b18-8207-487e-a3d3-227e629ba9ad"
+    "31bb9575-2fa4-4491-8272-0ecafef260ff"
   ],
   "ddl": [
     {
@@ -60,6 +60,10 @@
     },
     {
       "name": "session_context_epoch",
+      "entityType": "tables"
+    },
+    {
+      "name": "session_folder",
       "entityType": "tables"
     },
     {
@@ -924,6 +928,56 @@
     },
     {
       "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "session_id",
+      "entityType": "columns",
+      "table": "session_folder"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "directory",
+      "entityType": "columns",
+      "table": "session_folder"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "position",
+      "entityType": "columns",
+      "table": "session_folder"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "session_folder"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_updated",
+      "entityType": "columns",
+      "table": "session_folder"
+    },
+    {
+      "type": "text",
       "notNull": false,
       "autoincrement": false,
       "default": null,
@@ -1623,6 +1677,21 @@
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
+      "name": "fk_session_folder_session_id_session_id_fk",
+      "entityType": "fks",
+      "table": "session_folder"
+    },
+    {
+      "columns": [
+        "session_id"
+      ],
+      "tableTo": "session",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
       "name": "fk_session_input_session_id_session_id_fk",
       "entityType": "fks",
       "table": "session_input"
@@ -1706,6 +1775,16 @@
       "name": "project_directory_pk",
       "entityType": "pks",
       "table": "project_directory"
+    },
+    {
+      "columns": [
+        "session_id",
+        "directory"
+      ],
+      "nameExplicit": false,
+      "name": "session_folder_pk",
+      "entityType": "pks",
+      "table": "session_folder"
     },
     {
       "columns": [

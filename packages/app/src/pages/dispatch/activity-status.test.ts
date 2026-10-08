@@ -12,9 +12,10 @@ describe("activityStatus", () => {
     expect(inboxStatus("done")).toBe("done")
   })
 
-  test("keeps the stored status when the live session is idle and unblocked", () => {
+  test("resolves a running task once the live session goes idle", () => {
     expect(inboxStatus("done", { type: "idle" })).toBe("done")
-    expect(inboxStatus("running", { type: "idle" })).toBe("running")
+    expect(inboxStatus("failed", { type: "idle" })).toBe("failed")
+    expect(inboxStatus("running", { type: "idle" })).toBe("done")
   })
 
   test("follows the live status while the session is working or blocked", () => {
@@ -34,6 +35,11 @@ describe("inboxRowStatus", () => {
 
   test("maps live idle with waiting onto needs-input", () => {
     expect(inboxRowStatus("dispatch", "running", { type: "idle" }, true)).toBe("needs-input")
+  })
+
+  test("maps a finished idle session onto done", () => {
+    expect(inboxRowStatus("session", "done", { type: "idle" }, false)).toBe("done")
+    expect(inboxRowStatus("dispatch", "running", { type: "idle" }, false)).toBe("done")
   })
 
   test("maps live busy onto running", () => {

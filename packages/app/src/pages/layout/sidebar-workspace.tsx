@@ -574,7 +574,7 @@ function useWorkspaceBulk(input: {
       })
       return
     }
-    if (result.pending.length > 0) clearBulk()
+    clearBulk()
   }
   const confirm = (op: BulkOp) => {
     if (bulk.busy) return

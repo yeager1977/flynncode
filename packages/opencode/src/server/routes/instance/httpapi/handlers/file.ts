@@ -103,9 +103,17 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
       // non-git projects keep external_directory permissions intact.
       if (!containsPath(file, instance)) return yield* Effect.die(new Error("Path escapes the location"))
       if (!(yield* FSUtil.Service.use((fs) => fs.existsSafe(file)))) return { type: "text" as const, content: "" }
-      return yield* filesystem(
-        FileSystem.Service.use((fs) => fs.read({ path: RelativePath.make(ctx.query.path) })),
+      // Each read goes through the Location of the root that holds the file,
+      // so an attached folder keeps its own containment check instead of
+      // failing the primary Location's boundary.
+      const root =
+        [instance.directory, ...instance.additionalDirectories, instance.worktree].find((dir) =>
+          FSUtil.contains(dir, file),
+        ) ?? directory
+      return yield* FileSystem.Service.use((fs) =>
+        fs.read({ path: RelativePath.make(path.relative(root, file)) }),
       ).pipe(
+        Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(root) }))),
         Effect.flatMap((item) =>
           Effect.gen(function* () {
             const text = item.content.includes(0)

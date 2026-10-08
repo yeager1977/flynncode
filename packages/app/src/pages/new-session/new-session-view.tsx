@@ -1,6 +1,8 @@
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { Tag } from "@opencode-ai/ui/v2/badge-v2"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
+import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { WordmarkV2 } from "@opencode-ai/ui/v2/wordmark-v2"
@@ -29,7 +31,7 @@ import { showToast } from "@/utils/toast"
 import { Persist, persisted } from "@/utils/persist"
 import type { NewSessionDraftController } from "./new-session-draft-controller"
 import type { NewSessionWorkspaceController } from "./new-session-workspace-controller"
-import { knowledgeNotesEmpty } from "./new-session-knowledge"
+import { directoryMissing, knowledgeNotesEmpty } from "./new-session-knowledge"
 
 const providerTipDismissalDuration = 30 * 24 * 60 * 60 * 1000
 
@@ -102,17 +104,26 @@ function NewSessionKindSelector(props: {
 }) {
   const language = useLanguage()
   const sdk = useSDK()
-  // The empty state asserts on a successful listing only. A failed list
+  // The empty state asserts on a successful listing, or on a parent listing
+  // that proves the knowledge folder does not exist yet. Any other failure
   // must not claim the folder is empty. While loading, only the hint shows.
   const [notesEmpty] = createResource(
     () => (props.kind() === "knowledge" ? (props.worktree() ?? null) : null),
     async (root) => {
-      try {
-        const result = await sdk().api.file.list({ path: ".opencode/knowledge", location: { directory: root } })
-        return knowledgeNotesEmpty([result.data.map((entry) => entry.path)])
-      } catch {
-        return false
-      }
+      const list = (path: string) =>
+        sdk()
+          .api.file.list({ path, location: { directory: root } })
+          .then(
+            (result) => result.data.map((entry) => entry.path),
+            () => undefined,
+          )
+      const notes = await list(".opencode/knowledge")
+      if (notes) return knowledgeNotesEmpty([notes])
+      const config = await list(".opencode")
+      if (config) return directoryMissing(config, ".opencode/knowledge")
+      const top = await list(".")
+      if (top) return directoryMissing(top, ".opencode")
+      return false
     },
   )
   return (
@@ -163,11 +174,9 @@ function NewSessionKindSelector(props: {
 
 function NewSessionFolders(props: { workspace: NewSessionWorkspaceController; kind: NewSessionDraftController["kind"] }) {
   const language = useLanguage()
-  const sdk = useSDK()
   const server = useServer()
   const pickDirectory = useDirectoryPicker()
 
-  const primary = createMemo(() => sdk().directory)
   const add = () => {
     const conn = server.current
     if (!conn) return
@@ -178,7 +187,7 @@ function NewSessionFolders(props: { workspace: NewSessionWorkspaceController; ki
       onSelect: (result) => {
         for (const directory of homeProjectDirectories(result)) {
           const extras = props.workspace.folders.extras()
-          if (directory === primary() || extras.includes(directory)) {
+          if (directory === props.workspace.folders.primary() || extras.includes(directory)) {
             showToast({ title: language.t("session.folders.duplicate") })
             continue
           }
@@ -193,29 +202,59 @@ function NewSessionFolders(props: { workspace: NewSessionWorkspaceController; ki
   }
 
   return (
-    <div class="flex min-h-7 min-w-0 flex-col items-center justify-center gap-1 text-[13px] leading-5 text-v2-text-text-faint">
+    <div
+      data-component="new-session-folders"
+      class="flex min-w-0 flex-col items-center justify-center gap-1 text-[13px] leading-5 text-v2-text-text-faint"
+    >
       <span>{language.t("session.new.folders.label")}</span>
       <Show when={props.kind() === "knowledge"}>
         <span>{language.t("knowledge.folders.hint")}</span>
       </Show>
-      <For each={props.workspace.folders.extras()}>
-        {(directory) => (
-          <div class="flex min-w-0 items-center gap-2">
-            <span class="truncate">{directory}</span>
-            <button
-              type="button"
-              class="shrink-0 underline"
-              aria-label={language.t("session.folders.remove")}
-              onClick={() => props.workspace.folders.remove(directory)}
-            >
-              {language.t("session.folders.remove")}
-            </button>
-          </div>
-        )}
-      </For>
-      <button type="button" class="shrink-0 underline" onClick={add}>
+      <Show when={props.workspace.folders.extras().length > 0}>
+        <span>{language.t("session.folders.primaryNote")}</span>
+        <For each={[props.workspace.folders.primary(), ...props.workspace.folders.extras()]}>
+          {(directory, index) => (
+            <div class="flex w-full min-w-0 items-center justify-center gap-1">
+              <span class="min-w-0 truncate text-v2-text-text-muted">{directory}</span>
+              <Show
+                when={index() > 0}
+                fallback={<Tag class="shrink-0">{language.t("session.folders.primary")}</Tag>}
+              >
+                <ButtonV2
+                  data-action="new-session-folder-primary"
+                  variant="ghost-muted"
+                  size="small"
+                  class="shrink-0"
+                  onClick={() => props.workspace.folders.setPrimary(directory)}
+                >
+                  {language.t("session.folders.setPrimary")}
+                </ButtonV2>
+                <TooltipV2 placement="top" value={language.t("session.folders.remove")} class="shrink-0">
+                  <IconButtonV2
+                    type="button"
+                    data-action="new-session-folder-remove"
+                    variant="ghost-muted"
+                    size="small"
+                    icon={<IconV2 name="xmark-small" />}
+                    aria-label={language.t("session.folders.remove")}
+                    onClick={() => props.workspace.folders.remove(directory)}
+                  />
+                </TooltipV2>
+              </Show>
+            </div>
+          )}
+        </For>
+      </Show>
+      <ButtonV2
+        data-action="new-session-folder-add"
+        variant="ghost-muted"
+        size="small"
+        icon="folder-add-left"
+        class="shrink-0"
+        onClick={add}
+      >
         {language.t("session.folders.add")}
-      </button>
+      </ButtonV2>
     </div>
   )
 }
