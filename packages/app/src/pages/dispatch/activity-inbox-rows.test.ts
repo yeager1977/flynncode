@@ -154,3 +154,25 @@ describe("inboxUnread", () => {
     expect(inboxUnread(rows)).toBe(2)
   })
 })
+
+describe("capped dispatch list", () => {
+  test("session rows still surface live sessions missing from the capped dispatch list", () => {
+    const tasks = Array.from({ length: 40 }, (_, index) => ({
+      sessionID: `capped-${index}`,
+      title: `Task ${index}`,
+      status: "done" as const,
+      directory: "/repo",
+      unread: false,
+    }))
+    const dispatched = dispatchRows(tasks, () => "done", () => 0)
+    const extra = sessionRows(
+      [{ id: "live-overflow", title: "Overflow session", directory: "/repo" }],
+      () => "running",
+      () => 1,
+    )
+    const combined = [...dispatched, ...extra]
+    expect(filterInbox(combined, "all").map((row) => row.key)).toContain("session:live-overflow")
+    expect(filterInbox(combined, "unread").map((row) => row.key)).toEqual(["session:live-overflow"])
+    expect(inboxUnread(combined)).toBe(1)
+  })
+})
