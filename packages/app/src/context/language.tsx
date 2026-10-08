@@ -40,6 +40,7 @@ type PluralKey =
   | "session.bulk.cleanup.skipped"
   | "session.bulk.failed"
   | "session.project.sessions"
+  | "settings.hooks.pending"
 type Source = { dict: Record<string, string> }
 
 function cookie(locale: Locale) {
