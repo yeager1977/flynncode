@@ -797,4 +797,28 @@ describe("relay routes", () => {
     expect(html).not.toContain("token")
     expect(html).not.toContain("Bearer")
   })
+
+  test("rejects a chunked oversized body with 413", async () => {
+    const handle = createGateway({ options: relayOptions })
+    const payload = JSON.stringify({
+      originID: "big",
+      items: [{ sessionID: "ses_1", directory: "/r", title: "x".repeat(70 * 1024), kind: "permission", updated: 1 }],
+      updatedAt: 1,
+    })
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(payload))
+        controller.close()
+      },
+    })
+    const response = await handle(
+      new Request("http://gateway/flynncode-mobile-relay/publish", {
+        method: "POST",
+        headers: { authorization: "Bearer relay-secret", "content-type": "application/json" },
+        body: stream,
+        duplex: "half",
+      } as RequestInit & { duplex: "half" }),
+    )
+    expect(response.status).toBe(413)
+  })
 })

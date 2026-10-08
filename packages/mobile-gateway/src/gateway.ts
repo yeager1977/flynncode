@@ -130,6 +130,12 @@ export function createGateway(input: { options: GatewayOptions }) {
         return new Response("Payload too large", { status: 413 })
       }
       const body = await request.json().catch(() => undefined)
+      // The header pre-check above is only a fast path: chunked bodies carry
+      // no content-length, so enforce the cap on the serialized post-parse
+      // length as well. Parsed JSON always re-serializes to a string.
+      if ((JSON.stringify(body) ?? "").length > RELAY_MAX_BODY_BYTES) {
+        return new Response("Payload too large", { status: 413 })
+      }
       const digest = parseRelayDigest(body)
       if (!digest) return new Response("Bad request", { status: 400 })
       relayStore.publish(digest)
