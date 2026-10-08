@@ -12,7 +12,9 @@ import { ProviderTransform } from "@/provider/transform"
 import PROMPT_GENERATE from "./generate.txt"
 import PROMPT_COMPACTION from "./prompt/compaction.txt"
 import PROMPT_EXPLORE from "./prompt/explore.txt"
-import PROMPT_KNOWLEDGE from "./prompt/knowledge.txt"
+// Single-sourced from core: the V2 knowledge agent uses the same prompt.
+// A .txt here would need manual sync (core's export map cannot serve .txt).
+import { PROMPT_KNOWLEDGE } from "@opencode-ai/core/plugin/agent"
 import PROMPT_SUMMARY from "./prompt/summary.txt"
 import PROMPT_TITLE from "./prompt/title.txt"
 import { Permission } from "@/permission"

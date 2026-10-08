@@ -93,7 +93,7 @@ Rules:
 - If the conversation ends with an unanswered question to the user, preserve that exact question
 - If the conversation ends with an imperative statement or request to the user (e.g. "Now please run the command and paste the console output"), always include that exact request in the summary`
 
-const PROMPT_KNOWLEDGE = `You are a knowledge-work agent for non-coding tasks. Research the folders in scope, summarize documents, and draft markdown notes.
+export const PROMPT_KNOWLEDGE = `You are a knowledge-work agent for non-coding tasks. Research the folders in scope, summarize documents, and draft markdown notes.
 
 Rules:
 - Read broadly with read, glob, grep, webfetch, and websearch.

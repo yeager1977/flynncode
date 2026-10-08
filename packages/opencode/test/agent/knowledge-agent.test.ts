@@ -1,5 +1,6 @@
 import { expect } from "bun:test"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { PROMPT_KNOWLEDGE } from "@opencode-ai/core/plugin/agent"
 import { Effect, Layer } from "effect"
 import { testEffect } from "../lib/effect"
 import { Agent } from "../../src/agent/agent"
@@ -35,5 +36,14 @@ it.instance("knowledge agent is a native primary agent with docs-only write", ()
     expect(Permission.evaluate("write", "notes.md", knowledge!.permission).action).toBe("allow")
     expect(Permission.evaluate("write", "main.ts", knowledge!.permission).action).toBe("deny")
     expect(Permission.evaluate("webfetch", "*", knowledge!.permission).action).toBe("allow")
+  }),
+)
+
+it.instance("knowledge agent prompt is single-sourced from core", () =>
+  Effect.gen(function* () {
+    const knowledge = yield* load((svc) => svc.get("knowledge"))
+    expect(knowledge?.prompt).toBe(PROMPT_KNOWLEDGE)
+    expect(PROMPT_KNOWLEDGE).toContain("markdown")
+    expect(PROMPT_KNOWLEDGE).toContain("Never edit source code")
   }),
 )
