@@ -89,6 +89,15 @@ export const Info = Schema.Struct({
   routines: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)).annotate({
     description: "Repeatable agent jobs. Shape is { routines: [{ id, name, prompt, enabled, schedule }] }.",
   }),
+  computer_use: Schema.optional(
+    Schema.Struct({
+      enabled: Schema.optional(Schema.Boolean),
+      allowedApps: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
+    }),
+  ).annotate({
+    description:
+      "Opt-in local computer use fallback after the browser pane. Disabled by default; requires per-app allowlist plus per-action approval.",
+  }),
   enabled_providers: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
     description: "When set, ONLY these providers will be enabled. All other providers will be ignored",
   }),
