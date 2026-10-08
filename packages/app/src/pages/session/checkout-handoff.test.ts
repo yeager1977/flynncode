@@ -50,7 +50,29 @@ describe("checkoutHandoff", () => {
         worktrees: [{ directory: "/repo-wt", branch: "feature" }],
         git: true,
       }),
-    ).toEqual({ ok: true, directory: "/repo", create: false })
+    ).toEqual({ ok: true, targets: ["/repo"], create: false })
+  })
+
+  test("offers every other worktree when leaving the primary checkout", () => {
+    expect(
+      checkoutHandoff({
+        current: "/repo",
+        primary: "/repo",
+        worktrees: [{ directory: "/repo" }, { directory: "/wt-a" }, { directory: "/wt-b" }],
+        git: true,
+      }),
+    ).toEqual({ ok: true, targets: ["/wt-a", "/wt-b"], create: false })
+  })
+
+  test("asks to create a worktree when the primary checkout has none", () => {
+    expect(
+      checkoutHandoff({
+        current: "/repo",
+        primary: "/repo",
+        worktrees: [{ directory: "/repo" }],
+        git: true,
+      }),
+    ).toEqual({ ok: true, targets: [], create: true })
   })
 })
 
@@ -80,18 +102,33 @@ describe("carryHandoffContext", () => {
     return clients as never as import("./checkout-handoff").HandoffMoveClients
   }
 
-  test("moves to an existing worktree, archives the source, and starts a fresh destination session", async () => {
+  test("leaving a worktree opens the rebound source session without archiving it", async () => {
     const logs = recordings()
     const result = await carryHandoffContext({
       clients: makeClients(logs),
       from: "/repo-wt",
       to: "/repo",
+      fromPrimary: false,
       sourceSessionID: "ses_src",
     })
     expect(logs.handoff).toEqual([{ from: "/repo-wt", to: "/repo" }])
-    expect(logs.created).toEqual([{ directory: "/repo" }])
-    expect(logs.archived).toEqual([{ sessionID: "ses_src", directory: "/repo-wt" }])
-    expect(result).toEqual({ directory: "/repo", sessionID: "ses_1", movedSessionID: "ses_src" })
+    expect(logs.created).toEqual([])
+    expect(logs.archived).toEqual([])
+    expect(result).toEqual({ directory: "/repo", sessionID: "ses_src" })
+  })
+
+  test("leaving the primary checkout archives the source and starts a destination session", async () => {
+    const logs = recordings()
+    const result = await carryHandoffContext({
+      clients: makeClients(logs),
+      from: "/repo",
+      to: "/repo-wt",
+      fromPrimary: true,
+      sourceSessionID: "ses_src",
+    })
+    expect(logs.created).toEqual([{ directory: "/repo-wt" }])
+    expect(logs.archived).toEqual([{ sessionID: "ses_src", directory: "/repo" }])
+    expect(result).toEqual({ directory: "/repo-wt", sessionID: "ses_1", created: true })
   })
 
   test("still allows the move with a fresh session when the source session is missing", async () => {
@@ -100,10 +137,11 @@ describe("carryHandoffContext", () => {
       clients: makeClients(logs),
       from: "/repo-wt",
       to: "/repo",
+      fromPrimary: false,
     })
     expect(logs.created).toEqual([{ directory: "/repo" }])
     expect(logs.archived).toEqual([])
-    expect(result).toEqual({ directory: "/repo", sessionID: "ses_1" })
+    expect(result).toEqual({ directory: "/repo", sessionID: "ses_1", created: true })
   })
 
   test("endpoint failure aborts the move before creating a destination session", async () => {
@@ -117,6 +155,7 @@ describe("carryHandoffContext", () => {
       clients: clients as never as import("./checkout-handoff").HandoffMoveClients,
       from: "/repo-wt",
       to: "/missing",
+      fromPrimary: false,
       sourceSessionID: "ses_src",
     }).catch(() => undefined)
     expect(result).toBeUndefined()

@@ -7983,6 +7983,34 @@ export type ConfigUpdateResponses = {
 
 export type ConfigUpdateResponse = ConfigUpdateResponses[keyof ConfigUpdateResponses]
 
+export type ConfigProjectGetData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/config/project"
+}
+
+export type ConfigProjectGetErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ConfigProjectGetError = ConfigProjectGetErrors[keyof ConfigProjectGetErrors]
+
+export type ConfigProjectGetResponses = {
+  /**
+   * Get project config file info
+   */
+  200: Config
+}
+
+export type ConfigProjectGetResponse = ConfigProjectGetResponses[keyof ConfigProjectGetResponses]
+
 export type ConfigProvidersData = {
   body?: never
   path?: never

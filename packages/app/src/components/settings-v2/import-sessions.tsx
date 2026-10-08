@@ -232,7 +232,9 @@ export const SettingsImportSessionsV2: Component<{ directory?: string }> = (prop
                   when={!loadError()}
                   fallback={<>{language.t("settings.import.loadError")} {loadError()}</>}
                 >
-                  {language.t("settings.import.empty")}
+                  <Show when={directory()} fallback={<>{language.t("settings.import.noProject")}</>}>
+                    {language.t("settings.import.empty")}
+                  </Show>
                 </Show>
               </Show>
             </div>

@@ -30,6 +30,8 @@ import type {
   ConfigOmoGetResponses,
   ConfigOmoUpdateErrors,
   ConfigOmoUpdateResponses,
+  ConfigProjectGetErrors,
+  ConfigProjectGetResponses,
   ConfigProvidersErrors,
   ConfigProvidersResponses,
   ConfigUpdateErrors,
@@ -1513,6 +1515,38 @@ export class Event extends HeyApiClient {
   }
 }
 
+export class Project extends HeyApiClient {
+  /**
+   * Get project configuration
+   *
+   * Retrieve only the project configuration file that project updates write to, without global or inherited settings.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ConfigProjectGetResponses, ConfigProjectGetErrors, ThrowOnError>({
+      url: "/config/project",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Omo extends HeyApiClient {
   /**
    * Get project Oh My OpenCode configuration
@@ -1741,7 +1775,7 @@ export class Config2 extends HeyApiClient {
   /**
    * Update configuration
    *
-   * Update OpenCode configuration settings and preferences.
+   * Patch the project configuration file with only the provided keys. Writes the closest existing opencode.jsonc or opencode.json, or creates opencode.json in the project directory.
    */
   public update<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -1803,6 +1837,11 @@ export class Config2 extends HeyApiClient {
       ...options,
       ...params,
     })
+  }
+
+  private _project?: Project
+  get project(): Project {
+    return (this._project ??= new Project({ client: this.client }))
   }
 
   private _omo?: Omo
@@ -2869,7 +2908,7 @@ export class Mcp extends HeyApiClient {
   }
 }
 
-export class Project extends HeyApiClient {
+export class Project2 extends HeyApiClient {
   /**
    * List all projects
    *
@@ -8082,9 +8121,9 @@ export class OpencodeClient extends HeyApiClient {
     return (this._mcp ??= new Mcp({ client: this.client }))
   }
 
-  private _project?: Project
-  get project(): Project {
-    return (this._project ??= new Project({ client: this.client }))
+  private _project?: Project2
+  get project(): Project2 {
+    return (this._project ??= new Project2({ client: this.client }))
   }
 
   private _pty?: Pty

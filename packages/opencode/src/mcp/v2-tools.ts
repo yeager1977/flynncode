@@ -36,7 +36,7 @@ export const syncV2Tools = (
         }),
     })
   }
-  ToolRegistry.replaceSupplements(owner(directory, server), tools)
+  ToolRegistry.replaceSupplements(owner(directory, server), tools, directory)
 }
 
 async function call(client: Client, name: string, input: unknown, timeout?: number) {

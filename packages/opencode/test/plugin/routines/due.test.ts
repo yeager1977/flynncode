@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test"
-import { dueRoutines, isDue } from "../../../src/plugin/routines/due"
+import { afterAll, beforeAll, describe, expect, test } from "bun:test"
+import { dueRoutines, isDue, nextOccurrence } from "../../../src/plugin/routines/due"
 import type { Routine } from "../../../src/plugin/routines/parse"
 
 const routine = (patch: Partial<Routine> = {}): Routine => ({
@@ -107,5 +107,55 @@ describe("rrule", () => {
   test("invalid rrule never fires", () => {
     const broken = routine({ dailyAt: undefined, rrule: "EVERY=monday" })
     expect(isDue(broken, new Date(2026, 8, 21, 9, 0))).toBe(false)
+  })
+})
+
+describe("rrule in a non-UTC timezone", () => {
+  const previous = process.env.TZ
+  beforeAll(() => {
+    process.env.TZ = "America/New_York"
+  })
+  afterAll(() => {
+    process.env.TZ = previous
+  })
+
+  test("BYHOUR is local wall-clock time", () => {
+    const daily = routine({ dailyAt: undefined, rrule: "FREQ=DAILY;BYHOUR=9;BYMINUTE=0" })
+    // 09:00 UTC is 05:00 in New York; the rule must wait for 09:00 local.
+    expect(isDue(daily, new Date(2026, 8, 22, 5, 30))).toBe(false)
+    expect(isDue(daily, new Date(2026, 8, 22, 9, 0))).toBe(true)
+    expect(nextOccurrence(daily, new Date(2026, 8, 22, 5, 30))?.getHours()).toBe(9)
+  })
+
+  test("COUNT rules anchor at createdAt and stop after COUNT runs", () => {
+    const twice = routine({
+      dailyAt: undefined,
+      rrule: "FREQ=DAILY;COUNT=2;BYHOUR=9;BYMINUTE=0",
+      createdAt: new Date(2026, 8, 20, 8, 0).toISOString(),
+    })
+    expect(isDue(twice, new Date(2026, 8, 20, 9, 0))).toBe(true)
+    const done = { ...twice, lastRun: new Date(2026, 8, 21, 9, 0, 5).toISOString() }
+    expect(isDue(done, new Date(2026, 8, 25, 9, 0))).toBe(false)
+  })
+
+  test("honors a supplied DTSTART", () => {
+    const later = routine({
+      dailyAt: undefined,
+      rrule: "DTSTART:20261001T090000\nRRULE:FREQ=DAILY",
+      createdAt: new Date(2026, 8, 20, 8, 0).toISOString(),
+    })
+    expect(isDue(later, new Date(2026, 8, 25, 12, 0))).toBe(false)
+    expect(isDue(later, new Date(2026, 9, 1, 9, 0))).toBe(true)
+  })
+
+  test("FREQ=DAILY without BYHOUR fires at the createdAt time of day", () => {
+    const daily = routine({
+      dailyAt: undefined,
+      rrule: "FREQ=DAILY",
+      createdAt: new Date(2026, 8, 20, 14, 30).toISOString(),
+      lastRun: new Date(2026, 8, 21, 14, 30, 5).toISOString(),
+    })
+    expect(isDue(daily, new Date(2026, 8, 22, 14, 0))).toBe(false)
+    expect(isDue(daily, new Date(2026, 8, 22, 14, 30))).toBe(true)
   })
 })

@@ -1,4 +1,8 @@
 import { createMemo, createSignal, For } from "solid-js"
+import { createStore } from "solid-js/store"
+import { Button } from "@opencode-ai/ui/button"
+import { Switch } from "@opencode-ai/ui/switch"
+import { TextField } from "@opencode-ai/ui/text-field"
 import type { FileDiffInfo } from "@opencode-ai/client/promise"
 import { useLanguage } from "@/context/language"
 import {
@@ -18,7 +22,10 @@ export function SessionHistoryPanel(props: {
 }) {
   const language = useLanguage()
   const [query, setQuery] = createSignal("")
-  const [consented, setConsented] = createSignal(loadHistoryConsent(props.sessionID))
+  // Consent is per session: derive it from the current session id so a
+  // session switch never carries the previous session's choice along.
+  const [consent, setConsent] = createStore<Record<string, boolean>>({})
+  const consented = () => consent[props.sessionID] ?? loadHistoryConsent(props.sessionID)
   const entries = createMemo(() => {
     const base = deriveSessionHistory({
       sessionID: props.sessionID,
@@ -55,7 +62,7 @@ export function SessionHistoryPanel(props: {
 
   function toggleConsent() {
     const next = !consented()
-    setConsented(next)
+    setConsent(props.sessionID, next)
     saveHistoryConsent(props.sessionID, next)
   }
 
@@ -72,25 +79,36 @@ export function SessionHistoryPanel(props: {
   }
 
   return (
-    <section aria-label={language.t("history.title")}>
-      <input
+    <section aria-label={language.t("history.title")} class="flex flex-col gap-3 pt-3">
+      <TextField
+        variant="ghost"
         type="search"
         value={query()}
-        onInput={(event) => setQuery(event.currentTarget.value)}
+        onChange={setQuery}
         placeholder={language.t("history.search.placeholder")}
         aria-label={language.t("history.search.placeholder")}
+        spellcheck={false}
+        autocomplete="off"
       />
-      <button type="button" onClick={toggleConsent}>
-        {consented() ? language.t("history.consent.disable") : language.t("history.consent.enable")}
-      </button>
-      <button type="button" onClick={exportHistory}>
-        {language.t("history.export")}
-      </button>
-      <ul>
-        <For each={entries()} fallback={<li>{language.t("history.empty")}</li>}>
+      <div class="flex items-center justify-between gap-2">
+        <Switch checked={consented()} onChange={toggleConsent}>
+          {language.t("history.consent.enable")}
+        </Switch>
+        <Button size="small" variant="ghost" onClick={exportHistory}>
+          {language.t("history.export")}
+        </Button>
+      </div>
+      <ul class="flex flex-col gap-1">
+        <For
+          each={entries()}
+          fallback={<li class="px-2 py-2 text-12-regular text-text-weak">{language.t("history.empty")}</li>}
+        >
           {(entry) => (
-            <li>
-              <span>{kindLabel(entry.kind)}</span> <span>{entry.title}</span>
+            <li class="flex min-w-0 items-baseline gap-2 px-2 py-1 text-12-regular">
+              <span class="shrink-0 text-text-weak">{kindLabel(entry.kind)}</span>
+              <span class="min-w-0 truncate text-text-strong" title={entry.title}>
+                {entry.title}
+              </span>
             </li>
           )}
         </For>

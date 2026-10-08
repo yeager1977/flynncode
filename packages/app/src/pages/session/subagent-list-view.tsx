@@ -1,6 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
+import { InlineInput } from "@opencode-ai/ui/inline-input"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
@@ -35,7 +36,11 @@ export function SubagentList(props: { sessionID: () => string }) {
         text: latestText(sync().data.message[session.id] ?? [], sync().data.part),
       }))
     const parts = (sync().data.message[id] ?? []).flatMap((message) => sync().data.part[message.id] ?? [])
-    return mergeSubagents(sessions, tasksFromParts(parts, Date.now()))
+    const live = (childID: string) => {
+      const type = sync().data.session_status[childID]?.type
+      return type === "busy" || type === "retry"
+    }
+    return mergeSubagents(sessions, tasksFromParts(parts, Date.now(), live))
   })
 
   const groups = createMemo(() => groupSubagents(rows()))
@@ -54,6 +59,8 @@ export function SubagentList(props: { sessionID: () => string }) {
     )
     view().subagents.setExpandedID(result.expandedID)
     view().subagents.setFinishedOpen(result.finishedOpen)
+    // Rows only carry the latest preview text; load the full child transcript.
+    if (result.expandedID) void sync().session.sync(result.expandedID)
   }
 
   return (
@@ -203,48 +210,49 @@ function Row(props: {
       data-action="session-task-chip"
       data-expanded={expanded() ? "true" : "false"}
     >
-      <button
-        type="button"
-        class="text-start"
-        aria-expanded={expanded()}
-        onClick={() => props.open(props.child, props.finished)}
-      >
-        <Show
-          when={rename() !== undefined}
-          fallback={
+      <Show
+        when={rename() !== undefined}
+        fallback={
+          <button
+            type="button"
+            class="text-start"
+            aria-expanded={expanded()}
+            onClick={() => props.open(props.child, props.finished)}
+          >
             <div dir="auto" class="text-14-regular text-text-strong" style={{ "font-weight": "560" }}>
               <bdi>{props.child.title}</bdi>
             </div>
-          }
-        >
-          <input
-            data-slot="subagent-rename-input"
-            class="min-w-0 flex-1 rounded-md border border-border-weak-base bg-transparent px-2 py-1 text-14-regular text-text-strong"
-            value={rename()}
-            aria-label={language.t("common.rename")}
-            onInput={(event) => setRename(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              event.stopPropagation()
-              if (event.key === "Enter") {
-                event.preventDefault()
-                commitRename()
-                return
-              }
-              if (event.key === "Escape") {
-                event.preventDefault()
-                setRename(undefined)
-              }
-            }}
-            onBlur={commitRename}
-          />
-        </Show>
-        <span class="text-text-weak"> {status()}</span>
-        <Show when={!expanded() && subagentPreview(props.child.text)}>
-          <div class="text-text-weak line-clamp-2">
-            <bdi dir="auto">{subagentPreview(props.child.text)}</bdi>
-          </div>
-        </Show>
-      </button>
+            <span class="text-text-weak"> {status()}</span>
+            <Show when={!expanded() && subagentPreview(props.child.text)}>
+              <div class="text-text-weak line-clamp-2">
+                <bdi dir="auto">{subagentPreview(props.child.text)}</bdi>
+              </div>
+            </Show>
+          </button>
+        }
+      >
+        <InlineInput
+          data-slot="subagent-rename-input"
+          class="min-w-0 flex-1 rounded-md border border-border-weak-base bg-transparent px-2 py-1 text-14-regular text-text-strong"
+          value={rename()}
+          aria-label={language.t("common.rename")}
+          ref={(el) => requestAnimationFrame(() => el.focus())}
+          onInput={(event) => setRename(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            event.stopPropagation()
+            if (event.key === "Enter") {
+              event.preventDefault()
+              commitRename()
+              return
+            }
+            if (event.key === "Escape") {
+              event.preventDefault()
+              setRename(undefined)
+            }
+          }}
+          onBlur={commitRename}
+        />
+      </Show>
       <Show when={expanded() && rename() === undefined}>
         <div class="flex gap-1">
           <Button
@@ -308,7 +316,6 @@ function Row(props: {
           dir="auto"
           data-slot="session-task-output"
           class="max-h-48 overflow-y-auto text-13-regular text-text-weak whitespace-pre-wrap break-words"
-          onClick={() => props.open(props.child, props.finished)}
         >
           <For each={text()}>{(item) => <div dir="auto">{item}</div>}</For>
         </div>

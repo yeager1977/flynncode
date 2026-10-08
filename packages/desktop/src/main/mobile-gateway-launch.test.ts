@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createServer } from "node:http"
+import { resolveOptions } from "@flynncode/mobile-gateway"
 import {
   MOBILE_GATEWAY_PORT,
   mobileGatewayEnv,
@@ -15,12 +16,34 @@ describe("mobileGatewayUpstream", () => {
 })
 
 describe("mobileGatewayEnv", () => {
-  test("maps passwords and port to gateway env", () => {
-    expect(mobileGatewayEnv({ serverPassword: "upstream", phonePassword: "phone", port: 4097 })).toEqual({
+  test("maps passwords, port, and relay token to gateway env", () => {
+    expect(
+      mobileGatewayEnv({ serverPassword: "upstream", phonePassword: "phone", port: 4097, relayToken: "relay" }),
+    ).toEqual({
       OPENCODE_SERVER_PASSWORD: "upstream",
       OPENCODE_MOBILE_PASSWORD: "phone",
       OPENCODE_MOBILE_PORT: "4097",
+      OPENCODE_RELAY_TOKEN: "relay",
     })
+  })
+
+  test("passes the bind host through when set", () => {
+    expect(
+      mobileGatewayEnv({
+        serverPassword: "upstream",
+        phonePassword: "phone",
+        port: 4097,
+        relayToken: "relay",
+        host: "127.0.0.1",
+      }).OPENCODE_MOBILE_HOST,
+    ).toBe("127.0.0.1")
+  })
+
+  test("resolves the relay token into gateway options", () => {
+    const resolved = resolveOptions(
+      mobileGatewayEnv({ serverPassword: "upstream", phonePassword: "phone", port: 4097, relayToken: "relay" }),
+    )
+    expect(resolved.ok && resolved.value.relayToken).toBe("relay")
   })
 })
 
@@ -37,6 +60,7 @@ describe("startMobileGateway", () => {
       phonePassword: "phone-secret",
       port: 0,
       upstream: "http://127.0.0.1:9",
+      relayToken: "",
     })
     expect(handle).toBeDefined()
     if (!handle) return
@@ -59,6 +83,7 @@ describe("startMobileGateway", () => {
         phonePassword: "phone-secret",
         port: occupiedPort,
         upstream: "http://127.0.0.1:9",
+        relayToken: "",
       })
       expect(handle).toBeUndefined()
     } finally {
@@ -72,6 +97,7 @@ describe("startMobileGateway", () => {
       phonePassword: "phone-secret",
       port: 0,
       upstream: "http://127.0.0.1:9",
+      relayToken: "",
     })
     expect(handle).toBeUndefined()
   })

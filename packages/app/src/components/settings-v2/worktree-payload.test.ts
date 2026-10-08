@@ -16,7 +16,8 @@ describe("worktree-payload", () => {
   })
 
   test("empty fields stay absent so a save does not write blank keys", () => {
-    expect(worktreeToConfig({ location: "  ", branchPrefix: "", keep: "" })).toEqual({})
+    // An empty worktree object tells the server to remove the key.
+    expect(worktreeToConfig({ location: "  ", branchPrefix: "", keep: "" })).toEqual({ worktree: {} })
     expect(worktreeToConfig({ location: ".wt", branchPrefix: "", keep: "" })).toEqual({
       worktree: { location: ".wt" },
     })

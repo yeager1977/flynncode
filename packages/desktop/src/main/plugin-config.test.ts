@@ -1,5 +1,5 @@
 import { describe, expect, test, mock } from "bun:test"
-import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises"
+import { chmod, lstat, mkdtemp, rm, stat, symlink, writeFile, readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
@@ -126,6 +126,30 @@ describe("mutateConfig", () => {
     expect(out).toContain(`"model": "x"`)
     const data = JSON.parse(out.replace(/\s*\/\/.*$/gm, ""))
     expect(data.plugin).toEqual(["a", "b"])
+  })
+  test("json file with comments keeps them through the jsonc edit path", async () => {
+    const content = `{\n // keep me\n "model": "x",\n "plugin": ["a"]\n}`
+    const target = await writeTarget("opencode.json", content)
+    await mutateConfig(target, { kind: "add", name: "b" })
+    const out = await readFile(target.path, "utf8")
+    expect(out).toContain("// keep me")
+    expect(JSON.parse(out.replace(/\s*\/\/.*$/gm, "")).plugin).toEqual(["a", "b"])
+  })
+  test("writes through a symlinked config and keeps the link", async () => {
+    const dir = await tmp()
+    const real = join(dir, "real.json")
+    const link = join(dir, "opencode.json")
+    await writeFile(real, `{"plugin": ["a"]}`)
+    await symlink(real, link)
+    await mutateConfig({ path: link, jsonc: false }, { kind: "add", name: "b" })
+    expect((await lstat(link)).isSymbolicLink()).toBe(true)
+    expect(JSON.parse(await readFile(real, "utf8")).plugin).toEqual(["a", "b"])
+  })
+  test("preserves the original file mode", async () => {
+    const target = await writeTarget("opencode.json", `{"plugin": ["a"]}`)
+    await chmod(target.path, 0o600)
+    await mutateConfig(target, { kind: "add", name: "b" })
+    expect((await stat(target.path)).mode & 0o777).toBe(0o600)
   })
   test("refuses to write on parse failure", async () => {
     const target = await writeTarget("opencode.json", `{oops`)

@@ -46,6 +46,12 @@ describe("review browser artifact wiring", () => {
     expect(source).toContain("sdk().directory")
   })
 
+  test("screenshots are scoped to the browser pane iframe", () => {
+    const source = readFileSync(new URL("./review-browser.tsx", import.meta.url), "utf8")
+    expect(source).toContain("frame?.getBoundingClientRect()")
+    expect(source).toContain("capturePage?.({")
+  })
+
   test("artifact version bumps signal reactive sidebar refresh", () => {
     const module = readFileSync(new URL("../layout/sidebar-artifacts.ts", import.meta.url), "utf8")
     expect(module).toContain("createSignal")

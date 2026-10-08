@@ -85,6 +85,7 @@ test("route_task caps concurrent executions per session", async () => {
     getOptionsError: () => undefined,
     getConfig: () => ({ provider: { p: { models: { a: {} } } } }),
     getCatalog: () => undefined,
+    loadCatalog: async () => {},
     getAssignments: () => ({}),
   })
   const ctx = { sessionID: "s1" } as any
@@ -108,6 +109,7 @@ test("rank_models reports unmatched scorecard keys", async () => {
     getOptionsError: () => undefined,
     getConfig: () => ({ provider: { p: { models: { a: {} } } } }),
     getCatalog: () => undefined,
+    loadCatalog: async () => {},
     getAssignments: () => ({}),
   })
   const out = await tools!.rank_models.execute({ task: "coding" } as any, { sessionID: "s" } as any)
@@ -123,6 +125,7 @@ test("tools report parse errors when options are invalid", async () => {
     getOptionsError: () => ["models.bad must be an integer 1-10", "provider missing"],
     getConfig: () => ({ provider: {} }),
     getCatalog: () => undefined,
+    loadCatalog: async () => {},
     getAssignments: () => ({}),
   })
   const rank = await tools!.rank_models.execute({} as any, { sessionID: "s" } as any)
@@ -132,4 +135,27 @@ test("tools report parse errors when options are invalid", async () => {
   const route = await tools!.route_task.execute({ task: "coding", prompt: "x" } as any, { sessionID: "s" } as any)
   expect(String(route)).toContain("Model router disabled: invalid options:")
   expect(String(route)).toContain("models.bad must be an integer 1-10")
+})
+
+test("router tools load the connected catalog before ranking", async () => {
+  const catalog: Record<string, { models: Record<string, object> }> = {}
+  const options = {
+    autoRoute: false, allowUnscored: true, overrideExplicit: false, providers: ["p"],
+    agentTasks: {}, taskWeights: { coding: { capability: 1, price: 1, speed: 1 } },
+    models: {},
+  } as any
+  const tools = createTools({
+    client: {} as any,
+    directory: "/tmp",
+    getOptions: () => options,
+    getOptionsError: () => undefined,
+    getConfig: () => ({ provider: {} }),
+    getCatalog: () => (Object.keys(catalog).length > 0 ? catalog : undefined),
+    loadCatalog: async () => {
+      catalog.p = { models: { connected: {} } }
+    },
+    getAssignments: () => ({}),
+  })
+  const out = await tools!.rank_models.execute({ task: "coding" } as any, { sessionID: "s" } as any)
+  expect(String(out)).toContain("p/connected")
 })

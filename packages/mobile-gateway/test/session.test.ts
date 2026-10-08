@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { MAX_AGE_SECONDS } from "../src/cookies"
 import { createSessionStore } from "../src/session"
 
 describe("session store", () => {
@@ -24,6 +25,27 @@ describe("session store", () => {
     const store = createSessionStore()
     expect(store.issue()).not.toBe(store.issue())
     expect(store.size()).toBe(2)
+  })
+
+  test("expires tokens after the cookie lifetime", () => {
+    const clock = { value: 1_000 }
+    const store = createSessionStore({ now: () => clock.value })
+    const token = store.issue()
+    clock.value += MAX_AGE_SECONDS * 1000 - 1
+    expect(store.verify(token)).toBe(true)
+    clock.value += 1
+    expect(store.verify(token)).toBe(false)
+    expect(store.size()).toBe(0)
+  })
+
+  test("prunes expired tokens when issuing", () => {
+    const clock = { value: 1_000 }
+    const store = createSessionStore({ now: () => clock.value })
+    store.issue()
+    clock.value += MAX_AGE_SECONDS * 1000
+    const fresh = store.issue()
+    expect(store.size()).toBe(1)
+    expect(store.verify(fresh)).toBe(true)
   })
 
   test("tracks issued tokens", () => {

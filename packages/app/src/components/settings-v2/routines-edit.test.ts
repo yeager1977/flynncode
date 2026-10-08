@@ -14,6 +14,18 @@ describe("routines editor", () => {
     })
   })
 
+  test("round-trips scheduler-owned fields Settings does not edit", () => {
+    const stored = {
+      id: "watch",
+      name: "Watch",
+      prompt: "Review changes",
+      createdAt: "2026-10-01T00:00:00.000Z",
+      directory: "/repo",
+      trigger: { files: ["src/**/*.ts"] },
+    }
+    expect(routinesToConfig(routinesFromConfig({ routines: [stored] })).routines[0]).toMatchObject(stored)
+  })
+
   test("adds, toggles, and removes", () => {
     const added = addRoutine([], { name: "Triage", prompt: "Check CI", dailyAt: "09:00" })
     expect(added[0]?.id).toBe("triage")

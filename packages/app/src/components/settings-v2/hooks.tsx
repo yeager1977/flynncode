@@ -69,13 +69,14 @@ export const SettingsHooksV2: Component<{ directory?: string }> = (props) => {
       <Show when={loadError() !== undefined}>
         <div data-slot="settings-v2-panel-description">{loadError()}</div>
       </Show>
-      <Show when={rows().length === 0 && loadError() === undefined}>
+      <Show when={state.loading}>
+        <div data-slot="settings-v2-panel-description">{language.t("settings.hooks.loading")}</div>
+      </Show>
+      <Show when={!state.loading && rows().length === 0 && loadError() === undefined}>
         <div data-slot="settings-v2-panel-description">{language.t("settings.hooks.empty")}</div>
       </Show>
       <Show when={pending() > 0}>
-        <div data-slot="settings-v2-panel-description">
-          {language.t("settings.hooks.pending", { count: String(pending()) })}
-        </div>
+        <div data-slot="settings-v2-panel-description">{language.plural("settings.hooks.pending", pending())}</div>
       </Show>
       <SettingsListV2>
         <For each={rows()}>

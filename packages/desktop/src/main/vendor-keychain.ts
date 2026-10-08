@@ -7,12 +7,16 @@ export type VendorEncryption = {
   isEncryptionAvailable(): boolean
   encryptString(secret: string): Buffer
   decryptString(encrypted: Buffer): string
+  getSelectedStorageBackend?(): string
 }
 
 export type VendorKeychainDeps = {
   file: string
   encryption?: VendorEncryption
+  platform?: NodeJS.Platform
 }
+
+export type KeychainSetResult = { ok: true } | { ok: false; reason: "encryption-unavailable" }
 
 export const VENDOR_ACCOUNTS = {
   anthropic: "flynncode-anthropic",
@@ -39,7 +43,11 @@ async function writeStore(file: string, store: Record<string, StoredEntry>): Pro
 
 export function isKeychainAvailable(deps: VendorKeychainDeps): boolean {
   try {
-    return deps.encryption?.isEncryptionAvailable() ?? false
+    if (!deps.encryption?.isEncryptionAvailable()) return false
+    // On Linux without a secret service, safeStorage reports availability but
+    // uses the basic_text backend: a hardcoded key, i.e. effectively plaintext.
+    if ((deps.platform ?? process.platform) !== "linux") return true
+    return deps.encryption.getSelectedStorageBackend?.() !== "basic_text"
   } catch {
     return false
   }
@@ -60,14 +68,15 @@ export async function keychainGet(account: string, deps: VendorKeychainDeps): Pr
   return deps.encryption.decryptString(Buffer.from(entry.data, "base64"))
 }
 
-export async function keychainSet(account: string, secret: string, deps: VendorKeychainDeps): Promise<void> {
+// Secrets are only ever written encrypted. Without real OS-backed encryption
+// the write is refused rather than falling back to plaintext on disk.
+export async function keychainSet(account: string, secret: string, deps: VendorKeychainDeps): Promise<KeychainSetResult> {
   if (secret.length === 0) throw new Error(nativeT("desktop.vendorAuth.error.emptySecret"))
+  if (!deps.encryption || !isKeychainAvailable(deps)) return { ok: false, reason: "encryption-unavailable" }
   const store = await readStore(deps.file)
-  const encrypted = isKeychainAvailable(deps)
-  const data = encrypted
-    ? Buffer.from(deps.encryption!.encryptString(secret)).toString("base64")
-    : Buffer.from(secret, "utf8").toString("base64")
-  await writeStore(deps.file, { ...store, [account]: { encrypted, data } })
+  const data = Buffer.from(deps.encryption.encryptString(secret)).toString("base64")
+  await writeStore(deps.file, { ...store, [account]: { encrypted: true, data } })
+  return { ok: true }
 }
 
 export async function keychainRemove(account: string, deps: VendorKeychainDeps): Promise<void> {

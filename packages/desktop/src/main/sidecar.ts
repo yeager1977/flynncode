@@ -6,7 +6,7 @@ import {
   startMobileGateway,
   type MobileGatewayHandle,
 } from "./mobile-gateway-launch"
-import { startRelayPublisher, relayPublisherConfigFromEnv } from "./relay-publisher"
+import { startRelayPublisher, relayPublisherConfig } from "./relay-publisher"
 
 type NodeHttpWithEnvProxy = typeof http & {
   setGlobalProxyFromEnv: () => void
@@ -24,7 +24,12 @@ type StartCommand = {
   password: string
   userDataPath: string
   mobile: { password: string; port: number }
+  // Relay secrets travel in the start message rather than the sidecar env so
+  // they never leak into agent shells, which inherit process.env.
+  relay: RelaySettings
 }
+
+type RelaySettings = { token: string; remoteToken: string; url: string }
 
 type StopCommand = { type: "stop" }
 type SidecarCommand = StartCommand | StopCommand
@@ -78,8 +83,11 @@ async function start(command: StartCommand) {
       phonePassword: command.mobile.password,
       port: command.mobile.port,
       upstream: mobileGatewayUpstream(command.hostname, command.port),
+      relayToken: command.relay.token,
+      host: process.env.OPENCODE_MOBILE_HOST,
     })
-    relayPublisher = startRelayPublisherFromEnv({
+    relayPublisher = startRelayPublisherFor({
+      relay: command.relay,
       gatewayPort: mobileGateway?.port,
       phonePassword: command.mobile.password,
     })
@@ -172,6 +180,8 @@ function parseCommand(value: unknown): SidecarCommand | undefined {
   if (typeof mobilePort !== "number" || !Number.isInteger(mobilePort) || mobilePort < 0 || mobilePort > 65535) {
     return
   }
+  const relay = parseRelaySettings((command as { relay?: unknown }).relay)
+  if (!relay) return
   return {
     type: "start",
     hostname: command.hostname,
@@ -179,7 +189,17 @@ function parseCommand(value: unknown): SidecarCommand | undefined {
     password: command.password,
     userDataPath: command.userDataPath,
     mobile: { password: mobilePassword, port: mobilePort },
+    relay,
   }
+}
+
+function parseRelaySettings(value: unknown): RelaySettings | undefined {
+  if (!value || typeof value !== "object") return
+  const relay = value as Partial<Record<keyof RelaySettings, unknown>>
+  if (typeof relay.token !== "string") return
+  if (typeof relay.remoteToken !== "string") return
+  if (typeof relay.url !== "string") return
+  return { token: relay.token, remoteToken: relay.remoteToken, url: relay.url }
 }
 
 function serializeError(error: unknown) {
@@ -191,8 +211,15 @@ function serializeError(error: unknown) {
 // the phone sees them while away. It stays off unless the outbound remote
 // token and the deepthought gateway URL are both configured; originID reuses
 // the machine hostname rather than inventing a new identity.
-function startRelayPublisherFromEnv(input: { gatewayPort: number | undefined; phonePassword: string }) {
-  const config = relayPublisherConfigFromEnv(process.env, { ...input, originID: hostname() })
+function startRelayPublisherFor(input: {
+  relay: RelaySettings
+  gatewayPort: number | undefined
+  phonePassword: string
+}) {
+  const config = relayPublisherConfig(
+    { remoteToken: input.relay.remoteToken, url: input.relay.url },
+    { gatewayPort: input.gatewayPort, phonePassword: input.phonePassword, originID: hostname() },
+  )
   if (!config) return
   return startRelayPublisher(config)
 }

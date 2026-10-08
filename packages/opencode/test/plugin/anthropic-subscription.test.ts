@@ -4,9 +4,11 @@ import type { AddressInfo } from "node:net"
 import {
   AnthropicSubscriptionPlugin,
   filterSubscriptionModels,
-  parseJwtLike,
+  oauthState,
   refreshSubscriptionToken,
+  waitForOAuthCallback,
 } from "../../src/plugin/anthropic/subscription"
+import { jwtExpiry, parseCodexAuth } from "../../src/auth/vendor-import"
 
 function createTestJwt(payload: object): string {
   const header = Buffer.from(JSON.stringify({ alg: "none" })).toString("base64url")
@@ -30,11 +32,37 @@ describe("subscription helpers", () => {
     }
     expect(Object.keys(filterSubscriptionModels(models, false))).toHaveLength(2)
   })
-  it("rejects malformed token parts", () => {
-    expect(parseJwtLike("not-a-jwt")).toBeUndefined()
+  it("reads a JWT's exp claim and rejects malformed tokens", () => {
+    expect(jwtExpiry("not-a-jwt")).toBeUndefined()
+    expect(jwtExpiry(createTestJwt({ sub: "user-1" }))).toBeUndefined()
+    expect(jwtExpiry(createTestJwt({ exp: 1_800_000_000 }))).toBe(1_800_000_000_000)
   })
-  it("parses jwt payload", () => {
-    expect(parseJwtLike(createTestJwt({ sub: "user-1" }))).toMatchObject({ sub: "user-1" })
+  it("imports Codex credentials with the access token's own expiry", () => {
+    const access = createTestJwt({ exp: 1_700_000_000 })
+    const imported = parseCodexAuth({ tokens: { access_token: access, refresh_token: "r" } })
+    expect(imported).toMatchObject({ kind: "oauth", expires: 1_700_000_000_000 })
+  })
+})
+
+describe("subscription oauth attempts", () => {
+  const pkce = { verifier: "v", challenge: "c" }
+
+  it("an abandoned attempt's timeout does not clear a newer pending attempt", async () => {
+    const abandoned = waitForOAuthCallback(pkce, "old", {}, 20)
+    const newer = waitForOAuthCallback(pkce, "new", {}, 60_000)
+    newer.catch(() => {})
+    await expect(abandoned).rejects.toThrow("superseded")
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(oauthState().pending).toBe(true)
+    // Supersede the long-lived attempt with one that times out immediately.
+    await waitForOAuthCallback(pkce, "cleanup", {}, 1).catch(() => {})
+    expect(oauthState().pending).toBe(false)
+  })
+
+  it("an attempt's own timeout clears it", async () => {
+    const attempt = waitForOAuthCallback(pkce, "solo", {}, 10)
+    await expect(attempt).rejects.toThrow("timeout")
+    expect(oauthState().pending).toBe(false)
   })
 })
 

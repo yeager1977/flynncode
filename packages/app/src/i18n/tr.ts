@@ -17,6 +17,7 @@ import { sideChatFallback } from "./side-chat-fallback"
 import { sessionManageFallback } from "./session-manage-fallback"
 import { metaContributorFallback } from "./meta-contributor-fallback"
 import { museImportFallback } from "./muse-import-fallback"
+import { hooksFallback } from "./hooks-fallback"
 
 type Keys = keyof typeof en
 
@@ -139,6 +140,7 @@ export const dict = {
   ...sessionManageFallback,
   ...metaContributorFallback,
   ...museImportFallback,
+  ...hooksFallback("tr"),
   "command.category.suggested": "Önerilen",
   "command.category.view": "Görünüm",
   "command.category.project": "Proje",
@@ -972,7 +974,6 @@ export const dict = {
   "settings.mcp.empty": "Yapılandırılmış MCP sunucusu yok.",
   "settings.mcp.deleted": "{{name}} silindi.",
   "settings.mcp.errors.refresh": "MCP sunucuları yüklenemedi.",
-  "settings.mcp.status.pending": "bağlanıyor…",
   "settings.mcp.action.connect": "Bağlan",
   "settings.mcp.action.disconnect": "Bağlantıyı kes",
   "settings.mcp.action.authenticate": "Kimlik doğrula",
@@ -1017,6 +1018,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Yapılandırma parçasını kopyala",
   "settings.plugins.detail.copied": "Kopyalandı",
   "settings.plugins.detail.notOnNpm": "npm'de bulunamadı — opencode.json dosyasına elle ekleyin",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Eklenti yükle",
   "settings.plugins.install.description": "{{name}} nereye eklensin?",
   "settings.plugins.install.global": "Global (~/.config/opencode)",
@@ -1403,11 +1405,7 @@ export const dict = {
   "command.permissions.projectDefault": "Accept all for this project",
   "command.permissions.sessionOverride": "Override for this session",
   "common.discard": "Discard",
-  "settings.modelRouter.add.description": "Pick a model to score.",
-  "settings.modelRouter.add.title": "Add model",
   "settings.modelRouter.agents.add": "Add agent",
-  "settings.modelRouter.agents.description": "Which task type each agent is routed for.",
-  "settings.modelRouter.agents.title": "Agent tasks",
   "settings.modelRouter.allowUnscored.description": "Include models without a scorecard entry, scored 5/5/5.",
   "settings.modelRouter.allowUnscored.title": "Allow unscored models",
   "settings.modelRouter.appliesOnRestart": "Routing applies after restart.",
@@ -1420,22 +1418,13 @@ export const dict = {
   "settings.modelRouter.overrideExplicit.description": "Also route agents that have a model set in your config.",
   "settings.modelRouter.overrideExplicit.title": "Override explicit agent models",
   "settings.modelRouter.price": "Price",
-  "settings.modelRouter.providers.add": "Add provider",
-  "settings.modelRouter.providers.description": "Providers considered for routing.",
   "settings.modelRouter.providers.title": "Providers",
-  "settings.modelRouter.remove.description": "Remove {{model}} from the scorecard?",
-  "settings.modelRouter.remove.title": "Remove model",
   "settings.modelRouter.save": "Save",
   "settings.modelRouter.saved": "Model router saved",
-  "settings.modelRouter.scorecard.add": "Add model",
-  "settings.modelRouter.scorecard.description": "Per-model scores from 1 to 10. Price 10 is most expensive.",
   "settings.modelRouter.scorecard.empty": "No models scored yet.",
-  "settings.modelRouter.scorecard.remove": "Remove model",
-  "settings.modelRouter.scorecard.title": "Scorecard",
   "settings.modelRouter.speed": "Speed",
   "settings.modelRouter.tags": "Tags",
   "settings.modelRouter.title": "Model Router",
-  "settings.modelRouter.weights.description": "Relative importance of capability, price, and speed per task.",
   "settings.modelRouter.weights.title": "Task weights",
   "settings.modelRouter.family.title": "Model ailesini geçersiz kılma",
   "settings.modelRouter.family.auto": "Otomatik (önerilen)",

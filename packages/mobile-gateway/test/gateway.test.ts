@@ -181,7 +181,7 @@ describe("createGateway", () => {
   test("serves localhost mobile status without upstream contact", async () => {
     upstreamRequests = []
     const handle = createGateway({ options })
-    const response = await handle(new Request("http://127.0.0.1/flynncode-mobile-status"))
+    const response = await handle(new Request("http://127.0.0.1/flynncode-mobile-status"), "127.0.0.1")
     expect(response.status).toBe(200)
     expect(response.headers.get("content-type")).toBe("application/json")
     const body = (await response.json()) as { port: number; lanUrls: string[]; launcherUrls: string[] }
@@ -191,18 +191,40 @@ describe("createGateway", () => {
     expect(upstreamRequests).toEqual([])
   })
 
-  test("serves mobile status for bracketed IPv6 loopback", async () => {
+  test("serves mobile status for IPv6 and IPv4-mapped loopback peers", async () => {
     const handle = createGateway({ options })
-    const response = await handle(new Request("http://[::1]/flynncode-mobile-status"))
-    expect(response.status).toBe(200)
+    const ipv6 = await handle(new Request("http://[::1]/flynncode-mobile-status"), "::1")
+    expect(ipv6.status).toBe(200)
+    const mapped = await handle(new Request("http://localhost/flynncode-mobile-status"), "::ffff:127.0.0.1")
+    expect(mapped.status).toBe(200)
   })
 
-  test("rejects mobile status from a LAN host", async () => {
+  test("rejects mobile status from a LAN peer", async () => {
     upstreamRequests = []
     const handle = createGateway({ options })
-    const response = await handle(new Request("http://192.168.1.42/flynncode-mobile-status"))
+    const response = await handle(new Request("http://192.168.1.42/flynncode-mobile-status"), "192.168.1.42")
     expect(response.status).toBe(404)
     expect(upstreamRequests).toEqual([])
+  })
+
+  test("rejects mobile status from a LAN peer spoofing a loopback Host header", async () => {
+    const handle = createGateway({ options })
+    const response = await handle(new Request("http://127.0.0.1/flynncode-mobile-status"), "192.168.1.42")
+    expect(response.status).toBe(404)
+  })
+
+  test("rejects mobile status when the peer address is unknown", async () => {
+    const handle = createGateway({ options })
+    const response = await handle(new Request("http://127.0.0.1/flynncode-mobile-status"))
+    expect(response.status).toBe(404)
+  })
+
+  test("rejects a password that only shares a prefix with the phone password", async () => {
+    const handle = createGateway({ options })
+    const response = await handle(
+      new Request("http://gateway/api/session", { headers: { authorization: basic("opencode", "secre") } }),
+    )
+    expect(response.status).toBe(401)
   })
 })
 
@@ -214,6 +236,13 @@ describe("startGateway", () => {
     expect(response.status).toBe(401)
     stopGateway()
     await expect(fetch(`http://127.0.0.1:${running.port}/api/session`)).rejects.toThrow()
+  })
+
+  test("serves mobile status to a loopback socket peer", async () => {
+    const running = await startGateway({ options, port: 0 })
+    const response = await fetch(`http://127.0.0.1:${running.port}/flynncode-mobile-status`)
+    expect(response.status).toBe(200)
+    running.stop()
   })
 
   test("reference-counts multiple holders on one port", async () => {

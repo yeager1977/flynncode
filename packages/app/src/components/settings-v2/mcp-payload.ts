@@ -227,3 +227,42 @@ export function storedToPayloadConfig(stored: StoredMcpConfig): McpServerConfig 
     timeout,
   }
 }
+
+/**
+ * Inverse of `storedToPayloadConfig`, used to persist a form save into the
+ * config file. The form never shows an existing client secret or redirect URI,
+ * so an edit keeps the previous stored values when the payload omits them.
+ */
+export function payloadToStoredConfig(config: McpServerConfig, previous?: StoredMcpConfig): StoredMcpConfig {
+  const timeout = config.timeout?.execution ?? config.timeout?.catalog ?? config.timeout?.startup
+  const enabled = config.disabled ? false : undefined
+  if (config.type === "local") {
+    return {
+      type: "local",
+      command: [...config.command],
+      cwd: config.cwd,
+      environment: config.environment,
+      enabled,
+      timeout,
+    }
+  }
+  const previousOauth = previous?.type === "remote" && previous.oauth ? previous.oauth : undefined
+  const oauth =
+    config.oauth === undefined || config.oauth === false
+      ? config.oauth
+      : {
+          clientId: config.oauth.client_id,
+          clientSecret: config.oauth.client_secret ?? previousOauth?.clientSecret,
+          scope: config.oauth.scope,
+          callbackPort: config.oauth.callback_port,
+          redirectUri: config.oauth.redirect_uri ?? previousOauth?.redirectUri,
+        }
+  return {
+    type: "remote",
+    url: config.url,
+    headers: config.headers,
+    oauth,
+    enabled,
+    timeout,
+  }
+}

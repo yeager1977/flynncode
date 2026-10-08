@@ -1,5 +1,5 @@
 import { homedir } from "node:os"
-import { readFile, rename, stat, unlink, writeFile } from "node:fs/promises"
+import { chmod, readFile, realpath, rename, stat, unlink, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { createHash, randomUUID } from "node:crypto"
 import { existsSync } from "node:fs"
@@ -223,8 +223,10 @@ async function writeConfig(
 
   if (before.raw === "") {
     content = JSON.stringify(data, null, 2) + "\n"
-  } else if (isJsonc(target)) {
-    // JSONC-aware in-place edit to preserve comments and formatting
+  } else if (isJsonc(target) || parseStrictJson(before.raw) === undefined) {
+    // JSONC-aware in-place edit to preserve comments and formatting. A .json
+    // file the loose reader only accepted via the jsonc fallback (comments,
+    // trailing commas) takes this path too, or re-serializing would drop them.
     const edits = modify(before.raw, ["plugin"], serializeEntries(plugins), {
       formattingOptions: { tabSize: 2, insertSpaces: true },
     })
@@ -240,10 +242,18 @@ async function writeConfig(
     throw new ConfigParseError(target.path)
   }
 
-  const tmpPath = join(dirname(target.path), `.${Date.now()}-${randomUUID()}.opencode-tmp`)
+  // Write through symlinks so a dotfiles-managed config stays a link, and keep
+  // the original permissions instead of whatever the umask gives the temp file.
+  const destination = await realpath(target.path).catch(() => target.path)
+  const mode = await stat(destination).then(
+    (info) => info.mode & 0o7777,
+    () => undefined,
+  )
+  const tmpPath = join(dirname(destination), `.${Date.now()}-${randomUUID()}.opencode-tmp`)
   try {
     await writeFile(tmpPath, content)
-    await rename(tmpPath, target.path)
+    if (mode !== undefined) await chmod(tmpPath, mode)
+    await rename(tmpPath, destination)
   } catch (error) {
     await unlink(tmpPath).catch(() => {})
     throw error

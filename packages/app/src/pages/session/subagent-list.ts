@@ -42,22 +42,6 @@ export function expandSubagent(
   }
 }
 
-export function hasSubagents(sessionID: string, sessions: readonly { parentID?: string }[]) {
-  return sessions.some((session) => session.parentID === sessionID)
-}
-
-export function sessionShowsSubagents(
-  sessionID: string,
-  sessions: readonly { parentID?: string }[],
-  messages: Record<string, readonly { id: string }[] | undefined> | undefined,
-  parts: Record<string, readonly TaskToolPart[] | undefined> | undefined,
-) {
-  if (!sessionID) return false
-  if (hasSubagents(sessionID, sessions)) return true
-  const own = (messages?.[sessionID] ?? []).flatMap((message) => parts?.[message.id] ?? [])
-  return tasksFromParts(own, 0).length > 0
-}
-
 export type TaskToolPart = {
   type?: string
   tool?: string
@@ -73,8 +57,14 @@ export type TaskToolPart = {
   }
 }
 
-// A background task tool reports completed as soon as the child starts.
-export function tasksFromParts(parts: readonly TaskToolPart[], updated: number): SubagentChild[] {
+// A background task tool reports completed as soon as the child starts, and its
+// "running" notice persists after the child ends, so background tasks count as
+// running only while the child's live session status is busy or retrying.
+export function tasksFromParts(
+  parts: readonly TaskToolPart[],
+  updated: number,
+  live: (sessionID: string) => boolean,
+): SubagentChild[] {
   const tasks = new Map<string, { title: string; text: string; running: boolean }>()
   for (const part of parts) {
     const output = part.state?.output ?? (typeof part.text === "string" ? part.text : "")
@@ -86,7 +76,7 @@ export function tasksFromParts(parts: readonly TaskToolPart[], updated: number):
       tasks.set(id, {
         title: title || current?.title || id,
         text: output || current?.text || "",
-        running: match[2] === "running",
+        running: match[2] === "running" && live(id),
       })
     }
     const sessionId = part.type === "tool" && part.tool === "task" ? part.state?.metadata?.sessionId : undefined
@@ -95,7 +85,8 @@ export function tasksFromParts(parts: readonly TaskToolPart[], updated: number):
     if (current && !current.running) continue
     const status = part.state?.status
     const background = part.state?.metadata?.background === true
-    const running = status === "running" || status === "pending" || (background && status !== "error")
+    const running =
+      status === "running" || status === "pending" || (background && status !== "error" && live(sessionId))
     tasks.set(sessionId, {
       title: title || current?.title || sessionId,
       text: output || current?.text || "",

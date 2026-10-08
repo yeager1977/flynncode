@@ -21,17 +21,20 @@ export function worktreeHasConfig(config: Config | undefined): boolean {
   return Boolean((config?.worktree as unknown) !== undefined)
 }
 
-// Empty fields stay absent so a save only writes what the user set, matching
-// how other optional config surfaces round-trip through the settings UI.
-export function worktreeToConfig(form: WorktreeForm): { worktree?: Config["worktree"] } {
-  const value: { location?: string; branch_prefix?: string; keep?: number } = {}
+// Empty fields stay absent so a save only writes what the user set. The server
+// replaces `worktree` as a whole and removes it when the object is empty, so
+// clearing every field still persists.
+export function worktreeToConfig(form: WorktreeForm): { worktree: NonNullable<Config["worktree"]> } {
   const location = form.location.trim()
   const branchPrefix = form.branchPrefix.trim()
   const keep = worktreeKeepValue(form)
-  if (location) value.location = location
-  if (branchPrefix) value.branch_prefix = branchPrefix
-  if (keep !== undefined) value.keep = keep
-  return Object.keys(value).length ? { worktree: value } : {}
+  return {
+    worktree: {
+      ...(location ? { location } : {}),
+      ...(branchPrefix ? { branch_prefix: branchPrefix } : {}),
+      ...(keep !== undefined ? { keep } : {}),
+    },
+  }
 }
 
 export function worktreeKeepValue(form: WorktreeForm): number | undefined {

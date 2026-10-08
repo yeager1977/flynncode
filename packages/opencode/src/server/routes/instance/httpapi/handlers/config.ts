@@ -23,6 +23,10 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
       return yield* configSvc.get()
     })
 
+    const projectGet = Effect.fn("ConfigHttpApi.projectGet")(function* () {
+      return yield* configSvc.getProject()
+    })
+
     const update = Effect.fn("ConfigHttpApi.update")(function* (ctx) {
       yield* configSvc.update(ctx.payload)
       yield* markInstanceForDisposal(yield* InstanceState.context)
@@ -115,6 +119,7 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
 
     return handlers
       .handle("get", get)
+      .handle("projectGet", projectGet)
       .handle("update", update)
       .handle("providers", providers)
       .handle("omoGet", omoGet)

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { buildDetachedReviewText, reviewDetachedPrefillKey } from "./review-detached"
+import { buildDetachedReviewText, sessionPrefillKey } from "./review-detached"
 
 describe("review detached delivery", () => {
   test("builds the slash prompt text for a preset", () => {
@@ -8,6 +8,6 @@ describe("review detached delivery", () => {
   })
 
   test("scopes the prefill key to the forked session", () => {
-    expect(reviewDetachedPrefillKey("ses_123")).toBe("flynncode.review-prefill:ses_123")
+    expect(sessionPrefillKey("ses_123")).toBe("flynncode.review-prefill:ses_123")
   })
 })

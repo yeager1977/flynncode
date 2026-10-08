@@ -1,9 +1,16 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
-import { expandSubagent, groupSubagents, mergeSubagents, subagentListState, subagentPreview, tasksFromParts } from "./subagent-list"
+import {
+  expandSubagent,
+  groupSubagents,
+  mergeSubagents,
+  subagentListState,
+  subagentPreview,
+  tasksFromParts,
+} from "./subagent-list"
 
 describe("Tasks visibility boundary", () => {
-  test("keeps side-panel triggers unconditional while terminal docks remain session-gated", () => {
+  test("mounts the task list only in the header Tasks side panel", () => {
     const sidePanel = readFileSync(new URL("./session-side-panel.tsx", import.meta.url), "utf8")
     const terminalPanel = readFileSync(new URL("./terminal-panel.tsx", import.meta.url), "utf8")
     const terminalPanelV2 = readFileSync(new URL("./terminal-panel-v2.tsx", import.meta.url), "utf8")
@@ -20,18 +27,18 @@ describe("Tasks visibility boundary", () => {
     expect(sidePanel.match(/<Tabs value=\{panelTab\(\)\} onChange=\{activateTab\}>/g)).toHaveLength(2)
 
     for (const source of [terminalPanel, terminalPanelV2]) {
-      expect(source).toMatch(/const tasksOpen = createMemo\(\(\) =>\s*sessionShowsSubagents\(/)
-      expect(source).toContain("<Show when={!opened() && tasksOpen()}>")
+      expect(source).not.toContain("SubagentList")
     }
   })
 })
 
-const child = (
-  id: string,
-  status: "busy" | "retry" | "idle" | undefined,
-  updated: number,
-  text = "",
-) => ({ id, title: id, updated, status, text })
+const child = (id: string, status: "busy" | "retry" | "idle" | undefined, updated: number, text = "") => ({
+  id,
+  title: id,
+  updated,
+  status,
+  text,
+})
 
 describe("groupSubagents", () => {
   test("puts busy and retry above idle, newest first", () => {
@@ -78,6 +85,7 @@ describe("tasksFromParts", () => {
         },
       ],
       10,
+      () => true,
     )
     expect(running.map((item) => item.id)).toEqual(["ses_child"])
     expect(running[0]?.status).toBe("busy")
@@ -100,6 +108,27 @@ describe("tasksFromParts", () => {
         { type: "text", text: '<task id="ses_child" state="completed">done</task>' },
       ],
       11,
+      () => true,
+    )
+    expect(running).toEqual([])
+  })
+
+  test("treats a background task as finished once its child is no longer live", () => {
+    const running = tasksFromParts(
+      [
+        {
+          type: "tool",
+          tool: "task",
+          state: {
+            status: "completed",
+            title: "Build packages",
+            metadata: { sessionId: "ses_child", background: true },
+            output: '<task id="ses_child" state="running">working</task>',
+          },
+        },
+      ],
+      10,
+      () => false,
     )
     expect(running).toEqual([])
   })
@@ -131,6 +160,7 @@ describe("tasksFromParts", () => {
           },
         ],
         9,
+        (id) => id === "ses_live",
       ),
     )
     expect(groupSubagents(merged).active.map((item) => item.id)).toEqual(["ses_live"])
@@ -150,6 +180,7 @@ describe("tasksFromParts", () => {
           },
         ],
         2,
+        () => false,
       ),
     )
     expect(groupSubagents(merged).active.map((item) => item.id)).toEqual(["ses_child"])

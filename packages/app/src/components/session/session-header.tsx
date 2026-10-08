@@ -1,5 +1,6 @@
 import { AppIcon } from "@opencode-ai/ui/app-icon"
 import { Button } from "@opencode-ai/ui/button"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
@@ -30,6 +31,8 @@ import { messageAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
 import { pathKey } from "@/utils/path-key"
 import { checkoutHandoff, carryHandoffContext, firstPromptText, handoffErrorMessage, handoffPromptOutcome } from "@/pages/session/checkout-handoff"
+import { sessionPrefillKey } from "@/pages/session/review-detached"
+import { SessionHandoffDialog } from "./session-handoff-dialog"
 import { fileManagerApp } from "@/utils/file-manager"
 import { Persist, persisted } from "@/utils/persist"
 import { StatusPopover, StatusPopoverV2 } from "../status-popover"
@@ -158,6 +161,7 @@ export function SessionHeader() {
   const navigate = useNavigate()
   const serverSDK = useServerSDK()
   const sdk = useSDK()
+  const dialog = useDialog()
 
   const projectDirectory = createMemo(() => decode64(params.dir) ?? "")
   const project = createMemo(() => {
@@ -259,7 +263,9 @@ export function SessionHeader() {
       primary: pathKey(root),
       branch: sync().data.vcs?.branch,
       worktrees: listed.map((item) =>
-        typeof item === "string" ? { directory: pathKey(item) } : { directory: pathKey(item.directory), branch: item.branch },
+        typeof item === "string"
+          ? { directory: pathKey(item) }
+          : { directory: pathKey(item.directory), branch: item.branch },
       ),
       git: true,
     })
@@ -270,14 +276,35 @@ export function SessionHeader() {
       })
       return
     }
-    const created = decision.create
+    // Targets come back path-keyed; map them to the listed spelling so the
+    // move and navigation use real directories.
+    const directories = new Map<string, string>(
+      listed.map((item) => {
+        const directory = typeof item === "string" ? item : item.directory
+        return [pathKey(directory), directory] as const
+      }),
+    )
+    directories.set(pathKey(root), root)
+    dialog.show(() => (
+      <SessionHandoffDialog
+        targets={decision.targets.map((target) => directories.get(target) ?? target)}
+        primary={root}
+        create={decision.create}
+        hasSession={!!params.id}
+        onConfirm={(target) => void moveSession({ current, root, target, create: decision.create })}
+      />
+    ))
+  }
+
+  const moveSession = async (input: { current: string; root: string; target?: string; create: boolean }) => {
+    const created = input.create
       ? await serverSDK()
-          .client.worktree.create({ directory: root })
+          .client.worktree.create({ directory: input.root })
           .then((result) => result.data?.directory)
           .catch(() => undefined)
-      : decision.directory
-    if (!created || pathKey(created) === pathKey(current)) {
-      if (decision.create) {
+      : input.target
+    if (!created || pathKey(created) === pathKey(input.current)) {
+      if (input.create) {
         showToast({
           title: language.t("workspace.create.failed.title"),
           description: language.t("common.requestFailed"),
@@ -286,59 +313,65 @@ export function SessionHeader() {
       return
     }
     const id = params.id
+    if (input.create || !id) {
+      navigate(id ? `/${base64Encode(created)}/session/${id}` : `/${base64Encode(created)}/session`)
+      return
+    }
     // A move into an already-existing worktree carries the conversation: the
-    // endpoint copies session-relevant state, a fresh destination session is
-    // bound to the same first prompt, and the source session is archived.
-    const session = id ? sync().session.get(id) : undefined
-    if (!decision.create && id) {
-      const moved = await carryHandoffContext({
-        clients: {
-          handoffEndpoint: (input) =>
-            serverSDK()
-              .client.worktree.handoff({ directory: root, worktreeHandoffInput: input })
-              .then((result) => result.data),
-          createSession: (input) =>
-            sdk()
-              .api.session.create({ location: { directory: input.directory } })
-              .then((result) => ({ id: result.id })),
-          archiveSession: (input) =>
-            serverSDK().client.session.update({
-              sessionID: input.sessionID,
-              directory: input.directory,
-              time: { archived: Date.now() },
-            }),
-        },
-        from: current,
-        to: created,
-        sourceSessionID: session?.id,
-      }).catch((error: unknown) => {
-        showToast({
-          title: language.t("session.handoff.failed.title"),
-          // Surface the endpoint's own failure reason instead of a generic
-          // request-failed toast; WorktreeError carries { data: { message } }.
-          description:
-            language.t("session.handoff.failed.description", {
-              message: handoffErrorMessage(error) ?? language.t("common.requestFailed"),
-            }),
-        })
-        return undefined
+    // endpoint copies dirty files and rebinds worktree sessions; leaving the
+    // main checkout starts a destination session and archives the source.
+    const session = sync().session.get(id)
+    const moved = await carryHandoffContext({
+      clients: {
+        handoffEndpoint: (handoffInput) =>
+          serverSDK()
+            .client.worktree.handoff({ directory: input.root, worktreeHandoffInput: handoffInput })
+            .then((result) => result.data),
+        createSession: (createInput) =>
+          sdk()
+            .api.session.create({ location: { directory: createInput.directory } })
+            .then((result) => ({ id: result.id })),
+        archiveSession: (archiveInput) =>
+          serverSDK().client.session.update({
+            sessionID: archiveInput.sessionID,
+            directory: archiveInput.directory,
+            time: { archived: Date.now() },
+          }),
+      },
+      from: input.current,
+      to: created,
+      fromPrimary: pathKey(input.current) === pathKey(input.root),
+      sourceSessionID: session?.id,
+    }).catch((error: unknown) => {
+      showToast({
+        title: language.t("session.handoff.failed.title"),
+        // Surface the endpoint's own failure reason instead of a generic
+        // request-failed toast; WorktreeError carries { data: { message } }.
+        description: language.t("session.handoff.failed.description", {
+          message: handoffErrorMessage(error) ?? language.t("common.requestFailed"),
+        }),
       })
-      if (!moved) return
-      const loaded = id ? sync().data.message[id] !== undefined : false
-      if (handoffPromptOutcome({
-        sessionFound: !!session,
-        messagesLoaded: loaded,
-        prompt: firstPromptText(sessionPayload()),
-      }) === "empty-unresolved") {
+      return undefined
+    })
+    if (!moved) return
+    if (moved.created) {
+      const prompt = firstPromptText(sessionPayload())
+      if (
+        handoffPromptOutcome({
+          sessionFound: !!session,
+          messagesLoaded: sync().data.message[id] !== undefined,
+          prompt,
+        }) === "empty-unresolved"
+      ) {
         showToast({
           title: language.t("session.handoff.movedWithoutSession.title"),
           description: language.t("session.handoff.emptyPromptMoved.description"),
         })
       }
-      navigate(`/${base64Encode(moved.directory)}/session?prompt=${encodeURIComponent(firstPromptText(sessionPayload()))}`)
-      return
+      // The destination session's composer picks this up once on arrival.
+      if (prompt) sessionStorage.setItem(sessionPrefillKey(moved.sessionID), prompt)
     }
-    navigate(id ? `/${base64Encode(created)}/session/${id}` : `/${base64Encode(created)}/session`)
+    navigate(`/${base64Encode(moved.directory)}/session/${moved.sessionID}`)
   }
 
   const toggleTerminal = () => {
@@ -384,7 +417,7 @@ export function SessionHeader() {
     tasksLabel: language.t("session.subagents.tasks"),
     tasksOpened: view().tasks.opened(),
     onTasksToggle: () => view().tasks.toggle(),
-    handoffLabel: language.t(onPrimary() ? "session.new.worktree.create" : "session.new.worktree.main"),
+    handoffLabel: language.t(onPrimary() ? "session.handoff.toWorktree" : "session.handoff.toMain"),
     onHandoff: () => void handoff(),
   }))
 
@@ -778,7 +811,7 @@ function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
           />
         </TooltipV2>
         <Show when={props.state.computerUseVisible}>
-          <ComputerUseMenu />
+          <ComputerUseMenu variant="v2" />
         </Show>
         <TooltipV2 class="shrink-0" placement="bottom" value={props.state.tasksLabel}>
           <IconButtonV2

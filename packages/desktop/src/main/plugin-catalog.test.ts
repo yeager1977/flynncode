@@ -2,7 +2,7 @@ import { describe, expect, test, beforeEach, afterEach } from "bun:test"
 import { mkdtemp, rm, readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { createCatalogFetcher } from "./plugin-catalog"
+import { createCatalogFetcher, githubRepo } from "./plugin-catalog"
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
@@ -75,9 +75,9 @@ describe("createCatalogFetcher", () => {
       if (url.startsWith("https://registry.npmjs.org/opencode-daytona"))
         return json(npmPackument("opencode-daytona", "1.2.3", "Run sessions in Daytona sandboxes", "https://github.com/daytona/integrations"))
       if (url.startsWith("https://registry.npmjs.org/opencode-helicone-session"))
-        return json(npmPackument("opencode-helicone-session", "0.1.0", "Inject Helicone session headers"))
+        return json(npmPackument("opencode-helicone-session", "0.1.0", "Inject Helicone session headers", "git+https://github.com/H2Shami/opencode-helicone-session.git"))
       if (url.startsWith("https://registry.npmjs.org/opencode-wakatime"))
-        return json(npmPackument("opencode-wakatime", "1.0.0", "Track usage with Wakatime"))
+        return json(npmPackument("opencode-wakatime", "1.0.0", "Track usage with Wakatime", "https://github.com/angristan/opencode-wakatime"))
       if (url.startsWith("https://api.npmjs.org/downloads/point/last-week/"))
         return json({ downloads: 4211 })
       throw new Error("unexpected fetch: " + url)
@@ -228,7 +228,7 @@ describe("createCatalogFetcher", () => {
       if (url.includes("opencode.ai/docs/ecosystem")) return new Response(treeHtml)
       if (url.includes("awesome-opencode")) return new Response("")
       if (url.startsWith("https://registry.npmjs.org/opencode-plugin"))
-        return json(npmPackument("opencode-plugin", "1.0.0", "Run sessions in Daytona sandboxes"))
+        return json(npmPackument("opencode-plugin", "1.0.0", "Run sessions in Daytona sandboxes", "git+https://github.com/Daytona/Integrations.git"))
       if (url.startsWith("https://registry.npmjs.org/")) return new Response("nf", { status: 404 })
       if (url.startsWith("https://api.npmjs.org/")) return json({ downloads: 7 })
       throw new Error("unexpected fetch: " + url)
@@ -355,9 +355,9 @@ describe("createCatalogFetcher", () => {
       if (url.includes("awesome-opencode")) return new Response(AWESOME_MD)
       if (url.includes("opencode.cafe") && url.includes("plugins.json")) return new Response(CAFE_JSON)
       if (url.startsWith("https://registry.npmjs.org/opencode-helicone-session"))
-        return json(npmPackument("opencode-helicone-session", "0.1.0", "Inject Helicone session headers"))
+        return json(npmPackument("opencode-helicone-session", "0.1.0", "Inject Helicone session headers", "https://github.com/H2Shami/opencode-helicone-session"))
       if (url.startsWith("https://registry.npmjs.org/opencode-daytona"))
-        return json(npmPackument("opencode-daytona", "1.2.3", "Run sessions in Daytona sandboxes"))
+        return json(npmPackument("opencode-daytona", "1.2.3", "Run sessions in Daytona sandboxes", "https://github.com/daytona/integrations"))
       if (url.startsWith("https://registry.npmjs.org/")) return new Response("nf", { status: 404 })
       if (url.startsWith("https://api.npmjs.org/")) return json({ downloads: 1 })
       throw new Error("unexpected fetch: " + url)
@@ -375,6 +375,37 @@ describe("createCatalogFetcher", () => {
     const helicone = result.entries.filter((e) => e.name === "opencode-helicone-session")
     expect(helicone).toHaveLength(1)
     expect(helicone[0].onNpm).toBe(true)
+  })
+
+  test("an npm package whose repository does not match the catalog repo is not installable", async () => {
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input instanceof Request ? input.url : input)
+      if (url.includes("opencode.ai/docs/ecosystem")) return new Response(ECOSYSTEM_HTML)
+      if (url.includes("awesome-opencode")) return new Response(AWESOME_MD)
+      if (url.startsWith("https://registry.npmjs.org/opencode-helicone-session"))
+        return json(npmPackument("opencode-helicone-session", "9.9.9", "Squatted", "https://github.com/attacker/opencode-helicone-session"))
+      if (url.startsWith("https://registry.npmjs.org/opencode-wakatime"))
+        return json(npmPackument("opencode-wakatime", "1.0.0", "No repository field"))
+      if (url.startsWith("https://registry.npmjs.org/")) return new Response("nf", { status: 404 })
+      if (url.startsWith("https://api.npmjs.org/")) return json({ downloads: 1 })
+      throw new Error("unexpected fetch: " + url)
+    }
+    const f = createCatalogFetcher({ fetchImpl, cacheDir: dir })
+    const result = await f.fetchCatalog()
+    const helicone = result.entries.find((e) => e.name === "opencode-helicone-session")!
+    expect(helicone.onNpm).toBe(false)
+    expect(helicone.version).toBeUndefined()
+    expect(helicone.description).toBe("Inject Helicone session headers")
+    expect(result.entries.find((e) => e.name === "opencode-wakatime")?.onNpm).toBe(false)
+  })
+
+  test("githubRepo normalizes git+https, .git, ssh, shorthand and case", () => {
+    expect(githubRepo("git+https://github.com/Owner/Repo.git")).toBe("owner/repo")
+    expect(githubRepo("git@github.com:owner/repo.git")).toBe("owner/repo")
+    expect(githubRepo("ssh://git@github.com/owner/repo")).toBe("owner/repo")
+    expect(githubRepo("github:owner/repo")).toBe("owner/repo")
+    expect(githubRepo("https://github.com/owner/repo/tree/main/packages/x")).toBe("owner/repo")
+    expect(githubRepo("https://gitlab.com/owner/repo")).toBeUndefined()
   })
 
   test("cafe source failure does not break the rest of the catalog", async () => {

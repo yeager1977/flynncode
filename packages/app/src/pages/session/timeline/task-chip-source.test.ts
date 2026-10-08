@@ -14,7 +14,9 @@ describe("session task chip wiring", () => {
   })
 
   test("the chip is an interactive row with its own data-action", () => {
-    expect(timelineSource).toContain('data-action="session-task-chip"')
+    // Subagent rows own "session-task-chip"; suggestions must not share it.
+    expect(timelineSource).toContain('data-action="session-task-suggestion"')
+    expect(timelineSource).not.toContain('data-action="session-task-chip"')
     expect(timelineSource).toContain('data-slot="session-task-suggestion"')
     expect(timelineSource).toContain('case "TaskSuggestion"')
   })
@@ -28,12 +30,15 @@ describe("session task chip wiring", () => {
     expect(timelineSource).toContain("startTaskSession(chipRow().prompt)")
   })
 
+  test("chip click confirms before creating a worktree", () => {
+    expect(timelineSource).toContain("<DialogStartTaskSession")
+    expect(timelineSource).toContain('language.t("session.taskSuggestion.confirm.title")')
+  })
+
   test("the chip label is model-provided, not app copy", () => {
     // The chip text comes from the envelope fields; nothing app-authored is
     // rendered inside the button besides an icon.
     expect(timelineSource).toContain("{chipRow().title}")
-    expect(timelineSource).not.toMatch(
-      /data-slot="session-task-suggestion"[\s\S]{0,400}>(?![^{])\s*[A-Z][a-z]+ [a-z]+/,
-    )
+    expect(timelineSource).not.toMatch(/data-slot="session-task-suggestion"[\s\S]{0,400}>(?![^{])\s*[A-Z][a-z]+ [a-z]+/)
   })
 })
