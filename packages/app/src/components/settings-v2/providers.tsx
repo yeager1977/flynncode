@@ -128,6 +128,12 @@ export const SettingsProvidersV2: Component<{
 
   const note = (id: string) => PROVIDER_NOTES.find((item) => item.match(id))?.key
 
+  const connectLabel = (id: string) => {
+    if (id === "anthropic") return language.t("settings.providers.vendor.signInClaude")
+    if (id === "openai") return language.t("settings.providers.vendor.signInChatGPT")
+    return language.t("common.connect")
+  }
+
   const isConfigCustom = (providerID: string) =>
     isConfigCustomProvider(serverSync().data.config.provider?.[providerID])
 
@@ -245,12 +251,12 @@ export const SettingsProvidersV2: Component<{
                             {language.t("common.edit")}
                           </ButtonV2>
                         </Show>
-                        <Show when={row.id === "openai" && src() !== "env"}>
+                        <Show when={(row.id === "openai" || row.id === "anthropic") && src() !== "env"}>
                           <ButtonV2
                             size="normal"
                             variant="ghost-muted"
                             data-action="provider-reconnect"
-                            onClick={() => connect("openai")}
+                            onClick={() => connect(row.id)}
                           >
                             {language.t("common.reconnect")}
                           </ButtonV2>
@@ -308,7 +314,7 @@ export const SettingsProvidersV2: Component<{
                     </div>
                   </div>
                   <ButtonV2 size="normal" variant="neutral" icon="plus" onClick={() => connect(item.id)}>
-                    {language.t("common.connect")}
+                    {connectLabel(item.id)}
                   </ButtonV2>
                 </div>
               )}
