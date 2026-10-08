@@ -391,27 +391,30 @@ export default function Page() {
   const comments = useComments()
   const command = useCommand()
   const terminal = useTerminal()
-  const handedPty = new Set<string>()
-  createEffect(() => {
-    const parts = sync().data.part
-    for (const list of Object.values(parts)) {
-      if (!Array.isArray(list)) continue
-      for (const part of list) {
-        if (part.type !== "tool" || part.tool !== "shell") continue
-        const metadata = "metadata" in part.state ? part.state.metadata : undefined
-        const id = shellPtyID(metadata)
-        if (!id || handedPty.has(id)) continue
-        handedPty.add(id)
-        const title = "title" in part.state && typeof part.state.title === "string" ? part.state.title : undefined
-        terminal.adopt(id, title)
-        view().terminal.open()
-      }
-    }
-  })
   const [searchParams, setSearchParams] = useSearchParams<{ prompt?: string; file?: string }>()
   const location = useLocation()
   const navigate = useNavigate()
   const { params, sessionKey, workspaceKey, tabs, view } = useSessionLayout()
+
+  // Adopt PTYs only from shell tools still running in this session: finished
+  // or other sessions' shells must not reopen terminals on load or switch.
+  const handedPty = new Set<string>()
+  createEffect(() => {
+    const sessionID = params.id
+    if (!sessionID) return
+    const messages = sync().data.message[sessionID] ?? []
+    messages
+      .flatMap((message) => sync().data.part[message.id] ?? [])
+      .forEach((part) => {
+        if (part.type !== "tool" || part.tool !== "shell") return
+        if (part.sessionID !== sessionID || part.state.status !== "running") return
+        const id = shellPtyID(part.state.metadata)
+        if (!id || handedPty.has(id)) return
+        handedPty.add(id)
+        terminal.adopt(id, part.state.title)
+        view().terminal.open()
+      })
+  })
   const reviewMode = () => sessionReviewMode(view().review.mode())
   const reviewFile = () => view().review.file()
   const sessionOwnership = createSessionOwnership(sessionKey)

@@ -402,7 +402,7 @@ function createWorkspaceTerminalSession(
       batch(() => {
         setStore("all", store.all.length, {
           id,
-          title: title ?? `Terminal ${id.slice(-4)}`,
+          title: title ?? defaultTitle(titleNumber),
           titleNumber,
         })
         setStore("active", id)
