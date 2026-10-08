@@ -10,7 +10,9 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 export const Event = PermissionV1.Event
 
 export interface Interface {
-  readonly ask: (input: PermissionV1.AskInput) => Effect.Effect<void, PermissionV1.Error>
+  readonly ask: (
+    input: PermissionV1.AskInput & { approval?: ConfigPermissionV1.ApprovalMode },
+  ) => Effect.Effect<void, PermissionV1.Error>
   readonly reply: (input: PermissionV1.ReplyInput) => Effect.Effect<void, PermissionV1.NotFoundError>
   readonly list: () => Effect.Effect<ReadonlyArray<PermissionV1.Request>>
 }
@@ -64,9 +66,12 @@ const layer = Layer.effect(
       }),
     )
 
-    const ask = Effect.fn("Permission.ask")(function* (input: PermissionV1.AskInput) {
+    const ask = Effect.fn("Permission.ask")(function* (
+      input: PermissionV1.AskInput & { approval?: ConfigPermissionV1.ApprovalMode },
+    ) {
       const { approved, pending } = yield* InstanceState.get(state)
-      const { ruleset, ...request } = input
+      const { ruleset, approval: approvalRaw, ...request } = input
+      const approval = approvalRaw ?? "manual"
       let needsAsk = false
 
       for (const pattern of request.patterns) {
@@ -82,6 +87,10 @@ const layer = Layer.effect(
       }
 
       if (!needsAsk) return
+
+      const AUTO_EDIT_PERMISSIONS = ["edit", "read", "glob", "grep", "list"]
+      if (approval === "auto") return
+      if (approval === "accept-edits" && AUTO_EDIT_PERMISSIONS.includes(request.permission)) return
 
       const id = request.id ?? PermissionV1.ID.ascending()
       const info: PermissionV1.Request = {
