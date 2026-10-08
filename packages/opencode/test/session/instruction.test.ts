@@ -32,17 +32,21 @@ const it = testEffect(
 
 const configLayer = Layer.succeed(Config.Service, TestConfig.make())
 
-const instructionLayer = (global: Partial<Global.Interface>, flags: Partial<RuntimeFlags.Info> = {}) =>
+const instructionLayer = (
+  global: Partial<Global.Interface>,
+  flags: Partial<RuntimeFlags.Info> = {},
+  config = TestConfig.make(),
+) =>
   AppNodeBuilder.build(Instruction.node, [
-    [Config.node, configLayer],
+    [Config.node, Layer.succeed(Config.Service, config)],
     [Global.node, Global.layerWith(global)],
     [RuntimeFlags.node, RuntimeFlags.layer(flags)],
   ])
 
 const provideInstruction =
-  (global: Partial<Global.Interface>, flags?: Partial<RuntimeFlags.Info>) =>
+  (global: Partial<Global.Interface>, flags?: Partial<RuntimeFlags.Info>, config = TestConfig.make()) =>
   <A, E, R>(self: Effect.Effect<A, E, R>) =>
-    self.pipe(Effect.provide(instructionLayer(global, flags)))
+    self.pipe(Effect.provide(instructionLayer(global, flags, config)))
 
 const write = (filepath: string, content: string) =>
   Effect.gen(function* () {
@@ -267,6 +271,46 @@ describe("Instruction.system", () => {
         expect(paths.has(path.join(projectTmp, "AGENTS.md"))).toBe(true)
         expect(paths.has(path.join(projectTmp, "CLAUDE.md"))).toBe(false)
       }).pipe(provideInstance(projectTmp), provideInstruction({ home: projectTmp, config: projectTmp }))
+    }),
+  )
+})
+
+describe("Instruction.system memories", () => {
+  it.live("returns empty when memory disabled", () =>
+    withFiles({ "AGENTS.md": "# Root" }, (dir) =>
+      Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const rules = yield* svc.system()
+        expect(rules.some((item) => item.includes("Memory from:"))).toBe(false)
+      }),
+    ),
+  )
+
+  it.live("appends memory-dir files after MEMORY.md", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpWithFiles({})
+      const projectTmp = yield* tmpWithFiles({
+        "MEMORY.md": "# Project Memory",
+        ".opencode/memories/a.md": "token ghp_abcdefghij1234567890",
+      })
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const rules = yield* svc.system()
+        const memoryIdx = rules.findIndex((item) => item.includes("Memory from:"))
+        const memoryMdIdx = rules.findIndex((item) => item.includes("# Project Memory"))
+        expect(memoryIdx).toBeGreaterThan(-1)
+        expect(memoryMdIdx).toBeGreaterThan(-1)
+        expect(memoryMdIdx).toBeLessThan(memoryIdx)
+        expect(rules[memoryIdx]).toContain("[redacted:github]")
+      }).pipe(
+        provideInstance(projectTmp),
+        provideInstruction(
+          { home: globalTmp, config: globalTmp, data: globalTmp },
+          {},
+          TestConfig.make({ get: () => Effect.succeed({ memory: { enabled: true } }) as never }),
+        ),
+      )
     }),
   )
 })
