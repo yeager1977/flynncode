@@ -1,3 +1,5 @@
+import { timingSafeEqual } from "node:crypto"
+
 export type GatewayOptions = {
   host: string
   port: number
@@ -64,4 +66,19 @@ export function resolveOptions(
 
 export function envAuthHeader(options: GatewayOptions): string {
   return `Basic ${Buffer.from(`${options.username}:${options.upstreamPassword}`).toString("base64")}`
+}
+
+// Constant-time credential check so response timing does not reveal how much
+// of the phone password matched. Both fields are always compared.
+export function matchesCredentials(options: GatewayOptions, credentials: { username: string; password: string }) {
+  const username = safeEqual(credentials.username, options.username)
+  const password = safeEqual(credentials.password, options.password)
+  return username && password
+}
+
+function safeEqual(got: string, want: string) {
+  const a = Buffer.from(got)
+  const b = Buffer.from(want)
+  if (a.length !== b.length) return false
+  return timingSafeEqual(a, b)
 }
