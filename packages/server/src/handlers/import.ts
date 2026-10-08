@@ -1,5 +1,6 @@
 import { Database } from "@opencode-ai/core/database/database"
 import { EventV2 } from "@opencode-ai/core/event"
+import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Global } from "@opencode-ai/core/global"
 import { SessionSchema } from "@opencode-ai/core/session/schema"
 import { SessionV2 } from "@opencode-ai/core/session"
@@ -20,10 +21,31 @@ export const ImportHandler = HttpApiBuilder.group(Api, "server.import", (handler
     const events = yield* EventV2.Service
     const database = yield* Database.Service
 
+    // Importing the same source session into the same directory twice returns
+    // the session created by the first import instead of duplicating it.
+    const existingImport = Effect.fn("ImportHandler.existingImport")(function* (input: {
+      readonly source: "claude-code" | "codex"
+      readonly sourceSessionID: string
+      readonly directory: string
+    }) {
+      const imported = yield* SessionImportRegistry.findImported(database.db, input)
+      const match = imported.find((item) => item.sourceSessionID === input.sourceSessionID)
+      if (!match) return undefined
+      return yield* session
+        .get(SessionSchema.ID.make(match.sessionID))
+        .pipe(Effect.catchTag("Session.NotFoundError", () => Effect.succeed(undefined)))
+    })
+
     return handlers
       .handle(
         "import.session",
         Effect.fn(function* (ctx) {
+          const existing = yield* existingImport({
+            source: ctx.payload.source,
+            sourceSessionID: ctx.payload.sourceSessionID,
+            directory: ctx.payload.location.directory,
+          })
+          if (existing) return { data: existing }
           return {
             data: yield* SessionImport.importSession({
               location: ctx.payload.location,
@@ -75,15 +97,19 @@ export const ImportHandler = HttpApiBuilder.group(Api, "server.import", (handler
           })
           const known = new Set(imported.map((item) => item.sourceSessionID))
           return {
-            data: candidates.map((item) => ({
-              path: item.path,
-              sourceSessionID: item.sourceSessionID,
-              title: item.title,
-              cwd: item.cwd,
-              time: Number.isFinite(item.time) ? Math.max(0, Math.floor(item.time)) : 0,
-              messageCount: item.messageCount,
-              imported: known.has(item.sourceSessionID),
-            })),
+            // Only sessions recorded in this directory (or below it) belong to
+            // the project being imported into.
+            data: candidates
+              .filter((item) => item.cwd !== "" && FSUtil.contains(ctx.query.directory, item.cwd))
+              .map((item) => ({
+                path: item.path,
+                sourceSessionID: item.sourceSessionID,
+                title: item.title,
+                cwd: item.cwd,
+                time: Number.isFinite(item.time) ? Math.max(0, Math.floor(item.time)) : 0,
+                messageCount: item.messageCount,
+                imported: known.has(item.sourceSessionID),
+              })),
           }
         }),
       )
@@ -111,13 +137,21 @@ export const ImportHandler = HttpApiBuilder.group(Api, "server.import", (handler
             })
 
           const parsed =
-            resolved.source === "claude-code" ? parseClaudeCode({ path: resolved.path, text }) : parseCodex({ path: resolved.path, text })
+            resolved.source === "claude-code"
+              ? parseClaudeCode({ path: resolved.path, text })
+              : parseCodex({ path: resolved.path, text })
           if (!parsed.messages.length)
             return yield* new InvalidRequestError({
               message: "Source session has no importable messages",
               field: "sourcePath",
             })
 
+          const existing = yield* existingImport({
+            source: resolved.source,
+            sourceSessionID: parsed.sourceSessionID,
+            directory: ctx.payload.location.directory,
+          })
+          if (existing) return { data: existing }
           return {
             data: yield* SessionImport.importSession({
               location: ctx.payload.location,

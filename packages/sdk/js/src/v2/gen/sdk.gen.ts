@@ -6714,7 +6714,7 @@ export class Import extends HeyApiClient {
   /**
    * List importable sessions
    *
-   * Discover Claude Code and Codex sessions available for import into the given directory.
+   * Discover Claude Code and Codex sessions recorded in the given directory or one of its subdirectories. Sessions from other directories are omitted.
    */
   public sources<ThrowOnError extends boolean = false>(
     parameters: {
