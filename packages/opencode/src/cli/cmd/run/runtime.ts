@@ -352,6 +352,27 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
           state.aborting = false
         })
     },
+    onSubagentInterrupt: (sessionID) => {
+      if (!hasSession(input, state)) {
+        return
+      }
+
+      void ctx.sdk.session.abort({ sessionID }).catch(() => {})
+    },
+    onSubagentSteer: (sessionID, text) => {
+      if (!hasSession(input, state)) {
+        return
+      }
+
+      const trimmed = text.trim()
+      if (!trimmed) {
+        return
+      }
+
+      void ctx.sdk.session
+        .promptAsync({ sessionID, parts: [{ type: "text" as const, text: trimmed }], delivery: "steer" })
+        .catch(() => {})
+    },
     onBackground: () => {
       if (!hasSession(input, state)) return
       void ctx.sdk.experimental.session.background({ sessionID: state.sessionID }).catch(() => {})

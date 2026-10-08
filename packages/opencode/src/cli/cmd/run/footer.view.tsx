@@ -110,6 +110,8 @@ type RunFooterViewProps = {
   onLayout: (input: { route: FooterPromptRoute; autocomplete: boolean; subagentRows: number }) => void
   onStatus: (text: string) => void
   onSubagentSelect?: (sessionID: string | undefined) => void
+  onSubagentInterrupt?: (sessionID: string) => void
+  onSubagentSteer?: (sessionID: string, text: string) => void
   onQueuedRemove: (messageID: string) => Promise<boolean>
 }
 
@@ -937,6 +939,10 @@ export function RunFooterView(props: RunFooterViewProps) {
             diffStyle={props.diffStyle}
             onCycle={cycleTab}
             onClose={closeTab}
+            onStop={props.onSubagentInterrupt}
+            onSteer={props.onSubagentSteer}
+            interruptHint={interruptLabel}
+            tuiConfig={props.tuiConfig}
           />
         </box>
       </Show>
