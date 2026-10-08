@@ -14,6 +14,7 @@ import type { Agent } from "./agent"
 export function deriveSubagentSessionPermission(input: {
   parentSessionPermission: PermissionV1.Ruleset
   subagent: Agent.Info
+  sandbox?: string
 }): PermissionV1.Ruleset {
   const canTask = input.subagent.permission.some((rule) => rule.permission === "task")
   const canTodo = input.subagent.permission.some((rule) => rule.permission === "todowrite")
@@ -23,5 +24,8 @@ export function deriveSubagentSessionPermission(input: {
     ),
     ...(canTodo ? [] : [{ permission: "todowrite" as const, pattern: "*" as const, action: "deny" as const }]),
     ...(canTask ? [] : [{ permission: "task" as const, pattern: "*" as const, action: "deny" as const }]),
+    ...(input.sandbox
+      ? [{ permission: "external_directory" as const, pattern: input.sandbox, action: "allow" as const }]
+      : []),
   ]
 }

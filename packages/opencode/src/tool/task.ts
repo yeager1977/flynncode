@@ -14,6 +14,7 @@ import { Effect, Exit, Schema, Scope } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Database } from "@opencode-ai/core/database/database"
+import { Worktree } from "@/worktree"
 
 export interface TaskPromptOps {
   cancel(sessionID: SessionID): Effect.Effect<void>
@@ -49,6 +50,12 @@ const BaseParameterFields = {
       "This should only be set if you mean to resume a previous task (you can pass a prior task_id and the task will continue the same subagent session as before instead of creating a fresh one)",
   }),
   command: Schema.optional(Schema.String).annotate({ description: "The command that triggered this task" }),
+  isolation: Schema.optional(Schema.Literals(["inherit", "worktree"])).annotate({
+    description: "Run the subagent in the parent directory (inherit) or in a temp worktree (worktree)",
+  }),
+  cleanup: Schema.optional(Schema.Literals(["retain", "dispose"])).annotate({
+    description: "Keep the temp worktree after the task (retain) or mark it disposable on archive (dispose)",
+  }),
 }
 
 const BaseParameters = Schema.Struct(BaseParameterFields)
@@ -88,6 +95,7 @@ export const TaskTool = Tool.define(
     const scope = yield* Scope.Scope
     const flags = yield* RuntimeFlags.Service
     const database = yield* Database.Service
+    const worktreeSvc = yield* Worktree.Service
 
     const run = Effect.fn("TaskTool.execute")(function* (
       params: Schema.Schema.Type<typeof Parameters>,
@@ -133,12 +141,22 @@ export const TaskTool = Tool.define(
         return yield* Effect.fail(new Error(`Unknown agent type: ${params.subagent_type} is not a valid agent type`))
       }
 
+      const agentDefaults = cfg.agent?.[params.subagent_type]
+      const isolation = params.isolation ?? agentDefaults?.isolation ?? "inherit"
+      const cleanup = params.cleanup ?? "retain"
+      const sandbox = agentDefaults?.sandbox
+      const isolated = isolation === "worktree"
+      // The disposable binding is persisted in session metadata (no new
+      // session table): the temp worktree directory travels with the child.
+      const worktreeInfo = isolated ? yield* worktreeSvc.createDisposable({ sessionID: ctx.sessionID }) : undefined
+
       const session = params.task_id
         ? yield* sessions.get(SessionID.make(params.task_id)).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
         : undefined
       const childPermission = deriveSubagentSessionPermission({
         parentSessionPermission: parent.permission ?? [],
         subagent: next,
+        ...(sandbox ? { sandbox } : {}),
       })
       const childToolDenies = [
         ...(next.permission.some((rule) => rule.permission === "todowrite")
@@ -187,6 +205,9 @@ export const TaskTool = Tool.define(
         sessionId: nextSession.id,
         model,
         ...(runInBackground ? { background: true } : {}),
+        ...(worktreeInfo
+          ? { worktree: worktreeInfo.directory, disposable: cleanup === "dispose" }
+          : {}),
       }
 
       yield* ctx.metadata({
