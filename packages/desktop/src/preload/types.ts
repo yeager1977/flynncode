@@ -52,6 +52,8 @@ export type MobileGatewayStatus = {
   port: number
   lanUrls: string[]
   launcherUrls: string[]
+  tailnetUrls: string[]
+  tailnetLauncherUrls: string[]
 }
 
 export type ElectronAPI = {

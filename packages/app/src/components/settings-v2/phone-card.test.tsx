@@ -12,4 +12,10 @@ describe("phone launcher url", () => {
       expect(text.includes(key), key).toBe(true)
     }
   })
+
+  test("relay copy keys exist in en only", async () => {
+    const { dict } = (await import("@/i18n/en")) as Record<string, Record<string, string>>
+    expect(dict["server.phone.away.title"]).toBe("Away from home")
+    expect(dict["server.phone.relay.hint"]).toContain("deepthought")
+  })
 })

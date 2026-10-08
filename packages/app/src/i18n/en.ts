@@ -489,6 +489,11 @@ export const dict = {
   "server.phone.stopped": "Phone access is unavailable while the mobile gateway is stopped.",
   "server.phone.noWifi":
     "No Wi-Fi connection found. Connect this computer and your phone to the same Wi-Fi network to link your phone.",
+  "server.phone.away.title": "Away from home",
+  "server.phone.away.direct": "On Tailscale, use this address to reach this computer directly.",
+  "server.phone.relay.title": "Needs-input relay",
+  "server.phone.relay.hint": "When this computer sleeps, new approval requests appear on your deepthought host. Approvals still run here.",
+  "server.phone.relay.stopped": "Relay is off. Add your deepthought host in Servers to turn it on.",
 
   "dialog.project.edit.title": "Edit project",
   "dialog.project.edit.name": "Name",
