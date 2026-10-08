@@ -8,6 +8,10 @@ export type RoutineRunSummary = {
   error?: string
 }
 
+export type RoutineTrigger = {
+  files?: string[]
+}
+
 export type Routine = {
   id: string
   name: string
@@ -18,6 +22,7 @@ export type Routine = {
   rrule?: string
   lastRun?: string
   recentRuns?: RoutineRunSummary[]
+  trigger?: RoutineTrigger
 }
 
 export type RoutinesFile = {
@@ -75,6 +80,7 @@ function parseRoutine(item: unknown, index: number, errors: string[]) {
   if (typeof row.prompt !== "string" || row.prompt.trim() === "") errors.push(`routines.${index}.prompt must be a string`)
   const schedule = readSchedule(row.schedule, index, errors)
   const recentRuns = readRecentRuns(row.recentRuns)
+  const trigger = readTrigger(row.trigger, index, errors)
   if (errors.some((error) => error.startsWith(`routines.${index}`))) return
   if (!schedule) return
   return {
@@ -87,6 +93,7 @@ function parseRoutine(item: unknown, index: number, errors: string[]) {
     rrule: schedule.rrule,
     lastRun: typeof row.lastRun === "string" ? row.lastRun : undefined,
     recentRuns,
+    trigger,
   }
 }
 
@@ -143,6 +150,34 @@ function readRrule(rrule: unknown, index: number, errors: string[]) {
     return undefined
   }
   return rrule
+}
+
+function readTrigger(trigger: unknown, index: number, errors: string[]) {
+  if (trigger === undefined) return undefined
+  if (!trigger || typeof trigger !== "object" || Array.isArray(trigger)) {
+    errors.push(`routines.${index}.trigger must be an object`)
+    return undefined
+  }
+  const row = trigger as Record<string, unknown>
+  const files = readTriggerFiles(row.files, index, errors)
+  if (errors.some((error) => error.startsWith(`routines.${index}.trigger`))) return undefined
+  if (!files) return undefined
+  return { files }
+}
+
+function readTriggerFiles(files: unknown, index: number, errors: string[]) {
+  if (files === undefined) return undefined
+  if (!Array.isArray(files) || files.length === 0 || files.length > 10) {
+    errors.push(`routines.${index}.trigger.files must be an array of 1-10 glob patterns`)
+    return undefined
+  }
+  for (const pattern of files) {
+    if (typeof pattern !== "string" || pattern.trim() === "" || pattern.startsWith("/") || pattern.split("/").includes("..")) {
+      errors.push(`routines.${index}.trigger.files must be relative globs without .. segments`)
+      return undefined
+    }
+  }
+  return files as string[]
 }
 
 function readRecentRuns(recentRuns: unknown) {

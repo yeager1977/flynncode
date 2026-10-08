@@ -6,6 +6,7 @@ import { applyEdits, modify, parse } from "jsonc-parser"
 import type { Hooks, PluginInput } from "@opencode-ai/plugin"
 import { dueRoutines } from "./due"
 import { parseRoutines, type Routine, type RoutineRunSummary } from "./parse"
+import { triggerDue } from "./trigger"
 
 // Mirrors globalConfigFile() precedence so we patch the file OpenCode loads.
 const CONFIG_CANDIDATES = ["opencode.jsonc", "opencode.json", "config.json"]
@@ -22,6 +23,7 @@ function stored(routine: Routine) {
     enabled: routine.enabled,
     lastRun: routine.lastRun,
     recentRuns: routine.recentRuns,
+    trigger: routine.trigger,
     schedule: routine.dailyAt
       ? { dailyAt: routine.dailyAt }
       : routine.interval
@@ -180,6 +182,20 @@ export function startScheduler(client: Client, directory: string) {
     try {
       const loaded = await loadRoutines()
       const due = dueRoutines(loaded.routines, new Date())
+      const dueIDs = new Set(due.map((routine) => routine.id))
+      const polled = await Promise.all(
+        loaded.routines.map(async (routine) => {
+          if (dueIDs.has(routine.id)) return undefined
+          const fired = await triggerDue(routine, directory).catch(() => false)
+          return fired ? routine : undefined
+        }),
+      )
+      for (const routine of polled) {
+        if (routine && !dueIDs.has(routine.id)) {
+          dueIDs.add(routine.id)
+          due.push(routine)
+        }
+      }
       if (due.length === 0) return
       // Record each routine individually so one failure does not make every
       // later tick re-fire the whole batch.
