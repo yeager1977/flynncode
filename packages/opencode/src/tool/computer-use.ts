@@ -14,6 +14,17 @@ export class ComputerUseNotAllowedError extends Schema.TaggedErrorClass<Computer
   { appID: Schema.String },
 ) {}
 
+// No client executor runs pane-scoped GUI actions yet, so the tool must fail
+// rather than report an action that never happened.
+export class ComputerUseUnavailableError extends Schema.TaggedErrorClass<ComputerUseUnavailableError>()(
+  "ComputerUseUnavailableError",
+  { appID: Schema.String, action: Schema.String },
+) {
+  override get message() {
+    return `Computer use is not available in this build: the ${this.action} action for ${this.appID} was not performed. Do not assume it happened; tell the user and continue another way.`
+  }
+}
+
 export const Parameters = Schema.Struct({
   action: Schema.Literals(["screenshot", "click", "type", "keypress", "scroll"]).annotate({
     description: "Exactly one pane-scoped GUI action per call",
@@ -27,9 +38,7 @@ export const Parameters = Schema.Struct({
   deltaY: Schema.optional(Schema.Number).annotate({ description: "Vertical scroll delta" }),
 })
 
-type Metadata = {
-  acknowledged: boolean
-}
+type Metadata = Record<string, never>
 
 const definition = Tool.define<typeof Parameters, Metadata, Config.Service>(
   "computer_use",
@@ -38,29 +47,16 @@ const definition = Tool.define<typeof Parameters, Metadata, Config.Service>(
     return {
       description: DESCRIPTION,
       parameters: Parameters,
-      execute: (input: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context<Metadata>) =>
+      execute: (input: Schema.Schema.Type<typeof Parameters>) =>
         Effect.gen(function* () {
           const cfg = yield* config.get()
           const policy = ComputerUse.resolveComputerUse(cfg.computer_use ?? {})
           if (policy.enabled === false) return yield* new ComputerUseDisabledError({ appID: input.appID })
           if (ComputerUse.isAppAllowed(input.appID, policy.allowedApps) === false)
             return yield* new ComputerUseNotAllowedError({ appID: input.appID })
-          yield* ctx.ask({
-            permission: "computer_use",
-            patterns: [input.appID, input.action],
-            always: [],
-            metadata: {
-              appID: input.appID,
-              action: input.action,
-            },
-          })
-          return {
-            title: "Computer use action acknowledged",
-            output: `Acknowledged ${input.action} for ${input.appID}. Pane-scoped execution happens client-side after approval.`,
-            metadata: {
-              acknowledged: true,
-            },
-          }
+          // Asking for approval first would have the user consent to an action
+          // that cannot run, so fail before the permission prompt.
+          return yield* new ComputerUseUnavailableError({ appID: input.appID, action: input.action })
         }).pipe(Effect.orDie),
     }
   }),
