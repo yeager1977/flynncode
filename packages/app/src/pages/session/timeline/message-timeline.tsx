@@ -962,6 +962,52 @@ export function MessageTimeline(props: {
     navigate(`/${slug}/session?prompt=${encodeURIComponent(prompt)}`)
   }
 
+  // Starting a task creates a git worktree, so the chip asks before acting.
+  function DialogStartTaskSession(props: { title: string; onConfirm: () => Promise<void> }) {
+    const handleStart = () => {
+      dialog.close()
+      void props.onConfirm()
+    }
+
+    if (settings.general.newLayoutDesigns())
+      return (
+        <DialogV2 fit>
+          <DialogHeader hideClose>
+            <DialogTitleGroup
+              title={language.t("session.taskSuggestion.confirm.title")}
+              description={language.t("session.taskSuggestion.confirm.description", { title: props.title })}
+            />
+          </DialogHeader>
+          <DialogFooter>
+            <ButtonV2 variant="ghost" onClick={() => dialog.close()}>
+              {language.t("common.cancel")}
+            </ButtonV2>
+            <ButtonV2 variant="contrast" data-action="session-task-suggestion-confirm" onClick={handleStart}>
+              {language.t("session.taskSuggestion.confirm.action")}
+            </ButtonV2>
+          </DialogFooter>
+        </DialogV2>
+      )
+
+    return (
+      <Dialog title={language.t("session.taskSuggestion.confirm.title")} fit>
+        <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
+          <span class="text-14-regular text-text-strong">
+            {language.t("session.taskSuggestion.confirm.description", { title: props.title })}
+          </span>
+          <div class="flex justify-end gap-2">
+            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+              {language.t("common.cancel")}
+            </Button>
+            <Button variant="primary" size="large" data-action="session-task-suggestion-confirm" onClick={handleStart}>
+              {language.t("session.taskSuggestion.confirm.action")}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    )
+  }
+
   function DialogDeleteSession(props: { sessionID: string }) {
     const name = createMemo(
       () => sessionTitle(sync().session.get(props.sessionID)?.title) ?? language.t("command.session.new"),
@@ -1104,7 +1150,7 @@ export function MessageTimeline(props: {
                 turnDurationMs={turnDurationMs(row().userMessageID)}
                 useV2Actions={settings.general.newLayoutDesigns()}
                 defaultOpen={defaultOpen()}
-                toolOpen={row().verbose || toolOpen[part().id] === undefined ? defaultOpen() : toolOpen[part().id]}
+                toolOpen={toolOpen[part().id] ?? defaultOpen()}
                 onToolOpenChange={(open) => setToolOpen(part().id, open)}
                 deferToolContent
                 virtualizeDiff={false}
@@ -1312,11 +1358,18 @@ export function MessageTimeline(props: {
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5 pb-1">
               <button
                 type="button"
-                data-action="session-task-chip"
+                data-action="session-task-suggestion"
                 data-slot="session-task-suggestion"
                 class="flex max-w-[82%] items-center gap-2 rounded-[6px] border border-border-weak-base bg-background-stronger px-2.5 py-2 text-start transition-colors hover:border-border-strong"
                 title={chipRow().prompt}
-                onClick={() => void startTaskSession(chipRow().prompt)}
+                onClick={() =>
+                  dialog.show(() => (
+                    <DialogStartTaskSession
+                      title={chipRow().title}
+                      onConfirm={() => startTaskSession(chipRow().prompt)}
+                    />
+                  ))
+                }
               >
                 <Icon name="branch" size="small" class="shrink-0 text-icon-base" />
                 <span class="min-w-0 truncate text-12-medium text-text-strong">{chipRow().title}</span>
