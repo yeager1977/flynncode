@@ -207,5 +207,25 @@ export function createTools(deps: Deps): Hooks["tool"] {
         }
       },
     }),
+    auth_status: tool({
+      description: "Show vendor sign-in connection state for router-visible providers. Never prints secrets.",
+      args: {},
+      async execute() {
+        const options = deps.getOptions()
+        if (options?.enabled === false) return "Model router disabled."
+        if (!options) return disabledMessage(deps.getOptionsError())
+        const cfg = deps.getConfig()
+        const catalog = deps.getCatalog()
+        const candidates = collectCandidates(cfg, options, catalog)
+        const vendors = ["anthropic", "openai"]
+        const lines = vendors.map((vendor) => {
+          const count = candidates.filter((c) => c.providerID === vendor && !c.providerDisabled && !c.hidden).length
+          return `${vendor}: ${count > 0 ? `connected (${count} models)` : "not connected"}`
+        })
+        return [...lines, `Eligible models: ${candidates.filter((c) => !c.providerDisabled && !c.hidden).length}`].join(
+          "\n",
+        )
+      },
+    }),
   }
 }
