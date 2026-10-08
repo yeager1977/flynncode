@@ -26,37 +26,77 @@ export function isDue(routine: Routine, now: Date) {
   return !ranYesterday
 }
 
-function rruleOptions(routine: Routine) {
+function rruleOptions(routine: Routine, now: Date) {
+  const text = routine.rrule ?? ""
   try {
-    // Anchor dtstart in the past: fromString defaults dtstart to now, which
-    // would hide occurrences before the first parse. Local time matches dailyAt.
-    const options = RRule.parseString(routine.rrule ?? "")
-    return new RRule({ ...options, dtstart: new Date(2000, 0, 1) })
+    const options = RRule.parseString(text)
+    // rrule evaluates in UTC. Run it on "floating" wall-clock-as-UTC dates so
+    // BYHOUR/BYDAY mean local time. A DTSTART/UNTIL with a trailing Z is a real
+    // UTC instant; without it the value already is floating wall-clock time.
+    // Without DTSTART, anchor at the routine's creation so COUNT and INTERVAL
+    // count from when it was saved.
+    return new RRule({
+      ...options,
+      tzid: null,
+      dtstart: options.dtstart
+        ? /DTSTART[^:\n]*:\d{8}T\d{6}Z/i.test(text)
+          ? toFloating(options.dtstart)
+          : options.dtstart
+        : toFloating(anchor(routine, now)),
+      until: options.until && /UNTIL=\d{8}T\d{6}Z/i.test(text) ? toFloating(options.until) : options.until,
+    })
   } catch {
     return undefined
   }
 }
 
 function isRruleDue(routine: Routine, now: Date) {
-  const rule = rruleOptions(routine)
+  const rule = rruleOptions(routine, now)
   if (!rule) return false
   const last = routine.lastRun ? new Date(routine.lastRun) : undefined
   if (last && Number.isNaN(last.getTime())) return true
-  // Never-run routines anchor at local midnight: due when today's occurrence
-  // already passed (mirrors dailyAt), without firing for occurrences from
-  // previous days. A far-past anchor would make every post-first-occurrence
-  // tick due.
-  const after = last ?? new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const next = rule.after(after, true)
+  // Never-run routines look for the first occurrence since creation (or local
+  // midnight for routines saved before createdAt existed), so they do not
+  // fire for every occurrence that predates them.
+  const next = rule.after(toFloating(last ?? anchor(routine, now)), true)
   if (!next) return false
-  return next.getTime() <= now.getTime()
+  return fromFloating(next).getTime() <= now.getTime()
 }
 
 export function nextOccurrence(routine: Routine, now: Date) {
-  const rule = rruleOptions(routine)
-  if (!rule) return undefined
-  const next = rule.after(now, false)
-  return next ?? undefined
+  const next = rruleOptions(routine, now)?.after(toFloating(now), false)
+  return next ? fromFloating(next) : undefined
+}
+
+function anchor(routine: Routine, now: Date) {
+  if (routine.createdAt) return new Date(routine.createdAt)
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate())
+}
+
+function toFloating(date: Date) {
+  return new Date(
+    Date.UTC(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+      date.getHours(),
+      date.getMinutes(),
+      date.getSeconds(),
+      date.getMilliseconds(),
+    ),
+  )
+}
+
+function fromFloating(date: Date) {
+  return new Date(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+    date.getUTCHours(),
+    date.getUTCMinutes(),
+    date.getUTCSeconds(),
+    date.getUTCMilliseconds(),
+  )
 }
 
 function isIntervalDue(routine: Routine, now: Date) {
