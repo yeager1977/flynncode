@@ -109,6 +109,16 @@ const desktop = [
   "A port lekérése sikertelen",
   "A fájl nem lett kiválasztva a választóban",
   "A kiválasztott mellékletek meghaladják a(z) {{limit}} MB-os korlátot",
+  "Sign in with Claude",
+  "Sign in with ChatGPT",
+  "Import from Claude Code",
+  "Import from Codex CLI",
+  "Sign out",
+  "Connected",
+  "Not connected",
+  "Secret is empty.",
+  "System keychain unavailable; using encrypted file storage.",
+  "Unknown provider.",
 ]
 
 export const dict = {

@@ -6,7 +6,7 @@ import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
-import { app, BrowserWindow } from "electron"
+import { app, BrowserWindow, safeStorage } from "electron"
 
 import { Deferred, Effect, Fiber } from "effect"
 import contextMenu from "electron-context-menu"
@@ -51,6 +51,7 @@ import { cleanupStoreFiles } from "./store-cleanup"
 import { startBackgroundCli } from "./background-cli"
 import { setNativeTranslations } from "./native-translations"
 import { museAuthStatus, runMuseAuthSync } from "./muse-auth"
+import { vendorAuthSignout, vendorAuthStatus } from "./vendor-keychain"
 import { MOBILE_PHONE_PASSWORD_KEY } from "./store-keys"
 import { getOrCreateMobilePhonePassword } from "./mobile-password"
 import { getStore } from "./store"
@@ -310,6 +311,10 @@ const main = Effect.gen(function* () {
     resolveAppPath: async (appName) => resolveAppPath(appName),
     museAuthStatus: () => museAuthStatus(),
     museAuthSync: () => runMuseAuthSync(),
+    vendorAuthStatus: () =>
+      vendorAuthStatus({ file: join(app.getPath("userData"), "vendor-auth.json"), encryption: safeStorage }),
+    vendorAuthSignout: (vendor) =>
+      vendorAuthSignout(vendor, { file: join(app.getPath("userData"), "vendor-auth.json"), encryption: safeStorage }),
     updater,
     showUpdater: () => showUpdaterDialog(updater, true),
     setBackgroundColor: (color) => setBackgroundColor(color),
