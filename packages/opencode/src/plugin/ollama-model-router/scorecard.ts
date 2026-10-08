@@ -113,12 +113,13 @@ export function parseOptions(
       }
     }
 
-    let agentTasks: Record<string, TaskName> = { ...DEFAULT_AGENT_TASKS }
+    // User entries merge over the defaults so mapping one custom agent does
+    // not unmap build/plan/explore/general.
+    const agentTasks: Record<string, TaskName> = { ...DEFAULT_AGENT_TASKS }
     if (r.agentTasks !== undefined) {
       if (r.agentTasks === null || typeof r.agentTasks !== "object" || Array.isArray(r.agentTasks)) {
         errors.push("agentTasks must be an object mapping agent names to task names")
       } else {
-        agentTasks = {}
         for (const [agent, task] of Object.entries(r.agentTasks as Record<string, unknown>)) {
           if (!isTaskName(task)) {
             errors.push(`agentTasks.${agent}: unknown task "${String(task)}" (valid: ${TASK_NAMES.join(", ")})`)

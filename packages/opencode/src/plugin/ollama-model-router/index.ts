@@ -1,6 +1,6 @@
 import type { Hooks, PluginInput, PluginOptions } from "@opencode-ai/plugin"
 import { assignAgents, resolveTaskModel } from "./assign"
-import { ROUTER_MODEL_ID, ROUTER_MODEL_KEY, ROUTER_PROVIDER_ID, type CatalogLike } from "./candidates"
+import { ROUTER_MODEL_ID, ROUTER_PROVIDER_ID, type CatalogLike } from "./candidates"
 import { MODEL_FAMILIES, type ModelFamily } from "./provider-family"
 import { parseOptions, parseTaskVariant, ROUTER_VARIANTS, VALUE_TASK_WEIGHTS } from "./scorecard"
 import { createTools } from "./tools"
@@ -26,6 +26,9 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
   let optionsError: string[] | undefined
   let currentConfig: any
   let assignments: Record<string, string> = {}
+  // Provider blocks this plugin injected, so a later config pass can tell them
+  // apart from a user's static `model-router` provider.
+  const injected = new WeakSet<object>()
 
   const getOptions = () => currentOptions
   const getOptionsError = () => optionsError
@@ -91,27 +94,34 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
   // the sentinel is present, resolve it to the concrete winner for the chosen
   // task (variant) or the active agent's task, and rewrite the transcript
   // message. The session preference keeps the sentinel so the picker stays put.
-  const resolveSentinel = (event: {
-    sessionID: string
-    agent?: string
-    model?: { providerID: string; modelID: string }
-    variant?: string
-  }): { task: TaskName; model: string } | undefined => {
-    if (!currentOptions) return undefined
-    if (event.model?.providerID !== ROUTER_PROVIDER_ID) return undefined
-    const parsed = parseTaskVariant(event.variant)
-    const task: TaskName | undefined =
-      parsed?.task ?? (event.agent ? currentOptions.agentTasks[event.agent] : undefined)
-    if (!task) return undefined
+  const resolveSentinel = (options: RouterOptions, agent: string, variant: string | undefined) => {
+    const parsed = parseTaskVariant(variant)
+    const task = parsed?.task ?? taskForAgent(options, agent)
     // A `<task>-value` variant asks for the cheap lane, so it uses value weights
     // and ignores the task pin (a pin would otherwise re-impose the premium
     // model for tasks like review).
     const value = parsed?.value === true
-    const model = resolveTaskModel(currentConfig, currentOptions, task, getCatalog(), {
+    const model = resolveTaskModel(currentConfig, options, task, getCatalog(), {
       weights: value ? VALUE_TASK_WEIGHTS : undefined,
       ignorePin: value,
     })
-    return model ? { task, model } : undefined
+    return { task, model }
+  }
+
+  // Custom agents without an agentTasks entry route as coding, the closest
+  // match for general-purpose agents, instead of failing the prompt.
+  const taskForAgent = (options: RouterOptions, agent: string): TaskName => {
+    const task = options.agentTasks[agent]
+    if (task) return task
+    console.warn(`${PREFIX} agent "${agent}" has no agentTasks entry; routing it as "coding"`)
+    return "coding"
+  }
+
+  // A static `model-router` provider block is a user's own provider; leave it
+  // alone. Otherwise the sentinel has nothing to resolve it while routing is off.
+  const staticRouterProvider = () => {
+    const block = currentConfig?.provider?.[ROUTER_PROVIDER_ID]
+    return block !== undefined && !injected.has(block)
   }
 
   return {
@@ -140,6 +150,7 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
           return
         }
 
+        warnShadowedRouter(cfg)
         injectRouterProvider(cfg)
 
         // Assignment mutates agent models and is legacy-only. Normal activation
@@ -164,29 +175,32 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
       // Another plugin may have already replaced the sentinel; never touch a
       // concrete model.
       if (output.message.model.providerID !== ROUTER_PROVIDER_ID) return
-      if (event.model?.providerID !== ROUTER_PROVIDER_ID) return
-      if (!currentOptions?.enabled) return
-      try {
-        await loadCatalog()
-        const resolved = resolveSentinel(event)
-        if (!resolved) {
-          // Failing here is safer than letting the sentinel reach a provider
-          // API. The prompt surfaces this message to the user.
-          const task = event.variant ?? (event.agent ? currentOptions?.agentTasks[event.agent] : undefined) ?? "?"
-          throw new Error(
-            `Model Router has no eligible model for task "${task}". ` +
-              `Check model_router providers, scorecards, and excludeModels.`,
-          )
-        }
-        const index = resolved.model.indexOf("/")
-        output.message.model = {
-          ...output.message.model,
-          providerID: resolved.model.slice(0, index),
-          modelID: resolved.model.slice(index + 1),
-        }
-      } catch (error) {
+      if (!currentOptions?.enabled) {
+        if (staticRouterProvider()) return
+        // Failing here is safer than sending the sentinel to a provider with
+        // no baseURL. The prompt surfaces this message to the user.
+        throw new Error(
+          optionsError
+            ? `Model Router is disabled because model_router options are invalid:\n- ${optionsError.join("\n- ")}`
+            : "Model Router is disabled — enable model_router.enabled in your config or pick a concrete model.",
+        )
+      }
+      await loadCatalog()
+      const agent = output.message.agent || event.agent || "build"
+      const resolved = resolveSentinel(currentOptions, agent, event.variant)
+      if (!resolved.model) {
+        const error = new Error(
+          `Model Router has no eligible model for agent "${agent}" (task "${resolved.task}"). ` +
+            `Check model_router providers, scorecards, and excludeModels.`,
+        )
         console.error(`${PREFIX} chat.message hook failed`, error)
         throw error
+      }
+      const index = resolved.model.indexOf("/")
+      output.message.model = {
+        ...output.message.model,
+        providerID: resolved.model.slice(0, index),
+        modelID: resolved.model.slice(index + 1),
       }
     },
     event: async ({ event }) => {
@@ -201,15 +215,29 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
       getOptionsError,
       getConfig: () => currentConfig,
       getCatalog,
+      loadCatalog,
       getAssignments: () => assignments,
     }),
+  }
+
+  function warnShadowedRouter(cfg: any) {
+    if (!cfg || typeof cfg !== "object") return
+    const disabled: unknown = cfg.disabled_providers
+    if (Array.isArray(disabled) && disabled.includes(ROUTER_PROVIDER_ID))
+      console.warn(`${PREFIX} model_router is enabled but "${ROUTER_PROVIDER_ID}" is in disabled_providers; Model Router will not appear`)
+    const enabled: unknown = cfg.enabled_providers
+    if (Array.isArray(enabled) && !enabled.includes(ROUTER_PROVIDER_ID))
+      console.warn(`${PREFIX} model_router is enabled but enabled_providers does not include "${ROUTER_PROVIDER_ID}"; Model Router will not appear`)
+    const block = cfg.provider?.[ROUTER_PROVIDER_ID]
+    if (block !== undefined && !injected.has(block))
+      console.warn(`${PREFIX} a static provider.${ROUTER_PROVIDER_ID} block shadows the injected Model Router provider; remove it to use routing`)
   }
 
   function injectRouterProvider(cfg: any) {
     if (!cfg || typeof cfg !== "object") return
     if (!cfg.provider || typeof cfg.provider !== "object") cfg.provider = {}
     if (cfg.provider[ROUTER_PROVIDER_ID]) return
-    cfg.provider[ROUTER_PROVIDER_ID] = {
+    const block = {
       name: "Model Router",
       models: {
         [ROUTER_MODEL_ID]: {
@@ -221,6 +249,8 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
         },
       },
     }
+    injected.add(block)
+    cfg.provider[ROUTER_PROVIDER_ID] = block
   }
 }
 

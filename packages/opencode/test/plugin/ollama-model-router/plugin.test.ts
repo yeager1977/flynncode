@@ -298,7 +298,7 @@ describe("plugin", () => {
     expect(cfg.agent).toEqual({})
   })
 
-  test("enabled false leaves the sentinel unrewritten", async () => {
+  test("enabled false fails the sentinel with a clear error instead of leaking it", async () => {
     const hooks = await plugin.server(fakeInput)
     const cfg: any = {
       model_router: { enabled: false, providers: ["ollama-cloud"] },
@@ -307,11 +307,83 @@ describe("plugin", () => {
     }
     await hooks.config?.(cfg)
     const message: any = { model: { providerID: "model-router", modelID: "auto" } }
-    await hooks["chat.message"]?.(
+    const result = hooks["chat.message"]?.(
       { sessionID: "s", agent: "build", model: { providerID: "model-router", modelID: "auto" } },
       { message, parts: [] },
     )
+    await expect(result).rejects.toThrow("Model Router is disabled — enable model_router.enabled")
     expect(message.model).toEqual({ providerID: "model-router", modelID: "auto" })
+  })
+
+  test("invalid options fail the sentinel naming the option errors", async () => {
+    const hooks = await plugin.server(fakeInput)
+    await hooks.config?.({ model_router: { providers: "nope" } } as any)
+    const result = hooks["chat.message"]?.(
+      { sessionID: "s", agent: "build" },
+      { message: { agent: "build", model: { providerID: "model-router", modelID: "auto" } } as any, parts: [] },
+    )
+    await expect(result).rejects.toThrow("providers must be an array of strings")
+  })
+
+  test("a static model-router provider is left alone while routing is off", async () => {
+    const hooks = await plugin.server(fakeInput)
+    await hooks.config?.({ provider: { "model-router": { options: { baseURL: "http://x" }, models: { auto: {} } } } } as any)
+    const message: any = { agent: "build", model: { providerID: "model-router", modelID: "auto" } }
+    await hooks["chat.message"]?.({ sessionID: "s", agent: "build" }, { message, parts: [] })
+    expect(message.model).toEqual({ providerID: "model-router", modelID: "auto" })
+  })
+
+  test("routes by the message's resolved agent and falls back to coding for unmapped agents", async () => {
+    const hooks = await plugin.server(fakeInput, {
+      providers: ["ollama-cloud"],
+      taskModels: { coding: "ollama-cloud/code", lookup: "ollama-cloud/look" },
+      models: {
+        "ollama-cloud/code": { price: 1, capability: 10, speed: 10 },
+        "ollama-cloud/look": { price: 1, capability: 10, speed: 10 },
+      },
+    })
+    await hooks.config?.({ provider: { "ollama-cloud": { models: { code: {}, look: {} } } }, agent: {} } as any)
+    // No agent in the prompt input: the message carries the resolved agent.
+    const explore: any = { agent: "explore", model: { providerID: "model-router", modelID: "auto" } }
+    await hooks["chat.message"]?.({ sessionID: "s" }, { message: explore, parts: [] })
+    expect(explore.model).toEqual({ providerID: "ollama-cloud", modelID: "look" })
+
+    const warnings: unknown[][] = []
+    const original = console.warn
+    console.warn = (...args: unknown[]) => warnings.push(args)
+    const custom: any = { agent: "my-reviewer", model: { providerID: "model-router", modelID: "auto" } }
+    await hooks["chat.message"]?.({ sessionID: "s", agent: "my-reviewer" }, { message: custom, parts: [] }).finally(() => {
+      console.warn = original
+    })
+    expect(custom.model).toEqual({ providerID: "ollama-cloud", modelID: "code" })
+    expect(warnings.some((args) => String(args[0]).includes('agent "my-reviewer"'))).toBe(true)
+  })
+
+  test("the no-eligible-model error names the agent and task", async () => {
+    const hooks = await plugin.server(fakeInput, { providers: ["ollama-cloud"], allowUnscored: false, models: {} })
+    await hooks.config?.({ provider: {}, agent: {} } as any)
+    const result = hooks["chat.message"]?.(
+      { sessionID: "s" },
+      { message: { agent: "plan", model: { providerID: "model-router", modelID: "auto" } } as any, parts: [] },
+    )
+    await expect(result).rejects.toThrow('agent "plan" (task "planning")')
+  })
+
+  test("warns when model-router is disabled or shadowed by a static provider block", async () => {
+    const hooks = await plugin.server(fakeInput, { providers: ["ollama-cloud"], models: {} })
+    const warnings: unknown[][] = []
+    const original = console.warn
+    console.warn = (...args: unknown[]) => warnings.push(args)
+    await hooks.config?.({ disabled_providers: ["model-router"], provider: {} } as any)
+    await hooks.config?.({ provider: { "model-router": { models: {} } } } as any)
+    const cfg: any = { provider: {} }
+    await hooks.config?.(cfg)
+    await hooks.config?.(cfg)
+    console.warn = original
+    const text = warnings.map((args) => String(args[0]))
+    expect(text.filter((line) => line.includes("disabled_providers"))).toHaveLength(1)
+    // The re-run over an already-injected config must not count as shadowing.
+    expect(text.filter((line) => line.includes("shadows"))).toHaveLength(1)
   })
 
   test("rank_models reports disabled when enabled is false", async () => {

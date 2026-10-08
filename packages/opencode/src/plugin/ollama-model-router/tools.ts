@@ -48,6 +48,9 @@ type Deps = {
   getOptionsError: () => string[] | undefined
   getConfig: () => any
   getCatalog: () => CatalogLike | undefined
+  // Loads the connected provider catalog (no-op once loaded); tools await it
+  // so they rank the same models prompt-time routing sees.
+  loadCatalog: () => Promise<void>
   getAssignments: () => Record<string, string>
 }
 
@@ -104,6 +107,7 @@ export function createTools(deps: Deps): Hooks["tool"] {
         const options = deps.getOptions()
         if (options?.enabled === false) return "Model router disabled."
         if (!options) return disabledMessage(deps.getOptionsError())
+        await deps.loadCatalog()
         const cfg = deps.getConfig()
         const catalog = deps.getCatalog()
         const candidates = collectCandidates(cfg, options, catalog)
@@ -145,6 +149,7 @@ export function createTools(deps: Deps): Hooks["tool"] {
         if (!isTaskName(args.task)) {
           return `Unknown task "${args.task}". Valid tasks: ${TASK_NAMES.join(", ")}`
         }
+        await deps.loadCatalog()
         const cfg = deps.getConfig()
         const catalog = deps.getCatalog()
         const candidates = collectCandidates(cfg, options, catalog)
@@ -214,6 +219,7 @@ export function createTools(deps: Deps): Hooks["tool"] {
         const options = deps.getOptions()
         if (options?.enabled === false) return "Model router disabled."
         if (!options) return disabledMessage(deps.getOptionsError())
+        await deps.loadCatalog()
         const cfg = deps.getConfig()
         const catalog = deps.getCatalog()
         const candidates = collectCandidates(cfg, options, catalog)

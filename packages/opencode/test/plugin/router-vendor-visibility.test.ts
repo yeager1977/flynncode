@@ -43,6 +43,7 @@ describe("vendor visibility", () => {
       getOptionsError: () => undefined,
       getConfig: () => ({ provider: {}, disabled_providers: [] }),
       getCatalog: () => catalog,
+      loadCatalog: async () => {},
       getAssignments: () => ({}),
     })
     const output = await tools?.auth_status?.execute?.({}, {} as never)
