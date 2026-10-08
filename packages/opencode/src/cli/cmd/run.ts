@@ -182,6 +182,10 @@ export const RunCommand = effectCmd({
         default: false,
         describe: "shorthand for --format json (line-delimited JSON events on stdout)",
       })
+      .option("output-schema", {
+        type: "string",
+        describe: "JSON schema (inline JSON or @path/to/schema.json) for structured output",
+      })
       .option("file", {
         alias: ["f"],
         type: "string",
@@ -290,6 +294,19 @@ export const RunCommand = effectCmd({
 
         throw error
       }
+
+      async function outputSchema() {
+        const raw = args["output-schema"]
+        if (!raw) return undefined
+        if (args.command) die("--output-schema cannot be used with --command")
+        const { parseOutputSchema } = await import("./run/output-schema")
+        try {
+          return await parseOutputSchema(raw)
+        } catch (error) {
+          die(error instanceof Error ? error.message : String(error))
+        }
+      }
+      const schema = await outputSchema()
 
       let message = [...args.message, ...(args["--"] || [])]
         .map((arg) => (arg.includes(" ") ? `"${arg.replace(/"/g, '\\"')}"` : arg))
@@ -680,6 +697,7 @@ export const RunCommand = effectCmd({
           process.exit(1)
         }
         const sessionID = sess.id
+        let structuredOutput: unknown
 
         function emit(type: string, data: Record<string, unknown>) {
           if (format === "json") {
@@ -704,7 +722,6 @@ export const RunCommand = effectCmd({
           const toggles = new Map<string, boolean>()
           const sessions = new Set([sessionID])
           let error: string | undefined
-
           for await (const event of events.stream) {
             if (event.type === "session.created" && event.properties.info.parentID) {
               if (sessions.has(event.properties.info.parentID)) sessions.add(event.properties.info.id)
@@ -728,6 +745,8 @@ export const RunCommand = effectCmd({
               if (part.sessionID !== sessionID) continue
 
               if (part.type === "tool" && (part.state.status === "completed" || part.state.status === "error")) {
+                if (part.tool === "StructuredOutput" && part.state.status === "completed")
+                  structuredOutput = part.state.input
                 if (emit("tool_use", { part })) continue
                 if (part.state.status === "completed") {
                   await tool(part)
@@ -758,6 +777,7 @@ export const RunCommand = effectCmd({
 
               if (part.type === "text" && part.time?.end) {
                 if (emit("text", { part })) continue
+                if (schema) continue
                 const text = part.text.trim()
                 if (!text) continue
                 if (!process.stdout.isTTY) {
@@ -822,6 +842,20 @@ export const RunCommand = effectCmd({
           }
           return error
         }
+        async function structured() {
+          if (structuredOutput === undefined) {
+            UI.error("Model did not produce structured output")
+            process.exitCode = 1
+            if (format === "json") emit("session_end", { exitCode: 1 })
+            return
+          }
+          if (format === "json") {
+            emit("structured_output", { output: structuredOutput })
+            emit("session_end", { exitCode: process.exitCode ?? 0 })
+            return
+          }
+          process.stdout.write(JSON.stringify(structuredOutput, null, 2) + EOL)
+        }
         const cwd = args.attach ? (directory ?? sess.directory ?? (await current(sdk))) : (directory ?? root)
         const client = args.attach ? attachSDK(cwd) : sdk
 
@@ -869,6 +903,7 @@ export const RunCommand = effectCmd({
             agent,
             model,
             variant: args.variant,
+            ...(schema ? { format: { type: "json_schema", schema } } : {}),
             parts: [...files, { type: "text", text: message }],
           })
           if (result.error) {
@@ -878,6 +913,10 @@ export const RunCommand = effectCmd({
             return
           }
           await finish()
+          if (schema) {
+            await structured()
+            return
+          }
           if (format === "json") emit("session_end", { exitCode: process.exitCode ?? 0 })
           return
         }
@@ -999,6 +1038,8 @@ export async function runMini(input: MiniCommandInput) {
     agent: input.agent,
     format: "default",
     json: false,
+    "output-schema": undefined,
+    outputSchema: undefined,
     file: undefined,
     title: undefined,
     attach: input.attach,

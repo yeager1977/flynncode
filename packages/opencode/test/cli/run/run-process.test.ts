@@ -104,6 +104,41 @@ describe("opencode run (non-interactive subprocess)", () => {
     60_000,
   )
 
+  cliIt.concurrent(
+    "--output-schema prints structured JSON to stdout in default mode",
+    ({ llm, opencode }) =>
+      Effect.gen(function* () {
+        yield* llm.push(reply().tool("StructuredOutput", { summary: "done", count: 2 }))
+        const result = yield* opencode.run("summarize", {
+          extraArgs: [
+            "--output-schema",
+            '{"type":"object","properties":{"summary":{"type":"string"},"count":{"type":"number"}},"required":["summary","count"]}',
+            "--dangerously-skip-permissions",
+          ],
+        })
+        opencode.expectExit(result, 0)
+        expect(JSON.parse(result.stdout)).toEqual({ summary: "done", count: 2 })
+      }),
+    60_000,
+  )
+
+  cliIt.concurrent(
+    "--output-schema exits nonzero when the model skips structured output",
+    ({ llm, opencode }) =>
+      Effect.gen(function* () {
+        yield* llm.text("plain answer, no tool call")
+        const result = yield* opencode.run("summarize", {
+          extraArgs: [
+            "--output-schema",
+            '{"type":"object","properties":{"summary":{"type":"string"}}}',
+          ],
+        })
+        expect(result.exitCode).not.toBe(0)
+        expect(result.stderr).toContain("structured output")
+      }),
+    60_000,
+  )
+
   // Regression for #27371: an unknown model used to hang the process forever
   // waiting on a session.status === idle event that never arrived. The fix
   // makes the SDK call surface an error promptly so the process exits nonzero.
