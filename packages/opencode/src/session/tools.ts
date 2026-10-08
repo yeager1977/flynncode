@@ -167,9 +167,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               tool: item.id,
               callID: options.toolCallId ?? ctx.callID ?? "unknown",
               args: toRecord(effectiveArgs),
-              output: output.output,
+              result: output,
             })
-            const finalOutput = post.blocked ? { ...output, output: post.reason } : output
+            const finalOutput = { ...output, ...post }
             if (options.abortSignal?.aborted) {
               yield* input.processor.completeToolCall(options.toolCallId, finalOutput)
             }
@@ -259,9 +259,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               tool: MCP_RESOURCE_TOOLS.list,
               callID: opts.toolCallId,
               args: toRecord(args),
-              output: output.output,
+              result: output,
             })
-            const finalList = postList.blocked ? { ...output, output: postList.reason } : output
+            const finalList = { ...output, ...postList }
             if (opts.abortSignal?.aborted) {
               yield* input.processor.completeToolCall(opts.toolCallId, finalList)
             }
@@ -347,9 +347,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               tool: MCP_RESOURCE_TOOLS.listTemplates,
               callID: opts.toolCallId,
               args: toRecord(args),
-              output: output.output,
+              result: output,
             })
-            const finalTemplates = postTemplates.blocked ? { ...output, output: postTemplates.reason } : output
+            const finalTemplates = { ...output, ...postTemplates }
             if (opts.abortSignal?.aborted) {
               yield* input.processor.completeToolCall(opts.toolCallId, finalTemplates)
             }
@@ -434,9 +434,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               tool: MCP_RESOURCE_TOOLS.read,
               callID: opts.toolCallId,
               args: toRecord(args),
-              output: output.output,
+              result: output,
             })
-            const finalRead = postRead.blocked ? { ...output, output: postRead.reason } : output
+            const finalRead = { ...output, ...postRead }
             if (opts.abortSignal?.aborted) {
               yield* input.processor.completeToolCall(opts.toolCallId, finalRead)
             }
@@ -549,9 +549,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             tool: key,
             callID: opts.toolCallId,
             args: toRecord(effectiveMcp),
-            output: output.output,
+            result: output,
           })
-          const finalMcp = postMcp.blocked ? { ...output, output: postMcp.reason } : output
+          const finalMcp = { ...output, ...postMcp }
           if (opts.abortSignal?.aborted) {
             yield* input.processor.completeToolCall(opts.toolCallId, finalMcp)
           }

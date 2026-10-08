@@ -209,3 +209,59 @@ describe("hooks runner event fidelity", () => {
     }),
   )
 })
+
+const mutateAfterIt = testEffect(
+  HooksRunner.testLayerWithHooks([
+    {
+      "tool.execute.after": async (_input, output) => {
+        output.title = "renamed"
+        output.output = `BLOCKED: ${output.output} (redacted)`
+        output.metadata = { ...output.metadata, redacted: true }
+      },
+    },
+  ]),
+)
+
+describe("hooks runner tool.execute.after", () => {
+  mutateAfterIt.effect("plugin title/output/metadata mutations reach the tool result", () =>
+    Effect.gen(function* () {
+      const runner = yield* HooksRunner.Service
+      const result = yield* runner.runPostToolUse({
+        sessionID: "ses_1",
+        tool: "read",
+        callID: "c1",
+        args: {},
+        result: { title: "a.ts", output: "secret", metadata: { lines: 1 } },
+      })
+      expect(result).toEqual({
+        title: "renamed",
+        output: "BLOCKED: secret (redacted)",
+        metadata: { lines: 1, redacted: true },
+      })
+    }),
+  )
+})
+
+const fileBlockIt = testEffect(
+  HooksRunner.testLayerWithHooks([], {
+    runDecision: () => Effect.succeed({ behavior: "undecided" as const }),
+    runPostTool: () => Effect.succeed({ blocked: true as const, reason: "file hook blocked" }),
+    runObserve: () => Effect.succeed({}),
+  }),
+)
+
+describe("hooks runner file post block", () => {
+  fileBlockIt.effect("a file hook block replaces the output only", () =>
+    Effect.gen(function* () {
+      const runner = yield* HooksRunner.Service
+      const result = yield* runner.runPostToolUse({
+        sessionID: "ses_1",
+        tool: "read",
+        callID: "c1",
+        args: {},
+        result: { title: "a.ts", output: "secret", metadata: { lines: 1 } },
+      })
+      expect(result).toEqual({ title: "a.ts", output: "file hook blocked", metadata: { lines: 1 } })
+    }),
+  )
+})

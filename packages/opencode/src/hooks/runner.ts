@@ -14,6 +14,14 @@ export type PostToolUseOutcome =
   | { blocked: true; reason: string }
   | { blocked: false; additionalContext?: string }
 
+// The model-visible slice of a tool result that `tool.execute.after` plugins
+// may mutate in place.
+export type ToolResultView = {
+  title: string
+  output: string
+  metadata: Record<string, unknown>
+}
+
 export type SessionObserve = {
   additionalContext?: string
   systemMessage?: string
@@ -47,8 +55,8 @@ export interface RunnerInterface {
     tool: string
     callID: string
     args: Record<string, unknown>
-    output: string
-  }) => Effect.Effect<PostToolUseOutcome>
+    result: ToolResultView
+  }) => Effect.Effect<ToolResultView>
   readonly runSessionStart: (input: {
     sessionID: string
     source: "startup" | "resume" | "clear" | "compact"
@@ -227,30 +235,31 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
     tool: string
     callID: string
     args: Record<string, unknown>
-    output: string
+    result: ToolResultView
   }) {
-    const output = { title: "", output: input.output, metadata: {} }
+    // Plugins mutate this view in place; their title/output/metadata edits are
+    // the tool result the model sees. Only a file hook's block replaces it.
+    const view: ToolResultView = {
+      title: input.result.title,
+      output: input.result.output,
+      metadata: { ...input.result.metadata },
+    }
     yield* plugin.trigger(
       "tool.execute.after",
       { tool: input.tool, sessionID: input.sessionID, callID: input.callID, args: input.args },
-      output,
+      view,
     )
-    const filePost = executor
-      ? yield* executor.runPostTool({
-          tool: input.tool,
-          matchName: input.tool,
-          sessionID: input.sessionID,
-          callID: input.callID,
-          args: input.args,
-          output: input.output,
-        })
-      : undefined
-    const pluginBlocked = output.output !== input.output && output.output.startsWith("BLOCKED:")
-    if (filePost?.blocked) return filePost
-    if (pluginBlocked) return { blocked: true as const, reason: output.output }
-    const contexts = [filePost?.additionalContext].filter((part): part is string => part !== undefined)
-    if (contexts.length > 0) return { blocked: false as const, additionalContext: contexts.join("\n\n") }
-    return { blocked: false as const, additionalContext: undefined }
+    if (!executor) return view
+    const filePost = yield* executor.runPostTool({
+      tool: input.tool,
+      matchName: input.tool,
+      sessionID: input.sessionID,
+      callID: input.callID,
+      args: input.args,
+      output: view.output,
+    })
+    if (filePost.blocked) return { ...view, output: filePost.reason }
+    return view
   })
 
   const runSessionStart = Effect.fn("HooksRunner.runSessionStart")(function* (input: {
