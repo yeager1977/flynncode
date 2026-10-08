@@ -91,6 +91,7 @@ export function fromRow(row: SessionRow): Info {
     parentID: row.parent_id ?? undefined,
     title: row.title,
     agent: row.agent ?? undefined,
+    kind: row.kind === "knowledge" ? "knowledge" : "code",
     model: row.model
       ? {
           id: ModelV2.ID.make(row.model.id),
@@ -134,6 +135,7 @@ export function toRow(info: Info) {
     path: info.path,
     title: info.title,
     agent: info.agent,
+    kind: info.kind,
     model: info.model,
     version: info.version,
     share_url: info.share?.url,
@@ -241,6 +243,10 @@ export const Info = Schema.Struct({
   share: optional(Share),
   title: Schema.String,
   agent: optional(Schema.String),
+  kind: Schema.Literals(["code", "knowledge"]).pipe(
+    Schema.optional,
+    Schema.withDecodingDefault(Effect.succeed("code" as const)),
+  ),
   model: optional(Model),
   version: Schema.String,
   metadata: optional(Metadata),
@@ -268,6 +274,7 @@ export const CreateInput = Schema.optional(
     parentID: Schema.optional(SessionID),
     title: Schema.optional(Schema.String),
     agent: Schema.optional(Schema.String),
+    kind: Schema.optional(Schema.Literals(["code", "knowledge"])),
     model: Schema.optional(Model),
     metadata: Schema.optional(Metadata),
     permission: Schema.optional(PermissionV1.Ruleset),
@@ -433,6 +440,7 @@ export interface Interface {
     parentID?: SessionID
     title?: string
     agent?: string
+    kind?: "code" | "knowledge"
     model?: Schema.Schema.Type<typeof Model>
     metadata?: typeof Metadata.Type
     permission?: PermissionV1.Ruleset
@@ -532,6 +540,7 @@ const layer: Layer.Layer<
       id?: SessionID
       title?: string
       agent?: string
+      kind?: "code" | "knowledge"
       model?: Schema.Schema.Type<typeof Model>
       parentID?: SessionID
       workspaceID?: WorkspaceV2.ID
@@ -560,6 +569,7 @@ const layer: Layer.Layer<
         parentID: input.parentID,
         title: input.title ?? (input.parentID ? childTitlePrefix : parentTitlePrefix) + new Date().toISOString(),
         agent: input.agent,
+        kind: input.kind ?? "code",
         model: input.model,
         metadata: input.metadata,
         permission: input.permission ? [...input.permission] : undefined,
@@ -742,6 +752,7 @@ const layer: Layer.Layer<
       parentID?: SessionID
       title?: string
       agent?: string
+      kind?: "code" | "knowledge"
       model?: Schema.Schema.Type<typeof Model>
       metadata?: typeof Metadata.Type
       permission?: PermissionV1.Ruleset
@@ -757,6 +768,7 @@ const layer: Layer.Layer<
         path: sessionPath(ctx.worktree, ctx.directory),
         title: input?.title,
         agent: input?.agent,
+        kind: input?.kind,
         model: input?.model,
         metadata: input?.metadata,
         permission: input?.permission,
@@ -775,6 +787,7 @@ const layer: Layer.Layer<
         path: sessionPath(ctx.worktree, ctx.directory),
         workspaceID: original.workspaceID,
         title,
+        kind: original.kind,
         metadata: structuredClone(original.metadata),
         // A fork carries resumed history into a new session.
         source: "resume",

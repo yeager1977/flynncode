@@ -324,6 +324,7 @@ export function make(options: ClientOptions) {
             body: {
               id: input?.["id"],
               agent: input?.["agent"],
+              kind: input?.["kind"],
               model: input?.["model"],
               location: input?.["location"],
               additionalDirectories: input?.["additionalDirectories"],

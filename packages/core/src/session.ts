@@ -88,6 +88,7 @@ type CreateInput = {
   id?: SessionSchema.ID
   parentID?: SessionSchema.ID
   agent?: AgentV2.ID
+  kind?: SessionSchema.Kind
   model?: ModelV2.Ref
   location: Location.Ref
   metadata?: Record<string, unknown>
@@ -246,6 +247,7 @@ const layer = Layer.effect(
           parentID: input.parentID,
           metadata: input.metadata,
           agent: input.agent,
+          kind: input.kind ?? "code",
           model: input.model
             ? {
                 id: ModelV2.ID.make(input.model.id),

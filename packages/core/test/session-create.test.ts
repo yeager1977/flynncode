@@ -105,6 +105,29 @@ describe("SessionV2.create", () => {
     }),
   )
 
+  it.effect("defaults the session kind to code", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+
+      const created = yield* session.create({ location })
+
+      expect(created.kind).toBe("code")
+      expect(yield* session.get(created.id)).toMatchObject({ kind: "code" })
+    }),
+  )
+
+  it.effect("persists an explicit knowledge kind", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+
+      const created = yield* session.create({ location, kind: "knowledge" })
+
+      expect(created.kind).toBe("knowledge")
+      expect(yield* session.get(created.id)).toMatchObject({ kind: "knowledge" })
+      expect(yield* session.list()).toContainEqual(expect.objectContaining({ id: created.id, kind: "knowledge" }))
+    }),
+  )
+
   it.effect("returns the existing Session when one ID is reused with different create arguments", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service

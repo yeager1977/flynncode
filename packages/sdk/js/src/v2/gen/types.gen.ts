@@ -196,6 +196,7 @@ export type Session = {
   }
   title: string
   agent?: string
+  kind?: "code" | "knowledge"
   model?: {
     id: string
     providerID: string
@@ -2311,6 +2312,12 @@ export type Config = {
     max_lines?: number
     max_bytes?: number
   }
+  memory?: {
+    enabled?: boolean
+    min_turns?: number
+    max_files?: number
+    max_chars_per_file?: number
+  }
   compaction?: {
     auto?: boolean
     prune?: boolean
@@ -2591,6 +2598,7 @@ export type GlobalSession = {
   }
   title: string
   agent?: string
+  kind?: "code" | "knowledge"
   model?: {
     id: string
     providerID: string
@@ -3200,6 +3208,11 @@ export type SessionHistory = {
 }
 
 export type SessionDurableEventStream = string
+
+export type SessionFolders = {
+  primary: string
+  extras: Array<string>
+}
 
 export type ImportedMessage =
   | {
@@ -4348,6 +4361,7 @@ export type SessionV2Info = {
   projectID: string
   agent?: string
   model?: ModelRef
+  kind?: "code" | "knowledge"
   cost: number
   tokens: {
     input: number
@@ -10330,6 +10344,7 @@ export type SessionCreateData = {
     parentID?: string
     title?: string
     agent?: string
+    kind?: "code" | "knowledge"
     model?: {
       id: string
       providerID: string
@@ -10340,6 +10355,7 @@ export type SessionCreateData = {
     }
     permission?: PermissionRuleset
     workspaceID?: string
+    additionalDirectories?: Array<string>
     source?: "startup" | "resume" | "clear" | "compact"
   }
   path?: never
@@ -11334,6 +11350,83 @@ export type PartUpdateResponses = {
 
 export type PartUpdateResponse = PartUpdateResponses[keyof PartUpdateResponses]
 
+export type SessionFoldersData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/folders"
+}
+
+export type SessionFoldersErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionFoldersError = SessionFoldersErrors[keyof SessionFoldersErrors]
+
+export type SessionFoldersResponses = {
+  /**
+   * Attached project folders
+   */
+  200: {
+    primary: string
+    extras: Array<string>
+  }
+}
+
+export type SessionFoldersResponse = SessionFoldersResponses[keyof SessionFoldersResponses]
+
+export type SessionFoldersUpdateData = {
+  body?: {
+    extras?: Array<string>
+    primary?: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/folders"
+}
+
+export type SessionFoldersUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionFoldersUpdateError = SessionFoldersUpdateErrors[keyof SessionFoldersUpdateErrors]
+
+export type SessionFoldersUpdateResponses = {
+  /**
+   * Updated project folders
+   */
+  200: {
+    primary: string
+    extras: Array<string>
+  }
+}
+
+export type SessionFoldersUpdateResponse = SessionFoldersUpdateResponses[keyof SessionFoldersUpdateResponses]
+
 export type SyncStartData = {
   body?: never
   path?: never
@@ -12232,8 +12325,10 @@ export type V2SessionCreateData = {
   body: {
     id?: string
     agent?: string
+    kind?: "code" | "knowledge"
     model?: ModelRef
     location?: LocationRef
+    additionalDirectories?: Array<string>
   }
   path?: never
   query?: never
@@ -12842,6 +12937,78 @@ export type V2SessionMessageResponses = {
 }
 
 export type V2SessionMessageResponse = V2SessionMessageResponses[keyof V2SessionMessageResponses]
+
+export type V2SessionFoldersData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/folders"
+}
+
+export type V2SessionFoldersErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionFoldersError = V2SessionFoldersErrors[keyof V2SessionFoldersErrors]
+
+export type V2SessionFoldersResponses = {
+  /**
+   * SessionFolders
+   */
+  200: SessionFolders
+}
+
+export type V2SessionFoldersResponse = V2SessionFoldersResponses[keyof V2SessionFoldersResponses]
+
+export type V2SessionFoldersUpdateData = {
+  body: {
+    extras?: Array<string>
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/folders"
+}
+
+export type V2SessionFoldersUpdateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionFoldersUpdateError = V2SessionFoldersUpdateErrors[keyof V2SessionFoldersUpdateErrors]
+
+export type V2SessionFoldersUpdateResponses = {
+  /**
+   * SessionFolders
+   */
+  200: SessionFolders
+}
+
+export type V2SessionFoldersUpdateResponse = V2SessionFoldersUpdateResponses[keyof V2SessionFoldersUpdateResponses]
 
 export type V2ImportSessionData = {
   body: {
