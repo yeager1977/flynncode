@@ -738,6 +738,7 @@ it.instance(
       agent: {
         build: { disable: true },
         plan: { disable: true },
+        knowledge: { disable: true },
       },
     },
   },
