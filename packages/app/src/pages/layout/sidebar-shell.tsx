@@ -31,6 +31,7 @@ export const SidebarContent = (props: {
   helpLabel: Accessor<string>
   onOpenHelp: () => void
   dispatchLabel: Accessor<string>
+  dispatchUnread: Accessor<number>
   onOpenDispatch: () => void
   renderPanel: () => JSX.Element
 }): JSX.Element => {
@@ -92,15 +93,22 @@ export const SidebarContent = (props: {
           </DragDropProvider>
         </div>
         <div class="shrink-0 w-full pt-3 pb-6 flex flex-col items-center gap-2">
-          <Tooltip placement={placement()} value={props.dispatchLabel()}>
-            <IconButton
-              icon="plus"
-              variant="ghost"
-              size="large"
-              onClick={props.onOpenDispatch}
-              aria-label={props.dispatchLabel()}
-            />
-          </Tooltip>
+          <div class="relative">
+            <Tooltip placement={placement()} value={props.dispatchLabel()}>
+              <IconButton
+                icon="plus"
+                variant="ghost"
+                size="large"
+                onClick={props.onOpenDispatch}
+                aria-label={props.dispatchLabel()}
+              />
+            </Tooltip>
+            <Show when={props.dispatchUnread() > 0}>
+              <span class="pointer-events-none absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-surface-raised px-1 text-12-regular text-text-strong">
+                {props.dispatchUnread()}
+              </span>
+            </Show>
+          </div>
           <TooltipKeybind placement={placement()} title={props.settingsLabel()} keybind={props.settingsKeybind() ?? ""}>
             <IconButton
               icon="settings-gear"

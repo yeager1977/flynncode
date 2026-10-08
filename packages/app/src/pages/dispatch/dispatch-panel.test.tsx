@@ -10,31 +10,43 @@ import { readFileSync } from "node:fs"
 // stub throws before the component body runs, so the contract is pinned at
 // the source level.)
 describe("DispatchPanel", () => {
-  test("does not depend on directory-scoped contexts", () => {
+  test("delegates to the unified activity inbox panel", () => {
     const source = readFileSync(new URL("./dispatch-panel.tsx", import.meta.url), "utf8")
+    expect(source).toContain("ActivityInboxPanel")
+    expect(source).toContain("DispatchPanel")
+  })
+
+  test("does not depend on directory-scoped contexts", () => {
+    const source = readFileSync(new URL("./activity-inbox.tsx", import.meta.url), "utf8")
     expect(source).not.toContain("useSDK")
     expect(source).not.toContain("useLocal")
     expect(source).toContain("useServerSDK")
     expect(source).toContain("useModels")
   })
 
-  test("renders memoized filters and an unread badge", () => {
-    const source = readFileSync(new URL("./dispatch-panel.tsx", import.meta.url), "utf8")
+  test("renders inbox tabs and the dispatch send form", () => {
+    const source = readFileSync(new URL("./activity-inbox.tsx", import.meta.url), "utf8")
     expect(source).toContain("createMemo")
-    expect(source).toContain('"all", "unread", "running", "waiting"')
-    expect(source).toContain("dispatch.filterUnread")
-    expect(source).toContain("dispatch.filterRunning")
-    expect(source).toContain("dispatch.filterWaiting")
+    expect(source).toContain('"all", "running", "needs-input", "blocked", "done", "unread"')
+    expect(source).toContain("inbox.title")
+    expect(source).toContain("inbox.filterUnread")
+    expect(source).toContain("inbox.filterRunning")
+    expect(source).toContain("inbox.filterNeedsInput")
+    expect(source).toContain("inbox.filterBlocked")
+    expect(source).toContain("inbox.empty")
+    expect(source).toContain("dispatch.send")
     expect(source).toContain("unreadCount()")
-    expect(source).toContain("filteredTasks()")
+    expect(source).toContain("visible()")
+    expect(source).toContain('data-action="inbox-open"')
+    expect(source).toContain('data-action="inbox-mark-read"')
   })
 
-  test("marks tasks read on open and reads transition state from the activity context", () => {
-    const source = readFileSync(new URL("./dispatch-panel.tsx", import.meta.url), "utf8")
-    expect(source).toContain("markDispatchRead")
+  test("marks rows read through existing activity sources", () => {
+    const source = readFileSync(new URL("./activity-inbox.tsx", import.meta.url), "utf8")
+    expect(source).toContain("useDispatchActivity")
+    expect(source).toContain("markViewed")
     // Transition detection and OS notification moved to the persistently
     // mounted DispatchActivityProvider; the panel only renders store state.
-    expect(source).toContain("useDispatchActivity")
     expect(source).not.toContain("platform.notify")
     expect(source).not.toContain("resolvedTransition")
   })
