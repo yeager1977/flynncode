@@ -24,7 +24,7 @@ import type {
 } from "@opencode-ai/session-ui/session-review"
 import FileTreeV2 from "@/components/file-tree-v2"
 import { useLanguage } from "@/context/language"
-import { hunkApply, whenApplied } from "../hunk-apply"
+import { applyHunkSequence, hunkApply, whenApplied } from "../hunk-apply"
 import { splitPatchToHunks } from "../split-patch"
 import { useSDK } from "@/context/sdk"
 import { showToast } from "@/utils/toast"
@@ -138,13 +138,30 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
     applyHunk(hunkApply({ patch: hunk, index: "unstage" }))
   }
   const revertHunks = () => {
-    for (const hunk of hunks()) revertSingleHunk(hunk)
+    applyHunkSequenceCalls(hunks().map((hunk) => hunkApply({ patch: hunk, revert: true })))
   }
   const stageHunks = () => {
-    for (const hunk of hunks()) stageSingleHunk(hunk)
+    applyHunkSequenceCalls(hunks().map((hunk) => hunkApply({ patch: hunk, index: "stage" })))
   }
   const unstageHunks = () => {
-    for (const hunk of hunks()) unstageSingleHunk(hunk)
+    applyHunkSequenceCalls(hunks().map((hunk) => hunkApply({ patch: hunk, index: "unstage" })))
+  }
+  // File-level actions apply each hunk in order: parallel vcs.apply calls on
+  // the same file risk index.lock contention and out-of-order application, so
+  // the sequence awaits each call and refreshes once at the end.
+  const applyHunkSequenceCalls = (calls: ReturnType<typeof hunkApply>[]) => {
+    const run = async () => {
+      try {
+        await applyHunkSequence(calls, (call) => sdk().client.vcs.apply(call))
+      } catch {
+        showToast({
+          title: language.t("common.requestFailed"),
+          description: language.t("common.requestFailed"),
+        })
+      }
+      props.onApplied?.()
+    }
+    void run()
   }
 
   const readFile = async (path: string) =>
@@ -229,8 +246,8 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
             </For>
           </div>
         </Show>
-        // Key on the file path, not the diff object identity, so refreshed diff data
-        // updates the mounted preview instead of remounting the whole viewer.
+        {/* Key on the file path, not the diff object identity, so refreshed diff data
+        updates the mounted preview instead of remounting the whole viewer. */}
         <Show when={activeDiff()} keyed>
           {(file) => (
             <Show when={artifactPreviewKind(file)} fallback={
