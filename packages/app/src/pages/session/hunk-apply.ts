@@ -12,6 +12,15 @@ export function hunkApply(input: { patch: string; index?: HunkIndex; revert?: bo
   return { patch: input.patch, index: input.index }
 }
 
+export type HunkApplyCall = ReturnType<typeof hunkApply>
+
+export async function applyHunkSequence(
+  calls: readonly HunkApplyCall[],
+  apply: (call: HunkApplyCall) => Promise<unknown>,
+) {
+  for (const call of calls) await apply(call)
+}
+
 export function whenApplied<T>(pending: Promise<T>, onApplied?: () => void) {
   return pending.then((value) => {
     onApplied?.()
