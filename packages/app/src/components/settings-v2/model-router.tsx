@@ -10,6 +10,7 @@ import { useLanguage } from "@/context/language"
 import { useModels } from "@/context/models"
 import { useServerSync } from "@/context/server-sync"
 import { pathKey } from "@/utils/path-key"
+import { showToast } from "@/utils/toast"
 import {
   DEFAULT_AGENT_TASKS,
   MODEL_FAMILIES,
@@ -262,12 +263,16 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
                 checked={hasOmoPlugin(serverSync().data.config.plugin)}
                 disabled={state.saving}
                 onChange={(checked) => {
-                  void serverSync().updateConfig({
-                    plugin: setOmoPlugin(serverSync().data.config.plugin, checked) as (
-                      | string
-                      | [string, { [key: string]: unknown }]
-                    )[],
-                  })
+                  void serverSync()
+                    .updateConfig({
+                      plugin: setOmoPlugin(serverSync().data.config.plugin, checked) as (
+                        | string
+                        | [string, { [key: string]: unknown }]
+                      )[],
+                    })
+                    .catch(() =>
+                      showToast({ variant: "error", description: language.t("settings.modelRouter.omo.toggleFailed") }),
+                    )
                 }}
                 hideLabel
               >

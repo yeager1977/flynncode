@@ -1250,6 +1250,7 @@ export const dict = {
   "settings.modelRouter.global": "Global settings",
   "settings.modelRouter.unsaved": "Unsaved changes",
   "settings.modelRouter.saveFailed": "Could not save the router. Your changes are still here. Try saving again.",
+  "settings.modelRouter.omo.toggleFailed": "Could not turn Oh My OpenCode on or off. Try again.",
   "settings.modelRouter.start.title": "Start with the models you want to use",
   "settings.modelRouter.start.description": "Add models and rate their strengths, then choose what matters for each task. The router will show the best match.",
   "settings.modelRouter.chooseModels": "Choose models",
