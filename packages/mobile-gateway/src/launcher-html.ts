@@ -1,4 +1,5 @@
 import { projectLabel, relativeTime, sessionSlug, type LauncherData, type LauncherSession } from "./launcher.ts"
+import type { InboxItem } from "./inbox.ts"
 
 const RUNNING_BADGE = "running"
 const SUBAGENT_BADGE = "subagent"
@@ -28,7 +29,15 @@ function section(heading: string, rows: string[]) {
   return `<section><h2>${escapeHtml(heading)}</h2>${rows.join("")}</section>`
 }
 
-export function renderLauncher(input: { data: LauncherData; now: number; partial: boolean }) {
+function inboxRow(item: InboxItem) {
+  const href = item.directory === undefined ? undefined : `/${sessionSlug(item.directory)}/session/${encodeURIComponent(item.sessionID)}?needs-input=1`
+  const label = item.kind === "permission" ? "Approval needed" : "Question waiting"
+  const inner = `<span class="title">${escapeHtml(item.title)}</span><span class="meta">${escapeHtml(label)}</span>`
+  if (href === undefined) return `<div class="row">${inner}</div>`
+  return `<a class="row" href="${escapeHtml(href)}">${inner}</a>`
+}
+
+export function renderLauncher(input: { data: LauncherData; now: number; partial: boolean; inbox?: InboxItem[] }) {
   const running = input.data.running.length
     ? section("Running now", input.data.running.map((session) => row(session, input.now, true)))
     : `<p class="quiet">Nothing is running.</p>`
@@ -40,6 +49,10 @@ export function renderLauncher(input: { data: LauncherData; now: number; partial
     : `<p class="quiet">No recent sessions.</p>`
 
   const warning = input.partial ? `<p class="warn">Some session data is unavailable.</p>` : ""
+
+  const inbox = (input.inbox ?? []).length
+    ? section("Needs input", (input.inbox ?? []).map(inboxRow))
+    : ""
 
   return `<!doctype html>
 <html lang="en">
@@ -55,6 +68,7 @@ ${STYLE}
 <body>
 <h1>Sessions</h1>
 ${warning}
+${inbox}
 ${running}
 ${groups}
 </body>

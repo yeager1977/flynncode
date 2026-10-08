@@ -101,13 +101,16 @@ export function createGateway(input: { options: GatewayOptions }) {
     }
 
     if (isLauncherPath(request.url)) {
-      const loaded = await loadLauncher({ upstream: options.upstream, authorization })
+      const [loaded, inbox] = await Promise.all([
+        loadLauncher({ upstream: options.upstream, authorization }),
+        listNeedsInput({ upstream: options.upstream, authorization }),
+      ])
       const page =
         loaded.kind === "unreachable"
           ? renderUnreachable()
           : loaded.kind === "unauthorized"
             ? renderUnauthorized()
-            : renderLauncher({ data: loaded.data, now: Date.now(), partial: loaded.partial })
+            : renderLauncher({ data: loaded.data, now: Date.now(), partial: loaded.partial, inbox: inbox.kind === "loaded" ? inbox.items : [] })
       const response = new Response(page, {
         status: 200,
         headers: { "content-type": "text/html; charset=utf-8" },

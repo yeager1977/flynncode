@@ -137,6 +137,17 @@ describe("renderLauncher", () => {
     expect(html).toContain("safe-area-inset-bottom")
     expect(html).not.toContain("<script")
   })
+
+  test("renders needs-input section first", () => {
+    const html = renderLauncher({
+      data: { running: [], groups: [] },
+      now: 1000,
+      partial: false,
+      inbox: [{ sessionID: "ses_1", directory: "/repo/app", title: "Fix login", kind: "permission", updated: 900 }],
+    })
+    expect(html).toContain("Needs input")
+    expect(html.indexOf("Needs input")).toBeLessThan(html.indexOf("No recent sessions"))
+  })
 })
 
 describe("renderUnreachable", () => {
