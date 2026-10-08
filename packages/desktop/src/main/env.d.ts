@@ -15,5 +15,8 @@ declare module "virtual:opencode-server" {
     export const get: typeof import("../../../opencode/dist/types/src/node").Config.get
     export type Info = import("../../../opencode/dist/types/src/node").Config.Info
   }
+  export namespace InstanceRuntime {
+    export const disposeAllInstances: typeof import("../../../opencode/dist/types/src/node").InstanceRuntime.disposeAllInstances
+  }
   export const bootstrap: typeof import("../../../opencode/dist/types/src/node").bootstrap
 }

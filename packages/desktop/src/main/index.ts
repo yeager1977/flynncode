@@ -228,9 +228,14 @@ const main = Effect.gen(function* () {
     emitDeepLinks([url])
   })
 
-  app.on("before-quit", () => {
+  app.on("before-quit", (event) => {
     setAppQuitting()
-    void stopSidecars()
+    // Electron does not await async listeners, so hold the quit until the sidecar has
+    // disposed its children. Paths that already stopped it (signals, relaunch, updater)
+    // find no server and quit straight through.
+    if (!server) return
+    event.preventDefault()
+    void stopSidecars().finally(() => app.quit())
   })
 
   app.on("will-quit", () => {
