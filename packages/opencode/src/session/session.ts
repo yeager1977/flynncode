@@ -39,9 +39,9 @@ import { SessionID, MessageID, PartID } from "./schema"
 import type { Provider } from "@/provider/provider"
 import { Global } from "@opencode-ai/core/global"
 import { Effect, Layer, Option, Context, Schema, Types } from "effect"
-import { NonNegativeInt, optional, AbsolutePath } from "@opencode-ai/core/schema"
+import { NonNegativeInt, optional } from "@opencode-ai/core/schema"
 import { normalizeFolders, MaxExtras } from "@opencode-ai/core/project/folders"
-import { ProjectDirectories } from "@opencode-ai/core/project/directories"
+import { SessionFolders } from "@opencode-ai/core/session/folders"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
@@ -448,7 +448,10 @@ export interface Interface {
     additionalDirectories?: string[]
     source?: "startup" | "resume" | "clear" | "compact"
   }) => Effect.Effect<Info, MultifoldError>
-  readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info, NotFound | MultifoldError>
+  readonly fork: (input: {
+    sessionID: SessionID
+    messageID?: MessageID
+  }) => Effect.Effect<Info, NotFound | MultifoldError>
   readonly touch: (sessionID: SessionID) => Effect.Effect<void>
   readonly get: (id: SessionID) => Effect.Effect<Info, NotFound>
   readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
@@ -513,7 +516,12 @@ export type Patch = Omit<Partial<Info>, "time" | "share" | "summary" | "revert" 
 const layer: Layer.Layer<
   Service,
   never,
-  BackgroundJob.Service | RuntimeFlags.Service | Database.Service | EventV2Bridge.Service | FSUtil.Service | ProjectDirectories.Service
+  | BackgroundJob.Service
+  | RuntimeFlags.Service
+  | Database.Service
+  | EventV2Bridge.Service
+  | FSUtil.Service
+  | SessionFolders.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -523,14 +531,13 @@ const layer: Layer.Layer<
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
     const fs = yield* FSUtil.Service
-    const projectDirectories = yield* ProjectDirectories.Service
+    const sessionFolders = yield* SessionFolders.Service
 
     const requireExtras = Effect.fn("Session.requireExtras")(function* (directory: string, raw?: string[]) {
       const extras = normalizeFolders(directory, raw ?? [])
       if (extras.length > MaxExtras) return yield* new MultifoldError({ reason: "limit" })
       for (const extra of extras) {
-        if (yield* fs.exists(extra).pipe(Effect.orElseSucceed(() => false)))
-          continue
+        if (yield* fs.exists(extra).pipe(Effect.orElseSucceed(() => false))) continue
         return yield* new MultifoldError({ reason: "missing", path: extra })
       }
       return extras
@@ -594,9 +601,9 @@ const layer: Layer.Layer<
         )
       }
 
-      for (const extra of extras) {
-        yield* projectDirectories
-          .create({ directory: AbsolutePath.make(extra), projectID: result.projectID })
+      if (extras.length > 0) {
+        yield* sessionFolders
+          .replace(result.id, extras)
           .pipe(
             Effect.catchCause((cause) =>
               Effect.logWarning("session extra directory persistence failed", { sessionID: result.id, cause }),
@@ -1111,7 +1118,7 @@ function listByProject(
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [BackgroundJob.node, RuntimeFlags.node, Database.node, EventV2Bridge.node, FSUtil.node, ProjectDirectories.node],
+  deps: [BackgroundJob.node, RuntimeFlags.node, Database.node, EventV2Bridge.node, FSUtil.node, SessionFolders.node],
 })
 
 export * as Session from "./session"

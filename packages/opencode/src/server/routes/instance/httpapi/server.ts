@@ -29,6 +29,7 @@ import { Permission } from "@/permission"
 import { Plugin } from "@/plugin"
 import { PluginPtyEnvironment } from "@/plugin/pty-environment"
 import { InstanceStore } from "@/project/instance-store"
+import { SessionFolders } from "@opencode-ai/core/session/folders"
 import { Project } from "@/project/project"
 import { Vcs } from "@/project/vcs"
 import { ProviderAuth } from "@/provider/auth"
@@ -282,11 +283,13 @@ const app = LayerNode.group([
   ShareNext.node,
   SessionShare.node,
   InstanceStore.node,
+  InstanceStore.foldersNode,
   httpClient,
   EventV2.node,
   ProjectV2.node,
   ProjectCopy.node,
   ProjectDirectories.node,
+  SessionFolders.node,
   PtyTicket.node,
 ])
 
