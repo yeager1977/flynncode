@@ -67,6 +67,11 @@ function isolatedEnv(home: string, configJson: string): Record<string, string> {
     XDG_DATA_HOME: path.join(home, ".local/share"),
     XDG_STATE_HOME: path.join(home, ".local/state"),
     XDG_CACHE_HOME: path.join(home, ".cache"),
+    // The test runner's preload sets OPENCODE_DB=:memory:, which children
+    // would otherwise inherit (killing cross-process session resume). Point
+    // children at a home-scoped file instead: isolated per test, shared
+    // across that test's subprocess runs so --session resume works.
+    OPENCODE_DB: path.join(home, "opencode-test.db"),
     OPENCODE_CONFIG_CONTENT: configJson,
     OPENCODE_DISABLE_PROJECT_CONFIG: "1",
     OPENCODE_PURE: "1",

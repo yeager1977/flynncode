@@ -151,7 +151,7 @@ export const RunCommand = effectCmd({
       })
       .option("session", {
         alias: ["s"],
-        describe: "session id to continue",
+        describe: "session id to continue (pair with --json session_start for two-stage pipelines)",
         type: "string",
       })
       .option("fork", {
@@ -863,6 +863,7 @@ export const RunCommand = effectCmd({
         const agent = await pickAgent(client)
 
         if (format === "json") emit("session_start", {})
+        if (format !== "json") UI.println(UI.Style.TEXT_DIM + `Session: ${sessionID}` + UI.Style.TEXT_NORMAL)
         await share(client, sessionID)
 
         if (!interactive) {

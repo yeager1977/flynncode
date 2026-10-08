@@ -139,6 +139,28 @@ describe("opencode run (non-interactive subprocess)", () => {
     60_000,
   )
 
+  cliIt.concurrent(
+    "two-stage pipeline resumes by session id from the first run",
+    ({ llm, opencode }) =>
+      Effect.gen(function* () {
+        yield* llm.text("stage one done")
+        const first = yield* opencode.run("stage one", { json: true })
+        opencode.expectExit(first, 0)
+        const events = opencode.parseJsonEvents(first.stdout)
+        const sessionID = events.find((event) => event.type === "session_start")?.sessionID
+        expect(typeof sessionID).toBe("string")
+
+        yield* llm.text("stage two done")
+        const second = yield* opencode.run("stage two", {
+          extraArgs: ["--session", sessionID as string],
+        })
+        opencode.expectExit(second, 0)
+        expect(second.stdout).toBe("stage two done\n")
+        expect(second.stderr).toContain(`Session: ${sessionID}`)
+      }),
+    90_000,
+  )
+
   // Regression for #27371: an unknown model used to hang the process forever
   // waiting on a session.status === idle event that never arrived. The fix
   // makes the SDK call surface an error promptly so the process exits nonzero.
