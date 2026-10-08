@@ -8,8 +8,15 @@ export type RoutineRunSummary = {
   error?: string
 }
 
+export type TriggerGithub = {
+  owner: string
+  repo: string
+  event: "pr" | "issue"
+}
+
 export type RoutineTrigger = {
   files?: string[]
+  github?: TriggerGithub
 }
 
 export type Routine = {
@@ -160,9 +167,16 @@ function readTrigger(trigger: unknown, index: number, errors: string[]) {
   }
   const row = trigger as Record<string, unknown>
   const files = readTriggerFiles(row.files, index, errors)
+  const github = readTriggerGithub(row.github, index, errors)
   if (errors.some((error) => error.startsWith(`routines.${index}.trigger`))) return undefined
-  if (!files) return undefined
-  return { files }
+  if (!files && !github) {
+    errors.push(`routines.${index}.trigger must set files or github`)
+    return undefined
+  }
+  const out: RoutineTrigger = {}
+  if (files) out.files = files
+  if (github) out.github = github
+  return out
 }
 
 function readTriggerFiles(files: unknown, index: number, errors: string[]) {
@@ -178,6 +192,26 @@ function readTriggerFiles(files: unknown, index: number, errors: string[]) {
     }
   }
   return files as string[]
+}
+
+function readTriggerGithub(github: unknown, index: number, errors: string[]) {
+  if (github === undefined) return undefined
+  if (!github || typeof github !== "object" || Array.isArray(github)) {
+    errors.push(`routines.${index}.trigger.github must be an object`)
+    return undefined
+  }
+  const row = github as Record<string, unknown>
+  if (
+    typeof row.owner !== "string" ||
+    row.owner.trim() === "" ||
+    typeof row.repo !== "string" ||
+    row.repo.trim() === "" ||
+    (row.event !== "pr" && row.event !== "issue")
+  ) {
+    errors.push(`routines.${index}.trigger.github must set owner, repo, and event ("pr" or "issue")`)
+    return undefined
+  }
+  return { owner: row.owner, repo: row.repo, event: row.event as "pr" | "issue" }
 }
 
 function readRecentRuns(recentRuns: unknown) {

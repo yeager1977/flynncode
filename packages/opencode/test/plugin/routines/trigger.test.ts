@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import path from "path"
 import { tmpdir } from "../../fixture/fixture"
+import { parseRoutines } from "../../../src/plugin/routines/parse"
 import { triggerDue } from "../../../src/plugin/routines/trigger"
 
 describe("triggerDue", () => {
@@ -33,5 +34,16 @@ describe("triggerDue", () => {
   test("no trigger means not due", async () => {
     await using tmp = await tmpdir()
     expect(await triggerDue({ id: "w", name: "W", prompt: "go", enabled: true }, tmp.path)).toBe(false)
+  })
+
+  test("github trigger requires owner, repo, and event", () => {
+    const bad = parseRoutines({
+      routines: [{ id: "g", name: "G", prompt: "go", trigger: { github: { owner: "o" } } }],
+    })
+    expect(bad.ok).toBe(false)
+    const good = parseRoutines({
+      routines: [{ id: "g", name: "G", prompt: "go", trigger: { github: { owner: "o", repo: "r", event: "pr" } } }],
+    })
+    expect(good.ok).toBe(true)
   })
 })

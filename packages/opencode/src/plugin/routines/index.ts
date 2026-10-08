@@ -6,7 +6,7 @@ import { applyEdits, modify, parse } from "jsonc-parser"
 import type { Hooks, PluginInput } from "@opencode-ai/plugin"
 import { dueRoutines } from "./due"
 import { parseRoutines, type Routine, type RoutineRunSummary } from "./parse"
-import { triggerDue } from "./trigger"
+import { githubDue, triggerDue } from "./trigger"
 
 // Mirrors globalConfigFile() precedence so we patch the file OpenCode loads.
 const CONFIG_CANDIDATES = ["opencode.jsonc", "opencode.json", "config.json"]
@@ -183,11 +183,15 @@ export function startScheduler(client: Client, directory: string) {
       const loaded = await loadRoutines()
       const due = dueRoutines(loaded.routines, new Date())
       const dueIDs = new Set(due.map((routine) => routine.id))
+      const token = process.env.GITHUB_TOKEN
       const polled = await Promise.all(
         loaded.routines.map(async (routine) => {
           if (dueIDs.has(routine.id)) return undefined
-          const fired = await triggerDue(routine, directory).catch(() => false)
-          return fired ? routine : undefined
+          const fileFired = await triggerDue(routine, directory).catch(() => false)
+          if (fileFired) return routine
+          if (!routine.trigger?.github) return undefined
+          const githubFired = await githubDue(routine, token).catch(() => false)
+          return githubFired ? routine : undefined
         }),
       )
       for (const routine of polled) {
