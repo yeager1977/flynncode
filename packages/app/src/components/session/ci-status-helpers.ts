@@ -19,7 +19,6 @@ export type PrStatusPayload = {
 }
 
 export const FAILED_STATES: ReadonlySet<CheckState> = new Set(["FAILURE", "ERROR", "CANCELLED"])
-export const GH_DOCS_URL = "https://cli.github.com/"
 
 // Summary line for the collapsed strip: worst state wins (failure > running
 // > everything else), matching how developers glance at CI.
