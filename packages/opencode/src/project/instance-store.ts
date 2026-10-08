@@ -15,6 +15,7 @@ export interface LoadInput {
   directory: string
   worktree?: string
   project?: Project.Info
+  additionalDirectories?: string[]
 }
 
 export interface Interface {
@@ -51,12 +52,14 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
                 directory: input.directory,
                 worktree: input.worktree,
                 project: input.project,
+                additionalDirectories: input.additionalDirectories ?? [],
               }
             : yield* project.fromDirectory(input.directory).pipe(
                 Effect.map((result) => ({
                   directory: input.directory,
                   worktree: result.sandbox,
                   project: result.project,
+                  additionalDirectories: input.additionalDirectories ?? [],
                 })),
               )
         yield* bootstrap.run.pipe(Effect.provideService(InstanceRef, ctx))
