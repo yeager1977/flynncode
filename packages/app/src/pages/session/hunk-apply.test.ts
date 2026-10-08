@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { hunkApply, reviewIndexActions, whenApplied } from "./hunk-apply"
+import { applyHunkSequence, hunkApply, reviewIndexActions, whenApplied } from "./hunk-apply"
+import { splitPatchToHunks } from "./split-patch"
 
 describe("reviewIndexActions", () => {
   test("shows stage and unstage only for the unstaged git scope", () => {
@@ -45,5 +46,63 @@ describe("whenApplied", () => {
       notified = true
     })).rejects.toThrow("not-clean")
     expect(notified).toBe(false)
+  })
+})
+
+describe("per-hunk apply wiring", () => {
+  test("each split hunk round-trips through hunkApply without a message revert", () => {
+    const patch = [
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -1 +1 @@",
+      "-a",
+      "+b",
+      "@@ -10 +10 @@",
+      "-c",
+      "+d",
+    ].join("\n")
+    const hunks = splitPatchToHunks(patch)
+    expect(hunks.length).toBe(2)
+    for (const hunk of hunks) {
+      const call = hunkApply({ patch: hunk, index: "stage" })
+      expect(call).toEqual({ patch: hunk, index: "stage" })
+      expect(JSON.stringify(call)).not.toContain("session.revert")
+    }
+  })
+})
+
+describe("applyHunkSequence", () => {
+  test("stages then reverts two hunks of one file in order without overlapping applies", async () => {
+    const hunks = splitPatchToHunks(
+      ["--- a/src/a.ts", "+++ b/src/a.ts", "@@ -1 +1 @@", "-a", "+b", "@@ -10 +10 @@", "-c", "+d"].join("\n"),
+    )
+    expect(hunks.length).toBe(2)
+    const calls = [
+      hunkApply({ patch: hunks[0] ?? "", index: "stage" }),
+      hunkApply({ patch: hunks[1] ?? "", revert: true }),
+    ]
+    const started: string[] = []
+    const finished: string[] = []
+    let releaseFirst!: () => void
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    let applyCount = 0
+    const pending = applyHunkSequence(calls, async (call) => {
+      applyCount += 1
+      started.push(call.patch)
+      if (applyCount === 1) await firstGate
+      finished.push(call.patch)
+    })
+    // The first apply is gated: a parallel implementation would already have
+    // started the second apply by now.
+    expect(started).toHaveLength(1)
+    releaseFirst()
+    await pending
+    expect(started).toEqual([calls[0]?.patch, calls[1]?.patch])
+    expect(finished).toEqual([calls[0]?.patch, calls[1]?.patch])
+    expect(calls[0]).toEqual({ patch: hunks[0], index: "stage" })
+    expect(calls[1]?.patch).toContain("-d")
+    expect(calls[1]).not.toHaveProperty("index")
   })
 })

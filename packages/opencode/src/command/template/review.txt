@@ -25,6 +25,11 @@ Based on the input provided, determine which type of review to perform:
    - Run: `gh pr view $ARGUMENTS` to get PR context
    - Run: `gh pr diff $ARGUMENTS` to get the diff
 
+Preset shapes (the caller passes one of these as $ARGUMENTS):
+- uncommitted: empty input, review `git diff` plus `git diff --cached` plus untracked files
+- base-branch: a branch name, review `git diff <branch>...HEAD`
+- commit: a commit hash, review `git show <hash>`
+
 Use best judgement when processing input.
 
 ---
