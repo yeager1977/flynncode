@@ -65,14 +65,16 @@ export function SessionPermissionDock(props: {
               <Button variant="ghost" size="normal" onClick={() => props.onDecide("reject")} disabled={props.responding}>
                 {language.t("ui.permission.deny")}
               </Button>
-              <Button
-                variant="secondary"
-                size="normal"
-                onClick={() => props.onDecide("always")}
-                disabled={props.responding}
-              >
-                {language.t("ui.permission.allowAlways")}
-              </Button>
+              <Show when={props.request.permission !== "computer_use"}>
+                <Button
+                  variant="secondary"
+                  size="normal"
+                  onClick={() => props.onDecide("always")}
+                  disabled={props.responding}
+                >
+                  {language.t("ui.permission.allowAlways")}
+                </Button>
+              </Show>
               <Button variant="primary" size="normal" onClick={() => props.onDecide("once")} disabled={props.responding}>
                 {language.t("ui.permission.allowOnce")}
               </Button>
@@ -130,6 +132,38 @@ export function SessionPermissionDock(props: {
         <div data-slot="permission-row">
           <span data-slot="permission-spacer" aria-hidden="true" />
           <div data-slot="permission-hint">{language.t("approval.reviewerApproved.note")}</div>
+        </div>
+      </Show>
+
+      <Show when={props.request.permission === "computer_use"}>
+        <div data-slot="permission-row">
+          <span data-slot="permission-spacer" aria-hidden="true" />
+          <div data-slot="permission-hint">{language.t("computerUse.consent.title")}</div>
+        </div>
+        <div data-slot="permission-row">
+          <span data-slot="permission-spacer" aria-hidden="true" />
+          <div data-slot="permission-hint">{language.t("computerUse.consent.note")}</div>
+        </div>
+        <div data-slot="permission-row">
+          <span data-slot="permission-spacer" aria-hidden="true" />
+          <div data-slot="permission-footer-actions">
+            <Button
+              variant="ghost"
+              size="normal"
+              onClick={() => props.onDecide("reject")}
+              disabled={props.responding}
+            >
+              {language.t("computerUse.consent.deny")}
+            </Button>
+            <Button
+              variant="primary"
+              size="normal"
+              onClick={() => props.onDecide("once")}
+              disabled={props.responding}
+            >
+              {language.t("computerUse.consent.allowOnce")}
+            </Button>
+          </div>
         </div>
       </Show>
     </DockPrompt>
