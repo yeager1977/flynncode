@@ -1,16 +1,17 @@
 /** @jsxImportSource @opentui/solid */
-import type { ScrollBoxRenderable } from "@opentui/core"
+import type { ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
 import { useKeyboard } from "@opentui/solid"
+import { OPENCODE_BASE_MODE, useBindings } from "@opencode-ai/tui/keymap"
 import { registerOpencodeSpinner } from "@opencode-ai/tui/component/register-spinner"
 import { Show, createMemo, indexArray } from "solid-js"
 import { SPINNER_FRAMES } from "@opencode-ai/tui/component/spinner"
 import { RunEntryContent, separatorRows } from "./scrollback.writer"
-import type { FooterSubagentDetail, FooterSubagentTab, RunDiffStyle } from "./types"
+import type { FooterSubagentDetail, FooterSubagentTab, RunDiffStyle, RunTuiConfig } from "./types"
 import type { RunFooterTheme, RunTheme } from "./theme"
 
 registerOpencodeSpinner()
 
-export const SUBAGENT_INSPECTOR_ROWS = 14
+export const SUBAGENT_INSPECTOR_ROWS = 16
 
 function statusColor(theme: RunFooterTheme, status: FooterSubagentTab["status"]) {
   if (status === "completed") {
@@ -53,8 +54,12 @@ export function RunFooterSubagentBody(props: {
   detail: () => FooterSubagentDetail | undefined
   width: () => number
   diffStyle?: RunDiffStyle
+  tuiConfig: RunTuiConfig
+  interruptHint?: () => string | undefined
   onCycle: (dir: -1 | 1) => void
   onClose: () => void
+  onStop?: (sessionID: string) => void
+  onSteer?: (sessionID: string, text: string) => void
 }) {
   const theme = createMemo(() => props.theme())
   const footer = createMemo(() => theme().footer)
@@ -90,6 +95,40 @@ export function RunFooterSubagentBody(props: {
     </box>
   ))
   let scroll: ScrollBoxRenderable | undefined
+  let steer: TextareaRenderable | undefined
+
+  const running = createMemo(() => tab()?.status === "running")
+
+  // Reuses the existing session.interrupt binding while the inspector owns a
+  // running child. The composer's binding is disabled on this route, so only
+  // one handler answers. No new keybind names.
+  useBindings(() => ({
+    mode: OPENCODE_BASE_MODE,
+    enabled: props.active() && running() && props.onStop !== undefined,
+    commands: [
+      {
+        name: "session.interrupt",
+        title: "Interrupt subagent",
+        category: "Session",
+        run() {
+          const id = tab()?.sessionID
+          if (!id) return false
+          props.onStop?.(id)
+          return true
+        },
+      },
+    ],
+    bindings: props.tuiConfig.keybinds.get("session.interrupt"),
+  }))
+
+  const submitSteer = () => {
+    const id = tab()?.sessionID
+    if (!id || !steer || steer.isDestroyed) return
+    const text = steer.plainText.trim()
+    if (!text) return
+    props.onSteer?.(id, text)
+    steer.setText("")
+  }
 
   useKeyboard((event) => {
     if (!props.active()) {
@@ -146,8 +185,41 @@ export function RunFooterSubagentBody(props: {
                   {props.index()} of {props.total()}
                 </text>
               </Show>
+              <Show when={current().status === "running" && props.onStop && props.interruptHint?.()}>
+                <text fg={footer().muted} wrapMode="none" truncate flexShrink={0}>
+                  {props.interruptHint?.()} stop
+                </text>
+              </Show>
             </box>
           )}
+        </Show>
+        <Show when={running() && props.onSteer}>
+          <box width="100%" flexShrink={0} paddingBottom={1}>
+            <textarea
+              width="100%"
+              minHeight={1}
+              maxHeight={1}
+              wrapMode="none"
+              placeholder="Steer this subagent..."
+              placeholderColor={footer().muted}
+              textColor={footer().text}
+              focusedTextColor={footer().text}
+              backgroundColor={footer().surface}
+              focusedBackgroundColor={footer().surface}
+              cursorColor={footer().text}
+              focused={props.active()}
+              onSubmit={submitSteer}
+              onKeyDown={(event) => {
+                if (event.name === "escape") {
+                  event.preventDefault()
+                  props.onClose()
+                }
+              }}
+              ref={(item) => {
+                steer = item
+              }}
+            />
+          </box>
         </Show>
         <scrollbox
           width="100%"
