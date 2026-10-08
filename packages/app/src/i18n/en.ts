@@ -1190,6 +1190,7 @@ export const dict = {
   "settings.omo.restart": "Quit and restart. A model already selected in the picker still wins until the next session.",
   "settings.omo.unsaved": "Unsaved changes",
   "settings.omo.parseError": "This config file could not be read, so it was not changed.",
+  "settings.omo.loadFailed": "Could not load these settings, so saving is turned off: {{error}}",
   "settings.omo.saveFailed": "Could not save {{path}}. The plugin file may already be saved, so a banned provider can still appear in the picker.",
   "settings.modelRouter.title": "Model Router",
   "settings.modelRouter.description": "Route agents to the best Ollama model for each kind of task.",
