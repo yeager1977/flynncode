@@ -161,6 +161,25 @@ describe("opencode run (non-interactive subprocess)", () => {
     90_000,
   )
 
+  cliIt.concurrent(
+    "json mode error path keeps stdout to a single error record and exits nonzero",
+    ({ opencode }) =>
+      Effect.gen(function* () {
+        const result = yield* opencode.run("use an unknown model", {
+          model: "test/nonexistent-model",
+          json: true,
+        })
+        expect(result.exitCode).not.toBe(0)
+        const events = opencode.parseJsonEvents(result.stdout)
+        expect(events.map((event) => event.type)).toEqual(["session_start", "error", "session_end"])
+        expect(events.at(-1)).toEqual(
+          expect.objectContaining({ type: "session_end", exitCode: expect.any(Number) }),
+        )
+        expect((events.at(-1) as { exitCode: number }).exitCode).not.toBe(0)
+      }),
+    30_000,
+  )
+
   // Regression for #27371: an unknown model used to hang the process forever
   // waiting on a session.status === idle event that never arrived. The fix
   // makes the SDK call surface an error promptly so the process exits nonzero.

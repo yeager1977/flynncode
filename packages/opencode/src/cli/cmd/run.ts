@@ -125,7 +125,7 @@ async function toolError(part: ToolPart) {
 
 export const RunCommand = effectCmd({
   command: "run [message..]",
-  describe: "run opencode with a message",
+  describe: "run a single non-interactive prompt (exit 0 on completion; stdout carries only the final answer)",
   // --attach connects to a remote server (no local instance needed); the
   // default path runs an in-process server and needs the project instance.
   instance: (args) => !args.attach,
@@ -175,7 +175,7 @@ export const RunCommand = effectCmd({
         type: "string",
         choices: ["default", "json"],
         default: "default",
-        describe: "format: default (formatted) or json (raw JSON events)",
+        describe: "format: default (final text on stdout, progress on stderr) or json (JSONL events framed by session_start/session_end)",
       })
       .option("json", {
         type: "boolean",
@@ -184,7 +184,7 @@ export const RunCommand = effectCmd({
       })
       .option("output-schema", {
         type: "string",
-        describe: "JSON schema (inline JSON or @path/to/schema.json) for structured output",
+        describe: 'JSON schema (inline JSON or @path/to/schema.json) for structured output (CI: opencode run --json --output-schema schema.json "prompt" | jq)',
       })
       .option("file", {
         alias: ["f"],
@@ -869,7 +869,7 @@ export const RunCommand = effectCmd({
         if (!interactive) {
           const events = await client.event.subscribe()
           const completed = loop(client, events).catch((e) => {
-            console.error(e)
+            UI.error(e instanceof Error ? e.message : String(e))
             process.exitCode = 1
           })
           async function finish() {
