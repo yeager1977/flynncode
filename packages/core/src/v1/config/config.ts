@@ -5,6 +5,7 @@ import { NonNegativeInt, PositiveInt, type DeepMutable } from "../../schema"
 import { ConfigExperimental } from "../../config/experimental"
 import { ConfigReference } from "../../config/reference"
 import { ConfigAgentV1 } from "./agent"
+import { ConfigMemoryV1 } from "./memory"
 import { ConfigAttachmentV1 } from "./attachment"
 import { ConfigCommandV1 } from "./command"
 import { ConfigFormatterV1 } from "./formatter"
@@ -182,6 +183,9 @@ export const Info = Schema.Struct({
   ).annotate({
     description:
       "Thresholds for truncating tool output. When output exceeds either limit, the full text is written to the truncation directory and a preview is returned.",
+  }),
+  memory: Schema.optional(ConfigMemoryV1.Info).annotate({
+    description: "On-disk opt-in agent memories. Disabled by default and never synced.",
   }),
   compaction: Schema.optional(
     Schema.Struct({
