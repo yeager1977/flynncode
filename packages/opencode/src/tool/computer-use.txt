@@ -1,0 +1,1 @@
+Local GUI fallback after the browser pane. Disabled by default; requires per-app allowlist plus per-action approval. Never background operation.

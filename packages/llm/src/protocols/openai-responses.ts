@@ -548,6 +548,9 @@ const HOSTED_TOOLS = {
     name: "code_interpreter",
     input: (item) => ({ code: item.code, container_id: item.container_id }),
   },
+  // Hosted computer_use_call stays provider-executed and never maps to the
+  // local pane-scoped actuator from WS17; local execution uses the
+  // client-executed `computer_use` tool behind per-action consent.
   computer_use_call: { name: "computer_use", input: (item) => item.action ?? {} },
   image_generation_call: { name: "image_generation", input: () => ({}) },
   mcp_call: {

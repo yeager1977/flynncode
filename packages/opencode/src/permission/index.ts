@@ -107,8 +107,10 @@ const layer = Layer.effect(
       if (!needsAsk) return
 
       const AUTO_EDIT_PERMISSIONS = ["edit", "read", "glob", "grep", "list"]
-      if (approval === "auto") return
-      if (approval === "accept-edits" && AUTO_EDIT_PERMISSIONS.includes(request.permission)) return
+      if (request.permission !== "computer_use") {
+        if (approval === "auto") return
+        if (approval === "accept-edits" && AUTO_EDIT_PERMISSIONS.includes(request.permission)) return
+      }
 
       const id = request.id ?? PermissionV1.ID.ascending()
       const info: PermissionV1.Request = {

@@ -3,6 +3,7 @@
 const AUTO_ALLOW = ["read", "glob", "grep", "list"]
 
 export function review(input: { permission: string; patterns: readonly string[] }): "allow" | "defer" {
+  if (input.permission === "computer_use") return "defer"
   if (AUTO_ALLOW.includes(input.permission)) return "allow"
   return "defer"
 }
