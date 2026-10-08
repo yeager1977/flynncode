@@ -1802,8 +1802,6 @@ export const dict = {
   "computerUse.allowlist.remove": "Remove",
   "computerUse.allowlist.empty": "No apps allowed yet.",
   "computerUse.consent.title": "Allow this GUI action?",
-  "computerUse.consent.allowOnce": "Allow once",
-  "computerUse.consent.deny": "Deny",
   "computerUse.consent.note": "Flynncode never approves its own GUI actions.",
   "computerUse.stop": "Stop computer use",
   "computerUse.screenshot": "Screenshot",
