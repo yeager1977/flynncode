@@ -52,12 +52,173 @@ describe("opencode run (non-interactive subprocess)", () => {
         yield* llm.reason("  considering  ", { text: "  answer  " })
         const thinking = yield* opencode.run("think", { extraArgs: ["--thinking"] })
         opencode.expectExit(thinking, 0)
-        expect(thinking.stdout).toBe("Thinking: considering\nanswer\n")
+        expect(thinking.stdout).toBe("answer\n")
+        expect(thinking.stderr).toContain("Thinking: considering")
 
         yield* llm.reason("hidden", { text: "visible" })
         const plain = yield* opencode.run("think again")
         opencode.expectExit(plain, 0)
         expect(plain.stdout).toBe("visible\n")
+      }),
+    60_000,
+  )
+
+  cliIt.concurrent(
+    "default mode keeps stdout to final text only (reasoning goes to stderr)",
+    ({ llm, opencode }) =>
+      Effect.gen(function* () {
+        yield* llm.reason("  private chain  ", { text: "  public answer  " })
+        const result = yield* opencode.run("think out loud", { extraArgs: ["--thinking"] })
+        opencode.expectExit(result, 0)
+        expect(result.stdout).toBe("public answer\n")
+        expect(result.stderr).toContain("Thinking: private chain")
+      }),
+    60_000,
+  )
+
+  cliIt.concurrent(
+    "--json is shorthand for --format json with session envelope events",
+    ({ llm, opencode }) =>
+      Effect.gen(function* () {
+        yield* llm.text("enveloped")
+        const result = yield* opencode.run("say hi", { json: true })
+        opencode.expectExit(result, 0)
+        const events = opencode.parseJsonEvents(result.stdout)
+        expect(events[0]?.type).toBe("session_start")
+        expect(events.at(-1)?.type).toBe("session_end")
+        expect(events[0]?.sessionID).toBe(events.at(-1)?.sessionID)
+        expect(events.map((event) => event.type)).toEqual([
+          "session_start",
+          "step_start",
+          "text",
+          "step_finish",
+          "session_end",
+        ])
+        expect(
+          result.stdout
+            .split("\n")
+            .slice(0, -1)
+            .every((line) => line.startsWith("{")),
+        ).toBe(true)
+      }),
+    60_000,
+  )
+
+  cliIt.concurrent(
+    "--output-schema prints structured JSON to stdout in default mode",
+    ({ llm, opencode }) =>
+      Effect.gen(function* () {
+        yield* llm.push(reply().tool("StructuredOutput", { summary: "done", count: 2 }))
+        const result = yield* opencode.run("summarize", {
+          extraArgs: [
+            "--output-schema",
+            '{"type":"object","properties":{"summary":{"type":"string"},"count":{"type":"number"}},"required":["summary","count"]}',
+            "--dangerously-skip-permissions",
+          ],
+        })
+        opencode.expectExit(result, 0)
+        expect(JSON.parse(result.stdout)).toEqual({ summary: "done", count: 2 })
+      }),
+    60_000,
+  )
+
+  cliIt.concurrent(
+    "--output-schema exits nonzero when the model skips structured output",
+    ({ llm, opencode }) =>
+      Effect.gen(function* () {
+        yield* llm.text("plain answer, no tool call")
+        const result = yield* opencode.run("summarize", {
+          extraArgs: [
+            "--output-schema",
+            '{"type":"object","properties":{"summary":{"type":"string"}}}',
+          ],
+        })
+        expect(result.exitCode).not.toBe(0)
+        expect(result.stderr).toContain("structured output")
+      }),
+    60_000,
+  )
+
+  cliIt.concurrent(
+    "two-stage pipeline resumes by session id from the first run",
+    ({ llm, opencode }) =>
+      Effect.gen(function* () {
+        yield* llm.text("stage one done")
+        const first = yield* opencode.run("stage one", { json: true })
+        opencode.expectExit(first, 0)
+        const events = opencode.parseJsonEvents(first.stdout)
+        const sessionID = events.find((event) => event.type === "session_start")?.sessionID
+        expect(typeof sessionID).toBe("string")
+
+        yield* llm.text("stage two done")
+        const second = yield* opencode.run("stage two", {
+          extraArgs: ["--session", sessionID as string],
+        })
+        opencode.expectExit(second, 0)
+        expect(second.stdout).toBe("stage two done\n")
+        expect(second.stderr).toContain(`Session: ${sessionID}`)
+      }),
+    90_000,
+  )
+
+  cliIt.concurrent(
+    "json mode error path keeps stdout to a single error record and exits nonzero",
+    ({ opencode }) =>
+      Effect.gen(function* () {
+        const result = yield* opencode.run("use an unknown model", {
+          model: "test/nonexistent-model",
+          json: true,
+        })
+        expect(result.exitCode).not.toBe(0)
+        const events = opencode.parseJsonEvents(result.stdout)
+        expect(events.map((event) => event.type)).toEqual(["session_start", "error", "session_end"])
+        expect(events.at(-1)).toEqual(
+          expect.objectContaining({ type: "session_end", exitCode: expect.any(Number) }),
+        )
+        expect((events.at(-1) as { exitCode: number }).exitCode).not.toBe(0)
+      }),
+    30_000,
+  )
+
+  cliIt.concurrent(
+    "--output-schema with --command is rejected as prompt-only",
+    ({ opencode }) =>
+      Effect.gen(function* () {
+        const result = yield* opencode.run("args", {
+          command: "some-command",
+          extraArgs: ["--output-schema", '{"type":"object"}'],
+        })
+        expect(result.exitCode).not.toBe(0)
+        expect(result.stderr).toContain("--output-schema cannot be used with --command")
+      }),
+    30_000,
+  )
+
+  cliIt.concurrent(
+    "--json --output-schema emits structured_output without a StructuredOutput tool_use event",
+    ({ llm, opencode }) =>
+      Effect.gen(function* () {
+        yield* llm.push(reply().tool("StructuredOutput", { summary: "done", count: 2 }))
+        const result = yield* opencode.run("summarize", {
+          json: true,
+          extraArgs: [
+            "--output-schema",
+            '{"type":"object","properties":{"summary":{"type":"string"},"count":{"type":"number"}},"required":["summary","count"]}',
+            "--dangerously-skip-permissions",
+          ],
+        })
+        opencode.expectExit(result, 0)
+        const events = opencode.parseJsonEvents(result.stdout)
+        expect(events.map((event) => event.type)).toEqual([
+          "session_start",
+          "step_start",
+          "step_finish",
+          "structured_output",
+          "session_end",
+        ])
+        expect(events.find((event) => event.type === "structured_output")).toEqual(
+          expect.objectContaining({ output: { summary: "done", count: 2 } }),
+        )
       }),
     60_000,
   )
@@ -122,14 +283,22 @@ describe("opencode run (non-interactive subprocess)", () => {
           expect(typeof evt.type).toBe("string")
           expect(typeof evt.sessionID).toBe("string")
         }
-        expect(events.map((event) => event.type)).toEqual(["step_start", "text", "step_finish"])
+        expect(events.map((event) => event.type)).toEqual([
+          "session_start",
+          "step_start",
+          "text",
+          "step_finish",
+          "session_end",
+        ])
         expect(events.map(({ timestamp: _, sessionID: __, ...event }) => event)).toEqual([
+          { type: "session_start" },
           { type: "step_start", part: expect.objectContaining({ type: "step-start" }) },
           {
             type: "text",
             part: expect.objectContaining({ type: "text", text: "structured output" }),
           },
           { type: "step_finish", part: expect.objectContaining({ type: "step-finish" }) },
+          { type: "session_end", exitCode: 0 },
         ])
         expect(result.stdout.endsWith("\n")).toBe(true)
         expect(
@@ -153,14 +322,14 @@ describe("opencode run (non-interactive subprocess)", () => {
 
         expect(result.exitCode).not.toBe(0)
         const events = opencode.parseJsonEvents(result.stdout)
-        expect(events.map((event) => event.type)).toEqual(["error"])
-        expect(events[0]).toEqual({
+        expect(events.map((event) => event.type)).toEqual(["session_start", "error", "session_end"])
+        expect(events[1]).toEqual({
           type: "error",
           timestamp: expect.any(Number),
           sessionID: expect.any(String),
           error: expect.any(Object),
         })
-        expect(result.stdout.split("\n").filter(Boolean)).toHaveLength(1)
+        expect(result.stdout.split("\n").filter(Boolean)).toHaveLength(3)
       }),
     30_000,
   )
@@ -185,6 +354,7 @@ describe("opencode run (non-interactive subprocess)", () => {
         expect(result.exitCode).toBe(0)
         const events = opencode.parseJsonEvents(result.stdout)
         expect(events.map((event) => event.type)).toEqual([
+          "session_start",
           "step_start",
           "reasoning",
           "text",
@@ -193,6 +363,7 @@ describe("opencode run (non-interactive subprocess)", () => {
           "step_start",
           "text",
           "step_finish",
+          "session_end",
         ])
         expect(events.find((event) => event.type === "reasoning")?.part).toEqual(
           expect.objectContaining({ type: "reasoning", text: "reasoning" }),
@@ -231,6 +402,7 @@ describe("opencode run (non-interactive subprocess)", () => {
         const events = opencode.parseJsonEvents(result.stdout)
         expect(result.exitCode).toBe(0)
         expect(events.map((event) => event.type)).toEqual([
+          "session_start",
           "step_start",
           "text",
           "tool_use",
@@ -240,11 +412,12 @@ describe("opencode run (non-interactive subprocess)", () => {
           "step_start",
           "text",
           "step_finish",
+          "session_end",
         ])
-        expect(events[1]?.part).toEqual(expect.objectContaining({ type: "text", text: "partial json" }))
-        expect(events[5]?.part).toEqual(expect.objectContaining({ type: "step-finish", reason: "unknown" }))
-        expect(events[7]?.part).toEqual(expect.objectContaining({ type: "text", text: "recovered" }))
-        expect(events.at(-1)?.part).toEqual(expect.objectContaining({ type: "step-finish", reason: "stop" }))
+        expect(events[2]?.part).toEqual(expect.objectContaining({ type: "text", text: "partial json" }))
+        expect(events[6]?.part).toEqual(expect.objectContaining({ type: "step-finish", reason: "unknown" }))
+        expect(events[8]?.part).toEqual(expect.objectContaining({ type: "text", text: "recovered" }))
+        expect(events.at(-2)?.part).toEqual(expect.objectContaining({ type: "step-finish", reason: "stop" }))
       }),
     60_000,
   )

@@ -67,6 +67,11 @@ function isolatedEnv(home: string, configJson: string): Record<string, string> {
     XDG_DATA_HOME: path.join(home, ".local/share"),
     XDG_STATE_HOME: path.join(home, ".local/state"),
     XDG_CACHE_HOME: path.join(home, ".cache"),
+    // The test runner's preload sets OPENCODE_DB=:memory:, which children
+    // would otherwise inherit (killing cross-process session resume). Point
+    // children at a home-scoped file instead: isolated per test, shared
+    // across that test's subprocess runs so --session resume works.
+    OPENCODE_DB: path.join(home, "opencode-test.db"),
     OPENCODE_CONFIG_CONTENT: configJson,
     OPENCODE_DISABLE_PROJECT_CONFIG: "1",
     OPENCODE_PURE: "1",
@@ -97,6 +102,7 @@ export type RunOpts = SpawnOpts & {
   readonly model?: string
   readonly agent?: string
   readonly format?: "default" | "json"
+  readonly json?: boolean
   readonly command?: string
   readonly printLogs?: boolean
   readonly permission?: Record<string, "ask" | "allow" | "deny">
@@ -254,6 +260,7 @@ export function withCliFixture<A, E>(
       argv.push("--model", opts?.model ?? testModelID)
       if (opts?.agent) argv.push("--agent", opts.agent)
       if (opts?.format) argv.push("--format", opts.format)
+      if (opts?.json) argv.push("--json")
       if (opts?.command) argv.push("--command", opts.command)
       if (opts?.extraArgs) argv.push(...opts.extraArgs)
       argv.push(message)
