@@ -69,7 +69,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     .sandboxes(input.session.projectID)
     .pipe(Effect.catch(() => Effect.succeed([] as string[])))
 
-  const context = (args: Record<string, unknown>, options: ToolExecutionOptions): Tool.Context => ({
+  const context = (args: Record<string, unknown>, options: ToolExecutionOptions, toolID: string): Tool.Context => ({
     sessionID: input.session.id,
     abort: options.abortSignal!,
     messageID: input.processor.message.id,
@@ -100,7 +100,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           Effect.fail(new Sandbox.SandboxViolationError({ path: input.session.directory, level: policy.sandbox })),
         )
       }
-      if (req.permission === "edit" || req.permission === "external_directory") {
+      // The sandbox contains writes only: reads (read/glob/grep/list/lsp/skill,
+      // Truncate output) may cross the workspace boundary through the normal
+      // external_directory prompt.
+      if (Sandbox.containsWrite({ permission: req.permission, toolID })) {
         const blocked = req.patterns.find(
           (target) =>
             target !== "" && !Sandbox.isPathAllowed(target, input.session.directory, sandboxDirs, policy.sandbox),
@@ -109,11 +112,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           return Effect.orDie(Effect.fail(new Sandbox.SandboxViolationError({ path: blocked, level: policy.sandbox })))
         }
       }
-      const denied = req.patterns.some(
-        (pattern) => Permission.evaluate(req.permission, pattern, ruleset).action === "deny",
-      )
-      if (!denied && Reviewer.review({ permission: req.permission, patterns: req.patterns }) === "allow") {
-        return Effect.orDie(Effect.void)
+      if (Reviewer.review({ permission: req.permission, patterns: req.patterns, ruleset }) === "allow") {
+        return Effect.void
       }
       return permission
         .ask({
@@ -140,7 +140,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       execute(args, options) {
         return run.promise(
           Effect.gen(function* () {
-            const ctx = context(args, options)
+            const ctx = context(args, options, item.id)
             const decision = yield* hooksRunner.runPreToolUse({
               sessionID: ctx.sessionID,
               tool: item.id,
@@ -202,7 +202,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         return run.promise(
           Effect.gen(function* () {
             const parsed = parseListMcpResourcesArgs(args)
-            const ctx = context(toRecord(args), opts)
+            const ctx = context(toRecord(args), opts, MCP_RESOURCE_TOOLS.list)
             const clients = yield* mcp.clients()
             const resourceServers = Object.entries(clients)
               .filter((entry) => !!entry[1].getServerCapabilities()?.resources)
@@ -290,7 +290,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         return run.promise(
           Effect.gen(function* () {
             const parsed = parseListMcpResourcesArgs(args)
-            const ctx = context(toRecord(args), opts)
+            const ctx = context(toRecord(args), opts, MCP_RESOURCE_TOOLS.listTemplates)
             const clients = yield* mcp.clients()
             const resourceServers = Object.entries(clients)
               .filter((entry) => !!entry[1].getServerCapabilities()?.resources)
@@ -382,7 +382,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         return run.promise(
           Effect.gen(function* () {
             const parsed = parseReadMcpResourceArgs(args)
-            const ctx = context(toRecord(args), opts)
+            const ctx = context(toRecord(args), opts, MCP_RESOURCE_TOOLS.read)
             const clients = yield* mcp.clients()
             const client = clients[parsed.server]
             if (!client) {
@@ -459,7 +459,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     item.execute = (args, opts) =>
       run.promise(
         Effect.gen(function* () {
-          const ctx = context(args, opts)
+          const ctx = context(args, opts, key)
           const preMcp = yield* hooksRunner.runPreToolUse({
             sessionID: ctx.sessionID,
             tool: key,
