@@ -333,6 +333,20 @@ describe("plugin", () => {
     expect(message.model).toEqual({ providerID: "model-router", modelID: "auto" })
   })
 
+  test("a static copy of the sentinel block without an endpoint still fails while routing is off", async () => {
+    const hooks = await plugin.server(fakeInput)
+    await hooks.config?.({
+      model_router: { enabled: false },
+      disabled_providers: ["model-router"],
+      provider: { "model-router": { name: "Model Router", models: { auto: {} } } },
+    } as any)
+    const result = hooks["chat.message"]?.(
+      { sessionID: "s", agent: "build" },
+      { message: { agent: "build", model: { providerID: "model-router", modelID: "auto" } } as any, parts: [] },
+    )
+    await expect(result).rejects.toThrow("Model Router is disabled")
+  })
+
   test("routes by the message's resolved agent and falls back to coding for unmapped agents", async () => {
     const hooks = await plugin.server(fakeInput, {
       providers: ["ollama-cloud"],

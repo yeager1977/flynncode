@@ -117,11 +117,13 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
     return "coding"
   }
 
-  // A static `model-router` provider block is a user's own provider; leave it
-  // alone. Otherwise the sentinel has nothing to resolve it while routing is off.
+  // A static `model-router` block with its own endpoint is a real provider the
+  // user defined; leave it alone. A copy of the injected sentinel block (name
+  // and models only) has no endpoint and must not reach a provider API.
   const staticRouterProvider = () => {
     const block = currentConfig?.provider?.[ROUTER_PROVIDER_ID]
-    return block !== undefined && !injected.has(block)
+    if (!block || injected.has(block)) return false
+    return Boolean(block.npm || block.api || block.options?.baseURL)
   }
 
   return {
