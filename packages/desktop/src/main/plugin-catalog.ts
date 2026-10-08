@@ -28,6 +28,15 @@ export type CatalogResult = { entries: CatalogEntry[]; fetchedAt: number; stale:
 type RawEntry = { name: string; description?: string; url?: string; source: CatalogSource }
 
 const NPM_CONCURRENCY = 12
+const SOURCE_TIMEOUT_MS = 15_000
+const NPM_TIMEOUT_MS = 10_000
+
+type Packument = {
+  "dist-tags"?: { latest?: string }
+  versions?: Record<string, { description?: string; repository?: unknown } | undefined>
+  repository?: unknown
+  time?: { modified?: string }
+}
 
 export function createCatalogFetcher(deps: {
   fetchImpl?: typeof fetch
@@ -218,15 +227,15 @@ export function createCatalogFetcher(deps: {
   async function fetchFresh(): Promise<CatalogResult> {
     // cafe is optional: a failure there must not take down the curated sources.
     const [ecoRes, awesomeRes, cafeRes] = await Promise.all([
-      doFetch(ECOSYSTEM_URL).then((r) => {
+      doFetch(ECOSYSTEM_URL, { signal: AbortSignal.timeout(SOURCE_TIMEOUT_MS) }).then((r) => {
         if (!r.ok) throw new Error(`ecosystem source returned ${r.status}`)
         return r.text()
       }),
-      doFetch(AWESOME_URL).then((r) => {
+      doFetch(AWESOME_URL, { signal: AbortSignal.timeout(SOURCE_TIMEOUT_MS) }).then((r) => {
         if (!r.ok) throw new Error(`awesome source returned ${r.status}`)
         return r.text()
       }),
-      doFetch(CAFE_URL)
+      doFetch(CAFE_URL, { signal: AbortSignal.timeout(SOURCE_TIMEOUT_MS) })
         .then((r) => (r.ok ? r.text() : ""))
         .catch(() => ""),
     ])
@@ -268,26 +277,36 @@ export function createCatalogFetcher(deps: {
       source: entry.source,
     }
     if (!candidate) return base
+    // Without a GitHub repo on the catalog side there is nothing to verify an
+    // npm package against, so the entry stays non-installable.
+    const catalogRepo = githubRepo(entry.url)
+    if (!catalogRepo) return base
     try {
-      const packRes = await doFetch(NPM_REGISTRY + encodeURIComponent(candidate))
+      const packRes = await doFetch(NPM_REGISTRY + encodeURIComponent(candidate), {
+        signal: AbortSignal.timeout(NPM_TIMEOUT_MS),
+      })
       if (packRes.ok) {
-        const pack = (await packRes.json()) as any
-        const latest = pack["dist-tags"]?.latest as string | undefined
+        const pack = (await packRes.json()) as Packument
+        const latest = pack["dist-tags"]?.latest
         const versionMeta = latest ? pack.versions?.[latest] : undefined
+        const npmRepoUrl = repositoryUrl(versionMeta?.repository) ?? repositoryUrl(pack.repository)
+        // Guard against name squatting: the catalog names a GitHub repo, and an
+        // npm package with the guessed name only counts when it points back at
+        // that same repo.
+        if (githubRepo(npmRepoUrl) !== catalogRepo) return base
         const enriched: CatalogEntry = {
           ...base,
           name: candidate,
           onNpm: true,
           version: latest,
-          description: (versionMeta?.description as string | undefined) ?? base.description,
-          repository:
-            (typeof versionMeta?.repository?.url === "string"
-              ? versionMeta.repository.url.replace(/^git\+/, "").replace(/\.git$/, "")
-              : undefined) ?? base.repository,
-          updatedAt: pack.time?.modified as string | undefined,
+          description: versionMeta?.description ?? base.description,
+          repository: npmRepoUrl?.replace(/^git\+/, "").replace(/\.git$/, "") ?? base.repository,
+          updatedAt: pack.time?.modified,
         }
         try {
-          const dlRes = await doFetch(NPM_DOWNLOADS + encodeURIComponent(candidate))
+          const dlRes = await doFetch(NPM_DOWNLOADS + encodeURIComponent(candidate), {
+            signal: AbortSignal.timeout(NPM_TIMEOUT_MS),
+          })
           if (dlRes.ok) {
             const dl = (await dlRes.json()) as { downloads?: number }
             enriched.downloadsLastWeek = dl.downloads
@@ -328,4 +347,22 @@ export function createCatalogFetcher(deps: {
   }
 
   return { fetchCatalog, refreshInBackground }
+}
+
+// npm's repository field is either a string (URL or "github:owner/repo"
+// shorthand) or an object with a url.
+function repositoryUrl(value: unknown) {
+  if (typeof value === "string") return value
+  if (!value || typeof value !== "object") return
+  const url = (value as { url?: unknown }).url
+  return typeof url === "string" ? url : undefined
+}
+
+// Normalizes git+https, git@, ssh, .git suffixes and case to "owner/repo".
+export function githubRepo(url: string | undefined) {
+  if (!url) return
+  const match =
+    /^(?:github:)?([\w.-]+)\/([\w.-]+)$/i.exec(url) ?? /github\.com[/:]([^/]+)\/([^/#?]+)/i.exec(url)
+  if (!match) return
+  return `${match[1]}/${match[2].replace(/\.git$/i, "")}`.toLowerCase()
 }
