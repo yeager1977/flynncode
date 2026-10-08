@@ -693,7 +693,16 @@ const layer = Layer.effect(
     })
 
     const createUserMessage = Effect.fn("SessionPrompt.createUserMessage")(function* (input: PromptInput) {
-      const agentName = input.agent
+      // A steer/queue prompt joins the conversation already running, so it
+      // keeps that conversation's agent instead of switching a steered
+      // subagent to the default agent.
+      const previous =
+        !input.agent && input.delivery
+          ? yield* sessions.findMessage(input.sessionID, (m) => m.info.role === "user").pipe(Effect.orDie)
+          : Option.none()
+      const agentName =
+        input.agent ??
+        (Option.isSome(previous) && previous.value.info.role === "user" ? previous.value.info.agent : undefined)
       const ag = agentName ? yield* agents.get(agentName) : yield* agents.defaultInfo()
       if (!ag) {
         const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)

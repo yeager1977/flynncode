@@ -51,6 +51,8 @@ import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import { Format } from "../../src/format"
 import { TestInstance } from "../fixture/fixture"
+import { InstanceStore } from "../../src/project/instance-store"
+import { InstanceBootstrap } from "../../src/project/bootstrap"
 import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
 import { reply, TestLLMServer } from "../lib/llm-server"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -214,6 +216,7 @@ function makePrompt(input?: { mcpInstructions?: MCP.ServerInstructions[]; proces
     [LSP.node, lsp],
     [MCP.node, makeMcp(input?.mcpInstructions)],
     [RuntimeFlags.node, runtimeFlags],
+    [InstanceStore.bootstrapNode, InstanceBootstrap.node],
   ] as const
   if (input?.processor === "blocking") {
     return LayerNode.compile(promptRoot, [...replacements, [SessionProcessor.node, blockingProcessor]])
@@ -228,6 +231,7 @@ function makeHttp(input?: { mcpInstructions?: MCP.ServerInstructions[]; processo
     [LSP.node, lsp],
     [MCP.node, makeMcp(input?.mcpInstructions)],
     [RuntimeFlags.node, runtimeFlags],
+    [InstanceStore.bootstrapNode, InstanceBootstrap.node],
   ] as const
   if (input?.processor === "blocking") {
     return LayerNode.compile(root, [...replacements, [SessionProcessor.node, blockingProcessor]])
@@ -625,6 +629,44 @@ it.instance("legacy prompt emits message events without session.next events", ()
     expect(seen).toContain(MessageV2.Event.Updated.type)
     expect(seen).toContain(MessageV2.Event.PartUpdated.type)
     expect(seen.filter((type) => type.startsWith("session.next."))).toEqual([])
+  }),
+)
+
+it.instance("steer and queue prompts without an agent keep the session's agent", () =>
+  Effect.gen(function* () {
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Steered" })
+    const model = { providerID: ProviderV2.ID.make("test"), modelID: ModelV2.ID.make("test-model") }
+
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "plan",
+      model,
+      noReply: true,
+      parts: [{ type: "text", text: "start" }],
+    })
+    const steer = yield* prompt.prompt({
+      sessionID: chat.id,
+      delivery: "steer",
+      noReply: true,
+      parts: [{ type: "text", text: "steer" }],
+    })
+    const queue = yield* prompt.prompt({
+      sessionID: chat.id,
+      delivery: "queue",
+      noReply: true,
+      parts: [{ type: "text", text: "queue" }],
+    })
+    const plain = yield* prompt.prompt({
+      sessionID: chat.id,
+      noReply: true,
+      parts: [{ type: "text", text: "plain" }],
+    })
+
+    expect(steer.info.role === "user" && steer.info.agent).toBe("plan")
+    expect(queue.info.role === "user" && queue.info.agent).toBe("plan")
+    expect(plain.info.role === "user" && plain.info.agent).toBe("build")
   }),
 )
 
