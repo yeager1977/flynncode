@@ -166,6 +166,13 @@ function mergeWholeSubtrees(base: Record<string, unknown>, patch: Record<string,
     if (isEmptyRecord(patch.worktree)) delete merged.worktree
     else merged.worktree = patch.worktree
   }
+  // An MCP server entry is swapped whole so fields removed in an edit persist.
+  if (isRecord(patch.mcp)) {
+    merged.mcp = {
+      ...(isRecord(base.mcp) ? base.mcp : {}),
+      ...patch.mcp,
+    }
+  }
   // A provider entry is swapped as a whole subtree so removed headers, models,
   // and a cleared base URL persist, while sibling providers stay untouched.
   if (isRecord(patch.provider)) {
@@ -239,7 +246,18 @@ function patchJsonc(input: string, patch: unknown, path: string[] = [], removeMc
         })
         return applyEdits(current, edits)
       }, result)
-      return patchJsonc(deleted, value, [...path, key], removeMcp)
+      // Each server entry is swapped whole so fields removed in an edit (cwd,
+      // headers, oauth, an enabled override) do not survive the patch.
+      if (!isRecord(value)) return patchJsonc(deleted, value, [...path, key], removeMcp)
+      return Object.entries(value).reduce((current, [name, entry]) => {
+        const edits = modify(current, [key, name], entry, {
+          formattingOptions: {
+            insertSpaces: true,
+            tabSize: 2,
+          },
+        })
+        return applyEdits(current, edits)
+      }, deleted)
     }
     // A provider entry is swapped as a whole subtree so removed headers, models,
     // and a cleared base URL persist, while sibling providers stay untouched.

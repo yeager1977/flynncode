@@ -451,6 +451,38 @@ it.effect("removes an mcp server from an existing json config", () =>
   ),
 )
 
+for (const name of ["opencode.json", "opencode.jsonc"]) {
+  it.effect(`replaces an edited mcp server entry whole in ${name}`, () =>
+    withGlobalConfig(
+      {
+        name,
+        config: {
+          mcp: {
+            edited: { type: "local", command: ["old"], cwd: "/tmp/old", enabled: false },
+            other: { type: "remote", url: "http://b/mcp" },
+          },
+        },
+      },
+      ({ dir }) =>
+        Effect.gen(function* () {
+          yield* Config.use.updateGlobal({
+            mcp: {
+              edited: { type: "local", command: ["new"] },
+              other: { type: "remote", url: "http://b/mcp" },
+            },
+          })
+
+          const file = path.join(dir, name)
+          const parsed = ConfigParse.jsonc(yield* FSUtil.use.readFileString(file), file) as { mcp: object }
+          expect(parsed.mcp).toEqual({
+            edited: { type: "local", command: ["new"] },
+            other: { type: "remote", url: "http://b/mcp" },
+          })
+        }),
+    ),
+  )
+}
+
 it.effect("logs global update diagnostics once without exposing values", () =>
   withGlobalConfig(
     {
