@@ -198,8 +198,18 @@ const main = Effect.gen(function* () {
   ensureLoopbackNoProxy()
   useEnvProxy()
   app.commandLine.appendSwitch("proxy-bypass-list", "<-loopback>")
-  const features = app.commandLine.getSwitchValue("enable-features")
-  app.commandLine.appendSwitch("enable-features", features ? `${jsCallStackFeature},${features}` : jsCallStackFeature)
+  // On Wayland, global shortcuts only work through the XDG GlobalShortcuts
+  // portal, which Chromium gates behind this feature.
+  app.commandLine.appendSwitch(
+    "enable-features",
+    [
+      jsCallStackFeature,
+      ...(process.platform === "linux" ? ["GlobalShortcutsPortal"] : []),
+      app.commandLine.getSwitchValue("enable-features"),
+    ]
+      .filter(Boolean)
+      .join(","),
+  )
   if (!app.isPackaged) app.commandLine.appendSwitch("remote-debugging-port", "9222")
 
   if (!app.requestSingleInstanceLock()) {
