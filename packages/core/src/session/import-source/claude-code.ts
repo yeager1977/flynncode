@@ -1,6 +1,6 @@
 export * as ClaudeCode from "./claude-code"
 
-import type { ImportedMessage, ParsedSession } from "./types.js"
+import type { ImportedMessage, ParsedSession, SessionReader } from "./types.js"
 
 type Record_ = Record<string, unknown>
 
@@ -34,10 +34,20 @@ const SYNTHETIC_PROMPTS = ["Analyze this conversation and determine", "[structur
 
 const isSyntheticUserText = (text: string) => SYNTHETIC_PROMPTS.some((prefix) => text.startsWith(prefix))
 
+// Slash-command bookkeeping Claude Code records as user turns: the command
+// invocation wrapper and the local command's captured output.
+const COMMAND_WRAPPER = /^\s*<(command-name|command-message|command-args|local-command-stdout|local-command-stderr|local-command-caveat)>/
+
 // Claude Code prepends context to the first human turn as one or more
 // <system-reminder> blocks. Strip them from titles so the title reflects what
 // the user actually asked, not the injected worktree/skill boilerplate.
 const LEADING_REMINDERS = /^\s*(<system-reminder>[\s\S]*?<\/system-reminder>\s*)+/
+
+// Only user/assistant records with string content or text blocks can yield a
+// message, so other lines (tool results, snapshots, summaries) skip
+// JSON.parse. These lines dominate large stores.
+const MESSAGE_TYPE = /"type"\s*:\s*"(user|assistant)"/
+const HAS_TEXT = /"content"\s*:\s*"|"type"\s*:\s*"text"/
 
 const titleText = (text: string) => {
   const withoutReminders = text.replace(LEADING_REMINDERS, "").trim()
@@ -50,65 +60,84 @@ const hasHumanOrigin = (record: Record_) => {
 }
 
 export function parseClaudeCode(input: { readonly path: string; readonly text: string }): ParsedSession {
-  let sessionID = ""
-  let cwd = ""
-  let lastTime = 0
+  const reader = claudeCodeReader(input.path, { keepMessages: true })
+  for (const raw of input.text.split("\n")) reader.push(raw)
+  return reader.finish()
+}
+
+// Incremental parser: discovery streams lines through it with
+// `keepMessages: false`, so only the summary (title, cwd, count, first time)
+// is retained instead of every message of a multi-gigabyte store.
+export function claudeCodeReader(path: string, options: { readonly keepMessages: boolean }): SessionReader {
+  const state = {
+    sessionID: "",
+    cwd: "",
+    lastTime: 0,
+    firstTime: undefined as number | undefined,
+    count: 0,
+    humanOrigin: false,
+    realUserText: false,
+    firstUser: undefined as string | undefined,
+    firstRealUser: undefined as string | undefined,
+  }
   const messages: ImportedMessage[] = []
-  let humanOrigin = false
-  let realUserText = false
 
-  for (const raw of input.text.split("\n")) {
-    if (!raw.trim()) continue
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(raw)
-    } catch {
-      continue
-    }
-    const record = asRecord(parsed)
-    if (!record) continue
-    if (record.isSidechain === true) continue
+  const push = (raw: string) => {
+    if (!MESSAGE_TYPE.test(raw) || !HAS_TEXT.test(raw)) return
+    const record = asRecord(parseLine(raw))
+    if (!record) return
+    if (record.isSidechain === true || record.isMeta === true || record.isCompactSummary === true) return
     const type = record.type
-    if (type !== "user" && type !== "assistant") continue
+    if (type !== "user" && type !== "assistant") return
     const message = asRecord(record.message)
-    if (!message) continue
+    if (!message) return
     const text = textOf(message.content)
-    if (!text) continue
+    if (!text) return
+    if (type === "user" && COMMAND_WRAPPER.test(text)) return
 
-    if (!sessionID) sessionID = asString(record.sessionId) ?? ""
-    if (!cwd) cwd = asString(record.cwd) ?? ""
+    if (!state.sessionID) state.sessionID = asString(record.sessionId) ?? ""
+    if (!state.cwd) state.cwd = asString(record.cwd) ?? ""
     if (type === "user") {
-      if (hasHumanOrigin(record)) humanOrigin = true
-      if (!isSyntheticUserText(text)) realUserText = true
+      if (hasHumanOrigin(record)) state.humanOrigin = true
+      if (!isSyntheticUserText(text)) {
+        state.realUserText = true
+        state.firstRealUser ??= text
+      }
+      state.firstUser ??= text
     }
     const stamp = asString(record.timestamp)
     const parsedTime = stamp ? Date.parse(stamp) : Number.NaN
-    const time = Number.isFinite(parsedTime) ? parsedTime : lastTime
-    lastTime = time
-    messages.push({ role: type, text, time })
+    const time = Number.isFinite(parsedTime) ? parsedTime : state.lastTime
+    state.lastTime = time
+    state.firstTime ??= time
+    state.count++
+    if (options.keepMessages) messages.push({ role: type, text, time })
   }
 
-  if (!humanOrigin && !realUserText) {
+  const finish = (): ParsedSession => {
+    const sourceSessionID = state.sessionID || path
+    if (!state.humanOrigin && !state.realUserText)
+      return { sourceSessionID, sourcePath: path, cwd: state.cwd, title: "", messages: [], messageCount: 0, time: 0 }
+    const firstUser = state.firstRealUser ?? state.firstUser
+    const fallback = path.split("/").at(-2) ?? path
     return {
-      sourceSessionID: sessionID || input.path,
-      sourcePath: input.path,
-      cwd,
-      title: "",
-      messages: [],
+      sourceSessionID,
+      sourcePath: path,
+      cwd: state.cwd,
+      title: (firstUser ? titleText(firstUser) : fallback).slice(0, TITLE_LIMIT),
+      messages,
+      messageCount: state.count,
+      time: state.firstTime ?? 0,
     }
   }
 
-  const firstUser =
-    messages.find((message) => message.role === "user" && !isSyntheticUserText(message.text)) ??
-    messages.find((message) => message.role === "user")
-  const fallback = input.path.split("/").at(-2) ?? input.path
-  const title = (firstUser ? titleText(firstUser.text) : fallback).slice(0, TITLE_LIMIT)
+  return { push, finish, cwd: () => state.cwd || undefined }
+}
 
-  return {
-    sourceSessionID: sessionID || input.path,
-    sourcePath: input.path,
-    cwd,
-    title,
-    messages,
+function parseLine(raw: string): unknown {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return undefined
   }
 }

@@ -134,6 +134,36 @@ async function exchangeCodeForTokens(code: string, redirectUri: string, pkce: Pk
   return response.json()
 }
 
+async function readCodexCliAuth() {
+  const raw = await Bun.file(path.join(process.env.HOME ?? os.homedir(), ".codex", "auth.json"))
+    .json()
+    .catch(() => undefined)
+  return parseCodexAuth(raw)
+}
+
+// Codex CLI rotates refresh tokens, so credentials imported from it go stale
+// once the CLI refreshes first. On a failed refresh, re-read its auth file once
+// and adopt it when it holds different tokens for the same account.
+export async function refreshFromCodexCli(
+  refreshToken: string,
+  accountId: string | undefined,
+  issuer: string,
+  error: unknown,
+  read: () => Promise<ReturnType<typeof parseCodexAuth>> = readCodexCliAuth,
+): Promise<TokenResponse> {
+  const current = await read()
+  if (!current || current.kind !== "oauth" || current.refresh === refreshToken) throw error
+  if (accountId && current.accountId && current.accountId !== accountId) throw error
+  if (current.expires > Date.now() + 60_000)
+    return {
+      id_token: "",
+      access_token: current.access,
+      refresh_token: current.refresh,
+      expires_in: Math.floor((current.expires - Date.now()) / 1000),
+    }
+  return refreshAccessToken(current.refresh, issuer)
+}
+
 async function refreshAccessToken(refreshToken: string, issuer = ISSUER): Promise<TokenResponse> {
   const response = await fetch(`${issuer}/oauth/token`, {
     method: "POST",
@@ -371,6 +401,7 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
             if (!currentAuth.access || currentAuth.expires < Date.now()) {
               if (!refreshPromise) {
                 refreshPromise = refreshAccessToken(currentAuth.refresh, issuer)
+                  .catch((error) => refreshFromCodexCli(currentAuth.refresh, authWithAccount.accountId, issuer, error))
                   .then(async (tokens) => {
                     const accountId = extractAccountId(tokens) || authWithAccount.accountId
                     await input.client.auth.set({
@@ -556,11 +587,7 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
           label: "Import from Codex CLI",
           type: "oauth",
           authorize: async () => {
-            const home = process.env.HOME ?? os.homedir()
-            const raw = await Bun.file(path.join(home, ".codex", "auth.json"))
-              .json()
-              .catch(() => undefined)
-            const imported = parseCodexAuth(raw)
+            const imported = await readCodexCliAuth()
             if (!imported || imported.kind !== "oauth") throw new Error("No Codex CLI credentials found")
             return {
               url: "http://localhost/imported",

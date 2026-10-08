@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
-  nextFamily,
+  tieredFamily,
   resolveFamilyModel,
   taskFamilyTier,
 } from "../../../src/plugin/ollama-model-router/provider-family"
@@ -11,11 +11,17 @@ const catalog = {
   "ollama-cloud": { id: "ollama-cloud", models: { "glm-5.3-flash": {} } },
 }
 
-describe("nextFamily", () => {
-  test("falls through ollama, openai, anthropic", () => {
-    expect(nextFamily("ollama")).toBe("openai")
-    expect(nextFamily("openai")).toBe("anthropic")
-    expect(nextFamily("anthropic")).toBeUndefined()
+describe("tieredFamily", () => {
+  test("only openai and anthropic resolve tier models", () => {
+    expect(tieredFamily("openai")).toBe("openai")
+    expect(tieredFamily("anthropic")).toBe("anthropic")
+    expect(tieredFamily("ollama")).toBeUndefined()
+    expect(tieredFamily("auto")).toBeUndefined()
+    expect(tieredFamily(undefined)).toBeUndefined()
+  })
+
+  test("an unknown model_family skips family resolution instead of walking families", () => {
+    expect(tieredFamily("gpt")).toBeUndefined()
   })
 })
 

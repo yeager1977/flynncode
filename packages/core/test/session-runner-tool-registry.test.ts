@@ -343,6 +343,30 @@ describe("ToolRegistry", () => {
     }),
   )
 
+  it.effect("overlays only the materializing directory's groups and settles them", () =>
+    Effect.gen(function* () {
+      const service = yield* ToolRegistry.Service
+      ToolRegistry.replaceGroup("test-overlay:/a", { overlay_a: make() }, "/a")
+      ToolRegistry.replaceGroup("test-overlay:/b", { overlay_b: make() }, "/b")
+      ToolRegistry.replaceSupplements("test-overlay:shared", { overlay_shared: make() })
+      const names = (materialized: ToolRegistry.Materialization) =>
+        materialized.definitions.map((definition) => definition.name).filter((name) => name.startsWith("overlay_"))
+      const forA = yield* service.materialize([], "/a")
+      const all = yield* service.materialize()
+      ToolRegistry.clearGroup("test-overlay:/a")
+      ToolRegistry.clearGroup("test-overlay:/b")
+      ToolRegistry.clearSupplements("test-overlay:shared")
+
+      expect(names(forA).toSorted()).toEqual(["overlay_a", "overlay_shared"])
+      expect(names(all).toSorted()).toEqual(["overlay_a", "overlay_b", "overlay_shared"])
+      expect((yield* forA.settle(call("overlay_a"))).result).toEqual({ type: "text", value: "overlay_a" })
+      expect((yield* forA.settle(call("overlay_b"))).result).toEqual({
+        type: "error",
+        value: "Unknown tool: overlay_b",
+      })
+    }),
+  )
+
   it.effect("rejects a call when its advertised registration was removed", () =>
     Effect.gen(function* () {
       const service = yield* ToolRegistry.Service

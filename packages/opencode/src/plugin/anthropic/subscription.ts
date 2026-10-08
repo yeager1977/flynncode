@@ -41,16 +41,6 @@ function base64UrlEncode(buffer: ArrayBuffer): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
 }
 
-export function parseJwtLike(token: string): Record<string, unknown> | undefined {
-  const parts = token.split(".")
-  if (parts.length !== 3) return undefined
-  try {
-    return JSON.parse(Buffer.from(parts[1], "base64url").toString())
-  } catch {
-    return undefined
-  }
-}
-
 // Subscription OAuth only serves the Claude Pro/Max lineup; API keys keep the
 // full provider catalog.
 const SUBSCRIPTION_MODELS = new Set(["claude-sonnet-5", "claude-opus-5-5", "claude-fable-5-1"])
@@ -162,29 +152,37 @@ async function startOAuthServer(): Promise<{ redirectUri: string }> {
     res.writeHead(404)
     res.end("Not found")
   })
+  const server = oauthServer
+  // Loopback only: the callback carries an authorization code.
   await new Promise<void>((resolve, reject) => {
-    oauthServer!.listen(OAUTH_PORT, () => resolve())
-    oauthServer!.on("error", reject)
+    server.once("error", reject)
+    server.listen(OAUTH_PORT, "127.0.0.1", () => resolve())
+  }).catch((error) => {
+    // A failed listen (port in use) must not leave a dead server cached.
+    if (oauthServer === server) oauthServer = undefined
+    throw error
   })
   return { redirectUri: `http://localhost:${OAUTH_PORT}/auth/callback` }
 }
 
+// Keeps the server up while another attempt is still waiting on it, so a
+// superseded attempt settling cannot strand the newer one.
 function stopOAuthServer() {
-  if (oauthServer) {
-    oauthServer.close(() => {})
-    oauthServer = undefined
-  }
+  if (!oauthServer || pendingOAuth) return
+  oauthServer.close(() => {})
+  oauthServer = undefined
 }
 
-function waitForOAuthCallback(pkce: PkceCodes, state: string, options: AnthropicSubscriptionOptions): Promise<TokenResponse> {
+export function waitForOAuthCallback(
+  pkce: PkceCodes,
+  state: string,
+  options: AnthropicSubscriptionOptions,
+  timeoutMs = 5 * 60 * 1000,
+): Promise<TokenResponse> {
+  // A newer attempt supersedes an abandoned one instead of leaving it hanging.
+  pendingOAuth?.reject(new Error("OAuth authorization superseded by a newer attempt"))
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      if (pendingOAuth) {
-        pendingOAuth = undefined
-        reject(new Error("OAuth callback timeout - authorization took too long"))
-      }
-    }, 5 * 60 * 1000)
-    pendingOAuth = {
+    const attempt: PendingOAuth = {
       pkce,
       state,
       options,
@@ -197,7 +195,21 @@ function waitForOAuthCallback(pkce: PkceCodes, state: string, options: Anthropic
         reject(error)
       },
     }
+    // Only this attempt's own timeout may clear it; an abandoned attempt's
+    // timer must not cancel a newer pending attempt or stop its server.
+    const timeout = setTimeout(() => {
+      if (pendingOAuth !== attempt) return
+      pendingOAuth = undefined
+      stopOAuthServer()
+      reject(new Error("OAuth callback timeout - authorization took too long"))
+    }, timeoutMs)
+    pendingOAuth = attempt
   })
+}
+
+/** Test-only view of the pending authorization state. */
+export function oauthState() {
+  return { pending: pendingOAuth !== undefined, listening: oauthServer !== undefined }
 }
 
 function buildAuthorizeUrl(redirectUri: string, pkce: PkceCodes, state: string, options: AnthropicSubscriptionOptions): string {
@@ -291,13 +303,16 @@ export async function AnthropicSubscriptionPlugin(
             const pkce = await generatePKCE()
             const state = base64UrlEncode(crypto.getRandomValues(new Uint8Array(32)).buffer)
             const callbackPromise = waitForOAuthCallback(pkce, state, options)
+            // An abandoned attempt (callback never awaited) still rejects on
+            // timeout or supersession; keep that from surfacing as unhandled.
+            callbackPromise.catch(() => {})
             return {
               url: buildAuthorizeUrl(redirectUri, pkce, state, options),
               instructions: "Complete authorization in your browser. This window will close automatically.",
               method: "auto" as const,
               callback: async () => {
-                const tokens = await callbackPromise
-                stopOAuthServer()
+                // Stop the loopback server whether the attempt succeeds or fails.
+                const tokens = await callbackPromise.finally(stopOAuthServer)
                 return {
                   type: "success" as const,
                   refresh: tokens.refresh_token ?? "",

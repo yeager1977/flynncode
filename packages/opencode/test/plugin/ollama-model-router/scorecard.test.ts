@@ -143,6 +143,13 @@ describe("parseOptions", () => {
     expect(result.errors.length).toBe(2)
   })
 
+  test("merges user agentTasks over the defaults", () => {
+    const result = parseOptions({ agentTasks: { reviewer: "review", plan: "architecture" } })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.options.agentTasks).toEqual({ ...DEFAULT_AGENT_TASKS, reviewer: "review", plan: "architecture" })
+  })
+
   test("rejects unknown task in agentTasks", () => {
     const result = parseOptions({ agentTasks: { build: "nope" } })
     expect(result.ok).toBe(false)

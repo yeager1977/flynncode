@@ -1,3 +1,4 @@
+import path from "path"
 import { RRule } from "rrule"
 
 export type RoutineRunSummary = {
@@ -28,6 +29,13 @@ export type Routine = {
   interval?: string
   rrule?: string
   lastRun?: string
+  // First time the routine was saved or seen by the scheduler; anchors RRULEs
+  // without an explicit DTSTART so COUNT/INTERVAL rules count from creation.
+  createdAt?: string
+  // Absolute (or ~/-relative) directory routine sessions run in and file
+  // triggers watch. Without it sessions run in the home directory and file
+  // triggers are skipped.
+  directory?: string
   recentRuns?: RoutineRunSummary[]
   trigger?: RoutineTrigger
 }
@@ -88,6 +96,7 @@ function parseRoutine(item: unknown, index: number, errors: string[]) {
   const schedule = readSchedule(row.schedule, index, errors)
   const recentRuns = readRecentRuns(row.recentRuns)
   const trigger = readTrigger(row.trigger, index, errors)
+  const directory = readDirectory(row.directory, index, errors)
   if (errors.some((error) => error.startsWith(`routines.${index}`))) return
   if (!schedule) return
   return {
@@ -99,6 +108,8 @@ function parseRoutine(item: unknown, index: number, errors: string[]) {
     interval: schedule.interval,
     rrule: schedule.rrule,
     lastRun: typeof row.lastRun === "string" ? row.lastRun : undefined,
+    createdAt: typeof row.createdAt === "string" && !Number.isNaN(Date.parse(row.createdAt)) ? row.createdAt : undefined,
+    directory,
     recentRuns,
     trigger,
   }
@@ -157,6 +168,15 @@ function readRrule(rrule: unknown, index: number, errors: string[]) {
     return undefined
   }
   return rrule
+}
+
+function readDirectory(directory: unknown, index: number, errors: string[]) {
+  if (directory === undefined) return undefined
+  if (typeof directory !== "string" || !(path.isAbsolute(directory) || directory.startsWith("~/"))) {
+    errors.push(`routines.${index}.directory must be an absolute path`)
+    return undefined
+  }
+  return directory
 }
 
 function readTrigger(trigger: unknown, index: number, errors: string[]) {

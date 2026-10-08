@@ -32,7 +32,12 @@ behavior is configured through the `model_router` key in the global config
 With no `model_router` key the plugin stays inert (no warnings, no routing).
 
 - `enabled` (default true) is the master switch. `false` keeps the scorecard
-  but does not inject Model Router, rewrite prompts, or rank models.
+  but does not inject Model Router, rewrite prompts, or rank models. A prompt
+  that still selects Model Router while routing is off (or its options are
+  invalid) fails with an error instead of reaching a provider.
+- `agentTasks` entries merge over the defaults (`build`/`general` → coding,
+  `plan` → planning, `explore` → lookup). Agents with no entry route as
+  `coding` and log a warning.
 - Agentic xAI Grok models ship with bundled scorecard entries. A user entry
   for the same key replaces the bundled one wholesale. Non-agentic Grok
   models (`grok-imagine-*`, `grok-4.20-multi-agent-0309`) are always excluded;

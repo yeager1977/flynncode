@@ -35,7 +35,7 @@ import { ModelStatus } from "./model-status"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderError } from "./error"
 import {
-  asModelFamily,
+  tieredFamily,
   FAMILY_ORDER,
   resolveFamilyModel,
   type FamilyTier,
@@ -2057,9 +2057,10 @@ const layer = Layer.effect(
 
       const s = yield* InstanceState.get(state)
 
-      if (cfg.model_family && cfg.model_family !== "auto" && cfg.model_family !== "ollama") {
+      const smallFamily = tieredFamily(cfg.model_family)
+      if (smallFamily) {
         const winner = familyWinner({
-          family: asModelFamily(cfg.model_family) as Exclude<ModelFamily, "auto">,
+          family: smallFamily,
           tier: "fast",
           providers: s.providers,
           available: providerModelKeys(s.providers),
@@ -2133,10 +2134,11 @@ const layer = Layer.effect(
 
       const s = yield* InstanceState.get(state)
 
-      if (cfg.model_family && cfg.model_family !== "auto" && cfg.model_family !== "ollama") {
+      const family = tieredFamily(cfg.model_family)
+      if (family) {
         const available = providerModelKeys(s.providers)
         const winner = familyWinner({
-          family: asModelFamily(cfg.model_family) as Exclude<ModelFamily, "auto">,
+          family,
           tier: "balanced",
           providers: s.providers,
           available,

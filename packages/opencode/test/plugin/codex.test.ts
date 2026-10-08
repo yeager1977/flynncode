@@ -9,6 +9,7 @@ import {
   extractAccountIdFromClaims,
   extractAccountId,
   extractResidency,
+  refreshFromCodexCli,
   renderOAuthError,
   type IdTokenClaims,
 } from "../../src/plugin/openai/codex"
@@ -475,6 +476,41 @@ describe("plugin.codex", () => {
 })
 
 describe("codex cli import", () => {
+  const original = new Error("Token refresh failed: 401")
+  const read = (tokens: Record<string, string>) => async () => parseCodexAuth({ tokens })
+
+  test("adopts rotated Codex CLI tokens after a failed refresh", async () => {
+    const access = createTestJwt({ exp: Math.floor(Date.now() / 1000) + 3600 })
+    const tokens = await refreshFromCodexCli(
+      "stale",
+      "acc-1",
+      "http://unused",
+      original,
+      read({ access_token: access, refresh_token: "rotated", account_id: "acc-1" }),
+    )
+    expect(tokens).toMatchObject({ access_token: access, refresh_token: "rotated" })
+    expect(tokens.expires_in).toBeGreaterThan(3500)
+  })
+
+  test("rethrows when the Codex CLI file is unchanged or for another account", async () => {
+    const access = createTestJwt({ exp: Math.floor(Date.now() / 1000) + 3600 })
+    await expect(
+      refreshFromCodexCli("same", undefined, "http://unused", original, read({ access_token: access, refresh_token: "same" })),
+    ).rejects.toBe(original)
+    await expect(
+      refreshFromCodexCli(
+        "stale",
+        "acc-1",
+        "http://unused",
+        original,
+        read({ access_token: access, refresh_token: "rotated", account_id: "acc-2" }),
+      ),
+    ).rejects.toBe(original)
+    await expect(refreshFromCodexCli("stale", undefined, "http://unused", original, async () => undefined)).rejects.toBe(
+      original,
+    )
+  })
+
   test("maps Codex CLI file to oauth success payload", () => {
     const imported = parseCodexAuth({ tokens: { access_token: "a", refresh_token: "r" } })
     expect(imported).toMatchObject({ vendor: "openai", kind: "oauth" })
