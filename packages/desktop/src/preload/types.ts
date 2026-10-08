@@ -54,6 +54,13 @@ export type MobileGatewayStatus = {
   launcherUrls: string[]
 }
 
+export type ComputerUseAPI = {
+  click: (appID: string, x: number, y: number) => Promise<void>
+  typeText: (appID: string, text: string) => Promise<void>
+  keypress: (appID: string, key: string) => Promise<void>
+  scroll: (appID: string, deltaX: number, deltaY: number) => Promise<void>
+}
+
 export type ElectronAPI = {
   killSidecar: () => Promise<void>
   installCli: () => Promise<string>
@@ -138,6 +145,7 @@ export type ElectronAPI = {
   setBackgroundColor: (color: string) => Promise<void>
   exportDebugLogs: () => Promise<string>
   capturePage: () => Promise<string | undefined>
+  computerUse: ComputerUseAPI
   setForceFocus: (enabled: boolean) => Promise<void>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>
   setNativeTranslations: (bundle: DesktopNativeBundle) => Promise<void>

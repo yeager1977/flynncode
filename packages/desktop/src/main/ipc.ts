@@ -25,6 +25,8 @@ import { createUpdaterSubscriptions } from "./updater-subscriptions"
 import { createDesktopDraftStore } from "./draft-store"
 import { nativeT } from "./native-translations"
 import { registerPluginManager } from "./plugin-manager"
+import { clickPane, isComputerUseTargetAllowed, keypressPane, scrollPane, typePane } from "./computer-use"
+import { COMPUTER_USE_ALLOWED_APPS_KEY } from "./store-keys"
 
 const MOBILE_GATEWAY_PORT = 4097
 const MOBILE_GATEWAY_STATUS_URL = "http://127.0.0.1:4097/flynncode-mobile-status"
@@ -35,6 +37,15 @@ function stoppedMobileGatewayStatus() {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string")
+}
+
+function readComputerUseAllowedApps(): string[] {
+  try {
+    const value = getStore().get(COMPUTER_USE_ALLOWED_APPS_KEY)
+    return isStringArray(value) ? value : []
+  } catch {
+    return []
+  }
 }
 
 const pickerFilters = (ext?: string[]) => {
@@ -132,6 +143,34 @@ export function registerIpcHandlers(deps: Deps) {
     if (!win || win.isDestroyed()) return undefined
     // Native PNG capture: toDataURL already yields a data:image/png;base64 URL.
     return win.webContents.capturePage().then((image) => (image.isEmpty() ? undefined : image.toDataURL()))
+  })
+  ipcMain.handle("computer-use-click", (event: IpcMainInvokeEvent, appID: string, x: number, y: number) => {
+    if (typeof appID !== "string" || typeof x !== "number" || typeof y !== "number") return
+    if (isComputerUseTargetAllowed(appID, readComputerUseAllowedApps()) === false) return
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
+    clickPane(win, x, y)
+  })
+  ipcMain.handle("computer-use-type", (event: IpcMainInvokeEvent, appID: string, text: string) => {
+    if (typeof appID !== "string" || typeof text !== "string") return
+    if (isComputerUseTargetAllowed(appID, readComputerUseAllowedApps()) === false) return
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
+    typePane(win, text)
+  })
+  ipcMain.handle("computer-use-keypress", (event: IpcMainInvokeEvent, appID: string, key: string) => {
+    if (typeof appID !== "string" || typeof key !== "string") return
+    if (isComputerUseTargetAllowed(appID, readComputerUseAllowedApps()) === false) return
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
+    keypressPane(win, key)
+  })
+  ipcMain.handle("computer-use-scroll", (event: IpcMainInvokeEvent, appID: string, deltaX: number, deltaY: number) => {
+    if (typeof appID !== "string" || typeof deltaX !== "number" || typeof deltaY !== "number") return
+    if (isComputerUseTargetAllowed(appID, readComputerUseAllowedApps()) === false) return
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
+    scrollPane(win, deltaX, deltaY)
   })
   ipcMain.handle("set-force-focus", (event: IpcMainInvokeEvent, enabled: boolean) =>
     setForceFocus(event.sender, enabled),

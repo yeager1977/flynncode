@@ -147,6 +147,12 @@ const api: ElectronAPI = {
   setBackgroundColor: (color: string) => ipcRenderer.invoke("set-background-color", color),
   exportDebugLogs: () => ipcRenderer.invoke("export-debug-logs"),
   capturePage: () => ipcRenderer.invoke("app:capturePage"),
+  computerUse: {
+    click: (appID, x, y) => ipcRenderer.invoke("computer-use-click", appID, x, y),
+    typeText: (appID, text) => ipcRenderer.invoke("computer-use-type", appID, text),
+    keypress: (appID, key) => ipcRenderer.invoke("computer-use-keypress", appID, key),
+    scroll: (appID, deltaX, deltaY) => ipcRenderer.invoke("computer-use-scroll", appID, deltaX, deltaY),
+  },
   setForceFocus: (enabled) => ipcRenderer.invoke("set-force-focus", enabled),
   recordFatalRendererError: (error) => ipcRenderer.invoke("record-fatal-renderer-error", error),
   setNativeTranslations: (bundle) => ipcRenderer.invoke("set-native-translations", bundle),
