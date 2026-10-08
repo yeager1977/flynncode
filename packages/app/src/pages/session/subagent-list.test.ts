@@ -85,6 +85,7 @@ describe("tasksFromParts", () => {
         },
       ],
       10,
+      () => true,
     )
     expect(running.map((item) => item.id)).toEqual(["ses_child"])
     expect(running[0]?.status).toBe("busy")
@@ -107,6 +108,27 @@ describe("tasksFromParts", () => {
         { type: "text", text: '<task id="ses_child" state="completed">done</task>' },
       ],
       11,
+      () => true,
+    )
+    expect(running).toEqual([])
+  })
+
+  test("treats a background task as finished once its child is no longer live", () => {
+    const running = tasksFromParts(
+      [
+        {
+          type: "tool",
+          tool: "task",
+          state: {
+            status: "completed",
+            title: "Build packages",
+            metadata: { sessionId: "ses_child", background: true },
+            output: '<task id="ses_child" state="running">working</task>',
+          },
+        },
+      ],
+      10,
+      () => false,
     )
     expect(running).toEqual([])
   })
@@ -138,6 +160,7 @@ describe("tasksFromParts", () => {
           },
         ],
         9,
+        (id) => id === "ses_live",
       ),
     )
     expect(groupSubagents(merged).active.map((item) => item.id)).toEqual(["ses_live"])
@@ -157,6 +180,7 @@ describe("tasksFromParts", () => {
           },
         ],
         2,
+        () => false,
       ),
     )
     expect(groupSubagents(merged).active.map((item) => item.id)).toEqual(["ses_child"])
