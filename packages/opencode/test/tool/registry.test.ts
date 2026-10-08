@@ -35,6 +35,8 @@ const brokenPluginLayer = Layer.succeed(
     init: () => Effect.void,
     trigger: ((_name: unknown, _input: unknown, output: unknown) =>
       Effect.succeed(output)) as Plugin.Interface["trigger"],
+    triggerDecision: ((input: unknown, output: unknown) =>
+      Effect.succeed(output)) as Plugin.Interface["triggerDecision"],
     list: () =>
       Effect.succeed([
         {

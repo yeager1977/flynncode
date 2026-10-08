@@ -57,6 +57,10 @@ export interface Interface {
     input: Input,
     output: Output,
   ) => Effect.Effect<Output>
+  readonly triggerDecision: (
+    input: { tool: string; sessionID: string; callID: string; args: Record<string, unknown> },
+    output: { decision: "allow" | "deny" | "undecided"; message?: string; updatedInput?: Record<string, unknown> },
+  ) => Effect.Effect<{ decision: "allow" | "deny" | "undecided"; message?: string; updatedInput?: Record<string, unknown> }>
   readonly list: () => Effect.Effect<Hooks[]>
   readonly init: () => Effect.Effect<void>
 }
@@ -311,11 +315,26 @@ const layer = Layer.effect(
       return s.hooks
     })
 
+    const triggerDecision = Effect.fn("Plugin.triggerDecision")(function* (
+      input: { tool: string; sessionID: string; callID: string; args: Record<string, unknown> },
+      output: { decision: "allow" | "deny" | "undecided"; message?: string; updatedInput?: Record<string, unknown> },
+    ) {
+      const s = yield* InstanceState.get(state)
+      for (const hook of s.hooks) {
+        const fn = hook["tool.permission"]
+        if (!fn) continue
+        yield* Effect.promise(async () => fn(input, output))
+        // Fail closed: first deny short-circuits, never silently continue.
+        if (output.decision === "deny") return output
+      }
+      return output
+    })
+
     const init = Effect.fn("Plugin.init")(function* () {
       yield* InstanceState.get(state)
     })
 
-    return Service.of({ trigger, list, init })
+    return Service.of({ trigger, triggerDecision, list, init })
   }),
 )
 

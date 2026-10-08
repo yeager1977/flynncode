@@ -49,6 +49,7 @@ const fakePlugin = Plugin.Service.of({
   init: () => Effect.void,
   list: () => Effect.succeed([]),
   trigger: (_name, _input, output) => Effect.succeed(output),
+  triggerDecision: (_input, output) => Effect.succeed(output),
 } satisfies Plugin.Interface)
 
 const fakePermission = Permission.Service.of({
