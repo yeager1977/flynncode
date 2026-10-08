@@ -41,3 +41,32 @@ describe("subagent list rename + archive wiring", () => {
     expect(viewSource).not.toMatch(/>\s*Rename\s*</)
   })
 })
+
+describe("subagent list stop + steer wiring", () => {
+  test("stop aborts the child session with i18n copy and a stable hook", () => {
+    expect(viewSource).toContain("client.session.abort")
+    expect(viewSource).toContain('data-action="subagent-stop"')
+    expect(viewSource).toContain('language.t("session.subagents.stop")')
+    expect(viewSource).toContain('language.t("session.subagents.stopping")')
+    expect(viewSource).toContain('language.t("session.subagents.stop.failed")')
+  })
+
+  test("steer prompts with explicit steer delivery and a stable hook", () => {
+    expect(viewSource).toContain('delivery: "steer"')
+    expect(viewSource).toContain('data-action="subagent-steer"')
+    expect(viewSource).toContain('language.t("session.subagents.steer.send")')
+    expect(viewSource).toContain('language.t("session.subagents.steer.sending")')
+    expect(viewSource).toContain('language.t("session.subagents.steer.failed")')
+  })
+
+  test("steer input labels through the dedicated placeholder key", () => {
+    expect(viewSource).toContain('aria-label={language.t("session.subagents.steer.placeholder")}')
+    expect(viewSource).toContain('placeholder={language.t("session.subagents.steer.placeholder")}')
+    expect(viewSource).not.toContain("dispatch.placeholder")
+  })
+
+  test("stop and steer copy is i18n keys, no hardcoded English", () => {
+    expect(viewSource).not.toMatch(/>\s*Stop\s*</)
+    expect(viewSource).not.toMatch(/>\s*Steer\s*</)
+  })
+})

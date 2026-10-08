@@ -5,6 +5,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import { showToast } from "@/utils/toast"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import {
   expandSubagent,
@@ -92,6 +93,8 @@ function Row(props: {
   const dialog = useDialog()
   const expanded = () => view().subagents.expandedID() === props.child.id
   const [steer, setSteer] = createSignal("")
+  const [stopping, setStopping] = createSignal(false)
+  const [steering, setSteering] = createSignal(false)
   const [rename, setRename] = createSignal<string | undefined>()
   const [archiving, setArchiving] = createSignal(false)
   const status = () =>
@@ -161,6 +164,37 @@ function Row(props: {
         </div>
       </Dialog>
     ))
+  }
+
+  const stopChild = async () => {
+    if (stopping()) return
+    setStopping(true)
+    try {
+      await sdk().client.session.abort({ sessionID: props.child.id })
+    } catch {
+      showToast({ title: language.t("session.subagents.stop.failed") })
+    } finally {
+      setStopping(false)
+    }
+  }
+
+  const submitSteer = async (event: SubmitEvent) => {
+    event.preventDefault()
+    const text = steer().trim()
+    if (!text || steering()) return
+    setSteering(true)
+    try {
+      await sdk().client.session.prompt({
+        sessionID: props.child.id,
+        parts: [{ type: "text", text }],
+        delivery: "steer",
+      })
+      setSteer("")
+    } catch {
+      showToast({ title: language.t("session.subagents.steer.failed") })
+    } finally {
+      setSteering(false)
+    }
   }
 
   return (
@@ -242,33 +276,30 @@ function Row(props: {
           type="button"
           size="small"
           variant="ghost"
+          data-action="subagent-stop"
+          disabled={stopping()}
           onClick={() => {
-            void sdk().client.session.abort({ sessionID: props.child.id })
+            void stopChild()
           }}
         >
-          {language.t("common.cancel")}
+          {stopping() ? language.t("session.subagents.stopping") : language.t("session.subagents.stop")}
         </Button>
         <form
           class="flex gap-1"
+          data-action="subagent-steer"
           onSubmit={(event) => {
-            event.preventDefault()
-            const text = steer().trim()
-            if (!text) return
-            void sdk().client.session.prompt({
-              sessionID: props.child.id,
-              parts: [{ type: "text", text }],
-            })
-            setSteer("")
+            void submitSteer(event)
           }}
         >
           <input
             class="min-w-0 flex-1 rounded-md border border-border-weak-base bg-transparent px-2 py-1 text-12-regular"
             value={steer()}
-            aria-label={language.t("dispatch.placeholder")}
+            aria-label={language.t("session.subagents.steer.placeholder")}
+            placeholder={language.t("session.subagents.steer.placeholder")}
             onInput={(event) => setSteer(event.currentTarget.value)}
           />
-          <Button type="submit" size="small" variant="ghost">
-            {language.t("session.followupDock.sendNow")}
+          <Button type="submit" size="small" variant="ghost" disabled={steering() || steer().trim() === ""}>
+            {steering() ? language.t("session.subagents.steer.sending") : language.t("session.subagents.steer.send")}
           </Button>
         </form>
       </Show>
