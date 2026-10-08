@@ -1,4 +1,4 @@
-import { Glob } from "bun"
+import { readdir, readFile, stat, writeFile } from "node:fs/promises"
 import path from "path"
 import { Global } from "@opencode-ai/core/global"
 import { Flock } from "@opencode-ai/core/util/flock"
@@ -15,10 +15,10 @@ export async function triggerDue(routine: Routine, directory: string) {
   if (!patterns || patterns.length === 0) return false
   const since = routine.lastRun ? new Date(routine.lastRun).getTime() : 0
   for (const pattern of patterns) {
-    const glob = new Glob(pattern)
-    for await (const entry of glob.scan({ cwd: directory, onlyFiles: true })) {
-      const stat = await Bun.file(path.join(directory, entry)).stat().catch(() => undefined)
-      if (stat && stat.mtime.getTime() > since) return true
+    for (const entry of await scanFiles(directory)) {
+      if (!matchGlob(pattern, entry)) continue
+      const info = await stat(path.join(directory, entry)).catch(() => undefined)
+      if (info && info.mtime.getTime() > since) return true
     }
   }
   return false
@@ -42,7 +42,7 @@ export async function githubDue(routine: Routine, token: string | undefined, sta
       if (entry?.checkedAt && now - new Date(entry.checkedAt).getTime() < GITHUB_POLL_MS) return false
       const newest = yield* Effect.promise(() => newestUpdatedAt(github, token).catch(() => undefined))
       state[routine.id] = { seenAt: newest ?? entry?.seenAt, checkedAt: new Date(now).toISOString() }
-      yield* Effect.promise(() => Bun.write(stateFile, JSON.stringify(state)))
+      yield* Effect.promise(() => writeFile(stateFile, JSON.stringify(state)))
       if (!newest) return false
       if (!entry?.seenAt) return true
       return new Date(newest).getTime() > new Date(entry.seenAt).getTime()
@@ -73,12 +73,39 @@ async function newestUpdatedAt(github: TriggerGithub, token: string) {
 }
 
 async function readTriggerState(file: string): Promise<TriggerState> {
-  if (!(await Bun.file(file).exists())) return {}
+  const text = await readFile(file, "utf8").catch(() => undefined)
+  if (text === undefined) return {}
   try {
-    const parsed = JSON.parse(await Bun.file(file).text()) as unknown
+    const parsed = JSON.parse(text) as unknown
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {}
     return parsed as TriggerState
   } catch {
     return {}
   }
+}
+
+async function scanFiles(directory: string) {
+  const found: string[] = []
+  async function walk(dir: string) {
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+    for (const entry of entries) {
+      if (entry.name === "node_modules" || entry.name === ".git") continue
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        await walk(full)
+        continue
+      }
+      found.push(path.relative(directory, full))
+    }
+  }
+  await walk(directory)
+  return found
+}
+
+function matchGlob(pattern: string, file: string) {
+  const source = pattern
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*\*/g, ".*")
+    .replace(/\*/g, "[^/]*")
+  return new RegExp(`^${source}$`).test(file.split(path.sep).join("/"))
 }
