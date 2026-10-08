@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process"
+import { randomUUID } from "node:crypto"
 import { stat } from "node:fs/promises"
 import { basename, join } from "node:path"
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron"
@@ -27,7 +28,7 @@ import { nativeT } from "./native-translations"
 import { registerPluginManager } from "./plugin-manager"
 import type { VendorStatus } from "./vendor-keychain"
 import { clickPane, isComputerUseTargetAllowed, keypressPane, scrollPane, typePane } from "./computer-use"
-import { COMPUTER_USE_ALLOWED_APPS_KEY } from "./store-keys"
+import { COMPUTER_USE_ALLOWED_APPS_KEY, MOBILE_PHONE_PASSWORD_KEY } from "./store-keys"
 
 const MOBILE_GATEWAY_PORT = 4097
 const MOBILE_GATEWAY_STATUS_URL = "http://127.0.0.1:4097/flynncode-mobile-status"
@@ -131,6 +132,17 @@ export function registerIpcHandlers(deps: Deps) {
     } catch {
       return stoppedMobileGatewayStatus()
     }
+  })
+  ipcMain.handle("get-mobile-phone-password", () => {
+    const value = getStore().get(MOBILE_PHONE_PASSWORD_KEY)
+    return typeof value === "string" && value ? value : null
+  })
+  // The sidecar reads the phone password once at spawn, so a rotated value
+  // only takes effect after the app restarts.
+  ipcMain.handle("rotate-mobile-phone-password", () => {
+    const next = randomUUID()
+    getStore().set(MOBILE_PHONE_PASSWORD_KEY, next)
+    return next
   })
   ipcMain.handle("updater-subscribe", (event) => {
     const id = event.sender.id

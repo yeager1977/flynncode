@@ -489,6 +489,14 @@ export const dict = {
   "server.phone.stopped": "Phone access is unavailable while the mobile gateway is stopped.",
   "server.phone.noWifi":
     "No Wi-Fi connection found. Connect this computer and your phone to the same Wi-Fi network to link your phone.",
+  "server.phone.password.label": "Phone password",
+  "server.phone.password.hint": "Sign in on your phone with the username opencode and this password.",
+  "server.phone.password.show": "Show",
+  "server.phone.password.hide": "Hide",
+  "server.phone.password.rotate": "Rotate",
+  "server.phone.password.rotated":
+    "New password saved. It takes effect after you restart the app; until then your phone keeps using the old one.",
+  "server.phone.password.unavailable": "The phone password is created the first time the app starts the gateway.",
   "server.phone.away.title": "Away from home",
   "server.phone.away.direct": "On Tailscale, use this address to reach this computer directly.",
   "server.phone.relay.title": "Needs-input relay",
