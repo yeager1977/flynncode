@@ -51,7 +51,7 @@ import { cleanupStoreFiles } from "./store-cleanup"
 import { startBackgroundCli } from "./background-cli"
 import { setNativeTranslations } from "./native-translations"
 import { museAuthStatus, runMuseAuthSync } from "./muse-auth"
-import { MOBILE_PHONE_PASSWORD_KEY, RELAY_PUBLISH_URL_KEY, RELAY_TOKEN_KEY } from "./store-keys"
+import { MOBILE_PHONE_PASSWORD_KEY, RELAY_PUBLISH_URL_KEY, RELAY_REMOTE_TOKEN_KEY, RELAY_TOKEN_KEY } from "./store-keys"
 import { getOrCreateMobilePhonePassword } from "./mobile-password"
 import { generateRelayToken } from "./relay-publisher"
 import { getStore } from "./store"
@@ -410,6 +410,13 @@ const main = Effect.gen(function* () {
       generateRelayToken,
     )
     process.env.OPENCODE_RELAY_TOKEN ??= relayToken
+    // The outbound token is the deepthought host's inbound token, pasted once
+    // via Settings > Servers > Phone relay. It is never generated here: only
+    // an explicit user paste enables publishing outward.
+    const relayRemoteToken = persisted.get(RELAY_REMOTE_TOKEN_KEY)
+    if (typeof relayRemoteToken === "string" && relayRemoteToken) {
+      process.env.OPENCODE_RELAY_REMOTE_TOKEN ??= relayRemoteToken
+    }
     const relayPublishUrl = persisted.get(RELAY_PUBLISH_URL_KEY)
     if (typeof relayPublishUrl === "string" && relayPublishUrl) {
       process.env.OPENCODE_RELAY_URL ??= relayPublishUrl

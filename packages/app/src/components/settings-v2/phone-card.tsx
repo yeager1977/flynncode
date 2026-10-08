@@ -1,5 +1,6 @@
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { type Component, For, Show, createEffect, createResource, createSignal, onCleanup } from "solid-js"
+import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
+import { type Component, For, Show, createEffect, createResource, createSignal, onCleanup, onMount } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { normalizeServerUrl, serverName, useServer, type ServerConnection } from "@/context/server"
 import { SettingsListV2 } from "./parts/list"
@@ -34,8 +35,31 @@ export const PhoneCard: Component = () => {
   }, STATUS_POLL_INTERVAL_MS)
   onCleanup(() => clearInterval(timer))
   const [copied, setCopied] = createSignal<string>()
+  const [remoteToken, setRemoteToken] = createSignal("")
+  const [tokenSaved, setTokenSaved] = createSignal(false)
   let qrCanvas: HTMLCanvasElement | undefined
   let qrCanvasRelay: HTMLCanvasElement | undefined
+
+  // The outbound relay token is the deepthought host's inbound token, pasted
+  // once here. It lives in the desktop settings store and is sent only as an
+  // outbound Bearer header — never rendered into QR codes or URLs.
+  const storeApi = () =>
+    (window as unknown as { api?: { storeGet?: (name: string, key: string) => Promise<string | null>; storeSet?: (name: string, key: string, value: string) => Promise<void> } }).api
+
+  onMount(() => {
+    void storeApi()?.storeGet?.("opencode.settings", "relayRemoteToken").then((value) => {
+      if (value) setTokenSaved(true)
+    }).catch(() => undefined)
+  })
+
+  const saveRemoteToken = () => {
+    const value = remoteToken().trim()
+    if (!value) return
+    void storeApi()?.storeSet?.("opencode.settings", "relayRemoteToken", value).then(() => {
+      setRemoteToken("")
+      setTokenSaved(true)
+    }).catch(() => undefined)
+  }
 
   const launcherUrls = () => status()?.launcherUrls ?? []
   const gatewayRunning = () => status()?.running === true
@@ -226,6 +250,44 @@ export const PhoneCard: Component = () => {
               </Show>
             </>
           )}
+        </Show>
+        <div class="settings-v2-servers-row">
+          <div class="settings-v2-servers-lead">
+            <div class="settings-v2-servers-copy">
+              <span class="settings-v2-servers-name">{language.t("server.phone.relay.token.label")}</span>
+              <span class="settings-v2-servers-meta">{language.t("server.phone.relay.token.hint")}</span>
+            </div>
+          </div>
+        </div>
+        <div class="settings-v2-servers-row">
+          <div class="settings-v2-servers-lead">
+            <TextInputV2
+              type="password"
+              appearance="base"
+              value={remoteToken()}
+              onInput={(event) => setRemoteToken(event.currentTarget.value)}
+              placeholder={language.t("server.phone.relay.token.placeholder")}
+              spellcheck={false}
+              autocorrect="off"
+              autocomplete="off"
+              autocapitalize="off"
+              aria-label={language.t("server.phone.relay.token.label")}
+            />
+          </div>
+          <div class="settings-v2-servers-actions">
+            <ButtonV2 size="small" variant="ghost-muted" onClick={saveRemoteToken}>
+              {language.t("server.phone.relay.token.save")}
+            </ButtonV2>
+          </div>
+        </div>
+        <Show when={tokenSaved()}>
+          <div class="settings-v2-servers-row">
+            <div class="settings-v2-servers-lead">
+              <div class="settings-v2-servers-copy">
+                <span class="settings-v2-servers-meta">{language.t("server.phone.relay.token.saved")}</span>
+              </div>
+            </div>
+          </div>
         </Show>
       </SettingsListV2>
     </Show>

@@ -187,14 +187,26 @@ Setup:
 
 1. Attach the deepthought host in Settings > Servers (192.168.4.251 or its
    Tailscale IP) and install Tailscale on both machines plus the phone.
-2. The desktop settings store generates a relay token once (same store as the
-   phone password). Copy the deepthought host's relay token into the laptop's
-   relay settings and set the deepthought gateway URL
-   (`http://<deepthought-ip>:4097`), so the laptop publisher can authenticate
-   its POSTs with `Authorization: Bearer <token>`.
+2. Token roles are split. Each host generates its own **inbound** relay token
+   once in its desktop settings store (same store as the phone password);
+   that token guards the host's own publish endpoint. To publish outward, a
+   host needs the other host's token: on the laptop, open Settings > Servers >
+   Phone > Deepthought relay token and paste the deepthought host's relay
+   token, then set the deepthought gateway URL (`http://<deepthought-ip>:4097`).
+   The laptop publisher authenticates its POSTs with
+   `Authorization: Bearer <deepthought-token>`. The two tokens are never
+   mixed — the local inbound token is never sent outward.
 3. QR codes carry bare `/m` URLs only. The phone credential is typed once per
-   host; the relay token never leaves the two hosts and never appears in QR
-   codes or URLs.
+   host; relay tokens never leave the two hosts and never appear in QR
+   codes, URLs, or logs.
+
+Environment (relay):
+
+| Variable | Purpose |
+|---|---|
+| `OPENCODE_RELAY_TOKEN` | Inbound token guarding this host's publish endpoint (from the desktop settings store) |
+| `OPENCODE_RELAY_REMOTE_TOKEN` | Outbound token: the deepthought host's inbound token, pasted via Settings (laptop side) |
+| `OPENCODE_RELAY_URL` | Deepthought gateway base URL (laptop side) |
 
 Relay digests expire after 24 hours. The publish endpoint rejects bodies over
 64KB, caps origin IDs at 64 characters, keeps at most 50 items per digest,

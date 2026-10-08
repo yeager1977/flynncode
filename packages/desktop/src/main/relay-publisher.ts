@@ -34,6 +34,29 @@ export function generateRelayToken() {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")
 }
 
+// Token roles are split: the local settings-store token guards this host's
+// own publish endpoint (inbound), while the publisher authenticates to the
+// deepthought host with a separately configured outbound token (the
+// deepthought host's token, pasted once into this host's settings). The two
+// are never mixed: sending the inbound token outward would 403 unless both
+// hosts happened to share one secret.
+export function relayPublisherConfigFromEnv(
+  env: Record<string, string | undefined>,
+  input: { gatewayPort: number | undefined; phonePassword: string; originID: string },
+) {
+  if (input.gatewayPort === undefined) return
+  const remoteToken = env.OPENCODE_RELAY_REMOTE_TOKEN
+  const relayUrl = env.OPENCODE_RELAY_URL?.replace(/\/+$/, "")
+  if (!remoteToken || !relayUrl) return
+  return {
+    originID: input.originID,
+    localInboxUrl: `http://127.0.0.1:${input.gatewayPort}/flynncode-mobile-inbox`,
+    remotePublishUrl: `${relayUrl}/flynncode-mobile-relay/publish`,
+    phonePassword: input.phonePassword,
+    remoteToken,
+  }
+}
+
 const POLL_MS = 60_000
 const TIMEOUT_MS = 5000
 
@@ -44,7 +67,7 @@ export function startRelayPublisher(input: {
   remotePublishUrl: string
   username?: string
   phonePassword: string
-  relayToken: string
+  remoteToken: string
   fetchImpl?: typeof fetch
 }): { stop(): void } {
   const fetchImpl = input.fetchImpl ?? fetch
@@ -83,7 +106,7 @@ export function startRelayPublisher(input: {
     try {
       const response = await fetchImpl(input.remotePublishUrl, {
         method: "POST",
-        headers: { authorization: `Bearer ${input.relayToken}`, "content-type": "application/json" },
+        headers: { authorization: `Bearer ${input.remoteToken}`, "content-type": "application/json" },
         body: JSON.stringify(buildDigestBody({ originID: input.originID, items, updatedAt: Date.now() })),
         redirect: "error",
         signal: AbortSignal.timeout(TIMEOUT_MS),

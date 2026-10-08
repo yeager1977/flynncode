@@ -6,7 +6,7 @@ import {
   startMobileGateway,
   type MobileGatewayHandle,
 } from "./mobile-gateway-launch"
-import { startRelayPublisher } from "./relay-publisher"
+import { startRelayPublisher, relayPublisherConfigFromEnv } from "./relay-publisher"
 
 type NodeHttpWithEnvProxy = typeof http & {
   setGlobalProxyFromEnv: () => void
@@ -184,21 +184,13 @@ function serializeError(error: unknown) {
 }
 
 // The relay publisher pushes needs-input digests to the deepthought host so
-// the phone sees them while away. It stays off unless the relay token and the
-// deepthought gateway URL are both configured; originID reuses the machine
-// hostname rather than inventing a new identity.
+// the phone sees them while away. It stays off unless the outbound remote
+// token and the deepthought gateway URL are both configured; originID reuses
+// the machine hostname rather than inventing a new identity.
 function startRelayPublisherFromEnv(input: { gatewayPort: number | undefined; phonePassword: string }) {
-  if (input.gatewayPort === undefined) return
-  const relayToken = process.env.OPENCODE_RELAY_TOKEN
-  const relayUrl = process.env.OPENCODE_RELAY_URL?.replace(/\/+$/, "")
-  if (!relayToken || !relayUrl) return
-  return startRelayPublisher({
-    originID: hostname(),
-    localInboxUrl: `http://127.0.0.1:${input.gatewayPort}/flynncode-mobile-inbox`,
-    remotePublishUrl: `${relayUrl}/flynncode-mobile-relay/publish`,
-    phonePassword: input.phonePassword,
-    relayToken,
-  })
+  const config = relayPublisherConfigFromEnv(process.env, { ...input, originID: hostname() })
+  if (!config) return
+  return startRelayPublisher(config)
 }
 
 function getParentPort() {

@@ -17,5 +17,7 @@ describe("phone launcher url", () => {
     const { dict } = (await import("@/i18n/en")) as Record<string, Record<string, string>>
     expect(dict["server.phone.away.title"]).toBe("Away from home")
     expect(dict["server.phone.relay.hint"]).toContain("deepthought")
+    expect(dict["server.phone.relay.token.label"].toLowerCase()).toContain("deepthought")
+    expect(dict["server.phone.relay.token.save"]).toBe("Save")
   })
 })

@@ -494,6 +494,11 @@ export const dict = {
   "server.phone.relay.title": "Needs-input relay",
   "server.phone.relay.hint": "When this computer sleeps, new approval requests appear on your deepthought host. Approvals still run here.",
   "server.phone.relay.stopped": "Relay is off. Add your deepthought host in Servers to turn it on.",
+  "server.phone.relay.token.label": "Deepthought relay token",
+  "server.phone.relay.token.hint": "Paste your deepthought host's relay token so this computer can publish needs-input notices while you are away.",
+  "server.phone.relay.token.placeholder": "Paste token",
+  "server.phone.relay.token.save": "Save",
+  "server.phone.relay.token.saved": "Relay token saved. Needs-input notices will publish to your deepthought host.",
 
   "dialog.project.edit.title": "Edit project",
   "dialog.project.edit.name": "Name",
