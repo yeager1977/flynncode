@@ -32,13 +32,41 @@ describe("vendor-keychain", () => {
     expect(isKeychainAvailable({ file: "/nonexistent", encryption: fakeEncryption })).toBe(true)
     expect(isKeychainAvailable({ file: "/nonexistent" })).toBe(false)
   })
-  it("round-trips secrets through the file fallback", async () => {
+  it("treats the Linux basic_text backend as unavailable", () => {
+    const basicText = { ...fakeEncryption, getSelectedStorageBackend: () => "basic_text" }
+    expect(isKeychainAvailable({ file: "/nonexistent", encryption: basicText, platform: "linux" })).toBe(false)
+    expect(isKeychainAvailable({ file: "/nonexistent", encryption: basicText, platform: "darwin" })).toBe(true)
+    const libsecret = { ...fakeEncryption, getSelectedStorageBackend: () => "gnome_libsecret" }
+    expect(isKeychainAvailable({ file: "/nonexistent", encryption: libsecret, platform: "linux" })).toBe(true)
+  })
+  it("refuses to store secrets without encryption instead of writing plaintext", async () => {
     const location = await tempFile()
     try {
-      await keychainSet("flynncode-anthropic", "sk-ant-test", { file: location.file })
-      expect(await keychainGet("flynncode-anthropic", { file: location.file })).toBe("sk-ant-test")
-      await keychainRemove("flynncode-anthropic", { file: location.file })
-      expect(await keychainGet("flynncode-anthropic", { file: location.file })).toBeUndefined()
+      expect(await keychainSet("flynncode-anthropic", "sk-ant-test", { file: location.file })).toEqual({
+        ok: false,
+        reason: "encryption-unavailable",
+      })
+      const basicText = { ...fakeEncryption, getSelectedStorageBackend: () => "basic_text" }
+      expect(
+        await keychainSet("flynncode-anthropic", "sk-ant-test", {
+          file: location.file,
+          encryption: basicText,
+          platform: "linux",
+        }),
+      ).toEqual({ ok: false, reason: "encryption-unavailable" })
+      expect(await Bun.file(location.file).exists()).toBe(false)
+    } finally {
+      await rm(location.dir, { recursive: true, force: true })
+    }
+  })
+  it("round-trips and removes encrypted secrets", async () => {
+    const location = await tempFile()
+    try {
+      const deps = { file: location.file, encryption: fakeEncryption }
+      expect(await keychainSet("flynncode-anthropic", "sk-ant-test", deps)).toEqual({ ok: true })
+      expect(await keychainGet("flynncode-anthropic", deps)).toBe("sk-ant-test")
+      await keychainRemove("flynncode-anthropic", deps)
+      expect(await keychainGet("flynncode-anthropic", deps)).toBeUndefined()
     } finally {
       await rm(location.dir, { recursive: true, force: true })
     }
@@ -55,10 +83,10 @@ describe("vendor-keychain", () => {
       await rm(location.dir, { recursive: true, force: true })
     }
   })
-  it("stores the fallback file with owner-only permissions", async () => {
+  it("stores the secrets file with owner-only permissions", async () => {
     const location = await tempFile()
     try {
-      await keychainSet("flynncode-anthropic", "sk-ant-test", { file: location.file })
+      await keychainSet("flynncode-anthropic", "sk-ant-test", { file: location.file, encryption: fakeEncryption })
       const mode = (await stat(location.file)).mode & 0o777
       expect(mode).toBe(0o600)
     } finally {
@@ -76,7 +104,7 @@ describe("vendor-keychain", () => {
   it("tracks vendor status and signs out per vendor", async () => {
     const location = await tempFile()
     try {
-      const deps = { file: location.file }
+      const deps = { file: location.file, encryption: fakeEncryption }
       expect(await vendorAuthStatus(deps)).toEqual({ anthropic: false, openai: false })
       await keychainSet("flynncode-anthropic", "sk-ant-test", deps)
       expect(await vendorAuthStatus(deps)).toEqual({ anthropic: true, openai: false })
