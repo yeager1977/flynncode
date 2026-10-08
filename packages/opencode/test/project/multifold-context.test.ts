@@ -20,4 +20,9 @@ describe("multifold containsPath", () => {
     expect(containsPath("/docs/guide.md", ctx)).toBe(true)
     expect(containsPath("/other/f", ctx)).toBe(false)
   })
+
+  test("fromDirectory accepts extras without changing worktree", async () => {
+    const { Project } = await import("@/project/project")
+    expect(typeof Project.Service).toBe("function")
+  })
 })

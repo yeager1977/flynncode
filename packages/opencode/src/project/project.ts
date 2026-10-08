@@ -3,6 +3,7 @@ import { and, eq, sql } from "drizzle-orm"
 import { Database } from "@opencode-ai/core/database/database"
 import { ProjectDirectoryTable, ProjectTable } from "@opencode-ai/core/project/sql"
 import { ProjectDirectories } from "@opencode-ai/core/project/directories"
+import { normalizeFolders } from "@opencode-ai/core/project/folders"
 import { SessionTable } from "@opencode-ai/core/session/sql"
 import { WorkspaceTable } from "@opencode-ai/core/control-plane/workspace.sql"
 import { Flag } from "@opencode-ai/core/flag/flag"
@@ -87,7 +88,10 @@ export interface Interface {
    * fires. Subscription lifetime is tied to the per-instance state scope.
    */
   readonly init: () => Effect.Effect<void>
-  readonly fromDirectory: (directory: string) => Effect.Effect<{ project: Info; sandbox: string }>
+  readonly fromDirectory: (
+    directory: string,
+    additionalDirectories?: string[],
+  ) => Effect.Effect<{ project: Info; sandbox: string }>
   readonly discover: (input: Info) => Effect.Effect<void>
   readonly list: () => Effect.Effect<Info[]>
   readonly get: (id: ProjectV2.ID) => Effect.Effect<Info | undefined>
@@ -210,7 +214,10 @@ const layer = Layer.effect(
         )
     })
 
-    const fromDirectory = Effect.fn("Project.fromDirectory")(function* (directory: string) {
+    const fromDirectory = Effect.fn("Project.fromDirectory")(function* (
+      directory: string,
+      additionalDirectories?: string[],
+    ) {
       yield* Effect.logInfo("fromDirectory", { directory })
 
       const data = yield* projectV2.resolve(AbsolutePath.make(directory))
@@ -301,6 +308,19 @@ const layer = Layer.effect(
         projectID,
         directory: data.directory,
       })
+
+      // Multifold: extra folders persist as project_directory rows alongside
+      // the primary. They never change project id, worktree, or vcs.
+      for (const extra of normalizeFolders(data.directory, additionalDirectories ?? [])) {
+        const opened = AbsolutePath.make(FSUtil.resolve(extra))
+        yield* projectDirectories
+          .create({ directory: opened, projectID })
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("project extra directory persistence failed", { projectID, cause }),
+            ),
+          )
+      }
 
       yield* emitUpdated(result)
       if (projectID !== ProjectV2.ID.global && data.vcs?.type === "git") {
