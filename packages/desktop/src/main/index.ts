@@ -405,9 +405,10 @@ const main = Effect.gen(function* () {
       randomUUID,
     )
     // The relay token lives in the same settings store as the phone password
-    // and stays stable across restarts. It is forwarded to the sidecar via
-    // env; the deepthought gateway URL is user-configured (Settings > Servers
-    // relay row persists it under RELAY_PUBLISH_URL_KEY).
+    // and stays stable across restarts. Relay settings are forwarded to the
+    // sidecar in its start message, never via process.env: the sidecar env is
+    // inherited by every agent shell. Explicit env values still win so a
+    // headless host can configure the relay without the settings store.
     const relayToken = getOrCreateMobilePhonePassword(
       {
         get: (key) => {
@@ -419,17 +420,16 @@ const main = Effect.gen(function* () {
       RELAY_TOKEN_KEY,
       generateRelayToken,
     )
-    process.env.OPENCODE_RELAY_TOKEN ??= relayToken
     // The outbound token is the deepthought host's inbound token, pasted once
     // via Settings > Servers > Phone relay. It is never generated here: only
     // an explicit user paste enables publishing outward.
     const relayRemoteToken = persisted.get(RELAY_REMOTE_TOKEN_KEY)
-    if (typeof relayRemoteToken === "string" && relayRemoteToken) {
-      process.env.OPENCODE_RELAY_REMOTE_TOKEN ??= relayRemoteToken
-    }
     const relayPublishUrl = persisted.get(RELAY_PUBLISH_URL_KEY)
-    if (typeof relayPublishUrl === "string" && relayPublishUrl) {
-      process.env.OPENCODE_RELAY_URL ??= relayPublishUrl
+    const relay = {
+      token: process.env.OPENCODE_RELAY_TOKEN || relayToken,
+      remoteToken:
+        process.env.OPENCODE_RELAY_REMOTE_TOKEN || (typeof relayRemoteToken === "string" ? relayRemoteToken : ""),
+      url: process.env.OPENCODE_RELAY_URL || (typeof relayPublishUrl === "string" ? relayPublishUrl : ""),
     }
 
     logger.log("spawning sidecar", { url })
@@ -437,6 +437,7 @@ const main = Effect.gen(function* () {
       spawnLocalServer(hostname, port, password, {
         userDataPath: app.getPath("userData"),
         mobilePassword,
+        relay,
         onStdout: (message) => writeLog("server", "stdout", { message }),
         onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
         onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),

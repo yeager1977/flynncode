@@ -7,11 +7,19 @@ export function mobileGatewayUpstream(hostname: string, port: number) {
   return `http://${hostname}:${port}`
 }
 
-export function mobileGatewayEnv(input: { serverPassword: string; phonePassword: string; port: number }) {
+export function mobileGatewayEnv(input: {
+  serverPassword: string
+  phonePassword: string
+  port: number
+  relayToken: string
+  host?: string
+}) {
   return {
     OPENCODE_SERVER_PASSWORD: input.serverPassword,
     OPENCODE_MOBILE_PASSWORD: input.phonePassword,
     OPENCODE_MOBILE_PORT: String(input.port),
+    OPENCODE_RELAY_TOKEN: input.relayToken,
+    ...(input.host ? { OPENCODE_MOBILE_HOST: input.host } : {}),
   }
 }
 
@@ -22,6 +30,8 @@ export async function startMobileGateway(input: {
   phonePassword: string
   port: number
   upstream: string
+  relayToken: string
+  host?: string
 }): Promise<MobileGatewayHandle | undefined> {
   try {
     const resolved = resolveOptions(mobileGatewayEnv(input), input.upstream)

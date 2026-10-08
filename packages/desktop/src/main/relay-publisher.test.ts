@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { buildDigestBody, relayPublisherConfigFromEnv, startRelayPublisher } from "./relay-publisher.ts"
+import { buildDigestBody, relayPublisherConfig, startRelayPublisher } from "./relay-publisher.ts"
 import { createGateway } from "@flynncode/mobile-gateway/gateway"
 
 test("digest body carries metadata only", () => {
@@ -11,9 +11,9 @@ test("digest body carries metadata only", () => {
   expect(body).toEqual({ originID: "laptop", items: [{ sessionID: "ses_1", directory: "/repo", title: "Fix", kind: "permission", updated: 5 }], updatedAt: 7 })
 })
 
-test("sidecar config uses the outbound remote token, not the inbound one", () => {
-  const config = relayPublisherConfigFromEnv(
-    { OPENCODE_RELAY_TOKEN: "local-inbound", OPENCODE_RELAY_REMOTE_TOKEN: "deep-B", OPENCODE_RELAY_URL: "http://192.168.4.251:4097/" },
+test("sidecar config uses the outbound remote token", () => {
+  const config = relayPublisherConfig(
+    { remoteToken: "deep-B", url: "http://192.168.4.251:4097/" },
     { gatewayPort: 4097, phonePassword: "phone-A", originID: "laptop-A" },
   )
   expect(config?.remoteToken).toBe("deep-B")
@@ -21,8 +21,8 @@ test("sidecar config uses the outbound remote token, not the inbound one", () =>
 })
 
 test("sidecar config stays off without a remote token", () => {
-  const config = relayPublisherConfigFromEnv(
-    { OPENCODE_RELAY_TOKEN: "local-inbound", OPENCODE_RELAY_URL: "http://192.168.4.251:4097" },
+  const config = relayPublisherConfig(
+    { remoteToken: "", url: "http://192.168.4.251:4097" },
     { gatewayPort: 4097, phonePassword: "phone-A", originID: "laptop-A" },
   )
   expect(config).toBeUndefined()

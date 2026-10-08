@@ -24,6 +24,7 @@ const SIDECAR_STOP_TIMEOUT = 6_000
 type SpawnLocalServerOptions = {
   userDataPath: string
   mobilePassword: string
+  relay: { token: string; remoteToken: string; url: string }
   onStdout?: (message: string) => void
   onStderr?: (message: string) => void
   onExit?: (code: number) => void
@@ -138,6 +139,7 @@ export async function spawnLocalServer(
       password,
       userDataPath: options.userDataPath,
       mobile: { password: options.mobilePassword, port: MOBILE_GATEWAY_PORT },
+      relay: options.relay,
     })
   }).catch((error) => {
     if (!exited) child.kill()
@@ -219,6 +221,11 @@ function createSidecarEnv(): Record<string, string> {
   )
   delete env.DEBUG
   if (process.platform === "linux") delete env.LD_PRELOAD
+  // Relay secrets reach the sidecar through the start message only; agent
+  // shells inherit the sidecar env, so they must never be present here.
+  delete env.OPENCODE_RELAY_TOKEN
+  delete env.OPENCODE_RELAY_REMOTE_TOKEN
+  delete env.OPENCODE_RELAY_URL
   return env
 }
 

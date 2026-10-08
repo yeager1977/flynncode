@@ -40,13 +40,13 @@ export function generateRelayToken() {
 // deepthought host's token, pasted once into this host's settings). The two
 // are never mixed: sending the inbound token outward would 403 unless both
 // hosts happened to share one secret.
-export function relayPublisherConfigFromEnv(
-  env: Record<string, string | undefined>,
+export function relayPublisherConfig(
+  relay: { remoteToken: string | undefined; url: string | undefined },
   input: { gatewayPort: number | undefined; phonePassword: string; originID: string },
 ) {
   if (input.gatewayPort === undefined) return
-  const remoteToken = env.OPENCODE_RELAY_REMOTE_TOKEN
-  const relayUrl = env.OPENCODE_RELAY_URL?.replace(/\/+$/, "")
+  const remoteToken = relay.remoteToken
+  const relayUrl = relay.url?.replace(/\/+$/, "")
   if (!remoteToken || !relayUrl) return
   return {
     originID: input.originID,
