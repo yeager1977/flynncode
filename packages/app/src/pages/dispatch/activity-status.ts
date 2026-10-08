@@ -12,10 +12,17 @@ export function activityStatus(input: { type?: string; blocked?: boolean }): Act
 
 export function inboxStatus(stored: ActivityStatus, live?: { type?: string; blocked?: boolean }) {
   if (!live) return stored
-  // Live idle only means the driver is not running, so a finished dispatch
-  // keeps its stored terminal status; blocked idle still needs user input.
-  if (live.type === "idle") return live.blocked ? "needs-input" : stored
+  if (live.type === "idle") return idleStatus(stored, live.blocked === true)
   return activityStatus(live)
+}
+
+// Live idle means the driver stopped after running. A task still stored as
+// active has therefore finished; a stored failure is kept, and a blocked idle
+// session still needs user input.
+function idleStatus(stored: ActivityStatus, waiting: boolean): ActivityStatus {
+  if (waiting) return "needs-input"
+  if (stored === "failed") return "failed"
+  return "done"
 }
 
 // Single status resolver for every inbox row. `kind` is reserved for future
@@ -28,6 +35,6 @@ export function inboxRowStatus(
 ): ActivityStatus {
   void kind
   if (!live) return stored
-  if (live.type === "idle") return waiting ? "needs-input" : stored
+  if (live.type === "idle") return idleStatus(stored, waiting)
   return activityStatus(live)
 }

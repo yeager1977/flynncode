@@ -83,7 +83,9 @@ export const { use: useDispatchActivity, provider: DispatchActivityProvider } = 
           existing.map((task) => {
             const status = current.get(task.sessionID)
             if (!status || !resolvedTransition(previous.get(task.sessionID) ?? status, status)) return task
-            return { ...task, unread: true }
+            // Persist the resolved status so a later reconcile does not
+            // re-flag a task the user already marked read.
+            return { ...task, status, unread: true }
           }),
         )
       }

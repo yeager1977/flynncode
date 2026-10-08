@@ -27,7 +27,9 @@ describe("DispatchPanel", () => {
   test("renders inbox tabs and the dispatch send form", () => {
     const source = readFileSync(new URL("./activity-inbox.tsx", import.meta.url), "utf8")
     expect(source).toContain("createMemo")
-    expect(source).toContain('"all", "running", "needs-input", "blocked", "done", "unread"')
+    expect(source).toContain('"all", "running", "needs-input", "blocked", "done", "failed", "unread"')
+    expect(source).toContain("inbox.filterFailed")
+    expect(source).toContain("inbox.modelPlaceholder")
     expect(source).toContain("inbox.title")
     expect(source).toContain("inbox.filterUnread")
     expect(source).toContain("inbox.filterRunning")

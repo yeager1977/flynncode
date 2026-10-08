@@ -1,5 +1,6 @@
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
+import { SelectV2 } from "@opencode-ai/ui/v2/select-v2"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog, DialogTitle } from "@opencode-ai/ui/v2/dialog-v2"
 import { createQuery } from "@tanstack/solid-query"
@@ -27,7 +28,7 @@ import {
   type InboxRow,
 } from "./activity-inbox-rows"
 import { useDispatchActivity } from "./dispatch-activity"
-import { addDispatch, completeDispatch, failDispatch, reconcileDispatch } from "./dispatch-store"
+import { addDispatch, failDispatch, reconcileDispatch } from "./dispatch-store"
 
 export function ActivityInboxPanel() {
   const language = useLanguage()
@@ -88,9 +89,12 @@ export function ActivityInboxPanel() {
     if (!ready()) return
     void serverSDK()
       .api.session.active()
-      .then((active) => {
-        setDesk("tasks", (current) => reconcileDispatch(current, new Set(Object.keys(active))))
-      }, () => undefined)
+      .then(
+        (active) => {
+          setDesk("tasks", (current) => reconcileDispatch(current, new Set(Object.keys(active))))
+        },
+        () => undefined,
+      )
   })
 
   const selectedModel = () => {
@@ -120,9 +124,8 @@ export function ActivityInboxPanel() {
       setState({ sending: false, error: language.t("dispatch.sendFailed") })
       return
     }
-    setDesk(
-      "tasks",
-      (current) => addDispatch(current, { sessionID: created.id, title: text, status: "running", directory, unread: false }),
+    setDesk("tasks", (current) =>
+      addDispatch(current, { sessionID: created.id, title: text, status: "running", directory, unread: false }),
     )
     await serverSDK()
       .api.session.prompt({
@@ -133,9 +136,10 @@ export function ActivityInboxPanel() {
       })
       .then(
         () => {
-          setDesk("tasks", (current) => completeDispatch(current, created.id))
-          // Success clears the composed text; a failure keeps it so the
-          // user can retry without retyping.
+          // Accepting the prompt only starts the task. It stays running until
+          // the live-status watcher sees the session go idle (or reconcile
+          // finds it inactive). Success clears the composed text; a failure
+          // keeps it so the user can retry without retyping.
           setState({ sending: false, text: "" })
         },
         () => {
@@ -157,11 +161,13 @@ export function ActivityInboxPanel() {
     return inboxRowStatus("dispatch", stored, { type: live.type, blocked: waiting }, waiting)
   }
 
+  // Plain sessions have no stored dispatch status; without live work they
+  // are finished, so the fallback is "done" rather than "running".
   const liveSessionStatus = (sessionID: string): ActivityStatus => {
     const live = serverSync().session.data.session_status[sessionID]
-    if (!live) return inboxRowStatus("session", "running")
     const waiting = waitingFor(sessionID)
-    return inboxRowStatus("session", "running", { type: live.type, blocked: waiting }, waiting)
+    if (!live) return waiting ? "needs-input" : "done"
+    return inboxRowStatus("session", "done", { type: live.type, blocked: waiting }, waiting)
   }
 
   const scheduleOf = (routine: StoredRoutine) =>
@@ -188,8 +194,11 @@ export function ActivityInboxPanel() {
         if (dispatched.has(session.id)) return []
         if (session.parentID) return []
         if (session.time?.archived) return []
-        const live = serverSync().session.data.session_status[session.id]
-        if (!live && notification.session.unseenCount(session.id) === 0) return []
+        // Only sessions that are working, waiting on the user, or carry
+        // unseen activity belong in the inbox.
+        const type = serverSync().session.data.session_status[session.id]?.type
+        const working = type === "busy" || type === "retry"
+        if (!working && !waitingFor(session.id) && notification.session.unseenCount(session.id) === 0) return []
         return [{ id: session.id, title: session.title || session.id, directory: session.directory }]
       })
     })
@@ -209,8 +218,10 @@ export function ActivityInboxPanel() {
   const markRowRead = (row: InboxRow) => {
     const sessionID = row.sessionID
     if (!sessionID) return
+    // Dispatch rows are unread from either the dispatch flag or unseen
+    // session notifications, so marking read clears both.
     if (row.kind === "dispatch") activity.markRead(sessionID)
-    if (row.kind === "session") notification.session.markViewed(sessionID)
+    notification.session.markViewed(sessionID)
   }
 
   const openRow = (row: InboxRow) => {
@@ -240,44 +251,40 @@ export function ActivityInboxPanel() {
         </Show>
       </DialogTitle>
       <div class="flex flex-col gap-3 p-4">
-        <label class="flex flex-col gap-1 text-12-regular text-text-weak">
-          {language.t("dispatch.project")}
-          <select
-            class="rounded border border-border-weak bg-surface-base px-2 py-1 text-14-regular text-text-strong"
-            value={state.directory}
-            onChange={(event) => setState("directory", event.currentTarget.value)}
-          >
-            <For each={projects()}>
-              {(project) => <option value={project.worktree}>{project.worktree}</option>}
-            </For>
-          </select>
-        </label>
-        <label class="flex flex-col gap-1 text-12-regular text-text-weak">
-          {language.t("dispatch.agent")}
-          <select
-            class="rounded border border-border-weak bg-surface-base px-2 py-1 text-14-regular text-text-strong"
-            value={state.agent}
-            onChange={(event) => setState("agent", event.currentTarget.value)}
-          >
-            <For each={agents()}>{(agent) => <option value={agent}>{agent}</option>}</For>
-          </select>
-        </label>
-        <label class="flex flex-col gap-1 text-12-regular text-text-weak">
-          {language.t("dispatch.model")}
-          <select
-            class="rounded border border-border-weak bg-surface-base px-2 py-1 text-14-regular text-text-strong"
-            value={state.model}
-            onChange={(event) => setState("model", event.currentTarget.value)}
-          >
-            <For each={modelOptions()}>
-              {(model) => (
-                <option value={`${model.provider.id}/${model.id}`}>
-                  {model.provider.name} / {model.name}
-                </option>
-              )}
-            </For>
-          </select>
-        </label>
+        <div class="flex flex-col gap-1 text-12-regular text-text-weak">
+          <span>{language.t("dispatch.project")}</span>
+          <SelectV2
+            data-action="inbox-project"
+            options={projects()}
+            current={projects().find((project) => project.worktree === state.directory)}
+            value={(project) => project.worktree}
+            label={(project) => project.worktree}
+            placeholder={language.t("inbox.projectPlaceholder")}
+            onSelect={(project) => project && setState("directory", project.worktree)}
+          />
+        </div>
+        <div class="flex flex-col gap-1 text-12-regular text-text-weak">
+          <span>{language.t("dispatch.agent")}</span>
+          <SelectV2
+            data-action="inbox-agent"
+            options={agents()}
+            current={agents().find((agent) => agent === state.agent)}
+            placeholder={language.t("inbox.agentPlaceholder")}
+            onSelect={(agent) => agent && setState("agent", agent)}
+          />
+        </div>
+        <div class="flex flex-col gap-1 text-12-regular text-text-weak">
+          <span>{language.t("dispatch.model")}</span>
+          <SelectV2
+            data-action="inbox-model"
+            options={modelOptions()}
+            current={selectedModel()}
+            value={(model) => `${model.provider.id}/${model.id}`}
+            label={(model) => `${model.provider.name} / ${model.name}`}
+            placeholder={language.t("inbox.modelPlaceholder")}
+            onSelect={(model) => model && setState("model", `${model.provider.id}/${model.id}`)}
+          />
+        </div>
         <textarea
           class="min-h-24 w-full rounded border border-border-weak bg-surface-base p-2 text-14-regular"
           aria-label={language.t("dispatch.placeholder")}
@@ -295,13 +302,17 @@ export function ActivityInboxPanel() {
           <p class="text-text-critical">{state.error}</p>
         </Show>
         <div class="flex flex-row gap-1" role="tablist">
-          <For each={["all", "running", "needs-input", "blocked", "done", "unread"] as const}>
+          <For each={["all", "running", "needs-input", "blocked", "done", "failed", "unread"] as const}>
             {(tab) => (
               <button
                 type="button"
                 role="tab"
                 aria-selected={state.filter === tab}
-                class={tab === state.filter ? "rounded px-2 py-1 text-12-regular bg-surface-raised text-text-strong" : "rounded px-2 py-1 text-12-regular text-text-weak"}
+                class={
+                  tab === state.filter
+                    ? "rounded px-2 py-1 text-12-regular bg-surface-raised text-text-strong"
+                    : "rounded px-2 py-1 text-12-regular text-text-weak"
+                }
                 onClick={() => setState("filter", tab)}
               >
                 {language.t(filterKey(tab))}
@@ -375,6 +386,8 @@ function filterKey(tab: InboxFilter) {
       return "inbox.filterBlocked" as const
     case "done":
       return "inbox.filterDone" as const
+    case "failed":
+      return "inbox.filterFailed" as const
   }
 }
 
