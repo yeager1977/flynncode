@@ -86,3 +86,26 @@ describe("interval", () => {
     expect(isDue(routine({ dailyAt: undefined, interval: "1h", lastRun: "not-a-date" }), new Date(2026, 8, 22, 9, 0))).toBe(true)
   })
 })
+
+describe("rrule", () => {
+  test("fires on a matching weekday", () => {
+    const weekly = routine({ dailyAt: undefined, rrule: "FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0" })
+    // 2026-09-21 is a Monday
+    expect(isDue(weekly, new Date(2026, 8, 21, 9, 0))).toBe(true)
+    expect(isDue(weekly, new Date(2026, 8, 22, 9, 0))).toBe(false)
+  })
+
+  test("does not refire after running", () => {
+    const ran = routine({
+      dailyAt: undefined,
+      rrule: "FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0",
+      lastRun: new Date(2026, 8, 21, 9, 0, 5).toISOString(),
+    })
+    expect(isDue(ran, new Date(2026, 8, 21, 9, 0, 40))).toBe(false)
+  })
+
+  test("invalid rrule never fires", () => {
+    const broken = routine({ dailyAt: undefined, rrule: "EVERY=monday" })
+    expect(isDue(broken, new Date(2026, 8, 21, 9, 0))).toBe(false)
+  })
+})

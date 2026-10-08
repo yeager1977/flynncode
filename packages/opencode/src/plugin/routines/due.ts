@@ -1,7 +1,9 @@
+import { RRule } from "rrule"
 import { intervalMs, type Routine } from "./parse"
 
 export function isDue(routine: Routine, now: Date) {
   if (!routine.enabled) return false
+  if (routine.rrule) return isRruleDue(routine, now)
   if (routine.interval) return isIntervalDue(routine, now)
   if (!routine.dailyAt) return false
   const [hour, minute] = routine.dailyAt.split(":").map((part) => Number(part))
@@ -22,6 +24,39 @@ export function isDue(routine: Routine, now: Date) {
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
   const ranYesterday = last.getFullYear() === yesterday.getFullYear() && last.getMonth() === yesterday.getMonth() && last.getDate() === yesterday.getDate()
   return !ranYesterday
+}
+
+function rruleOptions(routine: Routine) {
+  try {
+    // Anchor dtstart in the past: fromString defaults dtstart to now, which
+    // would hide occurrences before the first parse. Local time matches dailyAt.
+    const options = RRule.parseString(routine.rrule ?? "")
+    return new RRule({ ...options, dtstart: new Date(2000, 0, 1) })
+  } catch {
+    return undefined
+  }
+}
+
+function isRruleDue(routine: Routine, now: Date) {
+  const rule = rruleOptions(routine)
+  if (!rule) return false
+  const last = routine.lastRun ? new Date(routine.lastRun) : undefined
+  if (last && Number.isNaN(last.getTime())) return true
+  // Never-run routines anchor at local midnight: due when today's occurrence
+  // already passed (mirrors dailyAt), without firing for occurrences from
+  // previous days. A far-past anchor would make every post-first-occurrence
+  // tick due.
+  const after = last ?? new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const next = rule.after(after, true)
+  if (!next) return false
+  return next.getTime() <= now.getTime()
+}
+
+export function nextOccurrence(routine: Routine, now: Date) {
+  const rule = rruleOptions(routine)
+  if (!rule) return undefined
+  const next = rule.after(now, false)
+  return next ?? undefined
 }
 
 function isIntervalDue(routine: Routine, now: Date) {
