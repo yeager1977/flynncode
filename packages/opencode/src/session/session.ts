@@ -44,6 +44,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { SessionMessage } from "@opencode-ai/schema/session-message"
+import { HooksRunner } from "@/hooks/runner"
 
 const parentTitlePrefix = "New session - "
 const childTitlePrefix = "Child session - "
@@ -534,6 +535,11 @@ const layer: Layer.Layer<
       yield* Effect.logInfo("created", result)
 
       yield* events.publish(SessionV1.Event.Created, { sessionID: result.id, info: result })
+      // Observe-only SessionStart hook; failures are advisory and never block creation.
+      const maybeStartHooks = yield* Effect.serviceOption(HooksRunner.Service)
+      if (Option.isSome(maybeStartHooks)) {
+        yield* maybeStartHooks.value.runSessionStart({ sessionID: result.id, source: "startup" }).pipe(Effect.ignore)
+      }
 
       return result
     })
@@ -621,6 +627,13 @@ const layer: Layer.Layer<
         }
 
         yield* events.publish(SessionV1.Event.Deleted, { sessionID, info: session })
+        // SessionEnd is always synchronous with a 3s cap; output is advisory only.
+        const maybeEndHooks = yield* Effect.serviceOption(HooksRunner.Service)
+        if (Option.isSome(maybeEndHooks) && hasInstance) {
+          yield* maybeEndHooks.value
+            .runSessionEnd({ sessionID })
+            .pipe(Effect.timeout("3 seconds"), Effect.ignore)
+        }
         yield* events.remove(sessionID)
       } catch (error) {
         yield* Effect.logError("failed to remove session", { sessionID, error })

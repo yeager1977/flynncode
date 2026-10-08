@@ -12,8 +12,9 @@ import { Plugin } from "@/plugin"
 import { Config } from "@/config/config"
 import { NotFoundError } from "@/storage/storage"
 
-import { Effect, Layer, Context } from "effect"
+import { Effect, Layer, Context, Option } from "effect"
 import { InstanceState } from "@/effect/instance-state"
+import { HooksRunner } from "@/hooks/runner"
 import { isOverflow as overflow, usable } from "./overflow"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -370,6 +371,12 @@ const layer = Layer.effect(
         model,
       })
       // Allow plugins to inject context or replace compaction prompt.
+      const maybeCompactHooks = yield* Effect.serviceOption(HooksRunner.Service)
+      if (Option.isSome(maybeCompactHooks)) {
+        yield* maybeCompactHooks.value
+          .runCompact({ sessionID: input.sessionID, trigger: input.auto ? "auto" : "manual", phase: "pre" })
+          .pipe(Effect.ignore)
+      }
       const compacting = yield* plugin.trigger(
         "experimental.session.compacting",
         { sessionID: input.sessionID },
@@ -552,6 +559,12 @@ const layer = Layer.effect(
       if (processor.message.error) return "stop"
       if (result === "continue") {
         yield* events.publish(Event.Compacted, { sessionID: input.sessionID })
+        const maybePostHooks = yield* Effect.serviceOption(HooksRunner.Service)
+        if (Option.isSome(maybePostHooks)) {
+          yield* maybePostHooks.value
+            .runCompact({ sessionID: input.sessionID, trigger: input.auto ? "auto" : "manual", phase: "post" })
+            .pipe(Effect.ignore)
+        }
       }
       return result
     })

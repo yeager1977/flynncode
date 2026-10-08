@@ -1,9 +1,10 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { InstanceState } from "@/effect/instance-state"
 import { SessionID } from "./schema"
-import { Effect, Layer, Context } from "effect"
+import { Effect, Layer, Context, Option } from "effect"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { SessionStatusEvent } from "@opencode-ai/schema/session-status-event"
+import { HooksRunner } from "@/hooks/runner"
 
 export const Info = SessionStatusEvent.Info
 export type Info = SessionStatusEvent.Info
@@ -41,6 +42,11 @@ const layer = Layer.effect(
       yield* events.publish(Event.Status, { sessionID, status })
       if (status.type === "idle") {
         yield* events.publish(Event.Idle, { sessionID })
+        // Observe-only Stop hook on idle transition; advisory, never blocks.
+        const maybeHooks = yield* Effect.serviceOption(HooksRunner.Service)
+        if (Option.isSome(maybeHooks)) {
+          yield* maybeHooks.value.runIdle({ sessionID }).pipe(Effect.ignore)
+        }
         data.delete(sessionID)
         return
       }

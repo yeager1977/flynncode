@@ -194,6 +194,12 @@ const layer = Layer.effect(
 
     const cancel = Effect.fn("SessionPrompt.cancel")(function* (sessionID: SessionID) {
       yield* Effect.logInfo("cancel", { "session.id": sessionID })
+      // Interrupt hook reuses the existing user-interrupt path: advisory
+      // observe-only, no parallel interruption mechanism.
+      const maybeInterruptHooks = yield* Effect.serviceOption(HooksRunner.Service)
+      if (Option.isSome(maybeInterruptHooks)) {
+        yield* maybeInterruptHooks.value.runInterrupt({ sessionID }).pipe(Effect.ignore)
+      }
       yield* state.cancel(sessionID)
     })
 
@@ -1103,6 +1109,24 @@ const layer = Layer.effect(
     const prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error> = Effect.fn(
       "SessionPrompt.prompt",
     )(function* (input: PromptInput) {
+      // UserPromptSubmit hook runs before admission. A blocking hook aborts
+      // the turn with a hook error (fail closed — never silently continue).
+      const maybePromptHooks = yield* Effect.serviceOption(HooksRunner.Service)
+      if (Option.isSome(maybePromptHooks)) {
+        const text = input.parts
+          .filter((part) => part.type === "text")
+          .map((part) => part.text)
+          .join("\n")
+        const hookExit = yield* maybePromptHooks.value
+          .runSessionPrompt({ sessionID: input.sessionID, prompt: text })
+          .pipe(Effect.exit)
+        if (Exit.isFailure(hookExit)) {
+          const cause = Cause.squash(hookExit.cause)
+          throw cause instanceof HooksRunner.HookDeniedError
+            ? cause
+            : new HooksRunner.HookDeniedError(cause instanceof Error ? cause.message : "Prompt blocked by hook")
+        }
+      }
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       yield* revert.cleanup(session)
       const message = yield* createUserMessage(input)

@@ -1,7 +1,7 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Option } from "effect"
 import type { Hooks } from "@opencode-ai/plugin"
-import { Plugin } from "@/plugin"
+import type { Plugin } from "@/plugin"
 import { HooksTrust } from "@/hooks/trust"
 
 export type PreToolUseDecision =
@@ -273,17 +273,33 @@ export const node = LayerNode.make({
   layer: Layer.effect(
     Service,
     Effect.gen(function* () {
-      const plugin = yield* Plugin.Service
+      // Dynamic import: src/plugin/index pulls the full internal plugin graph
+      // (which transitively reaches session/prompt -> tool/task -> this module),
+      // so a static value import would create an eval-time cycle (TDZ on Plugin.node).
+      // serviceOption keeps this layer free of a hard Plugin dependency: graphs
+      // that provide Plugin.Service get full hook behavior, others degrade to
+      // passthrough with a warning instead of failing layer construction.
+      const pluginModule = yield* Effect.promise(() => import("../plugin"))
+      const maybePlugin = yield* Effect.serviceOption(pluginModule.Plugin.Service)
       const trust = yield* HooksTrust.Service
       // In-memory plugin hooks are already-loaded code and therefore trusted.
       // File-based command hooks consult HooksTrust before execution (Task 9);
       // trust lookup failures fail closed via isTrusted === false.
       void trust
-      return createRunner(plugin)
+      if (Option.isNone(maybePlugin)) {
+        yield* Effect.logWarning("HooksRunner running without Plugin service; hooks disabled")
+        return createRunner(noopPlugin)
+      }
+      return createRunner(maybePlugin.value)
     }),
   ),
-  deps: [Plugin.node, HooksTrust.node],
+  deps: [HooksTrust.node],
 })
+
+const noopPlugin: TriggerLike = {
+  trigger: (_name, _input, output) => Effect.succeed(output as never),
+  triggerDecision: (_input, output) => Effect.succeed(output),
+}
 
 function stubPlugin(hooks: Array<Hooks>): TriggerLike {
   return {
