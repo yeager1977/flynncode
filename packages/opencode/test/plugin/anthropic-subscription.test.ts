@@ -1,7 +1,12 @@
 import { describe, expect, it } from "bun:test"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
-import { filterSubscriptionModels, parseJwtLike, refreshSubscriptionToken } from "../../src/plugin/anthropic/subscription"
+import {
+  AnthropicSubscriptionPlugin,
+  filterSubscriptionModels,
+  parseJwtLike,
+  refreshSubscriptionToken,
+} from "../../src/plugin/anthropic/subscription"
 
 function createTestJwt(payload: object): string {
   const header = Buffer.from(JSON.stringify({ alg: "none" })).toString("base64url")
@@ -30,6 +35,18 @@ describe("subscription helpers", () => {
   })
   it("parses jwt payload", () => {
     expect(parseJwtLike(createTestJwt({ sub: "user-1" }))).toMatchObject({ sub: "user-1" })
+  })
+})
+
+describe("subscription plugin shape", () => {
+  it("registers anthropic auth with browser, import, and api methods", async () => {
+    const hooks = await AnthropicSubscriptionPlugin({} as never)
+    expect(hooks.auth?.provider).toBe("anthropic")
+    expect(hooks.auth?.methods.map((method) => method.label)).toEqual([
+      "Claude Pro/Max (browser)",
+      "Import from Claude Code",
+      "Manually enter API Key",
+    ])
   })
 })
 
