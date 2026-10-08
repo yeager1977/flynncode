@@ -666,7 +666,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       id: "session.viewMode.cycle",
       title: language.t("session.viewMode.next"),
       description: language.t("session.viewMode.next.description"),
-      keybind: "ctrl+o",
+      keybind: "mod+shift+m",
       disabled: !params.id,
       onSelect: () => view().cycleViewMode(),
     }),
