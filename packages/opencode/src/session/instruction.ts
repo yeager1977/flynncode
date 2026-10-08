@@ -70,6 +70,9 @@ const layer: Layer.Layer<
       const ctx = yield* InstanceState.context
       const paths = new Set<string>()
 
+      // Multifold: base instruction discovery uses the primary folder only;
+      // extras load via explicit read.
+
       for (const file of globalFiles) {
         if (yield* fs.existsSafe(file)) {
           paths.add(path.resolve(file))
