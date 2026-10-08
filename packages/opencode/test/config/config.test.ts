@@ -363,12 +363,11 @@ it.instance("updates config and preserves empty shell sentinel", () =>
     yield* writeConfigEffect(
       test.directory,
       { $schema: "https://opencode.ai/config.json", shell: "bash" },
-      "config.json",
     )
 
     yield* Config.Service.use((svc) => svc.update(ConfigParse.schema(ConfigV1.Info, { shell: "" }, "test:config")))
 
-    const writtenConfig = yield* FSUtil.use.readJson(path.join(test.directory, "config.json"))
+    const writtenConfig = yield* FSUtil.use.readJson(path.join(test.directory, "opencode.json"))
     expect(writtenConfig).toMatchObject({ shell: "" })
   }),
 )
@@ -521,7 +520,7 @@ for (const input of projectInputs) {
     Effect.gen(function* () {
       const instance = yield* TestInstance
       const fs = yield* FSUtil.Service
-      const file = path.join(instance.directory, "config.json")
+      const file = path.join(instance.directory, "opencode.json")
       yield* fs.writeFileString(file, yield* fs.readFileString(path.join(updateFixtures, input)))
       const patch = ConfigParse.schema(ConfigV1.Info, yield* fs.readJson(`${prefix}-patch.json`), input)
       yield* Config.use.update(patch)
@@ -564,7 +563,7 @@ it.instance("rejects a project update with native agent permissions without writ
   Effect.gen(function* () {
     const instance = yield* TestInstance
     const fs = yield* FSUtil.Service
-    const file = path.join(instance.directory, "config.json")
+    const file = path.join(instance.directory, "opencode.json")
     const before = JSON.stringify({ agents: { reviewer: { permissions: [] } } })
     yield* fs.writeFileString(file, before)
     const exit = yield* Effect.exit(Config.use.update({ username: "changed" }))
@@ -1137,10 +1136,96 @@ it.instance("updates config and writes to file", () =>
       svc.update(ConfigParse.schema(ConfigV1.Info, { model: "updated/model" }, "test:config")),
     )
 
-    const writtenConfig = yield* FSUtil.use.readJson(path.join(test.directory, "config.json"))
+    const writtenConfig = yield* FSUtil.use.readJson(path.join(test.directory, "opencode.json"))
     expect(writtenConfig).toMatchObject({ model: "updated/model" })
+    expect(yield* FSUtil.use.existsSafe(path.join(test.directory, "config.json"))).toBe(false)
   }),
 )
+
+it.effect("project update patches only the requested keys into the project file", () =>
+  withConfigTree(
+    {
+      global: { provider: { example: { options: { apiKey: "global-secret" } } } },
+      project: { username: "project-user" },
+    },
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      yield* Config.use.update({ worktree: { location: "trees" } })
+
+      const written = yield* FSUtil.use.readJson(path.join(test.directory, "opencode.json"))
+      expect(written).toMatchObject({ username: "project-user", worktree: { location: "trees" } })
+      expect(JSON.stringify(written)).not.toContain("global-secret")
+      expect(yield* FSUtil.use.existsSafe(path.join(test.directory, "config.json"))).toBe(false)
+    }),
+  ),
+)
+
+it.instance("project update preserves comments in an existing opencode.jsonc", () =>
+  Effect.gen(function* () {
+    const test = yield* TestInstance
+    const file = path.join(test.directory, "opencode.jsonc")
+    yield* FSUtil.use.writeFileString(file, '{\n  // keep me\n  "username": "before"\n}\n')
+
+    yield* Config.use.update({ model: "updated/model" })
+
+    const written = yield* FSUtil.use.readFileString(file)
+    expect(written).toContain("// keep me")
+    expect(ConfigParse.jsonc(written, file)).toMatchObject({ username: "before", model: "updated/model" })
+    expect(yield* FSUtil.use.existsSafe(path.join(test.directory, "opencode.json"))).toBe(false)
+  }),
+)
+
+it.effect("getProject returns only the project file config", () =>
+  withConfigTree(
+    {
+      global: { username: "global-user", mcp: { shared: { type: "remote", url: "http://global/mcp" } } },
+      project: { mcp: { local: { type: "local", command: ["project-mcp"] } } },
+    },
+    Effect.gen(function* () {
+      const project = yield* Config.use.getProject()
+      expect(project.username).toBeUndefined()
+      expect(Object.keys(project.mcp ?? {})).toEqual(["local"])
+      expect(Object.keys((yield* Config.use.get()).mcp ?? {}).sort()).toEqual(["local", "shared"])
+    }),
+  ),
+)
+
+it.instance("getProject returns an empty config without a project file", () =>
+  Effect.gen(function* () {
+    expect(yield* Config.use.getProject()).toEqual({})
+  }),
+)
+
+for (const name of ["opencode.json", "opencode.jsonc"]) {
+  it.effect(`clearing worktree with an empty object removes the key from ${name}`, () =>
+    withGlobalConfig({ name, config: { username: "kept", worktree: { location: "trees", keep: 3 } } }, ({ dir }) =>
+      Effect.gen(function* () {
+        yield* Config.use.updateGlobal({ worktree: {} })
+
+        const file = path.join(dir, name)
+        const parsed = ConfigParse.jsonc(yield* FSUtil.use.readFileString(file), file)
+        expect(parsed).not.toHaveProperty("worktree")
+        expect(parsed).toMatchObject({ username: "kept" })
+      }),
+    ),
+  )
+
+  it.effect(`a worktree patch replaces the whole subtree in ${name}`, () =>
+    withGlobalConfig({ name, config: { worktree: { location: "trees", keep: 3 } } }, ({ dir }) =>
+      Effect.gen(function* () {
+        yield* Config.use.updateGlobal({ worktree: { branch_prefix: "wk" } })
+
+        const file = path.join(dir, name)
+        expect(ConfigParse.jsonc(yield* FSUtil.use.readFileString(file), file)).toMatchObject({
+          worktree: { branch_prefix: "wk" },
+        })
+        expect(
+          (ConfigParse.jsonc(yield* FSUtil.use.readFileString(file), file) as { worktree: object }).worktree,
+        ).toEqual({ branch_prefix: "wk" })
+      }),
+    ),
+  )
+}
 
 it.instance("gets config directories", () =>
   Effect.gen(function* () {
