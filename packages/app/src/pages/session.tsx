@@ -1216,9 +1216,14 @@ export default function Page() {
 
   const addressComments = () => {
     const mode = reviewMode()
-    const scope = mode === "turn" || mode === "branch" ? mode : "git"
+    const header =
+      mode === "branch"
+        ? language.t("session.review.followUp.branch")
+        : mode === "git"
+          ? language.t("session.review.followUp.git")
+          : language.t("session.review.followUp.turn")
     const text = reviewFollowUp({
-      scope,
+      header,
       comments: comments.all().map((item) => ({
         file: item.file,
         startLine: item.selection.start,
