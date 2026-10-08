@@ -80,6 +80,21 @@ export function resolveSessionPolicy(raw: unknown): { sandbox: SandboxMode; appr
   return { sandbox: decoded.sandbox ?? "workspace-write", approval: decoded.approval ?? "manual" }
 }
 
+// Tool keys carrying a session-policy literal instead of an action, such as
+// the typo `edit: "auto"`. The widened rest record admits these and
+// stripPolicyKeys silently drops them, so config load reports them as
+// warnings; a strict decode check previously made a property test hang.
+export function misplacedPolicyKeys(raw: unknown): string[] {
+  return globalThis.Object.entries((raw ?? {}) as Record<string, unknown>)
+    .filter(
+      (entry) =>
+        !RESERVED_POLICY_KEYS.includes(entry[0]) &&
+        !Schema.is(Rule)(entry[1]) &&
+        (Schema.is(SandboxMode)(entry[1]) || Schema.is(ApprovalMode)(entry[1])),
+    )
+    .map((entry) => entry[0])
+}
+
 // Also drops policy values misplaced on tool keys (e.g. `bash: "full-access"`), which the
 // rest record admits but which are not permission actions.
 export function stripPolicyKeys(raw: unknown): Record<string, Rule> {
