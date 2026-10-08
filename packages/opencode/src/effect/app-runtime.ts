@@ -55,6 +55,7 @@ import { memoMap } from "@opencode-ai/core/effect/memo-map"
 import { BackgroundJob } from "@/background/job"
 import { HooksContext } from "@/hooks/context"
 import { HooksExecutor } from "@/hooks/executor"
+import { HooksManaged } from "@/hooks/managed"
 import { HooksRunner } from "@/hooks/runner"
 import { HooksTrust } from "@/hooks/trust"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -86,6 +87,7 @@ export const AppLayer = AppNodeBuilderV1.build(
     Todo.node,
     HooksTrust.node,
     HooksContext.node,
+    HooksManaged.node,
     HooksExecutor.node,
     HooksRunner.node,
     Session.node,

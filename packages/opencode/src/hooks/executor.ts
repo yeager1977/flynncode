@@ -10,6 +10,7 @@ import { Config } from "@/config/config"
 import { MCP } from "@/mcp"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { InstanceState } from "@/effect/instance-state"
+import { HooksManaged } from "@/hooks/managed"
 
 // File-hook execution protocol (stdin JSON in, stdout JSON out):
 // - exit 0 + JSON decision: PreToolUse/PermissionRequest honor
@@ -39,12 +40,6 @@ export type ObserveEvent =
   | "SubagentStop"
   | "Stop"
   | "Interrupt"
-
-export interface ManagedPolicy {
-  readonly isManaged: (def: HooksTrust.HookDef) => boolean
-}
-
-export class ManagedHooks extends Context.Service<ManagedHooks, ManagedPolicy>()("@opencode/HooksManaged") {}
 
 export interface ExecutorInterface {
   readonly runDecision: (input: {
@@ -99,6 +94,23 @@ function matchedHandlers(hooks: ConfigHooksV1.Info | undefined, event: string, m
   return groups.flatMap((group) =>
     group.hooks.map((handler) => ({ def: HooksTrust.fromHandler(event, group.matcher, handler), handler })),
   )
+}
+
+// Every configured file hook with its trust identity and a display summary,
+// for the trust browser (settings UI + config endpoints).
+export function enumerateHooks(hooks: ConfigHooksV1.Info | undefined) {
+  return Object.entries(hooks ?? {}).flatMap((entry) => {
+    const event = entry[0]
+    const groups = entry[1] as Array<ConfigHooksV1.HookGroup> | undefined
+    if (!groups) return []
+    return groups.flatMap((group) =>
+      group.hooks.map((handler) => {
+        const def = HooksTrust.fromHandler(event, group.matcher, handler)
+        const summary = handler.type === "command" ? handler.command : `${handler.server}/${handler.tool}`
+        return { event, matcher: group.matcher ?? "", handler, def, summary, hash: HooksTrust.hashDef(def) }
+      }),
+    )
+  })
 }
 
 type Collected =
@@ -165,7 +177,7 @@ export const node = LayerNode.make({
       })
 
       const trusted = Effect.fn("HooksExecutor.trusted")(function* (def: HooksTrust.HookDef) {
-        const managed = yield* Effect.serviceOption(ManagedHooks)
+        const managed = yield* Effect.serviceOption(HooksManaged.ManagedHooks)
         if (Option.isSome(managed) && managed.value.isManaged(def)) return true
         if (flags.bypassHookTrust) return true
         // Fail closed: trust lookup failures read as untrusted.
@@ -361,6 +373,8 @@ export const node = LayerNode.make({
         }
         const decision = readDecisionJson(spawned.stdout)
         if (!decision) {
+          // Empty output expresses no opinion; non-empty garbage fails closed.
+          if (spawned.stdout.trim() === "") return decided({ behavior: "undecided" })
           return decided({ behavior: "deny", message: `Hook returned unparseable output: ${input.command}` })
         }
         if (decision.behavior === "allow" && decision.updatedInput === undefined && decision.additionalContext) {
@@ -411,6 +425,7 @@ export const node = LayerNode.make({
         }
         const decision = readDecisionJson(text)
         if (!decision) {
+          if (text.trim() === "") return decided({ behavior: "undecided" })
           return denyCollect(`MCP hook returned unparseable output: ${input.server}/${input.tool}`)
         }
         return decided(decision)
@@ -603,7 +618,7 @@ export const node = LayerNode.make({
       return Service.of({ runDecision, runPostTool, runObserve, cancelSession })
     }),
   ),
-  deps: [Config.node, HooksTrust.node, RuntimeFlags.node],
+  deps: [Config.node, HooksTrust.node, RuntimeFlags.node, HooksManaged.node],
 })
 
 export * as HooksExecutor from "./executor"

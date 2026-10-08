@@ -2285,3 +2285,27 @@ test("parseManagedPlist handles empty config", async () => {
   )
   expect(config.$schema).toBe("https://opencode.ai/config.json")
 })
+
+it.effect("merges hooks.json files with inline hooks tables across layers", () =>
+  Effect.gen(function* () {
+    const global = yield* tmpdirScoped()
+    const project = yield* tmpdirScoped()
+    const local = path.join(project, ".opencode")
+    yield* writeConfigEffect(
+      global,
+      schemaConfig({ hooks: { PreToolUse: [{ matcher: "g", hooks: [{ type: "command", command: "global.sh" }] }] } }),
+    )
+    yield* writeConfigEffect(
+      local,
+      schemaConfig({ hooks: { PreToolUse: [{ matcher: "i", hooks: [{ type: "command", command: "inline.sh" }] }] } }),
+    )
+    yield* writeConfigEffect(
+      local,
+      { PreToolUse: [{ matcher: "f", hooks: [{ type: "command", command: "file.sh" }] }] },
+      "hooks.json",
+    )
+    const svc = yield* Config.Service
+    const cfg = yield* withGlobalConfigDir(global, withInstanceDir(project, svc.get()))
+    expect((cfg.hooks?.PreToolUse ?? []).map((group) => group.matcher).sort()).toEqual(["f", "g", "i"])
+  }),
+)

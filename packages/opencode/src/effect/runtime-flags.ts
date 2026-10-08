@@ -77,5 +77,11 @@ export const layer = (overrides: Partial<Info> = {}) =>
 
 export const node = LayerNode.make({ service: Service, layer: Service.layer.pipe(Layer.orDie), deps: [] })
 
+// Applies `--dangerously-bypass-hook-trust` for one invocation by setting the
+// env flag before any layer reads RuntimeFlags. Call at CLI handler start.
+export function applyDangerouslyBypassHookTrust(args: { "dangerously-bypass-hook-trust"?: boolean }) {
+  if (args["dangerously-bypass-hook-trust"] === true) process.env["FLYNNCODE_BYPASS_HOOK_TRUST"] = "1"
+}
+
 export * as RuntimeFlags from "./runtime-flags"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"

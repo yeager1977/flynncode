@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { ConfigProvider, Effect, Layer } from "effect"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
@@ -371,4 +371,35 @@ describe("RuntimeFlags", () => {
       expect(flags.disableClaudeCodeSkills).toBe(true)
     }),
   )
+
+  it.effect("bypassHookTrust defaults to false", () =>
+    Effect.gen(function* () {
+      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({})))
+
+      expect(flags.bypassHookTrust).toBe(false)
+    }),
+  )
+
+  it.effect("bypassHookTrust reads FLYNNCODE_BYPASS_HOOK_TRUST", () =>
+    Effect.gen(function* () {
+      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ FLYNNCODE_BYPASS_HOOK_TRUST: "true" })))
+
+      expect(flags.bypassHookTrust).toBe(true)
+    }),
+  )
+})
+
+describe("applyDangerouslyBypassHookTrust", () => {
+  test("sets the bypass env flag for one invocation", () => {
+    delete process.env["FLYNNCODE_BYPASS_HOOK_TRUST"]
+    RuntimeFlags.applyDangerouslyBypassHookTrust({ "dangerously-bypass-hook-trust": true })
+    expect(process.env["FLYNNCODE_BYPASS_HOOK_TRUST"]).toBe("1")
+    delete process.env["FLYNNCODE_BYPASS_HOOK_TRUST"]
+  })
+
+  test("leaves the env unset when the flag is absent", () => {
+    delete process.env["FLYNNCODE_BYPASS_HOOK_TRUST"]
+    RuntimeFlags.applyDangerouslyBypassHookTrust({})
+    expect(process.env["FLYNNCODE_BYPASS_HOOK_TRUST"]).toBeUndefined()
+  })
 })

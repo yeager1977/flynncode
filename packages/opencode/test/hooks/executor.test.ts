@@ -228,6 +228,44 @@ describe("hooks executor", () => {
       yield* executor.cancelSession("ses_1")
     }),
   )
+
+  testEffect(executorLayer({ PreToolUse: [{ hooks: [{ type: "command", command: "true" }] }] })).effect(
+    "empty hook output expresses no opinion",
+    () =>
+      Effect.gen(function* () {
+        const def = HooksTrust.fromHandler("PreToolUse", undefined, { type: "command", command: "true" })
+        yield* Effect.promise(() => trustDef(def))
+        const executor = yield* HooksExecutor.Service
+        const decision = yield* executor.runDecision({
+          event: "PreToolUse",
+          matchName: "Bash",
+          tool: "Bash",
+          sessionID: "ses_1",
+          callID: "c1",
+          args: { command: "ls" },
+        })
+        expect(decision).toEqual({ behavior: "undecided" })
+      }),
+  )
+
+  testEffect(executorLayer({ PreToolUse: [{ hooks: [{ type: "command", command: "echo 'not json'" }] }] })).effect(
+    "non-empty garbage fails closed to deny",
+    () =>
+      Effect.gen(function* () {
+        const def = HooksTrust.fromHandler("PreToolUse", undefined, { type: "command", command: "echo 'not json'" })
+        yield* Effect.promise(() => trustDef(def))
+        const executor = yield* HooksExecutor.Service
+        const decision = yield* executor.runDecision({
+          event: "PreToolUse",
+          matchName: "Bash",
+          tool: "Bash",
+          sessionID: "ses_1",
+          callID: "c1",
+          args: { command: "ls" },
+        })
+        expect(decision.behavior).toBe("deny")
+      }),
+  )
 })
 
 describe("hooks executor timeouts", () => {

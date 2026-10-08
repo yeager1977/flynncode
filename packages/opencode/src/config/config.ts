@@ -2,7 +2,7 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { httpClient } from "@opencode-ai/core/effect/app-node-platform"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import path from "path"
-import { pathToFileURL } from "url"
+import { fileURLToPath, pathToFileURL } from "url"
 import os from "os"
 import { mergeDeep } from "remeda"
 import { Global } from "@opencode-ai/core/global"
@@ -34,6 +34,7 @@ import { ConfigManaged } from "./managed"
 import { ConfigParse } from "./parse"
 import { ConfigPaths } from "./paths"
 import { ConfigPlugin } from "./plugin"
+import { isPathPluginSpec, resolvePathPluginTarget } from "@/plugin/shared"
 import { ConfigVariable } from "./variable"
 import { ConfigV2Compat } from "./v2-compat"
 import { Npm } from "@opencode-ai/core/npm"
@@ -586,6 +587,19 @@ const layer = Layer.effect(
           // returns normalized Specs and we only need to attach origin metadata here.
           const list = yield* Effect.promise(() => ConfigPlugin.load(dir))
           yield* mergePluginOrigins(dir, list)
+        }
+
+        // Plugin-bundled hooks (<plugin-root>/hooks/hooks.json) apply after
+        // project hooks. Only path-like specs resolve to a readable root.
+        for (const origin of result.plugin_origins ?? []) {
+          const spec = ConfigPlugin.pluginSpecifier(origin.spec)
+          if (!isPathPluginSpec(spec)) continue
+          const target = yield* Effect.promise(() => resolvePathPluginTarget(spec).catch(() => undefined))
+          if (!target) continue
+          const targetPath = fileURLToPath(target)
+          const root = existsSync(path.join(targetPath, "package.json")) ? targetPath : path.dirname(targetPath)
+          const bundled = yield* loadHooksFile(path.join(root, "hooks", "hooks.json"))
+          if (bundled) result.hooks = HooksConfig.mergeHooksConfigs(result.hooks, bundled)
         }
 
         if (process.env.OPENCODE_CONFIG_CONTENT) {

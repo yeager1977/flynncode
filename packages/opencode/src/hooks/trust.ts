@@ -76,6 +76,7 @@ export interface TrustInterface {
   readonly isTrusted: (def: HookDef) => Effect.Effect<boolean>
   readonly trust: (def: HookDef) => Effect.Effect<void>
   readonly revoke: (hash: string) => Effect.Effect<void>
+  readonly list: () => Effect.Effect<Array<{ hash: string; trustedAt: number }>>
 }
 
 export class Service extends Context.Service<Service, TrustInterface>()("@opencode/HooksTrust") {}
@@ -112,6 +113,22 @@ function writeHashes(hashes: Set<string>): Promise<void> {
   return Bun.write(trustFile(), JSON.stringify(payload, null, 2)).then(() => undefined)
 }
 
+function readEntries(): Promise<Array<{ hash: string; trustedAt: number }>> {
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const file = Bun.file(trustFile())
+      const exists = yield* Effect.promise(() => file.exists())
+      if (!exists) return []
+      const raw = yield* Effect.promise(() => file.json()).pipe(
+        Effect.catch(() => Effect.succeed(undefined)),
+      )
+      if (raw === undefined) return []
+      const decoded = Option.getOrElse(Schema.decodeUnknownOption(TrustFileSchema)(raw), () => [])
+      return decoded.map((entry) => ({ hash: entry.hash, trustedAt: entry.trustedAt }))
+    }).pipe(Effect.catch(() => Effect.succeed([] as Array<{ hash: string; trustedAt: number }>))),
+  )
+}
+
 export const node = LayerNode.make({
   service: Service,
   layer: Layer.effect(
@@ -132,6 +149,7 @@ export const node = LayerNode.make({
             hashes.delete(hash)
             await writeHashes(hashes)
           }),
+        list: () => Effect.promise(() => readEntries()),
       })
     }),
   ),

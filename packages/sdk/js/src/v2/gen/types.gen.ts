@@ -2466,6 +2466,25 @@ export type Provider = {
   }
 }
 
+export type HooksTrustEntry = {
+  hash: string
+  event: string
+  matcher: string
+  summary: string
+  trusted: boolean
+  trustedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  managed: boolean
+}
+
+export type HooksTrustList = {
+  hooks: Array<HooksTrustEntry>
+  bypass: boolean
+}
+
+export type HooksHashInput = {
+  hash: string
+}
+
 export type ExperimentalCapabilities = {
   backgroundSubagents: boolean
 }
@@ -8020,6 +8039,90 @@ export type ConfigOmoUpdateResponses = {
 }
 
 export type ConfigOmoUpdateResponse = ConfigOmoUpdateResponses[keyof ConfigOmoUpdateResponses]
+
+export type ConfigHooksTrustListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/config/hooks/trust"
+}
+
+export type ConfigHooksTrustListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ConfigHooksTrustListError = ConfigHooksTrustListErrors[keyof ConfigHooksTrustListErrors]
+
+export type ConfigHooksTrustListResponses = {
+  /**
+   * List hooks with trust state
+   */
+  200: HooksTrustList
+}
+
+export type ConfigHooksTrustListResponse = ConfigHooksTrustListResponses[keyof ConfigHooksTrustListResponses]
+
+export type ConfigHooksTrustApproveData = {
+  body?: HooksHashInput
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/config/hooks/trust"
+}
+
+export type ConfigHooksTrustApproveErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type ConfigHooksTrustApproveError = ConfigHooksTrustApproveErrors[keyof ConfigHooksTrustApproveErrors]
+
+export type ConfigHooksTrustApproveResponses = {
+  /**
+   * Trusted hook entry
+   */
+  200: HooksTrustEntry
+}
+
+export type ConfigHooksTrustApproveResponse = ConfigHooksTrustApproveResponses[keyof ConfigHooksTrustApproveResponses]
+
+export type ConfigHooksTrustRevokeData = {
+  body?: HooksHashInput
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/config/hooks/revoke"
+}
+
+export type ConfigHooksTrustRevokeErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type ConfigHooksTrustRevokeError = ConfigHooksTrustRevokeErrors[keyof ConfigHooksTrustRevokeErrors]
+
+export type ConfigHooksTrustRevokeResponses = {
+  /**
+   * Revoked hook entry
+   */
+  200: HooksTrustEntry
+}
+
+export type ConfigHooksTrustRevokeResponse = ConfigHooksTrustRevokeResponses[keyof ConfigHooksTrustRevokeResponses]
 
 export type ExperimentalCapabilitiesGetData = {
   body?: never
