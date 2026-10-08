@@ -1,5 +1,6 @@
 import { projectLabel, relativeTime, sessionSlug, type LauncherData, type LauncherSession } from "./launcher.ts"
 import type { InboxItem } from "./inbox.ts"
+import type { RelayDigest } from "./relay.ts"
 
 const RUNNING_BADGE = "running"
 const SUBAGENT_BADGE = "subagent"
@@ -37,7 +38,7 @@ function inboxRow(item: InboxItem) {
   return `<a class="row" href="${escapeHtml(href)}">${inner}</a>`
 }
 
-export function renderLauncher(input: { data: LauncherData; now: number; partial: boolean; inbox?: InboxItem[] }) {
+export function renderLauncher(input: { data: LauncherData; now: number; partial: boolean; inbox?: InboxItem[]; relay?: RelayDigest[] }) {
   const running = input.data.running.length
     ? section("Running now", input.data.running.map((session) => row(session, input.now, true)))
     : `<p class="quiet">Nothing is running.</p>`
@@ -53,6 +54,8 @@ export function renderLauncher(input: { data: LauncherData; now: number; partial
   const inbox = (input.inbox ?? []).length
     ? section("Needs input", (input.inbox ?? []).map(inboxRow))
     : ""
+
+  const relay = renderRelayNotice({ digests: input.relay ?? [] })
 
   return `<!doctype html>
 <html lang="en">
@@ -71,6 +74,7 @@ ${warning}
 ${inbox}
 ${running}
 ${groups}
+${relay}
 </body>
 </html>`
 }
@@ -113,6 +117,24 @@ ${STYLE}
 <p><a class="row" href="/m">Reload</a></p>
 </body>
 </html>`
+}
+
+// Relay digests are notify-only: rows are plain divs with no href, because
+// approval always happens on the origin computer over its own gateway. The
+// section carries the originID plus session metadata only — never secrets.
+export function renderRelayNotice(input: { digests: RelayDigest[] }) {
+  if (!input.digests.length) return ""
+  return input.digests
+    .map((digest) => {
+      const rows = digest.items
+        .map((item) => {
+          const label = item.kind === "permission" ? "Approval needed" : "Question waiting"
+          return `<div class="row"><span class="title">${escapeHtml(item.title)}</span><span class="meta">${escapeHtml(label)}</span></div>`
+        })
+        .join("")
+      return `<section><h2>${escapeHtml(`Chats on ${digest.originID} need input`)}</h2>${rows}<p class="quiet">Open the Away address from Settings &gt; Servers to approve.</p></section>`
+    })
+    .join("")
 }
 
 const STYLE = `:root { color-scheme: light dark }

@@ -165,3 +165,37 @@ upstream is running again.
 The PTY terminal is not available through the gateway (it does not proxy
 WebSocket upgrades), so the terminal panel in the web UI will not work from the
 phone.
+
+## Off-LAN relay (deepthought)
+
+When the phone leaves the LAN, two paths keep approvals reachable without any
+vendor cloud or public push platform:
+
+1. **Tailscale direct (preferred).** With Tailscale on both the computer and
+   the phone, open the tailnet `/m` address from Settings > Servers > Phone >
+   Away from home. It reaches this computer directly and approves in place —
+   Remote Control with no cloud in the middle.
+2. **Needs-input relay (notify-only).** The desktop sidecar polls its own
+   `/flynncode-mobile-inbox` every 60 seconds and POSTs a digest (session
+   title + kind only — no prompt or file content) to the deepthought host's
+   `/flynncode-mobile-relay/publish`. The phone reads deepthought's `/m`
+   launcher while away and sees an "Away notices" section per origin computer.
+   Rows are deliberately not links: approvals always run on the origin
+   computer over its Tailscale address.
+
+Setup:
+
+1. Attach the deepthought host in Settings > Servers (192.168.4.251 or its
+   Tailscale IP) and install Tailscale on both machines plus the phone.
+2. The desktop settings store generates a relay token once (same store as the
+   phone password). Copy the deepthought host's relay token into the laptop's
+   relay settings and set the deepthought gateway URL
+   (`http://<deepthought-ip>:4097`), so the laptop publisher can authenticate
+   its POSTs with `Authorization: Bearer <token>`.
+3. QR codes carry bare `/m` URLs only. The phone credential is typed once per
+   host; the relay token never leaves the two hosts and never appears in QR
+   codes or URLs.
+
+Relay digests expire after 24 hours. The publish endpoint rejects bodies over
+64KB, caps origin IDs at 64 characters, keeps at most 50 items per digest,
+and stores only the five metadata fields.

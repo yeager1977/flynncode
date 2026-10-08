@@ -788,4 +788,13 @@ describe("relay routes", () => {
     stopGateway()
     stub.stop(true)
   })
+
+  test("relay digest rows never render links with secrets", async () => {
+    const { renderRelayNotice } = await import("../src/launcher-html.ts")
+    const html = renderRelayNotice({ digests: [{ originID: "laptop", items: [{ sessionID: "ses_1", directory: "/r", title: "Fix", kind: "permission", updated: 1 }], updatedAt: 2 }] })
+    expect(html).toContain("laptop")
+    expect(html).not.toContain("password")
+    expect(html).not.toContain("token")
+    expect(html).not.toContain("Bearer")
+  })
 })

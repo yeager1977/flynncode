@@ -14,6 +14,12 @@ import { renderLauncher, renderUnauthorized, renderUnreachable } from "./launche
 
 const UNAUTHORIZED = 'Basic realm="opencode-mobile"'
 
+// Hardening caps for the relay publish endpoint: digests are small metadata
+// payloads, so anything larger is rejected before parsing.
+const RELAY_MAX_BODY_BYTES = 64 * 1024
+const RELAY_MAX_ORIGIN_CHARS = 64
+const RELAY_MAX_ITEMS = 50
+
 export type Gateway = {
   port: number
   stop(): void
@@ -57,7 +63,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function parseRelayDigest(body: unknown): RelayDigest | undefined {
   if (!isRecord(body)) return
-  if (typeof body.originID !== "string" || !body.originID) return
+  if (typeof body.originID !== "string" || !body.originID || body.originID.length > RELAY_MAX_ORIGIN_CHARS) return
   if (typeof body.updatedAt !== "number" || !Number.isFinite(body.updatedAt)) return
   if (!Array.isArray(body.items)) return
   const items: RelayDigest["items"] = []
@@ -77,7 +83,9 @@ function parseRelayDigest(body: unknown): RelayDigest | undefined {
       updated: entry.updated,
     })
   }
-  return { originID: body.originID, items, updatedAt: body.updatedAt }
+  // Keep the newest digests when a publisher sends more than the cap.
+  items.sort((a, b) => b.updated - a.updated)
+  return { originID: body.originID, items: items.slice(0, RELAY_MAX_ITEMS), updatedAt: body.updatedAt }
 }
 
 export function createGateway(input: { options: GatewayOptions }) {
@@ -117,6 +125,10 @@ export function createGateway(input: { options: GatewayOptions }) {
       if (request.method !== "POST") return new Response("Method not allowed", { status: 405 })
       const contentType = request.headers.get("content-type") ?? ""
       if (!contentType.includes("application/json")) return new Response("Bad request", { status: 400 })
+      const declaredLength = Number(request.headers.get("content-length") ?? 0)
+      if (Number.isFinite(declaredLength) && declaredLength > RELAY_MAX_BODY_BYTES) {
+        return new Response("Payload too large", { status: 413 })
+      }
       const body = await request.json().catch(() => undefined)
       const digest = parseRelayDigest(body)
       if (!digest) return new Response("Bad request", { status: 400 })
@@ -176,7 +188,7 @@ export function createGateway(input: { options: GatewayOptions }) {
           ? renderUnreachable()
           : loaded.kind === "unauthorized"
             ? renderUnauthorized()
-            : renderLauncher({ data: loaded.data, now: Date.now(), partial: loaded.partial, inbox: inbox.kind === "loaded" ? inbox.items : [] })
+            : renderLauncher({ data: loaded.data, now: Date.now(), partial: loaded.partial, inbox: inbox.kind === "loaded" ? inbox.items : [], relay: relayStore.list() })
       const response = new Response(page, {
         status: 200,
         headers: { "content-type": "text/html; charset=utf-8" },
