@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs"
 import { expandSubagent, groupSubagents, mergeSubagents, subagentListState, subagentPreview, tasksFromParts } from "./subagent-list"
 
 describe("Tasks visibility boundary", () => {
-  test("keeps side-panel triggers unconditional while terminal docks remain session-gated", () => {
+  test("mounts the task list only in the header Tasks side panel", () => {
     const sidePanel = readFileSync(new URL("./session-side-panel.tsx", import.meta.url), "utf8")
     const terminalPanel = readFileSync(new URL("./terminal-panel.tsx", import.meta.url), "utf8")
     const terminalPanelV2 = readFileSync(new URL("./terminal-panel-v2.tsx", import.meta.url), "utf8")
@@ -20,8 +20,7 @@ describe("Tasks visibility boundary", () => {
     expect(sidePanel.match(/<Tabs value=\{panelTab\(\)\} onChange=\{activateTab\}>/g)).toHaveLength(2)
 
     for (const source of [terminalPanel, terminalPanelV2]) {
-      expect(source).toMatch(/const tasksOpen = createMemo\(\(\) =>\s*sessionShowsSubagents\(/)
-      expect(source).toContain("<Show when={!opened() && tasksOpen()}>")
+      expect(source).not.toContain("SubagentList")
     }
   })
 })

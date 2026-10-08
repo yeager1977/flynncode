@@ -42,22 +42,6 @@ export function expandSubagent(
   }
 }
 
-export function hasSubagents(sessionID: string, sessions: readonly { parentID?: string }[]) {
-  return sessions.some((session) => session.parentID === sessionID)
-}
-
-export function sessionShowsSubagents(
-  sessionID: string,
-  sessions: readonly { parentID?: string }[],
-  messages: Record<string, readonly { id: string }[] | undefined> | undefined,
-  parts: Record<string, readonly TaskToolPart[] | undefined> | undefined,
-) {
-  if (!sessionID) return false
-  if (hasSubagents(sessionID, sessions)) return true
-  const own = (messages?.[sessionID] ?? []).flatMap((message) => parts?.[message.id] ?? [])
-  return tasksFromParts(own, 0).length > 0
-}
-
 export type TaskToolPart = {
   type?: string
   tool?: string
