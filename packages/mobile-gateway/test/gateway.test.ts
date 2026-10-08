@@ -708,11 +708,50 @@ describe("inbox route", () => {
       headers: { authorization: basic("opencode", "secret") },
     })
     expect(response.status).toBe(200)
-    const body = (await response.json()) as { items: Array<Record<string, unknown>> }
+    const body = (await response.json()) as { items: Array<Record<string, unknown>>; partial: boolean }
     expect(body.items).toEqual([
       { sessionID: "ses_1", directory: "/repo/app", title: "Fix login", kind: "permission", updated: 100 },
     ])
+    expect(body.partial).toBe(false)
     expect(JSON.stringify(body)).not.toContain("secret")
+    stopGateway()
+    upstream.stop(true)
+  })
+
+  test("flags partial and keeps approvals when the session list fails", async () => {
+    const upstream = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (request) => {
+        const url = new URL(request.url)
+        const path = url.pathname
+        if (request.headers.get("authorization") !== basic("opencode", "secret")) {
+          return new Response("unauthorized", { status: 401 })
+        }
+        // The phone-gate probe uses limit=1; keep it healthy so the request
+        // reaches the inbox, while the inbox's own limit=30 fetch fails.
+        if (path === "/api/session" && url.searchParams.get("limit") === "1") {
+          return Response.json({ data: [] })
+        }
+        if (path === "/api/permission/request") {
+          return Response.json({ data: [{ id: "per_9", sessionID: "ses_9" }] })
+        }
+        if (path === "/api/question/request") return Response.json({ data: [] })
+        return new Response("down", { status: 500 })
+      },
+    })
+    const running = await startGateway({
+      options: { ...options, host: "127.0.0.1", port: 0, upstream: `http://127.0.0.1:${upstream.port}` },
+    })
+    const response = await fetch(`http://127.0.0.1:${running.port}/flynncode-mobile-inbox`, {
+      headers: { authorization: basic("opencode", "secret") },
+    })
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { items: Array<Record<string, unknown>>; partial: boolean }
+    expect(body.partial).toBe(true)
+    expect(body.items).toEqual([
+      { sessionID: "ses_9", directory: undefined, title: "ses_9", kind: "permission", updated: 0 },
+    ])
     stopGateway()
     upstream.stop(true)
   })

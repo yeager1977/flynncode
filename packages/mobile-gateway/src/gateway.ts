@@ -176,7 +176,7 @@ export function createGateway(input: { options: GatewayOptions }) {
       const loaded = await listNeedsInput({ upstream: options.upstream, authorization })
       if (loaded.kind === "unauthorized") return unauthorized()
       if (loaded.kind === "unreachable") return new Response("Upstream server unreachable", { status: 503 })
-      const response = new Response(JSON.stringify({ items: loaded.items }), {
+      const response = new Response(JSON.stringify({ items: loaded.items, partial: loaded.partial }), {
         status: 200,
         headers: { "content-type": "application/json" },
       })
@@ -194,7 +194,7 @@ export function createGateway(input: { options: GatewayOptions }) {
           ? renderUnreachable()
           : loaded.kind === "unauthorized"
             ? renderUnauthorized()
-            : renderLauncher({ data: loaded.data, now: Date.now(), partial: loaded.partial, inbox: inbox.kind === "loaded" ? inbox.items : [], relay: relayStore.list() })
+            : renderLauncher({ data: loaded.data, now: Date.now(), partial: loaded.partial || (inbox.kind === "loaded" && inbox.partial), inbox: inbox.kind === "loaded" ? inbox.items : [], relay: relayStore.list() })
       const response = new Response(page, {
         status: 200,
         headers: { "content-type": "text/html; charset=utf-8" },

@@ -29,7 +29,7 @@ export function groupInbox(input: {
 }
 
 export type InboxLoad =
-  | { kind: "loaded"; items: InboxItem[] }
+  | { kind: "loaded"; items: InboxItem[]; partial: boolean }
   | { kind: "unauthorized" }
   | { kind: "unreachable" }
 
@@ -56,14 +56,21 @@ export async function listNeedsInput(input: { upstream: string; authorization: s
   if (permissions.kind === "failed" && questions.kind === "failed" && recent.kind === "failed") {
     return { kind: "unreachable" }
   }
-  const sessions = parseSessions(recent.kind === "ok" ? recent.value : undefined)
+  // Partial failure must never silently hide approvals: when the session list
+  // fails but pending requests loaded, surface them with fallback metadata
+  // (sessionID as title) and flag the result partial. When a pending source
+  // fails, the item list may be incomplete, so that is partial too.
+  const partial = permissions.kind === "failed" || questions.kind === "failed" || recent.kind === "failed"
+  const pendingPermissions = parseRequests(permissions.kind === "ok" ? permissions.value : undefined)
+  const pendingQuestions = parseRequests(questions.kind === "ok" ? questions.value : undefined)
+  const sessions = withFallbackSessions(
+    parseSessions(recent.kind === "ok" ? recent.value : undefined),
+    [...pendingPermissions, ...pendingQuestions],
+  )
   return {
     kind: "loaded",
-    items: groupInbox({
-      sessions,
-      permissions: parseRequests(permissions.kind === "ok" ? permissions.value : undefined),
-      questions: parseRequests(questions.kind === "ok" ? questions.value : undefined),
-    }),
+    partial,
+    items: groupInbox({ sessions, permissions: pendingPermissions, questions: pendingQuestions }),
   }
 }
 
@@ -98,6 +105,20 @@ function parseRequests(value: unknown): Array<{ sessionID: string; id: string }>
     out.push({ sessionID: item.sessionID, id: item.id })
   }
   return out
+}
+
+function withFallbackSessions(
+  sessions: Array<{ id: string; title: string; directory: string | undefined; updated: number }>,
+  requests: Array<{ sessionID: string; id: string }>,
+) {
+  const known = new Set(sessions.map((session) => session.id))
+  const next = [...sessions]
+  for (const request of requests) {
+    if (known.has(request.sessionID)) continue
+    known.add(request.sessionID)
+    next.push({ id: request.sessionID, title: request.sessionID, directory: undefined, updated: 0 })
+  }
+  return next
 }
 
 function parseSessions(value: unknown): Array<{ id: string; title: string; directory: string | undefined; updated: number }> {
