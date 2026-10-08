@@ -1240,7 +1240,9 @@ hookAllowIt.instance(
 )
 
 hookDenyIt.instance(
-  "hook deny wins over allow ruleset",
+  // PermissionRequest only stands in for a prompt; PreToolUse is the hook
+  // that can veto calls the ruleset already allows.
+  "hook deny rejects a request that would prompt",
   () =>
     Effect.gen(function* () {
       const svc = yield* Permission.Service
@@ -1252,7 +1254,7 @@ hookDenyIt.instance(
           metadata: {},
           always: [],
           tool: { messageID: MessageID.make("msg_hook_deny"), callID: "call_hook_deny" },
-          ruleset: [{ permission: "bash", pattern: "*", action: "allow" }],
+          ruleset: [],
         })
         .pipe(Effect.exit)
       expect(Exit.isFailure(exit)).toBe(true)

@@ -122,6 +122,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           tool: { messageID: input.processor.message.id, callID: options.toolCallId },
           ruleset,
           approval: policy.approval,
+          hook: { tool: toolID, args },
         })
         .pipe(Effect.orDie)
     },
