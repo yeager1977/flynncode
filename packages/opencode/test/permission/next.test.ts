@@ -6,6 +6,7 @@ import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Permission } from "../../src/permission"
 import { HooksRunner } from "../../src/hooks/runner"
+import { testLayerWithHooks } from "../lib/hooks"
 import { InstanceBootstrap } from "../../src/project/bootstrap"
 import { InstanceStore } from "../../src/project/instance-store"
 import { TestInstance, tmpdirScoped } from "../fixture/fixture"
@@ -15,7 +16,7 @@ import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
-const passthroughHooks = HooksRunner.testLayerWithHooks([])
+const passthroughHooks = testLayerWithHooks([])
 const env = AppNodeBuilder.build(
   LayerNode.group([Permission.node, EventV2Bridge.node, CrossSpawnSpawner.node, InstanceStore.node]),
   [
@@ -1184,7 +1185,7 @@ const hookAllowEnv = AppNodeBuilder.build(
     [InstanceStore.bootstrapNode, noopBootstrap],
     [
       HooksRunner.node,
-      HooksRunner.testLayerWithHooks([
+      testLayerWithHooks([
         {
           "tool.permission": async (input, output) => {
             const patterns = input.args["patterns"]
@@ -1202,7 +1203,7 @@ const hookDenyEnv = AppNodeBuilder.build(
     [InstanceStore.bootstrapNode, noopBootstrap],
     [
       HooksRunner.node,
-      HooksRunner.testLayerWithHooks([
+      testLayerWithHooks([
         {
           "tool.permission": async (input, output) => {
             const patterns = input.args["patterns"]

@@ -5,6 +5,7 @@ import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Permission } from "../../src/permission"
 import { HooksRunner } from "../../src/hooks/runner"
+import { testLayerWithHooks } from "../lib/hooks"
 import { InstanceBootstrap } from "../../src/project/bootstrap"
 import { InstanceStore } from "../../src/project/instance-store"
 import { SessionID } from "../../src/session/schema"
@@ -13,7 +14,7 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { testEffect } from "../lib/effect"
 
 const calls: { tool: string; args: unknown }[] = []
-const allowEverything = HooksRunner.testLayerWithHooks([
+const allowEverything = testLayerWithHooks([
   {
     "tool.permission": async (input, output) => {
       calls.push({ tool: input.tool, args: input.args })

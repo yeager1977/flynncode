@@ -3,7 +3,7 @@ import { Deferred, Effect, Layer } from "effect"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { HooksContext } from "@/hooks/context"
-import { HooksRunner } from "@/hooks/runner"
+import { testLayerWithHooks } from "../lib/hooks"
 import { SessionID } from "@/session/schema"
 import { SessionStatus } from "@/session/status"
 import { awaitWithTimeout, testEffect } from "../lib/effect"
@@ -14,7 +14,7 @@ const signals = { started: () => {}, done: () => {} }
 const it = testEffect(
   Layer.merge(
     AppNodeBuilder.build(LayerNode.group([SessionStatus.node, HooksContext.node])),
-    HooksRunner.testLayerWithHooks([
+    testLayerWithHooks([
       {
         "session.idle": async (_input, output) => {
           signals.started()

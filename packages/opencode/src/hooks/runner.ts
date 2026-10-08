@@ -1,6 +1,5 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Context, Effect, Layer, Option } from "effect"
-import type { Hooks } from "@opencode-ai/plugin"
 import type { Plugin } from "@/plugin"
 import { HooksExecutor, type ExecutorInterface } from "@/hooks/executor"
 import { HooksTrust } from "@/hooks/trust"
@@ -63,7 +62,6 @@ export interface RunnerInterface {
   }) => Effect.Effect<SessionObserve>
   readonly runSessionEnd: (input: { sessionID: string }) => Effect.Effect<void>
   readonly runSessionPrompt: (input: { sessionID: string; prompt: string }) => Effect.Effect<SessionObserve>
-  readonly runUserPromptSubmit: (input: { sessionID: string; prompt: string }) => Effect.Effect<SessionObserve>
   readonly runCompact: (input: {
     sessionID: string
     trigger: "manual" | "auto"
@@ -80,7 +78,6 @@ export interface RunnerInterface {
     agentType: string
   }) => Effect.Effect<SessionObserve>
   readonly runIdle: (input: { sessionID: string; reason?: "idle" | "interrupt" }) => Effect.Effect<SessionObserve>
-  readonly runStop: (input: { sessionID: string }) => Effect.Effect<SessionObserve>
   readonly runInterrupt: (input: { sessionID: string }) => Effect.Effect<SessionObserve>
 }
 
@@ -96,26 +93,12 @@ export function denyWins(decisions: Array<PreToolUseDecision>): PreToolUseDecisi
   return { behavior: "undecided" }
 }
 
-// Surfaces hook systemMessage warnings through logs (the CLI stream transport
-// renders log warnings; dedicated TUI surfacing is a follow-up). Failures
-// stay advisory: observe hooks never block the lifecycle event they annotate.
-export function reportObserve(label: string, self: Effect.Effect<SessionObserve | void>) {
-  return self.pipe(
-    Effect.tap((out) =>
-      out && typeof out === "object" && out.systemMessage
-        ? Effect.logWarning(label, { systemMessage: out.systemMessage })
-        : Effect.void,
-    ),
-    Effect.ignore,
-  )
-}
-
-type TriggerLike = {
+export type TriggerLike = {
   trigger: Plugin.Interface["trigger"]
   triggerDecision: Plugin.Interface["triggerDecision"]
 }
 
-type ExecutorLike = Pick<ExecutorInterface, "runDecision" | "runPostTool" | "runObserve">
+export type ExecutorLike = Pick<ExecutorInterface, "runDecision" | "runPostTool" | "runObserve">
 
 function withContext(
   base: PreToolUseDecision,
@@ -442,12 +425,10 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
     runSessionStart,
     runSessionEnd,
     runSessionPrompt,
-    runUserPromptSubmit: runSessionPrompt,
     runCompact,
     runSubagentStart,
     runSubagentStop,
     runIdle,
-    runStop: runIdle,
     runInterrupt,
   })
 }
@@ -485,93 +466,5 @@ const noopPlugin: TriggerLike = {
   trigger: (_name, _input, output) => Effect.succeed(output as never),
   triggerDecision: (_input, output) => Effect.succeed(output),
 }
-
-function stubPlugin(hooks: Array<Hooks>): TriggerLike {
-  return {
-    trigger: ((name: string, input: unknown, output: Record<string, unknown>) => {
-      return Effect.promise(async () => {
-        for (const hook of hooks) {
-          const fn = (hook as Record<string, unknown>)[name] as
-            | ((input: unknown, output: Record<string, unknown>) => Promise<void>)
-            | undefined
-          if (!fn) continue
-          await fn(input, output)
-        }
-        return output as never
-      })
-    }) as TriggerLike["trigger"],
-    triggerDecision: (input, output) => {
-      // Same aggregation as Plugin.triggerDecision: isolated per-hook
-      // outputs, deny wins with short-circuit, allows merge updatedInput.
-      return Effect.promise(async () => {
-        const mergedUpdated: Record<string, unknown> = {}
-        let sawRewrite = false
-        for (const hook of hooks) {
-          const fn = hook["tool.permission"]
-          if (!fn) continue
-          const perHook: { decision: "allow" | "deny" | "undecided"; message?: string; updatedInput?: Record<string, unknown> } = {
-            decision: "undecided",
-          }
-          await fn(input, perHook)
-          if (perHook.decision === "deny") {
-            output.decision = "deny"
-            output.message = perHook.message
-            return output
-          }
-          if (perHook.decision !== "allow") continue
-          output.decision = "allow"
-          if (perHook.updatedInput) {
-            sawRewrite = true
-            Object.assign(mergedUpdated, perHook.updatedInput)
-          }
-        }
-        if (sawRewrite) output.updatedInput = mergedUpdated
-        return output
-      })
-    },
-  }
-}
-
-export function testLayerWithHooks(hooks: Array<Hooks>, executor?: ExecutorLike) {
-  return Layer.succeed(Service, createRunner(stubPlugin(hooks), executor))
-}
-
-function defaultTestHooks(): Array<Hooks> {
-  return [
-    {
-      "tool.execute.before": async (_input, output) => {
-        const args = output.args as Record<string, unknown>
-        if (args["command"] === "ls") output.args = { command: "ls --safe" }
-      },
-      "tool.permission": async (input, output) => {
-        const args = input.args as Record<string, unknown>
-        const haystack = JSON.stringify(args)
-        if (haystack.includes("rm -rf")) {
-          output.decision = "deny"
-          output.message = "Denied by hook"
-          return
-        }
-        if (haystack.includes("echo hi")) {
-          output.decision = "allow"
-          return
-        }
-      },
-      "session.start": async (_input, output) => {
-        output.additionalContext = "workspace conventions"
-      },
-    } satisfies Hooks,
-    {
-      "tool.permission": async (input, output) => {
-        const args = input.args as Record<string, unknown>
-        if (JSON.stringify(args).includes("rm -rf")) {
-          output.decision = "deny"
-          output.message = "Denied by hook"
-        }
-      },
-    } satisfies Hooks,
-  ]
-}
-
-export const testLayer = Layer.succeed(Service, createRunner(stubPlugin(defaultTestHooks())))
 
 export * as HooksRunner from "./runner"

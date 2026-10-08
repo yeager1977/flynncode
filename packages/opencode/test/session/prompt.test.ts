@@ -53,6 +53,7 @@ import { Format } from "../../src/format"
 import { TestInstance } from "../fixture/fixture"
 import { InstanceStore } from "../../src/project/instance-store"
 import { HooksRunner } from "../../src/hooks/runner"
+import { testLayerWithHooks } from "../lib/hooks"
 import { HooksContext } from "../../src/hooks/context"
 import { InstanceBootstrap } from "../../src/project/bootstrap"
 import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
@@ -255,7 +256,7 @@ const withPromptHook = testEffect(
     [InstanceStore.bootstrapNode, InstanceBootstrap.node],
     [
       HooksRunner.node,
-      HooksRunner.testLayerWithHooks([
+      testLayerWithHooks([
         {
           "session.prompt": async (_input, output) => {
             output.additionalContext = "the release branch is frozen"
