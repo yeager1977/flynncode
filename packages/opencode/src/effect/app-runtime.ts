@@ -53,6 +53,7 @@ import { SessionShare } from "@/share/session"
 import { Npm } from "@opencode-ai/core/npm"
 import { memoMap } from "@opencode-ai/core/effect/memo-map"
 import { BackgroundJob } from "@/background/job"
+import { HooksExecutor } from "@/hooks/executor"
 import { HooksRunner } from "@/hooks/runner"
 import { HooksTrust } from "@/hooks/trust"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -83,6 +84,7 @@ export const AppLayer = AppNodeBuilderV1.build(
     Permission.node,
     Todo.node,
     HooksTrust.node,
+    HooksExecutor.node,
     HooksRunner.node,
     Session.node,
     SessionProjector.node,

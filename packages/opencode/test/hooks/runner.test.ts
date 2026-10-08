@@ -113,3 +113,53 @@ describe("hooks runner deny propagation", () => {
     }),
   )
 })
+
+const fileDenyIt = testEffect(
+  HooksRunner.testLayerWithHooks([], {
+    runDecision: (): Effect.Effect<HooksRunner.PreToolUseDecision, never, never> =>
+      Effect.succeed({ behavior: "deny", message: "file hook says no" }),
+    runPostTool: (): Effect.Effect<HooksRunner.PostToolUseOutcome, never, never> =>
+      Effect.succeed({ blocked: false }),
+    runObserve: (): Effect.Effect<HooksRunner.SessionObserve, never, never> => Effect.succeed({}),
+  }),
+)
+
+describe("hooks runner file executor", () => {
+  fileDenyIt.effect("executor deny wins over plugin undecided", () =>
+    Effect.gen(function* () {
+      const runner = yield* HooksRunner.Service
+      const decision = yield* runner.runPreToolUse({
+        sessionID: "ses_1",
+        tool: "Bash",
+        callID: "c1",
+        args: { command: "ls" },
+      })
+      expect(decision).toEqual({ behavior: "deny", message: "file hook says no" })
+    }),
+  )
+})
+
+const fileRewriteIt = testEffect(
+  HooksRunner.testLayerWithHooks([], {
+    runDecision: (): Effect.Effect<HooksRunner.PreToolUseDecision, never, never> =>
+      Effect.succeed({ behavior: "allow", updatedInput: { command: "ls --file" } }),
+    runPostTool: (): Effect.Effect<HooksRunner.PostToolUseOutcome, never, never> =>
+      Effect.succeed({ blocked: false }),
+    runObserve: (): Effect.Effect<HooksRunner.SessionObserve, never, never> => Effect.succeed({}),
+  }),
+)
+
+describe("hooks runner file rewrite", () => {
+  fileRewriteIt.effect("executor allow+rewrite reaches the decision", () =>
+    Effect.gen(function* () {
+      const runner = yield* HooksRunner.Service
+      const decision = yield* runner.runPreToolUse({
+        sessionID: "ses_1",
+        tool: "Bash",
+        callID: "c1",
+        args: { command: "ls" },
+      })
+      expect(decision).toEqual({ behavior: "allow", updatedInput: { command: "ls --file" } })
+    }),
+  )
+})
