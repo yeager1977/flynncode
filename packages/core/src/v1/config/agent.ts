@@ -27,7 +27,8 @@ const TolerantIsolation = Schema.declare<Schema.Schema.Type<typeof Isolation>>(
 const TolerantSandbox = Schema.declare<string | undefined>(
   (_input): _input is string | undefined => true,
   {
-    description: "Sandbox profile name applied to isolated subagent sessions.",
+    description:
+      "Sandbox profile for isolated subagent sessions. 'restricted' confines file access to the temp worktree; other values degrade to default.",
     toArbitrary: () => (fc) => fc.oneof(fc.string(), fc.constant(undefined)),
   },
 )
