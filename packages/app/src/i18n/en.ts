@@ -1021,6 +1021,7 @@ export const dict = {
   "dispatch.filterRunning": "Running",
   "dispatch.filterWaiting": "Waiting",
   "inbox.title": "Activity",
+  "inbox.unreadLabel": "Activity, {{count}} unread",
   "inbox.filterAll": "All",
   "inbox.filterRunning": "Running",
   "inbox.filterNeedsInput": "Needs input",

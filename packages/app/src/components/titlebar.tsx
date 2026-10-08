@@ -9,6 +9,7 @@ import {
   Show,
   Switch,
   untrack,
+  type JSX,
 } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
@@ -61,7 +62,12 @@ export function useTitlebarRightMount() {
   return mount
 }
 
-export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visible: boolean; toggle: () => void } }) {
+export function Titlebar(props: {
+  update?: TitlebarUpdate
+  debugTools?: { visible: boolean; toggle: () => void }
+  /** Extra controls rendered before the right-side titlebar area in the new layout. */
+  actions?: JSX.Element
+}) {
   const layout = useLayout()
   const platform = usePlatform()
   const command = useCommand()
@@ -430,6 +436,7 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
                   />
                 </TooltipV2>
                 <div class="flex-1" />
+                {props.actions}
                 <TitlebarV2Right state={v2RightState()} />
               </div>
             )
