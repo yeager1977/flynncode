@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { buildAddInput, emptyForm, formFromConfig, type McpFormState } from "./mcp-payload"
+import {
+  buildAddInput,
+  emptyForm,
+  formFromConfig,
+  payloadToStoredConfig,
+  storedToPayloadConfig,
+  type McpFormState,
+} from "./mcp-payload"
 
 describe("emptyForm", () => {
   test("defaults to a disabled-oauth local server, enabled", () => {
@@ -390,5 +397,65 @@ describe("buildAddInput scope", () => {
     const built = buildAddInput({ ...remoteForm, scope: "directory" })
     expect(built.ok).toBe(true)
     if (built.ok) expect(built.input.directory).toBeUndefined()
+  })
+})
+
+describe("payloadToStoredConfig", () => {
+  test("local config maps disabled and nested timeout to the stored shape", () => {
+    expect(
+      payloadToStoredConfig({
+        type: "local",
+        command: ["npx", "server"],
+        cwd: "/work",
+        environment: { KEY: "value" },
+        disabled: true,
+        timeout: { startup: 5000, catalog: 5000, execution: 5000 },
+      }),
+    ).toEqual({
+      type: "local",
+      command: ["npx", "server"],
+      cwd: "/work",
+      environment: { KEY: "value" },
+      enabled: false,
+      timeout: 5000,
+    })
+  })
+
+  test("enabled servers omit the enabled flag", () => {
+    expect(payloadToStoredConfig({ type: "remote", url: "https://mcp.example.com" }).enabled).toBeUndefined()
+  })
+
+  test("round-trips through storedToPayloadConfig", () => {
+    const stored = {
+      type: "remote" as const,
+      url: "https://mcp.example.com",
+      headers: { Authorization: "Bearer x" },
+      oauth: { clientId: "id", clientSecret: "secret", scope: "read", callbackPort: 1234 },
+      enabled: false,
+      timeout: 3000,
+    }
+    expect(payloadToStoredConfig(storedToPayloadConfig(stored))).toEqual(stored)
+  })
+
+  test("keeps the previous client secret and redirect uri when the edit omits them", () => {
+    const previous = {
+      type: "remote" as const,
+      url: "https://mcp.example.com",
+      oauth: { clientId: "old", clientSecret: "secret", redirectUri: "http://localhost/cb" },
+    }
+    const stored = payloadToStoredConfig(
+      { type: "remote", url: "https://mcp.example.com", oauth: { client_id: "new" } },
+      previous,
+    )
+    expect(stored.type === "remote" ? stored.oauth : undefined).toEqual({
+      clientId: "new",
+      clientSecret: "secret",
+      redirectUri: "http://localhost/cb",
+    })
+  })
+
+  test("oauth false is preserved", () => {
+    const stored = payloadToStoredConfig({ type: "remote", url: "https://mcp.example.com", oauth: false })
+    expect(stored.type === "remote" ? stored.oauth : undefined).toBe(false)
   })
 })

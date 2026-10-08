@@ -79,12 +79,14 @@ export const SettingsPluginsV2: Component<{}> = () => {
     }
   })
 
-  const [configs, configsActions] = createResource(projectDir, async (dir) => {
+  // A resource source of `undefined` skips the fetcher entirely, so wrap the
+  // directory in an object: global configs still load with no project open.
+  const [configs, configsActions] = createResource(() => ({ dir: projectDir() }), async (source) => {
     const manager = platform.plugins
     if (!manager) return EMPTY_CONFIGS
     setConfigsError(undefined)
     try {
-      const payload = await manager.readConfigs(dir)
+      const payload = await manager.readConfigs(source.dir)
       // Parse failures arrive as structured entries (scope, path, message);
       // surface the first so the UI can offer the Open-config action.
       const first = payload.errors?.[0]
@@ -305,7 +307,9 @@ export const SettingsPluginsV2: Component<{}> = () => {
                         {entry.description}
                         <Show when={entry.downloadsLastWeek !== undefined}>
                           {" · "}
-                          {formatDownloads(entry.downloadsLastWeek)}/wk
+                          {language.t("settings.plugins.downloadsPerWeek", {
+                            count: formatDownloads(entry.downloadsLastWeek),
+                          })}
                         </Show>
                         <Show when={!entry.onNpm}>
                           {" · "}

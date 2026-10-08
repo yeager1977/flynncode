@@ -180,7 +180,7 @@ export const DialogSettings: Component<{
           <SettingsOmoV2 directory={directory} />
         </TabsV2.Content>
         <TabsV2.Content value="routines" class="settings-v2-panel">
-          <SettingsRoutinesV2 />
+          <SettingsRoutinesV2 directory={directory()} />
         </TabsV2.Content>
         <TabsV2.Content value="worktree" class="settings-v2-panel">
           <SettingsWorktreeV2 directory={directory()} />

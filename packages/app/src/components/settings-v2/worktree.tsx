@@ -1,7 +1,7 @@
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { Switch } from "@opencode-ai/ui/v2/switch-v2"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
-import { Show, type Component } from "solid-js"
+import { Show, onMount, type Component } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { Config } from "@opencode-ai/sdk/v2/client"
 import { useLanguage } from "@/context/language"
@@ -20,7 +20,7 @@ export const SettingsWorktreeV2: Component<{ directory?: string }> = (props) => 
   const serverSync = useServerSync()
 
   const [store, setStore] = createStore({
-    scope: "project" as "global" | "project",
+    scope: (props.directory ? "project" : "global") as "global" | "project",
     loading: false,
     saving: false,
     error: "",
@@ -44,7 +44,7 @@ export const SettingsWorktreeV2: Component<{ directory?: string }> = (props) => 
     if (!props.directory) return
     setStore("loading", true)
     try {
-      const response = await serverSdk().client.config.get({ directory: props.directory })
+      const response = await serverSdk().client.config.project.get({ directory: props.directory })
       const project = worktreeFromConfig((response.data ?? {}) as Config)
       setStore({ projectForm: project, projectBaseline: JSON.stringify(project), error: "" })
     } catch {
@@ -53,6 +53,10 @@ export const SettingsWorktreeV2: Component<{ directory?: string }> = (props) => 
       setStore("loading", false)
     }
   }
+
+  onMount(() => {
+    if (props.directory) void loadProject()
+  })
 
   const switchScope = (scope: "global" | "project") => {
     setStore({ scope, saved: false, error: "" })
@@ -72,20 +76,14 @@ export const SettingsWorktreeV2: Component<{ directory?: string }> = (props) => 
     setStore({ saving: true, error: "", saved: false })
     const patch = worktreeToConfig(draft)
     try {
-      // Both scopes rewrite the parsed config of the file they save: reading
-      // first and setting/clearing only `worktree` keeps every other key.
+      // Both scopes send only `worktree`; the server patches that key into the
+      // scope's config file and leaves every other key untouched.
+      const saved = worktreeFromConfig(patch)
       if (store.scope === "project") {
-        const response = await serverSdk().client.config.get({ directory: props.directory })
-        const next = { ...((response.data ?? {}) as Config), ...patch }
-        if (!patch.worktree) delete (next as Record<string, unknown>).worktree
-        await serverSdk().client.config.update({ directory: props.directory, config: next })
-        const saved = worktreeFromConfig(next)
+        await serverSdk().client.config.update({ directory: props.directory, config: patch })
         setStore({ projectForm: saved, projectBaseline: JSON.stringify(saved) })
       } else {
-        const next = { ...serverSync().data.config, ...patch }
-        if (!patch.worktree) delete (next as Record<string, unknown>).worktree
-        await serverSync().updateConfig(next)
-        const saved = worktreeFromConfig(next)
+        await serverSync().updateConfig(patch)
         setStore({ form: saved, formBaseline: JSON.stringify(saved) })
       }
       setStore("saved", true)
@@ -132,7 +130,9 @@ export const SettingsWorktreeV2: Component<{ directory?: string }> = (props) => 
 
           <SettingsRowV2
             title={language.t("settings.worktree.branchPrefix")}
-            description={language.t("settings.worktree.branchPrefixDescription")}
+            description={language.t("settings.worktree.branchPrefixDescription", {
+              prefix: form().branchPrefix.trim() || "opencode",
+            })}
           >
             <TextInputV2
               type="text"

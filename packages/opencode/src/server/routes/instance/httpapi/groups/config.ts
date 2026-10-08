@@ -45,6 +45,17 @@ export const ConfigApi = HttpApi.make("config")
             description: "Retrieve the current OpenCode configuration settings and preferences.",
           }),
         ),
+        HttpApiEndpoint.get("projectGet", `${root}/project`, {
+          query: WorkspaceRoutingQuery,
+          success: described(ConfigV1.Info, "Get project config file info"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "config.project.get",
+            summary: "Get project configuration",
+            description:
+              "Retrieve only the project configuration file that project updates write to, without global or inherited settings.",
+          }),
+        ),
         HttpApiEndpoint.patch("update", root, {
           query: WorkspaceRoutingQuery,
           payload: ConfigV1.Info,
@@ -54,7 +65,8 @@ export const ConfigApi = HttpApi.make("config")
           OpenApi.annotations({
             identifier: "config.update",
             summary: "Update configuration",
-            description: "Update OpenCode configuration settings and preferences.",
+            description:
+              "Patch the project configuration file with only the provided keys. Writes the closest existing opencode.jsonc or opencode.json, or creates opencode.json in the project directory.",
           }),
         ),
         HttpApiEndpoint.get("providers", `${root}/providers`, {

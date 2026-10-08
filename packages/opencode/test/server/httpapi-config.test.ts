@@ -56,11 +56,26 @@ describe("config HttpApi", () => {
         lsp: false,
       })
       yield* Fiber.join(disposed)
-      expect(yield* Effect.promise(() => Bun.file(path.join(tmp.path, "config.json")).json())).toMatchObject({
+      expect(yield* Effect.promise(() => Bun.file(path.join(tmp.path, "opencode.json")).json())).toMatchObject({
         username: "patched-user",
         formatter: false,
         lsp: false,
       })
+      expect(yield* Effect.promise(() => Bun.file(path.join(tmp.path, "config.json")).exists())).toBe(false)
+    }),
+  )
+
+  it.live(
+    "serves the project-only config file",
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirEffect({ config: { formatter: false, lsp: false, username: "project-user" } })
+
+      const response = yield* Effect.promise(() =>
+        Promise.resolve(app().request("/config/project", { headers: { "x-opencode-directory": tmp.path } })),
+      )
+
+      expect(response.status).toBe(200)
+      expect(yield* Effect.promise(() => response.json())).toMatchObject({ username: "project-user", lsp: false })
     }),
   )
 

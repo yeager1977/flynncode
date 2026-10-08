@@ -79,7 +79,7 @@ export const SettingsOmoV2: Component<{ directory: Accessor<string | undefined> 
     saved: false,
     error: null as { message: string; path: string } | null,
     loading: true,
-    loadError: null as string | null,
+    loadError: { global: null, project: null } as Record<Scope, string | null>,
   })
 
   const [globalForm, setGlobalForm] = createStore<ScopeForm>(emptyScopeForm())
@@ -168,15 +168,13 @@ export const SettingsOmoV2: Component<{ directory: Accessor<string | undefined> 
     on(
       () => [server.current, props.directory()],
       async ([, directory]) => {
-        setState({ loading: true, loadError: null })
+        setState({ loading: true, loadError: { global: null, project: null } })
         await Promise.all([
           loadScope("global", undefined).catch((err: unknown) => {
-            const message = err instanceof Error ? err.message : String(err)
-            setState("loadError", message)
+            setState("loadError", "global", err instanceof Error ? err.message : String(err))
           }),
           loadScope("project", directory as string | undefined).catch((err: unknown) => {
-            const message = err instanceof Error ? err.message : String(err)
-            setState("loadError", message)
+            setState("loadError", "project", err instanceof Error ? err.message : String(err))
           }),
         ])
         setState("loading", false)
@@ -325,7 +323,7 @@ export const SettingsOmoV2: Component<{ directory: Accessor<string | undefined> 
   }
 
   const save = async () => {
-    if (state.saving) return
+    if (state.saving || !canEdit()) return
     const conn = server.current
     if (!conn) return
     if (state.scope === "project" && !props.directory()) return
@@ -414,7 +412,12 @@ export const SettingsOmoV2: Component<{ directory: Accessor<string | undefined> 
     })
   }
 
-  const canEdit = () => !state.loading && !activeForm().parseError
+  // A failed load leaves the empty form in place, and saving it would wipe the
+  // file's pins and provider bans. A project save also merges the global bans,
+  // so it needs the global scope loaded too.
+  const activeLoadError = () =>
+    state.loadError[state.scope] ?? (state.scope === "project" ? state.loadError.global : null)
+  const canEdit = () => !state.loading && !activeForm().parseError && !activeLoadError()
   const pluginOn = createMemo(() => hasOmoPlugin(serverSync().data.config.plugin))
   const hasDirectory = createMemo(() => Boolean(props.directory()))
 
@@ -449,6 +452,13 @@ export const SettingsOmoV2: Component<{ directory: Accessor<string | undefined> 
           <div class="model-router-notice" role="status">
             {language.t("settings.omo.pluginOff")}
           </div>
+        </Show>
+        <Show when={activeLoadError()}>
+          {(error) => (
+            <div class="model-router-error" role="alert">
+              {language.t("settings.omo.loadFailed", { error: error() })}
+            </div>
+          )}
         </Show>
         <Show when={activeForm().parseError}>
           <div class="model-router-error" role="alert">

@@ -134,6 +134,7 @@ export interface Interface {
   readonly get: () => Effect.Effect<Info>
   readonly getGlobal: () => Effect.Effect<Info>
   readonly getConsoleState: () => Effect.Effect<ConsoleState>
+  readonly getProject: () => Effect.Effect<Info>
   readonly update: (config: Info) => Effect.Effect<void>
   readonly updateGlobal: (config: Info) => Effect.Effect<{ info: Info; changed: boolean }>
   readonly invalidate: () => Effect.Effect<void>
@@ -159,6 +160,19 @@ function mergeWholeSubtrees(base: Record<string, unknown>, patch: Record<string,
   const merged = mergeDeep(base, patch) as Record<string, unknown>
   // model_router is swapped as a whole subtree so removing nested keys (e.g. scorecard models) persists.
   if (Object.hasOwn(patch, "model_router")) merged.model_router = patch.model_router
+  // worktree is owned as a whole by the settings form: cleared fields must not
+  // survive a deep merge, and an empty object removes the key entirely.
+  if (Object.hasOwn(patch, "worktree")) {
+    if (isEmptyRecord(patch.worktree)) delete merged.worktree
+    else merged.worktree = patch.worktree
+  }
+  // An MCP server entry is swapped whole so fields removed in an edit persist.
+  if (isRecord(patch.mcp)) {
+    merged.mcp = {
+      ...(isRecord(base.mcp) ? base.mcp : {}),
+      ...patch.mcp,
+    }
+  }
   // A provider entry is swapped as a whole subtree so removed headers, models,
   // and a cleared base URL persist, while sibling providers stay untouched.
   if (isRecord(patch.provider)) {
@@ -209,6 +223,16 @@ function patchJsonc(input: string, patch: unknown, path: string[] = [], removeMc
       })
       return applyEdits(result, edits)
     }
+    // worktree is swapped as a whole subtree; an empty object removes the key.
+    if (path.length === 0 && key === "worktree") {
+      const edits = modify(result, [key], isEmptyRecord(value) ? undefined : value, {
+        formattingOptions: {
+          insertSpaces: true,
+          tabSize: 2,
+        },
+      })
+      return applyEdits(result, edits)
+    }
     // mcp needs explicit deletions: a merge patch can only add or update, so a
     // removed server would otherwise stay in the file. Delete exactly the names
     // the incoming patch dropped, then apply the rest normally.
@@ -222,7 +246,18 @@ function patchJsonc(input: string, patch: unknown, path: string[] = [], removeMc
         })
         return applyEdits(current, edits)
       }, result)
-      return patchJsonc(deleted, value, [...path, key], removeMcp)
+      // Each server entry is swapped whole so fields removed in an edit (cwd,
+      // headers, oauth, an enabled override) do not survive the patch.
+      if (!isRecord(value)) return patchJsonc(deleted, value, [...path, key], removeMcp)
+      return Object.entries(value).reduce((current, [name, entry]) => {
+        const edits = modify(current, [key, name], entry, {
+          formattingOptions: {
+            insertSpaces: true,
+            tabSize: 2,
+          },
+        })
+        return applyEdits(current, edits)
+      }, deleted)
     }
     // A provider entry is swapped as a whole subtree so removed headers, models,
     // and a cleared base URL persist, while sibling providers stay untouched.
@@ -239,6 +274,10 @@ function patchJsonc(input: string, patch: unknown, path: string[] = [], removeMc
     }
     return patchJsonc(result, value, [...path, key], removeMcp)
   }, input)
+}
+
+function isEmptyRecord(value: unknown) {
+  return isRecord(value) && Object.keys(value).length === 0
 }
 
 function writable(info: Info) {
@@ -759,31 +798,29 @@ const layer = Layer.effect(
       )
     })
 
-    const update = Effect.fn("Config.update")(function* (config: Info) {
-      const dir = yield* InstanceState.directory
-      const file = path.join(dir, "config.json")
-      const existing = yield* loadFile(file)
+    // The project file writes and project-only reads target: the closest existing
+    // opencode.jsonc/opencode.json the loader merges, else a new opencode.json in
+    // the instance directory.
+    const projectConfigFile = Effect.fnUntraced(function* () {
+      const ctx = yield* InstanceState.context
+      const files = yield* ConfigPaths.files("opencode", ctx.directory, ctx.worktree).pipe(
+        Effect.provideService(FSUtil.Service, fs),
+        Effect.orDie,
+      )
+      return files.at(-1) ?? path.join(ctx.directory, "opencode.json")
+    })
+
+    const getProject = Effect.fn("Config.getProject")(function* () {
+      const file = yield* projectConfigFile()
       const text = yield* readConfigFile(file)
-      const original = text ? ConfigParse.jsonc(text, file) : writable(existing)
-      yield* fs
-        .writeFileString(
-          file,
-          JSON.stringify(mergeDeep(isRecord(original) ? original : writable(existing), writable(config)), null, 2),
-        )
-        .pipe(Effect.orDie)
+      if (!text) return {} as Info
+      return yield* decodeConfig(ConfigParse.jsonc(text, file), file)
     })
 
-    const invalidate = Effect.fn("Config.invalidate")(function* () {
-      yield* invalidateGlobal
-    })
-
-    const updateGlobal = Effect.fn("Config.updateGlobal")(function* (config: Info) {
-      const file = globalConfigFile()
+    // Patch only the keys present in `patch` into `file`, preserving comments in
+    // jsonc files and every key the patch does not mention.
+    const patchConfigFile = Effect.fnUntraced(function* (file: string, patch: Info) {
       const before = (yield* readConfigFile(file)) ?? "{}"
-      const patch = writableGlobal(config)
-
-      let next: Info
-      let changed: boolean
       if (!file.endsWith(".jsonc")) {
         const existing = ConfigParse.jsonc(before, file)
         ConfigParse.schema(ConfigV1.Info, ConfigV2Compat.lower(normalizeLoadedConfig(existing), file).value, file)
@@ -798,25 +835,37 @@ const layer = Layer.effect(
         }
         const merged = mergeWholeSubtrees(base, patch)
         const serialized = JSON.stringify(merged, null, 2)
-        next = yield* decodeConfig(merged, file)
-        changed = serialized !== before
+        const info = yield* decodeConfig(merged, file)
+        const changed = serialized !== before
         if (changed) yield* fs.writeFileString(file, serialized).pipe(Effect.orDie)
-      } else {
-        const removed = removedMcpServers(before, patch, file)
-        const updated = patchJsonc(before, patch, [], removed)
-        next = yield* decodeConfig(ConfigParse.jsonc(updated, file), file)
-        changed = updated !== before
-        if (changed) yield* fs.writeFileString(file, updated).pipe(Effect.orDie)
+        return { info, changed }
       }
+      const updated = patchJsonc(before, patch, [], removedMcpServers(before, patch, file))
+      const info = yield* decodeConfig(ConfigParse.jsonc(updated, file), file)
+      const changed = updated !== before
+      if (changed) yield* fs.writeFileString(file, updated).pipe(Effect.orDie)
+      return { info, changed }
+    })
 
-      if (changed) yield* invalidate()
-      return { info: next, changed }
+    const update = Effect.fn("Config.update")(function* (config: Info) {
+      yield* patchConfigFile(yield* projectConfigFile(), writable(config))
+    })
+
+    const invalidate = Effect.fn("Config.invalidate")(function* () {
+      yield* invalidateGlobal
+    })
+
+    const updateGlobal = Effect.fn("Config.updateGlobal")(function* (config: Info) {
+      const result = yield* patchConfigFile(globalConfigFile(), writableGlobal(config))
+      if (result.changed) yield* invalidate()
+      return result
     })
 
     return Service.of({
       get,
       getGlobal,
       getConsoleState,
+      getProject,
       update,
       updateGlobal,
       invalidate,
