@@ -78,6 +78,7 @@ import { createTimelineModel } from "@/pages/session/timeline/model"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { citationFromTarget, scrollCitationLine } from "@/pages/session/citation"
 import { reviewFollowUp } from "@/pages/session/review-follow-up"
+import { buildDetachedReviewText, reviewDetachedPrefillKey } from "@/pages/session/review-detached"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { restorePromptModel, syncPromptModel, syncSessionModel } from "@/pages/session/session-model-helpers"
 import {
@@ -413,6 +414,23 @@ export default function Page() {
       if (!text) return
       prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
       setSearchParams({ ...searchParams, prompt: undefined })
+    })
+  })
+
+  // Detached review delivery: a forked session lands here with its /review
+  // prompt stashed under its prefill key. Consume it once into the composer.
+  // The page stays mounted across same-workspace tab switches, so this keys
+  // off the session id rather than mount.
+  createEffect(() => {
+    if (!prompt.ready()) return
+    const id = params.id
+    if (!id) return
+    untrack(() => {
+      const key = reviewDetachedPrefillKey(id)
+      const prefill = sessionStorage.getItem(key)
+      if (!prefill) return
+      sessionStorage.removeItem(key)
+      prompt.set([{ type: "text", content: prefill, start: 0, end: prefill.length }], prefill.length)
     })
   })
 
@@ -1236,6 +1254,54 @@ export default function Page() {
 
   const hasComments = () => comments.all().length > 0
 
+  type ReviewPresetOption = "uncommitted" | "base-branch" | "commit"
+  const [reviewPreset, setReviewPreset] = createSignal<ReviewPresetOption>("uncommitted")
+  const [reviewDetached, setReviewDetached] = createSignal(false)
+  const reviewPresetOptions = () => {
+    const options: ReviewPresetOption[] = ["uncommitted"]
+    if (sync().data.vcs?.default_branch) options.push("base-branch")
+    options.push("commit")
+    return options
+  }
+  const reviewPresetLabel = (preset: ReviewPresetOption) => {
+    if (preset === "base-branch") return language.t("session.review.preset.baseBranch")
+    if (preset === "commit") return language.t("session.review.preset.commit")
+    return language.t("session.review.preset.uncommitted")
+  }
+  const reviewPresetArgsText = (preset: ReviewPresetOption) => {
+    if (preset === "base-branch") return (sync().data.vcs?.default_branch ?? "").trim()
+    return ""
+  }
+  const fillReviewPrompt = (preset: ReviewPresetOption) => {
+    const text = buildDetachedReviewText(reviewPresetArgsText(preset))
+    prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
+  }
+  const runReviewDetached = (preset: ReviewPresetOption) => {
+    const id = params.id
+    if (!id) return
+    const text = buildDetachedReviewText(reviewPresetArgsText(preset))
+    sdk()
+      .api.session.fork({ sessionID: id })
+      .then((forked) => {
+        sessionStorage.setItem(reviewDetachedPrefillKey(forked.id), text)
+        navigate(`/${base64Encode(sdk().directory)}/session/${forked.id}`)
+      })
+      .catch(() => {
+        showToast({
+          title: language.t("common.requestFailed"),
+          description: language.t("common.requestFailed"),
+        })
+      })
+  }
+  const onSelectReviewPreset = (preset: ReviewPresetOption | undefined | null) => {
+    if (!preset) return
+    setReviewPreset(preset)
+    if (reviewDetached()) runReviewDetached(preset)
+    else fillReviewPrompt(preset)
+  }
+  const reviewDetachedLabel = () =>
+    reviewDetached() ? language.t("session.review.detached.attached") : language.t("session.review.detached")
+
   const changesTitle = () => {
     if (!canReview()) {
       return null
@@ -1254,6 +1320,18 @@ export default function Page() {
         />
         <Button size="small" variant="ghost" onClick={addressComments} disabled={!hasComments()} title={hasComments() ? undefined : language.t("session.review.addressCommentsDisabled")}>
           {language.t("session.review.addressComments")}
+        </Button>
+        <Select
+          options={reviewPresetOptions()}
+          current={reviewPreset()}
+          label={reviewPresetLabel}
+          onSelect={onSelectReviewPreset}
+          variant="ghost"
+          size="small"
+          valueClass="text-14-medium"
+        />
+        <Button size="small" variant="ghost" onClick={() => setReviewDetached(!reviewDetached())}>
+          {reviewDetachedLabel()}
         </Button>
       </div>
     )
@@ -1277,6 +1355,18 @@ export default function Page() {
         />
         <Button size="small" variant="ghost" onClick={addressComments} disabled={!hasComments()} title={hasComments() ? undefined : language.t("session.review.addressCommentsDisabled")}>
           {language.t("session.review.addressComments")}
+        </Button>
+        <SelectV2
+          appearance="inline"
+          options={reviewPresetOptions()}
+          current={reviewPreset()}
+          label={reviewPresetLabel}
+          placement="bottom-start"
+          gutter={6}
+          onSelect={onSelectReviewPreset}
+        />
+        <Button size="small" variant="ghost" onClick={() => setReviewDetached(!reviewDetached())}>
+          {reviewDetachedLabel()}
         </Button>
       </div>
     )
