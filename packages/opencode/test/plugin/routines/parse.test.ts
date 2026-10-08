@@ -102,3 +102,28 @@ describe("parseRoutines", () => {
     })
   })
 })
+
+describe("rrule schedule", () => {
+  test("parses an RRULE schedule", () => {
+    const result = parseRoutines({
+      routines: [{ id: "a", name: "A", prompt: "go", schedule: { rrule: "FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0" } }],
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.routines[0]).toMatchObject({ id: "a", rrule: "FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0" })
+  })
+
+  test("rejects an invalid RRULE string", () => {
+    const result = parseRoutines({
+      routines: [{ id: "a", name: "A", prompt: "go", schedule: { rrule: "EVERY=monday" } }],
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  test("rejects rrule combined with dailyAt", () => {
+    const result = parseRoutines({
+      routines: [{ id: "a", name: "A", prompt: "go", schedule: { dailyAt: "09:00", rrule: "FREQ=DAILY" } }],
+    })
+    expect(result.ok).toBe(false)
+  })
+})

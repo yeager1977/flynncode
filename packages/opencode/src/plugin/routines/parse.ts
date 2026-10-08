@@ -1,3 +1,5 @@
+import { RRule } from "rrule"
+
 export type Routine = {
   id: string
   name: string
@@ -5,6 +7,7 @@ export type Routine = {
   enabled: boolean
   dailyAt?: string
   interval?: string
+  rrule?: string
   lastRun?: string
 }
 
@@ -71,6 +74,7 @@ function parseRoutine(item: unknown, index: number, errors: string[]) {
     enabled: typeof row.enabled === "boolean" ? row.enabled : true,
     dailyAt: schedule.dailyAt,
     interval: schedule.interval,
+    rrule: schedule.rrule,
     lastRun: typeof row.lastRun === "string" ? row.lastRun : undefined,
   }
 }
@@ -88,11 +92,13 @@ function readSchedule(schedule: unknown, index: number, errors: string[]) {
   const row = schedule as Record<string, unknown>
   const dailyAt = readDailyAt(row.dailyAt, index, errors)
   const interval = readInterval(row.interval, index, errors)
-  if (dailyAt !== undefined && interval !== undefined) {
-    errors.push(`routines.${index}.schedule must not set both dailyAt and interval`)
+  const rrule = readRrule(row.rrule, index, errors)
+  const set = [dailyAt, interval, rrule].filter((entry) => entry !== undefined)
+  if (set.length > 1) {
+    errors.push(`routines.${index}.schedule must set only one of dailyAt, interval, rrule`)
     return
   }
-  return { dailyAt, interval }
+  return { dailyAt, interval, rrule }
 }
 
 function readDailyAt(dailyAt: unknown, index: number, errors: string[]) {
@@ -111,4 +117,19 @@ function readInterval(interval: unknown, index: number, errors: string[]) {
     return undefined
   }
   return interval
+}
+
+function readRrule(rrule: unknown, index: number, errors: string[]) {
+  if (rrule === undefined) return undefined
+  if (typeof rrule !== "string" || rrule.trim() === "") {
+    errors.push(`routines.${index}.schedule.rrule must be an RRULE string like FREQ=WEEKLY;BYDAY=MO`)
+    return undefined
+  }
+  try {
+    RRule.fromString(rrule)
+  } catch {
+    errors.push(`routines.${index}.schedule.rrule must be a valid RRULE string`)
+    return undefined
+  }
+  return rrule
 }
