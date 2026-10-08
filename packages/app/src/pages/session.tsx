@@ -1234,6 +1234,8 @@ export default function Page() {
     prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
   }
 
+  const hasComments = () => comments.all().length > 0
+
   const changesTitle = () => {
     if (!canReview()) {
       return null
@@ -1250,7 +1252,7 @@ export default function Page() {
           size="small"
           valueClass="text-14-medium"
         />
-        <Button size="small" variant="ghost" onClick={addressComments}>
+        <Button size="small" variant="ghost" onClick={addressComments} disabled={!hasComments()} title={hasComments() ? undefined : language.t("session.review.addressCommentsDisabled")}>
           {language.t("session.review.addressComments")}
         </Button>
       </div>
@@ -1273,7 +1275,7 @@ export default function Page() {
           gutter={6}
           onSelect={(option) => option && view().review.setMode(option)}
         />
-        <Button size="small" variant="ghost" onClick={addressComments}>
+        <Button size="small" variant="ghost" onClick={addressComments} disabled={!hasComments()} title={hasComments() ? undefined : language.t("session.review.addressCommentsDisabled")}>
           {language.t("session.review.addressComments")}
         </Button>
       </div>

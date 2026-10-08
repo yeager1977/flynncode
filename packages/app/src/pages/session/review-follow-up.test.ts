@@ -12,3 +12,8 @@ describe("reviewFollowUp", () => {
     expect(text).not.toContain("revert")
   })
 })
+
+test("empty comment list yields the header alone", () => {
+  const text = reviewFollowUp({ header: "Address these review comments on the last turn.", comments: [] })
+  expect(text).toBe("Address these review comments on the last turn.")
+})

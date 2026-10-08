@@ -749,6 +749,7 @@ export const dict = {
   "session.todo.statusLabel": "Todo status: {{status}}",
   "session.timeline.backgroundDivider": "Background activity",
   "session.review.addressComments": "Address comments",
+  "session.review.addressCommentsDisabled": "Add a line comment before addressing comments",
   "session.review.followUp.turn": "Address these review comments on the last turn.",
   "session.review.followUp.git": "Address these review comments on the unstaged diff.",
   "session.review.followUp.branch": "Address these review comments on the branch diff.",
