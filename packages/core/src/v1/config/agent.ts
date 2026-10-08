@@ -9,6 +9,29 @@ const Color = Schema.Union([
   Schema.Literals(["primary", "secondary", "accent", "success", "warning", "error", "info"]),
 ])
 
+const Isolation = Schema.Union([Schema.Literals(["inherit", "worktree"]), Schema.Undefined])
+
+// config.isolation/sandbox are tolerant like config.worktree: unknown values
+// decode successfully here and `normalize` below degrades them to undefined
+// instead of failing config load. The `toArbitrary` hooks keep
+// `Schema.toArbitrary` (used by config migration property tests) working for
+// these opaque declarations.
+const TolerantIsolation = Schema.declare<Schema.Schema.Type<typeof Isolation>>(
+  (_input): _input is Schema.Schema.Type<typeof Isolation> => true,
+  {
+    description: "Subagent isolation: inherit the parent directory or run in a temp worktree.",
+    toArbitrary: () => (fc) => fc.oneof(fc.constant("inherit"), fc.constant("worktree"), fc.constant(undefined)),
+  },
+)
+
+const TolerantSandbox = Schema.declare<string | undefined>(
+  (_input): _input is string | undefined => true,
+  {
+    description: "Sandbox profile name applied to isolated subagent sessions.",
+    toArbitrary: () => (fc) => fc.oneof(fc.string(), fc.constant(undefined)),
+  },
+)
+
 const AgentSchema = Schema.StructWithRest(
   Schema.Struct({
     model: Schema.optional(Schema.String),
@@ -27,6 +50,8 @@ const AgentSchema = Schema.StructWithRest(
     hidden: Schema.optional(Schema.Boolean).annotate({
       description: "Hide this subagent from the @ autocomplete menu (default: false, only applies to mode: subagent)",
     }),
+    isolation: Schema.optional(TolerantIsolation),
+    sandbox: Schema.optional(TolerantSandbox),
     options: Schema.optional(Schema.Record(Schema.String, Schema.Any)),
     color: Schema.optional(Color).annotate({
       description: "Hex color code (e.g., #FF5733) or theme color (e.g., primary)",
@@ -57,6 +82,8 @@ const KNOWN_KEYS = new Set([
   "permission",
   "disable",
   "tools",
+  "isolation",
+  "sandbox",
 ])
 
 const normalize = (agent: Schema.Schema.Type<typeof AgentSchema>): Schema.Schema.Type<typeof AgentSchema> => {
@@ -77,7 +104,9 @@ const normalize = (agent: Schema.Schema.Type<typeof AgentSchema>): Schema.Schema
   globalThis.Object.assign(permission, agent.permission)
 
   const steps = agent.steps ?? agent.maxSteps
-  return { ...agent, options, permission, ...(steps !== undefined ? { steps } : {}) }
+  const isolation = agent.isolation === "inherit" || agent.isolation === "worktree" ? agent.isolation : undefined
+  const sandbox = typeof agent.sandbox === "string" ? agent.sandbox : undefined
+  return { ...agent, isolation, sandbox, options, permission, ...(steps !== undefined ? { steps } : {}) }
 }
 
 export const Info = AgentSchema.pipe(
