@@ -185,7 +185,7 @@ export const RunCommand = effectCmd({
       })
       .option("output-schema", {
         type: "string",
-        describe: 'JSON schema (inline JSON or @path/to/schema.json) for structured output (CI: opencode run --json --output-schema schema.json "prompt" | jq)',
+        describe: 'JSON schema (inline JSON or @path/to/schema.json) for structured prompt output, not commands (CI: opencode run --json --output-schema schema.json "prompt" | jq)',
       })
       .option("file", {
         alias: ["f"],

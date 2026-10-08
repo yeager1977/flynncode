@@ -180,6 +180,20 @@ describe("opencode run (non-interactive subprocess)", () => {
     30_000,
   )
 
+  cliIt.concurrent(
+    "--output-schema with --command is rejected as prompt-only",
+    ({ opencode }) =>
+      Effect.gen(function* () {
+        const result = yield* opencode.run("args", {
+          command: "some-command",
+          extraArgs: ["--output-schema", '{"type":"object"}'],
+        })
+        expect(result.exitCode).not.toBe(0)
+        expect(result.stderr).toContain("--output-schema cannot be used with --command")
+      }),
+    30_000,
+  )
+
   // Regression for #27371: an unknown model used to hang the process forever
   // waiting on a session.status === idle event that never arrived. The fix
   // makes the SDK call surface an error promptly so the process exits nonzero.
