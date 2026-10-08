@@ -6,6 +6,7 @@ import { showToast } from "@/utils/toast"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { usePermission } from "@/context/permission"
+import type { ApprovalMode, SandboxLevel } from "@/context/permission"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { sessionPermissionRequest, sessionQuestionRequest } from "./session-request-tree"
@@ -90,6 +91,20 @@ export function createSessionComposerController(options?: { closeMs?: number | (
       .finally(() => {
         setStore("responding", (id) => (id === perm.id ? undefined : id))
       })
+  }
+
+  const permissionSandbox = createMemo((): SandboxLevel => permission.sandboxLevel(sdk().directory))
+
+  const permissionApprovalMode = createMemo((): ApprovalMode => {
+    const id = params.id
+    if (!id) return "manual"
+    return permission.approvalMode(id, sdk().directory)
+  })
+
+  const setPermissionApprovalMode = (mode: ApprovalMode) => {
+    const id = params.id
+    if (!id) return
+    permission.setApprovalMode(id, sdk().directory, mode)
   }
 
   let timer: number | undefined
@@ -191,6 +206,9 @@ export function createSessionComposerController(options?: { closeMs?: number | (
     permissionRequest,
     permissionResponding,
     decide,
+    permissionSandbox,
+    permissionApprovalMode,
+    setPermissionApprovalMode,
     todos,
     dock: () =>
       store.sessionID === params.id

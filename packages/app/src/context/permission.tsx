@@ -16,11 +16,15 @@ import type { ServerScope } from "@/utils/server-scope"
 import { normalizePermissionRequest } from "./global-sync/utils"
 import {
   acceptKey,
+  approvalAutoRespond,
+  type ApprovalMode,
   directoryAcceptKey,
   isDirectoryAutoAccepting,
   autoRespondsPermission,
+  resolveAutoRespond,
   sessionAutoAccept,
 } from "./permission-auto-respond"
+export type { ApprovalMode }
 
 type PermissionRespondFn = (input: {
   sessionID: string
@@ -28,6 +32,8 @@ type PermissionRespondFn = (input: {
   response: "once" | "always" | "reject"
   directory?: string
 }) => void
+
+export type SandboxLevel = "readonly" | "workspace-write" | "full-access"
 
 function isNonAllowRule(rule: unknown) {
   if (!rule) return false
@@ -180,6 +186,15 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
       isPermissionAllowAll(directory: string) {
         return selected().isPermissionAllowAll(directory)
       },
+      approvalMode(sessionID: string, directory?: string) {
+        return selected().approvalMode(sessionID, directory)
+      },
+      setApprovalMode(sessionID: string, directory: string | undefined, mode: ApprovalMode) {
+        selected().setApprovalMode(sessionID, directory, mode)
+      },
+      sandboxLevel(directory: string) {
+        return selected().sandboxLevel(directory)
+      },
     }
   },
 })
@@ -208,6 +223,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     },
     createStore({
       autoAccept: {} as Record<string, boolean>,
+      approvalMode: {} as Record<string, ApprovalMode>,
     }),
   )
 
@@ -295,8 +311,45 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     return isDirectoryAutoAccepting(store.autoAccept, directory)
   }
 
+  function approvalMode(sessionID: string, directory?: string): ApprovalMode {
+    return store.approvalMode[acceptKey(sessionID, directory)] ?? "manual"
+  }
+
+  function setApprovalMode(sessionID: string, directory: string | undefined, mode: ApprovalMode) {
+    if (meta.disposed) return
+    const key = acceptKey(sessionID, directory)
+    setStore(
+      produce((draft) => {
+        draft.approvalMode[key] = mode
+      }),
+    )
+  }
+
+  function sandboxLevel(directory: string): SandboxLevel {
+    if (meta.disposed) return "workspace-write"
+    const [childStore] = input.sync.child(directory)
+    // Full-access is settings-gated (Codex model): it only activates via an
+    // explicit `sandbox: "full-access"` config value. No UI affordance writes
+    // it, so it stays hidden until explicitly enabled.
+    const level = (childStore.config.permission as Record<string, string> | undefined)?.sandbox
+    if (level === "readonly" || level === "workspace-write" || level === "full-access") return level
+    return "workspace-write"
+  }
+
+  // Precedence rule (applied first on both the sync filter and the async
+  // responder path): an explicit per-session/directory auto-accept choice
+  // wins over approval mode, so disabling auto-accept for a session is never
+  // silently overridden by switching the mode to auto.
+  function explicitOverride(permission: PermissionRequest, directory?: string): boolean | undefined {
+    return sessionAutoAccept(store.autoAccept, sessions(directory), permission, directory)
+  }
+
   function shouldAutoRespond(permission: PermissionRequest, directory?: string) {
-    return autoRespondsPermission(store.autoAccept, sessions(directory), permission, directory)
+    return resolveAutoRespond(
+      explicitOverride(permission, directory),
+      approvalAutoRespond(approvalMode(permission.sessionID, directory), permission.permission),
+      autoRespondsPermission(store.autoAccept, sessions(directory), permission, directory),
+    )
   }
 
   function isPending(permission: PermissionRequest) {
@@ -305,7 +358,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
   }
 
   async function shouldAutoRespondResolved(permission: PermissionRequest, directory?: string) {
-    const override = sessionAutoAccept(store.autoAccept, sessions(directory), permission, directory)
+    const override = explicitOverride(permission, directory)
     if (override !== undefined) return override
     if (input.sync.session.lineage.peek(permission.sessionID)) return shouldAutoRespond(permission, directory)
     const lineage = await input.sync.session.lineage.resolve(permission.sessionID).catch(() => undefined)
@@ -467,6 +520,16 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
       if (meta.disposed) return false
       const [childStore] = input.sync.child(directory)
       return childStore.config.permission === "allow"
+    },
+    approvalMode(sessionID: string, directory?: string) {
+      if (meta.disposed) return "manual" as ApprovalMode
+      return approvalMode(sessionID, directory)
+    },
+    setApprovalMode(sessionID: string, directory: string | undefined, mode: ApprovalMode) {
+      setApprovalMode(sessionID, directory, mode)
+    },
+    sandboxLevel(directory: string) {
+      return sandboxLevel(directory)
     },
   }
 

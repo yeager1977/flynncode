@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, mock, test } from "bun:test"
 import type { OpencodeClient, PermissionRequest, QuestionRequest, Session, Todo } from "@opencode-ai/sdk/v2/client"
+import type { ApprovalMode, SandboxLevel } from "@/context/permission"
 
 // The `solid` test condition resolves solid-js to its SSR build, where
 // createEffect is a no-op and stores are not reactive. The composer lifecycle
@@ -20,6 +21,21 @@ let currentServer: ReturnType<(typeof import("@/context/server-session"))["creat
 let currentParams: () => { id: string | undefined }
 let setCurrentParams: (id: string | undefined) => void
 
+// Mutable per-test state read by the permission context mock. Defaults mirror
+// the real context (workspace-write sandbox, manual approvals, no auto-respond
+// recorded); tests override fields to assert controller delegation.
+const permissionMock: {
+  autoResponds: () => boolean
+  sandboxLevel: () => SandboxLevel
+  approvalMode: () => ApprovalMode
+  setApprovalMode: (sessionID: string, directory: string | undefined, mode: ApprovalMode) => void
+} = {
+  autoResponds: () => true,
+  sandboxLevel: () => "workspace-write",
+  approvalMode: () => "manual",
+  setApprovalMode: () => undefined,
+}
+
 beforeAll(async () => {
   // @ts-expect-error - deep import has no declaration file
   mock.module("solid-js", async () => await import("solid-js/dist/solid.js"))
@@ -32,7 +48,7 @@ beforeAll(async () => {
     useSDK: () => () => ({ api: { permission: { reply: () => Promise.resolve() } }, directory: "/repo" }),
   }))
   mock.module("@/context/permission", () => ({
-    usePermission: () => ({ autoResponds: () => true }),
+    usePermission: () => permissionMock,
   }))
   mock.module("@/context/language", () => ({
     useLanguage: () => ({ t: () => "" }),
@@ -260,8 +276,7 @@ describe("todoState", () => {
   })
 })
 
-describe("todoDockAtBoundary", () => {
-  test("shows active todos when entering a session", () => {
+describe("todoDockAtBoundary", () => {  test("shows active todos when entering a session", () => {
     expect(composer.todoDockAtBoundary("open")).toBe(true)
   })
 
@@ -329,6 +344,33 @@ describe("session composer todo lifecycle", () => {
 
     expect(h.server.data.todo["s1"]).toEqual([])
     expect(h.controller.dock()).toBe(false)
+    h.dispose()
+  })
+})
+
+describe("permission dock wiring", () => {
+  test("exposes the session sandbox level", () => {
+    permissionMock.sandboxLevel = () => "readonly"
+    const h = harness("s1")
+    expect(h.controller.permissionSandbox()).toBe("readonly")
+    h.dispose()
+  })
+
+  test("exposes the session approval mode", () => {
+    permissionMock.approvalMode = () => "auto"
+    const h = harness("s1")
+    expect(h.controller.permissionApprovalMode()).toBe("auto")
+    h.dispose()
+  })
+
+  test("forwards mode changes with the session id and directory", () => {
+    const calls: { sessionID: string; directory: string | undefined; mode: ApprovalMode }[] = []
+    permissionMock.setApprovalMode = (sessionID, directory, mode) => {
+      calls.push({ sessionID, directory, mode })
+    }
+    const h = harness("s1")
+    h.controller.setPermissionApprovalMode("accept-edits")
+    expect(calls).toEqual([{ sessionID: "s1", directory: "/repo", mode: "accept-edits" }])
     h.dispose()
   })
 })

@@ -580,6 +580,16 @@ export const dict = {
   "toast.permissions.autoaccept.off.title": "Stopped auto-accepting permissions",
   "toast.permissions.autoaccept.off.description": "Permission requests will require approval",
 
+  "sandbox.badge.readonly": "Sandbox: read-only",
+  "sandbox.badge.workspace": "Sandbox: workspace",
+  "sandbox.badge.full": "Sandbox: full access",
+  "approval.mode.manual": "Manual approvals",
+  "approval.mode.acceptEdits": "Accept edits",
+  "approval.mode.auto": "Auto approve",
+  "approval.sandboxBlocked.title": "Blocked by sandbox",
+  "approval.sandboxBlocked.description": "This action targets a path outside the session sandbox.",
+  "approval.reviewerApproved.note": "Auto-approved by reviewer",
+
   "toast.model.none.title": "No model selected",
   "toast.model.none.description": "Connect a provider to summarize this session",
 

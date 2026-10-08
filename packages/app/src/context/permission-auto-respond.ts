@@ -58,3 +58,28 @@ export function sessionAutoAccept(
     .map((id) => accepted(autoAccept, id, directory))
     .find((item): item is boolean => item !== undefined)
 }
+
+export type ApprovalMode = "manual" | "accept-edits" | "auto"
+
+// Same family as the server AUTO_EDIT_PERMISSIONS in permission evaluation:
+// approval modes never cover shell or other mutating permissions.
+export const AUTO_EDIT_PERMISSIONS: readonly string[] = ["edit", "read", "glob", "grep", "list"]
+
+// Approval-mode verdict for a permission name, or undefined to fall through
+// to the stored auto-accept rules.
+export function approvalAutoRespond(mode: ApprovalMode, permissionName: string): boolean | undefined {
+  if (mode === "auto") return true
+  if (mode === "accept-edits" && AUTO_EDIT_PERMISSIONS.includes(permissionName)) return true
+  return undefined
+}
+
+// Precedence: explicit per-session choice > approval mode > directory default.
+export function resolveAutoRespond(
+  override: boolean | undefined,
+  approval: boolean | undefined,
+  fallback: boolean,
+): boolean {
+  if (override !== undefined) return override
+  if (approval !== undefined) return approval
+  return fallback
+}
