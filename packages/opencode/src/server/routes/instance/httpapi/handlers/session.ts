@@ -46,7 +46,7 @@ import {
   SummarizePayload,
   UpdatePayload,
 } from "../groups/session"
-import { ApiNotFoundError, PermissionNotFoundError, notFound } from "../errors"
+import { PermissionNotFoundError, notFound } from "../errors"
 import * as SessionError from "./session-errors"
 
 const tryParseJson = (text: string) =>
@@ -464,9 +464,35 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     }) {
       const info = yield* requireSession(ctx.params.sessionID)
       const exists = (dir: string) => fs.exists(dir).pipe(Effect.orElseSucceed(() => false))
+      const applyExtras = Effect.fn("SessionHttpApi.applyExtras")(function* (raw: readonly string[]) {
+        const resolved = yield* Effect.forEach(raw, (dir) => fs.resolve(dir))
+        const extras = normalizeFolders(info.directory, resolved)
+        if (extras.length > MaxExtras) return yield* new HttpApiError.BadRequest({})
+        for (const extra of extras) {
+          if (yield* exists(extra)) continue
+          return yield* notFound(`Folder not found: ${extra}`)
+        }
+        const current = new Set((yield* projectDirectories.list(info.projectID)).map((row) => row.directory))
+        for (const extra of extras) {
+          if (current.has(AbsolutePath.make(extra))) continue
+          yield* projectDirectories
+            .create({ directory: AbsolutePath.make(extra), projectID: info.projectID })
+            .pipe(Effect.ignore)
+        }
+        for (const dir of current) {
+          if (dir === info.directory || extras.includes(dir)) continue
+          yield* projectDirectories.remove({ directory: dir, projectID: info.projectID }).pipe(Effect.ignore)
+        }
+        yield* instances.setAdditionalDirectories(info.directory, extras)
+        return { primary: info.directory, extras }
+      })
       if (ctx.payload.primary !== undefined) {
         const nextPrimary = yield* fs.resolve(ctx.payload.primary)
         if (!(yield* exists(nextPrimary))) return yield* notFound(`Folder not found: ${ctx.payload.primary}`)
+        if (nextPrimary === info.directory) {
+          if (ctx.payload.extras === undefined) return yield* folders(ctx)
+          return yield* applyExtras(ctx.payload.extras)
+        }
         const rows = yield* projectDirectories.list(info.projectID)
         const others = rows
           .map((row) => row.directory)
@@ -482,26 +508,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         return { primary: nextPrimary, extras }
       }
       if (ctx.payload.extras === undefined) return yield* folders(ctx)
-      const resolved = yield* Effect.forEach(ctx.payload.extras, (dir) => fs.resolve(dir))
-      const extras = normalizeFolders(info.directory, resolved)
-      if (extras.length > MaxExtras) return yield* new HttpApiError.BadRequest({})
-      for (const extra of extras) {
-        if (yield* exists(extra)) continue
-        return yield* notFound(`Folder not found: ${extra}`)
-      }
-      const current = new Set((yield* projectDirectories.list(info.projectID)).map((row) => row.directory))
-      for (const extra of extras) {
-        if (current.has(AbsolutePath.make(extra))) continue
-        yield* projectDirectories
-          .create({ directory: AbsolutePath.make(extra), projectID: info.projectID })
-          .pipe(Effect.ignore)
-      }
-      for (const dir of current) {
-        if (dir === info.directory || extras.includes(dir)) continue
-        yield* projectDirectories.remove({ directory: dir, projectID: info.projectID }).pipe(Effect.ignore)
-      }
-      yield* instances.setAdditionalDirectories(info.directory, extras)
-      return { primary: info.directory, extras }
+      return yield* applyExtras(ctx.payload.extras)
     })
 
     return handlers
