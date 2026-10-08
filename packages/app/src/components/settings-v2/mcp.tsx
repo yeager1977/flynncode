@@ -6,13 +6,22 @@ import { Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitleGroup } from
 import { Switch } from "@opencode-ai/ui/v2/switch-v2"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { For, Show, createMemo, createResource, createSignal, type Component } from "solid-js"
-import type { Config, McpLocalConfig, McpRemoteConfig } from "@opencode-ai/sdk/v2/client"
+import type { Config } from "@opencode-ai/sdk/v2/client"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { useServerProtocol, useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
-import { buildAddInput, emptyForm, formFromConfig, storedToPayloadConfig, type McpFormState, type McpServerConfig } from "./mcp-payload"
+import {
+  buildAddInput,
+  emptyForm,
+  formFromConfig,
+  payloadToStoredConfig,
+  storedToPayloadConfig,
+  type McpFormState,
+  type McpServerConfig,
+  type StoredMcpConfig,
+} from "./mcp-payload"
 import { RegistrySearchDialog } from "./mcp-registry"
 import { registryToForm, type RegistryEntry } from "./mcp-registry-payload"
 import { SettingsListV2 } from "./parts/list"
@@ -54,6 +63,8 @@ const asStatusState = (value: unknown): McpStatusState => {
     : "failed"
 }
 
+type McpMap = NonNullable<Config["mcp"]>
+
 export const SettingsMcpV2: Component<{ directory?: string }> = (props) => {
   const language = useLanguage()
   const dialog = useDialog()
@@ -66,6 +77,13 @@ export const SettingsMcpV2: Component<{ directory?: string }> = (props) => {
 
   const location = () => (props.directory ? { location: { directory: props.directory } } : {})
   const directory = () => (props.directory ? { directory: props.directory } : undefined)
+
+  // Only the project config file, never the merged config: writing merged
+  // values back would copy global settings (and secrets) into the project.
+  const projectConfig = async () => {
+    if (props.directory === undefined) return {} as Config
+    return ((await serverSdk().client.config.project.get({ directory: props.directory })).data ?? {}) as Config
+  }
 
   // The MCP surface used here is the SDK client's `/mcp` routes (status/add/
   // connect/disconnect), NOT the promise client's `/api/mcp*` — the desktop
@@ -95,32 +113,30 @@ export const SettingsMcpV2: Component<{ directory?: string }> = (props) => {
         )
         return result.data ?? []
       },
-      add: async (server: string, config: McpServerConfig, directory?: string) => {
-        // The v2 schema wants mutable arrays; the payload builder types them readonly.
-        const mutable = (config.type === "local"
-          ? { ...config, command: [...config.command] }
-          : { ...config }) as McpLocalConfig | McpRemoteConfig
+      add: async (server: string, config: McpServerConfig, stored: StoredMcpConfig, directory?: string) => {
         try {
-          await sdk.client.mcp.add({ name: server, config: mutable, ...(directory !== undefined ? { directory } : {}) })
+          // The SDK `/mcp` route takes the stored config shape (enabled, flat timeout).
+          await sdk.client.mcp.add({ name: server, config: stored, ...(directory !== undefined ? { directory } : {}) })
         } catch (error) {
           if (protocol() === "v2") throw error
           await sdk.api.mcp.add({ server, config, ...(directory !== undefined ? location() : {}) })
         }
       },
-      remove: async (server: string, scope?: "global" | "directory") => {
+      // Writes `mcp` into the config file of the chosen scope. The patch carries
+      // the whole server map of that file: the server drops names it omits.
+      save: async (scope: "global" | "directory", edit: (mcp: McpMap) => McpMap) => {
         if (scope === "directory" && props.directory !== undefined) {
-          const response = await sdk.client.config.get({ directory: props.directory })
-          const project = (response.data ?? {}) as Config
-          const next = { ...project, mcp: { ...project.mcp } }
-          delete next.mcp[server]
-          await sdk.client.config.update({ directory: props.directory, config: next })
+          const project = await projectConfig()
+          await sdk.client.config.update({ directory: props.directory, config: { mcp: edit({ ...project.mcp }) } })
           return
         }
-        const config = serverSync().data.config
-        const next = { ...config, mcp: { ...config?.mcp } }
-        delete next.mcp[server]
+        await serverSync().updateConfig({ mcp: edit({ ...serverSync().data.config?.mcp }) })
+      },
+      remove: async (server: string, scope: "global" | "directory") => {
+        const without = (mcp: McpMap) => Object.fromEntries(Object.entries(mcp).filter(([name]) => name !== server))
+        if (scope === "directory") return mcpApi().save(scope, without)
         try {
-          await sdk.client.global.config.update({ config: next })
+          await mcpApi().save(scope, without)
         } catch (error) {
           if (protocol() === "v2") throw error
           await sdk.api.mcp.remove({ server, ...location() })
@@ -166,24 +182,28 @@ export const SettingsMcpV2: Component<{ directory?: string }> = (props) => {
   const onError = (error: unknown) =>
     showToast({ variant: "error", description: error instanceof Error ? error.message : String(error) })
 
-  const addServer = async (form: McpFormState, previous?: { name: string; wasConnected: boolean; scope: "global" | "directory" }) => {
+  // Persist the server into the scope's config file first, then call add only
+  // to activate it in the running instance (add itself is in-memory only).
+  const addServer = async (
+    form: McpFormState,
+    previous?: { name: string; wasConnected: boolean; scope: "global" | "directory"; stored: StoredMcpConfig },
+  ) => {
     const built = buildAddInput(form, { keepSecret: previous !== undefined, directory: props.directory })
     if (!built.ok) throw new Error(built.error)
     const api = mcpApi()
-    if (previous) {
-      if (previous.wasConnected) {
-        await api.disconnect(previous.name).catch(() => undefined)
-      }
-      await api.remove(previous.name, previous.scope)
-      await api.add(built.input.server, built.input.config, previous.scope === "directory" ? props.directory : undefined)
-      return
-    }
-    await api.add(built.input.server, built.input.config, built.input.directory)
+    const scope = previous?.scope ?? (built.input.directory !== undefined ? "directory" : "global")
+    const stored = payloadToStoredConfig(built.input.config, previous?.stored)
+    if (previous?.wasConnected) await api.disconnect(previous.name).catch(() => undefined)
+    await api.save(scope, (mcp) => ({
+      ...Object.fromEntries(Object.entries(mcp).filter(([name]) => name !== previous?.name)),
+      [built.input.server]: stored,
+    }))
+    await api.add(built.input.server, built.input.config, stored, scope === "directory" ? props.directory : undefined)
   }
 
   const openForm = (
     initial: McpFormState,
-    previous?: { name: string; wasConnected: boolean; scope: "global" | "directory" },
+    previous?: { name: string; wasConnected: boolean; scope: "global" | "directory"; stored: StoredMcpConfig },
     note?: string,
   ) => {
     // A reactive store keeps the dialog's toggles, switches, and row editors
@@ -238,31 +258,31 @@ export const SettingsMcpV2: Component<{ directory?: string }> = (props) => {
     void dialog.push(() => <RegistrySearchDialog onSelect={onRegistrySelect} />)
   }
 
+  // A server is project-scoped only when the project config file itself
+  // defines it; the merged config would make global servers look local.
   const resolveServerScope = async (name: string) => {
-    if (props.directory === undefined) return { scope: "global" as const, project: undefined }
-    const response = await serverSdk().client.config.get({ directory: props.directory })
-    const project = (response.data ?? {}) as Config
-    return {
-      scope: project.mcp?.[name] !== undefined ? ("directory" as const) : ("global" as const),
-      project,
-    }
+    const project = await projectConfig()
+    return project.mcp?.[name] !== undefined
+      ? { scope: "directory" as const, existing: project.mcp[name] }
+      : { scope: "global" as const, existing: serverSync().data.config?.mcp?.[name] }
   }
 
   const onEdit = (name: string) => {
     void (async () => {
       try {
         const resolved = await resolveServerScope(name)
-        let existing = serverSync().data.config?.mcp?.[name]
-        if (resolved.scope === "directory") {
-          existing = resolved.project?.mcp?.[name]
-        }
+        const existing = resolved.existing
         if (!existing || !("type" in existing)) {
           showToast({ variant: "error", description: language.t("settings.mcp.errors.noConfig", { name }) })
           return
         }
-        const config = storedToPayloadConfig(existing)
         const status = (servers() ?? []).find((server) => server.name === name)?.status.status
-        openForm(formFromConfig(name, config), { name, wasConnected: status === "connected", scope: resolved.scope })
+        openForm(formFromConfig(name, storedToPayloadConfig(existing)), {
+          name,
+          wasConnected: status === "connected",
+          scope: resolved.scope,
+          stored: existing,
+        })
       } catch (error) {
         onError(error)
       }
@@ -311,8 +331,7 @@ export const SettingsMcpV2: Component<{ directory?: string }> = (props) => {
   const remove = async (name: string) => {
     setBusy(name)
     try {
-      const { scope } = await resolveServerScope(name)
-      await mcpApi().remove(name, scope)
+      await mcpApi().remove(name, (await resolveServerScope(name)).scope)
       showToast({ variant: "success", description: language.t("settings.mcp.deleted", { name }) })
       await serversActions.refetch()
     } catch (error) {
