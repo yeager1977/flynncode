@@ -29,7 +29,7 @@ import { showToast } from "@/utils/toast"
 import { Persist, persisted } from "@/utils/persist"
 import type { NewSessionDraftController } from "./new-session-draft-controller"
 import type { NewSessionWorkspaceController } from "./new-session-workspace-controller"
-import { knowledgeNotesEmpty } from "./new-session-knowledge"
+import { directoryMissing, knowledgeNotesEmpty } from "./new-session-knowledge"
 
 const providerTipDismissalDuration = 30 * 24 * 60 * 60 * 1000
 
@@ -102,17 +102,26 @@ function NewSessionKindSelector(props: {
 }) {
   const language = useLanguage()
   const sdk = useSDK()
-  // The empty state asserts on a successful listing only. A failed list
+  // The empty state asserts on a successful listing, or on a parent listing
+  // that proves the knowledge folder does not exist yet. Any other failure
   // must not claim the folder is empty. While loading, only the hint shows.
   const [notesEmpty] = createResource(
     () => (props.kind() === "knowledge" ? (props.worktree() ?? null) : null),
     async (root) => {
-      try {
-        const result = await sdk().api.file.list({ path: ".opencode/knowledge", location: { directory: root } })
-        return knowledgeNotesEmpty([result.data.map((entry) => entry.path)])
-      } catch {
-        return false
-      }
+      const list = (path: string) =>
+        sdk()
+          .api.file.list({ path, location: { directory: root } })
+          .then(
+            (result) => result.data.map((entry) => entry.path),
+            () => undefined,
+          )
+      const notes = await list(".opencode/knowledge")
+      if (notes) return knowledgeNotesEmpty([notes])
+      const config = await list(".opencode")
+      if (config) return directoryMissing(config, ".opencode/knowledge")
+      const top = await list(".")
+      if (top) return directoryMissing(top, ".opencode")
+      return false
     },
   )
   return (
