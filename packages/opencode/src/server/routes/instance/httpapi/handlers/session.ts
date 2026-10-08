@@ -20,6 +20,11 @@ import { Worktree } from "@/worktree"
 import { shouldDispose } from "@/worktree/session-binding"
 import { boundSessions } from "@/worktree/bound-sessions"
 import { NamedError } from "@opencode-ai/core/util/error"
+import { FSUtil } from "@opencode-ai/core/fs-util"
+import { AbsolutePath } from "@opencode-ai/core/schema"
+import { normalizeFolders, MaxExtras } from "@opencode-ai/core/project/folders"
+import { ProjectDirectories } from "@opencode-ai/core/project/directories"
+import { InstanceStore } from "@/project/instance-store"
 import { Cause, Effect, Option, Schema, Scope } from "effect"
 import * as Stream from "effect/Stream"
 import { InstanceState } from "@/effect/instance-state"
@@ -29,6 +34,7 @@ import { InstanceHttpApi } from "../api"
 import {
   CommandPayload,
   DiffQuery,
+  FoldersPayload,
   ForkPayload,
   InitPayload,
   ListQuery,
@@ -40,7 +46,7 @@ import {
   SummarizePayload,
   UpdatePayload,
 } from "../groups/session"
-import { PermissionNotFoundError } from "../errors"
+import { ApiNotFoundError, PermissionNotFoundError, notFound } from "../errors"
 import * as SessionError from "./session-errors"
 
 const tryParseJson = (text: string) =>
@@ -66,6 +72,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const scope = yield* Scope.Scope
     const worktreeSvc = yield* Worktree.Service
     const project = yield* Project.Service
+    const fs = yield* FSUtil.Service
+    const projectDirectories = yield* ProjectDirectories.Service
+    const instances = yield* InstanceStore.Service
 
     // Dispose-on-archive: a session carrying a disposable worktree binding in
     // its metadata removes that worktree once every session bound to it is
@@ -179,7 +188,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     })
 
     const create = Effect.fn("SessionHttpApi.create")(function* (ctx: { payload?: Session.CreateInput }) {
-      return yield* shareSvc.create(ctx.payload)
+      return yield* shareSvc.create(ctx.payload).pipe(
+        Effect.catchTag("SessionMultifoldError", () => new HttpApiError.BadRequest({})),
+      )
     })
 
     const createRaw = Effect.fn("SessionHttpApi.createRaw")(function* (ctx: {
@@ -196,6 +207,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         ? {
             ...decoded,
             permission: decoded.permission ? [...decoded.permission] : undefined,
+            additionalDirectories: decoded.additionalDirectories ? [...decoded.additionalDirectories] : undefined,
           }
         : decoded
       return yield* create({ payload })
@@ -437,6 +449,61 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return yield* session.updatePart(payload)
     })
 
+    const folders = Effect.fn("SessionHttpApi.folders")(function* (ctx: { params: { sessionID: SessionID } }) {
+      const info = yield* requireSession(ctx.params.sessionID)
+      const rows = yield* projectDirectories.list(info.projectID)
+      return {
+        primary: info.directory,
+        extras: rows.map((row) => row.directory).filter((dir) => dir !== info.directory),
+      }
+    })
+
+    const updateFolders = Effect.fn("SessionHttpApi.updateFolders")(function* (ctx: {
+      params: { sessionID: SessionID }
+      payload: typeof FoldersPayload.Type
+    }) {
+      const info = yield* requireSession(ctx.params.sessionID)
+      const exists = (dir: string) => fs.exists(dir).pipe(Effect.orElseSucceed(() => false))
+      if (ctx.payload.primary !== undefined) {
+        const nextPrimary = yield* fs.resolve(ctx.payload.primary)
+        if (!(yield* exists(nextPrimary))) return yield* notFound(`Folder not found: ${ctx.payload.primary}`)
+        const rows = yield* projectDirectories.list(info.projectID)
+        const others = rows
+          .map((row) => row.directory)
+          .filter((dir) => dir !== nextPrimary && dir !== info.directory)
+        const extras = [info.directory, ...others]
+        yield* session.setDirectory({ sessionID: ctx.params.sessionID, directory: nextPrimary })
+        for (const dir of [nextPrimary, ...extras]) {
+          yield* projectDirectories
+            .create({ directory: AbsolutePath.make(dir), projectID: info.projectID })
+            .pipe(Effect.ignore)
+        }
+        yield* instances.reload({ directory: nextPrimary, additionalDirectories: extras })
+        return { primary: nextPrimary, extras }
+      }
+      if (ctx.payload.extras === undefined) return yield* folders(ctx)
+      const resolved = yield* Effect.forEach(ctx.payload.extras, (dir) => fs.resolve(dir))
+      const extras = normalizeFolders(info.directory, resolved)
+      if (extras.length > MaxExtras) return yield* new HttpApiError.BadRequest({})
+      for (const extra of extras) {
+        if (yield* exists(extra)) continue
+        return yield* notFound(`Folder not found: ${extra}`)
+      }
+      const current = new Set((yield* projectDirectories.list(info.projectID)).map((row) => row.directory))
+      for (const extra of extras) {
+        if (current.has(AbsolutePath.make(extra))) continue
+        yield* projectDirectories
+          .create({ directory: AbsolutePath.make(extra), projectID: info.projectID })
+          .pipe(Effect.ignore)
+      }
+      for (const dir of current) {
+        if (dir === info.directory || extras.includes(dir)) continue
+        yield* projectDirectories.remove({ directory: dir, projectID: info.projectID }).pipe(Effect.ignore)
+      }
+      yield* instances.setAdditionalDirectories(info.directory, extras)
+      return { primary: info.directory, extras }
+    })
+
     return handlers
       .handle("list", list)
       .handle("status", status)
@@ -465,5 +532,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("deleteMessage", deleteMessage)
       .handle("deletePart", deletePart)
       .handle("updatePart", updatePart)
+      .handle("folders", folders)
+      .handle("updateFolders", updateFolders)
   }),
 )

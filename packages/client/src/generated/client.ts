@@ -37,6 +37,10 @@ import type {
   SessionsInterruptOutput,
   SessionsMessageInput,
   SessionsMessageOutput,
+  SessionsFoldersInput,
+  SessionsFoldersOutput,
+  SessionsUpdateInput,
+  SessionsUpdateOutput,
   ImportsSessionInput,
   ImportsSessionOutput,
   ImportsImportedInput,
@@ -322,6 +326,7 @@ export function make(options: ClientOptions) {
               agent: input?.["agent"],
               model: input?.["model"],
               location: input?.["location"],
+              additionalDirectories: input?.["additionalDirectories"],
             },
             successStatus: 200,
             declaredStatuses: [401, 400],
@@ -500,6 +505,29 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ).then((value) => value.data),
+      folders: (input: SessionsFoldersInput, requestOptions?: RequestOptions) =>
+        request<SessionsFoldersOutput>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/folders`,
+            successStatus: 200,
+            declaredStatuses: [404, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      update: (input: SessionsUpdateInput, requestOptions?: RequestOptions) =>
+        request<SessionsUpdateOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/folders`,
+            body: { extras: input["extras"] },
+            successStatus: 200,
+            declaredStatuses: [400, 404, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
     },
     imports: {
       session: (input: ImportsSessionInput, requestOptions?: RequestOptions) =>

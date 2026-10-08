@@ -1,5 +1,7 @@
 export * as ProjectFolders from "./folders"
 
+export const MaxExtras = 8
+
 export function normalizeFolders(primary: string, extras: string[]): string[] {
   const seen = new Set<string>([primary])
   const out: string[] = []

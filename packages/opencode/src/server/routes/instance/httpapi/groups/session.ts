@@ -74,6 +74,14 @@ export const RevertPayload = Schema.Struct(Struct.omit(SessionRevert.RevertInput
 export const PermissionResponsePayload = Schema.Struct({
   response: PermissionV1.Reply,
 })
+export const FoldersPayload = Schema.Struct({
+  extras: Schema.optional(Schema.Array(Schema.String)),
+  primary: Schema.optional(Schema.String),
+})
+export const FoldersResponse = Schema.Struct({
+  primary: Schema.String,
+  extras: Schema.Array(Schema.String),
+})
 
 export const SessionPaths = {
   list: root,
@@ -102,6 +110,7 @@ export const SessionPaths = {
   deleteMessage: `${root}/:sessionID/message/:messageID`,
   deletePart: `${root}/:sessionID/message/:messageID/part/:partID`,
   updatePart: `${root}/:sessionID/message/:messageID/part/:partID`,
+  folders: `${root}/:sessionID/folders`,
 } as const
 
 export const SessionApi = HttpApi.make("session")
@@ -440,6 +449,33 @@ export const SessionApi = HttpApi.make("session")
           OpenApi.annotations({
             identifier: "part.update",
             description: "Update a part in a message.",
+          }),
+        ),
+        HttpApiEndpoint.get("folders", SessionPaths.folders, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(FoldersResponse, "Attached project folders"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.folders",
+            summary: "Get session folders",
+            description:
+              "Retrieve the primary folder plus extra attached folders. Git, AGENTS.md, and config load from the primary folder only.",
+          }),
+        ),
+        HttpApiEndpoint.post("updateFolders", SessionPaths.folders, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          payload: FoldersPayload,
+          success: described(FoldersResponse, "Updated project folders"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.folders.update",
+            summary: "Update session folders",
+            description:
+              "Attach extra folders or switch the primary folder. Switching primary reboots the instance and rebinds the session directory.",
           }),
         ),
       )

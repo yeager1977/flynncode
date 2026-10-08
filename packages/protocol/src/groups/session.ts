@@ -132,6 +132,9 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
           agent: Agent.ID.pipe(Schema.optional),
           model: Model.Ref.pipe(Schema.optional),
           location: Location.Ref.pipe(Schema.optional),
+          // Multifold: additive session-level field. Location.Ref stays the
+          // sole placement key; extras only widen file access.
+          additionalDirectories: Schema.optional(Schema.Array(AbsolutePath)),
         }),
         success: Schema.Struct({ data: Session.Info }),
       }).annotateMerge(
@@ -368,6 +371,47 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
             identifier: "v2.session.message",
             summary: "Get session message",
             description: "Retrieve one projected message owned by the Session.",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.get("session.folders", "/api/session/:sessionID/folders", {
+        params: { sessionID: Session.ID },
+        success: Schema.Struct({
+          primary: AbsolutePath,
+          extras: Schema.Array(AbsolutePath),
+        }).annotate({ identifier: "SessionFolders" }),
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.folders",
+            summary: "Get session folders",
+            description:
+              "Retrieve the primary folder plus extra attached folders. Git, AGENTS.md, and config load from the primary folder only.",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.post("session.folders.update", "/api/session/:sessionID/folders", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({
+          extras: Schema.optional(Schema.Array(AbsolutePath)),
+        }),
+        success: Schema.Struct({
+          primary: AbsolutePath,
+          extras: Schema.Array(AbsolutePath),
+        }).annotate({ identifier: "SessionFolders" }),
+        error: [InvalidRequestError, SessionNotFoundError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.folders.update",
+            summary: "Update session folders",
+            description:
+              "Replace the extra attached folders. The primary folder is unchanged; switching primary is only available on the instance folders route.",
           }),
         ),
     )

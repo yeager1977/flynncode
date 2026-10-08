@@ -25,6 +25,7 @@ export interface Interface {
   readonly disposeDirectory: (directory: string) => Effect.Effect<void>
   readonly disposeAll: () => Effect.Effect<void>
   readonly loadedDirectories: () => Effect.Effect<ReadonlySet<string>>
+  readonly setAdditionalDirectories: (directory: string, extras: string[]) => Effect.Effect<InstanceContext>
   readonly provide: <A, E, R>(input: LoadInput, effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
 }
 
@@ -54,7 +55,7 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
                 project: input.project,
                 additionalDirectories: input.additionalDirectories ?? [],
               }
-            : yield* project.fromDirectory(input.directory).pipe(
+            : yield* project.fromDirectory(input.directory, input.additionalDirectories).pipe(
                 Effect.map((result) => ({
                   directory: input.directory,
                   worktree: result.sandbox,
@@ -195,6 +196,15 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
 
     const loadedDirectories = () => Effect.succeed(new Set(cache.keys()) as ReadonlySet<string>)
 
+    const setAdditionalDirectories = Effect.fn("InstanceStore.setAdditionalDirectories")(function* (
+      directory: string,
+      extras: string[],
+    ) {
+      const ctx = yield* load({ directory })
+      ctx.additionalDirectories = [...extras]
+      return ctx
+    })
+
     yield* Effect.addFinalizer(() => disposeAll().pipe(Effect.ignore))
 
     return Service.of({
@@ -204,6 +214,7 @@ const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Ser
       disposeDirectory,
       disposeAll,
       loadedDirectories,
+      setAdditionalDirectories,
       provide,
     })
   }),

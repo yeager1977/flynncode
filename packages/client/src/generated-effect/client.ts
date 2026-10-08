@@ -63,10 +63,17 @@ type Endpoint3_1Input = {
   readonly agent?: Endpoint3_1Request["payload"]["agent"]
   readonly model?: Endpoint3_1Request["payload"]["model"]
   readonly location?: Endpoint3_1Request["payload"]["location"]
+  readonly additionalDirectories?: Endpoint3_1Request["payload"]["additionalDirectories"]
 }
 const Endpoint3_1 = (raw: RawClient["server.session"]) => (input?: Endpoint3_1Input) =>
   raw["session.create"]({
-    payload: { id: input?.["id"], agent: input?.["agent"], model: input?.["model"], location: input?.["location"] },
+    payload: {
+      id: input?.["id"],
+      agent: input?.["agent"],
+      model: input?.["model"],
+      location: input?.["location"],
+      additionalDirectories: input?.["additionalDirectories"],
+    },
   }).pipe(
     Effect.mapError(mapClientError),
     Effect.map((value) => value.data),
@@ -207,6 +214,22 @@ const Endpoint3_16 = (raw: RawClient["server.session"]) => (input: Endpoint3_16I
     Effect.map((value) => value.data),
   )
 
+type Endpoint3_17Request = Parameters<RawClient["server.session"]["session.folders"]>[0]
+type Endpoint3_17Input = { readonly sessionID: Endpoint3_17Request["params"]["sessionID"] }
+const Endpoint3_17 = (raw: RawClient["server.session"]) => (input: Endpoint3_17Input) =>
+  raw["session.folders"]({ params: { sessionID: input["sessionID"] } }).pipe(Effect.mapError(mapClientError))
+
+type Endpoint3_18Request = Parameters<RawClient["server.session"]["session.folders.update"]>[0]
+type Endpoint3_18Input = {
+  readonly sessionID: Endpoint3_18Request["params"]["sessionID"]
+  readonly extras?: Endpoint3_18Request["payload"]["extras"]
+}
+const Endpoint3_18 = (raw: RawClient["server.session"]) => (input: Endpoint3_18Input) =>
+  raw["session.folders.update"]({
+    params: { sessionID: input["sessionID"] },
+    payload: { extras: input["extras"] },
+  }).pipe(Effect.mapError(mapClientError))
+
 const adaptGroup3 = (raw: RawClient["server.session"]) => ({
   list: Endpoint3_0(raw),
   create: Endpoint3_1(raw),
@@ -225,6 +248,8 @@ const adaptGroup3 = (raw: RawClient["server.session"]) => ({
   events: Endpoint3_14(raw),
   interrupt: Endpoint3_15(raw),
   message: Endpoint3_16(raw),
+  folders: Endpoint3_17(raw),
+  update: Endpoint3_18(raw),
 })
 
 type Endpoint4_0Request = Parameters<RawClient["server.import"]["import.session"]>[0]
