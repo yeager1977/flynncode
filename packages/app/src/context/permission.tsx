@@ -16,11 +16,15 @@ import type { ServerScope } from "@/utils/server-scope"
 import { normalizePermissionRequest } from "./global-sync/utils"
 import {
   acceptKey,
+  approvalAutoRespond,
+  type ApprovalMode,
   directoryAcceptKey,
   isDirectoryAutoAccepting,
   autoRespondsPermission,
+  resolveAutoRespond,
   sessionAutoAccept,
 } from "./permission-auto-respond"
+export type { ApprovalMode }
 
 type PermissionRespondFn = (input: {
   sessionID: string
@@ -29,10 +33,7 @@ type PermissionRespondFn = (input: {
   directory?: string
 }) => void
 
-export type ApprovalMode = "manual" | "accept-edits" | "auto"
 export type SandboxLevel = "readonly" | "workspace-write" | "full-access"
-
-const AUTO_EDIT_PERMISSIONS = ["edit", "read", "glob", "grep", "list"]
 
 function isNonAllowRule(rule: unknown) {
   if (!rule) return false
@@ -335,11 +336,20 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     return "workspace-write"
   }
 
+  // Precedence rule (applied first on both the sync filter and the async
+  // responder path): an explicit per-session/directory auto-accept choice
+  // wins over approval mode, so disabling auto-accept for a session is never
+  // silently overridden by switching the mode to auto.
+  function explicitOverride(permission: PermissionRequest, directory?: string): boolean | undefined {
+    return sessionAutoAccept(store.autoAccept, sessions(directory), permission, directory)
+  }
+
   function shouldAutoRespond(permission: PermissionRequest, directory?: string) {
-    const mode = approvalMode(permission.sessionID, directory)
-    if (mode === "auto") return true
-    if (mode === "accept-edits" && AUTO_EDIT_PERMISSIONS.includes(permission.permission)) return true
-    return autoRespondsPermission(store.autoAccept, sessions(directory), permission, directory)
+    return resolveAutoRespond(
+      explicitOverride(permission, directory),
+      approvalAutoRespond(approvalMode(permission.sessionID, directory), permission.permission),
+      autoRespondsPermission(store.autoAccept, sessions(directory), permission, directory),
+    )
   }
 
   function isPending(permission: PermissionRequest) {
@@ -348,7 +358,7 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
   }
 
   async function shouldAutoRespondResolved(permission: PermissionRequest, directory?: string) {
-    const override = sessionAutoAccept(store.autoAccept, sessions(directory), permission, directory)
+    const override = explicitOverride(permission, directory)
     if (override !== undefined) return override
     if (input.sync.session.lineage.peek(permission.sessionID)) return shouldAutoRespond(permission, directory)
     const lineage = await input.sync.session.lineage.resolve(permission.sessionID).catch(() => undefined)

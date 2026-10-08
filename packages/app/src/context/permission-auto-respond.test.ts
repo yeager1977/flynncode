@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { PermissionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import { base64Encode } from "@opencode-ai/core/util/encode"
-import { autoRespondsPermission, isDirectoryAutoAccepting, sessionAutoAccept } from "./permission-auto-respond"
+import { autoRespondsPermission, approvalAutoRespond, isDirectoryAutoAccepting, resolveAutoRespond, sessionAutoAccept } from "./permission-auto-respond"
 
 const session = (input: { id: string; parentID?: string }) =>
   ({
@@ -160,5 +160,47 @@ describe("isDirectoryAutoAccepting", () => {
     const directory = "/tmp/project"
     const autoAccept = { [`${base64Encode(directory)}/*`]: false }
     expect(isDirectoryAutoAccepting(autoAccept, directory)).toBe(false)
+  })
+})
+
+describe("approvalAutoRespond", () => {
+  test("auto approves any permission", () => {
+    expect(approvalAutoRespond("auto", "bash")).toBe(true)
+    expect(approvalAutoRespond("auto", "read")).toBe(true)
+  })
+
+  test("accept-edits approves the edit family", () => {
+    for (const name of ["edit", "read", "glob", "grep", "list"]) {
+      expect(approvalAutoRespond("accept-edits", name)).toBe(true)
+    }
+  })
+
+  test("accept-edits defers shell and other permissions", () => {
+    expect(approvalAutoRespond("accept-edits", "bash")).toBeUndefined()
+    expect(approvalAutoRespond("accept-edits", "doom_loop")).toBeUndefined()
+  })
+
+  test("manual defers to the stored rules", () => {
+    expect(approvalAutoRespond("manual", "bash")).toBeUndefined()
+    expect(approvalAutoRespond("manual", "read")).toBeUndefined()
+  })
+})
+
+describe("resolveAutoRespond", () => {
+  test("explicit disable wins over approval auto", () => {
+    expect(resolveAutoRespond(false, true, false)).toBe(false)
+  })
+
+  test("explicit enable wins over silent approval", () => {
+    expect(resolveAutoRespond(true, undefined, false)).toBe(true)
+  })
+
+  test("approval applies without an explicit choice", () => {
+    expect(resolveAutoRespond(undefined, true, false)).toBe(true)
+  })
+
+  test("falls back to the directory default", () => {
+    expect(resolveAutoRespond(undefined, undefined, true)).toBe(true)
+    expect(resolveAutoRespond(undefined, undefined, false)).toBe(false)
   })
 })
