@@ -3,20 +3,72 @@ import { Context, Effect, Layer, Option, Schema } from "effect"
 import { createHash } from "crypto"
 import os from "os"
 import path from "path"
+import { ConfigHooksV1 } from "@opencode-ai/core/v1/config/hooks"
 
+// Full normative hook model: every field that changes hook behavior is part
+// of the trusted identity, so any edit re-triggers review (fail closed).
 export type HookDef = {
   event: string
   matcher: string
-  type: string
-  command: string
+  type: "command" | "mcp_tool"
+  command?: string
+  timeout?: number
+  server?: string
+  tool?: string
+  input?: Record<string, unknown>
+  async?: boolean
+  additionalContextLimit?: number
+  statusMessage?: string
+}
+
+function stable(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stable)
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter((entry) => entry[1] !== undefined)
+        .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+        .map((entry) => [entry[0], stable(entry[1])]),
+    )
+  }
+  return value
 }
 
 export function canonicalize(def: HookDef) {
-  return JSON.stringify({ event: def.event, matcher: def.matcher, type: def.type, command: def.command })
+  return JSON.stringify(stable(def))
 }
 
 export function hashDef(def: HookDef) {
   return createHash("sha256").update(canonicalize(def)).digest("hex")
+}
+
+export function fromHandler(
+  event: string,
+  matcher: string | undefined,
+  handler: ConfigHooksV1.HookHandler,
+): HookDef {
+  if (handler.type === "command") {
+    return {
+      event,
+      matcher: matcher ?? "",
+      type: "command",
+      command: handler.command,
+      timeout: handler.timeout,
+      async: handler.async,
+      additionalContextLimit: handler.additionalContextLimit,
+      statusMessage: handler.statusMessage,
+    }
+  }
+  return {
+    event,
+    matcher: matcher ?? "",
+    type: "mcp_tool",
+    server: handler.server,
+    tool: handler.tool,
+    input: handler.input,
+    timeout: handler.timeout,
+    statusMessage: handler.statusMessage,
+  }
 }
 
 export interface TrustInterface {

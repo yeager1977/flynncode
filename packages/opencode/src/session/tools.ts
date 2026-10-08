@@ -141,7 +141,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               args: toRecord(args),
             })
             if (decision.behavior === "deny") throw new HooksRunner.HookDeniedError(decision.message)
-            const effectiveArgs = resolveEffectiveArgs(item.id, args, decision)
+            const resolved = resolveEffectiveArgs(item.id, args, decision)
+            if (resolved.warning) yield* Effect.logWarning(resolved.warning, { toolID: item.id })
+            const effectiveArgs = resolved.effective
             const result = yield* item.execute(effectiveArgs, ctx)
             const output = {
               ...result,
@@ -458,7 +460,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             args: toRecord(args),
           })
           if (preMcp.behavior === "deny") throw new HooksRunner.HookDeniedError(preMcp.message)
-          const effectiveMcp = resolveEffectiveArgs(key, args, preMcp)
+          const resolvedMcp = resolveEffectiveArgs(key, args, preMcp)
+          if (resolvedMcp.warning) yield* Effect.logWarning(resolvedMcp.warning, { toolID: key })
+          const effectiveMcp = resolvedMcp.effective
           const result: Awaited<ReturnType<NonNullable<typeof execute>>> = yield* Effect.gen(function* () {
             yield* ctx.ask({ permission: key, metadata: {}, patterns: ["*"], always: ["*"] })
             return yield* Effect.promise(() => execute(effectiveMcp, opts))
@@ -557,19 +561,22 @@ function toRecord(value: unknown) {
   return {}
 }
 
-function resolveEffectiveArgs(toolID: string, original: unknown, decision: HooksRunner.PreToolUseDecision) {
-  if (decision.behavior !== "allow") return original
-  if (!decision.updatedInput) return original
+// Pure: malformed rewrites fall back to the original args and report a
+// warning the caller yields into the stream transport (never forked here).
+export function resolveEffectiveArgs(
+  toolID: string,
+  original: unknown,
+  decision: HooksRunner.PreToolUseDecision,
+): { effective: unknown; warning?: string } {
+  if (decision.behavior !== "allow" || !decision.updatedInput) return { effective: original }
   const updated = decision.updatedInput
   if (toolID === "bash" && "command" in updated && typeof updated["command"] !== "string") {
-    Effect.runFork(Effect.logWarning("hook rewrite rejected: bash command must be a string", { toolID }))
-    return original
+    return { effective: original, warning: "hook rewrite rejected: bash command must be a string" }
   }
   if (toolID === "apply_patch" && "patchText" in updated && typeof updated["patchText"] !== "string") {
-    Effect.runFork(Effect.logWarning("hook rewrite rejected: apply_patch patchText must be a string", { toolID }))
-    return original
+    return { effective: original, warning: "hook rewrite rejected: apply_patch patchText must be a string" }
   }
-  return updated
+  return { effective: updated }
 }
 
 function parseListMcpResourcesArgs(value: unknown) {

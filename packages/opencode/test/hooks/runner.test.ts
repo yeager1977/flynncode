@@ -46,3 +46,70 @@ describe("hooks runner", () => {
     }),
   )
 })
+
+const mergeIt = testEffect(
+  HooksRunner.testLayerWithHooks([
+    {
+      "tool.permission": async (_input, output) => {
+        output.decision = "allow"
+        output.updatedInput = { command: "ls", extra: "one" }
+      },
+    },
+    {
+      "tool.permission": async (_input, output) => {
+        output.decision = "allow"
+        output.updatedInput = { verbose: true }
+      },
+    },
+  ]),
+)
+
+describe("hooks runner decision aggregation", () => {
+  mergeIt.effect("allow rewrites merge across hooks", () =>
+    Effect.gen(function* () {
+      const runner = yield* HooksRunner.Service
+      const decision = yield* runner.runPermissionRequest({
+        sessionID: "ses_1",
+        tool: "Bash",
+        callID: "c1",
+        args: { command: "ls" },
+      })
+      expect(decision).toEqual({
+        behavior: "allow",
+        updatedInput: { command: "ls", extra: "one", verbose: true },
+      })
+    }),
+  )
+})
+
+const denyMessageIt = testEffect(
+  HooksRunner.testLayerWithHooks([
+    {
+      "tool.permission": async (_input, output) => {
+        output.decision = "allow"
+        output.updatedInput = { command: "x" }
+      },
+    },
+    {
+      "tool.permission": async (_input, output) => {
+        output.decision = "deny"
+        output.message = "blocked for safety"
+      },
+    },
+  ]),
+)
+
+describe("hooks runner deny propagation", () => {
+  denyMessageIt.effect("first deny short-circuits with its message", () =>
+    Effect.gen(function* () {
+      const runner = yield* HooksRunner.Service
+      const decision = yield* runner.runPermissionRequest({
+        sessionID: "ses_1",
+        tool: "Bash",
+        callID: "c1",
+        args: { command: "x" },
+      })
+      expect(decision).toEqual({ behavior: "deny", message: "blocked for safety" })
+    }),
+  )
+})

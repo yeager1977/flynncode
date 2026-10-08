@@ -4,26 +4,27 @@ export function matchesMatcher(toolOrSource: string, matcher: string | undefined
   if (!matcher) return true
   if (matcher === "") return true
   if (matcher === "*") return true
-  return new RegExp(matcher).test(toolOrSource)
+  try {
+    return new RegExp(matcher).test(toolOrSource)
+  } catch {
+    // Invalid patterns never match rather than crashing the tool call.
+    return false
+  }
 }
 
 export function filterGroups(groups: Array<ConfigHooksV1.HookGroup>, toolOrSource: string) {
   return groups.filter((group) => matchesMatcher(toolOrSource, group.matcher))
 }
 
-export function matchHooks(toolOrSource: string, matcher: string | undefined): boolean
+// Plan form: (event, name, groups). The event is reserved for future
+// event-scoped matching; filtering is by tool/source name today.
 export function matchHooks(
   event: string,
   name: string | undefined,
   groups: Array<ConfigHooksV1.HookGroup>,
-): Array<ConfigHooksV1.HookGroup>
-export function matchHooks(
-  eventOrTool: string,
-  nameOrMatcher: string | undefined,
-  groups?: Array<ConfigHooksV1.HookGroup>,
 ) {
-  if (groups) return filterGroups(groups, nameOrMatcher ?? "")
-  return matchesMatcher(eventOrTool, nameOrMatcher)
+  void event
+  return filterGroups(groups, name ?? "")
 }
 
 function lookup(path: string, payload: Record<string, unknown>) {
@@ -60,10 +61,6 @@ export function expandMcpInput(
     return expanded as Record<string, unknown>
   }
   return {}
-}
-
-export function matchHooksGroups(groups: Array<ConfigHooksV1.HookGroup>, toolOrSource: string) {
-  return filterGroups(groups, toolOrSource)
 }
 
 export function mergeHooksConfigs(

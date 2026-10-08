@@ -330,13 +330,31 @@ function stubPlugin(hooks: Array<Hooks>): TriggerLike {
       })
     }) as TriggerLike["trigger"],
     triggerDecision: (input, output) => {
+      // Same aggregation as Plugin.triggerDecision: isolated per-hook
+      // outputs, deny wins with short-circuit, allows merge updatedInput.
       return Effect.promise(async () => {
+        const mergedUpdated: Record<string, unknown> = {}
+        let sawRewrite = false
         for (const hook of hooks) {
           const fn = hook["tool.permission"]
           if (!fn) continue
-          await fn(input, output)
-          if (output.decision === "deny") return output
+          const perHook: { decision: "allow" | "deny" | "undecided"; message?: string; updatedInput?: Record<string, unknown> } = {
+            decision: "undecided",
+          }
+          await fn(input, perHook)
+          if (perHook.decision === "deny") {
+            output.decision = "deny"
+            output.message = perHook.message
+            return output
+          }
+          if (perHook.decision !== "allow") continue
+          output.decision = "allow"
+          if (perHook.updatedInput) {
+            sawRewrite = true
+            Object.assign(mergedUpdated, perHook.updatedInput)
+          }
         }
+        if (sawRewrite) output.updatedInput = mergedUpdated
         return output
       })
     },

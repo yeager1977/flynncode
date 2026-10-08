@@ -1,4 +1,4 @@
-import { expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
@@ -252,3 +252,24 @@ it.effect("sandbox gate checks every pattern, not just the first", () =>
     }
   }),
 )
+
+describe("resolveEffectiveArgs", () => {
+  test("malformed bash rewrite keeps original args with a warning", () => {
+    const original = { command: "ls" }
+    const resolved = SessionTools.resolveEffectiveArgs("bash", original, {
+      behavior: "allow",
+      updatedInput: { command: 42 },
+    })
+    expect(resolved.effective).toBe(original)
+    expect(resolved.warning).toContain("bash command must be a string")
+  })
+
+  test("well-formed rewrite replaces args without a warning", () => {
+    const resolved = SessionTools.resolveEffectiveArgs("bash", { command: "ls" }, {
+      behavior: "allow",
+      updatedInput: { command: "ls --safe" },
+    })
+    expect(resolved.effective).toEqual({ command: "ls --safe" })
+    expect(resolved.warning).toBeUndefined()
+  })
+})

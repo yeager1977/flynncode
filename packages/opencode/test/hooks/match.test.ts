@@ -17,6 +17,11 @@ test("empty matcher matches all, regex filters", () => {
   expect(HooksConfig.matchHooks("PreToolUse", "read", groups).length).toBe(1)
 })
 
+test("invalid matcher never matches instead of throwing", () => {
+  const groups = [{ matcher: "([invalid", hooks: [] }]
+  expect(HooksConfig.matchHooks("PreToolUse", "([invalid", groups).length).toBe(0)
+})
+
 test("whole-value placeholder preserves JSON type", () => {
   const out = HooksConfig.expandMcpInput({ count: "${tool_input.count}" }, { tool_input: { count: 3 } })
   expect(out).toEqual({ count: 3 })
