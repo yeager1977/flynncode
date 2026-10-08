@@ -412,6 +412,9 @@ export class BusyError extends Schema.TaggedErrorClass<BusyError>()("SessionBusy
   sessionID: SessionID,
 }) {}
 
+// Duplicates of the primary directory and non-absolute entries are filtered
+// during normalization, never rejected. Only missing paths ("missing") and
+// more than MaxExtras entries ("limit") fail.
 export class MultifoldError extends Schema.TaggedErrorClass<MultifoldError>()("SessionMultifoldError", {
   reason: Schema.Literals(["missing", "limit"]),
   path: optional(Schema.String),
@@ -432,7 +435,7 @@ export interface Interface {
     workspaceID?: WorkspaceV2.ID
     additionalDirectories?: string[]
   }) => Effect.Effect<Info, MultifoldError>
-  readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info, NotFound>
+  readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info, NotFound | MultifoldError>
   readonly touch: (sessionID: SessionID) => Effect.Effect<void>
   readonly get: (id: SessionID) => Effect.Effect<Info, NotFound>
   readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
@@ -537,9 +540,9 @@ const layer: Layer.Layer<
       // Multifold: extras ride as an additive session-level field. The
       // primary directory stays the sole placement key; extras only widen
       // file access and never change project id, worktree, or drain routing.
-      // Callers pass validated extras (see requireExtras); persistence below
-      // is best-effort so a directory-row hiccup never fails session create.
-      const extras = normalizeFolders(input.directory, input.additionalDirectories ?? [])
+      // Validation runs here so every createNext caller is gated; persistence
+      // below stays best-effort so a directory-row hiccup never fails create.
+      const extras = yield* requireExtras(input.directory, input.additionalDirectories)
       const result: Info = {
         id: SessionID.descending(input.id),
         slug: Slug.create(),
@@ -717,7 +720,6 @@ const layer: Layer.Layer<
     }) {
       const ctx = yield* InstanceState.context
       const workspace = yield* InstanceState.workspaceID
-      const extras = yield* requireExtras(ctx.directory, input?.additionalDirectories)
       return yield* createNext({
         parentID: input?.parentID,
         directory: ctx.directory,
@@ -728,7 +730,7 @@ const layer: Layer.Layer<
         metadata: input?.metadata,
         permission: input?.permission,
         workspaceID: input?.workspaceID ?? workspace,
-        additionalDirectories: extras,
+        additionalDirectories: input?.additionalDirectories,
       })
     })
 

@@ -22,6 +22,7 @@ import { boundSessions } from "@/worktree/bound-sessions"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { AbsolutePath } from "@opencode-ai/core/schema"
+import { ProjectV2 } from "@opencode-ai/core/project"
 import { normalizeFolders, MaxExtras } from "@opencode-ai/core/project/folders"
 import { ProjectDirectories } from "@opencode-ai/core/project/directories"
 import { InstanceStore } from "@/project/instance-store"
@@ -46,7 +47,7 @@ import {
   SummarizePayload,
   UpdatePayload,
 } from "../groups/session"
-import { PermissionNotFoundError, notFound } from "../errors"
+import { InvalidRequestError, PermissionNotFoundError, notFound } from "../errors"
 import * as SessionError from "./session-errors"
 
 const tryParseJson = (text: string) =>
@@ -73,6 +74,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const worktreeSvc = yield* Worktree.Service
     const project = yield* Project.Service
     const fs = yield* FSUtil.Service
+    const projects = yield* ProjectV2.Service
     const projectDirectories = yield* ProjectDirectories.Service
     const instances = yield* InstanceStore.Service
 
@@ -246,12 +248,18 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload?: typeof ForkPayload.Type
     }) {
-      return yield* SessionError.mapStorageNotFound(
-        session.fork({
+      // Fork never carries extras, so the multifold failure is unreachable;
+      // it is mapped explicitly to keep the declared error union honest.
+      return yield* session
+        .fork({
           sessionID: ctx.params.sessionID,
           messageID: ctx.payload?.messageID,
-        }),
-      )
+        })
+        .pipe(
+          Effect.mapError((error) =>
+            error._tag === "SessionMultifoldError" ? new HttpApiError.BadRequest({}) : notFound(error.message),
+          ),
+        )
     })
 
     const forkRaw = Effect.fn("SessionHttpApi.forkRaw")(function* (ctx: {
@@ -458,6 +466,16 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       }
     })
 
+    // Multifold folders: this V1 instance route owns full folder semantics —
+    // extras attach/detach plus primary switch with instance reboot. The V2
+    // protocol folders route (`session.folders.update`) manages extras only;
+    // switching primary is not supported there because V2 has no
+    // directory-mutation primitive and a direct row rebind would bypass the
+    // event projector.
+    //
+    // Combined payload semantics: when `primary` differs and `extras` is also
+    // present, the provided extras are used verbatim (validated); when
+    // `extras` is absent, the old primary is demoted to the extras head.
     const updateFolders = Effect.fn("SessionHttpApi.updateFolders")(function* (ctx: {
       params: { sessionID: SessionID }
       payload: typeof FoldersPayload.Type
@@ -493,11 +511,32 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           if (ctx.payload.extras === undefined) return yield* folders(ctx)
           return yield* applyExtras(ctx.payload.extras)
         }
+        // Primary switch keeps Git identity: the new primary must resolve to
+        // the same project, otherwise the session would straddle two project
+        // rows, two worktrees, and two drains.
+        const nextProject = yield* projects.resolve(AbsolutePath.make(nextPrimary))
+        if (nextProject.id !== info.projectID) {
+          return yield* new InvalidRequestError({
+            message: `Primary folder must belong to the same project: ${ctx.payload.primary}`,
+            field: "primary",
+          })
+        }
         const rows = yield* projectDirectories.list(info.projectID)
         const others = rows
           .map((row) => row.directory)
           .filter((dir) => dir !== nextPrimary && dir !== info.directory)
-        const extras = [info.directory, ...others]
+        const extras =
+          ctx.payload.extras === undefined
+            ? [info.directory, ...others]
+            : normalizeFolders(
+                nextPrimary,
+                yield* Effect.forEach(ctx.payload.extras, (dir) => fs.resolve(dir)),
+              )
+        if (extras.length > MaxExtras) return yield* new HttpApiError.BadRequest({})
+        for (const extra of extras) {
+          if (yield* exists(extra)) continue
+          return yield* notFound(`Folder not found: ${extra}`)
+        }
         yield* session.setDirectory({ sessionID: ctx.params.sessionID, directory: nextPrimary })
         for (const dir of [nextPrimary, ...extras]) {
           yield* projectDirectories

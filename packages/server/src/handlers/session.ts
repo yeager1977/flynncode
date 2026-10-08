@@ -480,6 +480,11 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           })
         }),
       )
+      // Multifold folders: this V2 protocol route manages extras only. The
+      // primary folder is unchanged here; switching primary (with instance
+      // reboot and session rebinding) lives on the V1 instance folders
+      // route, because V2 has no directory-mutation primitive and a direct
+      // row rebind would bypass the event projector.
       .handle(
         "session.folders",
         Effect.fn(function* (ctx) {
