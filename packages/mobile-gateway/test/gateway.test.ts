@@ -9,7 +9,7 @@ const options: GatewayOptions = {
   upstream: "",
   username: "opencode",
   password: "secret",
-  upstreamPassword: "secret",
+  upstreamPassword: "secret", relayToken: "",
 }
 
 const basic = (username: string, password: string) => `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`
@@ -276,7 +276,7 @@ describe("startGateway", () => {
       },
     })
     const handle = startGateway({
-      options: { host: "127.0.0.1", port: 0, upstream: `http://127.0.0.1:${echo.port}`, username: "opencode", password: "secret", upstreamPassword: "secret" },
+      options: { host: "127.0.0.1", port: 0, upstream: `http://127.0.0.1:${echo.port}`, username: "opencode", password: "secret", upstreamPassword: "secret", relayToken: "" },
     })
     const running = await handle
     const auth = basic("opencode", "secret")
@@ -304,7 +304,7 @@ describe("startGateway", () => {
       },
     })
     const running = await startGateway({
-      options: { host: "127.0.0.1", port: 0, upstream: `http://127.0.0.1:${upstream.port}`, username: "opencode", password: "secret", upstreamPassword: "secret" },
+      options: { host: "127.0.0.1", port: 0, upstream: `http://127.0.0.1:${upstream.port}`, username: "opencode", password: "secret", upstreamPassword: "secret", relayToken: "" },
     })
     const first = await fetch(`http://127.0.0.1:${running.port}/api/health`, {
       headers: { authorization: basic("opencode", "secret") },
@@ -337,7 +337,7 @@ describe("startGateway", () => {
         ),
     })
     const running = await startGateway({
-      options: { host: "127.0.0.1", port: 0, upstream: `http://127.0.0.1:${upstream.port}`, username: "opencode", password: "secret", upstreamPassword: "secret" },
+      options: { host: "127.0.0.1", port: 0, upstream: `http://127.0.0.1:${upstream.port}`, username: "opencode", password: "secret", upstreamPassword: "secret", relayToken: "" },
     })
     const first = await fetch(`http://127.0.0.1:${running.port}/api/health`, {
       headers: { authorization: basic("opencode", "secret") },
@@ -377,7 +377,7 @@ describe("startGateway", () => {
         upstream: `http://127.0.0.1:${upstream.port}`,
         username: "opencode",
         password: "phone-pass",
-        upstreamPassword: "upstream-pass",
+        upstreamPassword: "upstream-pass", relayToken: "",
       },
     })
     const phoneAuth = basic("opencode", "phone-pass")
@@ -418,7 +418,7 @@ describe("startGateway", () => {
 
   test("responds 503 when the upstream is unreachable", async () => {
     const running = await startGateway({
-      options: { host: "127.0.0.1", port: 0, upstream: "http://127.0.0.1:1", username: "opencode", password: "secret", upstreamPassword: "secret" },
+      options: { host: "127.0.0.1", port: 0, upstream: "http://127.0.0.1:1", username: "opencode", password: "secret", upstreamPassword: "secret", relayToken: "" },
     })
     const response = await fetch(`http://127.0.0.1:${running.port}/api/health`, {
       headers: { authorization: basic("opencode", "secret") },
@@ -429,7 +429,7 @@ describe("startGateway", () => {
 
   test("survives a malformed Host header without crashing", async () => {
     const running = await startGateway({
-      options: { host: "127.0.0.1", port: 0, upstream: "http://127.0.0.1:1", username: "opencode", password: "secret", upstreamPassword: "secret" },
+      options: { host: "127.0.0.1", port: 0, upstream: "http://127.0.0.1:1", username: "opencode", password: "secret", upstreamPassword: "secret", relayToken: "" },
     })
     const { connect } = await import("node:net")
     const response = await new Promise<string>((resolve, reject) => {
@@ -481,7 +481,7 @@ describe("launcher route", () => {
         upstream: `http://127.0.0.1:${upstream.port}`,
         username: "opencode",
         password: "secret",
-        upstreamPassword: "secret",
+        upstreamPassword: "secret", relayToken: "",
       },
     })
     return { upstream, running }
@@ -564,7 +564,7 @@ describe("launcher route", () => {
         upstream: "http://127.0.0.1:1",
         username: "opencode",
         password: "secret",
-        upstreamPassword: "secret",
+        upstreamPassword: "secret", relayToken: "",
       },
     })
     const response = await fetch(`http://127.0.0.1:${running.port}/m`, {
@@ -597,7 +597,7 @@ describe("launcher route", () => {
         upstream: `http://127.0.0.1:${upstream.port}`,
         username: "opencode",
         password: "secret",
-        upstreamPassword: "secret",
+        upstreamPassword: "secret", relayToken: "",
       },
     })
     const response = await fetch(`http://127.0.0.1:${running.port}/m`, {
@@ -644,7 +644,7 @@ describe("launcher route", () => {
         upstream: `http://127.0.0.1:${upstream.port}`,
         username: "opencode",
         password: "secret",
-        upstreamPassword: "secret",
+        upstreamPassword: "secret", relayToken: "",
       },
     })
     await fetch(`http://127.0.0.1:${running.port}/m`, {
@@ -688,7 +688,7 @@ describe("inbox route", () => {
         upstream: `http://127.0.0.1:${upstream.port}`,
         username: "opencode",
         password: "secret",
-        upstreamPassword: "secret",
+        upstreamPassword: "secret", relayToken: "",
       },
     })
     return { upstream, running }
@@ -715,5 +715,77 @@ describe("inbox route", () => {
     expect(JSON.stringify(body)).not.toContain("secret")
     stopGateway()
     upstream.stop(true)
+  })
+})
+
+describe("relay routes", () => {
+  const relayOptions = { ...options, relayToken: "relay-secret" }
+
+  test("publish rejects a wrong bearer token", async () => {
+    const handle = createGateway({ options: relayOptions })
+    const response = await handle(
+      new Request("http://gateway/flynncode-mobile-relay/publish", {
+        method: "POST",
+        headers: { authorization: "Bearer wrong", "content-type": "application/json" },
+        body: JSON.stringify({ originID: "x", items: [], updatedAt: 1 }),
+      }),
+    )
+    expect(response.status).toBe(403)
+  })
+
+  test("publish stores a digest readable via inbox with the phone credential", async () => {
+    const stub = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (request) => {
+        if (request.headers.get("authorization") !== basic("opencode", "secret")) {
+          return new Response("unauthorized", { status: 401 })
+        }
+        return Response.json({ data: [] })
+      },
+    })
+    const running = await startGateway({
+      options: { ...relayOptions, host: "127.0.0.1", port: 0, upstream: `http://127.0.0.1:${stub.port}` },
+    })
+    const published = await fetch(`http://127.0.0.1:${running.port}/flynncode-mobile-relay/publish`, {
+      method: "POST",
+      headers: { authorization: "Bearer relay-secret", "content-type": "application/json" },
+      body: JSON.stringify({
+        originID: "laptop-relay-roundtrip",
+        items: [{ sessionID: "ses_1", directory: "/r", title: "Fix", kind: "permission", updated: 1 }],
+        updatedAt: Date.now(),
+      }),
+    })
+    expect(published.status).toBe(200)
+    const inbox = await fetch(`http://127.0.0.1:${running.port}/flynncode-mobile-relay/inbox`, {
+      headers: { authorization: basic("opencode", "secret") },
+    })
+    expect(inbox.status).toBe(200)
+    const body = (await inbox.json()) as { digests: Array<{ originID: string }> }
+    expect(body.digests.some((digest) => digest.originID === "laptop-relay-roundtrip")).toBe(true)
+    stopGateway()
+    stub.stop(true)
+  })
+
+  test("inbox answers 503 when the relay token is unset", async () => {
+    const stub = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (request) => {
+        if (request.headers.get("authorization") !== basic("opencode", "secret")) {
+          return new Response("unauthorized", { status: 401 })
+        }
+        return Response.json({ data: [] })
+      },
+    })
+    const running = await startGateway({
+      options: { ...options, host: "127.0.0.1", port: 0, upstream: `http://127.0.0.1:${stub.port}` },
+    })
+    const response = await fetch(`http://127.0.0.1:${running.port}/flynncode-mobile-relay/inbox`, {
+      headers: { authorization: basic("opencode", "secret") },
+    })
+    expect(response.status).toBe(503)
+    stopGateway()
+    stub.stop(true)
   })
 })

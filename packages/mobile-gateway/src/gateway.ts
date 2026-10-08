@@ -9,6 +9,7 @@ import { Upstream, upstreamHeaders, upstreamUrl } from "./upstream.ts"
 import { buildStatusPayload, listLanIPv4 } from "./lan-ips.ts"
 import { loadLauncher } from "./launcher.ts"
 import { listNeedsInput } from "./inbox.ts"
+import { createRelayStore, isRelayAuthorized, type RelayDigest } from "./relay.ts"
 import { renderLauncher, renderUnauthorized, renderUnreachable } from "./launcher-html.ts"
 
 const UNAUTHORIZED = 'Basic realm="opencode-mobile"'
@@ -21,6 +22,11 @@ export type Gateway = {
 type RunningState = { server: Server; port: number; refs: number; stop: () => void }
 
 let running: RunningState | undefined
+
+// Relay digests live in the gateway process (in-memory, 24h TTL). On the
+// deepthought host this store is what the phone reads while away; on a laptop
+// it stays empty unless something publishes to it.
+const relayStore = createRelayStore()
 
 function unauthorized() {
   return new Response("Authentication required", { status: 401, headers: { "www-authenticate": UNAUTHORIZED } })
@@ -43,6 +49,35 @@ function decodeBasic(header: string | null) {
 function isLauncherPath(url: string) {
   const pathname = new URL(url, "http://localhost").pathname
   return pathname === "/m" || pathname === "/m/"
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function parseRelayDigest(body: unknown): RelayDigest | undefined {
+  if (!isRecord(body)) return
+  if (typeof body.originID !== "string" || !body.originID) return
+  if (typeof body.updatedAt !== "number" || !Number.isFinite(body.updatedAt)) return
+  if (!Array.isArray(body.items)) return
+  const items: RelayDigest["items"] = []
+  for (const entry of body.items) {
+    if (!isRecord(entry)) return
+    if (typeof entry.sessionID !== "string" || !entry.sessionID) return
+    if (typeof entry.title !== "string") return
+    if (typeof entry.updated !== "number" || !Number.isFinite(entry.updated)) return
+    if (entry.kind !== "permission" && entry.kind !== "question") return
+    // Digest fields are metadata only: sessionID, title, directory, kind,
+    // updated. Anything else in the body is dropped before storing.
+    items.push({
+      sessionID: entry.sessionID,
+      directory: typeof entry.directory === "string" ? entry.directory : undefined,
+      title: entry.title,
+      kind: entry.kind,
+      updated: entry.updated,
+    })
+  }
+  return { originID: body.originID, items, updatedAt: body.updatedAt }
 }
 
 export function createGateway(input: { options: GatewayOptions }) {
@@ -71,6 +106,27 @@ export function createGateway(input: { options: GatewayOptions }) {
       })
     }
 
+    if (parsed.pathname === "/flynncode-mobile-relay/publish") {
+      // The laptop publisher authenticates with the relay bearer token, not
+      // the phone credential, so this route sits before the phone gate and is
+      // reachable over the LAN/Tailscale.
+      if (!options.relayToken) return new Response("Relay disabled", { status: 503 })
+      if (!isRelayAuthorized(request.headers.get("authorization"), options.relayToken)) {
+        return new Response("Forbidden", { status: 403 })
+      }
+      if (request.method !== "POST") return new Response("Method not allowed", { status: 405 })
+      const contentType = request.headers.get("content-type") ?? ""
+      if (!contentType.includes("application/json")) return new Response("Bad request", { status: 400 })
+      const body = await request.json().catch(() => undefined)
+      const digest = parseRelayDigest(body)
+      if (!digest) return new Response("Bad request", { status: 400 })
+      relayStore.publish(digest)
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })
+    }
+
     const token = readCookie(request.headers.get("cookie"), SESSION_COOKIE)
     const cookieValid = token !== undefined && sessions.verify(token)
 
@@ -88,6 +144,16 @@ export function createGateway(input: { options: GatewayOptions }) {
     }
 
     const inboxPath = new URL(request.url, "http://localhost").pathname
+    if (inboxPath === "/flynncode-mobile-relay/inbox") {
+      if (!options.relayToken) return new Response("Relay disabled", { status: 503 })
+      const response = new Response(JSON.stringify({ digests: relayStore.list() }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })
+      if (issued !== undefined) response.headers.set("set-cookie", sessionCookie(issued))
+      return response
+    }
+
     if (inboxPath === "/flynncode-mobile-inbox") {
       const loaded = await listNeedsInput({ upstream: options.upstream, authorization })
       if (loaded.kind === "unauthorized") return unauthorized()

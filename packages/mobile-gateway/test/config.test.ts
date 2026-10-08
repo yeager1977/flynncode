@@ -113,7 +113,7 @@ describe("envAuthHeader", () => {
       upstream: "http://127.0.0.1:4096",
       username: "opencode",
       password: "secret",
-      upstreamPassword: "secret",
+      upstreamPassword: "secret", relayToken: "",
     })
     expect(header).toBe(`Basic ${Buffer.from("opencode:secret").toString("base64")}`)
   })
@@ -125,7 +125,7 @@ describe("envAuthHeader", () => {
       upstream: "http://127.0.0.1:4096",
       username: "opencode",
       password: "phone",
-      upstreamPassword: "upstream",
+      upstreamPassword: "upstream", relayToken: "",
     })
     expect(header).toBe(`Basic ${Buffer.from("opencode:upstream").toString("base64")}`)
   })

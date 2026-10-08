@@ -5,6 +5,7 @@ export type GatewayOptions = {
   username: string
   password: string
   upstreamPassword: string
+  relayToken: string
 }
 
 export type ResolveResult = { ok: true; value: GatewayOptions } | { ok: false; reason: string }
@@ -56,6 +57,7 @@ export function resolveOptions(
       username: env.OPENCODE_SERVER_USERNAME ?? DEFAULT_USERNAME,
       password: mobilePassword || upstreamPassword,
       upstreamPassword,
+      relayToken: env.OPENCODE_RELAY_TOKEN ?? "",
     },
   }
 }
