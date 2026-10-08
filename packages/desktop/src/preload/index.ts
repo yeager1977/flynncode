@@ -72,6 +72,8 @@ const api: ElectronAPI = {
   vendorAuthStatus: () => ipcRenderer.invoke("vendor-auth-status"),
   vendorAuthSignout: (vendor) => ipcRenderer.invoke("vendor-auth-signout", vendor),
   getMobileGatewayStatus: () => ipcRenderer.invoke("get-mobile-gateway-status"),
+  getMobilePhonePassword: () => ipcRenderer.invoke("get-mobile-phone-password"),
+  rotateMobilePhonePassword: () => ipcRenderer.invoke("rotate-mobile-phone-password"),
   storeGet: (name, key) => ipcRenderer.invoke("store-get", name, key),
   storeSet: (name, key, value) => ipcRenderer.invoke("store-set", name, key, value),
   storeDelete: (name, key) => ipcRenderer.invoke("store-delete", name, key),
@@ -148,7 +150,7 @@ const api: ElectronAPI = {
   runDesktopMenuAction: (action) => ipcRenderer.invoke("run-desktop-menu-action", action),
   setBackgroundColor: (color: string) => ipcRenderer.invoke("set-background-color", color),
   exportDebugLogs: () => ipcRenderer.invoke("export-debug-logs"),
-  capturePage: () => ipcRenderer.invoke("app:capturePage"),
+  capturePage: (rect) => ipcRenderer.invoke("app:capturePage", rect),
   computerUse: {
     click: (appID, x, y) => ipcRenderer.invoke("computer-use-click", appID, x, y),
     typeText: (appID, text) => ipcRenderer.invoke("computer-use-type", appID, text),

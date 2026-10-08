@@ -15,6 +15,11 @@ describe("quick-entry shortcut module", () => {
     expect(source).toContain("sendQuickEntry")
   })
 
+  test("restores minimized windows and logs failed registration", () => {
+    expect(source).toContain("win.restore()")
+    expect(source).toContain("if (!registered)")
+  })
+
   test("unregisters on demand", () => {
     expect(source).toContain("globalShortcut.unregister")
   })

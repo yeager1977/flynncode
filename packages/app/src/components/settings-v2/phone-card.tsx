@@ -1,6 +1,7 @@
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { type Component, For, Show, createEffect, createResource, createSignal, onCleanup, onMount } from "solid-js"
+import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { normalizeServerUrl, serverName, useServer, type ServerConnection } from "@/context/server"
 import { SettingsListV2 } from "./parts/list"
@@ -15,25 +16,55 @@ type MobileGatewayStatus = {
   tailnetLauncherUrls?: string[]
 }
 
+type PhoneApi = {
+  getMobileGatewayStatus?: () => Promise<MobileGatewayStatus>
+  getMobilePhonePassword?: () => Promise<string | null>
+  rotateMobilePhonePassword?: () => Promise<string>
+}
+
 const STOPPED_STATUS: MobileGatewayStatus = { running: false, port: 4097, lanUrls: [], launcherUrls: [], tailnetUrls: [], tailnetLauncherUrls: [] }
 const STATUS_POLL_INTERVAL_MS = 5000
+const MASKED_PASSWORD = "••••••••"
 
 export const PhoneCard: Component = () => {
   const language = useLanguage()
   const server = useServer()
+  const phoneApi = (window as unknown as { api?: PhoneApi }).api
+  // The web build has no desktop bridge, so there is no gateway to poll.
+  const available = typeof phoneApi?.getMobileGatewayStatus === "function"
   const [status, { refetch }] = createResource(async () => {
-    const api = (window as unknown as { api?: { getMobileGatewayStatus?: () => Promise<MobileGatewayStatus> } })
-      .api
-    if (!api?.getMobileGatewayStatus) return STOPPED_STATUS
-    return api.getMobileGatewayStatus()
+    if (!phoneApi?.getMobileGatewayStatus) return STOPPED_STATUS
+    return phoneApi.getMobileGatewayStatus().catch(() => STOPPED_STATUS)
   })
+  // Read through `latest` so a background refetch keeps the last value instead
+  // of suspending, which would unmount the card and drop input focus.
+  const current = () => status.latest
   // The card mounts once; if Settings opens before the sidecar is ready the
   // first fetch resolves stopped. Keep polling until the gateway is running.
-  const timer = setInterval(() => {
-    if (status()?.running !== true) refetch()
-    else clearInterval(timer)
-  }, STATUS_POLL_INTERVAL_MS)
+  const timer = available
+    ? setInterval(() => {
+        if (current()?.running !== true) refetch()
+        else clearInterval(timer)
+      }, STATUS_POLL_INTERVAL_MS)
+    : undefined
   onCleanup(() => clearInterval(timer))
+  const [phonePassword, setPhonePassword] = createStore({
+    value: undefined as string | undefined,
+    visible: false,
+    rotated: false,
+  })
+  onMount(() => {
+    void phoneApi
+      ?.getMobilePhonePassword?.()
+      .then((value) => setPhonePassword("value", value ?? undefined))
+      .catch(() => undefined)
+  })
+  const rotatePhonePassword = () => {
+    void phoneApi
+      ?.rotateMobilePhonePassword?.()
+      .then((value) => setPhonePassword({ value, rotated: true }))
+      .catch(() => undefined)
+  }
   const [copied, setCopied] = createSignal<string>()
   const [remoteToken, setRemoteToken] = createSignal("")
   const [tokenSaved, setTokenSaved] = createSignal(false)
@@ -61,15 +92,15 @@ export const PhoneCard: Component = () => {
     }).catch(() => undefined)
   }
 
-  const launcherUrls = () => status()?.launcherUrls ?? []
-  const gatewayRunning = () => status()?.running === true
+  const launcherUrls = () => current()?.launcherUrls ?? []
+  const gatewayRunning = () => current()?.running === true
   const hasUrls = () => launcherUrls().length > 0
-  const loopbackUrl = () => `http://127.0.0.1:${status()?.port ?? STOPPED_STATUS.port}/m`
+  const loopbackUrl = () => `http://127.0.0.1:${current()?.port ?? STOPPED_STATUS.port}/m`
   const qrUrl = () => {
     const first = launcherUrls()[0]
     return first && canEncodeQr(first) ? first : undefined
   }
-  const tailnetLauncherUrls = () => status()?.tailnetLauncherUrls ?? []
+  const tailnetLauncherUrls = () => current()?.tailnetLauncherUrls ?? []
   const tailnetUrl = () => tailnetLauncherUrls()[0]
   const relayLauncherUrl = () => {
     for (const entry of server.list) {
@@ -103,7 +134,7 @@ export const PhoneCard: Component = () => {
   })
 
   return (
-    <Show when={!status.loading}>
+    <Show when={available && current()}>
       <SettingsListV2>
         <div class="settings-v2-servers-row">
           <div class="settings-v2-servers-lead">
@@ -171,6 +202,59 @@ export const PhoneCard: Component = () => {
                   {language.t("session.share.copy.copied")}
                 </Show>
               </ButtonV2>
+            </div>
+          </div>
+        </Show>
+        <div class="settings-v2-servers-row">
+          <div class="settings-v2-servers-lead">
+            <div class="settings-v2-servers-copy">
+              <span class="settings-v2-servers-name">{language.t("server.phone.password.label")}</span>
+              <span class="settings-v2-servers-meta">
+                <Show when={phonePassword.value} fallback={language.t("server.phone.password.unavailable")}>
+                  {language.t("server.phone.password.hint")}
+                </Show>
+              </span>
+            </div>
+          </div>
+        </div>
+        <Show when={phonePassword.value}>
+          {(password) => (
+            <div class="settings-v2-servers-row">
+              <div class="settings-v2-servers-lead">
+                <div class="settings-v2-servers-copy">
+                  <span class="settings-v2-servers-name font-mono select-all">
+                    {phonePassword.visible ? password() : MASKED_PASSWORD}
+                  </span>
+                </div>
+              </div>
+              <div class="settings-v2-servers-actions">
+                <ButtonV2
+                  size="small"
+                  variant="ghost-muted"
+                  onClick={() => setPhonePassword("visible", (visible) => !visible)}
+                >
+                  {phonePassword.visible
+                    ? language.t("server.phone.password.hide")
+                    : language.t("server.phone.password.show")}
+                </ButtonV2>
+                <ButtonV2 size="small" variant="ghost-muted" onClick={() => copyUrl(password())}>
+                  <Show when={copied() === password()} fallback={language.t("server.phone.copy")}>
+                    {language.t("session.share.copy.copied")}
+                  </Show>
+                </ButtonV2>
+                <ButtonV2 size="small" variant="ghost-muted" onClick={rotatePhonePassword}>
+                  {language.t("server.phone.password.rotate")}
+                </ButtonV2>
+              </div>
+            </div>
+          )}
+        </Show>
+        <Show when={phonePassword.rotated}>
+          <div class="settings-v2-servers-row">
+            <div class="settings-v2-servers-lead">
+              <div class="settings-v2-servers-copy">
+                <span class="settings-v2-servers-meta">{language.t("server.phone.password.rotated")}</span>
+              </div>
             </div>
           </div>
         </Show>

@@ -20,4 +20,10 @@ describe("phone launcher url", () => {
     expect(dict["server.phone.relay.token.label"].toLowerCase()).toContain("deepthought")
     expect(dict["server.phone.relay.token.save"]).toBe("Save")
   })
+
+  test("phone password copy explains that rotation needs a restart", async () => {
+    const { dict } = (await import("@/i18n/en")) as Record<string, Record<string, string>>
+    expect(dict["server.phone.password.label"]).toBe("Phone password")
+    expect(dict["server.phone.password.rotated"]).toContain("restart")
+  })
 })

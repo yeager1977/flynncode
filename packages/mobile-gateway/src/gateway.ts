@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { Readable } from "node:stream"
 import { pipeline } from "node:stream/promises"
 import { SESSION_COOKIE, readCookie, sessionCookie } from "./cookies.ts"
-import { envAuthHeader, type GatewayOptions } from "./config.ts"
+import { envAuthHeader, matchesCredentials, type GatewayOptions } from "./config.ts"
 import { streamThrough } from "./proxy.ts"
 import { createSessionStore } from "./session.ts"
 import { Upstream, upstreamHeaders, upstreamUrl } from "./upstream.ts"
@@ -57,6 +57,13 @@ function isLauncherPath(url: string) {
   return pathname === "/m" || pathname === "/m/"
 }
 
+function isLoopbackAddress(address: string | undefined) {
+  if (!address) return false
+  // Dual-stack listeners report IPv4 peers as IPv4-mapped IPv6 addresses.
+  const normalized = address.replace(/^::ffff:/i, "")
+  return normalized === "::1" || normalized.startsWith("127.")
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
@@ -93,20 +100,14 @@ export function createGateway(input: { options: GatewayOptions }) {
   const authorization = envAuthHeader(options)
   const sessions = createSessionStore()
 
-  function matchesEnv(credentials: { username: string; password: string }) {
-    return credentials.username === options.username && credentials.password === options.password
-  }
-
-  return async function handle(request: Request): Promise<Response> {
+  // remoteAddress is the socket peer address. The Host header is
+  // client-controlled, so it must never decide whether a caller is local.
+  return async function handle(request: Request, remoteAddress?: string): Promise<Response> {
     const parsed = new URL(request.url, "http://localhost")
     if (parsed.pathname === "/flynncode-mobile-status") {
-      // WHATWG URL keeps IPv6 brackets in hostname ("[::1]"), so strip them.
-      // The payload carries only the port and LAN URLs (no secrets); localhost
+      // The payload carries only the port and LAN URLs (no secrets); loopback
       // gating keeps it off the LAN rather than protecting sensitive data.
-      const host = parsed.hostname.replace(/^\[|\]$/g, "")
-      if (host !== "127.0.0.1" && host !== "localhost" && host !== "::1") {
-        return new Response("Not found", { status: 404 })
-      }
+      if (!isLoopbackAddress(remoteAddress)) return new Response("Not found", { status: 404 })
       const payload = buildStatusPayload({ port: options.port, ips: listLanIPv4() })
       return new Response(JSON.stringify(payload), {
         status: 200,
@@ -152,7 +153,7 @@ export function createGateway(input: { options: GatewayOptions }) {
     if (!cookieValid) {
       const credentials = decodeBasic(request.headers.get("authorization"))
       if (!credentials) return unauthorized()
-      if (!matchesEnv(credentials)) return unauthorized()
+      if (!matchesCredentials(options, credentials)) return unauthorized()
       const probe = await Upstream.probe({ base: options.upstream, authorization })
       if (!probe.ok && probe.reason === "unreachable") {
         return new Response("Upstream server unreachable", { status: 503 })
@@ -235,8 +236,7 @@ export async function startGateway(input: { options: GatewayOptions; port?: numb
   const handle = createGateway({ options: input.options })
   const server = createServer((request, response) => {
     Promise.resolve()
-      .then(() => requestFromNode(request))
-      .then(handle)
+      .then(() => handle(requestFromNode(request), request.socket.remoteAddress))
       .then((result) => writeToNode(response, result))
       .catch(() => {
         response.writeHead(500)
