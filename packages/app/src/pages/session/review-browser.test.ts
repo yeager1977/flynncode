@@ -78,3 +78,10 @@ describe("browser pane docking", () => {
     expect(panelSource).toContain("ReviewBrowser")
   })
 })
+
+describe("auto-verify affordance", () => {
+  test("pane surfaces a verify control tied to the auto-verify setting", () => {
+    const paneSource = readFileSync(new URL("./review-browser.tsx", import.meta.url), "utf8")
+    expect(paneSource).toContain('language.t("session.review.browserPane.verify")')
+  })
+})

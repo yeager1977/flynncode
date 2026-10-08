@@ -197,6 +197,14 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
     storeAnnotation({ url: state.loaded, note: text, thumbnail })
     setState("announced", language.t("session.review.browserPane.annotateSent"))
   }
+  // One-click verify: point the pane back at the running preview server and
+  // force the iframe to reload. The agent-side verify_page tool (preview
+  // plugin) then reports HTTP status and DOM state to the model.
+  const verify = () => {
+    const running = servers()?.find((server) => server.url && previewManaged(server)) ?? selected()
+    if (running?.url) commitUrl(running.url)
+    setState("frame", state.frame + 1)
+  }
 
   return (
     <div data-component="browser-pane" class="flex min-h-0 flex-col border-t border-border-weak-base">
@@ -301,6 +309,16 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void }) 
           onClick={() => void recheck()}
         >
           {language.t("session.review.recheckPage")}
+        </Button>
+        <Button
+          type="button"
+          size="small"
+          variant="ghost"
+          disabled={!state.open || !selected()?.url}
+          aria-label={language.t("session.review.browserPane.verify")}
+          onClick={() => verify()}
+        >
+          {language.t("session.review.browserPane.verify")}
         </Button>
         <Button type="button" size="small" variant="ghost" disabled={!state.open} onClick={() => commitUrl(state.url)}>
           {language.t("common.goForward")}
