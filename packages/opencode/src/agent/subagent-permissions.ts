@@ -14,7 +14,6 @@ import type { Agent } from "./agent"
 export function deriveSubagentSessionPermission(input: {
   parentSessionPermission: PermissionV1.Ruleset
   subagent: Agent.Info
-  sandbox?: string
 }): PermissionV1.Ruleset {
   const canTask = input.subagent.permission.some((rule) => rule.permission === "task")
   const canTodo = input.subagent.permission.some((rule) => rule.permission === "todowrite")
@@ -24,8 +23,23 @@ export function deriveSubagentSessionPermission(input: {
     ),
     ...(canTodo ? [] : [{ permission: "todowrite" as const, pattern: "*" as const, action: "deny" as const }]),
     ...(canTask ? [] : [{ permission: "task" as const, pattern: "*" as const, action: "deny" as const }]),
-    ...(input.sandbox
-      ? [{ permission: "external_directory" as const, pattern: input.sandbox, action: "allow" as const }]
-      : []),
+  ]
+}
+
+/**
+ * Resolve an agent `sandbox` profile to concrete `external_directory` rules
+ * scoped to the isolated worktree directory. The ruleset evaluates last
+ * match wins, so appending these confines the child even where inherited
+ * rules allow more.
+ *
+ * Only `restricted` confines: deny file access outside the worktree, then
+ * re-allow the worktree itself. Unknown profiles degrade to no extra rules
+ * instead of failing, matching tolerant config behavior elsewhere.
+ */
+export function sandboxRules(input: { sandbox: string; directory: string }): PermissionV1.Ruleset {
+  if (input.sandbox !== "restricted") return []
+  return [
+    { permission: "external_directory" as const, pattern: "*" as const, action: "deny" as const },
+    { permission: "external_directory" as const, pattern: `${input.directory}/*`, action: "allow" as const },
   ]
 }

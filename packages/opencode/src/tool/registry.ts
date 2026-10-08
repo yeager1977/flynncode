@@ -57,6 +57,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { MCP } from "@/mcp"
 import { Worktree } from "@/worktree"
+import { InstanceStore } from "@/project/instance-store"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { McpCatalog } from "@/mcp/catalog"
 
@@ -467,6 +468,7 @@ export const node = LayerNode.make({
     RuntimeFlags.node,
     MCP.node,
     Worktree.node,
+    InstanceStore.node,
     Database.node,
     locationServiceMapNode,
     Ripgrep.node,

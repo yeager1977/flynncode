@@ -7,7 +7,7 @@ import { Session } from "@/session/session"
 import { SessionID, MessageID } from "../session/schema"
 import { MessageV2 } from "../session/message-v2"
 import { Agent } from "../agent/agent"
-import { deriveSubagentSessionPermission } from "../agent/subagent-permissions"
+import { deriveSubagentSessionPermission, sandboxRules } from "../agent/subagent-permissions"
 import type { SessionPrompt } from "../session/prompt"
 import { Config } from "@/config/config"
 import { Effect, Exit, Schema, Scope } from "effect"
@@ -15,6 +15,7 @@ import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Database } from "@opencode-ai/core/database/database"
 import { Worktree } from "@/worktree"
+import { InstanceStore } from "@/project/instance-store"
 
 export interface TaskPromptOps {
   cancel(sessionID: SessionID): Effect.Effect<void>
@@ -96,6 +97,7 @@ export const TaskTool = Tool.define(
     const flags = yield* RuntimeFlags.Service
     const database = yield* Database.Service
     const worktreeSvc = yield* Worktree.Service
+    const store = yield* InstanceStore.Service
 
     const run = Effect.fn("TaskTool.execute")(function* (
       params: Schema.Schema.Type<typeof Parameters>,
@@ -145,18 +147,17 @@ export const TaskTool = Tool.define(
       const isolation = params.isolation ?? agentDefaults?.isolation ?? "inherit"
       const cleanup = params.cleanup ?? "retain"
       const sandbox = agentDefaults?.sandbox
-      const isolated = isolation === "worktree"
-      // The disposable binding is persisted in session metadata (no new
-      // session table): the temp worktree directory travels with the child.
-      const worktreeInfo = isolated ? yield* worktreeSvc.createDisposable({ sessionID: ctx.sessionID }) : undefined
 
       const session = params.task_id
         ? yield* sessions.get(SessionID.make(params.task_id)).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
         : undefined
+      // Fresh sessions isolate in a temp worktree named after the pending
+      // child (unique per spawn, so siblings never collide). Resumed sessions
+      // keep their existing directory.
+      const isolated = isolation === "worktree" && !session
       const childPermission = deriveSubagentSessionPermission({
         parentSessionPermission: parent.permission ?? [],
         subagent: next,
-        ...(sandbox ? { sandbox } : {}),
       })
       const childToolDenies = [
         ...(next.permission.some((rule) => rule.permission === "todowrite")
@@ -171,23 +172,41 @@ export const TaskTool = Tool.define(
           action: "deny" as const,
         })) ?? []),
       ]
+      const childRules = [
+        ...childPermission,
+        ...childToolDenies.filter(
+          (deny) =>
+            !childPermission.some(
+              (rule) =>
+                rule.permission === deny.permission && rule.pattern === deny.pattern && rule.action === deny.action,
+            ),
+        ),
+      ]
       const nextSession =
         session ??
         (yield* sessions.create({
           parentID: ctx.sessionID,
           title: params.description + ` (@${next.name} subagent)`,
           agent: next.name,
-          permission: [
-            ...childPermission,
-            ...childToolDenies.filter(
-              (deny) =>
-                !childPermission.some(
-                  (rule) =>
-                    rule.permission === deny.permission && rule.pattern === deny.pattern && rule.action === deny.action,
-                ),
-            ),
-          ],
+          permission: childRules,
         }))
+      // The child runs in the temp worktree: rebind its session row to the
+      // worktree directory (the disposable binding also travels in metadata,
+      // since there is no new session table), then append the sandbox profile
+      // resolved against that directory.
+      const worktreeInfo = isolated
+        ? yield* worktreeSvc.createDisposable({ sessionID: nextSession.id })
+        : undefined
+      if (worktreeInfo) {
+        yield* sessions.setDirectory({ sessionID: nextSession.id, directory: worktreeInfo.directory })
+        yield* sessions.setPermission({
+          sessionID: nextSession.id,
+          permission: [
+            ...childRules,
+            ...sandboxRules({ sandbox: sandbox ?? "inherit", directory: worktreeInfo.directory }),
+          ],
+        })
+      }
 
       const msg = yield* MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }).pipe(
         Effect.provideService(Database.Service, database),
@@ -220,7 +239,7 @@ export const TaskTool = Tool.define(
 
       const runTask = Effect.fn("TaskTool.runTask")(function* () {
         const parts = yield* ops.resolvePromptParts(params.prompt)
-        const result = yield* ops.prompt({
+        const prompt = ops.prompt({
           messageID: MessageID.ascending(),
           sessionID: nextSession.id,
           model: {
@@ -231,6 +250,13 @@ export const TaskTool = Tool.define(
           agent: next.name,
           parts,
         })
+        // Run the child under the temp worktree's instance so its tools and
+        // working directory resolve there. Prompt-part resolution stays in
+        // the parent (the prompt was authored against the parent checkout),
+        // and cancellation stays parent-scoped via the closed-over promptOps.
+        const result = worktreeInfo
+          ? yield* store.provide({ directory: worktreeInfo.directory }, prompt)
+          : yield* prompt
         if (result.info.role === "assistant" && result.info.error) {
           const message =
             "message" in result.info.error.data && typeof result.info.error.data.message === "string"

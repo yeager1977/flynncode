@@ -20,6 +20,7 @@ import { TaskTool, type TaskPromptOps } from "../../src/tool/task"
 import { Truncate } from "@/tool/truncate"
 import { ToolRegistry } from "@/tool/registry"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { InstanceState } from "@/effect/instance-state"
 import { Worktree } from "../../src/worktree"
 import { InstanceStore } from "../../src/project/instance-store"
 import { InstanceBootstrap } from "../../src/project/bootstrap"
@@ -1104,5 +1105,68 @@ describe("tool.task", () => {
       expect((yield* jobs.get(child.id))?.status).toBe("cancelled")
       expect((yield* jobs.get(grandchild.id))?.status).toBe("cancelled")
     }),
+  )
+
+  it.instance(
+    "execute runs isolated children in distinct temp worktrees under the worktree instance",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const { chat, assistant } = yield* seed()
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        const promptDirs: string[] = []
+        const promptOps: TaskPromptOps = {
+          ...stubOps({ text: "isolated" }),
+          prompt: (input) =>
+            Effect.gen(function* () {
+              promptDirs.push(yield* InstanceState.directory)
+              return reply(input, "isolated")
+            }),
+        }
+        const ctx = {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        }
+
+        const first = yield* def.execute(
+          {
+            description: "first scan",
+            prompt: "scan once",
+            subagent_type: "general",
+            isolation: "worktree",
+            cleanup: "dispose",
+          },
+          ctx,
+        )
+        const second = yield* def.execute(
+          {
+            description: "second scan",
+            prompt: "scan twice",
+            subagent_type: "general",
+            isolation: "worktree",
+            cleanup: "dispose",
+          },
+          ctx,
+        )
+
+        const firstChild = yield* sessions.get(first.metadata.sessionId)
+        const secondChild = yield* sessions.get(second.metadata.sessionId)
+        // Sibling children never collide on the temp worktree.
+        expect(firstChild.directory).not.toBe(secondChild.directory)
+        // Each child row is rebound to its own temp worktree...
+        expect(first.metadata.worktree).toBe(firstChild.directory)
+        expect(second.metadata.worktree).toBe(secondChild.directory)
+        expect(first.metadata.disposable).toBe(true)
+        // ...and its prompt executed under that worktree's instance.
+        expect(promptDirs).toEqual([firstChild.directory, secondChild.directory])
+      }),
+    { git: true },
   )
 })
