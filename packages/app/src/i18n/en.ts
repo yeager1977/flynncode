@@ -1804,6 +1804,4 @@ export const dict = {
   "computerUse.consent.title": "Allow this GUI action?",
   "computerUse.consent.note": "Flynncode never approves its own GUI actions.",
   "computerUse.saveFailed": "Could not save computer use settings",
-  "computerUse.stop": "Stop computer use",
-  "computerUse.screenshot": "Screenshot",
 }

@@ -9,7 +9,6 @@ import {
   createMemo,
   createSignal,
   createResource,
-  Match,
   type JSX,
 } from "solid-js"
 import { selectionFromLines, type SelectedLineRange, useFile } from "@/context/file"
