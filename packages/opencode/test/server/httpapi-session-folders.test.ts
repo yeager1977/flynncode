@@ -266,6 +266,35 @@ describe("session folders HttpApi", () => {
     { git: true, config: { formatter: false, lsp: false } },
   )
   it.instance(
+    "v2 folders route widens the running instance boundary",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const extra = yield* tmpdirScoped()
+        const store = yield* InstanceStore.Service
+        const session = yield* Session.use.create({ title: "v2-attach" })
+        const ctx = yield* store.load({ directory: test.directory })
+
+        const attach = yield* request(`/api/session/${session.id}/folders`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ extras: [extra] }),
+        })
+        expect(attach.status).toBe(200)
+        expect(ctx.additionalDirectories).toEqual([extra])
+
+        const detach = yield* request(`/api/session/${session.id}/folders`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ extras: [] }),
+        })
+        expect(detach.status).toBe(200)
+        expect(ctx.additionalDirectories).toEqual([])
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
     "extras stay per session and never touch project directory rows",
     () =>
       Effect.gen(function* () {
