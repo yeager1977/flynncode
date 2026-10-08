@@ -31,6 +31,19 @@ describe("sandboxRules", () => {
     expect(Permission.evaluate("external_directory", "/w/other/file.ts", effective).action).toBe("deny")
   })
 
+  test("restricted keeps the agent's Truncate/skill allow-list reachable", () => {
+    const agentPermission = Permission.fromConfig({
+      external_directory: { "*": "ask", "/data/tool-output/*": "allow", "/skills/*": "allow" },
+    })
+    const session = sandboxRules({ sandbox: "restricted", directory: "/w/a", agentPermission })
+    // Runtime order: agent rules, then session rules (sandbox last).
+    const effective = Permission.merge(agentPermission, session)
+    expect(Permission.evaluate("external_directory", "/data/tool-output/x", effective).action).toBe("allow")
+    expect(Permission.evaluate("external_directory", "/skills/review/SKILL.md", effective).action).toBe("allow")
+    expect(Permission.evaluate("external_directory", "/w/a/file.ts", effective).action).toBe("allow")
+    expect(Permission.evaluate("external_directory", "/home/me/.ssh/id", effective).action).toBe("deny")
+  })
+
   test("sandbox rules keep the ruleset type", () => {
     const rules: PermissionV1.Ruleset = sandboxRules({ sandbox: "restricted", directory: "/w/a" })
     expect(rules).toHaveLength(2)

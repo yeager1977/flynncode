@@ -13,7 +13,7 @@ import { Glob } from "@opencode-ai/core/util/glob"
 import { errorMessage } from "../util/error"
 import { GlobalBus } from "@/bus/global"
 import { Git } from "@/git"
-import { Effect, FileSystem, Layer, Path, Schema, Scope, Context } from "effect"
+import { Effect, FileSystem, Layer, Option, Path, Schema, Scope, Context } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { AppProcess } from "@opencode-ai/core/process"
@@ -266,16 +266,21 @@ const layer: Layer.Layer<
       })
     })
 
+    // Ignore the worktree root through the repository-local `info/exclude`
+    // rather than the user's tracked `.gitignore`. Linked worktrees share the
+    // common git dir, so resolve it instead of assuming `<root>/.git`.
     const ignoreWorktreeRoot = Effect.fn("Worktree.ignoreWorktreeRoot")(function* (projectRoot: string, location: string) {
-      const gitignore = pathSvc.join(projectRoot, ".gitignore")
+      const common = yield* git(["rev-parse", "--git-common-dir"], { cwd: projectRoot })
+      if (common.code !== 0 || !common.text.trim()) return
+      const exclude = pathSvc.join(pathSvc.resolve(projectRoot, common.text.trim()), "info", "exclude")
       const entry = `${location.replace(/\/+$/, "")}/`
-      const existing = (yield* fs.readFileStringSafe(gitignore).pipe(Effect.catch(() => Effect.succeed("")))) ?? ""
+      const existing = (yield* fs.readFileStringSafe(exclude).pipe(Effect.catch(() => Effect.succeed("")))) ?? ""
       // Match the entry as a whole line so repeated saves do not stack copies.
       if (existing.split("\n").some((line) => line.trim() === entry || line.trim() === entry.replace(/\/$/, ""))) return
       const prefix = existing && !existing.endsWith("\n") ? "\n" : ""
-      yield* fs.writeFileString(gitignore, `${existing}${prefix}# git worktrees (config.worktree.location)\n${entry}\n`).pipe(
-        Effect.catch(() => Effect.void),
-      )
+      yield* fs
+        .writeWithDirs(exclude, `${existing}${prefix}# git worktrees (config.worktree.location)\n${entry}\n`)
+        .pipe(Effect.catch(() => Effect.void))
     })
 
     const setup = Effect.fnUntraced(function* (info: Info) {
@@ -752,47 +757,92 @@ const layer: Layer.Layer<
 
     const createAndRetain = Effect.fn("Worktree.createAndRetain")(function* (input?: CreateInput) {
       const ctx = yield* InstanceState.context
-      const retain = ConfigWorktree.settings(yield* configSvc.get()).keep
+      const wt = ConfigWorktree.settings(yield* configSvc.get())
       const info = yield* create(input)
-      const entries = yield* list().pipe(Effect.catch(() => Effect.succeed([] as Info[])))
       // Canonicalize once: canonical() lowercases on Windows while
       // InstanceStore keys keep original casing, so a raw string comparison
-      // could miss a running worktree there.
+      // could miss a running worktree there. list() already returns
+      // canonical directories.
       const self = yield* canonical(ctx.worktree)
-      const loaded = yield* store
-        .loadedDirectories()
-        .pipe(Effect.catch(() => Effect.succeed(new Set<string>() as ReadonlySet<string>)))
-      const loadedKeys = new Set(
-        yield* Effect.forEach([...loaded], (directory) => canonical(directory), { concurrency: "unbounded" }),
+      const opened = yield* canonical(info.directory)
+      const root = yield* canonical(
+        pathSvc.isAbsolute(wt.location) ? wt.location : pathSvc.join(ctx.worktree, wt.location),
       )
-      const entryKeys = yield* Effect.forEach(entries, (entry) => canonical(entry.directory), {
-        concurrency: "unbounded",
-      })
-      const drop = worktreesToRemove(
-        entries.map((entry, index) => ({
-          directory: entry.directory,
-          updated: entries.length - index,
-          open: entry.directory === info.directory,
-          running: loadedKeys.has(entryKeys[index] ?? ""),
-        })),
-        retain,
+      // Only worktrees Flynncode created are eligible for retention: they live
+      // under the configured location and sit on a prefixed branch. Worktrees
+      // the user made by hand are never considered.
+      const owned = (yield* list().pipe(Effect.catch(() => Effect.succeed([] as Info[])))).filter(
+        (entry) =>
+          entry.directory.startsWith(`${root}${pathSvc.sep}`) && !!entry.branch?.startsWith(`${wt.branchPrefix}/`),
       )
-      for (const directory of drop) {
-        const key = yield* canonical(directory)
+      const loadedKeys = yield* loadedDirectoryKeys()
+      const updated = yield* Effect.forEach(
+        owned,
+        (entry) =>
+          rawFs.stat(entry.directory).pipe(
+            Effect.map((stat) => Option.getOrUndefined(stat.mtime)?.getTime() ?? 0),
+            Effect.catch(() => Effect.succeed(0)),
+          ),
+        { concurrency: "unbounded" },
+      )
+      const drop = new Set(
+        worktreesToRemove(
+          owned.map((entry, index) => ({
+            directory: entry.directory,
+            updated: updated[index] ?? 0,
+            open: entry.directory === opened,
+            running: loadedKeys.has(entry.directory),
+          })),
+          wt.keep,
+        ),
+      )
+      for (const entry of owned.filter((item) => drop.has(item.directory))) {
         // Re-check at removal time: a session may have loaded this worktree
         // between the snapshot and now (TOCTOU). Never remove our own or a
         // newly-running worktree.
-        if (key === self) continue
-        const reloaded = yield* store
-          .loadedDirectories()
-          .pipe(Effect.catch(() => Effect.succeed(new Set<string>() as ReadonlySet<string>)))
-        const runningNow = new Set(
-          yield* Effect.forEach([...reloaded], (candidate) => canonical(candidate), { concurrency: "unbounded" }),
+        if (entry.directory === self) continue
+        if ((yield* loadedDirectoryKeys()).has(entry.directory)) continue
+        yield* retire(entry.directory, entry.branch ?? "").pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("worktree retention skipped", { directory: entry.directory, cause }),
+          ),
         )
-        if (runningNow.has(key)) continue
-        yield* remove({ directory }).pipe(Effect.catch(() => Effect.void))
       }
       return info
+    })
+
+    const loadedDirectoryKeys = Effect.fnUntraced(function* () {
+      const loaded = yield* store
+        .loadedDirectories()
+        .pipe(Effect.catch(() => Effect.succeed(new Set<string>() as ReadonlySet<string>)))
+      return new Set(
+        yield* Effect.forEach([...loaded], (directory) => canonical(directory), { concurrency: "unbounded" }),
+      )
+    })
+
+    // Retention removal never forces: a worktree with uncommitted or untracked
+    // changes, or whose branch holds commits that no other branch,
+    // remote-tracking ref or tag reaches (so its upstream/base has not merged
+    // them), is kept so automatic cleanup cannot lose work.
+    const retire = Effect.fnUntraced(function* (directory: string, branch: string) {
+      const ctx = yield* InstanceState.context
+      if (!branch) return false
+      const status = yield* git(["-c", "core.fsmonitor=false", "status", "--porcelain=v1"], { cwd: directory })
+      if (status.code !== 0 || status.text.trim()) return false
+      const unique = yield* git(
+        ["rev-list", "--count", `refs/heads/${branch}`, "--not", `--exclude=${branch}`, "--branches", "--remotes", "--tags"],
+        { cwd: ctx.worktree },
+      )
+      if (unique.code !== 0 || unique.text.trim() !== "0") return false
+      yield* store.disposeDirectory(directory)
+      yield* stopFsmonitor(directory)
+      // No --force: git itself refuses a worktree that became dirty since the check.
+      const removed = yield* git(["worktree", "remove", directory], { cwd: ctx.worktree })
+      if (removed.code !== 0) return false
+      // Every commit on the branch is reachable from another ref (checked
+      // above), so dropping the branch name cannot lose history.
+      yield* git(["branch", "-D", branch], { cwd: ctx.worktree })
+      return true
     })
 
     // Disposable worktrees back a single session (chat or isolated subagent).

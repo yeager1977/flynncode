@@ -201,17 +201,12 @@ const layer = Layer.effect(
 
     const cancel = Effect.fn("SessionPrompt.cancel")(function* (sessionID: SessionID) {
       yield* Effect.logInfo("cancel", { "session.id": sessionID })
-      // Interrupt hook reuses the existing user-interrupt path: advisory
-      // observe-only, no parallel interruption mechanism.
-      const maybeInterruptHooks = yield* Effect.serviceOption(HooksRunner.Service)
-      if (Option.isSome(maybeInterruptHooks)) {
-        yield* HooksContext.observeAndStore(
-          "hooks.session.interrupt",
-          sessionID,
-          maybeInterruptHooks.value.runInterrupt({ sessionID }),
-        )
-      }
+      // Cancel first so a slow Interrupt hook never delays the stop. The hook
+      // reuses the user-interrupt path: advisory, report-only, detached.
       yield* state.cancel(sessionID)
+      yield* HooksContext.observe("hooks.session.interrupt", hooksRunner.runInterrupt({ sessionID })).pipe(
+        Effect.forkDetach,
+      )
     })
 
     const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(function* (template: string) {
@@ -693,7 +688,16 @@ const layer = Layer.effect(
     })
 
     const createUserMessage = Effect.fn("SessionPrompt.createUserMessage")(function* (input: PromptInput) {
-      const agentName = input.agent
+      // A steer/queue prompt joins the conversation already running, so it
+      // keeps that conversation's agent instead of switching a steered
+      // subagent to the default agent.
+      const previous =
+        !input.agent && input.delivery
+          ? yield* sessions.findMessage(input.sessionID, (m) => m.info.role === "user").pipe(Effect.orDie)
+          : Option.none()
+      const agentName =
+        input.agent ??
+        (Option.isSome(previous) && previous.value.info.role === "user" ? previous.value.info.agent : undefined)
       const ag = agentName ? yield* agents.get(agentName) : yield* agents.defaultInfo()
       if (!ag) {
         const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
@@ -1117,42 +1121,43 @@ const layer = Layer.effect(
       return { info, parts }
     }, Effect.scoped)
 
+    // UserPromptSubmit hook runs before admission. A blocking hook aborts the
+    // turn with a hook error (fail closed — never silently continue).
+    // Returns the hook's additionalContext for this prompt.
+    const runPromptSubmitHook = Effect.fnUntraced(function* (input: PromptInput) {
+      const text = input.parts
+        .filter((part) => part.type === "text")
+        .map((part) => part.text)
+        .join("\n")
+      const hookExit = yield* hooksRunner
+        .runSessionPrompt({ sessionID: input.sessionID, prompt: text })
+        .pipe(Effect.exit)
+      if (Exit.isFailure(hookExit)) {
+        const cause = Cause.squash(hookExit.cause)
+        throw cause instanceof HooksRunner.HookDeniedError
+          ? cause
+          : new HooksRunner.HookDeniedError(cause instanceof Error ? cause.message : "Prompt blocked by hook")
+      }
+      if (hookExit.value.systemMessage) {
+        yield* Effect.logWarning("hooks.session.prompt", { systemMessage: hookExit.value.systemMessage })
+      }
+      return hookExit.value.additionalContext
+    })
+
     const prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error> = Effect.fn(
       "SessionPrompt.prompt",
     )(function* (input: PromptInput) {
-      // UserPromptSubmit hook runs before admission. A blocking hook aborts
-      // the turn with a hook error (fail closed — never silently continue).
-      const maybePromptHooks = yield* Effect.serviceOption(HooksRunner.Service)
-      if (Option.isSome(maybePromptHooks)) {
-        const text = input.parts
-          .filter((part) => part.type === "text")
-          .map((part) => part.text)
-          .join("\n")
-        const hookExit = yield* maybePromptHooks.value
-          .runSessionPrompt({ sessionID: input.sessionID, prompt: text })
-          .pipe(Effect.exit)
-        if (Exit.isFailure(hookExit)) {
-          const cause = Cause.squash(hookExit.cause)
-          throw cause instanceof HooksRunner.HookDeniedError
-            ? cause
-            : new HooksRunner.HookDeniedError(cause instanceof Error ? cause.message : "Prompt blocked by hook")
-        }
-        if (Exit.isSuccess(hookExit)) {
-          if (hookExit.value.systemMessage) {
-            yield* Effect.logWarning("hooks.session.prompt", { systemMessage: hookExit.value.systemMessage })
-          }
-          // Admitted prompt context is stored for system-prompt injection.
-          if (hookExit.value.additionalContext) {
-            const maybeStore = yield* Effect.serviceOption(HooksContext.Service)
-            if (Option.isSome(maybeStore)) {
-              yield* maybeStore.value.append(input.sessionID, hookExit.value.additionalContext)
-            }
-          }
-        }
-      }
+      const promptContext = yield* runPromptSubmitHook(input)
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       yield* revert.cleanup(session)
-      const message = yield* createUserMessage(input)
+      // UserPromptSubmit context belongs to this prompt only: it rides on the
+      // admitted user message as a synthetic part instead of the sticky
+      // per-session system context.
+      const message = yield* createUserMessage(
+        promptContext
+          ? { ...input, parts: [...input.parts, { type: "text", synthetic: true, text: promptContext }] }
+          : input,
+      )
       yield* sessions.touch(input.sessionID)
 
       const permissions: PermissionV1.Rule[] = []

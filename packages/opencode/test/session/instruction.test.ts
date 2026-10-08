@@ -275,6 +275,22 @@ describe("Instruction.system", () => {
   )
 })
 
+describe("Instruction.system discovery", () => {
+  it.live("picks up instruction and memory files created after the first turn", () =>
+    withFiles({ "src/file.ts": "const x = 1" }, (dir) =>
+      Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        expect(yield* svc.system()).toEqual([])
+
+        yield* writeFiles(dir, { "AGENTS.md": "# Late Instructions", "MEMORY.md": "# Late Memory" })
+        const rules = yield* svc.system()
+        expect(rules).toContain(`Instructions from: ${path.join(dir, "AGENTS.md")}\n# Late Instructions`)
+        expect(rules).toContain(`Instructions from: ${path.join(dir, "MEMORY.md")}\n# Late Memory`)
+      }),
+    ),
+  )
+})
+
 describe("Instruction.system memories", () => {
   it.live("returns empty when memory disabled", () =>
     withFiles({ "AGENTS.md": "# Root" }, (dir) =>

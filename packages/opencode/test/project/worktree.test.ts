@@ -108,6 +108,24 @@ describe("Worktree", () => {
     )
 
     it.instance(
+      "ignores the worktree root via info/exclude, not the tracked .gitignore",
+      () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const fs = yield* FSUtil.Service
+          const svc = yield* Worktree.Service
+          yield* svc.makeWorktreeInfo()
+          yield* svc.makeWorktreeInfo()
+
+          expect(yield* fs.existsSafe(path.join(test.directory, ".gitignore"))).toBe(false)
+          const exclude = (yield* fs.readFileStringSafe(path.join(test.directory, ".git", "info", "exclude"))) ?? ""
+          expect(exclude.split("\n").filter((line) => line === ".opencode/worktrees/")).toHaveLength(1)
+          expect(yield* git(test.directory, ["check-ignore", ".opencode/worktrees/x"])).toContain(".opencode/worktrees/x")
+        }),
+      { git: true },
+    )
+
+    it.instance(
       "slugifies the provided name",
       () =>
         Effect.gen(function* () {
@@ -290,6 +308,50 @@ describe("Worktree", () => {
           yield* svc.remove({ directory: target })
         }),
       { git: true },
+    )
+  })
+
+  describe("retention", () => {
+    wintest(
+      "only retires clean, merged worktrees Flynncode created",
+      () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const fs = yield* FSUtil.Service
+          const svc = yield* Worktree.Service
+          const root = path.join(test.directory, ".opencode", "worktrees")
+          const outside = path.join(path.dirname(test.directory), `${path.basename(test.directory)}-manual`)
+          yield* fs.ensureDir(root)
+
+          // Hand-made worktrees: outside the location, and inside it on a non-prefixed branch.
+          yield* git(test.directory, ["worktree", "add", "-b", "manual-outside", outside])
+          yield* git(test.directory, ["worktree", "add", "-b", "manual-inside", path.join(root, "manual")])
+          // Flynncode-shaped worktrees that hold work.
+          yield* git(test.directory, ["worktree", "add", "-b", "opencode/dirty", path.join(root, "dirty")])
+          yield* fs.writeWithDirs(path.join(root, "dirty", "wip.txt"), "uncommitted")
+          yield* git(test.directory, ["worktree", "add", "-b", "opencode/ahead", path.join(root, "ahead")])
+          yield* git(path.join(root, "ahead"), ["commit", "--allow-empty", "-m", "unmerged work"])
+          // The only one retention may remove.
+          yield* git(test.directory, ["worktree", "add", "-b", "opencode/clean", path.join(root, "clean")])
+
+          const ready = yield* waitReady().pipe(Effect.forkScoped)
+          const info = yield* svc.create({ name: "fresh" })
+          yield* Fiber.join(ready)
+
+          const names = (yield* svc.list()).map((item) => item.branch)
+          expect(names).toContain("manual-outside")
+          expect(names).toContain("manual-inside")
+          expect(names).toContain("opencode/dirty")
+          expect(names).toContain("opencode/ahead")
+          expect(names).toContain(info.branch)
+          expect(names).not.toContain("opencode/clean")
+          expect(yield* fs.existsSafe(path.join(root, "dirty", "wip.txt"))).toBe(true)
+          const branches = yield* git(test.directory, ["branch", "--list", "opencode/ahead"])
+          expect(branches).toContain("opencode/ahead")
+
+          yield* svc.remove({ directory: outside })
+        }),
+      { git: true, config: { worktree: { keep: 0 } } },
     )
   })
 

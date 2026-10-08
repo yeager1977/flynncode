@@ -33,13 +33,23 @@ export function deriveSubagentSessionPermission(input: {
  * rules allow more.
  *
  * Only `restricted` confines: deny file access outside the worktree, then
- * re-allow the worktree itself. Unknown profiles degrade to no extra rules
- * instead of failing, matching tolerant config behavior elsewhere.
+ * re-allow the worktree itself and the agent's own external_directory
+ * allow-list (Truncate output, skill/reference dirs), which the trailing deny
+ * would otherwise shadow. Unknown profiles degrade to no extra rules instead
+ * of failing, matching tolerant config behavior elsewhere.
  */
-export function sandboxRules(input: { sandbox: string; directory: string }): PermissionV1.Ruleset {
+export function sandboxRules(input: {
+  sandbox: string
+  directory: string
+  agentPermission?: PermissionV1.Ruleset
+}): PermissionV1.Ruleset {
   if (input.sandbox !== "restricted") return []
+  const allowList = (input.agentPermission ?? []).filter(
+    (rule) => rule.permission === "external_directory" && rule.action === "allow" && rule.pattern !== "*",
+  )
   return [
     { permission: "external_directory" as const, pattern: "*" as const, action: "deny" as const },
+    ...allowList,
     { permission: "external_directory" as const, pattern: `${input.directory}/*`, action: "allow" as const },
   ]
 }

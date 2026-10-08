@@ -75,12 +75,43 @@ export const layer = (overrides: Partial<Info> = {}) =>
     }),
   ).pipe(Layer.provide(emptyConfigLayer))
 
-export const node = LayerNode.make({ service: Service, layer: Service.layer.pipe(Layer.orDie), deps: [] })
+const BYPASS_HOOK_TRUST_ENV = "FLYNNCODE_BYPASS_HOOK_TRUST"
 
-// Applies `--dangerously-bypass-hook-trust` for one invocation by setting the
-// env flag before any layer reads RuntimeFlags. Call at CLI handler start.
+// `--dangerously-bypass-hook-trust` lives in process memory only. Putting it in
+// process.env would hand the bypass to every hook command, shell tool and
+// nested flynncode the session spawns.
+let cliBypassHookTrust = false
+
+export const node = LayerNode.make({
+  service: Service,
+  layer: Layer.effect(
+    Service,
+    Effect.gen(function* () {
+      const flags = yield* Service
+      return Service.of({ ...flags, bypassHookTrust: flags.bypassHookTrust || cliBypassHookTrust })
+    }),
+  ).pipe(Layer.provide(Service.layer), Layer.orDie),
+  deps: [],
+})
+
+// Applies `--dangerously-bypass-hook-trust` for one invocation. Must run before
+// the runtime builds RuntimeFlags (HooksExecutor reads it at construction).
 export function applyDangerouslyBypassHookTrust(args: { "dangerously-bypass-hook-trust"?: boolean }) {
-  if (args["dangerously-bypass-hook-trust"] === true) process.env["FLYNNCODE_BYPASS_HOOK_TRUST"] = "1"
+  if (args["dangerously-bypass-hook-trust"] === true) cliBypassHookTrust = true
+}
+
+// Env entries handing the CLI bypass to a worker thread that builds its own runtime.
+export function bypassHookTrustWorkerEnv(): Record<string, string> {
+  return cliBypassHookTrust ? { [BYPASS_HOOK_TRUST_ENV]: "1" } : {}
+}
+
+// Worker side of the hand-off: adopt the bypass in memory and drop it from
+// the environment so processes the worker spawns do not inherit it.
+export function adoptBypassHookTrustEnv() {
+  const value = process.env[BYPASS_HOOK_TRUST_ENV]
+  if (value === undefined) return
+  delete process.env[BYPASS_HOOK_TRUST_ENV]
+  if (value === "1" || value.toLowerCase() === "true") cliBypassHookTrust = true
 }
 
 export * as RuntimeFlags from "./runtime-flags"

@@ -40,19 +40,21 @@ const layer = Layer.effect(
 
     const set = Effect.fn("SessionStatus.set")(function* (sessionID: SessionID, status: Info) {
       const data = yield* InstanceState.get(state)
+      // Update the map before anything can yield, so a busy status set while
+      // a hook runs is never overwritten by this idle transition.
+      if (status.type === "idle") data.delete(sessionID)
+      if (status.type !== "idle") data.set(sessionID, status)
       yield* events.publish(Event.Status, { sessionID, status })
-      if (status.type === "idle") {
-        yield* events.publish(Event.Idle, { sessionID })
-        // Observe-only Stop hook on idle transition; advisory, never blocks.
-        // Returned context is stored for system-prompt injection on later turns.
-        const maybeHooks = yield* Effect.serviceOption(HooksRunner.Service)
-        if (Option.isSome(maybeHooks)) {
-          yield* HooksContext.observeAndStore("hooks.session.idle", sessionID, maybeHooks.value.runIdle({ sessionID }))
-        }
-        data.delete(sessionID)
-        return
+      if (status.type !== "idle") return
+      yield* events.publish(Event.Idle, { sessionID })
+      // Observe-only Stop hook on idle transition: detached so it never delays
+      // the turn, and report-only so its context does not accumulate.
+      const maybeHooks = yield* Effect.serviceOption(HooksRunner.Service)
+      if (Option.isSome(maybeHooks)) {
+        yield* HooksContext.observe("hooks.session.idle", maybeHooks.value.runIdle({ sessionID })).pipe(
+          Effect.forkDetach,
+        )
       }
-      data.set(sessionID, status)
     })
 
     return Service.of({ get, list, set })

@@ -8,7 +8,7 @@ import { InstanceStore } from "../../src/project/instance-store"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { SessionID } from "../../src/session/schema"
-import { testEffect } from "../lib/effect"
+import { pollWithTimeout, testEffect } from "../lib/effect"
 
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
 const env = AppNodeBuilder.build(
@@ -71,6 +71,28 @@ it.instance("accept-edits auto-resolves edit but prompts bash", () =>
       }),
     )
     expect((yield* permission.list()).length).toBe(1)
+    yield* Fiber.interrupt(fiber)
+  }),
+)
+
+it.instance("auto approval still prompts for archive", () =>
+  Effect.gen(function* () {
+    const permission = yield* Permission.Service
+    const fiber = yield* permission
+      .ask({
+        sessionID: SessionID.make("session_test"),
+        permission: "archive",
+        patterns: ["ses_other"],
+        metadata: {},
+        always: [],
+        ruleset: [{ permission: "archive", pattern: "*", action: "ask" }],
+        approval: "auto",
+      })
+      .pipe(Effect.forkScoped)
+    yield* pollWithTimeout(
+      permission.list().pipe(Effect.map((pending) => (pending.length === 1 ? true : undefined))),
+      "archive never prompted",
+    )
     yield* Fiber.interrupt(fiber)
   }),
 )

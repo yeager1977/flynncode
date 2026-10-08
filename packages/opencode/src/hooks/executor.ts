@@ -148,22 +148,39 @@ export const node = LayerNode.make({
       const config = yield* Config.Service
       const trust = yield* HooksTrust.Service
       const flags = yield* RuntimeFlags.Service
-      const slots = yield* Semaphore.make(ASYNC_CONCURRENCY)
-      const running = new Map<string, Set<Fiber.Fiber<unknown, unknown>>>()
+      // Async hooks run detached, at most ASYNC_CONCURRENCY at a time per
+      // session; sync hooks are awaited inline and never queue behind them.
+      // A session's entry exists only while it has async hooks in flight.
+      const running = new Map<string, { slots: Semaphore.Semaphore; fibers: Set<Fiber.Fiber<unknown, unknown>> }>()
 
-      const track = (sessionID: string, fiber: Fiber.Fiber<unknown, unknown>) => {
-        const existing = running.get(sessionID) ?? new Set<Fiber.Fiber<unknown, unknown>>()
-        existing.add(fiber)
-        running.set(sessionID, existing)
+      const sessionSlots = (sessionID: string) => {
+        const existing = running.get(sessionID)
+        if (existing) return existing
+        const created = { slots: Semaphore.makeUnsafe(ASYNC_CONCURRENCY), fibers: new Set<Fiber.Fiber<unknown, unknown>>() }
+        running.set(sessionID, created)
+        return created
+      }
+
+      const track = (
+        sessionID: string,
+        entry: ReturnType<typeof sessionSlots>,
+        fiber: Fiber.Fiber<unknown, unknown>,
+      ) => {
+        entry.fibers.add(fiber)
+        if (!running.has(sessionID)) running.set(sessionID, entry)
+        // Finished fibers leave the map so it never grows past live work.
+        fiber.addObserver(() => {
+          entry.fibers.delete(fiber)
+          if (entry.fibers.size === 0 && running.get(sessionID) === entry) running.delete(sessionID)
+        })
       }
 
       const cancelSession = Effect.fn("HooksExecutor.cancelSession")(function* (sessionID: string) {
-        const fibers = running.get(sessionID)
-        if (!fibers) return
+        const entry = running.get(sessionID)
+        if (!entry) return
         running.delete(sessionID)
-        // Completed fibers are pruned; only live ones are interrupted.
         yield* Effect.forEach(
-          Array.from(fibers),
+          Array.from(entry.fibers),
           (fiber) =>
             Effect.sync(() => fiber.pollUnsafe()).pipe(
               Effect.flatMap((done) => (done === undefined ? Fiber.interrupt(fiber) : Effect.void)),
@@ -180,8 +197,10 @@ export const node = LayerNode.make({
         const managed = yield* Effect.serviceOption(HooksManaged.ManagedHooks)
         if (Option.isSome(managed) && managed.value.isManaged(def)) return true
         if (flags.bypassHookTrust) return true
+        // Trust is per project and covers referenced project scripts.
+        const bound = yield* HooksTrust.bindToInstance(def)
         // Fail closed: trust lookup failures read as untrusted.
-        return yield* trust.isTrusted(def).pipe(Effect.orElseSucceed(() => false))
+        return yield* trust.isTrusted(bound).pipe(Effect.orElseSucceed(() => false))
       })
 
       type Spawned = { code: number; stdout: string; stderr: string; timedOut: boolean }
@@ -488,11 +507,14 @@ export const node = LayerNode.make({
                   limit,
                 })
           if (isAsync) {
-            const fiber = yield* Effect.forkDetach(slots.withPermits(1)(guardCollect(collect, input.kind).pipe(Effect.ignore)))
-            track(input.sessionID, fiber)
+            const entry = sessionSlots(input.sessionID)
+            const fiber = yield* Effect.forkDetach(
+              entry.slots.withPermits(1)(guardCollect(collect, input.kind).pipe(Effect.ignore)),
+            )
+            track(input.sessionID, entry, fiber)
             continue
           }
-          const outcome = yield* slots.withPermits(1)(guardCollect(collect, input.kind))
+          const outcome = yield* guardCollect(collect, input.kind)
           collected.push(outcome)
         }
         return collected

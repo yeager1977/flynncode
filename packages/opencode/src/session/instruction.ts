@@ -107,14 +107,12 @@ const layer: Layer.Layer<
     })
 
     const state = yield* InstanceState.make(
-      Effect.fn("Instruction.state")(function* () {
-        return {
+      Effect.fn("Instruction.state")(() =>
+        Effect.succeed({
           // Track which instruction files have already been attached for a given assistant message.
           claims: new Map<MessageID, Set<string>>(),
-          // findUp walks are expensive; resolve instruction paths once per instance.
-          paths: yield* resolveBasePaths(),
-        }
-      }),
+        }),
+      ),
     )
 
     const relative = Effect.fnUntraced(function* (instruction: string) {
@@ -150,8 +148,10 @@ const layer: Layer.Layer<
 
     const systemPaths = Effect.fn("Instruction.systemPaths")(function* () {
       const config = yield* cfg.get()
-      const s = yield* InstanceState.get(state)
-      const paths = new Set(s.paths)
+      // Re-resolve every turn: the walk is a handful of stat calls between the
+      // directory and the worktree root, and caching it for the instance's
+      // life missed AGENTS.md/CLAUDE.md/MEMORY.md files created later.
+      const paths = yield* resolveBasePaths()
 
       if (config.instructions) {
         for (const raw of config.instructions) {

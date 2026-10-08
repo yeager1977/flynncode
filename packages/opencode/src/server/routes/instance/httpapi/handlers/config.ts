@@ -63,13 +63,23 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
       )
     })
 
-    const hooksEntries = Effect.fn("ConfigHttpApi.hooksEntries")(function* () {
+    // Configured hooks keyed by their project-bound trust identity, the same
+    // identity the executor checks before running a hook.
+    const boundHooks = Effect.fn("ConfigHttpApi.boundHooks")(function* () {
       const cfg = yield* configSvc.get()
+      return yield* Effect.forEach(enumerateHooks(cfg.hooks), (item) =>
+        HooksTrust.bindToInstance(item.def).pipe(
+          Effect.map((bound) => ({ ...item, bound, hash: HooksTrust.hashDef(bound) })),
+        ),
+      )
+    })
+
+    const hooksEntries = Effect.fn("ConfigHttpApi.hooksEntries")(function* () {
       const stored = yield* trustSvc.list()
       const byHash = new Map(stored.map((entry) => [entry.hash, entry.trustedAt]))
       const maybeManaged = yield* Effect.serviceOption(HooksManaged.ManagedHooks)
       return {
-        entries: enumerateHooks(cfg.hooks).map((item) => {
+        entries: (yield* boundHooks()).map((item) => {
           const managed = Option.isSome(maybeManaged) && maybeManaged.value.isManaged(item.def)
           const trustedAt = byHash.get(item.hash)
           return {
@@ -93,10 +103,9 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
     })
 
     const hooksTrustOne = Effect.fn("ConfigHttpApi.hooksTrustOne")(function* (ctx: { payload: { hash: string } }) {
-      const cfg = yield* configSvc.get()
-      const found = enumerateHooks(cfg.hooks).find((item) => item.hash === ctx.payload.hash)
+      const found = (yield* boundHooks()).find((item) => item.hash === ctx.payload.hash)
       if (!found) return yield* Effect.fail(new HttpApiError.BadRequest({}))
-      yield* trustSvc.trust(found.def)
+      yield* trustSvc.trust(found.bound)
       const listed = yield* hooksEntries()
       const entry = listed.entries.find((item) => item.hash === ctx.payload.hash)
       if (!entry) return yield* Effect.fail(new HttpApiError.BadRequest({}))
@@ -104,8 +113,7 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
     })
 
     const hooksRevoke = Effect.fn("ConfigHttpApi.hooksRevoke")(function* (ctx: { payload: { hash: string } }) {
-      const cfg = yield* configSvc.get()
-      const found = enumerateHooks(cfg.hooks).find((item) => item.hash === ctx.payload.hash)
+      const found = (yield* boundHooks()).find((item) => item.hash === ctx.payload.hash)
       if (!found) return yield* Effect.fail(new HttpApiError.BadRequest({}))
       const listed = yield* hooksEntries()
       // Managed hooks are trusted by policy and cannot be disabled.

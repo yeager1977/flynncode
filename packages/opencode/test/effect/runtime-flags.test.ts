@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import path from "path"
 import { ConfigProvider, Effect, Layer } from "effect"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
@@ -389,17 +390,47 @@ describe("RuntimeFlags", () => {
   )
 })
 
+// The CLI bypass is process-global state, so each case runs in its own
+// subprocess instead of leaking into other tests.
+async function probeBypass(script: string, env: Record<string, string> = {}) {
+  const base = Object.fromEntries(
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined && entry[0] !== "FLYNNCODE_BYPASS_HOOK_TRUST",
+    ),
+  )
+  const proc = Bun.spawn(
+    [
+      process.execPath,
+      "-e",
+      [
+        'import { Effect } from "effect"',
+        'import { LayerNode } from "@opencode-ai/core/effect/layer-node"',
+        'import { RuntimeFlags } from "@/effect/runtime-flags"',
+        script,
+        "const flags = await Effect.runPromise(Effect.gen(function* () { return yield* RuntimeFlags.Service }).pipe(Effect.provide(LayerNode.compile(RuntimeFlags.node))))",
+        "console.log(JSON.stringify({ bypass: flags.bypassHookTrust, env: process.env.FLYNNCODE_BYPASS_HOOK_TRUST ?? null, worker: RuntimeFlags.bypassHookTrustWorkerEnv() }))",
+      ].join("\n"),
+    ],
+    { cwd: path.join(import.meta.dir, "../.."), env: { ...base, ...env }, stdout: "pipe", stderr: "pipe" },
+  )
+  const out = await new Response(proc.stdout).text()
+  await proc.exited
+  return JSON.parse(out.trim().split("\n").at(-1) ?? "{}")
+}
+
 describe("applyDangerouslyBypassHookTrust", () => {
-  test("sets the bypass env flag for one invocation", () => {
-    delete process.env["FLYNNCODE_BYPASS_HOOK_TRUST"]
-    RuntimeFlags.applyDangerouslyBypassHookTrust({ "dangerously-bypass-hook-trust": true })
-    expect(process.env["FLYNNCODE_BYPASS_HOOK_TRUST"]).toBe("1")
-    delete process.env["FLYNNCODE_BYPASS_HOOK_TRUST"]
+  test("enables the bypass in the runtime without exporting it to child processes", async () => {
+    const result = await probeBypass('RuntimeFlags.applyDangerouslyBypassHookTrust({ "dangerously-bypass-hook-trust": true })')
+    expect(result).toEqual({ bypass: true, env: null, worker: { FLYNNCODE_BYPASS_HOOK_TRUST: "1" } })
   })
 
-  test("leaves the env unset when the flag is absent", () => {
-    delete process.env["FLYNNCODE_BYPASS_HOOK_TRUST"]
-    RuntimeFlags.applyDangerouslyBypassHookTrust({})
-    expect(process.env["FLYNNCODE_BYPASS_HOOK_TRUST"]).toBeUndefined()
+  test("leaves the bypass off when the flag is absent", async () => {
+    const result = await probeBypass("RuntimeFlags.applyDangerouslyBypassHookTrust({})")
+    expect(result).toEqual({ bypass: false, env: null, worker: {} })
+  })
+
+  test("a worker adopts the handed-over bypass and strips it from its env", async () => {
+    const result = await probeBypass("RuntimeFlags.adoptBypassHookTrustEnv()", { FLYNNCODE_BYPASS_HOOK_TRUST: "1" })
+    expect(result).toEqual({ bypass: true, env: null, worker: { FLYNNCODE_BYPASS_HOOK_TRUST: "1" } })
   })
 })

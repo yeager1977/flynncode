@@ -3,11 +3,15 @@ import { InstanceState } from "@/effect/instance-state"
 import { Context, Effect, Exit, Layer, Option } from "effect"
 import type { HooksRunner } from "@/hooks/runner"
 
-// Per-session hook context: observe hooks return additionalContext; call
-// sites store it here via observeAndStore and the prompt loop injects it into
-// the assembled system prompt (the shared seam). Entries dedupe by equality
-// and the per-session list is capped to bound growth; session removal clears
-// the entry. Store absence (tests, minimal graphs) degrades to report-only.
+// Per-session sticky hook context: only session-scoped events (SessionStart,
+// SubagentStart for the child session, PostCompact) store additionalContext
+// here via observeAndStore, and the prompt loop injects it into every
+// assembled system prompt (the shared seam). Per-turn events must not store:
+// UserPromptSubmit context rides on its own user message, PreCompact context
+// feeds that compaction, and Stop/Interrupt/SubagentStop are report-only via
+// observe. Entries dedupe by equality and the per-session list is capped to
+// bound growth; session removal clears the entry. Store absence (tests,
+// minimal graphs) degrades to report-only.
 
 export const MAX_ENTRIES = 100
 
@@ -54,20 +58,28 @@ export function assembleSystem(base: Array<string>, hookContext: Array<string>) 
   return [...base, ...hookContext]
 }
 
-// Report hook output (systemMessage warnings) and store additionalContext for
-// later system-prompt injection. Observe failures stay advisory.
+// Report hook output (systemMessage warnings) without storing anything.
+// Observe failures stay advisory.
+export function observe(label: string, self: Effect.Effect<HooksRunner.SessionObserve | void, unknown, never>) {
+  return Effect.gen(function* () {
+    const exit = yield* self.pipe(Effect.exit)
+    if (Exit.isFailure(exit)) return undefined
+    const out = exit.value
+    if (!out || typeof out !== "object") return undefined
+    if (out.systemMessage) yield* Effect.logWarning(label, { systemMessage: out.systemMessage })
+    return out
+  })
+}
+
+// Report hook output and store additionalContext as sticky session context.
 export function observeAndStore(
   label: string,
   sessionID: string,
   self: Effect.Effect<HooksRunner.SessionObserve | void, unknown, never>,
 ) {
   return Effect.gen(function* () {
-    const exit = yield* self.pipe(Effect.exit)
-    if (Exit.isFailure(exit)) return
-    const out = exit.value
-    if (!out || typeof out !== "object") return
-    if (out.systemMessage) yield* Effect.logWarning(label, { systemMessage: out.systemMessage })
-    if (!out.additionalContext) return
+    const out = yield* observe(label, self)
+    if (!out?.additionalContext) return
     const maybeStore = yield* Effect.serviceOption(Service)
     if (Option.isSome(maybeStore)) yield* maybeStore.value.append(sessionID, out.additionalContext)
   })

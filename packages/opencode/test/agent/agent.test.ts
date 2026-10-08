@@ -63,7 +63,18 @@ it.instance("build agent has correct default properties", () =>
     expect(build?.native).toBe(true)
     expect(evalPerm(build, "edit")).toBe("allow")
     expect(evalPerm(build, "bash")).toBe("allow")
+    expect(evalPerm(build, "archive")).toBe("ask")
   }),
+)
+
+it.instance(
+  "an explicit archive allow in config still wins over the ask default",
+  () =>
+    Effect.gen(function* () {
+      const build = yield* load((svc) => svc.get("build"))
+      expect(evalPerm(build, "archive")).toBe("allow")
+    }),
+  { config: { permission: { archive: "allow" } } },
 )
 
 it.instance("plan agent denies edits except .opencode/plans/*", () =>

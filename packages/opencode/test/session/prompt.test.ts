@@ -51,6 +51,11 @@ import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import { Format } from "../../src/format"
 import { TestInstance } from "../fixture/fixture"
+import { InstanceStore } from "../../src/project/instance-store"
+import { HooksRunner } from "../../src/hooks/runner"
+import { testLayerWithHooks } from "../lib/hooks"
+import { HooksContext } from "../../src/hooks/context"
+import { InstanceBootstrap } from "../../src/project/bootstrap"
 import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
 import { reply, TestLLMServer } from "../lib/llm-server"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -214,6 +219,7 @@ function makePrompt(input?: { mcpInstructions?: MCP.ServerInstructions[]; proces
     [LSP.node, lsp],
     [MCP.node, makeMcp(input?.mcpInstructions)],
     [RuntimeFlags.node, runtimeFlags],
+    [InstanceStore.bootstrapNode, InstanceBootstrap.node],
   ] as const
   if (input?.processor === "blocking") {
     return LayerNode.compile(promptRoot, [...replacements, [SessionProcessor.node, blockingProcessor]])
@@ -228,6 +234,7 @@ function makeHttp(input?: { mcpInstructions?: MCP.ServerInstructions[]; processo
     [LSP.node, lsp],
     [MCP.node, makeMcp(input?.mcpInstructions)],
     [RuntimeFlags.node, runtimeFlags],
+    [InstanceStore.bootstrapNode, InstanceBootstrap.node],
   ] as const
   if (input?.processor === "blocking") {
     return LayerNode.compile(root, [...replacements, [SessionProcessor.node, blockingProcessor]])
@@ -240,6 +247,25 @@ function makeHttpNoLLMServer(input?: { mcpInstructions?: MCP.ServerInstructions[
 }
 
 const it = testEffect(makeHttp())
+const withPromptHook = testEffect(
+  LayerNode.compile(LayerNode.group([promptRoot, HooksContext.node]), [
+    [SessionSummary.node, summary],
+    [LSP.node, lsp],
+    [MCP.node, makeMcp()],
+    [RuntimeFlags.node, runtimeFlags],
+    [InstanceStore.bootstrapNode, InstanceBootstrap.node],
+    [
+      HooksRunner.node,
+      testLayerWithHooks([
+        {
+          "session.prompt": async (_input, output) => {
+            output.additionalContext = "the release branch is frozen"
+          },
+        },
+      ]),
+    ],
+  ]),
+)
 const noLLMServer = testEffect(makeHttpNoLLMServer())
 const raceNoLLMServer = testEffect(makeHttpNoLLMServer({ processor: "blocking" }))
 const withMcpInstructions = testEffect(
@@ -625,6 +651,66 @@ it.instance("legacy prompt emits message events without session.next events", ()
     expect(seen).toContain(MessageV2.Event.Updated.type)
     expect(seen).toContain(MessageV2.Event.PartUpdated.type)
     expect(seen.filter((type) => type.startsWith("session.next."))).toEqual([])
+  }),
+)
+
+it.instance("steer and queue prompts without an agent keep the session's agent", () =>
+  Effect.gen(function* () {
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Steered" })
+    const model = { providerID: ProviderV2.ID.make("test"), modelID: ModelV2.ID.make("test-model") }
+
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "plan",
+      model,
+      noReply: true,
+      parts: [{ type: "text", text: "start" }],
+    })
+    const steer = yield* prompt.prompt({
+      sessionID: chat.id,
+      delivery: "steer",
+      noReply: true,
+      parts: [{ type: "text", text: "steer" }],
+    })
+    const queue = yield* prompt.prompt({
+      sessionID: chat.id,
+      delivery: "queue",
+      noReply: true,
+      parts: [{ type: "text", text: "queue" }],
+    })
+    const plain = yield* prompt.prompt({
+      sessionID: chat.id,
+      noReply: true,
+      parts: [{ type: "text", text: "plain" }],
+    })
+
+    expect(steer.info.role === "user" && steer.info.agent).toBe("plan")
+    expect(queue.info.role === "user" && queue.info.agent).toBe("plan")
+    expect(plain.info.role === "user" && plain.info.agent).toBe("build")
+  }),
+)
+
+withPromptHook.instance("UserPromptSubmit context rides on its own prompt, not the sticky store", () =>
+  Effect.gen(function* () {
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const store = yield* HooksContext.Service
+    const chat = yield* sessions.create({ title: "Hooked" })
+
+    const message = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      model: { providerID: ProviderV2.ID.make("test"), modelID: ModelV2.ID.make("test-model") },
+      noReply: true,
+      parts: [{ type: "text", text: "ship it" }],
+    })
+
+    expect(message.parts).toContainEqual(
+      expect.objectContaining({ type: "text", synthetic: true, text: "the release branch is frozen" }),
+    )
+    expect(yield* store.get(chat.id)).toEqual([])
   }),
 )
 

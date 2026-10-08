@@ -10,10 +10,16 @@ import { HooksRunner } from "@/hooks/runner"
 
 export const Event = PermissionV1.Event
 
+// The PermissionRequest hook sees the same tool name and arguments PreToolUse
+// saw. Callers without a tool call fall back to the permission name and its
+// patterns/metadata.
+export type AskInput = PermissionV1.AskInput & {
+  approval?: ConfigPermissionV1.ApprovalMode
+  hook?: { tool: string; args: Record<string, unknown> }
+}
+
 export interface Interface {
-  readonly ask: (
-    input: PermissionV1.AskInput & { approval?: ConfigPermissionV1.ApprovalMode },
-  ) => Effect.Effect<void, PermissionV1.Error>
+  readonly ask: (input: AskInput) => Effect.Effect<void, PermissionV1.Error>
   readonly reply: (input: PermissionV1.ReplyInput) => Effect.Effect<void, PermissionV1.NotFoundError>
   readonly list: () => Effect.Effect<ReadonlyArray<PermissionV1.Request>>
 }
@@ -42,6 +48,8 @@ export function evaluate(permission: string, pattern: string, ...rulesets: Permi
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Permission") {}
 
+const ALWAYS_ASK = ["computer_use", "archive"]
+
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -68,28 +76,10 @@ const layer = Layer.effect(
       }),
     )
 
-    const ask = Effect.fn("Permission.ask")(function* (
-      input: PermissionV1.AskInput & { approval?: ConfigPermissionV1.ApprovalMode },
-    ) {
+    const ask = Effect.fn("Permission.ask")(function* (input: AskInput) {
       const { approved, pending } = yield* InstanceState.get(state)
-      const { ruleset, approval: approvalRaw, ...request } = input
+      const { ruleset, approval: approvalRaw, hook, ...request } = input
       const approval = approvalRaw ?? "manual"
-
-      const verdict = yield* hooksRunner.runPermissionRequest({
-        sessionID: request.sessionID,
-        tool: request.permission,
-        callID: request.tool?.callID ?? request.id ?? "unknown",
-        args: { patterns: request.patterns, metadata: request.metadata },
-      })
-      // Fail closed: deny wins and throws DeniedError; allow short-circuits
-      // the prompt; undecided falls through to ruleset evaluation.
-      // updatedInput/interrupt fields on PermissionRequest are ignored (log and continue).
-      if (verdict.behavior === "deny") {
-        return yield* new PermissionV1.DeniedError({
-          ruleset: ruleset.filter((rule) => rule.permission === request.permission),
-        })
-      }
-      if (verdict.behavior === "allow") return
       let needsAsk = false
 
       for (const pattern of request.patterns) {
@@ -107,10 +97,28 @@ const layer = Layer.effect(
       if (!needsAsk) return
 
       const AUTO_EDIT_PERMISSIONS = ["edit", "read", "glob", "grep", "list"]
-      if (request.permission !== "computer_use") {
+      // computer_use and archive always reach the user, whatever the approval mode.
+      if (!ALWAYS_ASK.includes(request.permission)) {
         if (approval === "auto") return
         if (approval === "accept-edits" && AUTO_EDIT_PERMISSIONS.includes(request.permission)) return
       }
+
+      // The PermissionRequest hook only stands in for a prompt the user would
+      // actually see: config deny rules already failed above and allow/auto
+      // approvals never reach here. Deny wins; allow skips the prompt;
+      // updatedInput/interrupt fields are ignored.
+      const verdict = yield* hooksRunner.runPermissionRequest({
+        sessionID: request.sessionID,
+        tool: hook?.tool ?? request.permission,
+        callID: request.tool?.callID ?? request.id ?? "unknown",
+        args: hook?.args ?? { patterns: request.patterns, metadata: request.metadata },
+      })
+      if (verdict.behavior === "deny") {
+        return yield* new PermissionV1.DeniedError({
+          ruleset: ruleset.filter((rule) => rule.permission === request.permission),
+        })
+      }
+      if (verdict.behavior === "allow") return
 
       const id = request.id ?? PermissionV1.ID.ascending()
       const info: PermissionV1.Request = {

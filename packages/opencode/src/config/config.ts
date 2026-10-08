@@ -314,7 +314,22 @@ const layer = Layer.effect(
           action: diagnostic.message,
         }),
       )
-      return ConfigParse.schema(ConfigV1.Info, result.value, source)
+      const info = ConfigParse.schema(ConfigV1.Info, result.value, source)
+      // Policy literals on tool keys (`edit: "auto"`) decode but are dropped
+      // when rulesets are built; surface them instead of ignoring silently.
+      const misplaced = [
+        ...ConfigPermissionV1.misplacedPolicyKeys(info.permission).map((key) => `permission.${key}`),
+        ...Object.entries(info.agent ?? {}).flatMap(([name, agent]) =>
+          ConfigPermissionV1.misplacedPolicyKeys(agent?.permission).map((key) => `agent.${name}.permission.${key}`),
+        ),
+      ]
+      yield* Effect.forEach(misplaced, (path) =>
+        Effect.logWarning("permission rule uses a sandbox/approval mode instead of ask/allow/deny; ignoring it", {
+          source,
+          path,
+        }),
+      )
+      return info
     })
 
     const fetchRemoteJson = Effect.fnUntraced(function* <S extends Schema.Top>(

@@ -129,6 +129,9 @@ const layer = Layer.effect(
           question: "deny",
           plan_enter: "deny",
           plan_exit: "deny",
+          // Archiving hides a session from everyone, so it prompts unless the
+          // user explicitly allows it (approval modes never auto-approve it).
+          archive: "ask",
           // mirrors github.com/github/gitignore Node.gitignore pattern for .env files
           read: {
             "*": "allow",

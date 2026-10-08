@@ -23,6 +23,19 @@ test("full-access allows everything", () => {
   expect(Sandbox.isPathAllowed("/etc/passwd", "/repo", [], "full-access")).toBe(true)
 })
 
-test("resolveLevel defaults to workspace-write", () => {
-  expect(Sandbox.resolveLevel(undefined)).toBe("workspace-write")
+test("containment applies to writes only", () => {
+  expect(Sandbox.containsWrite({ permission: "edit", toolID: "edit" })).toBe(true)
+  for (const toolID of ["edit", "write", "apply_patch"]) {
+    expect(Sandbox.containsWrite({ permission: "external_directory", toolID })).toBe(true)
+  }
+  for (const toolID of ["read", "glob", "grep", "list", "lsp", "skill", "bash"]) {
+    expect(Sandbox.containsWrite({ permission: "external_directory", toolID })).toBe(false)
+  }
+  expect(Sandbox.containsWrite({ permission: "read", toolID: "read" })).toBe(false)
+})
+
+test("violation message names the blocked path and sandbox level", () => {
+  const error = new Sandbox.SandboxViolationError({ path: "/etc/hosts", level: "workspace-write" })
+  expect(error.message).toContain("/etc/hosts")
+  expect(error.message).toContain("workspace-write")
 })

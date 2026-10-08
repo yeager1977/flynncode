@@ -229,6 +229,42 @@ describe("hooks executor", () => {
     }),
   )
 
+  testEffect(
+    executorLayer(
+      {
+        SessionStart: [
+          {
+            hooks: Array.from({ length: 8 }, () => ({ type: "command", command: "sleep 5", async: true, timeout: 10 })),
+          },
+        ],
+        PreToolUse: [{ hooks: [{ type: "command", command: "true" }] }],
+      },
+      true,
+    ),
+  ).effect("sync hooks never queue behind a session's async hooks", () =>
+    Effect.gen(function* () {
+      const executor = yield* HooksExecutor.Service
+      yield* executor.runObserve({
+        event: "SessionStart",
+        matchName: "startup",
+        sessionID: "ses_1",
+        payload: { source: "startup" },
+      })
+      const start = Date.now()
+      const decision = yield* executor.runDecision({
+        event: "PreToolUse",
+        matchName: "Bash",
+        tool: "Bash",
+        sessionID: "ses_1",
+        callID: "c1",
+        args: { command: "ls" },
+      })
+      expect(decision).toEqual({ behavior: "undecided" })
+      expect(Date.now() - start).toBeLessThan(2_000)
+      yield* executor.cancelSession("ses_1")
+    }),
+  )
+
   testEffect(executorLayer({ PreToolUse: [{ hooks: [{ type: "command", command: "true" }] }] })).effect(
     "empty hook output expresses no opinion",
     () =>

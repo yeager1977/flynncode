@@ -3,7 +3,7 @@ import { Reviewer } from "../../src/permission/reviewer"
 
 describe("computer-use never self-approving", () => {
   test("reviewer defers computer_use", () => {
-    expect(Reviewer.review({ permission: "computer_use", patterns: ["com.example.gui", "click"] })).toBe("defer")
+    expect(Reviewer.review({ permission: "computer_use", patterns: ["com.example.gui", "click"], ruleset: [] })).toBe("defer")
   })
 
   test("ask source never short-circuits computer_use", async () => {

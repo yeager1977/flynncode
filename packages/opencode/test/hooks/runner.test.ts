@@ -3,13 +3,14 @@ import type { Hooks } from "@opencode-ai/plugin"
 import { Effect } from "effect"
 import { testEffect } from "../lib/effect"
 import { HooksRunner } from "../../src/hooks/runner"
+import { testLayer, testLayerWithHooks } from "../lib/hooks"
 
 test("hooks expose session lifecycle keys", () => {
   const keys: Array<keyof Hooks> = ["session.start", "session.end", "tool.permission"]
   expect(keys.length).toBe(3)
 })
 
-const it = testEffect(HooksRunner.testLayer)
+const it = testEffect(testLayer)
 
 describe("hooks runner", () => {
   it.effect("deny wins over allow", () =>
@@ -48,7 +49,7 @@ describe("hooks runner", () => {
 })
 
 const mergeIt = testEffect(
-  HooksRunner.testLayerWithHooks([
+  testLayerWithHooks([
     {
       "tool.permission": async (_input, output) => {
         output.decision = "allow"
@@ -83,7 +84,7 @@ describe("hooks runner decision aggregation", () => {
 })
 
 const denyMessageIt = testEffect(
-  HooksRunner.testLayerWithHooks([
+  testLayerWithHooks([
     {
       "tool.permission": async (_input, output) => {
         output.decision = "allow"
@@ -115,7 +116,7 @@ describe("hooks runner deny propagation", () => {
 })
 
 const fileDenyIt = testEffect(
-  HooksRunner.testLayerWithHooks([], {
+  testLayerWithHooks([], {
     runDecision: (): Effect.Effect<HooksRunner.PreToolUseDecision, never, never> =>
       Effect.succeed({ behavior: "deny", message: "file hook says no" }),
     runPostTool: (): Effect.Effect<HooksRunner.PostToolUseOutcome, never, never> =>
@@ -140,7 +141,7 @@ describe("hooks runner file executor", () => {
 })
 
 const fileRewriteIt = testEffect(
-  HooksRunner.testLayerWithHooks([], {
+  testLayerWithHooks([], {
     runDecision: (): Effect.Effect<HooksRunner.PreToolUseDecision, never, never> =>
       Effect.succeed({ behavior: "allow", updatedInput: { command: "ls --file" } }),
     runPostTool: (): Effect.Effect<HooksRunner.PostToolUseOutcome, never, never> =>
@@ -167,7 +168,7 @@ describe("hooks runner file rewrite", () => {
 const seenIdle: Array<unknown> = []
 const seenStart: Array<unknown> = []
 const reasonIt = testEffect(
-  HooksRunner.testLayerWithHooks([
+  testLayerWithHooks([
     {
       "session.idle": async (input) => {
         seenIdle.push(input)
@@ -206,6 +207,62 @@ describe("hooks runner event fidelity", () => {
         "clear",
         "compact",
       ])
+    }),
+  )
+})
+
+const mutateAfterIt = testEffect(
+  testLayerWithHooks([
+    {
+      "tool.execute.after": async (_input, output) => {
+        output.title = "renamed"
+        output.output = `BLOCKED: ${output.output} (redacted)`
+        output.metadata = { ...output.metadata, redacted: true }
+      },
+    },
+  ]),
+)
+
+describe("hooks runner tool.execute.after", () => {
+  mutateAfterIt.effect("plugin title/output/metadata mutations reach the tool result", () =>
+    Effect.gen(function* () {
+      const runner = yield* HooksRunner.Service
+      const result = yield* runner.runPostToolUse({
+        sessionID: "ses_1",
+        tool: "read",
+        callID: "c1",
+        args: {},
+        result: { title: "a.ts", output: "secret", metadata: { lines: 1 } },
+      })
+      expect(result).toEqual({
+        title: "renamed",
+        output: "BLOCKED: secret (redacted)",
+        metadata: { lines: 1, redacted: true },
+      })
+    }),
+  )
+})
+
+const fileBlockIt = testEffect(
+  testLayerWithHooks([], {
+    runDecision: () => Effect.succeed({ behavior: "undecided" as const }),
+    runPostTool: () => Effect.succeed({ blocked: true as const, reason: "file hook blocked" }),
+    runObserve: () => Effect.succeed({}),
+  }),
+)
+
+describe("hooks runner file post block", () => {
+  fileBlockIt.effect("a file hook block replaces the output only", () =>
+    Effect.gen(function* () {
+      const runner = yield* HooksRunner.Service
+      const result = yield* runner.runPostToolUse({
+        sessionID: "ses_1",
+        tool: "read",
+        callID: "c1",
+        args: {},
+        result: { title: "a.ts", output: "secret", metadata: { lines: 1 } },
+      })
+      expect(result).toEqual({ title: "a.ts", output: "file hook blocked", metadata: { lines: 1 } })
     }),
   )
 })

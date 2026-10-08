@@ -6,6 +6,7 @@ import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Permission } from "../../src/permission"
 import { HooksRunner } from "../../src/hooks/runner"
+import { testLayerWithHooks } from "../lib/hooks"
 import { InstanceBootstrap } from "../../src/project/bootstrap"
 import { InstanceStore } from "../../src/project/instance-store"
 import { TestInstance, tmpdirScoped } from "../fixture/fixture"
@@ -15,7 +16,7 @@ import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
-const passthroughHooks = HooksRunner.testLayerWithHooks([])
+const passthroughHooks = testLayerWithHooks([])
 const env = AppNodeBuilder.build(
   LayerNode.group([Permission.node, EventV2Bridge.node, CrossSpawnSpawner.node, InstanceStore.node]),
   [
@@ -1184,7 +1185,7 @@ const hookAllowEnv = AppNodeBuilder.build(
     [InstanceStore.bootstrapNode, noopBootstrap],
     [
       HooksRunner.node,
-      HooksRunner.testLayerWithHooks([
+      testLayerWithHooks([
         {
           "tool.permission": async (input, output) => {
             const patterns = input.args["patterns"]
@@ -1202,7 +1203,7 @@ const hookDenyEnv = AppNodeBuilder.build(
     [InstanceStore.bootstrapNode, noopBootstrap],
     [
       HooksRunner.node,
-      HooksRunner.testLayerWithHooks([
+      testLayerWithHooks([
         {
           "tool.permission": async (input, output) => {
             const patterns = input.args["patterns"]
@@ -1240,7 +1241,9 @@ hookAllowIt.instance(
 )
 
 hookDenyIt.instance(
-  "hook deny wins over allow ruleset",
+  // PermissionRequest only stands in for a prompt; PreToolUse is the hook
+  // that can veto calls the ruleset already allows.
+  "hook deny rejects a request that would prompt",
   () =>
     Effect.gen(function* () {
       const svc = yield* Permission.Service
@@ -1252,7 +1255,7 @@ hookDenyIt.instance(
           metadata: {},
           always: [],
           tool: { messageID: MessageID.make("msg_hook_deny"), callID: "call_hook_deny" },
-          ruleset: [{ permission: "bash", pattern: "*", action: "allow" }],
+          ruleset: [],
         })
         .pipe(Effect.exit)
       expect(Exit.isFailure(exit)).toBe(true)

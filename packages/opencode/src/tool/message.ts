@@ -1,6 +1,7 @@
 import DESCRIPTION from "./message.txt"
 import { SessionRunState } from "@/session/run-state"
 import { Session } from "@/session/session"
+import { InstanceStore } from "@/project/instance-store"
 import { Effect, Schema, Scope } from "effect"
 import { SessionID } from "../session/schema"
 import * as Tool from "./tool"
@@ -35,6 +36,7 @@ export const MessageTool = Tool.define(
   Effect.gen(function* () {
     const sessions = yield* Session.Service
     const runState = yield* SessionRunState.Service
+    const store = yield* InstanceStore.Service
     const scope = yield* Scope.Scope
 
     const run = Effect.fn("MessageTool.execute")(function* (
@@ -51,7 +53,12 @@ export const MessageTool = Tool.define(
       if (target.id === ctx.sessionID) {
         return yield* Effect.fail(new Error("Cannot send a message to your own session; reply directly instead"))
       }
-      const busy = yield* runState.assertNotBusy(target.id).pipe(
+      // Run state and the prompt live in the target's instance: a
+      // worktree-isolated subagent runs under its worktree directory.
+      const own = yield* sessions.get(ctx.sessionID)
+      const inTarget = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        target.directory === own.directory ? effect : store.provide({ directory: target.directory }, effect)
+      const busy = yield* inTarget(runState.assertNotBusy(target.id)).pipe(
         Effect.as(false),
         Effect.catch(() => Effect.succeed(true)),
       )
@@ -69,25 +76,25 @@ export const MessageTool = Tool.define(
         metadata: { sessionID: target.id, agent: target.agent ?? ctx.agent },
       })
 
-      yield* ops
-        .prompt({
+      yield* inTarget(
+        ops.prompt({
           sessionID: target.id,
           agent: target.agent ?? ctx.agent,
           parts: [
-              {
-                type: "text",
-                synthetic: true,
-                text: envelope({
-                  fromSession: ctx.sessionID,
-                  fromAgent: ctx.agent,
-                  correlation: ctx.messageID,
-                  message: params.message,
-                }),
-              },
-            ],
-            delivery,
-          })
-        .pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))
+            {
+              type: "text",
+              synthetic: true,
+              text: envelope({
+                fromSession: ctx.sessionID,
+                fromAgent: ctx.agent,
+                correlation: ctx.messageID,
+                message: params.message,
+              }),
+            },
+          ],
+          delivery,
+        }),
+      ).pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))
 
       return {
         title,

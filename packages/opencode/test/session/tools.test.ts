@@ -17,7 +17,7 @@ import { Tool } from "@/tool/tool"
 import { ToolRegistry } from "@/tool/registry"
 import { Truncate } from "@/tool/truncate"
 import { Plugin } from "@/plugin"
-import { HooksRunner } from "@/hooks/runner"
+import { testLayerWithHooks } from "../lib/hooks"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Effect, Cause, Exit, Layer, Schema } from "effect"
 import { testEffect } from "../lib/effect"
@@ -76,7 +76,7 @@ const fakeProject = Project.Service.of({
 
 const layer = Layer.mergeAll(
   Layer.succeed(Plugin.Service, fakePlugin),
-  HooksRunner.testLayerWithHooks([]),
+  testLayerWithHooks([]),
   Layer.succeed(Permission.Service, fakePermission),
   Layer.succeed(Config.Service, fakeConfig),
   Layer.succeed(Project.Service, fakeProject),
@@ -119,6 +119,25 @@ const layer = Layer.mergeAll(
                 return { title: "writer", metadata: {}, output: "done" }
               }),
           } satisfies Tool.Def,
+          ...["read", "write"].map(
+            (id) =>
+              ({
+                id,
+                description: `${id} outside the workspace`,
+                parameters: Schema.Struct({}),
+                jsonSchema: { type: "object", properties: {} },
+                execute: (_args, ctx) =>
+                  Effect.gen(function* () {
+                    yield* ctx.ask({
+                      permission: "external_directory",
+                      metadata: {},
+                      patterns: ["/etc/*"],
+                      always: [],
+                    })
+                    return { title: id, metadata: {}, output: "done" }
+                  }),
+              }) satisfies Tool.Def,
+          ),
         ]),
     }),
   ),
@@ -249,6 +268,44 @@ it.effect("sandbox gate checks every pattern, not just the first", () =>
       const err = Cause.squash(exit.cause)
       expect(err).toBeInstanceOf(Sandbox.SandboxViolationError)
       expect((err as Sandbox.SandboxViolationError).path).toBe("/etc/passwd")
+      expect((err as Error).message).toContain("/etc/passwd")
+    }
+  }),
+)
+
+it.effect("sandbox contains external_directory for write tools but not reads", () =>
+  Effect.gen(function* () {
+    const tools = yield* SessionTools.resolve({
+      agent,
+      model,
+      session: { id: sessionID, directory: "/repo", permission: [] } as unknown as Session.Info,
+      processor: {
+        message: { id: messageID, sessionID } as SessionV1.Assistant,
+        updateToolCall: () => Effect.succeed(undefined),
+        completeToolCall: () => Effect.void,
+      },
+      bypassAgentCheck: false,
+      messages: [],
+      promptOps: {} as never,
+    })
+    const call = (name: string) => {
+      const execute = tools[name]?.execute
+      if (!execute) throw new Error(`${name} tool is missing execute`)
+      return Effect.exit(
+        Effect.promise(() =>
+          execute({}, { toolCallId: callID, abortSignal: new AbortController().signal, messages: [] }),
+        ),
+      )
+    }
+
+    expect(Exit.isSuccess(yield* call("read"))).toBe(true)
+    const write = yield* call("write")
+    expect(Exit.isFailure(write)).toBe(true)
+    if (Exit.isFailure(write)) {
+      const err = Cause.squash(write.cause)
+      expect(err).toBeInstanceOf(Sandbox.SandboxViolationError)
+      expect((err as Error).message).toContain("/etc/*")
+      expect((err as Error).message).toContain("workspace-write")
     }
   }),
 )
