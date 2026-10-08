@@ -4,6 +4,7 @@ import { omoSettingsFallback } from "./omo-settings-fallback"
 import { providerEditFallback } from "./provider-edit-fallback"
 import { importSessionsFallback } from "./import-sessions-fallback"
 import { dispatchFallback } from "./dispatch-fallback"
+import { flynncodeFallback } from "./flynncode-fallback"
 import { routinesFallback } from "./routines-fallback"
 import { artifactsSidebarFallback } from "./artifacts-sidebar-fallback"
 import { sessionBulkFallback } from "./session-bulk-fallback"
@@ -130,6 +131,7 @@ export const dict = {
   ...providerEditFallback,
   ...importSessionsFallback,
   ...dispatchFallback,
+  ...flynncodeFallback,
   ...routinesFallback,
   ...artifactsSidebarFallback,
   ...sessionBulkFallback,
