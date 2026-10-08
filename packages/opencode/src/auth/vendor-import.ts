@@ -51,9 +51,22 @@ export function parseCodexAuth(raw: unknown): ImportedCredential | undefined {
     kind: "oauth",
     refresh: tokens.refresh_token,
     access: tokens.access_token,
-    expires: Date.now() + 3600_000,
+    // The access token is a JWT; trust its own expiry so an already-stale
+    // import refreshes on first use instead of failing for up to an hour.
+    expires: jwtExpiry(tokens.access_token) ?? Date.now() + 3600_000,
     ...(accountId ? { accountId } : {}),
   }
+}
+
+const JwtExpiry = Schema.fromJsonString(Schema.Struct({ exp: Schema.Number }))
+
+/** A JWT's `exp` claim as epoch milliseconds, or undefined when absent or not a JWT. */
+export function jwtExpiry(token: string) {
+  const parts = token.split(".")
+  if (parts.length !== 3) return undefined
+  const claims = Schema.decodeUnknownOption(JwtExpiry)(Buffer.from(parts[1] ?? "", "base64url").toString())
+  if (claims._tag === "None") return undefined
+  return claims.value.exp * 1000
 }
 
 export function readEnvCredential(
