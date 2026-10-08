@@ -11,7 +11,8 @@ export function HomeSessions(props: {
   return (
     <HomeSessionsView
       language={props.sessions.copy.language}
-      groups={props.sessions.data.filteredGroups}
+      groups={props.sessions.data.groups}
+      hasSessions={props.sessions.data.hasSessions}
       kindFilter={props.sessions.filter.value}
       onKindFilter={props.sessions.filter.set}
       showProjectName={props.sessions.session.showProjectName}
