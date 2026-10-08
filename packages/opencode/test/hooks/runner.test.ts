@@ -24,4 +24,25 @@ describe("hooks runner", () => {
       expect(decision.behavior).toBe("deny")
     }),
   )
+
+  it.effect("rewritten Bash args reach tool execute", () =>
+    Effect.gen(function* () {
+      const runner = yield* HooksRunner.Service
+      const decision = yield* runner.runPreToolUse({
+        sessionID: "ses_1",
+        tool: "Bash",
+        callID: "c1",
+        args: { command: "ls" },
+      })
+      expect(decision).toEqual({ behavior: "allow", updatedInput: { command: "ls --safe" } })
+    }),
+  )
+
+  it.effect("session start injects additional context", () =>
+    Effect.gen(function* () {
+      const runner = yield* HooksRunner.Service
+      const out = yield* runner.runSessionStart({ sessionID: "ses_1", source: "startup" })
+      expect(out.additionalContext).toContain("workspace conventions")
+    }),
+  )
 })

@@ -57,6 +57,7 @@ import { eq } from "drizzle-orm"
 import { SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
+import { HooksRunner } from "@/hooks/runner"
 import { LLMEvent } from "@opencode-ai/llm"
 
 // @ts-ignore
@@ -180,6 +181,7 @@ const layer = Layer.effect(
     const llm = yield* LLM.Service
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
+    const hooksRunner = yield* HooksRunner.Service
     const database = yield* Database.Service
     const { db } = database
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
@@ -1337,6 +1339,7 @@ const layer = Layer.effect(
               promptOps,
             }).pipe(
               Effect.provideService(Plugin.Service, plugin),
+              Effect.provideService(HooksRunner.Service, hooksRunner),
               Effect.provideService(Permission.Service, permission),
               Effect.provideService(Config.Service, config),
               Effect.provideService(Project.Service, project),
@@ -1752,6 +1755,7 @@ export const node = LayerNode.make({
     LLM.node,
     EventV2Bridge.node,
     RuntimeFlags.node,
+    HooksRunner.node,
     Database.node,
   ],
 })

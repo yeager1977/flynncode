@@ -17,6 +17,7 @@ import { Tool } from "@/tool/tool"
 import { ToolRegistry } from "@/tool/registry"
 import { Truncate } from "@/tool/truncate"
 import { Plugin } from "@/plugin"
+import { HooksRunner } from "@/hooks/runner"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Effect, Cause, Exit, Layer, Schema } from "effect"
 import { testEffect } from "../lib/effect"
@@ -75,6 +76,7 @@ const fakeProject = Project.Service.of({
 
 const layer = Layer.mergeAll(
   Layer.succeed(Plugin.Service, fakePlugin),
+  HooksRunner.testLayerWithHooks([]),
   Layer.succeed(Permission.Service, fakePermission),
   Layer.succeed(Config.Service, fakeConfig),
   Layer.succeed(Project.Service, fakeProject),

@@ -8,6 +8,8 @@ import { Account } from "@/account/account"
 import { Agent } from "@/agent/agent"
 import { Auth } from "@/auth"
 import { BackgroundJob } from "@/background/job"
+import { HooksRunner } from "@/hooks/runner"
+import { HooksTrust } from "@/hooks/trust"
 import { Command } from "@/command"
 import { Config } from "@/config/config"
 import { Workspace } from "@/control-plane/workspace"
@@ -240,6 +242,8 @@ const app = LayerNode.group([
   Question.node,
   Permission.node,
   PermissionSaved.node,
+  HooksTrust.node,
+  HooksRunner.node,
   Preview.node,
   Todo.node,
   Session.node,
