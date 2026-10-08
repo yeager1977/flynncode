@@ -75,6 +75,17 @@ describe("deriveSessionHistory", () => {
     expect(entries.map((entry) => entry.kind)).toEqual(["run", "approval"])
   })
 
+  test("does not throw when tool input is missing", () => {
+    const message = toolMessage("m4", "bash", {}, "completed", 10)
+    const part = message.parts[0]
+    if (part.type === "tool" && (part.state.status === "completed" || part.state.status === "error")) {
+      part.state.input = undefined as never
+    }
+    expect(() =>
+      deriveSessionHistory({ sessionID: "ses_1", messages: [message], diffs: [], stored: [] }),
+    ).not.toThrow()
+  })
+
   test("filters by text query across title, detail, and file", () => {
     const entries = deriveSessionHistory({
       sessionID: "ses_1",

@@ -31,6 +31,11 @@ function toolFile(input: unknown): string | undefined {
   return undefined
 }
 
+function askedPermission(input: unknown) {
+  if (typeof input !== "object" || input === null) return false
+  return (input as Record<string, unknown>).permissionAsked === true
+}
+
 function toolCommand(input: unknown): string {
   if (typeof input !== "object" || input === null) return ""
   const record = input as Record<string, unknown>
@@ -80,7 +85,7 @@ export function deriveSessionHistory(input: HistoryInput): HistoryEntry[] {
       // Question-dock permission prompts surface here as tool input/state
       // metadata, so they count as approvals in the timeline.
       const stateMetadata = (state.metadata ?? {}) as Record<string, unknown>
-      if (state.input.permissionAsked === true || stateMetadata.interrupted === true) {
+      if (askedPermission(state.input) || stateMetadata.interrupted === true) {
         entries.push({
           id: `approval-${message.info.id}-${part.callID}`,
           time,

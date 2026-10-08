@@ -164,21 +164,41 @@ export function SessionPage() {
   )
 }
 
+const COMPUTER_USE_STORE = "opencode.settings"
+const COMPUTER_USE_KEY = "computerUseAllowedApps"
+
+function parseAllowedApps(raw: string | null) {
+  if (!raw) return []
+  try {
+    const value = JSON.parse(raw) as unknown
+    return Array.isArray(value) && value.every((entry) => typeof entry === "string") ? value : []
+  } catch {
+    return []
+  }
+}
+
 function ComputerUsePanel() {
   const language = useLanguage()
   const [enabled, setEnabled] = createSignal(false)
   const [allowedApps, setAllowedApps] = createSignal<string[]>([])
   const [candidate, setCandidate] = createSignal("")
+  const persist = (next: string[]) => {
+    setAllowedApps(next)
+    void window.api?.storeSet?.(COMPUTER_USE_STORE, COMPUTER_USE_KEY, JSON.stringify(next))
+  }
+  void window.api?.storeGet?.(COMPUTER_USE_STORE, COMPUTER_USE_KEY).then((raw) => {
+    if (typeof raw === "string") setAllowedApps(parseAllowedApps(raw))
+  })
   const allowCurrent = () => {
     const id = candidate().trim()
     if (!id) return
-    setAllowedApps((prev) => (prev.includes(id) ? prev : [...prev, id]))
+    persist(allowedApps().includes(id) ? allowedApps() : [...allowedApps(), id])
     setCandidate("")
   }
-  const removeApp = (id: string) => setAllowedApps((prev) => prev.filter((app) => app !== id))
+  const removeApp = (id: string) => persist(allowedApps().filter((app) => app !== id))
   const stop = () => {
     setEnabled(false)
-    setAllowedApps([])
+    persist([])
     setCandidate("")
   }
   return (
@@ -225,9 +245,6 @@ function ComputerUsePanel() {
         <div>
           {language.t("computerUse.consent.title")} {language.t("computerUse.consent.allowOnce")}
         </div>
-        <Button variant="secondary" size="normal" onClick={() => void window.api?.capturePage?.()}>
-          {language.t("computerUse.screenshot")}
-        </Button>
         <Button variant="ghost" size="normal" onClick={stop}>
           {language.t("computerUse.stop")}
         </Button>

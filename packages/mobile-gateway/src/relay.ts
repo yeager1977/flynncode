@@ -1,3 +1,5 @@
+import { timingSafeEqual } from "node:crypto"
+
 export type RelayDigest = {
   originID: string
   items: Array<{ sessionID: string; directory: string | undefined; title: string; kind: "permission" | "question"; updated: number }>
@@ -22,6 +24,9 @@ export function createRelayStore(input?: { now?: () => number }) {
 }
 
 export function isRelayAuthorized(header: string | null, expected: string) {
-  if (!expected) return false
-  return header === `Bearer ${expected}`
+  if (!expected || !header) return false
+  const got = Buffer.from(header)
+  const want = Buffer.from(`Bearer ${expected}`)
+  if (got.length !== want.length) return false
+  return timingSafeEqual(got, want)
 }

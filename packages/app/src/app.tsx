@@ -276,6 +276,8 @@ declare global {
       setTitlebar?: (theme: { mode: "light" | "dark"; scheme?: "system" | "light" | "dark" }) => Promise<void>
       exportDebugLogs?: () => Promise<string>
       capturePage?: () => Promise<string | undefined>
+      storeGet?: (name: string, key: string) => Promise<string | null>
+      storeSet?: (name: string, key: string, value: string) => Promise<void>
     }
   }
 }

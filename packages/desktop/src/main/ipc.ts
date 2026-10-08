@@ -43,7 +43,10 @@ function isStringArray(value: unknown): value is string[] {
 function readComputerUseAllowedApps(): string[] {
   try {
     const value = getStore().get(COMPUTER_USE_ALLOWED_APPS_KEY)
-    return isStringArray(value) ? value : []
+    if (isStringArray(value)) return value
+    if (typeof value !== "string" || value === "") return []
+    const parsed = JSON.parse(value) as unknown
+    return isStringArray(parsed) ? parsed : []
   } catch {
     return []
   }

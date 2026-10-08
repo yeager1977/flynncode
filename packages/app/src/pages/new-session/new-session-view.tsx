@@ -102,9 +102,8 @@ function NewSessionKindSelector(props: {
 }) {
   const language = useLanguage()
   const sdk = useSDK()
-  // The empty state asserts on real data: list the selected project's
-  // knowledge folder and show it only when no markdown notes resolve.
-  // While loading (or with no project yet) only the hint shows.
+  // The empty state asserts on a successful listing only. A failed list
+  // must not claim the folder is empty. While loading, only the hint shows.
   const [notesEmpty] = createResource(
     () => (props.kind() === "knowledge" ? (props.worktree() ?? null) : null),
     async (root) => {
@@ -112,7 +111,7 @@ function NewSessionKindSelector(props: {
         const result = await sdk().api.file.list({ path: ".opencode/knowledge", location: { directory: root } })
         return knowledgeNotesEmpty([result.data.map((entry) => entry.path)])
       } catch {
-        return true
+        return false
       }
     },
   )
