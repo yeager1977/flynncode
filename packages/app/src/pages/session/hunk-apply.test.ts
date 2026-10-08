@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { hunkApply, reviewIndexActions, whenApplied } from "./hunk-apply"
+import { splitPatchToHunks } from "./split-patch"
 
 describe("reviewIndexActions", () => {
   test("shows stage and unstage only for the unstaged git scope", () => {
@@ -45,5 +46,27 @@ describe("whenApplied", () => {
       notified = true
     })).rejects.toThrow("not-clean")
     expect(notified).toBe(false)
+  })
+})
+
+describe("per-hunk apply wiring", () => {
+  test("each split hunk round-trips through hunkApply without a message revert", () => {
+    const patch = [
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -1 +1 @@",
+      "-a",
+      "+b",
+      "@@ -10 +10 @@",
+      "-c",
+      "+d",
+    ].join("\n")
+    const hunks = splitPatchToHunks(patch)
+    expect(hunks.length).toBe(2)
+    for (const hunk of hunks) {
+      const call = hunkApply({ patch: hunk, index: "stage" })
+      expect(call).toEqual({ patch: hunk, index: "stage" })
+      expect(JSON.stringify(call)).not.toContain("session.revert")
+    }
   })
 })

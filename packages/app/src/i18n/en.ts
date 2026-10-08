@@ -759,6 +759,7 @@ export const dict = {
   "session.review.revertHunk": "Revert hunk",
   "session.review.stageHunk": "Stage hunk",
   "session.review.unstageHunk": "Unstage hunk",
+  "session.review.hunk.label": "Hunk {{index}}",
   "session.review.markPreview": "Mark preview",
   "session.review.recheckPage": "Re-check page",
   "session.question.progress": "{{current}} of {{total}} questions",

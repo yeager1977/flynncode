@@ -1,5 +1,5 @@
 import { Button } from "@opencode-ai/ui/button"
-import { createMemo, createResource, createSignal, Show, type JSX } from "solid-js"
+import { createMemo, createResource, createSignal, For, Show, type JSX } from "solid-js"
 import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
 import type { FileDiffInfo } from "@opencode-ai/client/promise"
 import {
@@ -25,6 +25,7 @@ import type {
 import FileTreeV2 from "@/components/file-tree-v2"
 import { useLanguage } from "@/context/language"
 import { hunkApply, whenApplied } from "../hunk-apply"
+import { splitPatchToHunks } from "../split-patch"
 import { useSDK } from "@/context/sdk"
 import { showToast } from "@/utils/toast"
 import {
@@ -114,6 +115,11 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
     if (!item || !("patch" in item) || typeof item.patch !== "string" || item.patch.length === 0) return
     return item.patch
   }
+  const hunks = () => {
+    const value = patch()
+    if (!value) return []
+    return splitPatchToHunks(value)
+  }
   const applyHunk = (call: ReturnType<typeof hunkApply>) => {
     void whenApplied(sdk().client.vcs.apply(call), () => props.onApplied?.()).catch(() => {
       showToast({
@@ -122,20 +128,23 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
       })
     })
   }
-  const revertHunk = () => {
-    const value = patch()
-    if (!value) return
-    applyHunk(hunkApply({ patch: value, revert: true }))
+  const revertSingleHunk = (hunk: string) => {
+    applyHunk(hunkApply({ patch: hunk, revert: true }))
   }
-  const stageHunk = () => {
-    const value = patch()
-    if (!value) return
-    applyHunk(hunkApply({ patch: value, index: "stage" }))
+  const stageSingleHunk = (hunk: string) => {
+    applyHunk(hunkApply({ patch: hunk, index: "stage" }))
   }
-  const unstageHunk = () => {
-    const value = patch()
-    if (!value) return
-    applyHunk(hunkApply({ patch: value, index: "unstage" }))
+  const unstageSingleHunk = (hunk: string) => {
+    applyHunk(hunkApply({ patch: hunk, index: "unstage" }))
+  }
+  const revertHunks = () => {
+    for (const hunk of hunks()) revertSingleHunk(hunk)
+  }
+  const stageHunks = () => {
+    for (const hunk of hunks()) stageSingleHunk(hunk)
+  }
+  const unstageHunks = () => {
+    for (const hunk of hunks()) unstageSingleHunk(hunk)
   }
 
   const readFile = async (path: string) =>
@@ -162,15 +171,15 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
         <div class="flex items-center gap-2">
           {props.title}
           <Show when={props.indexActions && patch()}>
-            <Button size="small" variant="ghost" onClick={stageHunk}>
+            <Button size="small" variant="ghost" onClick={stageHunks}>
               {language.t("session.review.stageHunk")}
             </Button>
-            <Button size="small" variant="ghost" onClick={unstageHunk}>
+            <Button size="small" variant="ghost" onClick={unstageHunks}>
               {language.t("session.review.unstageHunk")}
             </Button>
           </Show>
           <Show when={patch()}>
-            <Button size="small" variant="ghost" onClick={revertHunk}>
+            <Button size="small" variant="ghost" onClick={revertHunks}>
               {language.t("session.review.revertHunk")}
             </Button>
           </Show>
@@ -195,6 +204,31 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
       onExpandModeChange={props.state.setExpandMode}
       hasDiffs={diffs().length > 0}
       preview={
+        <div class="flex h-full min-h-0 flex-col">
+        <Show when={hunks().length > 1}>
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
+            <For each={hunks()}>
+              {(hunk, index) => (
+                <div class="flex items-center gap-1">
+                  <span class="text-12-regular text-text-weak">
+                    {language.t("session.review.hunk.label", { index: index() + 1 })}
+                  </span>
+                  <Show when={props.indexActions}>
+                    <Button size="small" variant="ghost" onClick={() => stageSingleHunk(hunk)}>
+                      {language.t("session.review.stageHunk")}
+                    </Button>
+                    <Button size="small" variant="ghost" onClick={() => unstageSingleHunk(hunk)}>
+                      {language.t("session.review.unstageHunk")}
+                    </Button>
+                  </Show>
+                  <Button size="small" variant="ghost" onClick={() => revertSingleHunk(hunk)}>
+                    {language.t("session.review.revertHunk")}
+                  </Button>
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
         // Key on the file path, not the diff object identity, so refreshed diff data
         // updates the mounted preview instead of remounting the whole viewer.
         <Show when={activeDiff()} keyed>
@@ -223,6 +257,7 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
             </Show>
           )}
         </Show>
+        </div>
       }
     />
     <ReviewBrowser
