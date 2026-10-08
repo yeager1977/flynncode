@@ -77,6 +77,9 @@ export function SessionComposerRegion(props: {
                   controller.onResponseSubmit()
                   controller.state.decide(response)
                 }}
+                sandbox={controller.state.permissionSandbox()}
+                approvalMode={controller.state.permissionApprovalMode()}
+                onModeChange={controller.state.setPermissionApprovalMode}
               />
             </div>
           )}

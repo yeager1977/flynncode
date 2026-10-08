@@ -15,3 +15,10 @@ test("english dict carries sandbox and approval keys", async () => {
   expect(source).toContain("approval.mode.auto")
   expect(source).toContain("approval.sandboxBlocked.title")
 })
+
+test("composer region passes live sandbox and approval mode into the dock", async () => {
+  const source = await readFile(path.join(import.meta.dir, "session-composer-region.tsx"), "utf8")
+  expect(source).toContain("permissionSandbox()")
+  expect(source).toContain("permissionApprovalMode()")
+  expect(source).toContain("setPermissionApprovalMode")
+})
