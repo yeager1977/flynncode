@@ -45,6 +45,8 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { SessionMessage } from "@opencode-ai/schema/session-message"
 import { HooksRunner } from "@/hooks/runner"
+import { HooksContext } from "@/hooks/context"
+import { HooksExecutor } from "@/hooks/executor"
 
 const parentTitlePrefix = "New session - "
 const childTitlePrefix = "Child session - "
@@ -536,10 +538,12 @@ const layer: Layer.Layer<
 
       yield* events.publish(SessionV1.Event.Created, { sessionID: result.id, info: result })
       // Observe-only SessionStart hook; failures are advisory and never block creation.
+      // Returned context is stored for system-prompt injection on later turns.
       const maybeStartHooks = yield* Effect.serviceOption(HooksRunner.Service)
       if (Option.isSome(maybeStartHooks)) {
-        yield* HooksRunner.reportObserve(
+        yield* HooksContext.observeAndStore(
           "hooks.session.start",
+          result.id,
           maybeStartHooks.value.runSessionStart({ sessionID: result.id, source: "startup" }),
         )
       }
@@ -631,12 +635,18 @@ const layer: Layer.Layer<
 
         yield* events.publish(SessionV1.Event.Deleted, { sessionID, info: session })
         // SessionEnd is always synchronous with a 3s cap; output is advisory only.
+        // Stored hook context is cleared and background hook fibers are cancelled.
         const maybeEndHooks = yield* Effect.serviceOption(HooksRunner.Service)
         if (Option.isSome(maybeEndHooks) && hasInstance) {
-          yield* HooksRunner.reportObserve(
+          yield* HooksContext.observeAndStore(
             "hooks.session.end",
+            sessionID,
             maybeEndHooks.value.runSessionEnd({ sessionID }),
           ).pipe(Effect.timeout("3 seconds"), Effect.ignore)
+          const maybeStore = yield* Effect.serviceOption(HooksContext.Service)
+          if (Option.isSome(maybeStore)) yield* maybeStore.value.clear(sessionID)
+          const maybeExecutor = yield* Effect.serviceOption(HooksExecutor.Service)
+          if (Option.isSome(maybeExecutor)) yield* maybeExecutor.value.cancelSession(sessionID)
         }
         yield* events.remove(sessionID)
       } catch (error) {

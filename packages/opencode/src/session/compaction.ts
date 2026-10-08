@@ -12,9 +12,10 @@ import { Plugin } from "@/plugin"
 import { Config } from "@/config/config"
 import { NotFoundError } from "@/storage/storage"
 
-import { Effect, Layer, Context, Option } from "effect"
+import { Effect, Exit, Layer, Context, Option } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { HooksRunner } from "@/hooks/runner"
+import { HooksContext } from "@/hooks/context"
 import { isOverflow as overflow, usable } from "./overflow"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -371,16 +372,31 @@ const layer = Layer.effect(
         model,
       })
       // Allow plugins to inject context or replace compaction prompt.
+      // A pre-hook continue:false skips the auto-continue turn below.
       const maybeCompactHooks = yield* Effect.serviceOption(HooksRunner.Service)
+      let compactHalt = false
       if (Option.isSome(maybeCompactHooks)) {
-        yield* HooksRunner.reportObserve(
-          "hooks.session.compact",
-          maybeCompactHooks.value.runCompact({
+        const preExit = yield* maybeCompactHooks.value
+          .runCompact({
             sessionID: input.sessionID,
             trigger: input.auto ? "auto" : "manual",
             phase: "pre",
-          }),
-        )
+          })
+          .pipe(Effect.exit)
+        if (Exit.isSuccess(preExit)) {
+          const pre = preExit.value
+          if (pre.systemMessage) {
+            yield* Effect.logWarning("hooks.session.compact", { systemMessage: pre.systemMessage })
+          }
+          if (pre.additionalContext) {
+            const maybeStore = yield* Effect.serviceOption(HooksContext.Service)
+            if (Option.isSome(maybeStore)) yield* maybeStore.value.append(input.sessionID, pre.additionalContext)
+          }
+          if (pre.continue === false) {
+            compactHalt = true
+            yield* Effect.logInfo("hooks.session.compact halted auto-continue", { stopReason: pre.stopReason })
+          }
+        }
       }
       const compacting = yield* plugin.trigger(
         "experimental.session.compacting",
@@ -477,7 +493,7 @@ const layer = Layer.effect(
         })
       }
 
-      if (result === "continue" && input.auto) {
+      if (result === "continue" && input.auto && !compactHalt) {
         if (replay) {
           const original = replay.info
           const replayMsg = yield* session.updateMessage({
@@ -566,8 +582,9 @@ const layer = Layer.effect(
         yield* events.publish(Event.Compacted, { sessionID: input.sessionID })
         const maybePostHooks = yield* Effect.serviceOption(HooksRunner.Service)
         if (Option.isSome(maybePostHooks)) {
-          yield* HooksRunner.reportObserve(
+          yield* HooksContext.observeAndStore(
             "hooks.session.compact",
+            input.sessionID,
             maybePostHooks.value.runCompact({
               sessionID: input.sessionID,
               trigger: input.auto ? "auto" : "manual",

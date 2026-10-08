@@ -353,7 +353,7 @@ export interface Hooks {
     output: { additionalContext?: string; systemMessage?: string; continue?: boolean },
   ) => Promise<void>
   "session.idle"?: (
-    input: { sessionID: string },
+    input: { sessionID: string; reason: "idle" | "interrupt" },
     output: { additionalContext?: string; systemMessage?: string },
   ) => Promise<void>
   "subagent.start"?: (
