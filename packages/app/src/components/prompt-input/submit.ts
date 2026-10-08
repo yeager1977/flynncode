@@ -381,12 +381,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const isNewSession = !params.id
     const shouldAutoAccept = isNewSession && input.autoAccept()
     const worktreeSelection = input.newSessionWorktree?.() || "main"
+    const disposableWorktree = worktreeSelection === "disposable"
 
     let sessionDirectory = projectDirectory
     let client = sdk().client
 
     if (isNewSession) {
-      if (worktreeSelection === "create") {
+      if (worktreeSelection === "create" || disposableWorktree) {
         const createdWorktree = await client.worktree
           .create({ directory: projectDirectory })
           .then((x) => x.data)
@@ -409,7 +410,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         sessionDirectory = createdWorktree.directory
       }
 
-      if (worktreeSelection !== "main" && worktreeSelection !== "create") {
+      if (worktreeSelection !== "main" && worktreeSelection !== "create" && !disposableWorktree) {
         sessionDirectory = worktreeSelection
       }
 
@@ -441,6 +442,15 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           return undefined
         })
       if (created) {
+        if (disposableWorktree) {
+          await client.session
+            .update({
+              sessionID: created.id,
+              directory: sessionDirectory,
+              metadata: { worktree: sessionDirectory, disposable: true },
+            })
+            .catch(() => undefined)
+        }
         seed(sessionDirectory, created)
         session = created
         await startTransition(() => {

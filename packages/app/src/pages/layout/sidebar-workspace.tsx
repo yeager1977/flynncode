@@ -42,7 +42,8 @@ import {
 import { BulkConfirmDialog } from "../session/session-bulk-dialog"
 import { runSessionBulk, type BulkOp } from "../session/session-bulk-run"
 import { NewSessionItem, SessionItem, SessionSkeleton } from "./sidebar-items"
-import { sortedRootSessions } from "./helpers"
+import { sortedRootSessions, errorMessage } from "./helpers"
+import { handoffErrorMessage } from "../session/checkout-handoff"
 import { useIsFetching } from "@tanstack/solid-query"
 
 type InlineEditorComponent = (props: {
@@ -163,6 +164,7 @@ const WorkspaceActions = (props: {
   directory: string
   local: Accessor<boolean>
   busy: Accessor<boolean>
+  occupied: Accessor<boolean>
   menuOpen: Accessor<boolean>
   pendingRename: Accessor<boolean>
   setMenuOpen: (open: boolean) => void
@@ -174,6 +176,7 @@ const WorkspaceActions = (props: {
   openEditor: WorkspaceSidebarContext["openEditor"]
   showResetWorkspaceDialog: WorkspaceSidebarContext["showResetWorkspaceDialog"]
   showDeleteWorkspaceDialog: WorkspaceSidebarContext["showDeleteWorkspaceDialog"]
+  onHandoffWorkspace: (directory: string) => void
   root: string
   clearHoverProjectSoon: WorkspaceSidebarContext["clearHoverProjectSoon"]
   navigateToNewSession: () => void
@@ -233,6 +236,32 @@ const WorkspaceActions = (props: {
           >
             <DropdownMenu.ItemLabel>{props.language.t("common.delete")}</DropdownMenu.ItemLabel>
           </DropdownMenu.Item>
+          <Show
+            when={worktreeMenuActions({
+              local: props.local(),
+              busy: props.busy(),
+              occupied: props.occupied(),
+            }).find((action) => action.key === "session.worktree.handoff")}
+            keyed
+          >
+            {(action) => (
+              <Tooltip
+                value={
+                  action.disabledReason
+                    ? props.language.t(action.disabledReason)
+                    : props.language.t(action.key)
+                }
+                placement="right"
+              >
+                <DropdownMenu.Item
+                  disabled={action.disabled}
+                  onSelect={() => props.onHandoffWorkspace(props.directory)}
+                >
+                  <DropdownMenu.ItemLabel>{props.language.t(action.key)}</DropdownMenu.ItemLabel>
+                </DropdownMenu.Item>
+              </Tooltip>
+            )}
+          </Show>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu>
@@ -259,6 +288,39 @@ const WorkspaceActions = (props: {
 )
 
 const CLEANUP_SCAN_LIMIT = 10_000
+
+export type WorktreeMenuActionKey =
+  | "session.worktree.remove"
+  | "session.worktree.reset"
+  | "session.worktree.handoff"
+
+export type WorktreeMenuAction = {
+  key: WorktreeMenuActionKey
+  disabled: boolean
+  disabledReason?: "session.worktree.handoffOccupied"
+}
+
+// Menu model for per-worktree sidebar actions. Local workspaces only accept
+// handoff (moving sessions into main); sandbox rows also expose remove and
+// reset. Handoff is disabled while busy or when the target already backs an
+// active session (occupied guard uses loaded sessions, no new server state).
+export function worktreeMenuActions(input: {
+  local: boolean
+  busy: boolean
+  occupied: boolean
+}): WorktreeMenuAction[] {
+  const handoff: WorktreeMenuAction = {
+    key: "session.worktree.handoff",
+    disabled: input.busy || input.occupied,
+    ...(input.occupied ? { disabledReason: "session.worktree.handoffOccupied" as const } : {}),
+  }
+  if (input.local) return [handoff]
+  return [
+    { key: "session.worktree.remove", disabled: input.busy },
+    { key: "session.worktree.reset", disabled: input.busy },
+    handoff,
+  ]
+}
 
 function mergeSessions(left: readonly Session[], right: readonly Session[]) {
   const byID = new Map<string, Session>()
@@ -824,6 +886,7 @@ export const SortableWorkspace = (props: {
   const navigate = useNavigate()
   const params = useParams()
   const serverSync = useServerSync()
+  const serverSDK = useServerSDK()
   const queryOptions = useQueryOptions()
   const language = useLanguage()
   const sortable = createSortable(props.directory)
@@ -853,6 +916,34 @@ export const SortableWorkspace = (props: {
   const hasMore = createMemo(() => workspaceStore.sessionTotal > count())
   const fetching = useIsFetching(() => queryOptions().sessions(pathKey(props.directory)))
   const busy = createMemo(() => props.ctx.isBusy(props.directory))
+  // Occupied guard uses loaded sessions only (no new server state): handing
+  // off into a workspace that already backs an active session is disabled.
+  const occupied = createMemo(() => {
+    if (pathKey(props.ctx.currentDir()) === pathKey(props.directory)) return false
+    return (workspaceStore.session ?? []).some((item) => item.time?.archived == null)
+  })
+  const handoffTo = (target: string) => {
+    const from = props.ctx.currentDir()
+    void serverSDK()
+      .client.worktree.handoff({ directory: props.project.worktree, worktreeHandoffInput: { from, to: target } })
+      .then((result) => {
+        if (result.data) return
+        showToast({
+          title: language.t("session.handoff.failed.title"),
+          description: language.t("session.handoff.failed.description", {
+            message: language.t("common.requestFailed"),
+          }),
+        })
+      })
+      .catch((error: unknown) => {
+        showToast({
+          title: language.t("session.handoff.failed.title"),
+          description: language.t("session.handoff.failed.description", {
+            message: handoffErrorMessage(error) ?? errorMessage(error, language.t("common.requestFailed")),
+          }),
+        })
+      })
+  }
   const loading = () => fetching() > 0 && count() === 0
   const touch = createMediaQuery("(hover: none)")
   const showNew = createMemo(() => !loading() && (touch() || count() === 0 || (active() && !params.id)))
@@ -933,6 +1024,7 @@ export const SortableWorkspace = (props: {
                 directory={props.directory}
                 local={local}
                 busy={busy}
+                occupied={occupied}
                 menuOpen={() => menu.open}
                 pendingRename={() => menu.pendingRename}
                 setMenuOpen={(open) => setMenu("open", open)}
@@ -944,6 +1036,7 @@ export const SortableWorkspace = (props: {
                 openEditor={props.ctx.openEditor}
                 showResetWorkspaceDialog={props.ctx.showResetWorkspaceDialog}
                 showDeleteWorkspaceDialog={props.ctx.showDeleteWorkspaceDialog}
+                onHandoffWorkspace={handoffTo}
                 root={props.project.worktree}
                 clearHoverProjectSoon={props.ctx.clearHoverProjectSoon}
                 navigateToNewSession={() => navigate(`/${slug()}/session`)}

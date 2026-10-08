@@ -20,6 +20,7 @@ export function PromptWorkspaceSelector(props: {
   const icon = () => {
     if (selected() === "main") return "monitor"
     if (selected() === "create") return "workspace-new"
+    if (selected() === "disposable") return "workspace-isolated"
     return "workspace"
   }
   const select = (value: string) => {
@@ -35,6 +36,7 @@ export function PromptWorkspaceSelector(props: {
   const label = () => {
     if (selected() === "main") return language.t("session.new.workspace.triggerLocal")
     if (props.value === "create") return language.t("workspace.new")
+    if (props.value === "disposable") return language.t("session.worktree.disposable")
     return getFilename(props.value)
   }
 
@@ -65,6 +67,13 @@ export function PromptWorkspaceSelector(props: {
                   <Icon name="check" size="small" class="shrink-0" />
                 </Show>
               </MenuV2.Item>
+              <MenuV2.Item onSelect={() => select("disposable")}>
+                <IconV2 name="workspace-isolated" />
+                <span class="min-w-0 flex-1 truncate">{language.t("session.worktree.disposable")}</span>
+                <Show when={selected() === "disposable"}>
+                  <Icon name="check" size="small" class="shrink-0" />
+                </Show>
+              </MenuV2.Item>
             </MenuV2.Group>
             <Show when={props.workspaces.length > 0}>
               <MenuV2.Separator />
@@ -86,6 +95,12 @@ export function PromptWorkspaceSelector(props: {
                         </MenuV2.Item>
                       )}
                     </For>
+                    <div class="px-2 py-1 text-12-regular text-text-weak">
+                      {language.t("session.worktree.retainedCount", {
+                        count: props.workspaces.length,
+                        keep: props.workspaces.length,
+                      })}
+                    </div>
                   </MenuV2.SubContent>
                 </MenuV2.Portal>
               </MenuV2.Sub>

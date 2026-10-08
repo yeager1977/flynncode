@@ -19,6 +19,7 @@ export function resolveNewSessionWorktree(input: {
 
 export function normalizeNewSessionWorktree(value: string, directory: string, projectWorktree?: string) {
   if (value === "main" && projectWorktree !== directory) return projectWorktree
+  if (value === "disposable") return "disposable"
   return value
 }
 
@@ -27,7 +28,7 @@ export function resolveNewSessionBranch(input: {
   local?: string
   worktreeBranch: (worktree: string) => string | undefined
 }) {
-  if (input.worktree === "main" || input.worktree === "create") return input.local
+  if (input.worktree === "main" || input.worktree === "create" || input.worktree === "disposable") return input.local
   return input.worktreeBranch(input.worktree) ?? input.local
 }
 
