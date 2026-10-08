@@ -48,6 +48,8 @@ export function evaluate(permission: string, pattern: string, ...rulesets: Permi
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Permission") {}
 
+const ALWAYS_ASK = ["computer_use", "archive"]
+
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -95,7 +97,8 @@ const layer = Layer.effect(
       if (!needsAsk) return
 
       const AUTO_EDIT_PERMISSIONS = ["edit", "read", "glob", "grep", "list"]
-      if (request.permission !== "computer_use") {
+      // computer_use and archive always reach the user, whatever the approval mode.
+      if (!ALWAYS_ASK.includes(request.permission)) {
         if (approval === "auto") return
         if (approval === "accept-edits" && AUTO_EDIT_PERMISSIONS.includes(request.permission)) return
       }
