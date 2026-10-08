@@ -15,6 +15,9 @@ import { SessionStatus } from "@/session/status"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
+import { Project } from "@/project/project"
+import { Worktree } from "@/worktree"
+import { shouldDispose } from "@/worktree/session-binding"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { Cause, Effect, Option, Schema, Scope } from "effect"
 import * as Stream from "effect/Stream"
@@ -60,6 +63,28 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const summary = yield* SessionSummary.Service
     const events = yield* EventV2Bridge.Service
     const scope = yield* Scope.Scope
+    const worktreeSvc = yield* Worktree.Service
+    const project = yield* Project.Service
+
+    // Dispose-on-archive: a session carrying a disposable worktree binding in
+    // its metadata removes that worktree once every session bound to it is
+    // archived and no loaded instance runs there. Best-effort — archiving
+    // already succeeded, so failures here never fail the request.
+    const disposeArchivedWorktree = Effect.fn("SessionHttpApi.disposeArchivedWorktree")(function* (
+      sessionID: SessionID,
+    ) {
+      const info = yield* session.get(sessionID)
+      const meta = (info.metadata ?? {}) as Record<string, unknown>
+      if (meta.disposable !== true || typeof meta.worktree !== "string") return
+      const binding = { sessionID: info.id, directory: meta.worktree, disposable: true }
+      if (!shouldDispose(binding, { archived: info.time.archived != null, running: false })) return
+      const peers = yield* session.listGlobal({ directory: meta.worktree, limit: 100 })
+      if (peers.some((peer) => peer.time.archived == null)) return
+      const removed = yield* worktreeSvc.disposeIfIdle({ directory: meta.worktree })
+      if (!removed) return
+      const inst = yield* InstanceState.context
+      yield* project.removeSandbox(inst.project.id, meta.worktree).pipe(Effect.ignore)
+    })
 
     const list = Effect.fn("SessionHttpApi.list")(function* (ctx: { query: typeof ListQuery.Type }) {
       const directory = ctx.query.directory ? yield* InstanceState.directory : undefined
@@ -199,6 +224,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       }
       if (ctx.payload.time?.archived !== undefined) {
         yield* session.setArchived({ sessionID: ctx.params.sessionID, time: ctx.payload.time.archived })
+        yield* disposeArchivedWorktree(ctx.params.sessionID).pipe(Effect.ignore)
       }
       return yield* requireSession(ctx.params.sessionID)
     })

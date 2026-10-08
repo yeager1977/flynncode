@@ -11,6 +11,7 @@ import type { SessionID } from "@/session/schema"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { ToolRegistry } from "@/tool/registry"
 import { Worktree } from "@/worktree"
+import { shouldDispose } from "@/worktree/session-binding"
 import { Effect, Option } from "effect"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
@@ -140,7 +141,38 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       payload: Worktree.HandoffInput
     }) {
       yield* mapWorktreeError(worktreeSvc.handoff(ctx.payload))
+      yield* rebindHandoffSessions(ctx.payload).pipe(Effect.ignore)
       return true
+    })
+
+    // Session row rebinding happens at this HTTP boundary: sessions bound to
+    // the source worktree move to the destination, and a disposable source is
+    // removed once every session bound to it is archived and idle.
+    // Best-effort — handoff already succeeded, so failures never fail it.
+    const rebindHandoffSessions = Effect.fn("ExperimentalHttpApi.rebindHandoffSessions")(function* (
+      input: Worktree.HandoffInput,
+    ) {
+      const inst = yield* InstanceState.context
+      const same = (a: string, b: string) => a.replace(/\/+$/, "") === b.replace(/\/+$/, "")
+      // Never rebind away from the primary checkout or the serving
+      // instance's own worktree: those sessions belong where they are.
+      if (same(input.from, inst.project.worktree)) return
+      if (same(input.from, inst.worktree)) return
+      const bound = yield* sessions.listGlobal({ directory: input.from, limit: 100 })
+      yield* Effect.forEach(
+        bound,
+        (item) => sessions.setDirectory({ sessionID: item.id, directory: input.to }).pipe(Effect.ignore),
+        { discard: true },
+      )
+      const disposable = bound.some(
+        (item) => (item.metadata as Record<string, unknown> | undefined)?.disposable === true,
+      )
+      if (!disposable) return
+      if (bound.some((item) => item.time.archived == null)) return
+      const binding = { sessionID: bound[0]?.id ?? "", directory: input.from, disposable: true }
+      if (!shouldDispose(binding, { archived: true, running: false })) return
+      const removed = yield* worktreeSvc.disposeIfIdle({ directory: input.from })
+      if (removed) yield* project.removeSandbox(inst.project.id, input.from).pipe(Effect.ignore)
     })
 
     const session = Effect.fn("ExperimentalHttpApi.session")(function* (ctx: { query: typeof SessionListQuery.Type }) {

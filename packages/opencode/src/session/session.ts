@@ -426,6 +426,7 @@ export interface Interface {
   readonly touch: (sessionID: SessionID) => Effect.Effect<void>
   readonly get: (id: SessionID) => Effect.Effect<Info, NotFound>
   readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
+  readonly setDirectory: (input: { sessionID: SessionID; directory: string }) => Effect.Effect<void>
   readonly setArchived: (input: { sessionID: SessionID; time?: number }) => Effect.Effect<void>
   readonly setMetadata: (input: typeof SetMetadataInput.Type) => Effect.Effect<void>
   readonly setAgentModel: (input: {
@@ -754,6 +755,13 @@ const layer: Layer.Layer<
       yield* patch(input.sessionID, { title: input.title }).pipe(Effect.orDie)
     })
 
+    const setDirectory = Effect.fn("Session.setDirectory")(function* (input: {
+      sessionID: SessionID
+      directory: string
+    }) {
+      yield* patch(input.sessionID, { directory: input.directory, time: { updated: Date.now() } }).pipe(Effect.orDie)
+    })
+
     const setArchived = Effect.fn("Session.setArchived")(function* (input: { sessionID: SessionID; time?: number }) {
       yield* patch(input.sessionID, { time: { archived: input.time } }).pipe(Effect.orDie)
     })
@@ -911,6 +919,7 @@ const layer: Layer.Layer<
       touch,
       get,
       setTitle,
+      setDirectory,
       setArchived,
       setMetadata,
       setAgentModel,
