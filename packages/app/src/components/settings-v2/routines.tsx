@@ -6,7 +6,7 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
-import { addRoutine, removeRoutine, routinesFromConfig, routinesToConfig, toggleRoutine } from "./routines-edit"
+import { addRoutine, isValidRrule, removeRoutine, routinesFromConfig, routinesToConfig, toggleRoutine } from "./routines-edit"
 
 export function SettingsRoutinesV2() {
   const language = useLanguage()
@@ -28,7 +28,7 @@ export function SettingsRoutinesV2() {
 
   const create = () => {
     if (!draft.name.trim() || !draft.prompt.trim()) return
-    if (draft.rrule && !/^FREQ=[A-Z]+;/.test(draft.rrule)) {
+    if (draft.rrule && !isValidRrule(draft.rrule)) {
       setDraft("error", language.t("settings.routines.rruleInvalid"))
       return
     }

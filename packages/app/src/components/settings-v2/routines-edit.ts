@@ -21,6 +21,12 @@ export type StoredRoutine = {
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
 const INTERVALS = new Set(["15m", "1h", "6h", "1d", "1w"])
 
+// Mirrors the backend readRrule shape check: a bare FREQ value or FREQ plus
+// semicolon-separated parts. The backend RRule library is the final arbiter.
+export function isValidRrule(value: string) {
+  return /^FREQ=[A-Z]+(;|$)/.test(value)
+}
+
 export function routinesFromConfig(raw: unknown): StoredRoutine[] {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return []
   const list = (raw as { routines?: unknown }).routines
