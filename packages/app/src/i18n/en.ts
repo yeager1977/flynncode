@@ -1407,6 +1407,7 @@ export const dict = {
   "settings.plugins.detail.copy": "Copy config snippet",
   "settings.plugins.detail.copied": "Copied",
   "settings.plugins.detail.notOnNpm": "Not found on npm — add manually to opencode.json",
+  "settings.plugins.downloadsPerWeek": "{{count}}/wk",
   "settings.plugins.install.title": "Install plugin",
   "settings.plugins.install.description": "Where should {{name}} be added?",
   "settings.plugins.install.global": "Global (~/.config/opencode)",
