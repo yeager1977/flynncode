@@ -375,6 +375,8 @@ const layer = Layer.effect(
       // A pre-hook continue:false skips the auto-continue turn below.
       const maybeCompactHooks = yield* Effect.serviceOption(HooksRunner.Service)
       let compactHalt = false
+      // PreCompact context steers this compaction only; it is not sticky.
+      const preContext: string[] = []
       if (Option.isSome(maybeCompactHooks)) {
         const preExit = yield* maybeCompactHooks.value
           .runCompact({
@@ -388,10 +390,7 @@ const layer = Layer.effect(
           if (pre.systemMessage) {
             yield* Effect.logWarning("hooks.session.compact", { systemMessage: pre.systemMessage })
           }
-          if (pre.additionalContext) {
-            const maybeStore = yield* Effect.serviceOption(HooksContext.Service)
-            if (Option.isSome(maybeStore)) yield* maybeStore.value.append(input.sessionID, pre.additionalContext)
-          }
+          if (pre.additionalContext) preContext.push(pre.additionalContext)
           if (pre.continue === false) {
             compactHalt = true
             yield* Effect.logInfo("hooks.session.compact halted auto-continue", { stopReason: pre.stopReason })
@@ -401,7 +400,7 @@ const layer = Layer.effect(
       const compacting = yield* plugin.trigger(
         "experimental.session.compacting",
         { sessionID: input.sessionID },
-        { context: [], prompt: undefined },
+        { context: preContext, prompt: undefined },
       )
       const msgs = structuredClone(selected.head)
       yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })

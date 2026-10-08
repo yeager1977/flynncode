@@ -423,9 +423,8 @@ export const TaskTool = Tool.define(
             // user-interrupt path via ops.cancel (no parallel mechanism).
             const maybeStopHooks = yield* Effect.serviceOption(HooksRunner.Service)
             if (Option.isSome(maybeStopHooks)) {
-              yield* HooksContext.observeAndStore(
+              yield* HooksContext.observe(
                 "hooks.subagent.stop",
-                nextSession.id,
                 maybeStopHooks.value.runSubagentStop({
                   sessionID: nextSession.id,
                   agentID: nextSession.id,
