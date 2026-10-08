@@ -13,7 +13,7 @@ export function SettingsRoutinesV2() {
   const serverSync = useServerSync()
   const serverSDK = useServerSDK()
   const layout = useLayout()
-  const [draft, setDraft] = createStore({ name: "", prompt: "", dailyAt: "", interval: "", error: "", saving: false })
+  const [draft, setDraft] = createStore({ name: "", prompt: "", dailyAt: "", interval: "", rrule: "", error: "", saving: false })
   const routines = createMemo(() => routinesFromConfig(serverSync().data.config.routines))
   const directory = createMemo(() => layout.projects.list()[0]?.worktree ?? "")
 
@@ -28,6 +28,10 @@ export function SettingsRoutinesV2() {
 
   const create = () => {
     if (!draft.name.trim() || !draft.prompt.trim()) return
+    if (draft.rrule && !/^FREQ=[A-Z]+;/.test(draft.rrule)) {
+      setDraft("error", language.t("settings.routines.rruleInvalid"))
+      return
+    }
     if (draft.dailyAt && !/^([01]\d|2[0-3]):[0-5]\d$/.test(draft.dailyAt)) {
       setDraft("error", language.t("settings.routines.timeInvalid"))
       return
@@ -36,8 +40,16 @@ export function SettingsRoutinesV2() {
       setDraft("error", language.t("settings.routines.intervalInvalid"))
       return
     }
-    void save(addRoutine(routines(), { name: draft.name, prompt: draft.prompt, dailyAt: draft.dailyAt || undefined, interval: draft.dailyAt ? undefined : draft.interval || undefined }))
-    setDraft({ name: "", prompt: "", dailyAt: "", interval: "" })
+    void save(
+      addRoutine(routines(), {
+        name: draft.name,
+        prompt: draft.prompt,
+        dailyAt: draft.rrule ? undefined : draft.dailyAt || undefined,
+        interval: draft.rrule || draft.dailyAt ? undefined : draft.interval || undefined,
+        rrule: draft.rrule || undefined,
+      }),
+    )
+    setDraft({ name: "", prompt: "", dailyAt: "", interval: "", rrule: "" })
   }
 
   const run = async (id: string) => {
@@ -92,6 +104,14 @@ export function SettingsRoutinesV2() {
           value={draft.interval}
           onInput={(event) => setDraft("interval", event.currentTarget.value)}
         />
+        <input
+          class="rounded border border-border-weak bg-surface-base px-2 py-1 text-14-regular"
+          aria-label={language.t("settings.routines.rrule")}
+          placeholder={language.t("settings.routines.rrule")}
+          value={draft.rrule}
+          onInput={(event) => setDraft("rrule", event.currentTarget.value)}
+        />
+        <p class="text-12-regular text-text-weak">{language.t("settings.routines.targetDescription")}</p>
         <ButtonV2 disabled={draft.saving || !draft.name.trim() || !draft.prompt.trim()} onClick={create}>
           {language.t("settings.routines.add")}
         </ButtonV2>
@@ -106,9 +126,24 @@ export function SettingsRoutinesV2() {
               <div class="min-w-0 flex-1">
                 <div class="truncate text-14-medium">{routine.name}</div>
                 <div class="truncate text-12-regular text-text-weak" dir="ltr">
-                  {routine.dailyAt ?? routine.interval ?? language.t("settings.routines.manual")}
+                  {routine.rrule ?? routine.dailyAt ?? routine.interval ?? language.t("settings.routines.manual")}
                   {routine.lastRun ? ` · ${routine.lastRun}` : ""}
                 </div>
+                <Show when={routine.recentRuns && routine.recentRuns.length > 0}>
+                  <div class="text-12-regular text-text-weak">{language.t("settings.routines.history")}</div>
+                  <ul class="flex flex-col gap-1">
+                    <For each={routine.recentRuns ?? []}>
+                      {(run) => (
+                        <li class="truncate text-12-regular text-text-weak" dir="ltr">
+                          {run.startedAt} ·{" "}
+                          {run.state === "ok"
+                            ? language.t("settings.routines.runOk")
+                            : language.t("settings.routines.runError")}
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </Show>
               </div>
               <Switch
                 checked={routine.enabled}
