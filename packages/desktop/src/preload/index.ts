@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron"
 import type { ElectronAPI, WslServersEvent } from "./types"
+import type { MachineSyncPrefs, MachineSyncStatus } from "@opencode-ai/app/machine-sync-types"
 import type { UpdaterState } from "@opencode-ai/app/updater"
 
 const updaterCallbacks = new Set<(state: UpdaterState) => void>()
@@ -74,6 +75,27 @@ const api: ElectronAPI = {
   getMobileGatewayStatus: () => ipcRenderer.invoke("get-mobile-gateway-status"),
   getMobilePhonePassword: () => ipcRenderer.invoke("get-mobile-phone-password"),
   rotateMobilePhonePassword: () => ipcRenderer.invoke("rotate-mobile-phone-password"),
+  getPhoneAccess: () => ipcRenderer.invoke("get-phone-access"),
+  setPhoneAccess: (enabled) => ipcRenderer.invoke("set-phone-access", enabled),
+  machineSync: {
+    status: () => ipcRenderer.invoke("machine-sync-status"),
+    subscribe: (cb) => {
+      const handler = (_: unknown, status: MachineSyncStatus) => cb(status)
+      ipcRenderer.on("machine-sync-status", handler)
+      return () => ipcRenderer.removeListener("machine-sync-status", handler)
+    },
+    createPairingCode: () => ipcRenderer.invoke("machine-sync-create-code"),
+    pair: (input) => ipcRenderer.invoke("machine-sync-pair", input.host, input.code),
+    syncNow: () => ipcRenderer.invoke("machine-sync-now"),
+    setPaused: (paused) => ipcRenderer.invoke("machine-sync-set-paused", paused),
+    unpair: () => ipcRenderer.invoke("machine-sync-unpair"),
+    pushPrefs: (prefs) => ipcRenderer.invoke("machine-sync-push-prefs", prefs),
+    onPeerPrefs: (cb) => {
+      const handler = (_: unknown, prefs: MachineSyncPrefs) => cb(prefs)
+      ipcRenderer.on("machine-sync-peer-prefs", handler)
+      return () => ipcRenderer.removeListener("machine-sync-peer-prefs", handler)
+    },
+  },
   storeGet: (name, key) => ipcRenderer.invoke("store-get", name, key),
   storeSet: (name, key, value) => ipcRenderer.invoke("store-set", name, key, value),
   storeDelete: (name, key) => ipcRenderer.invoke("store-delete", name, key),

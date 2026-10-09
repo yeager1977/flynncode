@@ -8,6 +8,8 @@ import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 import { parseDesktopNativeBundle, type DesktopNativeBundle } from "@opencode-ai/app/i18n/desktop-native"
 
 import type { FatalRendererError, ServerReadyData, TitlebarTheme } from "../preload/types"
+import { parsePairInput, type MachineSync } from "./machine-sync"
+import { parsePrefs } from "./sidecar-sync"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { setForceFocus } from "./debug"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
@@ -96,6 +98,7 @@ type Deps = {
   exportDebugLogs: () => Promise<string>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void> | void
   setNativeTranslations: (bundle: DesktopNativeBundle) => void
+  machineSync: MachineSync
 }
 
 export function registerIpcHandlers(deps: Deps) {
@@ -155,6 +158,28 @@ export function registerIpcHandlers(deps: Deps) {
     const next = randomUUID()
     getStore().set(MOBILE_PHONE_PASSWORD_KEY, next)
     return next
+  })
+  // Phone access and machine sync change the sidecar live; no restart needed.
+  ipcMain.handle("get-phone-access", () => deps.machineSync.phoneAccess())
+  ipcMain.handle("set-phone-access", (_event: IpcMainInvokeEvent, enabled: unknown) => {
+    if (typeof enabled === "boolean") deps.machineSync.setPhoneAccess(enabled)
+  })
+  ipcMain.handle("machine-sync-status", () => deps.machineSync.status())
+  ipcMain.handle("machine-sync-create-code", () => deps.machineSync.createPairingCode())
+  ipcMain.handle("machine-sync-pair", (_event: IpcMainInvokeEvent, host: unknown, code: unknown) => {
+    const input = parsePairInput(host, code)
+    if (!input) return { ok: false, reason: "failed" }
+    return deps.machineSync.pair(input)
+  })
+  ipcMain.handle("machine-sync-unpair", () => deps.machineSync.unpair())
+  ipcMain.handle("machine-sync-now", () => deps.machineSync.syncNow())
+  ipcMain.handle("machine-sync-set-paused", (_event: IpcMainInvokeEvent, paused: unknown) => {
+    if (typeof paused === "boolean") deps.machineSync.setPaused(paused)
+  })
+  ipcMain.handle("machine-sync-push-prefs", (_event: IpcMainInvokeEvent, prefs: unknown) => {
+    const parsed = parsePrefs(prefs)
+    if (!parsed) return null
+    return deps.machineSync.pushPrefs(parsed) ?? null
   })
   ipcMain.handle("updater-subscribe", (event) => {
     const id = event.sender.id

@@ -10,6 +10,7 @@
     "./updater": "./src/updater.ts",
     "./wsl/types": "./src/wsl/types.ts",
     "./components/settings-v2/plugins-types": "./src/components/settings-v2/plugins-types.ts",
+    "./machine-sync-types": "./src/context/machine-sync-types.ts",
     "./vite": "./vite.js",
     "./index.css": "./src/index.css"
   },

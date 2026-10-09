@@ -82,7 +82,7 @@ const reconcileGateway = createReconciler(applyGatewayState, (error) =>
 parentPort.on("message", (event) => {
   const sync = parseSyncCommand(event.data)
   if (sync) {
-    void handleSyncCommand(sync)
+    handleSyncCommand(sync).catch(logSyncError)
     return
   }
   const command = parseCommand(event.data)
@@ -126,7 +126,7 @@ async function start(command: StartCommand) {
       onPaired: (peer) => {
         post({ type: "sync-paired", peer })
         void reconcileGateway()
-        void syncWorker?.syncNow()
+        syncWorker?.syncNow().catch(logSyncError)
       },
       // Give the unpair request time to answer before its gateway goes down.
       onUnpaired: () => {
@@ -185,6 +185,10 @@ async function stop() {
   }
 }
 
+function logSyncError(error: unknown) {
+  console.warn(`[sidecar] sync command failed: ${error instanceof Error ? error.message : String(error)}`)
+}
+
 async function handleSyncCommand(command: SidecarSyncCommand) {
   const gate = syncGate
   if (!gate) return
@@ -192,7 +196,7 @@ async function handleSyncCommand(command: SidecarSyncCommand) {
     const peerChanged = command.peer?.token !== gate.peer()?.token
     gate.update({ phoneAccess: command.phoneAccess, paused: command.paused, peer: command.peer })
     await reconcileGateway()
-    if (peerChanged && command.peer) void syncWorker?.syncNow()
+    if (peerChanged && command.peer) syncWorker?.syncNow().catch(logSyncError)
     return
   }
   if (command.type === "sync-pairing-code") {

@@ -1,5 +1,6 @@
 import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 import type { WslServersPlatform } from "@opencode-ai/app/wsl/types"
+import type { MachineSyncPlatform } from "@opencode-ai/app/machine-sync-types"
 import type { UpdaterState } from "@opencode-ai/app/updater"
 import type { DesktopNativeBundle } from "@opencode-ai/app/i18n/desktop-native"
 import type {
@@ -88,6 +89,9 @@ export type ElectronAPI = {
   getMobileGatewayStatus: () => Promise<MobileGatewayStatus>
   getMobilePhonePassword: () => Promise<string | null>
   rotateMobilePhonePassword: () => Promise<string>
+  getPhoneAccess: () => Promise<boolean>
+  setPhoneAccess: (enabled: boolean) => Promise<void>
+  machineSync: MachineSyncPlatform
   storeGet: (name: string, key: string) => Promise<string | null>
   storeSet: (name: string, key: string, value: string) => Promise<void>
   storeDelete: (name: string, key: string) => Promise<void>

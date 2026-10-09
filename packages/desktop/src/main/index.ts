@@ -52,17 +52,10 @@ import { startBackgroundCli } from "./background-cli"
 import { setNativeTranslations } from "./native-translations"
 import { museAuthStatus, runMuseAuthSync } from "./muse-auth"
 import { vendorAuthSignout, vendorAuthStatus } from "./vendor-keychain"
-import {
-  MOBILE_PHONE_PASSWORD_KEY,
-  PHONE_ACCESS_KEY,
-  RELAY_PUBLISH_URL_KEY,
-  RELAY_REMOTE_TOKEN_KEY,
-  RELAY_TOKEN_KEY,
-  SYNC_PAUSED_KEY,
-  SYNC_PEER_KEY,
-  SYNC_PREFS_KEY,
-} from "./store-keys"
-import { parsePeer, parsePrefs } from "./sidecar-sync"
+import { MOBILE_PHONE_PASSWORD_KEY, RELAY_PUBLISH_URL_KEY, RELAY_REMOTE_TOKEN_KEY, RELAY_TOKEN_KEY } from "./store-keys"
+import { listLanIPv4 } from "@flynncode/mobile-gateway/lan-ips"
+import { createMachineSync, readSyncStart } from "./machine-sync"
+import type { SidecarSyncCommand } from "./sidecar-sync"
 import { getOrCreateMobilePhonePassword } from "./mobile-password"
 import { generateRelayToken } from "./relay-publisher"
 import { getStore } from "./store"
@@ -313,6 +306,24 @@ const main = Effect.gen(function* () {
     checkForUpdates: () => void showUpdaterDialog(updater, true),
     relaunch,
   }
+  const syncStore = {
+    get: (key: string) => getStore().get(key),
+    set: (key: string, value: unknown) => getStore().set(key, value),
+    delete: (key: string) => getStore().delete(key),
+  }
+  // The sidecar spawns later; commands sent before it exists are dropped
+  // because its start message carries the same stored state.
+  const sidecar: { post?: (command: SidecarSyncCommand) => void } = {}
+  const machineSync = createMachineSync({
+    store: syncStore,
+    machineName: hostname(),
+    post: (command) => sidecar.post?.(command),
+    broadcast: (channel, payload) =>
+      BrowserWindow.getAllWindows()
+        .filter((win) => !win.isDestroyed())
+        .forEach((win) => win.webContents.send(channel, payload)),
+    lanAddresses: () => listLanIPv4(),
+  })
   registerIpcHandlers({
     killSidecar: () => killSidecar(),
     relaunch,
@@ -349,6 +360,7 @@ const main = Effect.gen(function* () {
     setNativeTranslations: (bundle) => {
       if (setNativeTranslations(bundle)) createMenu(menuDeps)
     },
+    machineSync,
   })
   registerWslIpcHandlers(wslServers)
   void updater.start()
@@ -453,25 +465,20 @@ const main = Effect.gen(function* () {
     }
 
     logger.log("spawning sidecar", { url })
-    const { listener, health } = yield* Effect.promise(() =>
+    const { listener, health, post } = yield* Effect.promise(() =>
       spawnLocalServer(host, port, password, {
         userDataPath: app.getPath("userData"),
         mobilePassword,
         relay,
-        // Each field is parsed alone so one corrupted value cannot reset the others.
-        sync: {
-          machineName: hostname(),
-          phoneAccess: persisted.get(PHONE_ACCESS_KEY) === true,
-          paused: persisted.get(SYNC_PAUSED_KEY) === true,
-          peer: parsePeer(persisted.get(SYNC_PEER_KEY)) ?? null,
-          prefs: parsePrefs(persisted.get(SYNC_PREFS_KEY)) ?? null,
-        },
+        sync: readSyncStart(syncStore, hostname()),
+        onSyncMessage: (message) => machineSync.handleSidecarMessage(message),
         onStdout: (message) => writeLog("server", "stdout", { message }),
         onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
         onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),
       }),
     )
     server = listener
+    sidecar.post = post
     yield* Deferred.succeed(serverReady, {
       url,
       username: "opencode",
