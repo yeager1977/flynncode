@@ -2,6 +2,7 @@ import { useDirectoryPicker } from "@/components/directory-picker"
 import { useServerManagementController } from "@/components/dialog-select-server"
 import { useSettingsCommand } from "@/components/settings-dialog"
 import { DialogServerV2 } from "@/components/settings-v2/dialog-server-v2"
+import { useCommand } from "@/context/command"
 import { type LocalProject } from "@/context/layout"
 import { useLanguage } from "@/context/language"
 import { useNotification } from "@/context/notification"
@@ -21,6 +22,7 @@ export function createHomeProjectsController(home: HomeController) {
   const dialog = useDialog()
   const language = useLanguage()
   const notification = useNotification()
+  const command = useCommand()
   const openSettings = useSettingsCommand()
   const serverManagement = useServerManagementController({ navigateOnAdd: false })
   const [_state, setState, _, ready] = persisted(
@@ -35,6 +37,31 @@ export function createHomeProjectsController(home: HomeController) {
   function directories(project: LocalProject) {
     return [project.worktree, ...(project.sandboxes ?? [])]
   }
+
+  function choose(conn: ServerConnection.Any) {
+    if (home.server.health(conn)?.healthy === false) return
+    pickDirectory({
+      server: conn,
+      title: language.t("command.project.open"),
+      multiple: true,
+      onSelect: (result) => home.project.add(conn, homeProjectDirectories(result)),
+    })
+  }
+
+  // The legacy layout's mod+o "Open project" (also the desktop File menu
+  // entry) adds projects on Home, where the new layout lists them.
+  command.register("home.projects", () => [
+    {
+      id: "project.open",
+      title: language.t("command.project.open"),
+      category: language.t("command.category.project"),
+      keybind: "mod+o",
+      onSelect: () => {
+        const conn = home.server.focused()
+        if (conn) choose(conn)
+      },
+    },
+  ])
 
   function canRevealProject(conn: ServerConnection.Any) {
     return platform.platform === "desktop" && !!platform.openPath && ServerConnection.local(conn)
@@ -86,15 +113,7 @@ export function createHomeProjectsController(home: HomeController) {
           .filter((directory) => state.project.unseenCount(directory) > 0)
           .forEach((directory) => state.project.markViewed(directory))
       },
-      choose: (conn: ServerConnection.Any) => {
-        if (home.server.health(conn)?.healthy === false) return
-        pickDirectory({
-          server: conn,
-          title: language.t("command.project.open"),
-          multiple: true,
-          onSelect: (result) => home.project.add(conn, homeProjectDirectories(result)),
-        })
-      },
+      choose,
       close: (conn: ServerConnection.Any, directory: string) => {
         const next = closeHomeProject(
           home.selection.value(),

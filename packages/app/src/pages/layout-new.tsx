@@ -2,6 +2,7 @@ import { createEffect, Suspense, type ParentProps } from "solid-js"
 import { createStore } from "solid-js/store"
 import { DebugBar } from "@/components/debug-bar"
 import { DeepLinkListener } from "@/components/deep-link-listener"
+import { LayoutCommands } from "@/components/layout-commands"
 import { LayoutEvents } from "@/components/layout-events"
 import { TabsInfoPopup } from "@/components/help-button"
 import { QuickEntryOverlay } from "@/components/quick-entry"
@@ -39,6 +40,7 @@ export default function NewLayout(props: ParentProps) {
       <QuickEntryOverlay />
       <DeepLinkListener />
       <LayoutEvents />
+      <LayoutCommands />
       <Titlebar
         update={update}
         actions={<ActivityInboxButton />}
