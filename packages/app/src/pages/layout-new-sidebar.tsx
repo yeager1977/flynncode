@@ -1,11 +1,11 @@
-import { createEffect, createMemo, onCleanup, onMount, Show, startTransition } from "solid-js"
+import { createEffect, createMemo, on, onCleanup, onMount, Show, startTransition } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useNavigate } from "@solidjs/router"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createMediaQuery } from "@solid-primitives/media"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
-import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
+import { Icon } from "@opencode-ai/ui/v2/icon"
 import { KeybindV2 } from "@opencode-ai/ui/v2/keybind-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { useCommand } from "@/context/command"
@@ -17,7 +17,15 @@ import { tabKey, useTabs } from "@/context/tabs"
 import { sessionHref } from "@/utils/session-route"
 import { createSidebarController } from "./layout/sidebar-controller"
 import { SidebarContent } from "./layout/sidebar-shell"
-import { openSidebarByDefault, projectDraft, sidebarCommands, sidebarDirectory } from "./layout/new-layout-sidebar"
+import {
+  directoryTabs,
+  openProjectDirectory,
+  openSidebarByDefault,
+  projectDraft,
+  sessionTabStep,
+  sidebarCommands,
+  sidebarDirectory,
+} from "./layout/new-layout-sidebar"
 
 const RAIL_WIDTH = 64
 const MIN_WIDTH = 244
@@ -54,7 +62,7 @@ export function SidebarToggle() {
         size="large"
         class="!w-9 shrink-0"
         data-action="sidebar-toggle"
-        icon={<IconV2 name="sidebar-left" />}
+        icon={<Icon name="sidebar-left" />}
         onClick={sidebar.toggle}
         aria-label={language.t("command.sidebar.toggle")}
         aria-expanded={sidebar.opened()}
@@ -79,38 +87,73 @@ export function ProjectSidebar() {
   const [state, setState] = createStore({ remembered: undefined as string | undefined, sizing: false })
   let sizet: number | undefined
 
+  const sessionDirectory = (id: string) =>
+    serverSync().session.get(id)?.directory ??
+    tabs.info[tabKey({ type: "session", server: server.key, sessionId: id })]?.directory
   const routed = createMemo(() =>
-    sidebarDirectory({
-      route: layout.route(),
-      server: server.key,
-      tabs: tabs.store,
-      sessionDirectory: (id) =>
-        serverSync().session.get(id)?.directory ??
-        tabs.info[tabKey({ type: "session", server: server.key, sessionId: id })]?.directory,
-      homeDirectory: layout.home.selection().server === server.key ? layout.home.selection().directory : undefined,
-    }),
+    sidebarDirectory({ route: layout.route(), server: server.key, tabs: tabs.store, sessionDirectory }),
   )
+  const sessionID = () => {
+    const route = layout.route()
+    if (route.type !== "session") return
+    if (route.server !== undefined && route.server !== server.key) return
+    return route.sessionId
+  }
   createEffect(() => {
     const directory = routed()
     if (directory) setState("remembered", directory)
   })
   const currentDir = createMemo(
-    () => routed() ?? state.remembered ?? server.projects.last() ?? layout.projects.list()[0]?.worktree ?? "",
+    () =>
+      openProjectDirectory(
+        [
+          routed(),
+          layout.home.selection().server === server.key ? layout.home.selection().directory : undefined,
+          state.remembered,
+          server.projects.last(),
+          layout.projects.list()[0]?.worktree,
+        ],
+        layout.projects.list(),
+      ) ?? "",
   )
 
   const sidebar = createSidebarController({
     currentDir,
-    sessionID: () => {
-      const route = layout.route()
-      if (route.type !== "session") return
-      if (route.server !== undefined && route.server !== server.key) return
-      return route.sessionId
-    },
+    routedDir: routed,
+    sessionID,
     tabs: true,
-    openSession: (_, id) =>
+    openSession: (_, id) => {
+      const step = sessionTabStep(tabs.store, server.key, sessionID(), id)
+      if (step.type === "select") {
+        tabs.select(step.tab)
+        return
+      }
+      if (step.type === "replace") {
+        tabs.replaceTab(step.index, { type: "session", server: server.key, sessionId: id })
+        return
+      }
       void startTransition(() => {
         tabs.select(tabs.addSessionTab({ server: server.key, sessionId: id }))
-      }),
+      })
+    },
+    closeTabs: async (input) => {
+      const found = directoryTabs(tabs.store, server.key, input.directory, sessionDirectory)
+      const drafts = input.drafts ? found.drafts : []
+      const route = layout.route()
+      const showing =
+        (route.type === "session" && found.sessions.includes(route.sessionId)) ||
+        (route.type === "draft" && drafts.includes(route.draftID))
+      // Like the session header's worktree menu: land on a draft in the main
+      // checkout before the removed worktree's tabs go away.
+      // A reset keeps the worktree, so its replacement draft stays there.
+      if (showing) await tabs.newDraft({ server: server.key, directory: input.drafts ? input.root : input.directory })
+      if (found.sessions.length > 0)
+        tabs.removeSessions({ server: server.key, directory: input.directory, sessionIDs: found.sessions })
+      for (const draftID of drafts) {
+        const index = tabs.store.findIndex((tab) => tab.type === "draft" && tab.draftID === draftID)
+        if (index !== -1) tabs.removeTab(index)
+      }
+    },
     newSession: (directory) => void tabs.newDraft({ server: server.key, directory }),
     openProject: (root) => {
       const draft = projectDraft(tabs.store, server.key, root)
@@ -123,6 +166,20 @@ export function ProjectSidebar() {
     sessionHref: (session) => sessionHref(server.key, session.id),
     home: () => navigate("/"),
   })
+
+  // Follow tab switches: reveal the routed session in the list and remember
+  // its project, as the classic layout does on route changes.
+  createEffect(
+    on([routed, sessionID, sidebar.ready] as const, ([directory, id, ready]) => {
+      if (!ready || !directory) return
+      const root = sidebar.projectRoot(directory)
+      if (server.projects.last() !== root) server.projects.touch(root)
+      if (id) sidebar.revealSession(directory, id)
+    }),
+  )
+
+  // Opening a session, draft or artifact from the phone drawer closes it.
+  createEffect(on(() => layout.route(), () => layout.mobileSidebar.hide(), { defer: true }))
 
   openSidebarByDefault({
     ready: layout.ready,

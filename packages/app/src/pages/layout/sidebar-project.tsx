@@ -16,6 +16,8 @@ import { displayName, sortedRootSessions } from "./helpers"
 export type ProjectSidebarContext = {
   currentDir: Accessor<string>
   currentProject: Accessor<LocalProject | undefined>
+  // Project of the routed session or draft; undefined on Home.
+  routedProject: Accessor<LocalProject | undefined>
   sidebarOpened: Accessor<boolean>
   sidebarHovering: Accessor<boolean>
   hoverProject: Accessor<string | undefined>
@@ -55,6 +57,7 @@ const ProjectTile = (props: {
   mobile?: boolean
   sidebarHovering: Accessor<boolean>
   selected: Accessor<boolean>
+  routed: Accessor<boolean>
   active: Accessor<boolean>
   isWorking: Accessor<boolean>
   overlay: Accessor<boolean>
@@ -136,7 +139,9 @@ const ProjectTile = (props: {
         }}
         onClick={() => {
           props.setOpen(false)
-          if (props.selected()) {
+          // Clicking the project already on screen collapses the sidebar; the
+          // project shown on Home still opens it.
+          if (props.routed()) {
             layout.sidebar.toggle()
             return
           }
@@ -321,6 +326,7 @@ export const SortableProject = (props: {
       mobile={props.mobile}
       sidebarHovering={props.ctx.sidebarHovering}
       selected={selected}
+      routed={() => props.ctx.routedProject()?.worktree === props.project.worktree}
       active={active}
       isWorking={isWorking}
       overlay={overlay}

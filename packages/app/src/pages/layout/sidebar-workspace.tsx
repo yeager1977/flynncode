@@ -76,7 +76,8 @@ type InlineEditorComponent = (props: {
 }) => JSX.Element
 
 export type WorkspaceSidebarContext = {
-  currentDir: Accessor<string>
+  // Directory of the routed session or draft; undefined on Home.
+  routedDir: Accessor<string | undefined>
   navList: Accessor<Session[]>
   sidebarExpanded: Accessor<boolean>
   sidebarHovering: Accessor<boolean>
@@ -199,6 +200,7 @@ const WorkspaceActions = (props: {
   showResetWorkspaceDialog: WorkspaceSidebarContext["showResetWorkspaceDialog"]
   showDeleteWorkspaceDialog: WorkspaceSidebarContext["showDeleteWorkspaceDialog"]
   onHandoffWorkspace: (directory: string) => void
+  canHandoff: Accessor<boolean>
   root: string
   clearHoverProjectSoon: WorkspaceSidebarContext["clearHoverProjectSoon"]
   navigateToNewSession: () => void
@@ -261,7 +263,8 @@ const WorkspaceActions = (props: {
           <Show
             when={worktreeMenuActions({
               local: props.local(),
-              busy: props.busy(),
+              // Handing off needs a routed session or draft to move from.
+              busy: props.busy() || !props.canHandoff(),
               occupied: props.occupied(),
             }).find((action) => action.key === "session.worktree.handoff")}
             keyed
@@ -1014,7 +1017,7 @@ export const SortableWorkspace = (props: {
   const slug = createMemo(() => base64Encode(props.directory))
   const sessions = createMemo(() => sortedRootSessions(workspaceStore, props.sortNow()))
   const local = createMemo(() => props.directory === props.project.worktree)
-  const active = createMemo(() => pathKey(props.ctx.currentDir()) === pathKey(props.directory))
+  const active = createMemo(() => pathKey(props.ctx.routedDir() ?? "") === pathKey(props.directory))
   const workspaceValue = createMemo(() => {
     const branch = workspaceStore.vcs?.branch
     const name = branch ?? getFilename(props.directory)
@@ -1035,11 +1038,12 @@ export const SortableWorkspace = (props: {
   // Occupied guard uses loaded sessions only (no new server state): handing
   // off into a workspace that already backs an active session is disabled.
   const occupied = createMemo(() => {
-    if (pathKey(props.ctx.currentDir()) === pathKey(props.directory)) return false
+    if (pathKey(props.ctx.routedDir() ?? "") === pathKey(props.directory)) return false
     return (workspaceStore.session ?? []).some((item) => item.time?.archived == null)
   })
   const handoffTo = (target: string) => {
-    const from = props.ctx.currentDir()
+    const from = props.ctx.routedDir()
+    if (!from) return
     void serverSDK()
       .client.worktree.handoff({ directory: props.project.worktree, worktreeHandoffInput: { from, to: target } })
       .then((result) => {
@@ -1153,6 +1157,7 @@ export const SortableWorkspace = (props: {
                 showResetWorkspaceDialog={props.ctx.showResetWorkspaceDialog}
                 showDeleteWorkspaceDialog={props.ctx.showDeleteWorkspaceDialog}
                 onHandoffWorkspace={handoffTo}
+                canHandoff={() => !!props.ctx.routedDir()}
                 root={props.project.worktree}
                 clearHoverProjectSoon={props.ctx.clearHoverProjectSoon}
                 navigateToNewSession={() => props.ctx.newSession(props.directory)}
@@ -1213,7 +1218,7 @@ export const LocalWorkspace = (props: {
   })
   const slug = createMemo(() => base64Encode(props.project.worktree))
   const sessions = createMemo(() => sortedRootSessions(workspace().store, props.sortNow()))
-  const active = createMemo(() => pathKey(props.ctx.currentDir()) === pathKey(props.project.worktree))
+  const active = createMemo(() => pathKey(props.ctx.routedDir() ?? "") === pathKey(props.project.worktree))
   const bulk = useWorkspaceBulk({
     directory: () => props.project.worktree,
     sessions,

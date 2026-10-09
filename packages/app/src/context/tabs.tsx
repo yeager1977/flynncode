@@ -251,6 +251,22 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
         removeDraftPersisted(draftID)
       },
       removeTab,
+      // Swaps the tab at index for another in place and shows it.
+      replaceTab(index: number, tab: Tab) {
+        const previous = store[index]
+        if (!previous) return
+        const key = tabKey(previous)
+        void startTransition(() => {
+          setStore(
+            produce((tabs) => {
+              tabs[index] = tab
+            }),
+          )
+          navigateTab(tab)
+        })
+        memory.remove(key)
+        removeInfo(key)
+      },
       // User-initiated close: records the tab so it can be reopened.
       // Cleanup paths (missing sessions, archive, server removal) go through
       // removeTab and friends directly and are not recorded.

@@ -12,7 +12,7 @@ import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { IconButton } from "@opencode-ai/ui/icon-button"
-import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
+import { Icon } from "@opencode-ai/ui/v2/icon"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLayout, type LocalProject } from "@/context/layout"
@@ -47,10 +47,15 @@ import { adjacentProject, adjacentSession, adjacentUnseenSession } from "./sideb
 // as tabs (`tabs: true`), where selecting a project starts a new draft and
 // closing the active project leaves its open tabs alone.
 export type SidebarHost = {
-  // Directory of the routed session or draft, or "" when nothing is routed.
+  // Directory whose project the sidebar shows. The new layout falls back to
+  // the last shown project on Home; the classic layout uses the route.
   currentDir: Accessor<string>
+  // Directory of the routed session or draft; undefined on Home.
+  routedDir: Accessor<string | undefined>
   sessionID: Accessor<string | undefined>
   tabs: boolean
+  // Tabbed layouts only: close tabs left in a removed or reset worktree.
+  closeTabs?: (input: { directory: string; root: string; drafts: boolean }) => void | Promise<void>
   openSession: (directory: string, id: string) => void
   newSession: (directory: string) => void
   // Tabbed layouts only: how selecting a project opens it (default: newSession).
@@ -281,8 +286,7 @@ export function createSidebarController(host: SidebarHost) {
     element.scrollIntoView({ block: "nearest", behavior: "smooth" })
   }
 
-  const currentProject = createMemo(() => {
-    const directory = host.currentDir()
+  const projectFor = (directory: string | undefined) => {
     if (!directory) return
     const key = pathKey(directory)
 
@@ -303,7 +307,9 @@ export function createSidebarController(host: SidebarHost) {
     if (!root) return
 
     return projects.find((p) => p.worktree === root)
-  })
+  }
+  const currentProject = createMemo(() => projectFor(host.currentDir()))
+  const routedProject = createMemo(() => projectFor(host.routedDir()))
 
   const workspaceName = (directory: string, projectId?: string, branch?: string) => {
     const key = pathKey(directory)
@@ -340,10 +346,10 @@ export function createSidebarController(host: SidebarHost) {
     if (!project) return [] as string[]
     if (!workspaceSetting()) return [project.worktree]
 
-    const activeDir = host.currentDir()
+    const activeDir = host.routedDir()
     return workspaceIds(project).filter((directory) => {
       const expanded = store.workspaceExpanded[directory] ?? directory === project.worktree
-      const active = pathKey(directory) === pathKey(activeDir)
+      const active = !!activeDir && pathKey(directory) === pathKey(activeDir)
       return expanded || active
     })
   })
@@ -366,7 +372,9 @@ export function createSidebarController(host: SidebarHost) {
 
   const currentSessions = createMemo(() => {
     const now = Date.now()
-    return visibleSessionDirs().flatMap((dir) => sortedRootSessions(serverSync().child(dir, { bootstrap: true })[0], now))
+    // Only a routed session or draft bootstraps its directories; Home just lists.
+    const bootstrap = !!host.routedDir()
+    return visibleSessionDirs().flatMap((dir) => sortedRootSessions(serverSync().child(dir, { bootstrap })[0], now))
   })
 
   const prefetchToken = { value: 0 }
@@ -387,7 +395,7 @@ export function createSidebarController(host: SidebarHost) {
       seen: lruFor(directory),
       keep: sessionID,
       limit: PREFETCH_MAX_SESSIONS_PER_DIR,
-      preserve: current && pathKey(directory) === pathKey(host.currentDir()) ? [current] : undefined,
+      preserve: current && pathKey(directory) === pathKey(host.routedDir() ?? "") ? [current] : undefined,
     })
   }
 
@@ -506,6 +514,7 @@ export function createSidebarController(host: SidebarHost) {
   }
 
   createEffect(() => {
+    if (!host.routedDir()) return
     const sessions = currentSessions()
     if (sessions.length === 0) return
 
@@ -640,14 +649,19 @@ export function createSidebarController(host: SidebarHost) {
     )
   }
 
-  function syncSessionRoute(directory: string, id: string, root = activeProjectRoot(directory)) {
-    rememberSessionRoute(directory, id, root)
+  // Marks the routed session seen, expands its workspace and scrolls to it.
+  function revealSession(directory: string, id: string) {
     notification.session.markViewed(id)
     const expanded = untrack(() => store.workspaceExpanded[directory])
     if (expanded === false) {
       setStore("workspaceExpanded", directory, true)
     }
     requestAnimationFrame(() => scrollToSession(id, `${directory}:${id}`))
+  }
+
+  function syncSessionRoute(directory: string, id: string, root = activeProjectRoot(directory)) {
+    rememberSessionRoute(directory, id, root)
+    revealSession(directory, id)
     return root
   }
 
@@ -841,15 +855,16 @@ export function createSidebarController(host: SidebarHost) {
     })
   }
 
-  const routed = () => !!host.currentDir()
+  const routed = () => !!host.routedDir()
 
   const deleteWorkspace = async (root: string, directory: string, leaveDeletedWorkspace = false) => {
     if (directory === root) return
 
-    const currentKey = pathKey(host.currentDir())
+    const currentKey = pathKey(host.routedDir() ?? "")
     const deletedKey = pathKey(directory)
     const shouldLeave = leaveDeletedWorkspace || (routed() && currentKey === deletedKey)
-    if (!leaveDeletedWorkspace && shouldLeave) {
+    // Tabbed layouts close the worktree's tabs once the removal succeeds.
+    if (!host.tabs && !leaveDeletedWorkspace && shouldLeave) {
       newSession(root)
     }
 
@@ -887,9 +902,14 @@ export function createSidebarController(host: SidebarHost) {
     layout.projects.close(directory)
     layout.projects.open(root)
 
+    if (host.tabs) {
+      await host.closeTabs?.({ directory, root, drafts: true })
+      return
+    }
+
     if (shouldLeave) return
 
-    const nextCurrent = host.currentDir()
+    const nextCurrent = host.routedDir() ?? ""
     const nextKey = pathKey(nextCurrent)
     const project = layout.projects.list().find((item) => item.worktree === root)
     const dirs = project
@@ -962,6 +982,8 @@ export function createSidebarController(host: SidebarHost) {
 
     setBusy(directory, false)
     dismiss()
+    // Reset archived the worktree's sessions; drop their tabs.
+    if (host.tabs) await host.closeTabs?.({ directory, root, drafts: false })
 
     showToast({
       title: language.t("workspace.reset.success.title"),
@@ -1003,8 +1025,8 @@ export function createSidebarController(host: SidebarHost) {
     })
 
     const handleDelete = () => {
-      const leaveDeletedWorkspace = routed() && pathKey(host.currentDir()) === pathKey(props.directory)
-      if (leaveDeletedWorkspace) {
+      const leaveDeletedWorkspace = routed() && pathKey(host.routedDir() ?? "") === pathKey(props.directory)
+      if (leaveDeletedWorkspace && !host.tabs) {
         newSession(props.root)
       }
       dialog.close()
@@ -1169,8 +1191,8 @@ export function createSidebarController(host: SidebarHost) {
     if (!project) return []
     const local = project.worktree
     const dirs = [local, ...(project.sandboxes ?? [])]
-    const active = currentProject()
-    const directory = pathKey(active?.worktree ?? "") === pathKey(project.worktree) ? host.currentDir() : undefined
+    const active = routedProject()
+    const directory = pathKey(active?.worktree ?? "") === pathKey(project.worktree) ? host.routedDir() : undefined
     const extra =
       directory && pathKey(directory) !== pathKey(local) && !dirs.some((item) => pathKey(item) === pathKey(directory))
         ? directory
@@ -1268,7 +1290,7 @@ export function createSidebarController(host: SidebarHost) {
   const sessionHref = host.sessionHref
 
   const workspaceSidebarCtx: WorkspaceSidebarContext = {
-    currentDir: host.currentDir,
+    routedDir: host.routedDir,
     navList: currentSessions,
     sidebarExpanded,
     sidebarHovering,
@@ -1300,6 +1322,7 @@ export function createSidebarController(host: SidebarHost) {
   const projectSidebarCtx: ProjectSidebarContext = {
     currentDir: host.currentDir,
     currentProject,
+    routedProject,
     sidebarOpened: () => layout.sidebar.opened(),
     sidebarHovering,
     hoverProject: () => state.hoverProject,
@@ -1339,7 +1362,7 @@ export function createSidebarController(host: SidebarHost) {
     const v2 = panelProps.variant === "v2"
     const merged = createMemo(() => panelProps.mobile || (panelProps.merged ?? layout.sidebar.opened()))
     const hover = createMemo(() => !panelProps.mobile && panelProps.merged === false && !layout.sidebar.opened())
-    const empty = createMemo(() => !routed() && layout.projects.list().length === 0)
+    const empty = createMemo(() => layout.projects.list().length === 0 && (host.tabs || !routed()))
     const projectName = createMemo(() => {
       const item = project()
       if (!item) return ""
@@ -1404,7 +1427,7 @@ export function createSidebarController(host: SidebarHost) {
           onClick={input.onClick}
         >
           <Show when={input.icon === "edit"}>
-            <IconV2 name="edit" size="small" />
+            <Icon name="edit" size="small" />
           </Show>
           {input.label}
         </Button>
@@ -1700,6 +1723,9 @@ export function createSidebarController(host: SidebarHost) {
     currentProject,
     currentSessions,
     workspaceSetting,
+    projectRoot,
+    revealSession,
+    connectProvider,
     projects,
     projectOverlay,
     renderProject,

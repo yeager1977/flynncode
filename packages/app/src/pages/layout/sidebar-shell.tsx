@@ -11,7 +11,7 @@ import { ConstrainDragXAxis } from "@/utils/solid-dnd"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
-import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
+import { Icon } from "@opencode-ai/ui/v2/icon"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { type LocalProject } from "@/context/layout"
 
@@ -111,7 +111,7 @@ export const SidebarContent = (props: {
                     variant="ghost-muted"
                     size="large"
                     class="!size-10"
-                    icon={<IconV2 name="folder-add-left" />}
+                    icon={<Icon name="folder-add-left" />}
                     data-action="sidebar-open-project"
                     onClick={props.onOpenProject}
                     aria-label={typeof props.openProjectLabel === "string" ? props.openProjectLabel : undefined}

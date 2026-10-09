@@ -2,8 +2,11 @@ import { describe, expect, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import {
+  directoryTabs,
+  openProjectDirectory,
   openSidebarByDefault,
   projectDraft,
+  sessionTabStep,
   sidebarCommands,
   sidebarDirectory,
   type SidebarCommandInput,
@@ -69,13 +72,12 @@ describe("sidebarDirectory", () => {
     { type: "draft", draftID: "d1", server: local, directory: "/repo/app" },
     { type: "session", server: local, sessionId: "s1" },
   ]
-  const directory = (route: Parameters<typeof sidebarDirectory>[0]["route"], homeDirectory?: string) =>
+  const directory = (route: Parameters<typeof sidebarDirectory>[0]["route"]) =>
     sidebarDirectory({
       route,
       server: local,
       tabs,
       sessionDirectory: (id) => (id === "s1" ? "/repo/api" : undefined),
-      homeDirectory,
     })
 
   test("follows the routed session or draft", () => {
@@ -88,9 +90,22 @@ describe("sidebarDirectory", () => {
     expect(directory({ type: "session", sessionId: "s1", server: remote })).toBeUndefined()
   })
 
-  test("uses Home's selected project on Home", () => {
-    expect(directory({ type: "home" }, "/repo/web")).toBe("/repo/web")
+  test("has no routed directory on Home", () => {
     expect(directory({ type: "home" })).toBeUndefined()
+  })
+})
+
+describe("openProjectDirectory", () => {
+  const projects = [{ worktree: "/repo/app", sandboxes: ["/repo/app-wt"] }, { worktree: "C:\\repo\\web" }]
+
+  test("takes the first candidate inside an open project", () => {
+    expect(openProjectDirectory([undefined, "/repo/app-wt/", "/repo/app"], projects)).toBe("/repo/app-wt/")
+    expect(openProjectDirectory(["C:/repo/web"], projects)).toBe("C:/repo/web")
+  })
+
+  test("skips a closed project's directory", () => {
+    expect(openProjectDirectory(["/repo/closed", "/repo/app"], projects)).toBe("/repo/app")
+    expect(openProjectDirectory(["/repo/closed"], [])).toBeUndefined()
   })
 })
 
@@ -106,6 +121,58 @@ describe("projectDraft", () => {
     expect(projectDraft(tabs, local, "/repo")?.draftID).toBe("new")
     expect(projectDraft(tabs, remote, "/repo")?.draftID).toBe("other")
     expect(projectDraft(tabs, local, "/elsewhere")).toBeUndefined()
+  })
+
+  test("matches the directory by path key", () => {
+    expect(projectDraft(tabs, local, "/repo/")?.draftID).toBe("new")
+  })
+})
+
+describe("sessionTabStep", () => {
+  const tabs: Tab[] = [
+    { type: "session", server: local, sessionId: "a" },
+    { type: "draft", draftID: "d", server: local, directory: "/repo" },
+    { type: "session", server: local, sessionId: "b" },
+    { type: "session", server: remote, sessionId: "c" },
+  ]
+
+  test("switches to an open tab for the next session", () => {
+    expect(sessionTabStep(tabs, local, "a", "b")).toEqual({
+      type: "select",
+      tab: { type: "session", server: local, sessionId: "b" },
+    })
+  })
+
+  test("swaps the next session into the current tab instead of adding one", () => {
+    expect(sessionTabStep(tabs, local, "b", "z")).toEqual({ type: "replace", index: 2 })
+  })
+
+  test("adds a tab when no session tab is routed on this server", () => {
+    expect(sessionTabStep(tabs, local, undefined, "z")).toEqual({ type: "add" })
+    expect(sessionTabStep(tabs, local, "c", "z")).toEqual({ type: "add" })
+    expect(sessionTabStep(tabs, remote, "a", "c")).toEqual({ type: "select", tab: tabs[3] })
+  })
+})
+
+describe("directoryTabs", () => {
+  const tabs: Tab[] = [
+    { type: "session", server: local, sessionId: "in" },
+    { type: "session", server: local, sessionId: "out" },
+    { type: "session", server: remote, sessionId: "in" },
+    { type: "draft", draftID: "d-in", server: local, directory: "/repo/wt/" },
+    { type: "draft", draftID: "d-out", server: local, directory: "/repo" },
+  ]
+  const directories: Record<string, string> = { in: "/repo/wt", out: "/repo" }
+
+  test("finds this server's session tabs and drafts in the worktree", () => {
+    expect(directoryTabs(tabs, local, "/repo/wt", (id) => directories[id])).toEqual({
+      sessions: ["in"],
+      drafts: ["d-in"],
+    })
+  })
+
+  test("ignores sessions whose directory is unknown", () => {
+    expect(directoryTabs(tabs, local, "/repo/wt", () => undefined)).toEqual({ sessions: [], drafts: ["d-in"] })
   })
 })
 

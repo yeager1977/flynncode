@@ -2,7 +2,8 @@ import { createEffect, type Accessor } from "solid-js"
 import type { CommandOption } from "@/context/command"
 import type { LayoutRoute } from "@/context/layout"
 import type { ServerConnection } from "@/context/server"
-import type { DraftTab, Tab } from "@/context/tabs"
+import type { DraftTab, SessionTab, Tab } from "@/context/tabs"
+import { pathKey } from "@/utils/path-key"
 
 // Logic behind the new layout's project sidebar, kept out of JSX so it runs
 // under test with real Solid effects.
@@ -21,29 +22,78 @@ export function openSidebarByDefault(input: {
   })
 }
 
-// The project the sidebar shows: the routed session or draft when it belongs
-// to this server, else Home's selected project, else the last one shown.
+// Directory of the routed session or draft when it belongs to this server;
+// undefined on Home.
 export function sidebarDirectory(input: {
   route: LayoutRoute
   server: ServerConnection.Key
   tabs: Tab[]
   sessionDirectory: (sessionID: string) => string | undefined
-  homeDirectory: string | undefined
 }) {
   const route = input.route
-  if (route.type === "home") return input.homeDirectory
+  if (route.type === "home") return
   if (route.server !== undefined && route.server !== input.server) return
   if (route.type === "session") return input.sessionDirectory(route.sessionId)
   if (route.type === "dir-new-sesssion") return route.dir
   return input.tabs.find((tab): tab is DraftTab => tab.type === "draft" && tab.draftID === route.draftID)?.directory
 }
 
+// The directory the panel shows: the first candidate inside an open project,
+// so closing the active project moves the panel on instead of blanking it.
+export function openProjectDirectory(
+  candidates: (string | undefined)[],
+  projects: { worktree: string; sandboxes?: string[] }[],
+) {
+  return candidates.find((directory): directory is string => {
+    if (!directory) return false
+    const key = pathKey(directory)
+    return projects.some(
+      (project) => pathKey(project.worktree) === key || !!project.sandboxes?.some((item) => pathKey(item) === key),
+    )
+  })
+}
+
 // Selecting a project reuses its open code draft rather than stacking another.
 export function projectDraft(tabs: Tab[], server: ServerConnection.Key, directory: string) {
+  const key = pathKey(directory)
   return tabs.findLast(
     (tab): tab is DraftTab =>
-      tab.type === "draft" && tab.server === server && tab.directory === directory && tab.kind !== "knowledge",
+      tab.type === "draft" && tab.server === server && pathKey(tab.directory) === key && tab.kind !== "knowledge",
   )
+}
+
+// Stepping to another session from the sidebar's keyboard navigation: switch
+// to its tab when open, else swap it into the current session's tab so
+// cycling does not stack a tab per step.
+export function sessionTabStep(tabs: Tab[], server: ServerConnection.Key, current: string | undefined, next: string) {
+  const open = tabs.find(
+    (tab): tab is SessionTab => tab.type === "session" && tab.server === server && tab.sessionId === next,
+  )
+  if (open) return { type: "select" as const, tab: open }
+  const index = current
+    ? tabs.findIndex((tab) => tab.type === "session" && tab.server === server && tab.sessionId === current)
+    : -1
+  if (index !== -1) return { type: "replace" as const, index }
+  return { type: "add" as const }
+}
+
+// Tabs left pointing into a removed (or reset) worktree.
+export function directoryTabs(
+  tabs: Tab[],
+  server: ServerConnection.Key,
+  directory: string,
+  sessionDirectory: (sessionID: string) => string | undefined,
+) {
+  const key = pathKey(directory)
+  const inside = (value: string | undefined) => value !== undefined && pathKey(value) === key
+  return {
+    sessions: tabs.flatMap((tab) =>
+      tab.type === "session" && tab.server === server && inside(sessionDirectory(tab.sessionId)) ? [tab.sessionId] : [],
+    ),
+    drafts: tabs.flatMap((tab) =>
+      tab.type === "draft" && tab.server === server && inside(tab.directory) ? [tab.draftID] : [],
+    ),
+  }
 }
 
 export type SidebarCommandInput = {

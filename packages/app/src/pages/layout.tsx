@@ -79,6 +79,7 @@ export default function LegacyLayout(props: ParentProps) {
 
   const sidebar = createSidebarController({
     currentDir,
+    routedDir: () => currentDir() || undefined,
     sessionID: () => params.id,
     tabs: false,
     openSession: (directory, id) => navigate(`/${base64Encode(directory)}/session/${id}`),
@@ -356,7 +357,7 @@ export default function LegacyLayout(props: ParentProps) {
         id: "provider.connect",
         title: language.t("command.provider.connect"),
         category: language.t("command.category.provider"),
-        onSelect: () => connectProvider(),
+        onSelect: () => sidebar.connectProvider(),
       },
       {
         id: "server.switch",
@@ -509,14 +510,6 @@ export default function LegacyLayout(props: ParentProps) {
 
     return commands
   })
-
-  function connectProvider() {
-    const run = ++dialogRun
-    void import("@/components/dialog-connect-provider").then((x) => {
-      if (dialogDead || dialogRun !== run) return
-      void dialog.show(() => <x.DialogConnectProvider />)
-    })
-  }
 
   function openServer() {
     const run = ++dialogRun
