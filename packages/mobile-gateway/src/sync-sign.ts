@@ -2,9 +2,10 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypt
 
 // After pairing the token never crosses the network: each request carries an
 // HMAC-SHA256 over its method, path and query, time, a fresh nonce and the
-// body hash, and each answer to a verified request carries an HMAC over that
-// nonce and the response body, so an on-path attacker can neither replay a
-// request nor alter what the peer sends back.
+// body hash, and each answer to a request signed with the token carries an
+// HMAC over that nonce, the status and the response body, so an on-path
+// attacker can neither replay a request nor alter (or invent) what the peer
+// sends back.
 export const SYNC_TIME_HEADER = "x-flynncode-sync-time"
 export const SYNC_NONCE_HEADER = "x-flynncode-sync-nonce"
 export const SYNC_SIGNATURE_HEADER = "x-flynncode-sync-signature"
@@ -36,7 +37,10 @@ export function signRequest(input: {
   }
 }
 
-/** The request's nonce when its signature and time check out, otherwise undefined. */
+/**
+ * The request's nonce when it is well formed and signed with `token`
+ * (`fresh` says whether its time is within the window), otherwise undefined.
+ */
 export function verifyRequest(input: {
   token: string
   method: string
@@ -49,17 +53,22 @@ export function verifyRequest(input: {
   const nonce = input.headers.get(SYNC_NONCE_HEADER)
   const signature = input.headers.get(SYNC_SIGNATURE_HEADER)
   if (!time || !TIME.test(time) || !nonce || !NONCE.test(nonce) || !signature) return
-  if (Math.abs(input.now - Number(time)) > SIGNATURE_WINDOW_MS) return
   if (!sameSignature(signature, hmac(input.token, requestMessage({ ...input, time, nonce })))) return
-  return nonce
+  return { nonce, fresh: Math.abs(input.now - Number(time)) <= SIGNATURE_WINDOW_MS }
 }
 
-export function signResponse(token: string, nonce: string, body: Uint8Array | string) {
-  return hmac(token, `${nonce}\n${bodyHash(body)}`)
+export function signResponse(token: string, nonce: string, status: number, body: Uint8Array | string) {
+  return hmac(token, `${nonce}\n${status}\n${bodyHash(body)}`)
 }
 
-export function verifyResponse(token: string, nonce: string, body: Uint8Array, signature: string | null) {
-  return signature !== null && sameSignature(signature, signResponse(token, nonce, body))
+export function verifyResponse(
+  token: string,
+  nonce: string,
+  status: number,
+  body: Uint8Array,
+  signature: string | null,
+) {
+  return signature !== null && sameSignature(signature, signResponse(token, nonce, status, body))
 }
 
 /**
@@ -115,7 +124,7 @@ export async function signedRequest(input: {
   return {
     status: response.status,
     body,
-    verified: verifyResponse(input.peer.token, signed.nonce, body, signature),
+    verified: verifyResponse(input.peer.token, signed.nonce, response.status, body, signature),
   }
 }
 

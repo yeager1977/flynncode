@@ -20,8 +20,13 @@ type Fake = {
   writes: Array<{ path: string; body: Record<string, unknown> }>
   paused: boolean
   tamper: boolean
+  forgeStatus: number | null
+  bundleRefusal: "revoked" | null
+  refuse: "clock" | "revoked" | null
   peerHeaders: Array<Record<string, string>>
   reloadPending: { from: string } | null
+  reloadBusy: boolean
+  reloadPosts: number
   bundleStatus: number | null
   bundleHits: number
   bundleStatuses: Map<string, number>
@@ -59,8 +64,13 @@ function fake(sessions: ManifestSession[], schema = "s1"): Fake {
     writes: [],
     paused: false,
     tamper: false,
+    forgeStatus: null,
+    bundleRefusal: null,
+    refuse: null,
     peerHeaders: [],
     reloadPending: null,
+    reloadBusy: false,
+    reloadPosts: 0,
     bundleStatus: null,
     bundleHits: 0,
     bundleStatuses: new Map(),
@@ -80,7 +90,7 @@ function serve(state: Fake, auth: { basic: string } | { token: string }) {
     async fetch(request) {
       if ("basic" in auth) return answer(state, request, auth.basic)
       const url = new URL(request.url)
-      const nonce = verifyRequest({
+      const checked = verifyRequest({
         token: auth.token,
         method: request.method,
         target: url.pathname + url.search,
@@ -88,16 +98,21 @@ function serve(state: Fake, auth: { basic: string } | { token: string }) {
         body: new Uint8Array(await request.arrayBuffer()),
         now: Date.now(),
       })
-      if (!nonce) return new Response("unauthorized", { status: 401 })
+      // Like the gateway: a request not signed with the token gets an unsigned 401.
+      if (!checked) return new Response("unauthorized", { status: 401 })
       state.peerHeaders.push(Object.fromEntries(request.headers.entries()))
-      const response = await answer(state, request, undefined)
+      const response = state.refuse
+        ? Response.json({ error: state.refuse, now: Date.now() + 120_000 }, { status: 401 })
+        : await answer(state, request, undefined)
       const body = new Uint8Array(await response.arrayBuffer())
-      const signature = signResponse(auth.token, nonce, body)
+      const signature = signResponse(auth.token, checked.nonce, response.status, body)
       // An on-path attacker rewriting the body after it was signed.
       const sent = state.tamper
         ? new TextEncoder().encode(new TextDecoder().decode(body).replace("ses_", "ses_x"))
         : body
-      return new Response(sent, { status: response.status, headers: { [SYNC_RESPONSE_SIGNATURE_HEADER]: signature } })
+      // ...or forging the status of a signed answer.
+      const status = state.forgeStatus ?? response.status
+      return new Response(sent, { status, headers: { [SYNC_RESPONSE_SIGNATURE_HEADER]: signature } })
     },
   })
   servers.push(server)
@@ -121,8 +136,11 @@ async function answer(state: Fake, request: Request, basic: string | undefined):
   }
   if (path === "/flynncode-sync/missing") return Response.json({ directories: ["/gone"] })
   if (path === "/flynncode-sync/reload" && request.method === "GET")
-    return Response.json({ pending: state.reloadPending })
+    return Response.json({ pending: state.reloadPending, busy: state.reloadBusy })
   if (path === "/flynncode-sync/reload") {
+    state.reloadPosts += 1
+    const body = (await request.json()) as { force?: boolean }
+    if (state.reloadBusy && body.force !== true) return Response.json({ error: "busy" }, { status: 409 })
     state.reloadPending = null
     return Response.json({ ok: true })
   }
@@ -154,6 +172,8 @@ async function answer(state: Fake, request: Request, basic: string | undefined):
   if (bundle?.[1]) state.onBundle?.()
   const failing = bundle?.[1] ? state.bundleStatuses.get(bundle[1]) : undefined
   if (failing) return new Response("bundle", { status: failing })
+  if (bundle?.[1] && state.bundleRefusal)
+    return Response.json({ error: state.bundleRefusal, now: Date.now() }, { status: 401 })
   if (bundle?.[1] && state.bundleStatus) return new Response("bundle", { status: state.bundleStatus })
   if (bundle?.[1]) return Response.json(state.bundles.get(bundle[1]))
   return new Response("not found", { status: 404 })
@@ -208,9 +228,33 @@ describe("sync worker", () => {
     expect(local.applied).toEqual([])
   })
 
-  test("asks to pair again on 401", async () => {
-    const status = await worker({ local: fake([]), peer: fake([]), token: "stale" }).cycle()
-    expect(status.phase).toBe("unauthorized")
+  test("asks to pair again only on a signed revoked refusal", async () => {
+    const peer = fake([])
+    peer.refuse = "revoked"
+    expect((await worker({ local: fake([]), peer }).cycle()).phase).toBe("unauthorized")
+  })
+
+  test("treats an unsigned 401 as no answer, not as pair again", async () => {
+    const status = await worker({ local: fake([]), peer: fake([]), token: "f".repeat(64) }).cycle()
+    expect(status).toMatchObject({ phase: "offline", online: false, consecutiveFailures: 1 })
+  })
+
+  test("reports a clock difference instead of pair again", async () => {
+    const peer = fake([session("ses_a", 10)])
+    peer.refuse = "clock"
+    const local = fake([])
+    const status = await worker({ local, peer }).cycle()
+    expect(status).toMatchObject({ phase: "clock-skew", online: true, consecutiveFailures: 0 })
+    expect(local.applied).toEqual([])
+  })
+
+  test("never trusts a signed answer whose status was changed on the way", async () => {
+    const peer = fake([session("ses_a", 10)])
+    peer.forgeStatus = 503
+    const local = fake([])
+    const status = await worker({ local, peer }).cycle()
+    expect(status).toMatchObject({ phase: "offline", lastError: "the other computer's reply failed verification" })
+    expect(local.applied).toEqual([])
   })
 
   test("counts consecutive offline cycles and backs off after five", async () => {
@@ -362,7 +406,9 @@ describe("sync worker", () => {
     const offline = await sync.cycle()
     expect(offline).toMatchObject({ phase: "offline", online: false, consecutiveFailures: 1, backlog: null })
     expect(peer.bundleHits).toBe(1)
-    peer.bundleStatus = 401
+    // A signed refusal of the bundle (here: the peer revoked us) ends the cycle too.
+    peer.bundleStatus = null
+    peer.bundleRefusal = "revoked"
     expect((await sync.cycle()).phase).toBe("unauthorized")
     expect(peer.bundleHits).toBe(2)
   })
@@ -554,11 +600,47 @@ describe("sync worker", () => {
     peer.settings = { config: { model: "a/b" }, mtime: 9 }
     const statuses: SyncStatus[] = []
     const sync = worker({ local, peer, onStatus: (status) => statuses.push(status) })
-    expect((await sync.cycle()).configReloadPending).toEqual({ from: "starship" })
+    expect((await sync.cycle()).configReloadPending).toEqual({ from: "starship", busy: false })
     const reloaded = await sync.reloadConfig()
     expect(reloaded.configReloadPending).toBeNull()
     expect(local.reloadPending).toBeNull()
     expect(statuses.at(-1)?.configReloadPending).toBeNull()
+  })
+
+  test("asks before a reload while a chat runs, and reloads when forced", async () => {
+    const local = fake([])
+    local.reloadPending = { from: "starship" }
+    local.reloadBusy = true
+    const sync = worker({ local, peer: fake([]) })
+    expect((await sync.cycle()).configReloadPending).toEqual({ from: "starship", busy: true })
+    const refused = await sync.reloadConfig()
+    expect(refused.configReloadPending).toEqual({ from: "starship", busy: true })
+    expect(refused.lastError).toBeNull()
+    const forced = await sync.reloadConfig({ force: true })
+    expect(forced.configReloadPending).toBeNull()
+  })
+
+  test("a cycle running during a reload cannot bring the reload banner back", async () => {
+    const local = fake([])
+    const peer = fake([])
+    local.reloadPending = { from: "starship" }
+    const release = Promise.withResolvers<void>()
+    // The cycle is held after it started; the reload is asked for meanwhile.
+    peer.gate = release.promise
+    const statuses: SyncStatus[] = []
+    const sync = worker({ local, peer, onStatus: (status) => statuses.push(status) })
+    const cycle = sync.cycle()
+    await Bun.sleep(20)
+    const reloaded = sync.reloadConfig()
+    await Bun.sleep(20)
+    // The reload waits for the running cycle instead of racing it.
+    expect(local.reloadPosts).toBe(0)
+    release.resolve()
+    await cycle
+    expect((await reloaded).configReloadPending).toBeNull()
+    expect(local.reloadPosts).toBe(1)
+    expect(statuses.at(-1)?.configReloadPending).toBeNull()
+    expect(sync.status().configReloadPending).toBeNull()
   })
 
   test("reports unpaired when there is no peer", async () => {

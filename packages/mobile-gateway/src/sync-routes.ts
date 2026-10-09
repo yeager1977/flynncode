@@ -33,14 +33,21 @@ export async function handleSync(input: {
       : await readCapped(input.request.body.getReader(), SIGNED_MAX_BODY_BYTES)
   const verified =
     body && gate.verify({ method, target: url.pathname + url.search, headers: input.request.headers, body })
+  // Unsigned: the peer treats it as no answer, since anyone on the path could send it.
   if (!verified) return json({ error: "unauthorized" }, 401)
+  // Signed refusals the peer can act on: "clock" carries this machine's time
+  // so it can report the skew; "revoked" means pair again.
+  if (!verified.ok) return signed(verified.sign, json({ error: verified.reason, now: Date.now() }, 401))
   verified.seen(input.remoteAddress)
-  // Every answer to a verified request is signed over its body, so the peer
-  // can tell it was not altered on the way.
-  const response = await route(input, url.pathname)
+  return signed(verified.sign, await route(input, url.pathname))
+}
+
+// Every answer to a request signed with the token is signed over the request
+// nonce, its status and its body, so the peer can tell it was not altered.
+async function signed(sign: (status: number, body: Uint8Array) => string, response: Response) {
   const bytes = new Uint8Array(await response.arrayBuffer())
   const headers = new Headers({ "content-type": response.headers.get("content-type") ?? "application/json" })
-  headers.set(SYNC_RESPONSE_SIGNATURE_HEADER, verified.sign(bytes))
+  headers.set(SYNC_RESPONSE_SIGNATURE_HEADER, sign(response.status, bytes))
   return new Response(bytes, { status: response.status, headers })
 }
 

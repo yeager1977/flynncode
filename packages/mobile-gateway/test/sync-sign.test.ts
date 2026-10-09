@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { createNonceCache, SIGNATURE_WINDOW_MS, signRequest, verifyRequest } from "../src/sync-sign.ts"
+import {
+  createNonceCache,
+  SIGNATURE_WINDOW_MS,
+  signRequest,
+  signResponse,
+  verifyRequest,
+  verifyResponse,
+} from "../src/sync-sign.ts"
 
 describe("nonce cache", () => {
   test("accepts a nonce once and forgets it after twice the signature window", () => {
@@ -37,9 +44,20 @@ describe("request signatures", () => {
         body: new TextEncoder().encode(body),
         now: 1_000,
       })
-    expect(verify("")).toBe(signed.nonce)
+    expect(verify("")).toEqual({ nonce: signed.nonce, fresh: true })
     expect(verify("x")).toBeUndefined()
     expect(signed.nonce).toMatch(/^[0-9a-f]{32}$/)
     expect(JSON.stringify(signed.headers)).not.toContain(token)
+  })
+})
+
+describe("response signatures", () => {
+  test("cover the status as well as the nonce and body", () => {
+    const token = "a".repeat(64)
+    const body = new TextEncoder().encode("{}")
+    const signature = signResponse(token, "3".repeat(32), 200, body)
+    expect(verifyResponse(token, "3".repeat(32), 200, body, signature)).toBe(true)
+    expect(verifyResponse(token, "3".repeat(32), 503, body, signature)).toBe(false)
+    expect(verifyResponse(token, "4".repeat(32), 200, body, signature)).toBe(false)
   })
 })

@@ -3,7 +3,13 @@ import type { GatewayOptions } from "../src/config.ts"
 import { createGateway } from "../src/gateway.ts"
 import { createSyncGate, type SyncPeer } from "../src/sync-gate.ts"
 import { pairWithPeer, peerBaseUrl, unpairPeer } from "../src/sync-pair.ts"
-import { SYNC_RESPONSE_SIGNATURE_HEADER, signRequest, signResponse, signedRequest } from "../src/sync-sign.ts"
+import {
+  SYNC_RESPONSE_SIGNATURE_HEADER,
+  signRequest,
+  signResponse,
+  signedRequest,
+  verifyResponse,
+} from "../src/sync-sign.ts"
 
 const basic = (username: string, password: string) => `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`
 
@@ -395,8 +401,54 @@ describe("signed sync requests", () => {
     const nonce = "2".repeat(32)
     const response = await handle(fromPeer(manifest, { nonce }), "192.168.1.20")
     const body = new Uint8Array(await response.arrayBuffer())
-    expect(response.headers.get(SYNC_RESPONSE_SIGNATURE_HEADER)).toBe(signResponse(peer.token, nonce, body))
-    expect(response.headers.get(SYNC_RESPONSE_SIGNATURE_HEADER)).not.toBe(signResponse(peer.token, nonce, "{}"))
+    expect(response.headers.get(SYNC_RESPONSE_SIGNATURE_HEADER)).toBe(signResponse(peer.token, nonce, 200, body))
+    expect(response.headers.get(SYNC_RESPONSE_SIGNATURE_HEADER)).not.toBe(signResponse(peer.token, nonce, 503, body))
+  })
+
+  test("sign a refusal only for requests signed with the current or a revoked token", async () => {
+    const sync = gate({ peer })
+    const handle = createGateway({ options, sync: sync.value })
+    const refusal = async (request: Request, nonce: string, token: string) => {
+      const response = await handle(request, "192.168.1.20")
+      const body = new Uint8Array(await response.arrayBuffer())
+      const signature = response.headers.get(SYNC_RESPONSE_SIGNATURE_HEADER)
+      return {
+        status: response.status,
+        verified: verifyResponse(token, nonce, response.status, body, signature),
+        body: JSON.parse(new TextDecoder().decode(body)) as { error: string; now?: number },
+      }
+    }
+    // A stale request signed with the token: signed 401 with the gateway's clock.
+    const stale = await refusal(fromPeer(manifest, { nonce: "5".repeat(32), now: Date.now() - 120_000 }), "5".repeat(32), peer.token)
+    expect(stale.status).toBe(401)
+    expect(stale.verified).toBe(true)
+    expect(stale.body.error).toBe("clock")
+    expect(Math.abs((stale.body.now ?? 0) - Date.now())).toBeLessThan(5_000)
+    // A replay: signed, but no use to an attacker.
+    await handle(fromPeer(manifest, { nonce: "6".repeat(32) }), "192.168.1.20")
+    expect((await refusal(fromPeer(manifest, { nonce: "6".repeat(32) }), "6".repeat(32), peer.token)).body.error).toBe(
+      "replay",
+    )
+    // Unknown token: unsigned.
+    const stranger = await refusal(fromPeer(manifest, { nonce: "7".repeat(32), token: "f".repeat(64) }), "7".repeat(32), "f".repeat(64))
+    expect(stranger.status).toBe(401)
+    expect(stranger.verified).toBe(false)
+    // After unpair the old token still gets a signed "revoked", so the peer knows to pair again.
+    sync.value.revoke()
+    const revoked = await refusal(fromPeer(manifest, { nonce: "8".repeat(32) }), "8".repeat(32), peer.token)
+    expect(revoked).toMatchObject({ status: 401, verified: true, body: { error: "revoked" } })
+  })
+
+  test("a re-paired gateway tells the previous peer it was revoked", async () => {
+    const sync = gate({ peer })
+    sync.value.update({ peer: { ...peer, token: "c".repeat(64) } })
+    const handle = createGateway({ options, sync: sync.value })
+    const response = await handle(fromPeer(manifest, { nonce: "9".repeat(32) }), "192.168.1.20")
+    const body = new Uint8Array(await response.arrayBuffer())
+    expect(response.status).toBe(401)
+    expect(
+      verifyResponse(peer.token, "9".repeat(32), 401, body, response.headers.get(SYNC_RESPONSE_SIGNATURE_HEADER)),
+    ).toBe(true)
   })
 
   test("verify a signed round trip over a real socket", async () => {

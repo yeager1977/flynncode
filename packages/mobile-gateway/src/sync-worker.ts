@@ -10,7 +10,17 @@ export const BATCH_DELAY_MS = 1_000
 const REQUEST_TIMEOUT_MS = 60_000
 
 // "peer-paused": the other computer answered, but its sync is paused.
-export type SyncPhase = "idle" | "offline" | "mismatch" | "unauthorized" | "paused" | "peer-paused" | "unpaired"
+// "clock-skew": the peer refused our signed requests because the two clocks
+// differ by more than the signature window.
+export type SyncPhase =
+  | "idle"
+  | "offline"
+  | "mismatch"
+  | "unauthorized"
+  | "paused"
+  | "peer-paused"
+  | "clock-skew"
+  | "unpaired"
 
 // Why a chat waits for the next cycle: it runs here, it runs on the peer, or it
 // changed here after this cycle read the manifest.
@@ -29,7 +39,8 @@ export type SyncStatus = {
   lastError: string | null
   consecutiveFailures: number
   /** A pulled global config waits for "Reload to apply"; `from` names the machine it came from. */
-  configReloadPending: { from: string } | null
+  // `busy`: a chat is running here, so reloading would stop it.
+  configReloadPending: { from: string; busy: boolean } | null
 }
 
 export type SyncWorker = ReturnType<typeof createSyncWorker>
@@ -40,6 +51,8 @@ export type SyncWorker = ReturnType<typeof createSyncWorker>
 type Fetched<T> =
   | { kind: "ok"; value: T }
   | { kind: "unauthorized" }
+  // The peer refused a request signed with our token because of its time.
+  | { kind: "clock" }
   | { kind: "unreachable" }
   | { kind: "paused" }
   | { kind: "error"; status: number }
@@ -126,14 +139,15 @@ export function createSyncWorker(options: {
     }).catch(() => undefined)
   const local = (path: string, body?: unknown) => send(`${options.local.url}${path}`, options.local.authorization, body)
   // Requests to the peer are signed with the token (never sent), and its
-  // answers are only used once their signature checks out. A 401 comes from a
-  // gateway that could not verify us, so it carries no signature.
+  // answers, refusals included, are only used once their signature checks
+  // out. An unsigned 401 could come from anyone on the path, so it counts as
+  // no answer rather than "pair again".
   const remote = async (peer: SyncPeer, path: string) => {
     const reply = await signedRequest({ peer, path, timeoutMs: REQUEST_TIMEOUT_MS, fetchImpl })
     if (!reply) return undefined
-    if (reply.status === 401 || reply.verified) return new Response(reply.body, { status: reply.status })
-    console.warn(`[machine-sync] ignored an unsigned or altered reply for ${path}`)
-    return "unverified" as const
+    if (reply.verified) return new Response(reply.body, { status: reply.status })
+    console.warn(`[machine-sync] ignored an unsigned or altered reply (HTTP ${reply.status}) for ${path}`)
+    return reply.status === 401 ? undefined : ("unverified" as const)
   }
 
   async function runCycle(): Promise<SyncStatus> {
@@ -146,6 +160,7 @@ export function createSyncWorker(options: {
     const peerManifest = await read(remote(peer, "/flynncode-sync/manifest"), isManifest)
     if (peerManifest.kind === "unauthorized")
       return { ...previous, phase: "unauthorized", online: true, backlog: null, consecutiveFailures: 0 }
+    if (peerManifest.kind === "clock") return clockSkew(previous, previous.received)
     // A paused peer is reachable, so it neither counts as an outage nor backs off.
     if (peerManifest.kind === "paused") return peerPaused(previous, previous.received)
     if (peerManifest.kind === "unverified")
@@ -198,6 +213,7 @@ export function createSyncWorker(options: {
         const received = pulled.filter((item) => item.outcome === "applied").length
         if (result.abort === "unauthorized")
           return { ...previous, phase: "unauthorized", online: true, backlog: null, received, consecutiveFailures: 0 }
+        if (result.abort === "clock") return clockSkew(previous, received)
         if (result.abort === "paused") return peerPaused(previous, received)
         return unreachable(previous, received)
       }
@@ -242,7 +258,7 @@ export function createSyncWorker(options: {
       skipped,
       lastError: settingsError,
       consecutiveFailures: 0,
-      configReloadPending: reload.kind === "ok" ? reload.value.pending : previous.configReloadPending,
+      configReloadPending: reload.kind === "ok" ? pendingReload(reload.value) : previous.configReloadPending,
     }
   }
 
@@ -263,10 +279,15 @@ export function createSyncWorker(options: {
     peer: SyncPeer,
     id: string,
     expected: Version | null,
-  ): Promise<{ outcome: string } | { abort: "unreachable" | "unauthorized" | "paused" }> {
+  ): Promise<{ outcome: string } | { abort: "unreachable" | "unauthorized" | "paused" | "clock" }> {
     const bundle = await read(remote(peer, `/flynncode-sync/session/${encodeURIComponent(id)}`), isRecord)
     // An unreachable, unauthorized or paused peer ends the cycle instead of failing every remaining chat.
-    if (bundle.kind === "unreachable" || bundle.kind === "unauthorized" || bundle.kind === "paused")
+    if (
+      bundle.kind === "unreachable" ||
+      bundle.kind === "unauthorized" ||
+      bundle.kind === "paused" ||
+      bundle.kind === "clock"
+    )
       return { abort: bundle.kind }
     // The chat started running on the peer after its manifest was read; it is
     // skipped like a chat the manifest already showed busy.
@@ -305,6 +326,11 @@ export function createSyncWorker(options: {
     return { ...previous, phase: "offline", online: false, backlog: null, lastError: LOCAL_UNAVAILABLE }
   }
 
+  // Reachable, but every signed request is refused until the clocks agree.
+  function clockSkew(previous: SyncStatus, received: number): SyncStatus {
+    return { ...previous, phase: "clock-skew", online: true, backlog: null, received, consecutiveFailures: 0 }
+  }
+
   function peerPaused(previous: SyncStatus, received: number): SyncStatus {
     return { ...previous, phase: "peer-paused", online: true, backlog: null, received, consecutiveFailures: 0 }
   }
@@ -334,13 +360,36 @@ export function createSyncWorker(options: {
     state.timer.unref?.()
   }
 
-  function run() {
-    if (state.running) return state.running
-    state.running = cycle().finally(() => {
+  // Cycles and reloads run one at a time, in order, so a cycle that read the
+  // pending reload before a reload finished can never report it again after.
+  function exclusive(work: () => Promise<SyncStatus>) {
+    const task = (state.running ?? Promise.resolve()).then(work, work)
+    const tracked: Promise<SyncStatus> = task.finally(() => {
+      if (state.running !== tracked) return
       state.running = undefined
       schedule()
     })
-    return state.running
+    state.running = tracked
+    return tracked
+  }
+
+  function run() {
+    return state.running ?? exclusive(cycle)
+  }
+
+  // A refused reload (a chat is running and `force` is off) leaves the config
+  // pending with `busy` set, so the user can be asked first.
+  async function reload(force: boolean) {
+    const response = await local("/flynncode-sync/reload", { force })
+    const after = await read(local("/flynncode-sync/reload"), isReloadState)
+    const failed = !response || (!response.ok && response.status !== 409)
+    state.status = {
+      ...state.status,
+      configReloadPending: after.kind === "ok" ? pendingReload(after.value) : state.status.configReloadPending,
+      lastError: failed ? "the settings could not be reloaded" : state.status.lastError,
+    }
+    options.onStatus(state.status)
+    return state.status
   }
 
   return {
@@ -357,14 +406,7 @@ export function createSyncWorker(options: {
     },
     syncNow: () => (state.running ? state.running.then(() => run()) : run()),
     /** "Reload to apply": reloads this machine's instances so a pulled config takes effect. */
-    async reloadConfig() {
-      const response = await local("/flynncode-sync/reload", {})
-      state.status = response?.ok
-        ? { ...state.status, configReloadPending: null }
-        : { ...state.status, lastError: "the settings could not be reloaded" }
-      options.onStatus(state.status)
-      return state.status
-    },
+    reloadConfig: (input: { force?: boolean } = {}) => exclusive(() => reload(input.force === true)),
     status: () => state.status,
   }
 }
@@ -403,7 +445,13 @@ async function read<T>(
   const response = await pending
   if (!response) return { kind: "unreachable" }
   if (response === "unverified") return { kind: "unverified" }
-  if (response.status === 401) return { kind: "unauthorized" }
+  // Only a signed refusal reaches here from the peer: "revoked" means pair
+  // again, "clock" means the clocks differ; anything else is a passing fault.
+  if (response.status === 401) {
+    const body: unknown = await response.json().catch(() => undefined)
+    if (isRecord(body) && body.error === "clock") return { kind: "clock" }
+    return isRecord(body) && body.error === "revoked" ? { kind: "unauthorized" } : { kind: "unreachable" }
+  }
   if (response.status === 503) {
     const body: unknown = await response.json().catch(() => undefined)
     return isRecord(body) && body.error === "paused" ? { kind: "paused" } : { kind: "unreachable" }
@@ -430,9 +478,15 @@ function isSettings(
   return isRecord(value) && (value.config === null || isRecord(value.config)) && typeof value.mtime === "number"
 }
 
-function isReloadState(value: unknown): value is { pending: { from: string } | null } {
-  if (!isRecord(value)) return false
+type ReloadState = { pending: { from: string } | null; busy: boolean }
+
+function isReloadState(value: unknown): value is ReloadState {
+  if (!isRecord(value) || typeof value.busy !== "boolean") return false
   return value.pending === null || (isRecord(value.pending) && typeof value.pending.from === "string")
+}
+
+function pendingReload(value: ReloadState) {
+  return value.pending ? { from: value.pending.from, busy: value.busy } : null
 }
 
 function isPrefsPayload(value: unknown): value is { prefs: SyncPrefs | null } {

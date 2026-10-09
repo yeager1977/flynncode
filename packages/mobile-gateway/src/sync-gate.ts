@@ -11,6 +11,9 @@ const MAX_NAME_LENGTH = 64
 // Tokens are minted as 32 random bytes in hex; anything else stored (an empty
 // or hand-edited record) must never verify a request.
 const TOKEN = /^[0-9a-f]{64}$/
+// Tokens revoked here (unpair, re-pair) still sign their own "pair again"
+// answer until the gateway restarts; a few are enough for one peer.
+const REVOKED_LIMIT = 4
 
 export type SyncGate = ReturnType<typeof createSyncGate>
 
@@ -41,6 +44,11 @@ export function createSyncGate(input: {
     pairing: undefined as PairingCode | undefined,
     attempts: 0,
     sent: 0,
+    revoked: [] as string[],
+  }
+  const retire = (peer: SyncPeer | undefined) => {
+    if (!peer || !TOKEN.test(peer.token) || state.revoked.includes(peer.token)) return
+    state.revoked = [...state.revoked, peer.token].slice(-REVOKED_LIMIT)
   }
   const nonces = createNonceCache({ now })
 
@@ -68,24 +76,42 @@ export function createSyncGate(input: {
     pairingActive: () => state.pairing !== undefined && state.pairing.expiresAt > now(),
     /**
      * Checks a request's signature, time and nonce (each nonce is accepted
-     * once). Only a verified request gets a response signer and may move the
-     * peer's stored address.
+     * once). A request signed with the current token is either verified (it
+     * gets a response signer and may move the peer's stored address) or
+     * refused with a signer, so the peer can trust the refusal: a stale time
+     * ("clock") or a reused nonce ("replay"). A request signed with a token
+     * revoked here is refused as "revoked". Anything else gets undefined and
+     * an unsigned 401.
      */
     verify(request: { method: string; target: string; headers: Headers; body: Uint8Array }) {
+      const at = now()
       const peer = state.peer
-      if (!peer || !TOKEN.test(peer.token)) return
-      const nonce = verifyRequest({ token: peer.token, ...request, now: now() })
-      if (!nonce || !nonces.claim(nonce)) return
-      const token = peer.token
+      const current =
+        peer && TOKEN.test(peer.token) ? verifyRequest({ token: peer.token, ...request, now: at }) : undefined
+      if (peer && current) {
+        const token = peer.token
+        const sign = (status: number, body: Uint8Array) => signResponse(token, current.nonce, status, body)
+        if (!current.fresh) return { ok: false as const, reason: "clock" as const, sign }
+        if (!nonces.claim(current.nonce)) return { ok: false as const, reason: "replay" as const, sign }
+        return { ok: true as const, sign, seen: (remoteAddress: string | undefined) => follow(token, remoteAddress) }
+      }
+      const revoked = state.revoked
+        .map((token) => ({ token, checked: verifyRequest({ token, ...request, now: at }) }))
+        .find((item) => item.checked !== undefined)
+      if (!revoked?.checked) return
+      const nonce = revoked.checked.nonce
       return {
-        sign: (body: Uint8Array) => signResponse(token, nonce, body),
-        seen: (remoteAddress: string | undefined) => follow(token, remoteAddress),
+        ok: false as const,
+        reason: "revoked" as const,
+        sign: (status: number, body: Uint8Array) => signResponse(revoked.token, nonce, status, body),
       }
     },
     update(next: { phoneAccess?: boolean; paused?: boolean; peer?: SyncPeer | null; prefs?: SyncPrefs }) {
       state.phoneAccess = next.phoneAccess ?? state.phoneAccess
       state.paused = next.paused ?? state.paused
-      state.peer = next.peer === null ? undefined : (next.peer ?? state.peer)
+      const peer = next.peer === null ? undefined : (next.peer ?? state.peer)
+      if (peer?.token !== state.peer?.token) retire(state.peer)
+      state.peer = peer
       state.prefs = next.prefs ?? state.prefs
     },
     setPairingCode(code: PairingCode | undefined) {
@@ -117,11 +143,13 @@ export function createSyncGate(input: {
       }
       state.pairing = undefined
       state.attempts = 0
+      retire(state.peer)
       state.peer = peer
       input.onPaired?.(peer)
       return { token: peer.token, name: input.machineName }
     },
     revoke() {
+      retire(state.peer)
       state.peer = undefined
       input.onUnpaired?.()
     },
