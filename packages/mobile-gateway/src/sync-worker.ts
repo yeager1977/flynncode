@@ -1,4 +1,4 @@
-import { decide, isManifest, type Manifest, type SyncAction } from "./sync-decide.ts"
+import { decide, isManifest, type Manifest, type ManifestSession, type SyncAction } from "./sync-decide.ts"
 import type { SyncPeer, SyncPrefs } from "./sync-gate.ts"
 
 export const POLL_MS = 60_000
@@ -8,7 +8,12 @@ export const BATCH_SIZE = 20
 export const BATCH_DELAY_MS = 1_000
 const REQUEST_TIMEOUT_MS = 60_000
 
-export type SyncPhase = "idle" | "offline" | "mismatch" | "unauthorized" | "paused" | "unpaired"
+// "peer-paused": the other computer answered, but its sync is paused.
+export type SyncPhase = "idle" | "offline" | "mismatch" | "unauthorized" | "paused" | "peer-paused" | "unpaired"
+
+// Why a chat waits for the next cycle: it runs here, it runs on the peer, or it
+// changed here after this cycle read the manifest.
+export type SkipReason = "local-busy" | "peer-busy" | "local-changed"
 
 export type SyncStatus = {
   phase: SyncPhase
@@ -19,23 +24,31 @@ export type SyncStatus = {
   missingDirectories: string[]
   backlog: { done: number; total: number } | null
   failures: Array<{ id: string; error: string }>
-  skipped: Array<{ id: string; reason: "local-busy" | "peer-busy" }>
+  skipped: Array<{ id: string; reason: SkipReason }>
   lastError: string | null
   consecutiveFailures: number
 }
 
 export type SyncWorker = ReturnType<typeof createSyncWorker>
 
-// "unreachable" means no response or a gateway-level outage (502/503/504); any
-// other HTTP error is "error" and belongs to the one request that produced it.
+// "unreachable" means no response or a gateway-level outage (502/503/504);
+// "paused" is the peer gateway's own 503 while its sync is paused. Any other
+// HTTP error is "error" and belongs to the one request that produced it.
 type Fetched<T> =
   | { kind: "ok"; value: T }
   | { kind: "unauthorized" }
   | { kind: "unreachable" }
+  | { kind: "paused" }
   | { kind: "error"; status: number }
   | { kind: "invalid" }
 
 const LOCAL_UNAVAILABLE = "local server unavailable"
+// Write outcomes that skip a chat for this cycle instead of failing it.
+const SKIPS = new Map<string, SkipReason>([
+  ["busy", "local-busy"],
+  ["stale", "local-changed"],
+  ["peer-busy", "peer-busy"],
+])
 
 export function initialStatus(): SyncStatus {
   return {
@@ -117,11 +130,17 @@ export function createSyncWorker(options: {
     const peerManifest = await read(remote(peer, "/flynncode-sync/manifest"), isManifest)
     if (peerManifest.kind === "unauthorized")
       return { ...previous, phase: "unauthorized", online: true, backlog: null, consecutiveFailures: 0 }
+    // A paused peer is reachable, so it neither counts as an outage nor backs off.
+    if (peerManifest.kind === "paused") return peerPaused(previous, previous.received)
     if (peerManifest.kind !== "ok") return unreachable(previous, previous.received)
     if (localManifest.value.schema !== peerManifest.value.schema || localManifest.value.app !== peerManifest.value.app)
       return { ...previous, phase: "mismatch", online: true, backlog: null, consecutiveFailures: 0 }
 
     const actions = decide({ local: localManifest.value, peer: peerManifest.value })
+    // Every write carries what this cycle saw of the local chat, so the local
+    // server refuses it if the chat changed in the meantime.
+    const seen = new Map(localManifest.value.sessions.map((item) => [item.id, item]))
+    const expected = (id: string) => version(seen.get(id))
     const pulls = actions.filter((action): action is Extract<SyncAction, { type: "pull" }> => action.type === "pull")
     const pullIDs = new Set(pulls.map((pull) => pull.id))
     ;[...state.stuck].filter((id) => !pullIDs.has(id)).forEach((id) => state.stuck.delete(id))
@@ -132,9 +151,13 @@ export function createSyncWorker(options: {
       if (action.type !== "delete" && action.type !== "archive") continue
       const outcome =
         action.type === "delete"
-          ? await write(`/flynncode-sync/delete/${encodeURIComponent(action.id)}`, { timeDeleted: action.timeDeleted })
+          ? await write(`/flynncode-sync/delete/${encodeURIComponent(action.id)}`, {
+              timeDeleted: action.timeDeleted,
+              expected: expected(action.id),
+            })
           : await write(`/flynncode-sync/archive/${encodeURIComponent(action.id)}`, {
               timeArchived: action.timeArchived,
+              expected: expected(action.id),
             })
       if (outcome === LOCAL_UNAVAILABLE) return localDown(previous)
       results.push({ id: action.id, outcome })
@@ -152,11 +175,12 @@ export function createSyncWorker(options: {
         deferred.push(action.id)
         continue
       }
-      const result = await pull(peer, action.id)
+      const result = await pull(peer, action.id, expected(action.id))
       if ("abort" in result) {
         const received = pulled.filter((item) => item.outcome === "applied").length
         if (result.abort === "unauthorized")
           return { ...previous, phase: "unauthorized", online: true, backlog: null, received, consecutiveFailures: 0 }
+        if (result.abort === "paused") return peerPaused(previous, received)
         return unreachable(previous, received)
       }
       if (result.outcome === LOCAL_UNAVAILABLE) return localDown(previous)
@@ -170,13 +194,14 @@ export function createSyncWorker(options: {
 
     const received = pulled.filter((result) => result.outcome === "applied").length
     const failures = [...results, ...pulled]
-      .filter((result) => result.outcome !== "applied" && result.outcome !== "busy")
+      .filter((result) => result.outcome !== "applied" && !SKIPS.has(result.outcome))
       .map((result) => ({ id: result.id, error: result.outcome }))
-    const skipped = [
+    const skipped: SyncStatus["skipped"] = [
       ...actions.flatMap((action) => (action.type === "skip" ? [{ id: action.id, reason: action.reason }] : [])),
-      ...[...results, ...pulled]
-        .filter((result) => result.outcome === "busy")
-        .map((result) => ({ id: result.id, reason: "local-busy" as const })),
+      ...[...results, ...pulled].flatMap((result) => {
+        const reason = SKIPS.get(result.outcome)
+        return reason ? [{ id: result.id, reason }] : []
+      }),
       // Waiting for a parent that is still unresolved is the same as the chat being busy.
       ...deferred.map((id) => ({ id, reason: "local-busy" as const })),
     ]
@@ -201,10 +226,15 @@ export function createSyncWorker(options: {
     }
   }
 
+  // "busy" (the chat runs here) and "stale" (it changed since the manifest)
+  // are both a 409 from the local server; the body tells them apart.
   async function write(path: string, body: unknown): Promise<string> {
     const response = await local(path, body)
     if (!response || [502, 503, 504].includes(response.status)) return LOCAL_UNAVAILABLE
-    if (response.status === 409) return "busy"
+    if (response.status === 409) {
+      const reply: unknown = await response.json().catch(() => undefined)
+      return isRecord(reply) && reply.error === "stale" ? "stale" : "busy"
+    }
     if (response.ok) return "applied"
     return `${response.status} ${await response.text().catch(() => "")}`.trim()
   }
@@ -212,14 +242,19 @@ export function createSyncWorker(options: {
   async function pull(
     peer: SyncPeer,
     id: string,
-  ): Promise<{ outcome: string } | { abort: "unreachable" | "unauthorized" }> {
+    expected: Version | null,
+  ): Promise<{ outcome: string } | { abort: "unreachable" | "unauthorized" | "paused" }> {
     const bundle = await read(remote(peer, `/flynncode-sync/session/${encodeURIComponent(id)}`), isRecord)
-    // An unreachable or unauthorized peer ends the cycle instead of failing every remaining chat.
-    if (bundle.kind === "unreachable" || bundle.kind === "unauthorized") return { abort: bundle.kind }
+    // An unreachable, unauthorized or paused peer ends the cycle instead of failing every remaining chat.
+    if (bundle.kind === "unreachable" || bundle.kind === "unauthorized" || bundle.kind === "paused")
+      return { abort: bundle.kind }
+    // The chat started running on the peer after its manifest was read; it is
+    // skipped like a chat the manifest already showed busy.
+    if (bundle.kind === "error" && bundle.status === 409) return { outcome: "peer-busy" }
     // Any other HTTP error is this chat's own failure; the rest of the batch continues.
     if (bundle.kind === "error") return { outcome: `fetch failed (HTTP ${bundle.status})` }
     if (bundle.kind !== "ok") return { outcome: `fetch failed (${bundle.kind})` }
-    return { outcome: await write("/flynncode-sync/apply", bundle.value) }
+    return { outcome: await write("/flynncode-sync/apply", { bundle: bundle.value, expected }) }
   }
 
   async function syncSettings(peer: SyncPeer): Promise<string | null> {
@@ -245,6 +280,10 @@ export function createSyncWorker(options: {
 
   function localDown(previous: SyncStatus): SyncStatus {
     return { ...previous, phase: "offline", online: false, backlog: null, lastError: LOCAL_UNAVAILABLE }
+  }
+
+  function peerPaused(previous: SyncStatus, received: number): SyncStatus {
+    return { ...previous, phase: "peer-paused", online: true, backlog: null, received, consecutiveFailures: 0 }
   }
 
   function unreachable(previous: SyncStatus, received: number): SyncStatus {
@@ -318,6 +357,13 @@ function pullOrder(pulls: Array<{ type: "pull"; id: string }>, peer: Manifest, s
   ].flat()
 }
 
+type Version = { timeUpdated: number; timeArchived: number | null }
+
+// null tells the local server the chat must not exist there yet.
+function version(session: ManifestSession | undefined): Version | null {
+  return session ? { timeUpdated: session.timeUpdated, timeArchived: session.timeArchived } : null
+}
+
 async function read<T>(
   pending: Promise<Response | undefined>,
   guard: (value: unknown) => value is T,
@@ -325,7 +371,11 @@ async function read<T>(
   const response = await pending
   if (!response) return { kind: "unreachable" }
   if (response.status === 401) return { kind: "unauthorized" }
-  if ([502, 503, 504].includes(response.status)) return { kind: "unreachable" }
+  if (response.status === 503) {
+    const body: unknown = await response.json().catch(() => undefined)
+    return isRecord(body) && body.error === "paused" ? { kind: "paused" } : { kind: "unreachable" }
+  }
+  if ([502, 504].includes(response.status)) return { kind: "unreachable" }
   if (!response.ok) return { kind: "error", status: response.status }
   const body: unknown = await response.json().catch(() => undefined)
   return guard(body) ? { kind: "ok", value: body } : { kind: "invalid" }

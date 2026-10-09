@@ -220,8 +220,17 @@ function bundle(input: { id: string; title: string; timeUpdated: number; directo
   }
 }
 
+// What the sync worker would send as the precondition for a local write.
+async function expected(target: Machine, id: string) {
+  const current = (await manifest(target)).sessions.find((session) => session.id === id)
+  return current ? { timeUpdated: current.timeUpdated, timeArchived: current.timeArchived } : null
+}
+
 async function seed(target: Machine, input: { id: string; title: string; timeUpdated: number; directory?: string }) {
-  const response = await local(target, "/flynncode-sync/apply", bundle({ ...input, directory: input.directory ?? state.missing }))
+  const response = await local(target, "/flynncode-sync/apply", {
+    bundle: bundle({ ...input, directory: input.directory ?? state.missing }),
+    expected: await expected(target, input.id),
+  })
   expect(response.status).toBe(200)
 }
 
@@ -244,11 +253,15 @@ beforeAll(async () => {
   await mkdir(state.project, { recursive: true })
   await machine("challenger")
   await machine("starship")
-}, 180_000)
+  // Two servers may each take the full 90 s start deadline; leave room on top.
+}, 240_000)
 
 afterAll(async () => {
-  for (const cleanup of cleanups.reverse()) await cleanup()
-  await rm(state.shared, { recursive: true, force: true })
+  // Every cleanup runs even if an earlier one throws, so no server is left behind.
+  const failures: unknown[] = []
+  for (const cleanup of cleanups.reverse()) await cleanup().catch((error: unknown) => failures.push(error))
+  await rm(state.shared, { recursive: true, force: true }).catch((error: unknown) => failures.push(error))
+  if (failures.length > 0) throw new AggregateError(failures, "sync e2e cleanup failed")
 })
 
 describe("machine sync end to end", () => {
@@ -341,7 +354,14 @@ describe("machine sync end to end", () => {
   test("a delete propagates and is not pulled back", async () => {
     const [challenger, starship] = machines
     if (!challenger || !starship) throw new Error("machines missing")
-    expect((await local(challenger, "/flynncode-sync/delete/ses_e2e_a2", { timeDeleted: Date.now() })).status).toBe(200)
+    expect(
+      (
+        await local(challenger, "/flynncode-sync/delete/ses_e2e_a2", {
+          timeDeleted: Date.now(),
+          expected: await expected(challenger, "ses_e2e_a2"),
+        })
+      ).status,
+    ).toBe(200)
     await starship.worker.cycle()
     await challenger.worker.cycle()
     expect(ids(await manifest(starship))).not.toContain("ses_e2e_a2")
@@ -352,7 +372,14 @@ describe("machine sync end to end", () => {
   test("an archive propagates", async () => {
     const [challenger, starship] = machines
     if (!challenger || !starship) throw new Error("machines missing")
-    expect((await local(starship, "/flynncode-sync/archive/ses_e2e_b1", { timeArchived: Date.now() })).status).toBe(200)
+    expect(
+      (
+        await local(starship, "/flynncode-sync/archive/ses_e2e_b1", {
+          timeArchived: Date.now(),
+          expected: await expected(starship, "ses_e2e_b1"),
+        })
+      ).status,
+    ).toBe(200)
     await challenger.worker.cycle()
     const archived = (await manifest(challenger)).sessions.find((session) => session.id === "ses_e2e_b1")
     expect(archived?.timeArchived).toBeNumber()
@@ -377,6 +404,11 @@ describe("machine sync end to end", () => {
     const busy = async () =>
       (await manifest(starship)).sessions.some((session) => session.id === "ses_e2e_run" && session.busy)
     await waitFor(busy, "the chat to run on starship")
+    // Asked directly mid-turn, starship's gateway refuses to hand out a half-written copy.
+    const midTurn = await fetch(`http://127.0.0.1:${starship.gateway.port}/flynncode-sync/session/ses_e2e_run`, {
+      headers: { authorization: `Bearer ${starship.gate.peer()?.token}` },
+    })
+    expect(midTurn.status).toBe(409)
 
     await seed(challenger, { id: "ses_e2e_run", title: "newer on challenger", timeUpdated: Date.now() + 60_000, directory: state.project })
     const skipped = await starship.worker.cycle()

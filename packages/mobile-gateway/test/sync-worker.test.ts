@@ -13,6 +13,9 @@ type Fake = {
   down: boolean
   failApply: Set<string>
   busyApply: Set<string>
+  staleApply: Set<string>
+  writes: Array<{ path: string; body: Record<string, unknown> }>
+  paused: boolean
   bundleStatus: number | null
   bundleHits: number
   bundleStatuses: Map<string, number>
@@ -46,6 +49,9 @@ function fake(sessions: ManifestSession[], schema = "s1"): Fake {
     down: false,
     failApply: new Set(),
     busyApply: new Set(),
+    staleApply: new Set(),
+    writes: [],
+    paused: false,
     bundleStatus: null,
     bundleHits: 0,
     bundleStatuses: new Map(),
@@ -65,7 +71,12 @@ function serve(state: Fake, authorization: string) {
     async fetch(request) {
       if (state.down) return new Response("down", { status: 503 })
       if (request.headers.get("authorization") !== authorization) return new Response("unauthorized", { status: 401 })
+      if (state.paused) return Response.json({ error: "paused" }, { status: 503 })
       const path = new URL(request.url).pathname
+      if (/^\/flynncode-sync\/(delete|archive)\//.test(path)) {
+        state.writes.push({ path, body: (await request.json()) as Record<string, unknown> })
+        return Response.json({ ok: true })
+      }
       if (path === "/flynncode-sync/manifest") {
         state.manifestHits += 1
         await state.gate
@@ -79,11 +90,17 @@ function serve(state: Fake, authorization: string) {
         return Response.json({ applied: true })
       }
       if (path === "/flynncode-sync/apply") {
-        const body = (await request.json()) as { session: { id: string; time_updated: number } }
-        if (state.busyApply.has(body.session.id)) return new Response("busy", { status: 409 })
-        if (state.failApply.has(body.session.id)) return new Response("apply failed", { status: 422 })
-        state.applied.push(body.session.id)
-        state.manifest.sessions.push(session(body.session.id, body.session.time_updated))
+        const body = (await request.json()) as {
+          bundle: { session: { id: string; time_updated: number } }
+          expected: unknown
+        }
+        const id = body.bundle.session.id
+        state.writes.push({ path, body })
+        if (state.busyApply.has(id)) return Response.json({ error: "busy" }, { status: 409 })
+        if (state.staleApply.has(id)) return Response.json({ error: "stale" }, { status: 409 })
+        if (state.failApply.has(id)) return new Response("apply failed", { status: 422 })
+        state.applied.push(id)
+        state.manifest.sessions.push(session(id, body.bundle.session.time_updated))
         return Response.json({ ok: true })
       }
       const bundle = /^\/flynncode-sync\/session\/(.+)$/.exec(path)
@@ -407,6 +424,59 @@ describe("sync worker", () => {
       lastError: "local server unavailable",
     })
     expect(peer.bundleLog).toEqual(["ses_a"])
+  })
+
+  test("skips a chat the peer started running after its manifest and retries it next cycle", async () => {
+    const local = fake([])
+    const peer = fake([session("ses_a", 10), session("ses_b", 10)])
+    peer.bundleStatuses = new Map([["ses_a", 409]])
+    const sync = worker({ local, peer })
+    const first = await sync.cycle()
+    expect(first).toMatchObject({ phase: "idle", failures: [], skipped: [{ id: "ses_a", reason: "peer-busy" }] })
+    expect(local.applied).toEqual(["ses_b"])
+    peer.bundleStatuses.clear()
+    const second = await sync.cycle()
+    expect(second.skipped).toEqual([])
+    expect(local.applied).toEqual(["ses_b", "ses_a"])
+  })
+
+  test("sends what it saw of each local chat as a precondition and skips a chat that changed", async () => {
+    const local = fake([session("ses_old", 10), session("ses_gone", 10), session("ses_shelf", 10)])
+    const peer = fake([session("ses_old", 20), session("ses_new", 5), { ...session("ses_shelf", 10), timeArchived: 30 }])
+    peer.manifest.tombstones = [{ id: "ses_gone", timeDeleted: 50 }]
+    local.staleApply = new Set(["ses_old"])
+    const status = await worker({ local, peer }).cycle()
+    const sent = local.writes
+      .filter((write) => write.path !== "/flynncode-sync/apply")
+      .map((write) => [write.path, write.body.expected])
+    expect(sent).toEqual([
+      ["/flynncode-sync/delete/ses_gone", { timeUpdated: 10, timeArchived: null }],
+      ["/flynncode-sync/archive/ses_shelf", { timeUpdated: 10, timeArchived: null }],
+    ])
+    expect(local.writes.filter((write) => write.path === "/flynncode-sync/apply").map((write) => write.body.expected)).toEqual([
+      { timeUpdated: 10, timeArchived: null },
+      null,
+    ])
+    // A chat that changed here waits for the next manifest instead of failing.
+    expect(status.failures).toEqual([])
+    expect(status.skipped).toEqual([{ id: "ses_old", reason: "local-changed" }])
+    expect(local.applied).toEqual(["ses_new"])
+  })
+
+  test("shows a paused peer as reachable and keeps polling at the normal interval", async () => {
+    const peer = fake([session("ses_a", 10)])
+    peer.paused = true
+    const local = fake([])
+    const sync = worker({ local, peer })
+    const results = []
+    for (const _ of [1, 2, 3, 4, 5, 6]) results.push(await sync.cycle())
+    expect(results.every((status) => status.phase === "peer-paused" && status.online)).toBe(true)
+    expect(results.at(-1)?.consecutiveFailures).toBe(0)
+    expect(nextDelay(results.at(-1)!)).toBe(60_000)
+    expect(local.applied).toEqual([])
+    peer.paused = false
+    expect((await sync.cycle()).phase).toBe("idle")
+    expect(local.applied).toEqual(["ses_a"])
   })
 
   test("reports unpaired when there is no peer", async () => {
