@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Deferred, Effect } from "effect"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { FSUtil } from "@opencode-ai/core/fs-util"
+import { GlobalBus, type GlobalEvent } from "../../src/bus/global"
 import { Git } from "../../src/git"
 import { InstanceStore } from "../../src/project/instance-store"
 import { InstanceBootstrap } from "../../src/project/bootstrap"
@@ -35,6 +36,15 @@ describe("subagent isolation cleanup", () => {
         const svc = yield* Worktree.Service
         const store = yield* InstanceStore.Service
 
+        // createDisposable forks the instance bootstrap; listen before creating
+        // so a fast Ready event is not missed.
+        const ready = yield* Deferred.make<void>()
+        const on = (event: GlobalEvent) => {
+          if (event.payload.type === Worktree.Event.Ready.type) Deferred.doneUnsafe(ready, Effect.void)
+        }
+        GlobalBus.on("event", on)
+        yield* Effect.addFinalizer(() => Effect.sync(() => GlobalBus.off("event", on)))
+
         const info = yield* svc.createDisposable({ sessionID: "ses_child" })
         expect(info.branch).toMatch(/^opencode\/session-ses-child/)
         expect(info.directory).toContain("session-ses-child")
@@ -42,7 +52,15 @@ describe("subagent isolation cleanup", () => {
         // The serving instance's own worktree is never disposed.
         expect(yield* svc.disposeIfIdle({ directory: test.directory })).toBe(false)
 
-        // Drain the async bootstrap load so the idle check is deterministic.
+        // Wait for the forked bootstrap to load the worktree instance, then
+        // dispose it. Disposing earlier races the load: under load the instance
+        // appears after disposeDirectory and the idle check sees it running.
+        yield* Deferred.await(ready).pipe(
+          Effect.timeoutOrElse({
+            duration: "10 seconds",
+            orElse: () => Effect.fail(new Error("timed out waiting for worktree.ready")),
+          }),
+        )
         yield* store.disposeDirectory(info.directory).pipe(Effect.ignore)
         expect(yield* svc.disposeIfIdle({ directory: info.directory })).toBe(true)
       }),
