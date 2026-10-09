@@ -15,6 +15,9 @@ type Fake = {
   busyApply: Set<string>
   bundleStatus: number | null
   bundleHits: number
+  bundleStatuses: Map<string, number>
+  bundleLog: string[]
+  onBundle: (() => void) | null
   manifestHits: number
   gate: Promise<void> | null
 }
@@ -45,6 +48,9 @@ function fake(sessions: ManifestSession[], schema = "s1"): Fake {
     busyApply: new Set(),
     bundleStatus: null,
     bundleHits: 0,
+    bundleStatuses: new Map(),
+    bundleLog: [],
+    onBundle: null,
     manifestHits: 0,
     gate: null,
   }
@@ -82,6 +88,10 @@ function serve(state: Fake, authorization: string) {
       }
       const bundle = /^\/flynncode-sync\/session\/(.+)$/.exec(path)
       if (bundle?.[1]) state.bundleHits += 1
+      if (bundle?.[1]) state.bundleLog.push(bundle[1])
+      if (bundle?.[1]) state.onBundle?.()
+      const failing = bundle?.[1] ? state.bundleStatuses.get(bundle[1]) : undefined
+      if (failing) return new Response("bundle", { status: failing })
       if (bundle?.[1] && state.bundleStatus) return new Response("bundle", { status: state.bundleStatus })
       if (bundle?.[1]) return Response.json(state.bundles.get(bundle[1]))
       return new Response("not found", { status: 404 })
@@ -258,7 +268,8 @@ describe("sync worker", () => {
       },
     })
     sync.start()
-    await Promise.race([finished.promise, Bun.sleep(5_000)])
+    // A stuck loop fails through the test timeout instead of leaving a timer behind.
+    await finished.promise
     sync.stop()
     const offline = seen.filter((item) => item.status.phase === "offline")
     expect(offline.length).toBeGreaterThanOrEqual(6)
@@ -346,6 +357,56 @@ describe("sync worker", () => {
     await again.cycle()
     // Without the stuck memory the same 20 failing chats fill the batch again.
     expect(local.applied).toEqual([])
+  })
+
+  test("a bad bundle response fails only that chat and demotes it", async () => {
+    const ids = Array.from({ length: 45 }, (_, index) => `ses_${String(index).padStart(2, "0")}`)
+    const local = fake([])
+    const peer = fake(ids.map((id) => session(id, 10)))
+    peer.bundleStatuses = new Map([
+      ["ses_00", 404],
+      ["ses_01", 500],
+    ])
+    const sync = worker({ local, peer })
+    const first = await sync.cycle()
+    expect(first).toMatchObject({ phase: "idle", online: true, consecutiveFailures: 0, received: 18 })
+    expect(first.failures.map((item) => item.id)).toEqual(["ses_00", "ses_01"])
+    expect(first.failures.map((item) => item.error)).toEqual(["fetch failed (HTTP 404)", "fetch failed (HTTP 500)"])
+    expect(local.applied.length).toBe(18)
+    // The two failing chats go behind the 25 untried ones, so they are not retried yet.
+    const second = await sync.cycle()
+    expect(second.failures).toEqual([])
+    expect(peer.bundleLog.filter((id) => id === "ses_00" || id === "ses_01").length).toBe(2)
+    expect(local.applied.length).toBe(38)
+  })
+
+  test("defers a child whose parent is unresolved as a visible skip", async () => {
+    const local = fake([])
+    local.busyApply = new Set(["ses_parent"])
+    const peer = fake([session("ses_parent", 10), session("ses_child", 10, "ses_parent")])
+    const status = await worker({ local, peer }).cycle()
+    expect(status.skipped).toEqual([
+      { id: "ses_parent", reason: "local-busy" },
+      { id: "ses_child", reason: "local-busy" },
+    ])
+    expect(status.failures).toEqual([])
+  })
+
+  test("a local outage during the batch ends the cycle as a local outage", async () => {
+    const local = fake([])
+    const peer = fake([session("ses_a", 10), session("ses_b", 10)])
+    // The local server drops as soon as the first bundle has been served.
+    peer.onBundle = () => {
+      local.down = true
+    }
+    const status = await worker({ local, peer }).cycle()
+    expect(status).toMatchObject({
+      phase: "offline",
+      online: false,
+      backlog: null,
+      lastError: "local server unavailable",
+    })
+    expect(peer.bundleLog).toEqual(["ses_a"])
   })
 
   test("reports unpaired when there is no peer", async () => {
