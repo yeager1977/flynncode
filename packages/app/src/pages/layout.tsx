@@ -657,14 +657,16 @@ export default function LegacyLayout(props: ParentProps) {
       openProjectKeybind={() => command.keybind("project.open")}
       onOpenProject={sidebar.chooseProject}
       renderProjectOverlay={sidebar.projectOverlay}
-      settingsLabel={() => language.t("sidebar.settings")}
-      settingsKeybind={() => command.keybind("settings.open")}
-      onOpenSettings={openSettings}
-      dispatchLabel={() => language.t("inbox.title")}
-      dispatchUnread={inboxBadge}
-      onOpenDispatch={openDispatch}
-      helpLabel={() => language.t("sidebar.help")}
-      onOpenHelp={() => platform.openExternal("https://opencode.ai/desktop-feedback")}
+      footer={{
+        settingsLabel: () => language.t("sidebar.settings"),
+        settingsKeybind: () => command.keybind("settings.open"),
+        onOpenSettings: openSettings,
+        dispatchLabel: () => language.t("inbox.title"),
+        dispatchUnread: inboxBadge,
+        onOpenDispatch: openDispatch,
+        helpLabel: () => language.t("sidebar.help"),
+        onOpenHelp: () => platform.openExternal("https://opencode.ai/desktop-feedback"),
+      }}
       renderPanel={() =>
         mobile ? (
           <sidebar.SidebarPanel project={sidebar.currentProject} variant="classic" mobile />
