@@ -276,7 +276,7 @@ describe("experimental HttpApi", () => {
           Effect.gen(function* () {
             const listed = yield* request(ExperimentalPaths.worktree, tmp.directory)
             expect(listed.status).toBe(200)
-            expect(yield* json(listed)).toContain(info.directory)
+            expect(yield* json(listed)).toContainEqual({ directory: info.directory, branch: info.branch })
 
             const reset = yield* request(ExperimentalPaths.worktreeReset, tmp.directory, {
               method: "POST",
