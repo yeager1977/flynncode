@@ -1,4 +1,4 @@
-import { decide, isManifest, type SyncAction } from "./sync-decide.ts"
+import { decide, isManifest, type Manifest, type SyncAction } from "./sync-decide.ts"
 import type { SyncPeer, SyncPrefs } from "./sync-gate.ts"
 
 export const POLL_MS = 60_000
@@ -48,7 +48,9 @@ export function nextDelay(
   status: SyncStatus,
   timing = { pollMs: POLL_MS, backoffMs: BACKOFF_MS, batchDelayMs: BATCH_DELAY_MS },
 ) {
-  if (status.backlog) return timing.batchDelayMs
+  // Only a cycle that is still making progress is worth following up quickly; a
+  // stale backlog must never defeat the poll or backoff delay.
+  if (status.phase === "idle" && status.backlog && status.received > 0) return timing.batchDelayMs
   if (status.consecutiveFailures >= BACKOFF_AFTER_FAILURES) return timing.backoffMs
   return timing.pollMs
 }
@@ -100,44 +102,66 @@ export function createSyncWorker(options: {
     const previous = state.status
     const peer = options.peer()
     if (!peer) return initialStatus()
-    if (options.paused()) return { ...previous, phase: "paused" }
+    if (options.paused()) return { ...previous, phase: "paused", backlog: null }
     const localManifest = await read(local("/flynncode-sync/manifest"), isManifest)
-    if (localManifest.kind !== "ok") return { ...previous, phase: "offline", lastError: "local server unavailable" }
+    if (localManifest.kind !== "ok")
+      return { ...previous, phase: "offline", online: false, backlog: null, lastError: "local server unavailable" }
     const peerManifest = await read(remote(peer, "/flynncode-sync/manifest"), isManifest)
     if (peerManifest.kind === "unauthorized")
-      return { ...previous, phase: "unauthorized", online: true, consecutiveFailures: 0 }
-    if (peerManifest.kind !== "ok")
-      return { ...previous, phase: "offline", online: false, consecutiveFailures: previous.consecutiveFailures + 1 }
+      return { ...previous, phase: "unauthorized", online: true, backlog: null, consecutiveFailures: 0 }
+    if (peerManifest.kind !== "ok") return unreachable(previous, previous.received)
     if (localManifest.value.schema !== peerManifest.value.schema || localManifest.value.app !== peerManifest.value.app)
-      return { ...previous, phase: "mismatch", online: true, consecutiveFailures: 0 }
+      return { ...previous, phase: "mismatch", online: true, backlog: null, consecutiveFailures: 0 }
 
     const actions = decide({ local: localManifest.value, peer: peerManifest.value })
     const pulls = actions.filter((action): action is Extract<SyncAction, { type: "pull" }> => action.type === "pull")
-    state.stuck.forEach((id) => pulls.some((pull) => pull.id === id) || state.stuck.delete(id))
-    const batch = [
-      ...pulls.filter((pull) => !state.stuck.has(pull.id)),
-      ...pulls.filter((pull) => state.stuck.has(pull.id)),
-    ].slice(0, BATCH_SIZE)
+    const pullIDs = new Set(pulls.map((pull) => pull.id))
+    ;[...state.stuck].filter((id) => !pullIDs.has(id)).forEach((id) => state.stuck.delete(id))
+    const batch = pullOrder(pulls, peerManifest.value, state.stuck).slice(0, BATCH_SIZE)
     // Requests run one at a time so a big first sync never floods either side.
-    const results: Array<{ id: string; outcome: "applied" | "busy" | string }> = []
+    const results: Array<{ id: string; outcome: string }> = []
     for (const action of actions) {
       if (action.type === "delete")
         results.push({
           id: action.id,
-          outcome: await write(`/flynncode-sync/delete/${action.id}`, { timeDeleted: action.timeDeleted }),
+          outcome: await write(`/flynncode-sync/delete/${encodeURIComponent(action.id)}`, {
+            timeDeleted: action.timeDeleted,
+          }),
         })
       if (action.type === "archive")
         results.push({
           id: action.id,
-          outcome: await write(`/flynncode-sync/archive/${action.id}`, { timeArchived: action.timeArchived }),
+          outcome: await write(`/flynncode-sync/archive/${encodeURIComponent(action.id)}`, {
+            timeArchived: action.timeArchived,
+          }),
         })
     }
-    const pulled: Array<{ id: string; outcome: "applied" | "busy" | string }> = []
-    for (const action of batch) pulled.push({ id: action.id, outcome: await pull(peer, action.id) })
+    const parents = new Map(peerManifest.value.sessions.map((item) => [item.id, item.parentID]))
+    // A chat is never applied while its pulled parent is unresolved this cycle.
+    const blocked = new Set(actions.flatMap((action) => (action.type === "skip" ? [action.id] : [])))
+    const pulled: Array<{ id: string; outcome: string }> = []
+    for (const action of batch) {
+      const parentID = parents.get(action.id)
+      if (parentID && blocked.has(parentID)) {
+        blocked.add(action.id)
+        state.stuck.add(action.id)
+        continue
+      }
+      const result = await pull(peer, action.id)
+      if ("abort" in result) {
+        const received = pulled.filter((item) => item.outcome === "applied").length
+        if (result.abort === "unauthorized")
+          return { ...previous, phase: "unauthorized", online: true, backlog: null, received, consecutiveFailures: 0 }
+        return unreachable(previous, received)
+      }
+      pulled.push({ id: action.id, outcome: result.outcome })
+      if (result.outcome === "applied") state.stuck.delete(action.id)
+      else {
+        state.stuck.add(action.id)
+        blocked.add(action.id)
+      }
+    }
 
-    pulled.forEach((result) =>
-      result.outcome === "applied" ? state.stuck.delete(result.id) : state.stuck.add(result.id),
-    )
     const received = pulled.filter((result) => result.outcome === "applied").length
     const failures = [...results, ...pulled]
       .filter((result) => result.outcome !== "applied" && result.outcome !== "busy")
@@ -169,7 +193,7 @@ export function createSyncWorker(options: {
     }
   }
 
-  async function write(path: string, body: unknown): Promise<"applied" | "busy" | string> {
+  async function write(path: string, body: unknown): Promise<string> {
     const response = await local(path, body)
     if (!response) return "local server unavailable"
     if (response.status === 409) return "busy"
@@ -177,10 +201,15 @@ export function createSyncWorker(options: {
     return `${response.status} ${await response.text().catch(() => "")}`.trim()
   }
 
-  async function pull(peer: SyncPeer, id: string) {
+  async function pull(
+    peer: SyncPeer,
+    id: string,
+  ): Promise<{ outcome: string } | { abort: "unreachable" | "unauthorized" }> {
     const bundle = await read(remote(peer, `/flynncode-sync/session/${encodeURIComponent(id)}`), isRecord)
-    if (bundle.kind !== "ok") return `fetch failed (${bundle.kind})`
-    return write("/flynncode-sync/apply", bundle.value)
+    // An unreachable or unauthorized peer ends the cycle instead of failing every remaining chat.
+    if (bundle.kind === "unreachable" || bundle.kind === "unauthorized") return { abort: bundle.kind }
+    if (bundle.kind !== "ok") return { outcome: `fetch failed (${bundle.kind})` }
+    return { outcome: await write("/flynncode-sync/apply", bundle.value) }
   }
 
   async function syncSettings(peer: SyncPeer): Promise<string | null> {
@@ -202,6 +231,17 @@ export function createSyncWorker(options: {
     if (result.kind !== "ok" || result.value.prefs === null) return
     if (result.value.prefs.updatedAt <= (options.prefs.get()?.updatedAt ?? 0)) return
     options.prefs.apply(result.value.prefs)
+  }
+
+  function unreachable(previous: SyncStatus, received: number): SyncStatus {
+    return {
+      ...previous,
+      phase: "offline",
+      online: false,
+      backlog: null,
+      received,
+      consecutiveFailures: previous.consecutiveFailures + 1,
+    }
   }
 
   async function cycle() {
@@ -231,15 +271,37 @@ export function createSyncWorker(options: {
     cycle: run,
     start() {
       state.stopped = false
+      state.stuck.clear()
       void run()
     },
     stop() {
       state.stopped = true
+      state.stuck.clear()
       clearTimeout(state.timer)
     },
     syncNow: () => (state.running ? state.running.then(() => run()) : run()),
     status: () => state.status,
   }
+}
+
+// Never-stuck chat families come first, stuck ones after. A family is a pulled
+// chat plus its pulled ancestors, kept in decide's parents-first order so a
+// child never precedes its parent in the batch.
+function pullOrder(pulls: Array<{ type: "pull"; id: string }>, peer: Manifest, stuck: Set<string>) {
+  const parents = new Map(peer.sessions.map((item) => [item.id, item.parentID]))
+  const pulling = new Set(pulls.map((pull) => pull.id))
+  // A hostile peer manifest may contain parent cycles; stop at the first repeat.
+  const root = (id: string, seen = new Set<string>()): string => {
+    const parentID = parents.get(id)
+    if (!parentID || !pulling.has(parentID) || seen.has(parentID)) return id
+    return root(parentID, seen.add(id))
+  }
+  const families = Map.groupBy(pulls, (pull) => root(pull.id))
+  const ordered = [...families.values()]
+  return [
+    ...ordered.filter((family) => !family.some((pull) => stuck.has(pull.id))),
+    ...ordered.filter((family) => family.some((pull) => stuck.has(pull.id))),
+  ].flat()
 }
 
 async function read<T>(
