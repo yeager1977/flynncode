@@ -1,4 +1,7 @@
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
+import { Dialog, DialogFooter, DialogHeader, DialogTitleGroup } from "@opencode-ai/ui/v2/dialog-v2"
+import { DividerV2 } from "@opencode-ai/ui/v2/divider-v2"
 import { SelectV2 } from "@opencode-ai/ui/v2/select-v2"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { type Component, For, Show } from "solid-js"
@@ -23,9 +26,43 @@ const PREFS_OPTIONS = [
 
 export const SyncCard: Component = () => {
   const language = useLanguage()
+  const dialog = useDialog()
+  // The v2 settings confirm pattern; resolves false when cancelled or dismissed.
+  const confirmReload = () =>
+    new Promise<boolean>((resolve) => {
+      void dialog.push(
+        () => (
+          <Dialog fit>
+            <DialogHeader>
+              <DialogTitleGroup
+                title={language.t("server.sync.reload.confirm.title")}
+                description={language.t("server.sync.reload.confirm.body")}
+              />
+            </DialogHeader>
+            <DividerV2 />
+            <DialogFooter>
+              <ButtonV2 variant="neutral" onClick={() => dialog.close()}>
+                {language.t("common.cancel")}
+              </ButtonV2>
+              <ButtonV2
+                variant="danger"
+                onClick={() => {
+                  resolve(true)
+                  dialog.close()
+                }}
+              >
+                {language.t("server.sync.reload.confirm.action")}
+              </ButtonV2>
+            </DialogFooter>
+          </Dialog>
+        ),
+        () => resolve(false),
+      )
+    })
   const sync = createSyncCardController({
     api: usePlatform().machineSync,
     fail: (key) => showToast({ variant: "error", description: language.t(key) }),
+    confirmReload,
   })
   const state = sync.state
 
@@ -205,9 +242,16 @@ export const SyncCard: Component = () => {
               {(pending) => (
                 <div class="settings-v2-servers-row">
                   <div class="settings-v2-servers-lead">
-                    <span class="settings-v2-servers-meta settings-v2-servers-meta--wrap">
-                      {language.t("server.sync.reload.ready", { name: pending().from || status().peerName || "" })}
-                    </span>
+                    <div class="settings-v2-servers-copy">
+                      <span class="settings-v2-servers-meta settings-v2-servers-meta--wrap">
+                        {language.t("server.sync.reload.ready", { name: pending().from || status().peerName || "" })}
+                      </span>
+                      <Show when={pending().busy}>
+                        <span class="settings-v2-servers-meta settings-v2-servers-meta--wrap">
+                          {language.t("server.sync.reload.busy")}
+                        </span>
+                      </Show>
+                    </div>
                   </div>
                   <div class="settings-v2-servers-actions">
                     <ButtonV2

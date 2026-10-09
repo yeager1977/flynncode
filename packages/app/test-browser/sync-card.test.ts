@@ -39,6 +39,7 @@ function fakeApi(initial: MachineSyncStatus = base) {
     codeTtl: 600_000,
     fail: false,
     reloadSticks: false,
+    reloadBusy: false,
     held: undefined as (() => void) | undefined,
   }
   const api: MachineSyncPlatform = {
@@ -66,12 +67,14 @@ function fakeApi(initial: MachineSyncStatus = base) {
       calls.push("unpair")
       if (control.fail) throw new Error("ipc down")
     },
-    reloadConfig: async () => {
-      calls.push("reload")
+    reloadConfig: async (input) => {
+      calls.push(input?.force ? "reload:force" : "reload")
       if (control.fail) throw new Error("ipc down")
+      // Like the server: refused while a chat runs, unless forced.
+      const refused = control.reloadBusy && input?.force !== true
       control.current = {
         ...control.current,
-        configReloadPending: control.reloadSticks ? control.current.configReloadPending : null,
+        configReloadPending: control.reloadSticks || refused ? { from: "starship", busy: control.reloadBusy } : null,
       }
       return control.current
     },
@@ -269,7 +272,7 @@ describe("createSyncCardController actions", () => {
 
 describe("createSyncCardController reload to apply", () => {
   // Fresh per test: the store merges statuses into the object it was first given.
-  const pending = (): MachineSyncStatus => ({ ...paired, configReloadPending: { from: "starship" } })
+  const pending = (): MachineSyncStatus => ({ ...paired, configReloadPending: { from: "starship", busy: false } })
 
   test("reloads, clears the pending settings and does not toast", async () => {
     const fake = fakeApi(pending())
@@ -277,7 +280,7 @@ describe("createSyncCardController reload to apply", () => {
     await createRoot(async (dispose) => {
       const sync = createSyncCardController({ api: fake.api, fail: (key) => failures.push(key) })
       await tick()
-      expect(sync.state.status?.configReloadPending).toEqual({ from: "starship" })
+      expect(sync.state.status?.configReloadPending).toEqual({ from: "starship", busy: false })
       sync.reloadConfig()
       expect(sync.state.busy).toBe("reload")
       await tick()
@@ -302,7 +305,60 @@ describe("createSyncCardController reload to apply", () => {
       sync.reloadConfig()
       await tick()
       expect(failures).toEqual(["server.sync.toast.actionFailed", "server.sync.toast.actionFailed"])
-      expect(sync.state.status?.configReloadPending).toEqual({ from: "starship" })
+      expect(sync.state.status?.configReloadPending).toEqual({ from: "starship", busy: false })
+      dispose()
+    })
+  })
+
+  test("asks before reloading while a chat runs, and reloads only once confirmed", async () => {
+    const fake = fakeApi(pending())
+    fake.control.reloadBusy = true
+    const asked: boolean[] = []
+    const answer = { value: false }
+    const failures: string[] = []
+    await createRoot(async (dispose) => {
+      const sync = createSyncCardController({
+        api: fake.api,
+        fail: (key) => failures.push(key),
+        confirmReload: async () => {
+          asked.push(true)
+          return answer.value
+        },
+      })
+      await tick()
+      sync.reloadConfig()
+      await tick()
+      // Declined: nothing is forced and the banner stays, now marked busy.
+      expect(fake.calls).toEqual(["reload"])
+      expect(sync.state.status?.configReloadPending).toEqual({ from: "starship", busy: true })
+      answer.value = true
+      sync.reloadConfig()
+      await tick()
+      expect(fake.calls).toEqual(["reload", "reload", "reload:force"])
+      expect(sync.state.status?.configReloadPending).toBeNull()
+      expect(asked).toEqual([true, true])
+      expect(failures).toEqual([])
+      dispose()
+    })
+  })
+
+  test("never asks when no chat is running", async () => {
+    const fake = fakeApi(pending())
+    const asked: boolean[] = []
+    await createRoot(async (dispose) => {
+      const sync = createSyncCardController({
+        api: fake.api,
+        fail: () => {},
+        confirmReload: async () => {
+          asked.push(true)
+          return true
+        },
+      })
+      await tick()
+      sync.reloadConfig()
+      await tick()
+      expect(asked).toEqual([])
+      expect(fake.calls).toEqual(["reload"])
       dispose()
     })
   })

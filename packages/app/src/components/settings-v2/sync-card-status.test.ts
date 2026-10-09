@@ -53,6 +53,13 @@ describe("syncProblem", () => {
   })
 })
 
+describe("syncProblem clock skew", () => {
+  test("says the clocks differ instead of asking to pair again", () => {
+    expect(syncProblem({ ...status, phase: "clock-skew" })).toEqual({ key: "server.sync.error.clock" })
+    expect(dict["server.sync.error.clock"]).toContain("clocks")
+  })
+})
+
 describe("syncNowFailed", () => {
   test("only a clean idle cycle counts as success", () => {
     expect(syncNowFailed(status)).toBe(false)
@@ -60,6 +67,7 @@ describe("syncNowFailed", () => {
     expect(syncNowFailed({ ...status, failures: [{ id: "ses_a", error: "x" }] })).toBe(true)
     // The other computer paused sync: the headline says so, no "Sync failed" toast.
     expect(syncNowFailed({ ...status, phase: "peer-paused" })).toBe(false)
+    expect(syncNowFailed({ ...status, phase: "clock-skew" })).toBe(true)
   })
 })
 

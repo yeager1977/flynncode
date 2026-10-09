@@ -16,6 +16,8 @@ type Busy = "code" | "syncNow" | "pause" | "unpair" | "reload"
 export function createSyncCardController(input: {
   api: MachineSyncPlatform | undefined
   fail: (key: "server.sync.toast.failed" | "server.sync.toast.actionFailed") => void
+  /** Asks whether to reload anyway while a chat is running (the reload stops it). */
+  confirmReload?: () => Promise<boolean>
   now?: () => number
 }) {
   const now = input.now ?? Date.now
@@ -82,6 +84,20 @@ export function createSyncCardController(input: {
     input.fail(key)
   }
 
+  // The server refuses a plain reload while a chat runs and reports the config
+  // still pending with `busy`; only then is the user asked, and only a
+  // confirmed reload is forced.
+  const reloadWithConfirm = async (machineSync: MachineSyncPlatform) => {
+    const first = await machineSync.reloadConfig()
+    setState("status", first)
+    if (!first.configReloadPending) return
+    if (!first.configReloadPending.busy) return input.fail("server.sync.toast.actionFailed")
+    if (!(await (input.confirmReload?.() ?? Promise.resolve(false)))) return
+    const forced = await machineSync.reloadConfig({ force: true })
+    setState("status", forced)
+    if (forced.configReloadPending) input.fail("server.sync.toast.actionFailed")
+  }
+
   return {
     state,
     /** For the form fields: host, pairCode and prefs. */
@@ -128,15 +144,8 @@ export function createSyncCardController(input: {
     },
     /** "Reload to apply": the pending pulled config takes effect; a reload that leaves it pending failed. */
     reloadConfig() {
-      guarded("reload", () =>
-        api?.reloadConfig().then(
-          (status) => {
-            setState("status", status)
-            if (status.configReloadPending) input.fail("server.sync.toast.actionFailed")
-          },
-          (error) => failed(error, "server.sync.toast.actionFailed"),
-        ),
-      )
+      if (!api) return
+      guarded("reload", () => reloadWithConfirm(api).catch((error) => failed(error, "server.sync.toast.actionFailed")))
     },
     togglePause() {
       guarded("pause", () =>

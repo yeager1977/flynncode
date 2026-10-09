@@ -14,6 +14,7 @@ export function syncHeadline(status: MachineSyncStatus) {
 export function syncProblem(status: MachineSyncStatus) {
   if (status.phase === "mismatch") return { key: "server.sync.error.mismatch" as const }
   if (status.phase === "unauthorized") return { key: "server.sync.error.unauthorized" as const }
+  if (status.phase === "clock-skew") return { key: "server.sync.error.clock" as const }
   if (status.failures.length > 0) return { key: "server.sync.error.failures" as const, count: status.failures.length }
   if (status.lastError) return { key: "server.sync.error.other" as const, error: status.lastError }
   return undefined
