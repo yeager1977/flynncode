@@ -1,11 +1,14 @@
-import { Effect, Option, Schema } from "effect"
+import { Effect, Option, Schema, Scope } from "effect"
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { ConfigErrorV1 } from "@opencode-ai/core/v1/config/error"
+import { GlobalBus } from "@/bus/global"
 import { Config } from "@/config/config"
 import { ConfigParse } from "@/config/parse"
 import { MachineSyncConfig } from "@/machine-sync/config-sync"
 import { MachineSyncStore } from "@/machine-sync/store"
+import { InstanceStore } from "@/project/instance-store"
+import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
 import { SessionID } from "@/session/schema"
 import { isRecord } from "@/util/record"
 
@@ -22,6 +25,9 @@ export const MachineSyncPaths = {
 
 // Largest timestamp a Date can represent.
 const MAX_MTIME = 8.64e15
+// A pulled config waits for running chats before instances reload.
+const RELOAD_POLL = "1 second"
+const RELOAD_MAX_WAIT_MS = 60 * 60 * 1000
 
 const decodeSessionID = Schema.decodeUnknownOption(SessionID)
 
@@ -36,6 +42,9 @@ export const machineSyncRoutes = HttpRouter.use((router) =>
     const store = yield* MachineSyncStore.Service
     const fs = yield* FSUtil.Service
     const config = yield* Config.Service
+    const instances = yield* InstanceStore.Service
+    const scope = yield* Scope.Scope
+    const reload = { pending: false }
 
     const modified = (file: string) =>
       fs.stat(file).pipe(
@@ -48,6 +57,27 @@ export const machineSyncRoutes = HttpRouter.use((router) =>
         Effect.orElseSucceed(() => 0),
       )
 
+    // A pulled config reaches running instances the way a settings save does:
+    // instances reload. Renderers refresh their settings views right away,
+    // but the reload waits until no chat is running, because it would stop
+    // them. Pulls that land while one reload waits share it.
+    const reloadInstances = Effect.fn("MachineSyncRoutes.reloadInstances")(function* () {
+      GlobalBus.emit("event", { directory: "global", payload: { type: "config.updated", properties: {} } })
+      if (reload.pending) return
+      reload.pending = true
+      yield* Effect.gen(function* () {
+        const deadline = Date.now() + RELOAD_MAX_WAIT_MS
+        while (!(yield* store.idle())) {
+          if (Date.now() >= deadline)
+            return yield* Effect.logWarning("machine sync skipped an instance reload; chats stayed busy")
+          yield* Effect.sleep(RELOAD_POLL)
+        }
+        yield* disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true }).pipe(
+          Effect.provideService(InstanceStore.Service, instances),
+        )
+      }).pipe(Effect.ensuring(Effect.sync(() => (reload.pending = false))), Effect.forkIn(scope))
+    })
+
     yield* router.add("GET", MachineSyncPaths.manifest, () =>
       store.manifest().pipe(Effect.map((manifest) => json(manifest))),
     )
@@ -56,19 +86,23 @@ export const machineSyncRoutes = HttpRouter.use((router) =>
       Effect.gen(function* () {
         const sessionID = decodeSessionID((yield* HttpRouter.params).id)
         if (Option.isNone(sessionID)) return json({ error: "not found" }, 404)
-        const bundle = yield* store.bundle(sessionID.value)
-        if (!bundle) return json({ error: "not found" }, 404)
-        return json(bundle)
+        return yield* store.bundle(sessionID.value).pipe(
+          Effect.map((bundle) => (bundle ? json(bundle) : json({ error: "not found" }, 404))),
+          // Mid-turn: the peer skips this chat and asks again next cycle.
+          Effect.catchTag("MachineSyncBusyError", () => Effect.succeed(json({ error: "busy" }, 409))),
+        )
       }),
     )
 
     yield* router.add("POST", MachineSyncPaths.apply, (request) =>
       Effect.gen(function* () {
         const body: unknown = yield* request.json.pipe(Effect.orElseSucceed(() => undefined))
-        if (!MachineSyncStore.isBundle(body)) return json({ error: "invalid bundle" }, 400)
-        return yield* store.apply(body).pipe(
+        if (!isRecord(body) || !MachineSyncStore.isBundle(body.bundle) || !MachineSyncStore.isVersion(body.expected))
+          return json({ error: "invalid bundle" }, 400)
+        return yield* store.apply({ bundle: body.bundle, expected: body.expected }).pipe(
           Effect.as(json({ ok: true })),
           Effect.catchTag("MachineSyncBusyError", () => Effect.succeed(json({ error: "busy" }, 409))),
+          Effect.catchTag("MachineSyncStaleError", () => Effect.succeed(json({ error: "stale" }, 409))),
           Effect.catchTag("MachineSyncApplyError", (error) => Effect.succeed(json({ error: error.message }, 422))),
         )
       }),
@@ -82,13 +116,17 @@ export const machineSyncRoutes = HttpRouter.use((router) =>
           Option.isNone(sessionID) ||
           !isRecord(body) ||
           typeof body.timeDeleted !== "number" ||
-          !Number.isInteger(body.timeDeleted)
+          !Number.isInteger(body.timeDeleted) ||
+          !MachineSyncStore.isVersion(body.expected)
         )
           return json({ error: "bad request" }, 400)
-        return yield* store.remove({ sessionID: sessionID.value, timeDeleted: body.timeDeleted }).pipe(
-          Effect.as(json({ ok: true })),
-          Effect.catchTag("MachineSyncBusyError", () => Effect.succeed(json({ error: "busy" }, 409))),
-        )
+        return yield* store
+          .remove({ sessionID: sessionID.value, timeDeleted: body.timeDeleted, expected: body.expected })
+          .pipe(
+            Effect.as(json({ ok: true })),
+            Effect.catchTag("MachineSyncBusyError", () => Effect.succeed(json({ error: "busy" }, 409))),
+            Effect.catchTag("MachineSyncStaleError", () => Effect.succeed(json({ error: "stale" }, 409))),
+          )
       }),
     )
 
@@ -100,13 +138,17 @@ export const machineSyncRoutes = HttpRouter.use((router) =>
           Option.isNone(sessionID) ||
           !isRecord(body) ||
           typeof body.timeArchived !== "number" ||
-          !Number.isInteger(body.timeArchived)
+          !Number.isInteger(body.timeArchived) ||
+          !MachineSyncStore.isVersion(body.expected)
         )
           return json({ error: "bad request" }, 400)
-        return yield* store.archive({ sessionID: sessionID.value, timeArchived: body.timeArchived }).pipe(
-          Effect.as(json({ ok: true })),
-          Effect.catchTag("MachineSyncBusyError", () => Effect.succeed(json({ error: "busy" }, 409))),
-        )
+        return yield* store
+          .archive({ sessionID: sessionID.value, timeArchived: body.timeArchived, expected: body.expected })
+          .pipe(
+            Effect.as(json({ ok: true })),
+            Effect.catchTag("MachineSyncBusyError", () => Effect.succeed(json({ error: "busy" }, 409))),
+            Effect.catchTag("MachineSyncStaleError", () => Effect.succeed(json({ error: "stale" }, 409))),
+          )
       }),
     )
 
@@ -171,6 +213,7 @@ export const machineSyncRoutes = HttpRouter.use((router) =>
                 .utimes(file, new Date(mtime), new Date(mtime))
                 .pipe(Effect.catch(() => Effect.logWarning("machine sync could not stamp the global config mtime")))
               yield* config.invalidate()
+              if (next !== localText) yield* reloadInstances()
               return json({ applied: true })
             }),
           ),

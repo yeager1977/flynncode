@@ -12,14 +12,17 @@ import { FSUtil } from "@opencode-ai/core/fs-util"
 import { AbsolutePath } from "@opencode-ai/core/schema"
 import { SessionExecution } from "@opencode-ai/core/session/execution"
 import { SessionTable } from "@opencode-ai/core/session/sql"
+import { GlobalBus, type GlobalEvent } from "@/bus/global"
 import { Config } from "@/config/config"
 import { MachineSyncConfig } from "@/machine-sync/config-sync"
 import { MachineSyncStore } from "@/machine-sync/store"
+import { InstanceBootstrap } from "@/project/bootstrap-service"
+import { InstanceStore } from "@/project/instance-store"
 import { ServerAuth } from "@/server/auth"
 import { authorizationRouterMiddleware } from "@/server/routes/instance/httpapi/middleware/authorization"
 import { MachineSyncPaths, machineSyncRoutes } from "@/server/routes/instance/httpapi/machine-sync"
 import { SessionID } from "@/session/schema"
-import { testEffect } from "../lib/effect"
+import { pollWithTimeout, testEffect } from "../lib/effect"
 
 // A session is "running" on the V2 engine while its id is in this set.
 const executing = new Set<SessionID>()
@@ -33,14 +36,20 @@ const execution = Layer.succeed(
   }),
 )
 
+const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
+
 // The routes are served on the in-test server; the app graph is provided once
 // so the routes and the test share one database. Each call builds its own graph.
 const serve = (routes: typeof machineSyncRoutes) =>
   HttpRouter.serve(routes, { disableListenLog: true, disableLogger: true }).pipe(
     Layer.provideMerge(
-      AppNodeBuilder.build(LayerNode.group([MachineSyncStore.node, Database.node, Config.node, FSUtil.node]), [
-        [SessionExecution.node, execution],
-      ]),
+      AppNodeBuilder.build(
+        LayerNode.group([MachineSyncStore.node, Database.node, Config.node, FSUtil.node, InstanceStore.node]),
+        [
+          [SessionExecution.node, execution],
+          [InstanceStore.bootstrapNode, noopBootstrap],
+        ],
+      ),
     ),
     Layer.provideMerge(NodeHttpServer.layerTest),
     Layer.provideMerge(NodeServices.layer),
@@ -88,6 +97,9 @@ const seed = Effect.fn("test.machineSyncRoutes.seed")(function* (id: string) {
     .run()
 })
 
+// The seeded chat's version as the sync worker reads it from the manifest.
+const seeded = { timeUpdated: 10, timeArchived: null }
+
 const basic = (password: string) => ({ authorization: ServerAuth.header({ username: "opencode", password }) ?? "" })
 
 const exportBundle = (id: string, headers?: Record<string, string>) =>
@@ -119,9 +131,13 @@ describe("machine sync routes", () => {
       expect((yield* request(MachineSyncPaths.apply, post({ version: 1 }))).status).toBe(400)
 
       const exported = yield* exportBundle("ses_apply")
+      expect((yield* request(MachineSyncPaths.apply, post({ bundle: exported }))).status).toBe(400)
       const applied = yield* request(
         MachineSyncPaths.apply,
-        post({ ...exported, session: { ...exported.session, title: "from peer", time_updated: 50 } }),
+        post({
+          bundle: { ...exported, session: { ...exported.session, title: "from peer", time_updated: 50 } },
+          expected: seeded,
+        }),
       )
       expect(applied.status).toBe(200)
       const after = yield* exportBundle("ses_apply")
@@ -133,9 +149,15 @@ describe("machine sync routes", () => {
     Effect.gen(function* () {
       yield* seed("ses_delete")
       yield* seed("ses_archive")
-      expect((yield* request("/flynncode-sync/delete/ses_delete", post({ timeDeleted: Date.now() }))).status).toBe(200)
-      expect((yield* request("/flynncode-sync/archive/ses_archive", post({ timeArchived: 77 }))).status).toBe(200)
+      expect(
+        (yield* request("/flynncode-sync/delete/ses_delete", post({ timeDeleted: Date.now(), expected: seeded })))
+          .status,
+      ).toBe(200)
+      expect(
+        (yield* request("/flynncode-sync/archive/ses_archive", post({ timeArchived: 77, expected: seeded }))).status,
+      ).toBe(200)
       expect((yield* request("/flynncode-sync/archive/ses_archive", post({}))).status).toBe(400)
+      expect((yield* request("/flynncode-sync/archive/ses_archive", post({ timeArchived: 78 }))).status).toBe(400)
 
       const manifest = (yield* (yield* request(MachineSyncPaths.manifest)).json) as {
         sessions: Array<{ id: string; timeArchived: number | null }>
@@ -168,11 +190,41 @@ describe("machine sync routes", () => {
       const exported = yield* exportBundle("ses_busy")
       executing.add(SessionID.make("ses_busy"))
       yield* Effect.gen(function* () {
-        expect((yield* request(MachineSyncPaths.apply, post(exported))).status).toBe(409)
-        expect((yield* request("/flynncode-sync/delete/ses_busy", post({ timeDeleted: 5 }))).status).toBe(409)
-        expect((yield* request("/flynncode-sync/archive/ses_busy", post({ timeArchived: 5 }))).status).toBe(409)
+        expect((yield* request(MachineSyncPaths.apply, post({ bundle: exported, expected: seeded }))).status).toBe(409)
+        expect(
+          (yield* request("/flynncode-sync/delete/ses_busy", post({ timeDeleted: 5, expected: seeded }))).status,
+        ).toBe(409)
+        expect(
+          (yield* request("/flynncode-sync/archive/ses_busy", post({ timeArchived: 5, expected: seeded }))).status,
+        ).toBe(409)
+        // A peer asking for the chat mid-turn is told to come back later.
+        const bundle = yield* request("/flynncode-sync/session/ses_busy")
+        expect(bundle.status).toBe(409)
+        expect(yield* bundle.json).toEqual({ error: "busy" })
       }).pipe(Effect.ensuring(Effect.sync(() => executing.delete(SessionID.make("ses_busy")))))
-      expect((yield* request("/flynncode-sync/archive/ses_busy", post({ timeArchived: 5 }))).status).toBe(200)
+      expect((yield* request("/flynncode-sync/session/ses_busy")).status).toBe(200)
+      expect(
+        (yield* request("/flynncode-sync/archive/ses_busy", post({ timeArchived: 5, expected: seeded }))).status,
+      ).toBe(200)
+    }),
+  )
+
+  it.live("answers 409 when the chat changed since the worker read the manifest", () =>
+    Effect.gen(function* () {
+      yield* seed("ses_stale")
+      const exported = yield* exportBundle("ses_stale")
+      const old = { timeUpdated: 9, timeArchived: null }
+      const apply = yield* request(MachineSyncPaths.apply, post({ bundle: exported, expected: old }))
+      expect(apply.status).toBe(409)
+      expect(yield* apply.json).toEqual({ error: "stale" })
+      expect((yield* request(MachineSyncPaths.apply, post({ bundle: exported, expected: null }))).status).toBe(409)
+      expect((yield* request("/flynncode-sync/delete/ses_stale", post({ timeDeleted: 5, expected: old }))).status).toBe(
+        409,
+      )
+      expect(
+        (yield* request("/flynncode-sync/archive/ses_stale", post({ timeArchived: 5, expected: old }))).status,
+      ).toBe(409)
+      expect((yield* exportBundle("ses_stale")).session).toMatchObject({ time_archived: null })
     }),
   )
 
@@ -193,9 +245,12 @@ describe("machine sync routes", () => {
       const response = yield* request(
         MachineSyncPaths.apply,
         post({
-          ...exported,
-          session: { ...exported.session, title: "must not land", time_updated: 500 },
-          parts: [orphan],
+          bundle: {
+            ...exported,
+            session: { ...exported.session, title: "must not land", time_updated: 500 },
+            parts: [orphan],
+          },
+          expected: seeded,
         }),
       )
       expect(response.status).toBe(422)
@@ -252,6 +307,46 @@ describe("machine sync routes", () => {
       expect(text).toContain("sk-local")
       expect(text).not.toContain(MachineSyncConfig.SECRET_PLACEHOLDER)
       expect((yield* Effect.promise(() => stat(file))).mtimeMs).toBe(2_000)
+    }),
+  )
+
+  it.live("reloads instances after a pulled config changed the file, but only once no chat runs", () =>
+    Effect.gen(function* () {
+      const file = Config.globalConfigFile()
+      yield* Effect.addFinalizer(() => Effect.promise(() => rm(file, { force: true })))
+      yield* Effect.promise(() => Bun.write(file, `{ "model": "local/model" }\n`))
+      yield* Effect.promise(() => utimes(file, new Date(1_000), new Date(1_000)))
+      const seen: string[] = []
+      const listen = (event: GlobalEvent) => {
+        if (event.directory === "global") seen.push(event.payload.type)
+      }
+      GlobalBus.on("event", listen)
+      yield* Effect.addFinalizer(() => Effect.sync(() => GlobalBus.off("event", listen)))
+
+      executing.add(SessionID.make("ses_reload"))
+      yield* Effect.gen(function* () {
+        const applied = yield* request(
+          MachineSyncPaths.settingsApply,
+          post({ config: { model: "peer/new" }, mtime: 2_000 }),
+        )
+        expect(yield* applied.json).toEqual({ applied: true })
+        // Settings views refresh right away; the reload would stop the running chat.
+        expect(seen).toEqual(["config.updated"])
+        yield* Effect.sleep("1500 millis")
+        expect(seen).toEqual(["config.updated"])
+      }).pipe(Effect.ensuring(Effect.sync(() => executing.delete(SessionID.make("ses_reload")))))
+      yield* pollWithTimeout(
+        Effect.sync(() => (seen.includes("global.disposed") ? true : undefined)),
+        "instances were not reloaded once the chat went idle",
+      )
+      expect(seen).toEqual(["config.updated", "global.disposed"])
+
+      // Newer but identical content only restamps the file: nothing to reload.
+      seen.length = 0
+      const same = yield* request(MachineSyncPaths.settingsApply, post({ config: { model: "peer/new" }, mtime: 3_000 }))
+      expect(yield* same.json).toEqual({ applied: true })
+      yield* Effect.sleep("1500 millis")
+      expect(seen).toEqual([])
     }),
   )
 
@@ -349,7 +444,7 @@ describe("machine sync routes behind the server password", () => {
         expect(manifest.status).toBe(401)
         expect(manifest.headers["www-authenticate"] ?? "").toContain("Basic")
         const apply = yield* request(MachineSyncPaths.apply, {
-          ...post(exported),
+          ...post({ bundle: exported, expected: seeded }),
           headers: { ...headers, "content-type": "application/json" },
         })
         expect(apply.status).toBe(401)
@@ -358,7 +453,7 @@ describe("machine sync routes behind the server password", () => {
       expect((yield* request(MachineSyncPaths.manifest, { headers: basic("secret") })).status).toBe(200)
       expect(
         (yield* request(MachineSyncPaths.apply, {
-          ...post(exported),
+          ...post({ bundle: exported, expected: seeded }),
           headers: { ...basic("secret"), "content-type": "application/json" },
         })).status,
       ).toBe(200)

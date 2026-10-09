@@ -1,6 +1,6 @@
 export * as MachineSyncStore from "./store"
 
-import { asc, eq, isNull, lt } from "drizzle-orm"
+import { asc, eq, isNull, lt, max } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Database } from "@opencode-ai/core/database/database"
 import { migrations } from "@opencode-ai/core/database/migration.gen"
@@ -54,6 +54,12 @@ export type Manifest = {
   tombstones: Array<{ id: string; timeDeleted: number }>
 }
 
+/**
+ * What the sync worker saw of a local chat when it decided to change it; null
+ * means the chat did not exist. A write whose chat no longer matches is stale.
+ */
+export type Version = { timeUpdated: number; timeArchived: number | null }
+
 type SessionRow = typeof SessionTable.$inferSelect
 
 export type Bundle = {
@@ -75,6 +81,10 @@ export class BusyError extends Schema.TaggedErrorClass<BusyError>()("MachineSync
   sessionID: Schema.String,
 }) {}
 
+export class StaleError extends Schema.TaggedErrorClass<StaleError>()("MachineSyncStaleError", {
+  sessionID: Schema.String,
+}) {}
+
 export class ApplyError extends Schema.TaggedErrorClass<ApplyError>()("MachineSyncApplyError", {
   sessionID: Schema.String,
   message: Schema.String,
@@ -83,14 +93,27 @@ export class ApplyError extends Schema.TaggedErrorClass<ApplyError>()("MachineSy
 export interface Interface {
   /** Every session (archived ones carry `timeArchived`) plus tombstones from the last 30 days. */
   readonly manifest: () => Effect.Effect<Manifest>
-  /** Everything that defines one chat; owner claims are cleared. */
-  readonly bundle: (sessionID: SessionID) => Effect.Effect<Bundle | undefined>
+  /** Everything that defines one chat, read in one transaction; owner claims are cleared. */
+  readonly bundle: (sessionID: SessionID) => Effect.Effect<Bundle | undefined, BusyError>
   /** Replaces the local chat with the bundle in one transaction. */
-  readonly apply: (bundle: Bundle) => Effect.Effect<void, BusyError | ApplyError>
-  readonly remove: (input: { sessionID: SessionID; timeDeleted: number }) => Effect.Effect<void, BusyError>
-  readonly archive: (input: { sessionID: SessionID; timeArchived: number }) => Effect.Effect<void, BusyError>
+  readonly apply: (input: {
+    bundle: Bundle
+    expected: Version | null
+  }) => Effect.Effect<void, BusyError | StaleError | ApplyError>
+  readonly remove: (input: {
+    sessionID: SessionID
+    timeDeleted: number
+    expected: Version | null
+  }) => Effect.Effect<void, BusyError | StaleError>
+  readonly archive: (input: {
+    sessionID: SessionID
+    timeArchived: number
+    expected: Version | null
+  }) => Effect.Effect<void, BusyError | StaleError>
   /** Distinct folders of unarchived chats that do not exist on this machine. */
   readonly missingDirectories: () => Effect.Effect<string[]>
+  /** True while no chat is running in either engine. */
+  readonly idle: () => Effect.Effect<boolean>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/MachineSyncStore") {}
@@ -128,237 +151,382 @@ const layer = Layer.effect(
       return new Set([...busy, ...(yield* execution.active)])
     })
 
+    // A chat's version is its newest content write, not only the session row's
+    // time_updated: the legacy engine touches the session when a prompt is
+    // submitted, then writes the reply into message and part rows without
+    // touching it again, and the V2 engine records inputs and projected
+    // messages in their own rows. Every write to those rows stamps
+    // time_updated (V2 inputs only have time_created), and an apply keeps the
+    // peer's stamps, so both machines compute the same version for the same
+    // content and the tie rule settles. The event log is not consulted: its
+    // rows carry no time, and every V2 event that changes content also writes
+    // one of these rows.
+    const latest = Effect.fn("MachineSyncStore.latest")(function* (sessionID?: SessionID) {
+      const groups = yield* Effect.all([
+        db
+          .select({ id: MessageTable.session_id, time: max(MessageTable.time_updated) })
+          .from(MessageTable)
+          .where(sessionID ? eq(MessageTable.session_id, sessionID) : undefined)
+          .groupBy(MessageTable.session_id)
+          .all(),
+        db
+          .select({ id: PartTable.session_id, time: max(PartTable.time_updated) })
+          .from(PartTable)
+          .where(sessionID ? eq(PartTable.session_id, sessionID) : undefined)
+          .groupBy(PartTable.session_id)
+          .all(),
+        db
+          .select({ id: TodoTable.session_id, time: max(TodoTable.time_updated) })
+          .from(TodoTable)
+          .where(sessionID ? eq(TodoTable.session_id, sessionID) : undefined)
+          .groupBy(TodoTable.session_id)
+          .all(),
+        db
+          .select({ id: SessionFolderTable.session_id, time: max(SessionFolderTable.time_updated) })
+          .from(SessionFolderTable)
+          .where(sessionID ? eq(SessionFolderTable.session_id, sessionID) : undefined)
+          .groupBy(SessionFolderTable.session_id)
+          .all(),
+        db
+          .select({ id: SessionMessageTable.session_id, time: max(SessionMessageTable.time_updated) })
+          .from(SessionMessageTable)
+          .where(sessionID ? eq(SessionMessageTable.session_id, sessionID) : undefined)
+          .groupBy(SessionMessageTable.session_id)
+          .all(),
+        db
+          .select({ id: SessionInputTable.session_id, time: max(SessionInputTable.time_created) })
+          .from(SessionInputTable)
+          .where(sessionID ? eq(SessionInputTable.session_id, sessionID) : undefined)
+          .groupBy(SessionInputTable.session_id)
+          .all(),
+      ]).pipe(Effect.orDie)
+      return groups
+        .flat()
+        .reduce(
+          (times, row) => times.set(row.id, Math.max(times.get(row.id) ?? 0, row.time ?? 0)),
+          new Map<string, number>(),
+        )
+    })
+
+    // Only meaningful inside a transaction, where it matches what is written next.
+    const current = Effect.fn("MachineSyncStore.current")(function* (sessionID: SessionID) {
+      const row = yield* db
+        .select({ time_updated: SessionTable.time_updated, time_archived: SessionTable.time_archived })
+        .from(SessionTable)
+        .where(eq(SessionTable.id, sessionID))
+        .get()
+        .pipe(Effect.orDie)
+      if (!row) return null
+      const times = yield* latest(sessionID)
+      return {
+        timeUpdated: Math.max(row.time_updated, times.get(sessionID) ?? 0),
+        timeArchived: row.time_archived ?? null,
+      } satisfies Version
+    })
+
+    // Runs first in every write transaction: a running chat or one that changed
+    // since the worker read the manifest is left alone until the next cycle.
+    const admit = Effect.fn("MachineSyncStore.admit")(function* (sessionID: SessionID, expected: Version | null) {
+      if ((yield* running()).has(sessionID)) return yield* new BusyError({ sessionID })
+      const now = yield* current(sessionID)
+      if (!sameVersion(now, expected)) return yield* new StaleError({ sessionID })
+    })
+
     const manifest = Effect.fn("MachineSyncStore.manifest")(function* () {
       yield* db
         .delete(SessionTombstoneTable)
         .where(lt(SessionTombstoneTable.time_deleted, Date.now() - TOMBSTONE_TTL_MS))
         .run()
         .pipe(Effect.orDie)
-      const sessions = yield* db
-        .select({
-          id: SessionTable.id,
-          parent_id: SessionTable.parent_id,
-          time_updated: SessionTable.time_updated,
-          time_archived: SessionTable.time_archived,
-        })
-        .from(SessionTable)
-        .all()
+      const read = yield* db
+        .transaction(() =>
+          Effect.gen(function* () {
+            return {
+              sessions: yield* db
+                .select({
+                  id: SessionTable.id,
+                  parent_id: SessionTable.parent_id,
+                  time_updated: SessionTable.time_updated,
+                  time_archived: SessionTable.time_archived,
+                })
+                .from(SessionTable)
+                .all()
+                .pipe(Effect.orDie),
+              times: yield* latest(),
+              tombstones: yield* db.select().from(SessionTombstoneTable).all().pipe(Effect.orDie),
+            }
+          }),
+        )
         .pipe(Effect.orDie)
-      const tombstones = yield* db.select().from(SessionTombstoneTable).all().pipe(Effect.orDie)
       const active = yield* running()
       // A session re-created under the same id (an import, a pulled chat)
       // outranks its old tombstone.
-      const live = new Set(sessions.map((row) => row.id))
+      const live = new Set(read.sessions.map((row) => row.id))
       return {
         schema: SCHEMA_VERSION,
         app: InstallationVersion,
-        sessions: sessions.map((row) => ({
+        sessions: read.sessions.map((row) => ({
           id: row.id,
           parentID: row.parent_id ?? null,
-          timeUpdated: row.time_updated,
+          timeUpdated: Math.max(row.time_updated, read.times.get(row.id) ?? 0),
           timeArchived: row.time_archived ?? null,
           busy: active.has(row.id),
         })),
-        tombstones: tombstones
+        tombstones: read.tombstones
           .filter((row) => !live.has(row.id))
           .map((row) => ({ id: row.id, timeDeleted: row.time_deleted })),
       } satisfies Manifest
     })
 
     const bundle = Effect.fn("MachineSyncStore.bundle")(function* (sessionID: SessionID) {
-      const session = yield* db
-        .select()
-        .from(SessionTable)
-        .where(eq(SessionTable.id, sessionID))
-        .get()
-        .pipe(Effect.orDie)
-      if (!session) return undefined
-      const projectRow = yield* db
-        .select()
-        .from(ProjectTable)
-        .where(eq(ProjectTable.id, session.project_id))
-        .get()
-        .pipe(Effect.orDie)
-      const sequence = yield* db
-        .select()
-        .from(EventSequenceTable)
-        .where(eq(EventSequenceTable.aggregate_id, sessionID))
-        .get()
-        .pipe(Effect.orDie)
-      const contextEpoch = yield* db
-        .select()
-        .from(SessionContextEpochTable)
-        .where(eq(SessionContextEpochTable.session_id, sessionID))
-        .get()
-        .pipe(Effect.orDie)
-      return {
-        version: 1,
-        session,
-        project: projectRow ?? null,
-        messages: yield* db
-          .select()
-          .from(MessageTable)
-          .where(eq(MessageTable.session_id, sessionID))
-          .orderBy(asc(MessageTable.time_created), asc(MessageTable.id))
-          .all()
-          .pipe(Effect.orDie),
-        parts: yield* db
-          .select()
-          .from(PartTable)
-          .where(eq(PartTable.session_id, sessionID))
-          .orderBy(asc(PartTable.id))
-          .all()
-          .pipe(Effect.orDie),
-        todos: yield* db
-          .select()
-          .from(TodoTable)
-          .where(eq(TodoTable.session_id, sessionID))
-          .orderBy(asc(TodoTable.position))
-          .all()
-          .pipe(Effect.orDie),
-        folders: yield* db
-          .select()
-          .from(SessionFolderTable)
-          .where(eq(SessionFolderTable.session_id, sessionID))
-          .orderBy(asc(SessionFolderTable.position))
-          .all()
-          .pipe(Effect.orDie),
-        inputs: yield* db
-          .select()
-          .from(SessionInputTable)
-          .where(eq(SessionInputTable.session_id, sessionID))
-          .orderBy(asc(SessionInputTable.admitted_seq))
-          .all()
-          .pipe(Effect.orDie),
-        sessionMessages: yield* db
-          .select()
-          .from(SessionMessageTable)
-          .where(eq(SessionMessageTable.session_id, sessionID))
-          .orderBy(asc(SessionMessageTable.seq))
-          .all()
-          .pipe(Effect.orDie),
-        contextEpoch: contextEpoch ?? null,
-        // Owner claims are process-local, so they never leave this machine.
-        eventSequence: sequence ? { ...sequence, owner_id: null } : null,
-        events: yield* db
-          .select()
-          .from(EventTable)
-          .where(eq(EventTable.aggregate_id, sessionID))
-          .orderBy(asc(EventTable.seq))
-          .all()
-          .pipe(Effect.orDie),
-      } satisfies Bundle
+      // One read transaction, refused while the chat runs, so a peer never
+      // copies a turn half written.
+      return yield* db
+        .transaction(() =>
+          Effect.gen(function* () {
+            if ((yield* running()).has(sessionID)) return yield* new BusyError({ sessionID })
+            const session = yield* db
+              .select()
+              .from(SessionTable)
+              .where(eq(SessionTable.id, sessionID))
+              .get()
+              .pipe(Effect.orDie)
+            if (!session) return undefined
+            const projectRow = yield* db
+              .select()
+              .from(ProjectTable)
+              .where(eq(ProjectTable.id, session.project_id))
+              .get()
+              .pipe(Effect.orDie)
+            const sequence = yield* db
+              .select()
+              .from(EventSequenceTable)
+              .where(eq(EventSequenceTable.aggregate_id, sessionID))
+              .get()
+              .pipe(Effect.orDie)
+            const contextEpoch = yield* db
+              .select()
+              .from(SessionContextEpochTable)
+              .where(eq(SessionContextEpochTable.session_id, sessionID))
+              .get()
+              .pipe(Effect.orDie)
+            return {
+              version: 1,
+              session,
+              project: projectRow ?? null,
+              messages: yield* db
+                .select()
+                .from(MessageTable)
+                .where(eq(MessageTable.session_id, sessionID))
+                .orderBy(asc(MessageTable.time_created), asc(MessageTable.id))
+                .all()
+                .pipe(Effect.orDie),
+              parts: yield* db
+                .select()
+                .from(PartTable)
+                .where(eq(PartTable.session_id, sessionID))
+                .orderBy(asc(PartTable.id))
+                .all()
+                .pipe(Effect.orDie),
+              todos: yield* db
+                .select()
+                .from(TodoTable)
+                .where(eq(TodoTable.session_id, sessionID))
+                .orderBy(asc(TodoTable.position))
+                .all()
+                .pipe(Effect.orDie),
+              folders: yield* db
+                .select()
+                .from(SessionFolderTable)
+                .where(eq(SessionFolderTable.session_id, sessionID))
+                .orderBy(asc(SessionFolderTable.position))
+                .all()
+                .pipe(Effect.orDie),
+              inputs: yield* db
+                .select()
+                .from(SessionInputTable)
+                .where(eq(SessionInputTable.session_id, sessionID))
+                .orderBy(asc(SessionInputTable.admitted_seq))
+                .all()
+                .pipe(Effect.orDie),
+              sessionMessages: yield* db
+                .select()
+                .from(SessionMessageTable)
+                .where(eq(SessionMessageTable.session_id, sessionID))
+                .orderBy(asc(SessionMessageTable.seq))
+                .all()
+                .pipe(Effect.orDie),
+              contextEpoch: contextEpoch ?? null,
+              // Owner claims are process-local, so they never leave this machine.
+              eventSequence: sequence ? { ...sequence, owner_id: null } : null,
+              events: yield* db
+                .select()
+                .from(EventTable)
+                .where(eq(EventTable.aggregate_id, sessionID))
+                .orderBy(asc(EventTable.seq))
+                .all()
+                .pipe(Effect.orDie),
+            } satisfies Bundle
+          }),
+        )
+        .pipe(Effect.catchTag("SqlError", (error) => Effect.die(error)))
     })
 
-    const apply = Effect.fn("MachineSyncStore.apply")(function* (input: Bundle) {
-      const sessionID = input.session.id
-      if ((yield* running()).has(sessionID)) return yield* new BusyError({ sessionID })
+    const apply = Effect.fn("MachineSyncStore.apply")(function* (input: { bundle: Bundle; expected: Version | null }) {
+      const incoming = input.bundle
+      const sessionID = incoming.session.id
       // A chat whose folder is missing here is still stored and readable; it
       // keeps the peer's project row so the foreign key holds.
-      const present = yield* fs.existsSafe(input.session.directory)
+      const present = yield* fs.existsSafe(incoming.session.directory)
       const projectID = present
-        ? (yield* project.fromDirectory(input.session.directory)).project.id
-        : input.session.project_id
-      yield* db
+        ? (yield* project.fromDirectory(incoming.session.directory).pipe(
+            Effect.catchDefect((defect) =>
+              Effect.fail(
+                new ApplyError({
+                  sessionID,
+                  message: `project lookup failed: ${defect instanceof Error ? defect.message : String(defect)}`,
+                }),
+              ),
+            ),
+          )).project.id
+        : incoming.session.project_id
+      const previous = yield* db
         .transaction((tx) =>
           Effect.gen(function* () {
-            if (!present && input.project)
-              yield* tx.insert(ProjectTable).values(input.project).onConflictDoNothing().run()
+            yield* admit(sessionID, input.expected)
+            const shown = {
+              messages: yield* tx
+                .select({ id: MessageTable.id, time_updated: MessageTable.time_updated })
+                .from(MessageTable)
+                .where(eq(MessageTable.session_id, sessionID))
+                .all(),
+              parts: yield* tx
+                .select({ id: PartTable.id, message_id: PartTable.message_id, time_updated: PartTable.time_updated })
+                .from(PartTable)
+                .where(eq(PartTable.session_id, sessionID))
+                .all(),
+            }
+            if (!present && incoming.project)
+              yield* tx.insert(ProjectTable).values(incoming.project).onConflictDoNothing().run()
             yield* tx.delete(EventSequenceTable).where(eq(EventSequenceTable.aggregate_id, sessionID)).run()
             yield* tx.delete(SessionTable).where(eq(SessionTable.id, sessionID)).run()
             yield* tx.delete(SessionTombstoneTable).where(eq(SessionTombstoneTable.id, sessionID)).run()
             yield* tx
               .insert(SessionTable)
-              .values({ ...input.session, project_id: projectID })
+              .values({ ...incoming.session, project_id: projectID })
               .run()
-            yield* Effect.forEach(chunks(input.messages), (rows) => tx.insert(MessageTable).values(rows).run(), {
+            yield* Effect.forEach(chunks(incoming.messages), (rows) => tx.insert(MessageTable).values(rows).run(), {
               discard: true,
             })
-            yield* Effect.forEach(chunks(input.parts), (rows) => tx.insert(PartTable).values(rows).run(), {
+            yield* Effect.forEach(chunks(incoming.parts), (rows) => tx.insert(PartTable).values(rows).run(), {
               discard: true,
             })
-            yield* Effect.forEach(chunks(input.todos), (rows) => tx.insert(TodoTable).values(rows).run(), {
-              discard: true,
-            })
-            yield* Effect.forEach(chunks(input.folders), (rows) => tx.insert(SessionFolderTable).values(rows).run(), {
-              discard: true,
-            })
-            yield* Effect.forEach(chunks(input.inputs), (rows) => tx.insert(SessionInputTable).values(rows).run(), {
+            yield* Effect.forEach(chunks(incoming.todos), (rows) => tx.insert(TodoTable).values(rows).run(), {
               discard: true,
             })
             yield* Effect.forEach(
-              chunks(input.sessionMessages),
+              chunks(incoming.folders),
+              (rows) => tx.insert(SessionFolderTable).values(rows).run(),
+              { discard: true },
+            )
+            yield* Effect.forEach(chunks(incoming.inputs), (rows) => tx.insert(SessionInputTable).values(rows).run(), {
+              discard: true,
+            })
+            yield* Effect.forEach(
+              chunks(incoming.sessionMessages),
               (rows) => tx.insert(SessionMessageTable).values(rows).run(),
               { discard: true },
             )
-            if (input.contextEpoch) yield* tx.insert(SessionContextEpochTable).values(input.contextEpoch).run()
-            if (input.eventSequence)
+            if (incoming.contextEpoch) yield* tx.insert(SessionContextEpochTable).values(incoming.contextEpoch).run()
+            if (incoming.eventSequence)
               yield* tx
                 .insert(EventSequenceTable)
-                .values({ ...input.eventSequence, owner_id: null })
+                .values({ ...incoming.eventSequence, owner_id: null })
                 .run()
-            yield* Effect.forEach(chunks(input.events), (rows) => tx.insert(EventTable).values(rows).run(), {
+            yield* Effect.forEach(chunks(incoming.events), (rows) => tx.insert(EventTable).values(rows).run(), {
               discard: true,
             })
+            return shown
           }),
         )
         .pipe(
-          Effect.mapError(
-            (cause) => new ApplyError({ sessionID, message: cause instanceof Error ? cause.message : String(cause) }),
+          Effect.mapError((cause) =>
+            cause instanceof BusyError || cause instanceof StaleError
+              ? cause
+              : new ApplyError({ sessionID, message: cause instanceof Error ? cause.message : String(cause) }),
           ),
         )
       const row = yield* db.select().from(SessionTable).where(eq(SessionTable.id, sessionID)).get().pipe(Effect.orDie)
-      if (row) emit("session.updated", row)
+      if (!row) return
+      emit("session.updated", row)
+      // A chat new to this machine is not open anywhere; an existing one may be,
+      // so its open views hear about every message and part that changed.
+      if (input.expected) announceContent(row, incoming, previous)
     })
 
     const remove = Effect.fn("MachineSyncStore.remove")(function* (input: {
       sessionID: SessionID
       timeDeleted: number
+      expected: Version | null
     }) {
-      if ((yield* running()).has(input.sessionID)) return yield* new BusyError({ sessionID: input.sessionID })
       const row = yield* db
-        .select()
-        .from(SessionTable)
-        .where(eq(SessionTable.id, input.sessionID))
-        .get()
-        .pipe(Effect.orDie)
-      yield* db
         .transaction((tx) =>
           Effect.gen(function* () {
-            yield* tx.delete(EventSequenceTable).where(eq(EventSequenceTable.aggregate_id, input.sessionID)).run()
-            yield* tx.delete(SessionTable).where(eq(SessionTable.id, input.sessionID)).run()
+            yield* admit(input.sessionID, input.expected)
+            const found = yield* tx
+              .select()
+              .from(SessionTable)
+              .where(eq(SessionTable.id, input.sessionID))
+              .get()
+              .pipe(Effect.orDie)
+            yield* tx
+              .delete(EventSequenceTable)
+              .where(eq(EventSequenceTable.aggregate_id, input.sessionID))
+              .run()
+              .pipe(Effect.orDie)
+            yield* tx.delete(SessionTable).where(eq(SessionTable.id, input.sessionID)).run().pipe(Effect.orDie)
             yield* tx
               .insert(SessionTombstoneTable)
               .values({ id: input.sessionID, time_deleted: input.timeDeleted })
               .onConflictDoUpdate({ target: SessionTombstoneTable.id, set: { time_deleted: input.timeDeleted } })
               .run()
+              .pipe(Effect.orDie)
+            return found
           }),
         )
-        .pipe(Effect.orDie)
+        .pipe(Effect.catchTag("SqlError", (error) => Effect.die(error)))
       if (row) emit("session.deleted", row)
     })
 
     const archive = Effect.fn("MachineSyncStore.archive")(function* (input: {
       sessionID: SessionID
       timeArchived: number
+      expected: Version | null
     }) {
-      if ((yield* running()).has(input.sessionID)) return yield* new BusyError({ sessionID: input.sessionID })
       const row = yield* db
-        .select()
-        .from(SessionTable)
-        .where(eq(SessionTable.id, input.sessionID))
-        .get()
-        .pipe(Effect.orDie)
-      if (!row) return
-      // time_updated has an $onUpdate default; pin it so archiving here does
-      // not look like a newer local edit to the peer.
-      yield* db
-        .update(SessionTable)
-        .set({ time_archived: input.timeArchived, time_updated: row.time_updated })
-        .where(eq(SessionTable.id, input.sessionID))
-        .run()
-        .pipe(Effect.orDie)
-      emit("session.updated", { ...row, time_archived: input.timeArchived })
+        .transaction((tx) =>
+          Effect.gen(function* () {
+            yield* admit(input.sessionID, input.expected)
+            const found = yield* tx
+              .select()
+              .from(SessionTable)
+              .where(eq(SessionTable.id, input.sessionID))
+              .get()
+              .pipe(Effect.orDie)
+            if (!found) return undefined
+            // time_updated has an $onUpdate default; pin it so archiving here does
+            // not look like a newer local edit to the peer.
+            yield* tx
+              .update(SessionTable)
+              .set({ time_archived: input.timeArchived, time_updated: found.time_updated })
+              .where(eq(SessionTable.id, input.sessionID))
+              .run()
+              .pipe(Effect.orDie)
+            return found
+          }),
+        )
+        .pipe(Effect.catchTag("SqlError", (error) => Effect.die(error)))
+      if (row) emit("session.updated", { ...row, time_archived: input.timeArchived })
     })
 
     const missingDirectories = Effect.fn("MachineSyncStore.missingDirectories")(function* () {
@@ -377,7 +545,11 @@ const layer = Layer.effect(
       return missing.filter((directory): directory is string => directory !== undefined).sort()
     })
 
-    return Service.of({ manifest, bundle, apply, remove, archive, missingDirectories })
+    const idle = Effect.fn("MachineSyncStore.idle")(function* () {
+      return (yield* running()).size === 0
+    })
+
+    return Service.of({ manifest, bundle, apply, remove, archive, missingDirectories, idle })
   }),
 )
 
@@ -410,6 +582,22 @@ export function isBundle(input: unknown): input is Bundle {
   return input.project === null || (isRecord(input.project) && input.project.id === session.project_id)
 }
 
+/** A version precondition from the sync worker: `null` (chat absent) or `{ timeUpdated, timeArchived }`. */
+export function isVersion(input: unknown): input is Version | null {
+  if (input === null) return true
+  if (!isRecord(input) || !isTime(input.timeUpdated)) return false
+  return input.timeArchived === null || isTime(input.timeArchived)
+}
+
+function isTime(value: unknown) {
+  return typeof value === "number" && Number.isInteger(value)
+}
+
+function sameVersion(a: Version | null, b: Version | null) {
+  if (a === null || b === null) return a === b
+  return a.timeUpdated === b.timeUpdated && a.timeArchived === b.timeArchived
+}
+
 function chunks<T>(rows: readonly T[]) {
   return Array.from({ length: Math.ceil(rows.length / INSERT_CHUNK) }, (_, index) =>
     rows.slice(index * INSERT_CHUNK, (index + 1) * INSERT_CHUNK),
@@ -423,5 +611,48 @@ function emit(type: "session.updated" | "session.deleted", row: SessionRow) {
     directory: row.directory,
     project: row.project_id,
     payload: { type, properties: { sessionID: row.id, info: Session.fromRow(row) } },
+  })
+}
+
+// Mirrors the legacy message events so an open chat redraws only what the
+// apply changed: removed messages and parts go, new or restamped ones are sent.
+function announceContent(
+  row: SessionRow,
+  incoming: Bundle,
+  previous: {
+    messages: Array<Pick<Bundle["messages"][number], "id" | "time_updated">>
+    parts: Array<Pick<Bundle["parts"][number], "id" | "message_id" | "time_updated">>
+  },
+) {
+  const send = (type: string, properties: Record<string, unknown>) =>
+    GlobalBus.emit("event", { directory: row.directory, project: row.project_id, payload: { type, properties } })
+  const messages = new Map(incoming.messages.map((message) => [message.id, message.time_updated]))
+  const parts = new Map(incoming.parts.map((part) => [part.id, part.time_updated]))
+  const shownMessages = new Map(previous.messages.map((message) => [message.id, message.time_updated]))
+  const shownParts = new Map(previous.parts.map((part) => [part.id, part.time_updated]))
+  previous.messages
+    .filter((message) => !messages.has(message.id))
+    .forEach((message) => send("message.removed", { sessionID: row.id, messageID: message.id }))
+  // Parts of a removed message go with it.
+  previous.parts
+    .filter((part) => !parts.has(part.id) && messages.has(part.message_id))
+    .forEach((part) => send("message.part.removed", { sessionID: row.id, messageID: part.message_id, partID: part.id }))
+  incoming.messages
+    .filter((message) => shownMessages.get(message.id) !== message.time_updated)
+    .forEach((message) =>
+      send("message.updated", { sessionID: row.id, info: { ...message.data, id: message.id, sessionID: row.id } }),
+    )
+  incoming.parts
+    .filter((part) => shownParts.get(part.id) !== part.time_updated)
+    .forEach((part) =>
+      send("message.part.updated", {
+        sessionID: row.id,
+        part: { ...part.data, id: part.id, sessionID: row.id, messageID: part.message_id },
+        time: part.time_updated,
+      }),
+    )
+  send("todo.updated", {
+    sessionID: row.id,
+    todos: incoming.todos.map((todo) => ({ content: todo.content, status: todo.status, priority: todo.priority })),
   })
 }
