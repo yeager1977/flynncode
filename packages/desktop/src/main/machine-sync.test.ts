@@ -52,7 +52,15 @@ function peerMachine(prefs?: { sections: Record<string, unknown>; updatedAt: num
   })
   gate.setPairingCode({ code: "654321", expiresAt: Date.now() + 60_000 })
   const handle = createGateway({
-    options: { host: "127.0.0.1", port: 0, upstream: "http://127.0.0.1:9", username: "opencode", password: "phone", upstreamPassword: "server", relayToken: "" },
+    options: {
+      host: "127.0.0.1",
+      port: 0,
+      upstream: "http://127.0.0.1:9",
+      username: "opencode",
+      password: "phone",
+      upstreamPassword: "server",
+      relayToken: "",
+    },
     sync: gate,
   })
   const server = Bun.serve({ port: 0, fetch: (request, srv) => handle(request, srv.requestIP(request)?.address) })
@@ -118,6 +126,7 @@ describe("createMachineSync", () => {
     const peer = peerMachine({ sections: { appearance: { fontSize: 22 } }, updatedAt: 5 })
     const { broadcasts, sync } = controller()
     expect(await sync.pair({ host: peer.host, code: "654321" })).toEqual({ ok: true })
+    await sync.idle()
     expect(broadcasts.filter((entry) => entry.channel === "machine-sync-adopt-prefs")).toEqual([
       { channel: "machine-sync-adopt-prefs", payload: null },
     ])
@@ -128,6 +137,7 @@ describe("createMachineSync", () => {
     const peer = peerMachine(prefs)
     const { broadcasts, sync } = controller()
     expect(await sync.pair({ host: peer.host, code: "654321", prefs: "theirs" })).toEqual({ ok: true })
+    await sync.idle()
     expect(broadcasts.filter((entry) => entry.channel === "machine-sync-adopt-prefs")).toEqual([
       { channel: "machine-sync-adopt-prefs", payload: prefs },
     ])
@@ -137,9 +147,59 @@ describe("createMachineSync", () => {
     const peer = peerMachine()
     const { broadcasts, sync } = controller()
     expect(await sync.pair({ host: peer.host, code: "654321", prefs: "theirs" })).toEqual({ ok: true })
+    await sync.idle()
     expect(broadcasts.filter((entry) => entry.channel === "machine-sync-adopt-prefs")).toEqual([
       { channel: "machine-sync-adopt-prefs", payload: null },
     ])
+  })
+
+  test("pairing with prefs=theirs broadcasts no adopt when the peer's prefs cannot be read", async () => {
+    const peer = peerMachine({ sections: { appearance: { fontSize: 22 } }, updatedAt: 5 })
+    const memory = memoryStore()
+    const broadcasts: Array<{ channel: string; payload: unknown }> = []
+    const fetchImpl = Object.assign(
+      (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
+        String(input).endsWith("/flynncode-sync/prefs")
+          ? Promise.resolve(new Response("boom", { status: 500 }))
+          : fetch(input, init),
+      { preconnect: fetch.preconnect },
+    )
+    const sync = createMachineSync({
+      store: memory.store,
+      machineName: "starship",
+      post: () => {},
+      broadcast: (channel, payload) => broadcasts.push({ channel, payload }),
+      lanAddresses: () => [],
+      fetchImpl,
+      code: () => "123456",
+    })
+    expect(await sync.pair({ host: peer.host, code: "654321", prefs: "theirs" })).toEqual({ ok: true })
+    await sync.idle()
+    expect(memory.values.has("syncPeer")).toBe(true)
+    expect(broadcasts.filter((entry) => entry.channel === "machine-sync-adopt-prefs")).toEqual([])
+  })
+
+  test("pairing with prefs=theirs broadcasts no adopt when the peer is unreachable for prefs", async () => {
+    const peer = peerMachine({ sections: { appearance: { fontSize: 22 } }, updatedAt: 5 })
+    const memory = memoryStore()
+    const broadcasts: Array<{ channel: string; payload: unknown }> = []
+    const fetchImpl = Object.assign(
+      (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
+        String(input).endsWith("/flynncode-sync/prefs") ? Promise.reject(new Error("unreachable")) : fetch(input, init),
+      { preconnect: fetch.preconnect },
+    )
+    const sync = createMachineSync({
+      store: memory.store,
+      machineName: "starship",
+      post: () => {},
+      broadcast: (channel, payload) => broadcasts.push({ channel, payload }),
+      lanAddresses: () => [],
+      fetchImpl,
+      code: () => "123456",
+    })
+    expect(await sync.pair({ host: peer.host, code: "654321", prefs: "theirs" })).toEqual({ ok: true })
+    await sync.idle()
+    expect(broadcasts.filter((entry) => entry.channel === "machine-sync-adopt-prefs")).toEqual([])
   })
 
   test("re-pairing tells the previous peer to drop its token", async () => {
@@ -150,6 +210,7 @@ describe("createMachineSync", () => {
     const firstToken = (values.get("syncPeer") as { token: string }).token
     expect(first.gate.peer()?.token).toBe(firstToken)
     expect(await sync.pair({ host: second.host, code: "654321" })).toEqual({ ok: true })
+    await sync.idle()
     expect(first.gate.peer()).toBeUndefined()
     expect(second.gate.peer()?.token).toBe((values.get("syncPeer") as { token: string }).token)
     expect((values.get("syncPeer") as { name: string }).name).toBe("challenger")
@@ -160,8 +221,17 @@ describe("createMachineSync", () => {
     const peer = { name: "challenger", url: "http://192.168.1.10:4097", token: "c".repeat(64) }
     sync.handleSidecarMessage({ type: "sync-paired", peer })
     expect(values.get("syncPeer")).toEqual(peer)
-    sync.handleSidecarMessage({ type: "sync-status", status: { ...initialStatus(), phase: "idle", online: true, received: 4 } })
-    expect(sync.status()).toMatchObject({ paired: true, peerName: "challenger", phase: "idle", online: true, received: 4 })
+    sync.handleSidecarMessage({
+      type: "sync-status",
+      status: { ...initialStatus(), phase: "idle", online: true, received: 4 },
+    })
+    expect(sync.status()).toMatchObject({
+      paired: true,
+      peerName: "challenger",
+      phase: "idle",
+      online: true,
+      received: 4,
+    })
     const prefs = { sections: { appearance: { fontSize: 17 } }, updatedAt: 9 }
     sync.handleSidecarMessage({ type: "sync-peer-prefs", prefs })
     expect(values.get("syncPrefs")).toEqual(prefs)
@@ -176,7 +246,11 @@ describe("createMachineSync", () => {
     const pending = sync.syncNow()
     const command = posted.at(-1)
     if (command?.type !== "sync-now") throw new Error("expected a sync-now command")
-    sync.handleSidecarMessage({ type: "sync-status", status: { ...initialStatus(), phase: "offline" }, requestID: command.requestID })
+    sync.handleSidecarMessage({
+      type: "sync-status",
+      status: { ...initialStatus(), phase: "offline" },
+      requestID: command.requestID,
+    })
     expect((await pending).phase).toBe("unpaired")
   })
 
@@ -201,7 +275,14 @@ describe("createMachineSync", () => {
       type: "sync-status",
       status: { ...initialStatus(), phase: "idle", online: true, received: 4, sent: 2, lastSuccess: 5, lastError: "x" },
     })
-    expect(sync.status()).toMatchObject({ phase: "unpaired", online: false, received: 0, sent: 0, lastSuccess: null, lastError: null })
+    expect(sync.status()).toMatchObject({
+      phase: "unpaired",
+      online: false,
+      received: 0,
+      sent: 0,
+      lastSuccess: null,
+      lastError: null,
+    })
   })
 
   test("keeps newer stored prefs and hands them back to an older window", () => {

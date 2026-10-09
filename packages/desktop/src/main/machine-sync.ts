@@ -57,6 +57,9 @@ function unbracket(host: string) {
   return /^\[[0-9A-Fa-f:]+\]:\d+$/.test(host) ? `http://${host}` : host
 }
 
+// Resolves to `{ prefs: null }` when the peer answered but has no prefs, and
+// to undefined when it could not be asked (unreachable, timeout, non-OK or an
+// unreadable body): those must not be mistaken for each other.
 async function fetchPeerPrefs(peer: { url: string; token: string }, fetchImpl: typeof fetch = fetch) {
   const response = await fetchImpl(`${peer.url}/flynncode-sync/prefs`, {
     headers: { authorization: `Bearer ${peer.token}` },
@@ -65,7 +68,10 @@ async function fetchPeerPrefs(peer: { url: string; token: string }, fetchImpl: t
   }).catch(() => undefined)
   if (!response?.ok) return
   const body: unknown = await response.json().catch(() => undefined)
-  return typeof body === "object" && body !== null && "prefs" in body ? parsePrefs(body.prefs) : undefined
+  if (typeof body !== "object" || body === null || !("prefs" in body)) return
+  if (body.prefs === null) return { prefs: null }
+  const prefs = parsePrefs(body.prefs)
+  return prefs && { prefs }
 }
 
 // Main owns the persisted sync settings; the sidecar owns the live gate and
@@ -118,10 +124,29 @@ export function createMachineSync(deps: {
     }
   }
 
+  // Best-effort work that outlives the call that started it; `idle` lets tests wait.
+  const tasks = new Set<Promise<unknown>>()
+  const background = (task: Promise<unknown>) => {
+    tasks.add(task)
+    void task.finally(() => tasks.delete(task))
+  }
+
+  // `keep` (null) has windows restamp and push their prefs. `theirs` hands them
+  // the peer's to adopt, falling back to keep if the peer answered with none;
+  // if the peer could not be asked, nothing is broadcast (plain newest-wins).
+  const adoptPeerPrefs = async (peer: { url: string; token: string }, choice: MachineSyncPrefsChoice | undefined) => {
+    if (choice !== "theirs") return deps.broadcast("machine-sync-adopt-prefs", null)
+    const fetched = await fetchPeerPrefs(peer, deps.fetchImpl)
+    if (!fetched)
+      return console.warn("[machine-sync] could not read the other computer's preferences; leaving them as is")
+    deps.broadcast("machine-sync-adopt-prefs", fetched.prefs)
+  }
+
   const publish = () => deps.broadcast("machine-sync-status", status())
 
   return {
     status,
+    idle: () => Promise.allSettled([...tasks]).then(() => undefined),
     phoneAccess: () => settings().phoneAccess,
     setPhoneAccess(enabled: boolean) {
       deps.store.set(PHONE_ACCESS_KEY, enabled)
@@ -151,14 +176,11 @@ export function createMachineSync(deps: {
       deps.store.set(SYNC_PEER_KEY, result.peer)
       pushConfig()
       publish()
-      // `keep` (null) has windows restamp and push their prefs; `theirs` hands
-      // them the peer's to adopt, falling back to `keep` if it has none.
-      deps.broadcast(
-        "machine-sync-adopt-prefs",
-        input.prefs === "theirs" ? ((await fetchPeerPrefs(result.peer, deps.fetchImpl)) ?? null) : null,
-      )
+      // Neither step blocks the pair result.
+      background(adoptPeerPrefs(result.peer, input.prefs))
       // Re-pairing replaces the peer; tell the old one so its token stops working.
-      if (previous && previous.token !== result.peer.token) await unpairPeer({ peer: previous, fetchImpl: deps.fetchImpl })
+      if (previous && previous.token !== result.peer.token)
+        background(unpairPeer({ peer: previous, fetchImpl: deps.fetchImpl }))
       return { ok: true }
     },
     async unpair() {
