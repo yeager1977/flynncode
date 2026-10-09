@@ -84,7 +84,7 @@ For each id in the peer manifest:
 - Peer `timeUpdated` > local `timeUpdated` (or chat missing locally, or local
   copy archived earlier than the peer's newer state) → **pull**.
 - Equal → keep local (tie rule).
-- Local chat is running (has an active runner/busy status) → skip this cycle.
+- Local chat is running (legacy busy status or in the V2 `SessionExecution` active set) → skip this cycle.
 - Peer reports the chat `busy` → skip this cycle (it is mid-turn there).
 - Peer tombstone newer than the local `timeUpdated` → delete locally (and
   write a local tombstone).
@@ -125,7 +125,7 @@ app stays usable.
 edit wins by file mtime (tie keeps local).
 
 - **Never sent:** values at secret paths — any key matching
-  `/apiKey|token|secret|password/i`, any `headers` map value under
+  `/(apiKey|api_key|token|secret|password)$/i` (suffix match, so `maxTokens` still syncs), any `headers` map value under
   `provider` or `mcp`, and `{env:…}`/`{file:…}` references — are replaced
   with a placeholder before sending. The `server` block is omitted.
 - **On apply:** the local file is patched in place with the jsonc patch
