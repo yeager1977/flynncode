@@ -44,7 +44,15 @@ export function parsePairInput(host: unknown, code: unknown) {
   const trimmedCode = code.trim()
   if (!/^(https?:\/\/)?[A-Za-z0-9.\-[\]:]{1,253}$/.test(trimmedHost)) return
   if (!/^\d{6}$/.test(trimmedCode)) return
-  return { host: trimmedHost, code: trimmedCode }
+  return { host: unbracket(trimmedHost), code: trimmedCode }
+}
+
+// pairWithPeer adds the brackets itself for a bare IPv6 address, so `[::1]`
+// becomes `::1`; `[::1]:4097` becomes a URL, which it takes as given.
+function unbracket(host: string) {
+  const bare = /^\[([0-9A-Fa-f:]+)\]$/.exec(host)
+  if (bare) return bare[1]
+  return /^\[[0-9A-Fa-f:]+\]:\d+$/.test(host) ? `http://${host}` : host
 }
 
 // Main owns the persisted sync settings; the sidecar owns the live gate and
@@ -73,7 +81,8 @@ export function createMachineSync(deps: {
 
   const status = (): MachineSyncStatus => {
     const current = settings()
-    const worker = state.worker
+    // A status that lands after unpair must not leak into the unpaired view.
+    const worker = current.peer === null ? undefined : state.worker
     return {
       paired: current.peer !== null,
       peerName: current.peer?.name ?? null,
@@ -121,10 +130,13 @@ export function createMachineSync(deps: {
         fetchImpl: deps.fetchImpl,
       })
       if (!result.ok) return { ok: false, reason: result.reason }
+      const previous = settings().peer
       state.worker = undefined
       deps.store.set(SYNC_PEER_KEY, result.peer)
       pushConfig()
       publish()
+      // Re-pairing replaces the peer; tell the old one so its token stops working.
+      if (previous && previous.token !== result.peer.token) await unpairPeer({ peer: previous, fetchImpl: deps.fetchImpl })
       return { ok: true }
     },
     async unpair() {
@@ -142,6 +154,7 @@ export function createMachineSync(deps: {
           pending.delete(requestID)
           resolve(status())
         }, SYNC_NOW_TIMEOUT_MS)
+        timer.unref()
         pending.set(requestID, () => {
           clearTimeout(timer)
           resolve(status())

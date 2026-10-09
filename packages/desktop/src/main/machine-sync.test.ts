@@ -111,6 +111,19 @@ describe("createMachineSync", () => {
     expect(peer.gate.peer()).toBeUndefined()
   })
 
+  test("re-pairing tells the previous peer to drop its token", async () => {
+    const first = peerMachine()
+    const second = peerMachine()
+    const { values, sync } = controller()
+    expect(await sync.pair({ host: first.host, code: "654321" })).toEqual({ ok: true })
+    const firstToken = (values.get("syncPeer") as { token: string }).token
+    expect(first.gate.peer()?.token).toBe(firstToken)
+    expect(await sync.pair({ host: second.host, code: "654321" })).toEqual({ ok: true })
+    expect(first.gate.peer()).toBeUndefined()
+    expect(second.gate.peer()?.token).toBe((values.get("syncPeer") as { token: string }).token)
+    expect((values.get("syncPeer") as { name: string }).name).toBe("challenger")
+  })
+
   test("applies sidecar messages: paired, unpaired, peer prefs and status", () => {
     const { values, broadcasts, sync } = controller()
     const peer = { name: "challenger", url: "http://192.168.1.10:4097", token: "c".repeat(64) }
@@ -134,6 +147,30 @@ describe("createMachineSync", () => {
     if (command?.type !== "sync-now") throw new Error("expected a sync-now command")
     sync.handleSidecarMessage({ type: "sync-status", status: { ...initialStatus(), phase: "offline" }, requestID: command.requestID })
     expect((await pending).phase).toBe("unpaired")
+  })
+
+  test("answers Sync now at once when the sidecar replies without a worker", async () => {
+    const memory = memoryStore()
+    const sync: ReturnType<typeof createMachineSync> = createMachineSync({
+      store: memory.store,
+      machineName: "starship",
+      post: (command) => {
+        if (command.type === "sync-now")
+          sync.handleSidecarMessage({ type: "sync-status", status: initialStatus(), requestID: command.requestID })
+      },
+      broadcast: () => {},
+      lanAddresses: () => [],
+    })
+    expect((await sync.syncNow()).phase).toBe("unpaired")
+  })
+
+  test("hides stale worker fields once unpaired", () => {
+    const { sync } = controller()
+    sync.handleSidecarMessage({
+      type: "sync-status",
+      status: { ...initialStatus(), phase: "idle", online: true, received: 4, sent: 2, lastSuccess: 5, lastError: "x" },
+    })
+    expect(sync.status()).toMatchObject({ phase: "unpaired", online: false, received: 0, sent: 0, lastSuccess: null, lastError: null })
   })
 
   test("keeps newer stored prefs and hands them back to an older window", () => {
@@ -160,6 +197,12 @@ describe("parsePairInput", () => {
     expect(parsePairInput(" starship.local ", " 123456 ")).toEqual({ host: "starship.local", code: "123456" })
     expect(parsePairInput("192.168.1.20:4097", "000000")).toEqual({ host: "192.168.1.20:4097", code: "000000" })
     expect(parsePairInput("http://192.168.1.20:4097", "123456")?.host).toBe("http://192.168.1.20:4097")
+  })
+
+  test("normalizes bracketed IPv6 hosts", () => {
+    expect(parsePairInput("[::1]", "123456")?.host).toBe("::1")
+    expect(parsePairInput("[fe80::1]:4097", "123456")?.host).toBe("http://[fe80::1]:4097")
+    expect(parsePairInput("::1", "123456")?.host).toBe("::1")
   })
 
   test("rejects non-strings, paths, credentials and malformed codes", () => {

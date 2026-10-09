@@ -1,7 +1,7 @@
 import * as http from "node:http"
 import * as tls from "node:tls"
 import { hostname } from "node:os"
-import { createSyncWorker, type SyncWorker } from "@flynncode/mobile-gateway/sync"
+import { createSyncWorker, initialStatus, type SyncStatus, type SyncWorker } from "@flynncode/mobile-gateway/sync"
 import { createSyncGate, type SyncGate } from "@flynncode/mobile-gateway/sync-gate"
 import {
   mobileGatewayUpstream,
@@ -72,6 +72,7 @@ let gatewayConfig: { command: StartCommand; upstream: string } | undefined
 let pairingTimer: ReturnType<typeof setTimeout> | undefined
 let unpairTimer: ReturnType<typeof setTimeout> | undefined
 let gatewayError: string | null = null
+let lastSyncStatus: SyncStatus | undefined
 
 // Serialised so overlapping toggles never start two gateways on port 4097.
 // Failures are logged, never rejected, so quit cannot be derailed by a bad reconcile.
@@ -150,7 +151,10 @@ async function start(command: StartCommand) {
         },
       },
       takeSent: () => gate.takeSent(),
-      onStatus: (status) => post({ type: "sync-status", status }),
+      onStatus: (status) => {
+        lastSyncStatus = status
+        post({ type: "sync-status", status })
+      },
     })
     syncWorker.start()
     parentPort.postMessage({ type: "ready" })
@@ -190,6 +194,8 @@ function logSyncError(error: unknown) {
 }
 
 async function handleSyncCommand(command: SidecarSyncCommand) {
+  // Main waits on a sync-now requestID, so it always gets an answer.
+  if (command.type === "sync-now") return replySyncNow(command.requestID)
   const gate = syncGate
   if (!gate) return
   if (command.type === "sync-config") {
@@ -211,8 +217,14 @@ async function handleSyncCommand(command: SidecarSyncCommand) {
     gate.update({ prefs: command.prefs })
     return
   }
-  const status = await syncWorker?.syncNow()
-  if (status) post({ type: "sync-status", status, requestID: command.requestID })
+}
+
+async function replySyncNow(requestID: string) {
+  const status = await syncWorker?.syncNow().catch((error): SyncStatus => {
+    logSyncError(error)
+    return { ...(lastSyncStatus ?? initialStatus()), lastError: error instanceof Error ? error.message : String(error) }
+  })
+  post({ type: "sync-status", status: status ?? lastSyncStatus ?? initialStatus(), requestID })
 }
 
 // The gateway runs while phone access is on, a peer is paired, or a pairing
