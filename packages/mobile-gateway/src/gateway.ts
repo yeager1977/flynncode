@@ -11,6 +11,8 @@ import { loadLauncher } from "./launcher.ts"
 import { listNeedsInput } from "./inbox.ts"
 import { createRelayStore, isRelayAuthorized, type RelayDigest } from "./relay.ts"
 import { renderLauncher, renderUnauthorized, renderUnreachable } from "./launcher-html.ts"
+import type { SyncGate } from "./sync-gate.ts"
+import { handleSync } from "./sync-routes.ts"
 
 const UNAUTHORIZED = 'Basic realm="opencode-mobile"'
 
@@ -95,7 +97,7 @@ function parseRelayDigest(body: unknown): RelayDigest | undefined {
   return { originID: body.originID, items: items.slice(0, RELAY_MAX_ITEMS), updatedAt: body.updatedAt }
 }
 
-export function createGateway(input: { options: GatewayOptions }) {
+export function createGateway(input: { options: GatewayOptions; sync?: SyncGate }) {
   const options = input.options
   const authorization = envAuthHeader(options)
   const sessions = createSessionStore()
@@ -104,6 +106,14 @@ export function createGateway(input: { options: GatewayOptions }) {
   // client-controlled, so it must never decide whether a caller is local.
   return async function handle(request: Request, remoteAddress?: string): Promise<Response> {
     const parsed = new URL(request.url, "http://localhost")
+    if (parsed.pathname.startsWith("/flynncode-sync/")) {
+      return handleSync({ request, remoteAddress, options, gate: input.sync })
+    }
+    // Phone access is opt-in on the desktop. With it off, every phone route
+    // (launcher, proxy, inbox, relay, status) answers 404 and the gateway only
+    // serves machine sync. Gateways without a sync gate (plugin, CLI) keep
+    // phone access on.
+    if (input.sync && !input.sync.phoneAccess()) return new Response("Not found", { status: 404 })
     if (parsed.pathname === "/flynncode-mobile-status") {
       // The payload carries only the port and LAN URLs (no secrets); loopback
       // gating keeps it off the LAN rather than protecting sensitive data.
@@ -226,14 +236,14 @@ export function createGateway(input: { options: GatewayOptions }) {
   }
 }
 
-export async function startGateway(input: { options: GatewayOptions; port?: number }): Promise<Gateway> {
+export async function startGateway(input: { options: GatewayOptions; port?: number; sync?: SyncGate }): Promise<Gateway> {
   if (running) {
     running.refs += 1
     const state = running
     const released = { value: false }
     return { port: state.port, stop: () => release(state, released) }
   }
-  const handle = createGateway({ options: input.options })
+  const handle = createGateway({ options: input.options, sync: input.sync })
   const server = createServer((request, response) => {
     Promise.resolve()
       .then(() => handle(requestFromNode(request), request.socket.remoteAddress))

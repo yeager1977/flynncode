@@ -11,7 +11,10 @@
   "exports": {
     ".": "./src/config.ts",
     "./server": "./src/index.ts",
-    "./gateway": "./src/gateway.ts"
+    "./gateway": "./src/gateway.ts",
+    "./sync-gate": "./src/sync-gate.ts",
+    "./sync-pair": "./src/sync-pair.ts",
+    "./lan-ips": "./src/lan-ips.ts"
   },
   "files": [
     "src"
