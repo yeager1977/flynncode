@@ -50,8 +50,11 @@ function sessionChange(
   deletedAt: number | undefined,
 ): Change | undefined {
   if (remote.timeArchived !== null) {
-    // Archived chats stay local: only an existing active copy follows the archive.
-    if (!current || current.timeArchived !== null) return
+    // Archived chats stay local: a peer-archived chat missing here is never pulled.
+    if (!current) return
+    // Newer peer content wins; the bundle carries time_archived, so pulling archives it too.
+    if (remote.timeUpdated > current.timeUpdated) return { type: "pull", id: remote.id }
+    if (current.timeArchived !== null) return
     if (remote.timeArchived <= current.timeUpdated) return
     return { type: "archive", id: remote.id, timeArchived: remote.timeArchived }
   }
@@ -91,7 +94,7 @@ export function isManifest(value: unknown): value is Manifest {
     value.sessions.every(isManifestSession) &&
     value.tombstones.every(
       (tombstone) =>
-        isRecord(tombstone) && typeof tombstone.id === "string" && typeof tombstone.timeDeleted === "number",
+        isRecord(tombstone) && typeof tombstone.id === "string" && isFiniteNumber(tombstone.timeDeleted),
     )
   )
 }
@@ -100,13 +103,17 @@ function isManifestSession(value: unknown): value is ManifestSession {
   return (
     isRecord(value) &&
     typeof value.id === "string" &&
-    typeof value.timeUpdated === "number" &&
+    isFiniteNumber(value.timeUpdated) &&
     typeof value.busy === "boolean" &&
     (value.parentID === null || typeof value.parentID === "string") &&
-    (value.timeArchived === null || typeof value.timeArchived === "number")
+    (value.timeArchived === null || isFiniteNumber(value.timeArchived))
   )
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value)
 }

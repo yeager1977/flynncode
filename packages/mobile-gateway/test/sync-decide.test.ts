@@ -94,6 +94,68 @@ describe("decide", () => {
     })
     expect(actions.map((action) => action.id)).toEqual(["ses_root", "ses_child", "ses_grandchild"])
   })
+
+  test("pulls instead of archiving when the peer worked on a chat and then archived it", () => {
+    const actions = decide({
+      local: manifest([session("ses_a", 10)]),
+      peer: manifest([session("ses_a", 20, { timeArchived: 30 })]),
+    })
+    expect(actions).toEqual([{ type: "pull", id: "ses_a" }])
+  })
+
+  test("pulls when both are archived and the peer content is newer, does nothing when it is not", () => {
+    const actions = decide({
+      local: manifest([session("ses_a", 10, { timeArchived: 15 }), session("ses_b", 10, { timeArchived: 15 })]),
+      peer: manifest([session("ses_a", 20, { timeArchived: 30 }), session("ses_b", 10, { timeArchived: 30 })]),
+    })
+    expect(actions).toEqual([{ type: "pull", id: "ses_a" }])
+  })
+
+  test("skips deletes and archives for a chat that is running here", () => {
+    const actions = decide({
+      local: manifest([session("ses_a", 10, { busy: true }), session("ses_b", 10, { busy: true })]),
+      peer: manifest([session("ses_b", 10, { timeArchived: 30 })], [{ id: "ses_a", timeDeleted: 20 }]),
+    })
+    expect(actions).toEqual([
+      { type: "skip", id: "ses_a", reason: "local-busy" },
+      { type: "skip", id: "ses_b", reason: "local-busy" },
+    ])
+  })
+
+  test("skips a running peer chat that is missing here", () => {
+    const actions = decide({
+      local: manifest([]),
+      peer: manifest([session("ses_a", 10, { busy: true })]),
+    })
+    expect(actions).toEqual([{ type: "skip", id: "ses_a", reason: "peer-busy" }])
+  })
+
+  test("equal timestamps keep the local copy", () => {
+    const actions = decide({
+      local: manifest([session("ses_a", 20), session("ses_b", 20)], [{ id: "ses_c", timeDeleted: 20 }]),
+      peer: manifest(
+        [session("ses_b", 20, { timeArchived: 20 }), session("ses_c", 20)],
+        [{ id: "ses_a", timeDeleted: 20 }],
+      ),
+    })
+    expect(actions).toEqual([])
+  })
+
+  test("a parent cycle terminates and pulls both chats", () => {
+    const actions = decide({
+      local: manifest([]),
+      peer: manifest([session("ses_a", 1, { parentID: "ses_b" }), session("ses_b", 2, { parentID: "ses_a" })]),
+    })
+    expect(actions.map((action) => action.id).sort()).toEqual(["ses_a", "ses_b"])
+  })
+
+  test("pulls a child whose parent is not being pulled", () => {
+    const actions = decide({
+      local: manifest([session("ses_parent", 5)]),
+      peer: manifest([session("ses_parent", 5), session("ses_child", 6, { parentID: "ses_parent" })]),
+    })
+    expect(actions).toEqual([{ type: "pull", id: "ses_child" }])
+  })
 })
 
 describe("isManifest", () => {
@@ -101,5 +163,8 @@ describe("isManifest", () => {
     expect(isManifest(manifest([session("ses_a", 1)], [{ id: "ses_b", timeDeleted: 2 }]))).toBe(true)
     expect(isManifest({ schema: "x", app: "y", sessions: [{ id: "ses_a" }], tombstones: [] })).toBe(false)
     expect(isManifest(null)).toBe(false)
+    expect(isManifest(manifest([], [{ id: "ses_b" } as never]))).toBe(false)
+    expect(isManifest(manifest([], [{ id: "ses_b", timeDeleted: Number.NaN }]))).toBe(false)
+    expect(isManifest(manifest([session("ses_a", Number.POSITIVE_INFINITY)]))).toBe(false)
   })
 })
