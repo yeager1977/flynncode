@@ -19,7 +19,9 @@ describe("tui thread", () => {
   test("forwards the CLI environment to the TUI worker", async () => {
     const source = await Bun.file(new URL("../../../src/cli/cmd/tui.ts", import.meta.url)).text()
 
-    expect(source).toMatch(/new Worker\(file, \{\s*env: Object\.fromEntries\(\s*Object\.entries\(process\.env\)/)
+    expect(source).toMatch(
+      /new Worker\(file, \{\s*env: \{\s*\.\.\.Object\.fromEntries\(\s*Object\.entries\(process\.env\)[\s\S]*?\.\.\.RuntimeFlags\.bypassHookTrustWorkerEnv\(\),\s*\},/,
+    )
   })
 
   async function check(project?: string) {
