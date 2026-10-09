@@ -179,7 +179,7 @@ describe("createMachineSync", () => {
             new Response(body, {
               status,
               headers: {
-                [SYNC_RESPONSE_SIGNATURE_HEADER]: signResponse(peer.gate.peer()?.token ?? "", nonce, body),
+                [SYNC_RESPONSE_SIGNATURE_HEADER]: signResponse(peer.gate.peer()?.token ?? "", nonce, status, body),
               },
             }),
         )
@@ -330,12 +330,13 @@ describe("createMachineSync", () => {
     sync.handleSidecarMessage({ type: "sync-paired", peer: { name: "challenger", url: "http://h:1", token: "c".repeat(64) } })
     sync.handleSidecarMessage({
       type: "sync-status",
-      status: { ...initialStatus(), phase: "idle", configReloadPending: { from: "challenger" } },
+      status: { ...initialStatus(), phase: "idle", configReloadPending: { from: "challenger", busy: false } },
     })
-    expect(sync.status().configReloadPending).toEqual({ from: "challenger" })
-    const pending = sync.reloadConfig()
+    expect(sync.status().configReloadPending).toEqual({ from: "challenger", busy: false })
+    const pending = sync.reloadConfig({ force: true })
     const command = posted.at(-1)
     if (command?.type !== "sync-reload") throw new Error("expected a sync-reload command")
+    expect(command.force).toBe(true)
     sync.handleSidecarMessage({
       type: "sync-status",
       status: { ...initialStatus(), phase: "idle", configReloadPending: null },

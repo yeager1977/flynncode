@@ -165,7 +165,7 @@ export function createMachineSync(deps: {
   const publish = () => deps.broadcast("machine-sync-status", status())
 
   // Sends a command the sidecar answers with a status carrying the same requestID.
-  const request = (type: "sync-now" | "sync-reload") => {
+  const request = (command: { type: "sync-now" } | { type: "sync-reload"; force: boolean }) => {
     const requestID = randomUUID()
     return new Promise<MachineSyncStatus>((resolve) => {
       const timer = setTimeout(() => {
@@ -177,7 +177,7 @@ export function createMachineSync(deps: {
         clearTimeout(timer)
         resolve(status())
       })
-      if (deps.post({ type, requestID })) return
+      if (deps.post({ ...command, requestID })) return
       // Nobody will answer: report at once instead of waiting out the timeout.
       clearTimeout(timer)
       pending.delete(requestID)
@@ -240,9 +240,11 @@ export function createMachineSync(deps: {
       publish()
       if (peer) await unpairPeer({ peer, fetchImpl: deps.fetchImpl })
     },
-    syncNow: () => request("sync-now"),
+    syncNow: () => request({ type: "sync-now" }),
     /** "Reload to apply": the sidecar reloads instances so a pulled config takes effect. */
-    reloadConfig: () => request("sync-reload"),
+    // Without `force` the reload is refused while a chat runs (the status then
+    // shows the config still pending with `busy`), so the user can confirm.
+    reloadConfig: (input: { force?: boolean } = {}) => request({ type: "sync-reload", force: input.force === true }),
     pushPrefs(prefs: SyncPrefs): SyncPrefs | undefined {
       const stored = parsePrefs(deps.store.get(SYNC_PREFS_KEY))
       if (stored && stored.updatedAt > prefs.updatedAt) return stored

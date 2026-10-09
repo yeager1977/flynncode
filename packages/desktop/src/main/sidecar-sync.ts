@@ -13,7 +13,7 @@ export type SidecarSyncCommand =
   | { type: "sync-config"; phoneAccess: boolean; paused: boolean; peer: SyncPeer | null }
   | { type: "sync-pairing-code"; code: string; expiresAt: number }
   | { type: "sync-now"; requestID: string }
-  | { type: "sync-reload"; requestID: string }
+  | { type: "sync-reload"; requestID: string; force: boolean }
   | { type: "sync-prefs"; prefs: SyncPrefs }
 
 export type SidecarSyncMessage =
@@ -59,9 +59,13 @@ export function parseSyncCommand(value: unknown): SidecarSyncCommand | undefined
     if (typeof value.code !== "string" || typeof value.expiresAt !== "number") return
     return { type: "sync-pairing-code", code: value.code, expiresAt: value.expiresAt }
   }
-  if (value.type === "sync-now" || value.type === "sync-reload") {
+  if (value.type === "sync-now") {
     if (typeof value.requestID !== "string") return
-    return { type: value.type, requestID: value.requestID }
+    return { type: "sync-now", requestID: value.requestID }
+  }
+  if (value.type === "sync-reload") {
+    if (typeof value.requestID !== "string") return
+    return { type: "sync-reload", requestID: value.requestID, force: value.force === true }
   }
   if (value.type === "sync-prefs") {
     const prefs = parsePrefs(value.prefs)
