@@ -27,3 +27,17 @@ export function promoteSessionFolder(
 export function canAddSessionFolder(extras: readonly string[]): boolean {
   return extras.length < MaxExtras
 }
+
+// Plans attaching picked folders to an open session: already-attached picks
+// are dropped (and reported), and the whole batch is rejected when it would
+// exceed the extras limit so a partial attach never surprises the user.
+export function appendSessionFolders(primary: string, extras: readonly string[], picked: readonly string[]) {
+  const known = new Set([primary, ...extras])
+  const fresh = [...new Set(picked)].filter((directory) => !known.has(directory))
+  return {
+    extras: [...extras, ...fresh],
+    added: fresh.length,
+    duplicate: fresh.length < picked.length,
+    overLimit: extras.length + fresh.length > MaxExtras,
+  }
+}

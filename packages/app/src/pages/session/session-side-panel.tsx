@@ -23,6 +23,7 @@ import { Mark } from "@opencode-ai/ui/logo"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { KeybindV2 } from "@opencode-ai/ui/v2/keybind-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
+import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
 import type { FileDiffInfo } from "@opencode-ai/client/promise"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
@@ -60,6 +61,7 @@ import { SessionHistoryPanel } from "@/pages/session/history/session-history-pan
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { SubagentList } from "@/pages/session/subagent-list-view"
 import { artifactVersionSignal, loadStoredArtifacts } from "@/pages/layout/sidebar-artifacts"
+import { createSessionArtifacts, SessionArtifactsPanel } from "@/pages/session/session-artifacts-panel"
 import { SessionFileBrowserTab, type SessionFileBrowserState } from "@/pages/session/v2/session-file-browser-tab"
 
 type ReviewDiff = FileDiffInfo | SnapshotFileDiff | VcsFileDiff
@@ -218,14 +220,19 @@ export function SessionSidePanel(props: {
   const activeFileTab = tabState.activeFileTab
   const panelTab = createMemo(() => activeTab())
 
-  // A draft has no session history, so a persisted History tab falls back to Changes.
+  const artifacts = createSessionArtifacts()
+
+  // A draft has no session history, and the Artifacts tab only shows while
+  // this workspace has artifacts, so either persisted tab falls back to Changes.
   const fileTreeTab = () => {
     const tab = layout.fileTree.tab()
-    return tab === "history" && !historySessionID() ? "changes" : tab
+    if (tab === "history" && !historySessionID()) return "changes"
+    if (tab === "artifacts" && artifacts.count() === 0) return "changes"
+    return tab
   }
 
   const setFileTreeTabValue = (value: string) => {
-    if (value !== "changes" && value !== "all" && value !== "history") return
+    if (value !== "changes" && value !== "all" && value !== "history" && value !== "artifacts") return
     layout.fileTree.setTab(value)
   }
 
@@ -842,6 +849,19 @@ export function SessionSidePanel(props: {
                           {language.t("history.title")}
                         </Tabs.Trigger>
                       </Show>
+                      <Show when={artifacts.count() > 0}>
+                        {/* Icon-only: the pill row is already as wide as the panel's minimum. */}
+                        <Tabs.Trigger
+                          value="artifacts"
+                          class="shrink-0"
+                          data-action="session-artifacts-tab"
+                          aria-label={language.t("session.artifacts.tab")}
+                        >
+                          <TooltipV2 placement="bottom" value={language.t("session.artifacts.tab")}>
+                            <IconV2 name="review" size="small" />
+                          </TooltipV2>
+                        </Tabs.Trigger>
+                      </Show>
                     </Tabs.List>
                     <Show when={fileTreeTab() === "changes"}>
                       <Tabs.Content value="changes" class="bg-background-stronger px-3 py-0">
@@ -878,6 +898,11 @@ export function SessionSidePanel(props: {
                           diffs={historyDiffs()}
                           stored={historyStored()}
                         />
+                      </Tabs.Content>
+                    </Show>
+                    <Show when={fileTreeTab() === "artifacts"}>
+                      <Tabs.Content value="artifacts" class="bg-background-stronger px-3 py-0">
+                        <SessionArtifactsPanel groups={artifacts.groups()} />
                       </Tabs.Content>
                     </Show>
                     <Show when={fileTreeTab() === "all"}>

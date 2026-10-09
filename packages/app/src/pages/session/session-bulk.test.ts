@@ -9,6 +9,7 @@ import {
   protectedRootIDs,
   selectLoaded,
   selectRange,
+  sessionsInDirectories,
   toggleID,
 } from "./session-bulk"
 
@@ -124,5 +125,29 @@ describe("session bulk eligibility", () => {
     const loaded = new Set(["a"])
     const allowed = new Set(["a"])
     expect(confirmIDs(["a", "unloaded", "other"], loaded, allowed, new Set(["unloaded"]))).toEqual(["a", "other"])
+  })
+})
+
+describe("project-scoped cleanup", () => {
+  const sessions = [
+    session({ id: "root", directory: "/repo" }),
+    session({ id: "sandbox", directory: "/repo-worktrees/feature/" }),
+    session({ id: "other", directory: "/elsewhere" }),
+  ]
+
+  test("keeps only sessions in the project's directories, ignoring trailing slashes", () => {
+    expect(
+      sessionsInDirectories(sessions, ["/repo/", "/repo-worktrees/feature"]).map((item) => item.id),
+    ).toEqual(["root", "sandbox"])
+  })
+
+  test("scans every session when no project is selected", () => {
+    expect(sessionsInDirectories(sessions, undefined).map((item) => item.id)).toEqual(["root", "sandbox", "other"])
+  })
+
+  test("feeds cleanup candidates without the out-of-scope sessions", () => {
+    const old = sessions.map((item) => ({ ...item, time: { ...item.time, updated: 0 } }))
+    const found = cleanupCandidates(sessionsInDirectories(old, ["/repo"]), now, 7, new Set())
+    expect(found.match.map((item) => item.id)).toEqual(["root"])
   })
 })

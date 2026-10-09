@@ -37,6 +37,8 @@ import { fileManagerApp } from "@/utils/file-manager"
 import { Persist, persisted } from "@/utils/persist"
 import { StatusPopover, StatusPopoverV2 } from "../status-popover"
 import { ComputerUseMenu } from "./computer-use-menu"
+import { SessionFoldersMenu } from "./session-folders-menu"
+import { SessionWorktreeMenu } from "./session-worktree-menu"
 import { CiStatusStrip } from "./ci-status"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
@@ -163,12 +165,17 @@ export function SessionHeader() {
   const sdk = useSDK()
   const dialog = useDialog()
 
-  const projectDirectory = createMemo(() => decode64(params.dir) ?? "")
+  // The new layout routes sessions by server and ID (no `:dir` segment), so
+  // fall back to the session's SDK directory.
+  const projectDirectory = createMemo(() => decode64(params.dir) ?? sdk().directory)
   const project = createMemo(() => {
     const directory = projectDirectory()
     if (!directory) return
     return layout.projects.list().find((p) => p.worktree === directory || p.sandboxes?.includes(directory))
   })
+  // Prefer the synced project so sessions of projects missing from the local
+  // project list (another server, a closed project) still resolve their root.
+  const projectRoot = createMemo(() => sync().project?.worktree ?? project()?.worktree)
   const name = createMemo(() => {
     const current = project()
     if (current) return current.name || getFilename(current.worktree)
@@ -223,7 +230,7 @@ export function SessionHeader() {
   })
 
   const onPrimary = createMemo(() => {
-    const root = project()?.worktree
+    const root = projectRoot()
     if (!root) return true
     return pathKey(projectDirectory()) === pathKey(root)
   })
@@ -245,7 +252,7 @@ export function SessionHeader() {
 
   const handoff = async () => {
     const current = projectDirectory()
-    const root = project()?.worktree
+    const root = projectRoot()
     if (!current || !root) return
     const listed = await serverSDK()
       .client.worktree.list({ directory: root })
@@ -419,6 +426,10 @@ export function SessionHeader() {
     onTasksToggle: () => view().tasks.toggle(),
     handoffLabel: language.t(onPrimary() ? "session.handoff.toWorktree" : "session.handoff.toMain"),
     onHandoff: () => void handoff(),
+    sessionID: params.id,
+    directory: projectDirectory(),
+    root: projectRoot(),
+    onPrimary: onPrimary(),
   }))
 
   const selectApp = (app: OpenApp) => {
@@ -746,6 +757,10 @@ type SessionHeaderV2ActionsState = {
   onTasksToggle: () => void
   handoffLabel: string
   onHandoff: () => void
+  sessionID: string | undefined
+  directory: string
+  root: string | undefined
+  onPrimary: boolean
 }
 
 function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
@@ -828,18 +843,17 @@ function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
             icon={<Icon name="checklist" />}
           />
         </TooltipV2>
-        <TooltipV2 class="shrink-0" placement="bottom" value={props.state.handoffLabel}>
-          <IconButtonV2
-            type="button"
-            variant="ghost-muted"
-            size="large"
-            class="!w-9 shrink-0"
-            data-action="session-checkout-handoff"
-            onClick={props.state.onHandoff}
-            aria-label={props.state.handoffLabel}
-            icon={<Icon name="branch" />}
-          />
-        </TooltipV2>
+        <Show when={props.state.sessionID}>
+          {(sessionID) => <SessionFoldersMenu sessionID={sessionID()} directory={props.state.directory} />}
+        </Show>
+        <SessionWorktreeMenu
+          directory={props.state.directory}
+          root={props.state.root}
+          local={props.state.onPrimary}
+          sessionID={props.state.sessionID}
+          handoffLabel={props.state.handoffLabel}
+          onHandoff={props.state.onHandoff}
+        />
       </Show>
     </div>
   )

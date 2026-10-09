@@ -28,6 +28,11 @@ import { sessionHasOpenTab, useTabs } from "@/context/tabs"
 import { pathKey } from "@/utils/path-key"
 import { useDirectoryPicker } from "@/components/directory-picker"
 import {
+  worktreeMenuActions,
+  type WorktreeMenuAction,
+  type WorktreeMenuActionKey,
+} from "@/components/session/session-worktree-actions"
+import {
   foldersConnection,
   getSessionFolders,
   setSessionExtras,
@@ -302,38 +307,9 @@ const WorkspaceActions = (props: {
 
 const CLEANUP_SCAN_LIMIT = 10_000
 
-export type WorktreeMenuActionKey =
-  | "session.worktree.remove"
-  | "session.worktree.reset"
-  | "session.worktree.handoff"
-
-export type WorktreeMenuAction = {
-  key: WorktreeMenuActionKey
-  disabled: boolean
-  disabledReason?: "session.worktree.handoffOccupied"
-}
-
-// Menu model for per-worktree sidebar actions. Local workspaces only accept
-// handoff (moving sessions into main); sandbox rows also expose remove and
-// reset. Handoff is disabled while busy or when the target already backs an
-// active session (occupied guard uses loaded sessions, no new server state).
-export function worktreeMenuActions(input: {
-  local: boolean
-  busy: boolean
-  occupied: boolean
-}): WorktreeMenuAction[] {
-  const handoff: WorktreeMenuAction = {
-    key: "session.worktree.handoff",
-    disabled: input.busy || input.occupied,
-    ...(input.occupied ? { disabledReason: "session.worktree.handoffOccupied" as const } : {}),
-  }
-  if (input.local) return [handoff]
-  return [
-    { key: "session.worktree.remove", disabled: input.busy },
-    { key: "session.worktree.reset", disabled: input.busy },
-    handoff,
-  ]
-}
+// The menu model moved next to the new-layout session header; keep the
+// export here for legacy callers.
+export { worktreeMenuActions, type WorktreeMenuAction, type WorktreeMenuActionKey }
 
 function mergeSessions(left: readonly Session[], right: readonly Session[]) {
   const byID = new Map<string, Session>()

@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import {
   addSessionFolder,
+  appendSessionFolders,
+  MaxSessionExtraFolders,
   normalizeSessionFolders,
   promoteSessionFolder,
   removeSessionFolder,
@@ -22,5 +24,29 @@ describe("sidebar folders model", () => {
   })
   test("remove filters extras", () => {
     expect(removeSessionFolder(["/docs"], "/missing")).toEqual(["/docs"])
+  })
+})
+
+describe("open-session folder append plan", () => {
+  test("appends fresh picks after existing extras", () => {
+    expect(appendSessionFolders("/repo", ["/docs"], ["/lib", "/web"])).toEqual({
+      extras: ["/docs", "/lib", "/web"],
+      added: 2,
+      duplicate: false,
+      overLimit: false,
+    })
+  })
+  test("drops the primary, attached, and repeated picks and reports duplicates", () => {
+    expect(appendSessionFolders("/repo", ["/docs"], ["/repo", "/docs", "/lib", "/lib"])).toEqual({
+      extras: ["/docs", "/lib"],
+      added: 1,
+      duplicate: true,
+      overLimit: false,
+    })
+  })
+  test("flags a batch that would exceed the extras limit", () => {
+    const extras = Array.from({ length: MaxSessionExtraFolders }, (_, index) => `/extra-${index}`)
+    expect(appendSessionFolders("/repo", extras, ["/one-more"]).overLimit).toBe(true)
+    expect(appendSessionFolders("/repo", extras.slice(1), ["/one-more"]).overLimit).toBe(false)
   })
 })

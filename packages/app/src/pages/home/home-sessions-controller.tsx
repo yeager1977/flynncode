@@ -41,6 +41,7 @@ import {
   protectedRootIDs,
   selectLoaded,
   selectRange,
+  sessionsInDirectories,
   toggleID,
   type BulkPreset,
 } from "../session/session-bulk"
@@ -409,9 +410,15 @@ export function createHomeSessionsController(home: HomeController) {
     }
     if (!sessionLoad.data) return
     const sessions = homeSessions().sessions(sessionLoad.data, sessionEventLoad.data)
+    const project = home.project.selected()
     const now = Date.now()
     const extra = mergeSessions(sessions, retained)
-    const found = cleanupCandidates(sessions, now, presetDays(id), blockedFor(extra))
+    const found = cleanupCandidates(
+      sessionsInDirectories(sessions, project ? directories(project) : undefined),
+      now,
+      presetDays(id),
+      blockedFor(extra),
+    )
     if (found.match.length === 0) {
       showConfirm(() => (
         <BulkConfirmDialog
@@ -430,9 +437,12 @@ export function createHomeSessionsController(home: HomeController) {
     const matchLabel = language.plural("session.bulk.cleanup.match", found.match.length, { period })
     const skippedLabel =
       found.skipped.length > 0 ? language.plural("session.bulk.cleanup.skipped", found.skipped.length) : undefined
-    // The home cleanup scans the whole server index while the home list is
-    // project-filtered, so the dialog must disclose the wider scope.
-    const scopeLabel = language.t("session.bulk.cleanup.scopeHome")
+    // With a project selected the cleanup covers only that project's
+    // directories; otherwise it scans the whole server index, and the dialog
+    // must disclose either scope.
+    const scopeLabel = project
+      ? language.t("session.bulk.cleanup.scopeProject", { project: displayName(project) })
+      : language.t("session.bulk.cleanup.scopeHome")
     showConfirm(() => (
       <CleanupConfirm
         count={ids.length}

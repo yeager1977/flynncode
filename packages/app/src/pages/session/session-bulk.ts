@@ -1,4 +1,5 @@
 import type { Session } from "@opencode-ai/sdk/v2/client"
+import { pathKey } from "@/utils/path-key"
 
 const DAY = 86_400_000
 
@@ -102,6 +103,15 @@ export function cleanupCandidates(
     match.push(session)
   }
   return { match, skipped }
+}
+
+// Narrows a cleanup scan to one project's directories (main checkout plus
+// sandboxes), matching the legacy per-workspace cleanup; no directories means
+// the whole server.
+export function sessionsInDirectories(sessions: readonly Session[], directories: readonly string[] | undefined) {
+  if (!directories) return [...sessions]
+  const keys = new Set(directories.map(pathKey))
+  return sessions.filter((session) => keys.has(pathKey(session.directory)))
 }
 
 export function toggleID(selected: readonly string[], id: string, allowed: ReadonlySet<string>) {

@@ -4,6 +4,7 @@ import type { FileDiffInfo } from "@opencode-ai/client/promise"
 import {
   artifactMatchesFilter,
   artifactSessionHref,
+  artifactTargetHref,
   artifactVersionSignal,
   filterArtifactGroups,
   groupSessionArtifacts,
@@ -297,6 +298,25 @@ describe("artifact persistence", () => {
 describe("artifactSessionHref", () => {
   test("points at the session and the changed file", () => {
     expect(artifactSessionHref("abc", "ses_1", "src/a.ts")).toBe("/abc/session/ses_1?file=src%2Fa.ts")
+  })
+})
+
+describe("artifactTargetHref", () => {
+  test("adds the file query for diff and file artifacts", () => {
+    expect(
+      artifactTargetHref("/server/a/session/ses_1", { type: "diff", sessionID: "ses_1", file: "src/a b.ts", additions: 1, deletions: 0 }),
+    ).toBe("/server/a/session/ses_1?file=src%2Fa%20b.ts")
+    expect(artifactTargetHref("/server/a/session/ses_1", { type: "file", sessionID: "ses_1", file: "x.ts" })).toBe(
+      "/server/a/session/ses_1?file=x.ts",
+    )
+  })
+  test("opens the session itself for screenshots and notes", () => {
+    expect(artifactTargetHref("/server/a/session/ses_1", { type: "note", sessionID: "ses_1", text: "hi" })).toBe(
+      "/server/a/session/ses_1",
+    )
+    expect(
+      artifactTargetHref("/server/a/session/ses_1", { type: "screenshot", sessionID: "ses_1", url: "http://x" }),
+    ).toBe("/server/a/session/ses_1")
   })
 })
 
