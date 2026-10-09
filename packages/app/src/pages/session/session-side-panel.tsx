@@ -23,6 +23,7 @@ import { Mark } from "@opencode-ai/ui/logo"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { KeybindV2 } from "@opencode-ai/ui/v2/keybind-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
+import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
 import type { FileDiffInfo } from "@opencode-ai/client/promise"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
@@ -849,13 +850,16 @@ export function SessionSidePanel(props: {
                         </Tabs.Trigger>
                       </Show>
                       <Show when={artifacts.count() > 0}>
+                        {/* Icon-only: the pill row is already as wide as the panel's minimum. */}
                         <Tabs.Trigger
                           value="artifacts"
-                          class="flex-1"
-                          classes={{ button: "w-full" }}
+                          class="shrink-0"
                           data-action="session-artifacts-tab"
+                          aria-label={language.t("session.artifacts.tab")}
                         >
-                          {language.t("session.artifacts.tab")}
+                          <TooltipV2 placement="bottom" value={language.t("session.artifacts.tab")}>
+                            <IconV2 name="review" size="small" />
+                          </TooltipV2>
                         </Tabs.Trigger>
                       </Show>
                     </Tabs.List>

@@ -1,6 +1,6 @@
 import { getFilename } from "@opencode-ai/core/util/path"
 import { Icon } from "@opencode-ai/ui/icon"
-import { SegmentedControlItemV2, SegmentedControlV2 } from "@opencode-ai/ui/v2/segmented-control-v2"
+import { SelectV2 } from "@opencode-ai/ui/v2/select-v2"
 import { A } from "@solidjs/router"
 import { createMemo, createSignal, For, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
@@ -24,12 +24,13 @@ import { sessionHref } from "@/utils/session-route"
 import { sessionTitle } from "@/utils/session-title"
 import { getRelativeTime } from "@/utils/time"
 
-const FILTERS = [
-  { id: "all", label: "sidebar.artifacts.filter.all" },
-  { id: "changed", label: "sidebar.artifacts.filter.changed" },
-  { id: "screenshots", label: "sidebar.artifacts.filter.screenshots" },
-  { id: "notes", label: "sidebar.artifacts.filter.notes" },
-] as const satisfies readonly { id: ArtifactFilter; label: string }[]
+const FILTERS: ArtifactFilter[] = ["all", "changed", "screenshots", "notes"]
+const FILTER_LABELS = {
+  all: "sidebar.artifacts.filter.all",
+  changed: "sidebar.artifacts.filter.changed",
+  screenshots: "sidebar.artifacts.filter.screenshots",
+  notes: "sidebar.artifacts.filter.notes",
+} as const satisfies Record<ArtifactFilter, string>
 
 // Artifacts produced by this workspace's sessions (changed files, browser
 // screenshots, notes), grouped per session — the legacy sidebar's "Changed
@@ -62,23 +63,21 @@ export function SessionArtifactsPanel(props: { groups: ArtifactGroup[] }) {
 
   return (
     <div data-component="session-artifacts" class="flex flex-col gap-3 pt-3 pb-3 text-[13px] leading-5">
-      <SegmentedControlV2
-        value={filter()}
-        aria-label={language.t("session.artifacts.tab")}
-        onChange={(value) => {
-          if (value !== "all" && value !== "changed" && value !== "screenshots" && value !== "notes") return
-          saveArtifactFilter(value)
-          setFilter(value)
-        }}
-      >
-        <For each={FILTERS}>
-          {(item) => (
-            <SegmentedControlItemV2 value={item.id} data-filter={item.id}>
-              {language.t(item.label)}
-            </SegmentedControlItemV2>
-          )}
-        </For>
-      </SegmentedControlV2>
+      <div class="flex" data-action="session-artifacts-filter">
+        <SelectV2
+          appearance="inline"
+          options={FILTERS}
+          current={filter()}
+          label={(value) => language.t(FILTER_LABELS[value])}
+          placement="bottom-start"
+          gutter={6}
+          onSelect={(value) => {
+            if (!value) return
+            saveArtifactFilter(value)
+            setFilter(value)
+          }}
+        />
+      </div>
       <Show
         when={filtered().length > 0}
         fallback={<span class="text-v2-text-text-muted">{language.t("session.artifacts.emptyFilter")}</span>}
