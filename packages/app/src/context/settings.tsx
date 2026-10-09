@@ -1,10 +1,9 @@
-import { createStore, reconcile, unwrap } from "solid-js/store"
-import { batch, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
+import { createStore, reconcile } from "solid-js/store"
+import { batch, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { persisted } from "@/utils/persist"
 import { usePlatform } from "@/context/platform"
-import type { MachineSyncPrefs } from "./machine-sync-types"
-import { mergePeerSections, syncableSections, syncKey } from "./settings-sync"
+import { createSettingsSync } from "./settings-sync"
 
 export interface NotificationSettings {
   agent: boolean
@@ -369,39 +368,23 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
 
     const machineSync = platform.machineSync
     if (machineSync) {
-      const sync = { previous: undefined as string | undefined }
-      const applyPeer = (prefs: MachineSyncPrefs) => {
-        if (prefs.updatedAt <= (store.syncUpdatedAt ?? 0)) return
-        const merged = mergePeerSections(store, prefs)
-        // Record the post-apply snapshot first so the change effect below sees
-        // no local edit and does not push the peer's prefs straight back.
-        sync.previous = syncKey(syncableSections({ ...unwrap(store), ...merged }))
-        batch(() => {
-          if (merged.general) setStore("general", reconcile(merged.general))
-          if (merged.appearance) setStore("appearance", reconcile(merged.appearance))
-          if (merged.keybinds) setStore("keybinds", reconcile(merged.keybinds))
-          if (merged.notifications) setStore("notifications", reconcile(merged.notifications))
-          if (merged.sounds) setStore("sounds", reconcile(merged.sounds))
-          setStore("syncUpdatedAt", prefs.updatedAt)
-        })
-      }
-      createEffect(() => {
-        if (!ready()) return
-        const sections = syncableSections(store)
-        const key = syncKey(sections)
-        if (key === sync.previous) return
-        const first = sync.previous === undefined
-        sync.previous = key
-        const updatedAt = first ? untrack(() => store.syncUpdatedAt ?? 0) : Date.now()
-        if (!first) setStore("syncUpdatedAt", updatedAt)
-        void machineSync.pushPrefs({ sections, updatedAt }).then(
-          (newer) => {
-            if (newer) applyPeer(newer)
-          },
-          () => undefined,
-        )
+      const sync = createSettingsSync({
+        platform: machineSync,
+        ready,
+        read: () => store,
+        write: (sections, updatedAt) =>
+          batch(() => {
+            if (sections.general) setStore("general", reconcile(sections.general))
+            if (sections.appearance) setStore("appearance", reconcile(sections.appearance))
+            if (sections.keybinds) setStore("keybinds", reconcile(sections.keybinds))
+            if (sections.notifications) setStore("notifications", reconcile(sections.notifications))
+            if (sections.sounds) setStore("sounds", reconcile(sections.sounds))
+            setStore("syncUpdatedAt", updatedAt)
+          }),
       })
-      onCleanup(machineSync.onPeerPrefs(applyPeer))
+      createEffect(sync.check)
+      onCleanup(machineSync.onPeerPrefs(sync.applyPeer))
+      onCleanup(machineSync.onAdoptPrefs(sync.adopt))
     }
 
     return {

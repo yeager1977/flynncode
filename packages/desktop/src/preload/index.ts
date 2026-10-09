@@ -85,7 +85,7 @@ const api: ElectronAPI = {
       return () => ipcRenderer.removeListener("machine-sync-status", handler)
     },
     createPairingCode: () => ipcRenderer.invoke("machine-sync-create-code"),
-    pair: (input) => ipcRenderer.invoke("machine-sync-pair", input.host, input.code),
+    pair: (input) => ipcRenderer.invoke("machine-sync-pair", input.host, input.code, input.prefs),
     syncNow: () => ipcRenderer.invoke("machine-sync-now"),
     setPaused: (paused) => ipcRenderer.invoke("machine-sync-set-paused", paused),
     unpair: () => ipcRenderer.invoke("machine-sync-unpair"),
@@ -94,6 +94,11 @@ const api: ElectronAPI = {
       const handler = (_: unknown, prefs: MachineSyncPrefs) => cb(prefs)
       ipcRenderer.on("machine-sync-peer-prefs", handler)
       return () => ipcRenderer.removeListener("machine-sync-peer-prefs", handler)
+    },
+    onAdoptPrefs: (cb) => {
+      const handler = (_: unknown, prefs: MachineSyncPrefs | null) => cb(prefs)
+      ipcRenderer.on("machine-sync-adopt-prefs", handler)
+      return () => ipcRenderer.removeListener("machine-sync-adopt-prefs", handler)
     },
   },
   storeGet: (name, key) => ipcRenderer.invoke("store-get", name, key),

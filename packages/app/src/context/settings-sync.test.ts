@@ -81,10 +81,10 @@ describe("mergePeerSections", () => {
 })
 
 describe("settings provider wiring", () => {
-  test("pushes stamped prefs and applies peer prefs through the platform", () => {
+  test("hands the platform to the sync controller", () => {
     const source = readFileSync(new URL("./settings.tsx", import.meta.url), "utf8")
-    expect(source).toContain("machineSync.pushPrefs(")
+    expect(source).toContain("createSettingsSync(")
     expect(source).toContain("machineSync.onPeerPrefs(")
-    expect(source).toContain('setStore("syncUpdatedAt"')
+    expect(source).toContain("machineSync.onAdoptPrefs(")
   })
 })

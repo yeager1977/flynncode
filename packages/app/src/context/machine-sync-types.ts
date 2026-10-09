@@ -23,17 +23,28 @@ export type MachineSyncPairingCode = { code: string; expiresAt: number; machineN
 
 export type MachineSyncPairResult = { ok: true } | { ok: false; reason: "unreachable" | "invalid-code" | "failed" }
 
+export type MachineSyncPrefsChoice = "keep" | "theirs"
+
 export type MachineSyncPrefs = { sections: Record<string, unknown>; updatedAt: number }
 
 export type MachineSyncPlatform = {
   status(): Promise<MachineSyncStatus>
   subscribe(cb: (status: MachineSyncStatus) => void): () => void
   createPairingCode(): Promise<MachineSyncPairingCode>
-  pair(input: { host: string; code: string }): Promise<MachineSyncPairResult>
+  /**
+   * `prefs` picks which computer's app preferences win once paired: `keep`
+   * (default) pushes this computer's, `theirs` adopts the other computer's.
+   */
+  pair(input: { host: string; code: string; prefs?: MachineSyncPrefsChoice }): Promise<MachineSyncPairResult>
   syncNow(): Promise<MachineSyncStatus>
   setPaused(paused: boolean): Promise<void>
   unpair(): Promise<void>
   /** Returns newer prefs the desktop already holds, for this window to apply. */
   pushPrefs(prefs: MachineSyncPrefs): Promise<MachineSyncPrefs | null>
   onPeerPrefs(cb: (prefs: MachineSyncPrefs) => void): () => void
+  /**
+   * Fires after a successful pair: prefs to adopt with a fresh stamp (the
+   * other computer's wins), or null to restamp and push this computer's.
+   */
+  onAdoptPrefs(cb: (prefs: MachineSyncPrefs | null) => void): () => void
 }

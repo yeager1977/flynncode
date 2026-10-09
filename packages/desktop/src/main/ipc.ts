@@ -166,10 +166,10 @@ export function registerIpcHandlers(deps: Deps) {
   })
   ipcMain.handle("machine-sync-status", () => deps.machineSync.status())
   ipcMain.handle("machine-sync-create-code", () => deps.machineSync.createPairingCode())
-  ipcMain.handle("machine-sync-pair", (_event: IpcMainInvokeEvent, host: unknown, code: unknown) => {
+  ipcMain.handle("machine-sync-pair", (_event: IpcMainInvokeEvent, host: unknown, code: unknown, prefs: unknown) => {
     const input = parsePairInput(host, code)
     if (!input) return { ok: false, reason: "failed" }
-    return deps.machineSync.pair(input)
+    return deps.machineSync.pair({ ...input, prefs: prefs === "theirs" ? "theirs" : "keep" })
   })
   ipcMain.handle("machine-sync-unpair", () => deps.machineSync.unpair())
   ipcMain.handle("machine-sync-now", () => deps.machineSync.syncNow())

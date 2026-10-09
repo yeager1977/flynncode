@@ -41,14 +41,14 @@ function controller() {
 }
 
 // Machine A: a real gateway with a pairing code, as the other computer.
-function peerMachine() {
+function peerMachine(prefs?: { sections: Record<string, unknown>; updatedAt: number }) {
   const gate = createSyncGate({
     machineName: "challenger",
     gatewayPort: 4097,
     phoneAccess: false,
     paused: false,
     peer: undefined,
-    prefs: undefined,
+    prefs,
   })
   gate.setPairingCode({ code: "654321", expiresAt: Date.now() + 60_000 })
   const handle = createGateway({
@@ -103,12 +103,43 @@ describe("createMachineSync", () => {
     expect(stored.token).toMatch(/^[0-9a-f]{64}$/)
     expect(peer.gate.peer()?.token).toBe(stored.token)
     expect(posted.at(-1)).toEqual({ type: "sync-config", phoneAccess: false, paused: false, peer: stored })
-    expect(broadcasts.at(-1)?.payload).toMatchObject({ paired: true, peerName: "challenger" })
+    expect(broadcasts.findLast((entry) => entry.channel === "machine-sync-status")?.payload).toMatchObject({
+      paired: true,
+      peerName: "challenger",
+    })
 
     await sync.unpair()
     expect(values.has("syncPeer")).toBe(false)
     expect(posted.at(-1)).toEqual({ type: "sync-config", phoneAccess: false, paused: false, peer: null })
     expect(peer.gate.peer()).toBeUndefined()
+  })
+
+  test("pairing with prefs=keep tells windows to restamp and push their own prefs", async () => {
+    const peer = peerMachine({ sections: { appearance: { fontSize: 22 } }, updatedAt: 5 })
+    const { broadcasts, sync } = controller()
+    expect(await sync.pair({ host: peer.host, code: "654321" })).toEqual({ ok: true })
+    expect(broadcasts.filter((entry) => entry.channel === "machine-sync-adopt-prefs")).toEqual([
+      { channel: "machine-sync-adopt-prefs", payload: null },
+    ])
+  })
+
+  test("pairing with prefs=theirs hands the peer's prefs to every window", async () => {
+    const prefs = { sections: { appearance: { fontSize: 22 } }, updatedAt: 5 }
+    const peer = peerMachine(prefs)
+    const { broadcasts, sync } = controller()
+    expect(await sync.pair({ host: peer.host, code: "654321", prefs: "theirs" })).toEqual({ ok: true })
+    expect(broadcasts.filter((entry) => entry.channel === "machine-sync-adopt-prefs")).toEqual([
+      { channel: "machine-sync-adopt-prefs", payload: prefs },
+    ])
+  })
+
+  test("pairing with prefs=theirs falls back to keep when the peer has no prefs", async () => {
+    const peer = peerMachine()
+    const { broadcasts, sync } = controller()
+    expect(await sync.pair({ host: peer.host, code: "654321", prefs: "theirs" })).toEqual({ ok: true })
+    expect(broadcasts.filter((entry) => entry.channel === "machine-sync-adopt-prefs")).toEqual([
+      { channel: "machine-sync-adopt-prefs", payload: null },
+    ])
   })
 
   test("re-pairing tells the previous peer to drop its token", async () => {

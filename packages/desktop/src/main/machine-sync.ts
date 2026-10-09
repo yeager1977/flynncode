@@ -5,6 +5,7 @@ import { pairWithPeer, unpairPeer } from "@flynncode/mobile-gateway/sync-pair"
 import type {
   MachineSyncPairingCode,
   MachineSyncPairResult,
+  MachineSyncPrefsChoice,
   MachineSyncStatus,
 } from "@opencode-ai/app/machine-sync-types"
 import {
@@ -17,6 +18,7 @@ import {
 import { PHONE_ACCESS_KEY, SYNC_PAUSED_KEY, SYNC_PEER_KEY, SYNC_PREFS_KEY } from "./store-keys"
 
 const SYNC_NOW_TIMEOUT_MS = 120_000
+const PEER_PREFS_TIMEOUT_MS = 10_000
 
 export type SyncStore = {
   get(key: string): unknown
@@ -55,6 +57,17 @@ function unbracket(host: string) {
   return /^\[[0-9A-Fa-f:]+\]:\d+$/.test(host) ? `http://${host}` : host
 }
 
+async function fetchPeerPrefs(peer: { url: string; token: string }, fetchImpl: typeof fetch = fetch) {
+  const response = await fetchImpl(`${peer.url}/flynncode-sync/prefs`, {
+    headers: { authorization: `Bearer ${peer.token}` },
+    redirect: "error",
+    signal: AbortSignal.timeout(PEER_PREFS_TIMEOUT_MS),
+  }).catch(() => undefined)
+  if (!response?.ok) return
+  const body: unknown = await response.json().catch(() => undefined)
+  return typeof body === "object" && body !== null && "prefs" in body ? parsePrefs(body.prefs) : undefined
+}
+
 // Main owns the persisted sync settings; the sidecar owns the live gate and
 // worker. Every change is written here first and then pushed to the sidecar,
 // so a restart always starts from the stored state.
@@ -62,7 +75,10 @@ export function createMachineSync(deps: {
   store: SyncStore
   machineName: string
   post: (command: SidecarSyncCommand) => void
-  broadcast: (channel: "machine-sync-status" | "machine-sync-peer-prefs", payload: unknown) => void
+  broadcast: (
+    channel: "machine-sync-status" | "machine-sync-peer-prefs" | "machine-sync-adopt-prefs",
+    payload: unknown,
+  ) => void
   lanAddresses: () => string[]
   fetchImpl?: typeof fetch
   now?: () => number
@@ -122,7 +138,7 @@ export function createMachineSync(deps: {
       deps.post({ type: "sync-pairing-code", code, expiresAt })
       return { code, expiresAt, machineName: deps.machineName, addresses: deps.lanAddresses() }
     },
-    async pair(input: { host: string; code: string }): Promise<MachineSyncPairResult> {
+    async pair(input: { host: string; code: string; prefs?: MachineSyncPrefsChoice }): Promise<MachineSyncPairResult> {
       const result = await pairWithPeer({
         host: input.host,
         code: input.code,
@@ -135,6 +151,12 @@ export function createMachineSync(deps: {
       deps.store.set(SYNC_PEER_KEY, result.peer)
       pushConfig()
       publish()
+      // `keep` (null) has windows restamp and push their prefs; `theirs` hands
+      // them the peer's to adopt, falling back to `keep` if it has none.
+      deps.broadcast(
+        "machine-sync-adopt-prefs",
+        input.prefs === "theirs" ? ((await fetchPeerPrefs(result.peer, deps.fetchImpl)) ?? null) : null,
+      )
       // Re-pairing replaces the peer; tell the old one so its token stops working.
       if (previous && previous.token !== result.peer.token) await unpairPeer({ peer: previous, fetchImpl: deps.fetchImpl })
       return { ok: true }
