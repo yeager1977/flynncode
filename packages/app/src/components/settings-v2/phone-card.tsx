@@ -1,10 +1,12 @@
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
+import { Switch } from "@opencode-ai/ui/v2/switch-v2"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { type Component, For, Show, createEffect, createResource, createSignal, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { normalizeServerUrl, serverName, useServer, type ServerConnection } from "@/context/server"
 import { SettingsListV2 } from "./parts/list"
+import { createPhoneAccessController } from "./phone-access-controller"
 import { canEncodeQr, drawQrToCanvas } from "./phone-qr"
 
 type MobileGatewayStatus = {
@@ -20,6 +22,8 @@ type PhoneApi = {
   getMobileGatewayStatus?: () => Promise<MobileGatewayStatus>
   getMobilePhonePassword?: () => Promise<string | null>
   rotateMobilePhonePassword?: () => Promise<string>
+  getPhoneAccess?: () => Promise<boolean>
+  setPhoneAccess?: (enabled: boolean) => Promise<void>
 }
 
 const STOPPED_STATUS: MobileGatewayStatus = { running: false, port: 4097, lanUrls: [], launcherUrls: [], tailnetUrls: [], tailnetLauncherUrls: [] }
@@ -65,6 +69,7 @@ export const PhoneCard: Component = () => {
       .then((value) => setPhonePassword({ value, rotated: true }))
       .catch(() => undefined)
   }
+  const phoneAccess = createPhoneAccessController({ api: phoneApi, refetch: () => void refetch() })
   const [copied, setCopied] = createSignal<string>()
   const [remoteToken, setRemoteToken] = createSignal("")
   const [tokenSaved, setTokenSaved] = createSignal(false)
@@ -142,171 +147,159 @@ export const PhoneCard: Component = () => {
               aria-hidden="true"
               classList={{
                 "size-1.5 rounded-full shrink-0 my-[3.5px]": true,
-                "bg-icon-success-base": gatewayRunning(),
-                "bg-border-weak-base": !gatewayRunning(),
+                "bg-icon-success-base": phoneAccess.enabled() && gatewayRunning(),
+                "bg-border-weak-base": !(phoneAccess.enabled() && gatewayRunning()),
               }}
             />
             <div class="settings-v2-servers-copy">
               <span class="settings-v2-servers-name">{language.t("server.phone.title")}</span>
               <span class="settings-v2-servers-meta">
-                <Show when={gatewayRunning()} fallback={language.t("server.phone.stopped")}>
-                  <Show when={hasUrls()} fallback={language.t("server.phone.noWifi")}>
-                    {language.t("server.phone.hint")}
+                <Show when={phoneAccess.enabled()} fallback={language.t("server.phone.access.off")}>
+                  <Show when={gatewayRunning()} fallback={language.t("server.phone.stopped")}>
+                    <Show when={hasUrls()} fallback={language.t("server.phone.noWifi")}>
+                      {language.t("server.phone.hint")}
+                    </Show>
                   </Show>
                 </Show>
               </span>
             </div>
           </div>
         </div>
-        <Show when={gatewayRunning() && hasUrls()}>
-          <For each={launcherUrls()}>
-            {(url) => (
+        <div class="settings-v2-servers-row">
+          <div class="settings-v2-servers-lead">
+            <div class="settings-v2-servers-copy">
+              <span class="settings-v2-servers-name">{language.t("server.phone.access.label")}</span>
+              <span class="settings-v2-servers-meta">{language.t("server.phone.access.hint")}</span>
+            </div>
+          </div>
+          <div class="settings-v2-servers-actions">
+            <Switch checked={phoneAccess.enabled()} onChange={phoneAccess.toggle} hideLabel>
+              {language.t("server.phone.access.label")}
+            </Switch>
+          </div>
+        </div>
+        <Show when={phoneAccess.enabled()}>
+          <Show when={gatewayRunning() && hasUrls()}>
+            <For each={launcherUrls()}>
+              {(url) => (
+                <div class="settings-v2-servers-row">
+                  <div class="settings-v2-servers-lead">
+                    <div class="settings-v2-servers-copy">
+                      <span class="settings-v2-servers-name">{url}</span>
+                    </div>
+                  </div>
+                  <div class="settings-v2-servers-actions">
+                    <ButtonV2 size="small" variant="ghost-muted" onClick={() => copyUrl(url)}>
+                      <Show when={copied() === url} fallback={language.t("server.phone.copy")}>
+                        {language.t("session.share.copy.copied")}
+                      </Show>
+                    </ButtonV2>
+                  </div>
+                </div>
+              )}
+            </For>
+            <Show when={qrUrl()}>
+              <div class="settings-v2-servers-row">
+                <canvas
+                  ref={(element) => {
+                    qrCanvas = element
+                  }}
+                  aria-label={language.t("server.phone.title")}
+                  style={{ width: "128px", height: "128px", "image-rendering": "pixelated" }}
+                />
+              </div>
+            </Show>
+          </Show>
+          <Show when={gatewayRunning() && !hasUrls()}>
+            <div class="settings-v2-servers-row">
+              <div class="settings-v2-servers-lead">
+                <div class="settings-v2-servers-copy">
+                  <span class="settings-v2-servers-name">{loopbackUrl()}</span>
+                </div>
+              </div>
+              <div class="settings-v2-servers-actions">
+                <ButtonV2 size="small" variant="ghost-muted" onClick={() => copyUrl(loopbackUrl())}>
+                  <Show when={copied() === loopbackUrl()} fallback={language.t("server.phone.copy")}>
+                    {language.t("session.share.copy.copied")}
+                  </Show>
+                </ButtonV2>
+              </div>
+            </div>
+          </Show>
+          <div class="settings-v2-servers-row">
+            <div class="settings-v2-servers-lead">
+              <div class="settings-v2-servers-copy">
+                <span class="settings-v2-servers-name">{language.t("server.phone.password.label")}</span>
+                <span class="settings-v2-servers-meta">
+                  <Show when={phonePassword.value} fallback={language.t("server.phone.password.unavailable")}>
+                    {language.t("server.phone.password.hint")}
+                  </Show>
+                </span>
+              </div>
+            </div>
+          </div>
+          <Show when={phonePassword.value}>
+            {(password) => (
               <div class="settings-v2-servers-row">
                 <div class="settings-v2-servers-lead">
                   <div class="settings-v2-servers-copy">
-                    <span class="settings-v2-servers-name">{url}</span>
+                    <span class="settings-v2-servers-name font-mono select-all">
+                      {phonePassword.visible ? password() : MASKED_PASSWORD}
+                    </span>
                   </div>
                 </div>
                 <div class="settings-v2-servers-actions">
-                  <ButtonV2 size="small" variant="ghost-muted" onClick={() => copyUrl(url)}>
-                    <Show when={copied() === url} fallback={language.t("server.phone.copy")}>
+                  <ButtonV2
+                    size="small"
+                    variant="ghost-muted"
+                    onClick={() => setPhonePassword("visible", (visible) => !visible)}
+                  >
+                    {phonePassword.visible
+                      ? language.t("server.phone.password.hide")
+                      : language.t("server.phone.password.show")}
+                  </ButtonV2>
+                  <ButtonV2 size="small" variant="ghost-muted" onClick={() => copyUrl(password())}>
+                    <Show when={copied() === password()} fallback={language.t("server.phone.copy")}>
                       {language.t("session.share.copy.copied")}
                     </Show>
+                  </ButtonV2>
+                  <ButtonV2 size="small" variant="ghost-muted" onClick={rotatePhonePassword}>
+                    {language.t("server.phone.password.rotate")}
                   </ButtonV2>
                 </div>
               </div>
             )}
-          </For>
-          <Show when={qrUrl()}>
+          </Show>
+          <Show when={phonePassword.rotated}>
             <div class="settings-v2-servers-row">
-              <canvas
-                ref={(element) => {
-                  qrCanvas = element
-                }}
-                aria-label={language.t("server.phone.title")}
-                style={{ width: "128px", height: "128px", "image-rendering": "pixelated" }}
-              />
+              <div class="settings-v2-servers-lead">
+                <div class="settings-v2-servers-copy">
+                  <span class="settings-v2-servers-meta">{language.t("server.phone.password.rotated")}</span>
+                </div>
+              </div>
             </div>
           </Show>
-        </Show>
-        <Show when={gatewayRunning() && !hasUrls()}>
           <div class="settings-v2-servers-row">
             <div class="settings-v2-servers-lead">
               <div class="settings-v2-servers-copy">
-                <span class="settings-v2-servers-name">{loopbackUrl()}</span>
+                <span class="settings-v2-servers-name">{language.t("server.phone.away.title")}</span>
+                <span class="settings-v2-servers-meta">{language.t("server.phone.away.direct")}</span>
               </div>
             </div>
-            <div class="settings-v2-servers-actions">
-              <ButtonV2 size="small" variant="ghost-muted" onClick={() => copyUrl(loopbackUrl())}>
-                <Show when={copied() === loopbackUrl()} fallback={language.t("server.phone.copy")}>
-                  {language.t("session.share.copy.copied")}
-                </Show>
-              </ButtonV2>
-            </div>
           </div>
-        </Show>
-        <div class="settings-v2-servers-row">
-          <div class="settings-v2-servers-lead">
-            <div class="settings-v2-servers-copy">
-              <span class="settings-v2-servers-name">{language.t("server.phone.password.label")}</span>
-              <span class="settings-v2-servers-meta">
-                <Show when={phonePassword.value} fallback={language.t("server.phone.password.unavailable")}>
-                  {language.t("server.phone.password.hint")}
-                </Show>
-              </span>
-            </div>
-          </div>
-        </div>
-        <Show when={phonePassword.value}>
-          {(password) => (
-            <div class="settings-v2-servers-row">
-              <div class="settings-v2-servers-lead">
-                <div class="settings-v2-servers-copy">
-                  <span class="settings-v2-servers-name font-mono select-all">
-                    {phonePassword.visible ? password() : MASKED_PASSWORD}
-                  </span>
+          <Show
+            when={tailnetUrl()}
+            fallback={
+              <div class="settings-v2-servers-row">
+                <div class="settings-v2-servers-lead">
+                  <div class="settings-v2-servers-copy">
+                    <span class="settings-v2-servers-meta">{language.t("server.phone.noWifi")}</span>
+                  </div>
                 </div>
               </div>
-              <div class="settings-v2-servers-actions">
-                <ButtonV2
-                  size="small"
-                  variant="ghost-muted"
-                  onClick={() => setPhonePassword("visible", (visible) => !visible)}
-                >
-                  {phonePassword.visible
-                    ? language.t("server.phone.password.hide")
-                    : language.t("server.phone.password.show")}
-                </ButtonV2>
-                <ButtonV2 size="small" variant="ghost-muted" onClick={() => copyUrl(password())}>
-                  <Show when={copied() === password()} fallback={language.t("server.phone.copy")}>
-                    {language.t("session.share.copy.copied")}
-                  </Show>
-                </ButtonV2>
-                <ButtonV2 size="small" variant="ghost-muted" onClick={rotatePhonePassword}>
-                  {language.t("server.phone.password.rotate")}
-                </ButtonV2>
-              </div>
-            </div>
-          )}
-        </Show>
-        <Show when={phonePassword.rotated}>
-          <div class="settings-v2-servers-row">
-            <div class="settings-v2-servers-lead">
-              <div class="settings-v2-servers-copy">
-                <span class="settings-v2-servers-meta">{language.t("server.phone.password.rotated")}</span>
-              </div>
-            </div>
-          </div>
-        </Show>
-        <div class="settings-v2-servers-row">
-          <div class="settings-v2-servers-lead">
-            <div class="settings-v2-servers-copy">
-              <span class="settings-v2-servers-name">{language.t("server.phone.away.title")}</span>
-              <span class="settings-v2-servers-meta">{language.t("server.phone.away.direct")}</span>
-            </div>
-          </div>
-        </div>
-        <Show when={tailnetUrl()} fallback={<div class="settings-v2-servers-row">
-          <div class="settings-v2-servers-lead">
-            <div class="settings-v2-servers-copy">
-              <span class="settings-v2-servers-meta">{language.t("server.phone.noWifi")}</span>
-            </div>
-          </div>
-        </div>}>
-          {(url) => (
-            <div class="settings-v2-servers-row">
-              <div class="settings-v2-servers-lead">
-                <div class="settings-v2-servers-copy">
-                  <span class="settings-v2-servers-name">{url()}</span>
-                </div>
-              </div>
-              <div class="settings-v2-servers-actions">
-                <ButtonV2 size="small" variant="ghost-muted" onClick={() => copyUrl(url())}>
-                  <Show when={copied() === url()} fallback={language.t("server.phone.copy")}>
-                    {language.t("session.share.copy.copied")}
-                  </Show>
-                </ButtonV2>
-              </div>
-            </div>
-          )}
-        </Show>
-        <div class="settings-v2-servers-row">
-          <div class="settings-v2-servers-lead">
-            <div class="settings-v2-servers-copy">
-              <span class="settings-v2-servers-name">{language.t("server.phone.relay.title")}</span>
-              <span class="settings-v2-servers-meta">{language.t("server.phone.relay.hint")}</span>
-            </div>
-          </div>
-        </div>
-        <Show when={relayLauncherUrl()} fallback={<div class="settings-v2-servers-row">
-          <div class="settings-v2-servers-lead">
-            <div class="settings-v2-servers-copy">
-              <span class="settings-v2-servers-meta">{language.t("server.phone.relay.stopped")}</span>
-            </div>
-          </div>
-        </div>}>
-          {(url) => (
-            <>
+            }
+          >
+            {(url) => (
               <div class="settings-v2-servers-row">
                 <div class="settings-v2-servers-lead">
                   <div class="settings-v2-servers-copy">
@@ -321,57 +314,96 @@ export const PhoneCard: Component = () => {
                   </ButtonV2>
                 </div>
               </div>
-              <Show when={relayQrUrl()}>
-                <div class="settings-v2-servers-row">
-                  <canvas
-                    ref={(element) => {
-                      qrCanvasRelay = element
-                    }}
-                    aria-label={language.t("server.phone.relay.title")}
-                    style={{ width: "128px", height: "128px", "image-rendering": "pixelated" }}
-                  />
-                </div>
-              </Show>
-            </>
-          )}
-        </Show>
-        <div class="settings-v2-servers-row">
-          <div class="settings-v2-servers-lead">
-            <div class="settings-v2-servers-copy">
-              <span class="settings-v2-servers-name">{language.t("server.phone.relay.token.label")}</span>
-              <span class="settings-v2-servers-meta">{language.t("server.phone.relay.token.hint")}</span>
-            </div>
-          </div>
-        </div>
-        <div class="settings-v2-servers-row">
-          <div class="settings-v2-servers-lead">
-            <TextInputV2
-              type="password"
-              appearance="base"
-              value={remoteToken()}
-              onInput={(event) => setRemoteToken(event.currentTarget.value)}
-              placeholder={language.t("server.phone.relay.token.placeholder")}
-              spellcheck={false}
-              autocorrect="off"
-              autocomplete="off"
-              autocapitalize="off"
-              aria-label={language.t("server.phone.relay.token.label")}
-            />
-          </div>
-          <div class="settings-v2-servers-actions">
-            <ButtonV2 size="small" variant="ghost-muted" onClick={saveRemoteToken}>
-              {language.t("server.phone.relay.token.save")}
-            </ButtonV2>
-          </div>
-        </div>
-        <Show when={tokenSaved()}>
+            )}
+          </Show>
           <div class="settings-v2-servers-row">
             <div class="settings-v2-servers-lead">
               <div class="settings-v2-servers-copy">
-                <span class="settings-v2-servers-meta">{language.t("server.phone.relay.token.saved")}</span>
+                <span class="settings-v2-servers-name">{language.t("server.phone.relay.title")}</span>
+                <span class="settings-v2-servers-meta">{language.t("server.phone.relay.hint")}</span>
               </div>
             </div>
           </div>
+          <Show
+            when={relayLauncherUrl()}
+            fallback={
+              <div class="settings-v2-servers-row">
+                <div class="settings-v2-servers-lead">
+                  <div class="settings-v2-servers-copy">
+                    <span class="settings-v2-servers-meta">{language.t("server.phone.relay.stopped")}</span>
+                  </div>
+                </div>
+              </div>
+            }
+          >
+            {(url) => (
+              <>
+                <div class="settings-v2-servers-row">
+                  <div class="settings-v2-servers-lead">
+                    <div class="settings-v2-servers-copy">
+                      <span class="settings-v2-servers-name">{url()}</span>
+                    </div>
+                  </div>
+                  <div class="settings-v2-servers-actions">
+                    <ButtonV2 size="small" variant="ghost-muted" onClick={() => copyUrl(url())}>
+                      <Show when={copied() === url()} fallback={language.t("server.phone.copy")}>
+                        {language.t("session.share.copy.copied")}
+                      </Show>
+                    </ButtonV2>
+                  </div>
+                </div>
+                <Show when={relayQrUrl()}>
+                  <div class="settings-v2-servers-row">
+                    <canvas
+                      ref={(element) => {
+                        qrCanvasRelay = element
+                      }}
+                      aria-label={language.t("server.phone.relay.title")}
+                      style={{ width: "128px", height: "128px", "image-rendering": "pixelated" }}
+                    />
+                  </div>
+                </Show>
+              </>
+            )}
+          </Show>
+          <div class="settings-v2-servers-row">
+            <div class="settings-v2-servers-lead">
+              <div class="settings-v2-servers-copy">
+                <span class="settings-v2-servers-name">{language.t("server.phone.relay.token.label")}</span>
+                <span class="settings-v2-servers-meta">{language.t("server.phone.relay.token.hint")}</span>
+              </div>
+            </div>
+          </div>
+          <div class="settings-v2-servers-row">
+            <div class="settings-v2-servers-lead">
+              <TextInputV2
+                type="password"
+                appearance="base"
+                value={remoteToken()}
+                onInput={(event) => setRemoteToken(event.currentTarget.value)}
+                placeholder={language.t("server.phone.relay.token.placeholder")}
+                spellcheck={false}
+                autocorrect="off"
+                autocomplete="off"
+                autocapitalize="off"
+                aria-label={language.t("server.phone.relay.token.label")}
+              />
+            </div>
+            <div class="settings-v2-servers-actions">
+              <ButtonV2 size="small" variant="ghost-muted" onClick={saveRemoteToken}>
+                {language.t("server.phone.relay.token.save")}
+              </ButtonV2>
+            </div>
+          </div>
+          <Show when={tokenSaved()}>
+            <div class="settings-v2-servers-row">
+              <div class="settings-v2-servers-lead">
+                <div class="settings-v2-servers-copy">
+                  <span class="settings-v2-servers-meta">{language.t("server.phone.relay.token.saved")}</span>
+                </div>
+              </div>
+            </div>
+          </Show>
         </Show>
       </SettingsListV2>
     </Show>

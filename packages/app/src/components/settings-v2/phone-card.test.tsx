@@ -26,4 +26,14 @@ describe("phone launcher url", () => {
     expect(dict["server.phone.password.label"]).toBe("Phone password")
     expect(dict["server.phone.password.rotated"]).toContain("restart")
   })
+
+  test("phone access copy exists and is in the fallback", async () => {
+    const { dict } = (await import("@/i18n/en")) as Record<string, Record<string, string>>
+    expect(dict["server.phone.access.label"]).toBe("Phone access")
+    expect(dict["server.phone.access.hint"]).toContain("right away")
+    expect(dict["server.phone.access.off"]).toContain("off")
+    const { flynncodeFallback } = await import("@/i18n/flynncode-fallback")
+    for (const key of ["server.phone.access.hint", "server.phone.access.label", "server.phone.access.off"])
+      expect(Object.hasOwn(flynncodeFallback, key), key).toBe(true)
+  })
 })
