@@ -516,6 +516,8 @@ export const dict = {
   "server.sync.offline": "{{name}} · offline",
   "server.sync.paused": "{{name}} · paused",
   "server.sync.peerPaused": "Paused on {{name}}",
+  "server.sync.reload.ready": "Settings from {{name}} are ready",
+  "server.sync.reload.apply": "Reload to apply",
   "server.sync.lastSync": "Last synced {{time}}",
   "server.sync.never": "Not synced yet",
   "server.sync.counts": "Last cycle: {{received}} received, {{sent}} sent",

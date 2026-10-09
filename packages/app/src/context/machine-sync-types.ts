@@ -14,6 +14,8 @@ export type MachineSyncStatus = {
   backlog: { done: number; total: number } | null
   failures: Array<{ id: string; error: string }>
   lastError: string | null
+  /** A pulled global config is written but waits for "Reload to apply"; `from` names its machine. */
+  configReloadPending: { from: string } | null
   /** Set while the LAN gateway is wanted but could not start (e.g. port 4097 busy). */
   gatewayError: string | null
   machineName: string
@@ -46,6 +48,8 @@ export type MachineSyncPlatform = {
    */
   pair(input: { host: string; code: string; prefs?: MachineSyncPrefsChoice }): Promise<MachineSyncPairResult>
   syncNow(): Promise<MachineSyncStatus>
+  /** Reloads this computer's instances so a pulled config takes effect, like saving settings does. */
+  reloadConfig(): Promise<MachineSyncStatus>
   setPaused(paused: boolean): Promise<void>
   unpair(): Promise<void>
   /** Returns newer prefs the desktop already holds, for this window to apply. */

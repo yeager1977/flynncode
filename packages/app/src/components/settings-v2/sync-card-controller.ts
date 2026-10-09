@@ -8,7 +8,7 @@ import type {
 } from "@/context/machine-sync-types"
 import { syncNowFailed, syncPairNotice } from "./sync-card-status"
 
-type Busy = "code" | "syncNow" | "pause" | "unpair"
+type Busy = "code" | "syncNow" | "pause" | "unpair" | "reload"
 
 // All state and side effects of the Sync card live here so the component is
 // only markup; `now` is injectable for tests. `fail` is told about user
@@ -123,6 +123,18 @@ export function createSyncCardController(input: {
             if (syncNowFailed(status)) input.fail("server.sync.toast.failed")
           },
           (error) => failed(error, "server.sync.toast.failed"),
+        ),
+      )
+    },
+    /** "Reload to apply": the pending pulled config takes effect; a reload that leaves it pending failed. */
+    reloadConfig() {
+      guarded("reload", () =>
+        api?.reloadConfig().then(
+          (status) => {
+            setState("status", status)
+            if (status.configReloadPending) input.fail("server.sync.toast.actionFailed")
+          },
+          (error) => failed(error, "server.sync.toast.actionFailed"),
         ),
       )
     },

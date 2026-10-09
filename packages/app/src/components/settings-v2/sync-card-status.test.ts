@@ -19,6 +19,7 @@ const status: MachineSyncStatus = {
   failures: [],
   lastError: null,
   gatewayError: null,
+  configReloadPending: null,
   machineName: "challenger",
   addresses: ["192.168.1.10"],
 }
@@ -57,6 +58,8 @@ describe("syncNowFailed", () => {
     expect(syncNowFailed(status)).toBe(false)
     expect(syncNowFailed({ ...status, phase: "offline" })).toBe(true)
     expect(syncNowFailed({ ...status, failures: [{ id: "ses_a", error: "x" }] })).toBe(true)
+    // The other computer paused sync: the headline says so, no "Sync failed" toast.
+    expect(syncNowFailed({ ...status, phase: "peer-paused" })).toBe(false)
   })
 })
 

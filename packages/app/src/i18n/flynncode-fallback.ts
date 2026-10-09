@@ -128,6 +128,8 @@ const keys = [
   "server.sync.prefs.theirs",
   "server.sync.prefs.unread",
   "server.sync.progress",
+  "server.sync.reload.apply",
+  "server.sync.reload.ready",
   "server.sync.resume",
   "server.sync.syncNow",
   "server.sync.title",

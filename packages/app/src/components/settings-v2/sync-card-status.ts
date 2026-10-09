@@ -22,6 +22,8 @@ export function syncProblem(status: MachineSyncStatus) {
 // Background cycles stay silent; only a manual Sync now that did not finish
 // cleanly shows a toast.
 export function syncNowFailed(status: MachineSyncStatus) {
+  // A paused peer answered; the headline already says so, which is no failure.
+  if (status.phase === "peer-paused") return false
   return status.phase !== "idle" || status.failures.length > 0 || status.lastError !== null
 }
 

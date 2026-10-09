@@ -201,6 +201,27 @@ export const SyncCard: Component = () => {
                 </ButtonV2>
               </div>
             </div>
+            <Show when={status().configReloadPending}>
+              {(pending) => (
+                <div class="settings-v2-servers-row">
+                  <div class="settings-v2-servers-lead">
+                    <span class="settings-v2-servers-meta settings-v2-servers-meta--wrap">
+                      {language.t("server.sync.reload.ready", { name: pending().from || status().peerName || "" })}
+                    </span>
+                  </div>
+                  <div class="settings-v2-servers-actions">
+                    <ButtonV2
+                      size="small"
+                      variant="ghost-muted"
+                      disabled={state.busy === "reload"}
+                      onClick={sync.reloadConfig}
+                    >
+                      {language.t("server.sync.reload.apply")}
+                    </ButtonV2>
+                  </div>
+                </div>
+              )}
+            </Show>
             <Show when={state.pairNotice}>
               {(notice) => (
                 <div class="settings-v2-servers-row">

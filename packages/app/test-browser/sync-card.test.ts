@@ -21,6 +21,7 @@ const base: MachineSyncStatus = {
   failures: [],
   lastError: null,
   gatewayError: null,
+  configReloadPending: null,
   machineName: "challenger",
   addresses: ["192.168.1.10"],
 }
@@ -33,7 +34,13 @@ const tick = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms))
 function fakeApi(initial: MachineSyncStatus = base) {
   const calls: string[] = []
   const listeners = new Set<(status: MachineSyncStatus) => void>()
-  const control = { current: initial, codeTtl: 600_000, fail: false, held: undefined as (() => void) | undefined }
+  const control = {
+    current: initial,
+    codeTtl: 600_000,
+    fail: false,
+    reloadSticks: false,
+    held: undefined as (() => void) | undefined,
+  }
   const api: MachineSyncPlatform = {
     status: async () => control.current,
     subscribe: (cb) => {
@@ -58,6 +65,15 @@ function fakeApi(initial: MachineSyncStatus = base) {
     unpair: async () => {
       calls.push("unpair")
       if (control.fail) throw new Error("ipc down")
+    },
+    reloadConfig: async () => {
+      calls.push("reload")
+      if (control.fail) throw new Error("ipc down")
+      control.current = {
+        ...control.current,
+        configReloadPending: control.reloadSticks ? control.current.configReloadPending : null,
+      }
+      return control.current
     },
     pushPrefs: async () => null,
     onPeerPrefs: () => () => {},
@@ -246,6 +262,47 @@ describe("createSyncCardController actions", () => {
       sync.showCode()
       sync.unpair()
       expect(sync.code()).toBeUndefined()
+      dispose()
+    })
+  })
+})
+
+describe("createSyncCardController reload to apply", () => {
+  // Fresh per test: the store merges statuses into the object it was first given.
+  const pending = (): MachineSyncStatus => ({ ...paired, configReloadPending: { from: "starship" } })
+
+  test("reloads, clears the pending settings and does not toast", async () => {
+    const fake = fakeApi(pending())
+    const failures: string[] = []
+    await createRoot(async (dispose) => {
+      const sync = createSyncCardController({ api: fake.api, fail: (key) => failures.push(key) })
+      await tick()
+      expect(sync.state.status?.configReloadPending).toEqual({ from: "starship" })
+      sync.reloadConfig()
+      expect(sync.state.busy).toBe("reload")
+      await tick()
+      expect(fake.calls).toEqual(["reload"])
+      expect(sync.state.status?.configReloadPending).toBeNull()
+      expect(sync.state.busy).toBeUndefined()
+      expect(failures).toEqual([])
+      dispose()
+    })
+  })
+
+  test("toasts when the reload fails or leaves the settings pending", async () => {
+    const fake = fakeApi(pending())
+    const failures: string[] = []
+    await createRoot(async (dispose) => {
+      const sync = createSyncCardController({ api: fake.api, fail: (key) => failures.push(key) })
+      await tick()
+      fake.control.reloadSticks = true
+      sync.reloadConfig()
+      await tick()
+      fake.control.fail = true
+      sync.reloadConfig()
+      await tick()
+      expect(failures).toEqual(["server.sync.toast.actionFailed", "server.sync.toast.actionFailed"])
+      expect(sync.state.status?.configReloadPending).toEqual({ from: "starship" })
       dispose()
     })
   })
