@@ -442,7 +442,11 @@ describe("sync worker", () => {
 
   test("sends what it saw of each local chat as a precondition and skips a chat that changed", async () => {
     const local = fake([session("ses_old", 10), session("ses_gone", 10), session("ses_shelf", 10)])
-    const peer = fake([session("ses_old", 20), session("ses_new", 5), { ...session("ses_shelf", 10), timeArchived: 30 }])
+    const peer = fake([
+      session("ses_old", 20),
+      session("ses_new", 5),
+      { ...session("ses_shelf", 10), timeArchived: 30 },
+    ])
     peer.manifest.tombstones = [{ id: "ses_gone", timeDeleted: 50 }]
     local.staleApply = new Set(["ses_old"])
     const status = await worker({ local, peer }).cycle()
@@ -453,10 +457,9 @@ describe("sync worker", () => {
       ["/flynncode-sync/delete/ses_gone", { timeUpdated: 10, timeArchived: null }],
       ["/flynncode-sync/archive/ses_shelf", { timeUpdated: 10, timeArchived: null }],
     ])
-    expect(local.writes.filter((write) => write.path === "/flynncode-sync/apply").map((write) => write.body.expected)).toEqual([
-      { timeUpdated: 10, timeArchived: null },
-      null,
-    ])
+    expect(
+      local.writes.filter((write) => write.path === "/flynncode-sync/apply").map((write) => write.body.expected),
+    ).toEqual([{ timeUpdated: 10, timeArchived: null }, null])
     // A chat that changed here waits for the next manifest instead of failing.
     expect(status.failures).toEqual([])
     expect(status.skipped).toEqual([{ id: "ses_old", reason: "local-changed" }])

@@ -92,7 +92,9 @@ async function readCapped(
 function advertised(body: Record<string, unknown>) {
   const host = typeof body.host === "string" && HOST_NAME.test(body.host) ? body.host : undefined
   const addresses = Array.isArray(body.addresses)
-    ? body.addresses.filter((item): item is string => typeof item === "string" && IPV4.test(item)).slice(0, MAX_ADVERTISED)
+    ? body.addresses
+        .filter((item): item is string => typeof item === "string" && IPV4.test(item))
+        .slice(0, MAX_ADVERTISED)
     : []
   return { host, addresses }
 }
