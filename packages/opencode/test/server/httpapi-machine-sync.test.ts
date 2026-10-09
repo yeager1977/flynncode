@@ -327,7 +327,10 @@ describe("machine sync routes", () => {
     Effect.gen(function* () {
       const file = Config.globalConfigFile()
       yield* Effect.promise(() => rm(file, { force: true }))
+      expect(yield* (yield* request(MachineSyncPaths.settings)).json).toEqual({ config: null, mtime: 0, missing: true })
+      yield* Effect.promise(() => Bun.write(file, `{ "model": `))
       expect(yield* (yield* request(MachineSyncPaths.settings)).json).toEqual({ config: null, mtime: 0 })
+      yield* Effect.promise(() => rm(file, { force: true }))
       expect((yield* request(MachineSyncPaths.settingsApply, post({ config: [], mtime: 1 }))).status).toBe(400)
       expect((yield* request(MachineSyncPaths.settingsApply, post({ config: {}, mtime: "1" }))).status).toBe(400)
       expect((yield* request(MachineSyncPaths.settingsApply, { method: "POST", body: "nope" })).status).toBe(400)

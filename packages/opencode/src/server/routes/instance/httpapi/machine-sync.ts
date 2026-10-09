@@ -120,7 +120,8 @@ export const machineSyncRoutes = HttpRouter.use((router) =>
         // Stat first so the mtime we send is never newer than the content we read.
         const mtime = yield* modified(file)
         const text = yield* fs.readFileStringSafe(file).pipe(Effect.orElseSucceed(() => undefined))
-        if (text === undefined) return json({ config: null, mtime: 0 })
+        // "missing" lets a fresh machine accept the peer config; unparseable files stay untouched.
+        if (text === undefined) return json({ config: null, mtime: 0, missing: true })
         const parsed = yield* Effect.try({
           try: () => ConfigParse.jsonc(text, file),
           catch: (error) => error,

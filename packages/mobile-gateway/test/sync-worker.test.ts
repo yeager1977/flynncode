@@ -7,10 +7,11 @@ type Fake = {
   manifest: Manifest
   bundles: Map<string, { session: { id: string; time_updated: number } }>
   applied: string[]
-  settings: { config: Record<string, unknown> | null; mtime: number }
+  settings: { config: Record<string, unknown> | null; mtime: number; missing?: boolean }
   settingsApplied: unknown[]
   prefs: SyncPrefs | null
   down: boolean
+  failApply: Set<string>
 }
 
 const servers: Array<ReturnType<typeof Bun.serve>> = []
@@ -35,6 +36,7 @@ function fake(sessions: ManifestSession[], schema = "s1"): Fake {
     settingsApplied: [],
     prefs: null,
     down: false,
+    failApply: new Set(),
   }
 }
 
@@ -58,6 +60,7 @@ function serve(state: Fake, authorization: string) {
       }
       if (path === "/flynncode-sync/apply") {
         const body = (await request.json()) as { session: { id: string; time_updated: number } }
+        if (state.failApply.has(body.session.id)) return new Response("apply failed", { status: 422 })
         state.applied.push(body.session.id)
         state.manifest.sessions.push(session(body.session.id, body.session.time_updated))
         return Response.json({ ok: true })
@@ -176,6 +179,33 @@ describe("sync worker", () => {
     const status = await worker({ local: readableLocal, peer: emptyPeer }).cycle()
     expect(readableLocal.settingsApplied).toEqual([])
     expect(status.lastError).toBeNull()
+  })
+
+  test("fills a fresh machine with no global config from the peer", async () => {
+    const local = fake([])
+    local.settings = { config: null, mtime: 0, missing: true }
+    const peer = fake([])
+    peer.settings = { config: { model: "a/b" }, mtime: 9 }
+    await worker({ local, peer }).cycle()
+    expect(local.settingsApplied).toEqual([{ config: { model: "a/b" }, mtime: 9 }])
+  })
+
+  test("does not let chats that keep failing starve the rest of a backlog", async () => {
+    const stuck = Array.from({ length: 25 }, (_, index) => `ses_bad${String(index).padStart(2, "0")}`)
+    const local = fake([])
+    const peer = fake([...stuck.map((id) => session(id, 10)), session("ses_zgood", 10)])
+    local.failApply = new Set(stuck)
+    const sync = worker({ local, peer })
+    // Nothing is known to fail yet, so the first batch is the first 20 in order.
+    const first = await sync.cycle()
+    expect(first.failures.length).toBe(20)
+    expect(local.applied).toEqual([])
+    // The failed 20 now go last, so the good chat is pulled in the next cycle.
+    const second = await sync.cycle()
+    expect(local.applied).toEqual(["ses_zgood"])
+    // The five never-tried failures come before the 14 retried ones that fit in the batch.
+    expect(second.failures.length).toBe(19)
+    expect(second.failures.map((item) => item.id)).toEqual(expect.arrayContaining(stuck.slice(20)))
   })
 
   test("reports unpaired when there is no peer", async () => {

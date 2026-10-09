@@ -79,6 +79,9 @@ export function createSyncWorker(options: {
     status: initialStatus(),
     timer: undefined as ReturnType<typeof setTimeout> | undefined,
     running: undefined as Promise<SyncStatus> | undefined,
+    // Chats whose last pull failed or was busy; they go to the back of the batch
+    // so a few stuck chats cannot starve the rest of a backlog.
+    stuck: new Set<string>(),
     stopped: true,
   }
 
@@ -110,7 +113,11 @@ export function createSyncWorker(options: {
 
     const actions = decide({ local: localManifest.value, peer: peerManifest.value })
     const pulls = actions.filter((action): action is Extract<SyncAction, { type: "pull" }> => action.type === "pull")
-    const batch = pulls.slice(0, BATCH_SIZE)
+    state.stuck.forEach((id) => pulls.some((pull) => pull.id === id) || state.stuck.delete(id))
+    const batch = [
+      ...pulls.filter((pull) => !state.stuck.has(pull.id)),
+      ...pulls.filter((pull) => state.stuck.has(pull.id)),
+    ].slice(0, BATCH_SIZE)
     // Requests run one at a time so a big first sync never floods either side.
     const results: Array<{ id: string; outcome: "applied" | "busy" | string }> = []
     for (const action of actions) {
@@ -128,6 +135,9 @@ export function createSyncWorker(options: {
     const pulled: Array<{ id: string; outcome: "applied" | "busy" | string }> = []
     for (const action of batch) pulled.push({ id: action.id, outcome: await pull(peer, action.id) })
 
+    pulled.forEach((result) =>
+      result.outcome === "applied" ? state.stuck.delete(result.id) : state.stuck.add(result.id),
+    )
     const received = pulled.filter((result) => result.outcome === "applied").length
     const failures = [...results, ...pulled]
       .filter((result) => result.outcome !== "applied" && result.outcome !== "busy")
@@ -176,11 +186,14 @@ export function createSyncWorker(options: {
   async function syncSettings(peer: SyncPeer): Promise<string | null> {
     const settings = await read(remote(peer, "/flynncode-sync/settings"), isSettings)
     if (settings.kind !== "ok" || settings.value.config === null) return null
-    // The server reports a null config for a missing or unparseable file; never
-    // let that state be overwritten by a peer config.
+    // A null local config is either a missing file (a fresh machine, safe to
+    // fill) or an unparseable one, which must never be overwritten.
     const here = await read(local("/flynncode-sync/settings"), isSettings)
-    if (here.kind !== "ok" || here.value.config === null) return null
-    const outcome = await write("/flynncode-sync/settings/apply", settings.value)
+    if (here.kind !== "ok" || (here.value.config === null && here.value.missing !== true)) return null
+    const outcome = await write("/flynncode-sync/settings/apply", {
+      config: settings.value.config,
+      mtime: settings.value.mtime,
+    })
     return outcome === "applied" ? null : `settings: ${outcome}`
   }
 
@@ -251,7 +264,9 @@ function isMissing(value: unknown): value is { directories: string[] } {
   )
 }
 
-function isSettings(value: unknown): value is { config: Record<string, unknown> | null; mtime: number } {
+function isSettings(
+  value: unknown,
+): value is { config: Record<string, unknown> | null; mtime: number; missing?: boolean } {
   return isRecord(value) && (value.config === null || isRecord(value.config)) && typeof value.mtime === "number"
 }
 
