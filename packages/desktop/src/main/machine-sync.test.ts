@@ -2,6 +2,11 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { createGateway } from "@flynncode/mobile-gateway/gateway"
 import { createSyncGate } from "@flynncode/mobile-gateway/sync-gate"
 import { initialStatus } from "@flynncode/mobile-gateway/sync"
+import {
+  SYNC_NONCE_HEADER,
+  SYNC_RESPONSE_SIGNATURE_HEADER,
+  signResponse,
+} from "@flynncode/mobile-gateway/sync-sign"
 import { createMachineSync, parsePairInput, readSyncStart, type SyncStore } from "./machine-sync"
 import type { SidecarSyncCommand } from "./sidecar-sync"
 
@@ -157,7 +162,9 @@ describe("createMachineSync", () => {
   })
 
   // Pairs with a real peer but lets the test answer (or fail) the prefs GET.
-  async function pairTheirs(prefsRoute: () => Promise<Response>, options?: { throwOnAdopt?: boolean }) {
+  // `reply` signs an answer the way the peer's gateway does.
+  type Reply = (body: string, status?: number) => Response
+  async function pairTheirs(prefsRoute: (reply: Reply) => Promise<Response>, options?: { throwOnAdopt?: boolean }) {
     const peer = peerMachine({ sections: { appearance: { fontSize: 22 } }, updatedAt: 5 })
     const memory = memoryStore()
     const events: string[] = []
@@ -166,14 +173,26 @@ describe("createMachineSync", () => {
       (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
         if (!String(input).endsWith("/flynncode-sync/prefs")) return fetch(input, init)
         events.push("prefs-get")
-        return prefsRoute()
+        const nonce = new Headers(init?.headers).get(SYNC_NONCE_HEADER) ?? ""
+        return prefsRoute(
+          (body, status = 200) =>
+            new Response(body, {
+              status,
+              headers: {
+                [SYNC_RESPONSE_SIGNATURE_HEADER]: signResponse(peer.gate.peer()?.token ?? "", nonce, body),
+              },
+            }),
+        )
       },
       { preconnect: fetch.preconnect },
     )
     const sync = createMachineSync({
       store: memory.store,
       machineName: "starship",
-      post: (command) => events.push(command.type),
+      post: (command) => {
+        events.push(command.type)
+        return true
+      },
       broadcast: (channel, payload) => {
         if (options?.throwOnAdopt && channel === "machine-sync-adopt-prefs") throw new Error("window destroyed")
         broadcasts.push({ channel, payload })
@@ -191,7 +210,7 @@ describe("createMachineSync", () => {
     broadcasts.filter((entry) => entry.channel === "machine-sync-adopt-prefs")
 
   test("pairing with prefs=theirs broadcasts no adopt when the peer's prefs cannot be read", async () => {
-    const failed = await pairTheirs(() => Promise.resolve(new Response("boom", { status: 500 })))
+    const failed = await pairTheirs((reply) => Promise.resolve(reply("boom", 500)))
     expect(failed.result).toEqual({ ok: true, prefs: "unread" })
     expect(failed.stored).toBe(true)
     expect(adopts(failed.broadcasts)).toEqual([])
@@ -205,18 +224,32 @@ describe("createMachineSync", () => {
   })
 
   test("pairing with prefs=theirs broadcasts no adopt when the prefs body is invalid", async () => {
-    const bad = await pairTheirs(() => Promise.resolve(Response.json({ prefs: { sections: "nope", updatedAt: "x" } })))
+    const bad = await pairTheirs((reply) =>
+      Promise.resolve(reply(JSON.stringify({ prefs: { sections: "nope", updatedAt: "x" } }))),
+    )
     expect(bad.result).toEqual({ ok: true, prefs: "unread" })
     expect(bad.stored).toBe(true)
     expect(adopts(bad.broadcasts)).toEqual([])
-    const noBody = await pairTheirs(() => Promise.resolve(new Response("not json")))
+    const noBody = await pairTheirs((reply) => Promise.resolve(reply("not json")))
     expect(noBody.result).toEqual({ ok: true, prefs: "unread" })
     expect(adopts(noBody.broadcasts)).toEqual([])
   })
 
+  test("pairing with prefs=theirs ignores prefs whose answer is unsigned or altered", async () => {
+    const prefs = { sections: { appearance: { fontSize: 22 } }, updatedAt: 5 }
+    const unsigned = await pairTheirs(() => Promise.resolve(Response.json({ prefs })))
+    expect(unsigned.result).toEqual({ ok: true, prefs: "unread" })
+    expect(adopts(unsigned.broadcasts)).toEqual([])
+    const altered = await pairTheirs((reply) => {
+      const signed = reply(JSON.stringify({ prefs }))
+      return Promise.resolve(new Response(JSON.stringify({ prefs: { ...prefs, updatedAt: 6 } }), signed))
+    })
+    expect(altered.result).toEqual({ ok: true, prefs: "unread" })
+  })
+
   test("pairing with prefs=theirs reads the peer's prefs before the worker config is pushed", async () => {
     const prefs = { sections: { appearance: { fontSize: 22 } }, updatedAt: 5 }
-    const run = await pairTheirs(() => Promise.resolve(Response.json({ prefs })))
+    const run = await pairTheirs((reply) => Promise.resolve(reply(JSON.stringify({ prefs }))))
     expect(run.events.indexOf("prefs-get")).toBeGreaterThanOrEqual(0)
     expect(run.events.indexOf("prefs-get")).toBeLessThan(run.events.indexOf("sync-config"))
     expect(run.result).toEqual({ ok: true, prefs: "adopted" })
@@ -229,7 +262,9 @@ describe("createMachineSync", () => {
     process.on("unhandledRejection", onUnhandled)
     const warn = console.warn
     console.warn = () => {}
-    const run = await pairTheirs(() => Promise.resolve(Response.json({ prefs: null })), { throwOnAdopt: true })
+    const run = await pairTheirs((reply) => Promise.resolve(reply(JSON.stringify({ prefs: null }))), {
+      throwOnAdopt: true,
+    })
     await new Promise((resolve) => setTimeout(resolve, 10))
     console.warn = warn
     process.off("unhandledRejection", onUnhandled)
@@ -288,6 +323,25 @@ describe("createMachineSync", () => {
       requestID: command.requestID,
     })
     expect((await pending).phase).toBe("unpaired")
+  })
+
+  test("reloads a pulled config through the sidecar and reports it no longer pending", async () => {
+    const { posted, sync } = controller()
+    sync.handleSidecarMessage({ type: "sync-paired", peer: { name: "challenger", url: "http://h:1", token: "c".repeat(64) } })
+    sync.handleSidecarMessage({
+      type: "sync-status",
+      status: { ...initialStatus(), phase: "idle", configReloadPending: { from: "challenger" } },
+    })
+    expect(sync.status().configReloadPending).toEqual({ from: "challenger" })
+    const pending = sync.reloadConfig()
+    const command = posted.at(-1)
+    if (command?.type !== "sync-reload") throw new Error("expected a sync-reload command")
+    sync.handleSidecarMessage({
+      type: "sync-status",
+      status: { ...initialStatus(), phase: "idle", configReloadPending: null },
+      requestID: command.requestID,
+    })
+    expect((await pending).configReloadPending).toBeNull()
   })
 
   test("answers Sync now at once when the sidecar replies without a worker", async () => {

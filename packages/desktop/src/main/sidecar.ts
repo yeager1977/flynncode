@@ -229,6 +229,7 @@ function logSyncError(error: unknown) {
 async function handleSyncCommand(command: SidecarSyncCommand) {
   // Main waits on a sync-now requestID, so it always gets an answer.
   if (command.type === "sync-now") return replySyncNow(command.requestID)
+  if (command.type === "sync-reload") return replyReload(command.requestID)
   const gate = syncGate
   if (!gate) return
   if (command.type === "sync-config") {
@@ -254,6 +255,14 @@ async function handleSyncCommand(command: SidecarSyncCommand) {
 
 async function replySyncNow(requestID: string) {
   const status = await syncWorker?.syncNow().catch((error): SyncStatus => {
+    logSyncError(error)
+    return { ...(lastSyncStatus ?? initialStatus()), lastError: error instanceof Error ? error.message : String(error) }
+  })
+  post({ type: "sync-status", status: status ?? lastSyncStatus ?? initialStatus(), requestID })
+}
+
+async function replyReload(requestID: string) {
+  const status = await syncWorker?.reloadConfig().catch((error): SyncStatus => {
     logSyncError(error)
     return { ...(lastSyncStatus ?? initialStatus()), lastError: error instanceof Error ? error.message : String(error) }
   })

@@ -2,6 +2,7 @@ import { randomInt, randomUUID } from "node:crypto"
 import type { SyncStatus } from "@flynncode/mobile-gateway/sync"
 import { PAIRING_CODE_TTL_MS, type SyncPrefs } from "@flynncode/mobile-gateway/sync-gate"
 import { pairWithPeer, unpairPeer } from "@flynncode/mobile-gateway/sync-pair"
+import { signedRequest } from "@flynncode/mobile-gateway/sync-sign"
 import type {
   MachineSyncPairingCode,
   MachineSyncPairResult,
@@ -63,13 +64,20 @@ function unbracket(host: string) {
 // to undefined when it could not be asked (unreachable, timeout, non-OK or an
 // unreadable body): those must not be mistaken for each other.
 async function fetchPeerPrefs(peer: { url: string; token: string }, fetchImpl: typeof fetch = fetch) {
-  const response = await fetchImpl(`${peer.url}/flynncode-sync/prefs`, {
-    headers: { authorization: `Bearer ${peer.token}` },
-    redirect: "error",
-    signal: AbortSignal.timeout(PEER_PREFS_TIMEOUT_MS),
-  }).catch(() => undefined)
-  if (!response?.ok) return
-  const body: unknown = await response.json().catch(() => undefined)
+  // Signed like every request after pairing; an unsigned or altered answer is
+  // treated as unreadable.
+  const reply = await signedRequest({
+    peer,
+    path: "/flynncode-sync/prefs",
+    timeoutMs: PEER_PREFS_TIMEOUT_MS,
+    fetchImpl,
+  })
+  if (!reply || reply.status !== 200) return
+  if (!reply.verified) {
+    console.warn("[machine-sync] ignored an unsigned or altered preferences reply")
+    return
+  }
+  const body: unknown = await new Response(reply.body).json().catch(() => undefined)
   if (typeof body !== "object" || body === null || !("prefs" in body)) return
   if (body.prefs === null) return { prefs: null }
   const prefs = parsePrefs(body.prefs)
@@ -123,6 +131,7 @@ export function createMachineSync(deps: {
       backlog: worker?.backlog ?? null,
       failures: worker?.failures ?? [],
       lastError: worker?.lastError ?? null,
+      configReloadPending: worker?.configReloadPending ?? null,
       gatewayError: state.gatewayError,
       machineName: deps.machineName,
       addresses: deps.lanAddresses(),
@@ -154,6 +163,27 @@ export function createMachineSync(deps: {
   }
 
   const publish = () => deps.broadcast("machine-sync-status", status())
+
+  // Sends a command the sidecar answers with a status carrying the same requestID.
+  const request = (type: "sync-now" | "sync-reload") => {
+    const requestID = randomUUID()
+    return new Promise<MachineSyncStatus>((resolve) => {
+      const timer = setTimeout(() => {
+        pending.delete(requestID)
+        resolve(status())
+      }, SYNC_NOW_TIMEOUT_MS)
+      timer.unref()
+      pending.set(requestID, () => {
+        clearTimeout(timer)
+        resolve(status())
+      })
+      if (deps.post({ type, requestID })) return
+      // Nobody will answer: report at once instead of waiting out the timeout.
+      clearTimeout(timer)
+      pending.delete(requestID)
+      resolve({ ...status(), lastError: SIDECAR_DOWN })
+    })
+  }
 
   return {
     status,
@@ -210,25 +240,9 @@ export function createMachineSync(deps: {
       publish()
       if (peer) await unpairPeer({ peer, fetchImpl: deps.fetchImpl })
     },
-    syncNow() {
-      const requestID = randomUUID()
-      return new Promise<MachineSyncStatus>((resolve) => {
-        const timer = setTimeout(() => {
-          pending.delete(requestID)
-          resolve(status())
-        }, SYNC_NOW_TIMEOUT_MS)
-        timer.unref()
-        pending.set(requestID, () => {
-          clearTimeout(timer)
-          resolve(status())
-        })
-        if (deps.post({ type: "sync-now", requestID })) return
-        // Nobody will answer: report at once instead of waiting out the timeout.
-        clearTimeout(timer)
-        pending.delete(requestID)
-        resolve({ ...status(), lastError: SIDECAR_DOWN })
-      })
-    },
+    syncNow: () => request("sync-now"),
+    /** "Reload to apply": the sidecar reloads instances so a pulled config takes effect. */
+    reloadConfig: () => request("sync-reload"),
     pushPrefs(prefs: SyncPrefs): SyncPrefs | undefined {
       const stored = parsePrefs(deps.store.get(SYNC_PREFS_KEY))
       if (stored && stored.updatedAt > prefs.updatedAt) return stored

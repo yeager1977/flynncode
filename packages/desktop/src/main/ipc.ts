@@ -173,6 +173,7 @@ export function registerIpcHandlers(deps: Deps) {
   })
   ipcMain.handle("machine-sync-unpair", () => deps.machineSync.unpair())
   ipcMain.handle("machine-sync-now", () => deps.machineSync.syncNow())
+  ipcMain.handle("machine-sync-reload-config", () => deps.machineSync.reloadConfig())
   ipcMain.handle("machine-sync-set-paused", (_event: IpcMainInvokeEvent, paused: unknown) => {
     if (typeof paused === "boolean") deps.machineSync.setPaused(paused)
   })

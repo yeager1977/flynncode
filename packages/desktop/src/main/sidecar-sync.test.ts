@@ -68,6 +68,8 @@ describe("isSyncMessage", () => {
   test("recognises sidecar sync messages only", () => {
     expect(isSyncMessage({ type: "sync-paired", peer })).toBe(true)
     expect(isSyncMessage({ type: "sync-unpaired" })).toBe(true)
+    expect(parseSyncCommand({ type: "sync-reload", requestID: "r1" })).toEqual({ type: "sync-reload", requestID: "r1" })
+    expect(parseSyncCommand({ type: "sync-reload" })).toBeUndefined()
     expect(isSyncMessage({ type: "sync-peer-moved", peer })).toBe(true)
     expect(isSyncMessage({ type: "sync-peer-moved", peer: { name: "x" } })).toBe(false)
     expect(isSyncMessage({ type: "sync-status", status: { phase: "idle" } })).toBe(true)

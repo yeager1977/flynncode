@@ -87,6 +87,7 @@ const api: ElectronAPI = {
     createPairingCode: () => ipcRenderer.invoke("machine-sync-create-code"),
     pair: (input) => ipcRenderer.invoke("machine-sync-pair", input.host, input.code, input.prefs),
     syncNow: () => ipcRenderer.invoke("machine-sync-now"),
+    reloadConfig: () => ipcRenderer.invoke("machine-sync-reload-config"),
     setPaused: (paused) => ipcRenderer.invoke("machine-sync-set-paused", paused),
     unpair: () => ipcRenderer.invoke("machine-sync-unpair"),
     pushPrefs: (prefs) => ipcRenderer.invoke("machine-sync-push-prefs", prefs),
