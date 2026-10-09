@@ -38,6 +38,7 @@ import { Persist, persisted } from "@/utils/persist"
 import { StatusPopover, StatusPopoverV2 } from "../status-popover"
 import { ComputerUseMenu } from "./computer-use-menu"
 import { SessionFoldersMenu } from "./session-folders-menu"
+import { SessionWorktreeMenu } from "./session-worktree-menu"
 import { CiStatusStrip } from "./ci-status"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
@@ -427,6 +428,8 @@ export function SessionHeader() {
     onHandoff: () => void handoff(),
     sessionID: params.id,
     directory: projectDirectory(),
+    root: projectRoot(),
+    onPrimary: onPrimary(),
   }))
 
   const selectApp = (app: OpenApp) => {
@@ -756,6 +759,8 @@ type SessionHeaderV2ActionsState = {
   onHandoff: () => void
   sessionID: string | undefined
   directory: string
+  root: string | undefined
+  onPrimary: boolean
 }
 
 function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
@@ -841,18 +846,14 @@ function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
         <Show when={props.state.sessionID}>
           {(sessionID) => <SessionFoldersMenu sessionID={sessionID()} directory={props.state.directory} />}
         </Show>
-        <TooltipV2 class="shrink-0" placement="bottom" value={props.state.handoffLabel}>
-          <IconButtonV2
-            type="button"
-            variant="ghost-muted"
-            size="large"
-            class="!w-9 shrink-0"
-            data-action="session-checkout-handoff"
-            onClick={props.state.onHandoff}
-            aria-label={props.state.handoffLabel}
-            icon={<Icon name="branch" />}
-          />
-        </TooltipV2>
+        <SessionWorktreeMenu
+          directory={props.state.directory}
+          root={props.state.root}
+          local={props.state.onPrimary}
+          sessionID={props.state.sessionID}
+          handoffLabel={props.state.handoffLabel}
+          onHandoff={props.state.onHandoff}
+        />
       </Show>
     </div>
   )

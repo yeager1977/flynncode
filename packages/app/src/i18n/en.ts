@@ -857,6 +857,7 @@ export const dict = {
   "session.worktree.handoff": "Hand off session here",
   "session.worktree.handoffOccupied": "That worktree already has an active session",
   "session.worktree.dispose": "Dispose disposable worktree",
+  "session.worktree.menu": "Worktree actions",
   "session.subagents.isolatedIn": "Isolated in {{directory}}",
   "session.subagents.isolationWorktree": "Run in temp worktree",
   "toast.worktree.disposed.description": "Disposable worktree removed",
