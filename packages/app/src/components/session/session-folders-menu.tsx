@@ -1,16 +1,16 @@
+import { getFilename } from "@opencode-ai/core/util/path"
 import { Popover } from "@opencode-ai/ui/popover"
 import { Tag } from "@opencode-ai/ui/v2/badge-v2"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
-import { createMemo, createResource, For, Match, Show, Switch } from "solid-js"
+import { createMemo, For, Match, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useDirectoryPicker } from "@/components/directory-picker"
 import {
   appendSessionFolders,
   MaxSessionExtraFolders,
-  normalizeSessionFolders,
   removeSessionFolder,
 } from "@/components/session-folders"
 import { useLanguage } from "@/context/language"
@@ -35,22 +35,29 @@ export function SessionFoldersMenu(props: { sessionID: string; directory: string
   const platform = usePlatform()
   const serverSDK = useServerSDK()
   const pickDirectory = useDirectoryPicker()
-  const [state, setState] = createStore({ open: false, busy: false })
+  const [state, setState] = createStore({
+    open: false,
+    busy: false,
+    loading: false,
+    folders: undefined as SessionFolders | undefined,
+  })
   const conn = createMemo(() => foldersConnection(serverSDK().server, platform.fetch))
-  // Fetch on every open so folders changed elsewhere (another window, the
-  // new-session view) show up without a stale cache.
-  const [folders, { mutate }] = createResource(
-    () => (state.open ? props.sessionID : undefined),
-    (sessionID) => {
-      const connection = conn()
-      if (!connection) return Promise.resolve(undefined)
-      return getSessionFolders(connection, sessionID)
-    },
-  )
+  // Loaded by hand on every open, not via createResource: a resource read
+  // here would suspend the whole session page while the request runs, and
+  // re-fetching shows folders changed elsewhere.
+  const load = async () => {
+    const connection = conn()
+    if (!connection) return
+    setState("loading", true)
+    const folders = await getSessionFolders(connection, props.sessionID)
+    setState({ loading: false, folders })
+  }
+  // The server already normalizes extras; core's normalizeFolders needs
+  // node:path, which is not available in the browser renderer.
   const list = createMemo(() => {
-    const data = folders()
+    const data = state.folders
     if (!data) return
-    return { primary: data.primary, extras: normalizeSessionFolders(data.primary, data.extras) }
+    return { primary: data.primary, extras: data.extras.filter((directory) => directory !== data.primary) }
   })
 
   const apply = async (request: (connection: FoldersConnection) => Promise<SessionFolders | undefined>) => {
@@ -63,7 +70,7 @@ export function SessionFoldersMenu(props: { sessionID: string; directory: string
       showToast({ title: language.t("common.requestFailed") })
       return
     }
-    mutate(updated)
+    setState("folders", updated)
     showToast({ title: language.t("toast.folders.updated") })
   }
 
@@ -92,7 +99,10 @@ export function SessionFoldersMenu(props: { sessionID: string; directory: string
     <TooltipV2 class="shrink-0" placement="bottom" value={language.t("session.folders.title")}>
       <Popover
         open={state.open}
-        onOpenChange={(open) => setState("open", open)}
+        onOpenChange={(open) => {
+          setState("open", open)
+          if (open) void load()
+        }}
         triggerAs={IconButtonV2}
         triggerProps={{
           variant: "ghost-muted",
@@ -117,8 +127,9 @@ export function SessionFoldersMenu(props: { sessionID: string; directory: string
                   <For each={[data().primary, ...data().extras]}>
                     {(directory, index) => (
                       <div class="flex min-w-0 items-center gap-1" data-folder={directory}>
-                        <span class="min-w-0 flex-1 truncate text-v2-text-text-base" title={directory}>
-                          {directory}
+                        <span class="flex min-w-0 flex-1 flex-col" title={directory}>
+                          <span class="truncate text-v2-text-text-base">{getFilename(directory)}</span>
+                          <span class="truncate text-[12px] leading-4 text-v2-text-text-faint">{directory}</span>
                         </span>
                         <Show
                           when={index() > 0}
@@ -165,7 +176,7 @@ export function SessionFoldersMenu(props: { sessionID: string; directory: string
                 </div>
               )}
             </Match>
-            <Match when={folders.loading}>
+            <Match when={state.loading}>
               <span class="text-v2-text-text-muted">
                 {language.t("common.loading")}
                 {language.t("common.loading.ellipsis")}
