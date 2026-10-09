@@ -604,7 +604,11 @@ withMcpInstructions.instance(
       const body = JSON.stringify(hits[0]?.body)
       expect(body).toContain('<server name=\\"guide-server\\">')
       expect(body).toContain("Use lookup before mutate.")
-      yield* Fiber.interrupt(fiber)
+      // Interrupting the caller leaves the shared run hanging on the LLM
+      // stream, and the test instance store is shared with the live graph, so
+      // nothing would cancel it before the LLM server tries to close.
+      yield* prompt.cancel(chat.id)
+      yield* Fiber.await(fiber)
     }),
   15_000,
 )
