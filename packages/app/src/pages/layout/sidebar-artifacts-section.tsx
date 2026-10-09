@@ -10,7 +10,7 @@ import { getRelativeTime } from "@/utils/time"
 import { sessionTitle } from "@/utils/session-title"
 import { pathKey } from "@/utils/path-key"
 import {
-  artifactSessionHref,
+  artifactTargetHref,
   artifactVersionSignal,
   filterArtifactGroups,
   groupSessionArtifacts,
@@ -44,16 +44,12 @@ const artifactLabel = (artifact: Artifact) => {
 const ArtifactRow = (props: {
   group: ArtifactGroup
   artifact: Artifact
-  slug: string
+  path: string
   sidebarExpanded: Accessor<boolean>
   clearHoverProjectSoon: () => void
   language: ReturnType<typeof useLanguage>
 }): JSX.Element => {
-  const href = createMemo(() => {
-    if (props.artifact.type === "diff" || props.artifact.type === "file")
-      return artifactSessionHref(props.slug, props.group.sessionID, props.artifact.file)
-    return `/${props.slug}/session/${props.group.sessionID}`
-  })
+  const href = createMemo(() => artifactTargetHref(props.path, props.artifact))
   return (
     <A
       href={href()}
@@ -81,12 +77,12 @@ const ArtifactRow = (props: {
 
 const ArtifactSessionGroup = (props: {
   group: ArtifactGroup
-  slug: string
+  path: string
   sidebarExpanded: Accessor<boolean>
   clearHoverProjectSoon: () => void
   language: ReturnType<typeof useLanguage>
 }): JSX.Element => {
-  const href = `/${props.slug}/session/${props.group.sessionID}`
+  const href = props.path
   const label = createMemo(() => sessionTitle(props.group.title) || props.language.t("command.session.new"))
   const close = () => {
     if (props.sidebarExpanded()) return
@@ -107,7 +103,7 @@ const ArtifactSessionGroup = (props: {
           <ArtifactRow
             group={props.group}
             artifact={artifact}
-            slug={props.slug}
+            path={props.path}
             sidebarExpanded={props.sidebarExpanded}
             clearHoverProjectSoon={props.clearHoverProjectSoon}
             language={props.language}
@@ -122,6 +118,8 @@ export const SidebarArtifacts = (props: {
   directory: Accessor<string | undefined>
   sidebarExpanded: Accessor<boolean>
   clearHoverProjectSoon: () => void
+  // Session route for a group; defaults to the classic `/:dir/session/:id`.
+  sessionPath?: (sessionID: string) => string | undefined
 }): JSX.Element => {
   const serverSync = useServerSync()
   const language = useLanguage()
@@ -195,7 +193,7 @@ export const SidebarArtifacts = (props: {
               {(group) => (
                 <ArtifactSessionGroup
                   group={group}
-                  slug={slug()}
+                  path={props.sessionPath?.(group.sessionID) ?? `/${slug()}/session/${group.sessionID}`}
                   sidebarExpanded={props.sidebarExpanded}
                   clearHoverProjectSoon={props.clearHoverProjectSoon}
                   language={language}

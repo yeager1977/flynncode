@@ -88,6 +88,8 @@ export type SessionItemProps = {
   clearHoverProjectSoon: () => void
   prefetchSession: (session: Session, priority?: "high" | "low") => void
   archiveSession: (session: Session) => Promise<void>
+  // Link target for the session; defaults to the classic `/:dir/session/:id` route.
+  href?: (session: { directory: string; id: string }) => string
   selecting?: boolean
   selected?: boolean
   locked?: boolean
@@ -96,7 +98,7 @@ export type SessionItemProps = {
 
 const SessionRow = (props: {
   session: Session
-  slug: string
+  href: string
   mobile?: boolean
   dense?: boolean
   tint: Accessor<string | undefined>
@@ -161,7 +163,7 @@ const SessionRow = (props: {
 
   return (
     <A
-      href={`/${props.slug}/session/${props.session.id}`}
+      href={props.href}
       class={className}
       onPointerDown={props.warmPress}
       onFocus={props.warmFocus}
@@ -232,7 +234,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
   const item = (
     <SessionRow
       session={props.session}
-      slug={props.slug}
+      href={props.href?.(props.session) ?? `/${props.slug}/session/${props.session.id}`}
       mobile={props.mobile}
       dense={props.dense}
       tint={tint}
@@ -341,7 +343,10 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
 }
 
 export const NewSessionItem = (props: {
-  slug: string
+  // Classic layouts link to the directory's new-session route; without an
+  // href the item calls onSelect (the new layout opens a draft tab).
+  href?: string
+  onSelect: () => void
   mobile?: boolean
   dense?: boolean
   sidebarExpanded: Accessor<boolean>
@@ -351,21 +356,41 @@ export const NewSessionItem = (props: {
   const language = useLanguage()
   const label = language.t("command.session.new")
   const tooltip = () => props.mobile || !props.sidebarExpanded()
-  const item = (
-    <A
-      href={`/${props.slug}/session`}
-      end
-      class={`flex items-center gap-2 min-w-0 w-full text-left focus:outline-none ${props.dense ? "py-0.5" : "py-1"}`}
-      onClick={() => {
-        if (layout.sidebar.opened()) return
-        props.clearHoverProjectSoon()
-      }}
-    >
+  const className = `flex items-center gap-2 min-w-0 w-full text-left focus:outline-none ${props.dense ? "py-0.5" : "py-1"}`
+  const clear = () => {
+    if (layout.sidebar.opened()) return
+    props.clearHoverProjectSoon()
+  }
+  const body = (
+    <>
       <div class="shrink-0 size-6 flex items-center justify-center">
         <IconV2 name="edit" size="small" class="text-icon-weak" />
       </div>
       <span class="text-14-regular text-text-strong min-w-0 flex-1 truncate">{label}</span>
-    </A>
+    </>
+  )
+  const item = (
+    <Show
+      when={props.href}
+      fallback={
+        <button
+          type="button"
+          class={className}
+          onClick={() => {
+            clear()
+            props.onSelect()
+          }}
+        >
+          {body}
+        </button>
+      }
+    >
+      {(href) => (
+        <A href={href()} end class={className} onClick={clear}>
+          {body}
+        </A>
+      )}
+    </Show>
   )
 
   return (

@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from "@solidjs/router"
+import { useParams } from "@solidjs/router"
 import { createEffect, createMemo, createResource, For, onCleanup, Show, type Accessor, type JSX } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { createSortable } from "@thisbeyond/solid-dnd"
@@ -83,6 +83,10 @@ export type WorkspaceSidebarContext = {
   clearHoverProjectSoon: () => void
   prefetchSession: (session: Session, priority?: "high" | "low") => void
   archiveSession: (session: Session) => Promise<void>
+  sessionHref?: (session: { directory: string; id: string }) => string
+  // Undefined when new sessions are not routes (the new layout opens draft tabs).
+  newSessionHref: (directory: string) => string | undefined
+  newSession: (directory: string) => void
   workspaceName: (directory: string, projectId?: string, branch?: string) => string | undefined
   renameWorkspace: (directory: string, next: string, projectId?: string, branch?: string) => void
   editorOpen: (id: string) => boolean
@@ -802,6 +806,7 @@ function SessionBulkBar(props: {
 
 const WorkspaceSessionList = (props: {
   slug: Accessor<string>
+  directory: string
   mobile?: boolean
   ctx: WorkspaceSidebarContext
   showNew: Accessor<boolean>
@@ -818,7 +823,8 @@ const WorkspaceSessionList = (props: {
   <nav class="flex flex-col gap-1">
     <Show when={props.showNew()}>
       <NewSessionItem
-        slug={props.slug()}
+        href={props.ctx.newSessionHref(props.directory)}
+        onSelect={() => props.ctx.newSession(props.directory)}
         mobile={props.mobile}
         sidebarExpanded={props.ctx.sidebarExpanded}
         clearHoverProjectSoon={props.ctx.clearHoverProjectSoon}
@@ -840,6 +846,7 @@ const WorkspaceSessionList = (props: {
           clearHoverProjectSoon={props.ctx.clearHoverProjectSoon}
           prefetchSession={props.ctx.prefetchSession}
           archiveSession={props.ctx.archiveSession}
+          href={props.ctx.sessionHref}
           selecting={props.selecting}
           selected={props.selected?.includes(session.id)}
           locked={props.locked?.(session.id)}
@@ -993,7 +1000,6 @@ export const SortableWorkspace = (props: {
   sortNow: Accessor<number>
   mobile?: boolean
 }): JSX.Element => {
-  const navigate = useNavigate()
   const params = useParams()
   const serverSync = useServerSync()
   const serverSDK = useServerSDK()
@@ -1149,7 +1155,7 @@ export const SortableWorkspace = (props: {
                 onHandoffWorkspace={handoffTo}
                 root={props.project.worktree}
                 clearHoverProjectSoon={props.ctx.clearHoverProjectSoon}
-                navigateToNewSession={() => navigate(`/${slug()}/session`)}
+                navigateToNewSession={() => props.ctx.newSession(props.directory)}
               />
             </div>
           </div>
@@ -1172,6 +1178,7 @@ export const SortableWorkspace = (props: {
           />
           <WorkspaceSessionList
             slug={slug}
+            directory={props.directory}
             mobile={props.mobile}
             ctx={props.ctx}
             showNew={showNew}
@@ -1243,6 +1250,7 @@ export const LocalWorkspace = (props: {
       />
       <WorkspaceSessionList
         slug={slug}
+        directory={props.project.worktree}
         mobile={props.mobile}
         ctx={props.ctx}
         showNew={() => false}
