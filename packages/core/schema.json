@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "022ce9f0-2002-4bb3-82a6-000f8825f2cf",
+  "id": "3eac4471-8cf2-41ee-84b1-bdb5cad10d63",
   "prevIds": [
-    "749bfd80-6b69-4e14-9303-74f95ce85a28"
+    "022ce9f0-2002-4bb3-82a6-000f8825f2cf"
   ],
   "ddl": [
     {
@@ -2060,6 +2060,24 @@
     {
       "columns": [
         {
+          "value": "session_id",
+          "isExpression": false
+        },
+        {
+          "value": "time_updated",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "message_session_time_updated_idx",
+      "entityType": "indexes",
+      "table": "message"
+    },
+    {
+      "columns": [
+        {
           "value": "message_id",
           "isExpression": false
         },
@@ -2086,6 +2104,24 @@
       "where": null,
       "origin": "manual",
       "name": "part_session_idx",
+      "entityType": "indexes",
+      "table": "part"
+    },
+    {
+      "columns": [
+        {
+          "value": "session_id",
+          "isExpression": false
+        },
+        {
+          "value": "time_updated",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "part_session_time_updated_idx",
       "entityType": "indexes",
       "table": "part"
     },
@@ -2224,6 +2260,24 @@
       "where": null,
       "origin": "manual",
       "name": "session_message_time_created_idx",
+      "entityType": "indexes",
+      "table": "session_message"
+    },
+    {
+      "columns": [
+        {
+          "value": "session_id",
+          "isExpression": false
+        },
+        {
+          "value": "time_updated",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "session_message_session_time_updated_idx",
       "entityType": "indexes",
       "table": "session_message"
     },
