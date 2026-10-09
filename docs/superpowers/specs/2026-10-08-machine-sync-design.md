@@ -33,9 +33,9 @@ Two Flynncode desktops, each running its usual sidecar (local opencode server
 on loopback) and mobile gateway (LAN, port 4097). Sync adds:
 
 1. **Sync routes on the gateway** under `/flynncode-sync/*`, authenticated only
-   by a pairing token (constant-time compare). The phone password does not
-   open them and the pairing token opens nothing else. The gateway forwards
-   them to the local server.
+   by requests signed with the pairing token (see "Request signing"). The
+   phone password does not open them and the pairing token opens nothing
+   else. The gateway forwards them to the local server.
 2. **Sync endpoints on the server** (`packages/opencode`, Flynncode-owned),
    read-only from the peer's point of view: `manifest`, `session bundle`,
    `settings`. They are mounted only for gateway-forwarded sync requests.
@@ -60,6 +60,25 @@ the sidecar in the `start` message (like relay settings), never in
   name from the payload.
 - Unpair on either side deletes the local record and revokes the token on the
   peer if reachable. One peer per machine (YAGNI on multi-peer).
+- The pair response is the only time the token crosses the network. That
+  one-time exposure on the LAN is accepted; it is bounded by the six-digit
+  code being single use, valid 10 minutes and burned after 5 wrong guesses.
+
+### Request signing
+
+After pairing the token is never sent. Every request to the peer's gateway
+(manifest, settings, prefs, session bundle, unpair) carries
+`x-flynncode-sync-time` (ms), `x-flynncode-sync-nonce` (128-bit random hex)
+and `x-flynncode-sync-signature` = HMAC-SHA256(token, method + "\n" +
+path?query + "\n" + time + "\n" + nonce + "\n" + sha256(body)). The gateway
+compares in constant time, refuses a time more than 60 s from its own clock
+and refuses a nonce it has seen in the last two minutes (bounded in-memory
+cache that refuses when full). Bad or missing signatures get 401. Every answer
+to a verified request carries `x-flynncode-sync-response-signature` =
+HMAC-SHA256(token, nonce + "\n" + sha256(response body)); the worker and the
+desktop main process use no manifest, bundle, settings or prefs body whose
+signature does not match (logged; the cycle, chat or settings pull fails).
+The two clocks must agree within a minute.
 
 ## Chat sync
 
@@ -125,8 +144,10 @@ app stays usable.
 edit wins by file mtime (tie keeps local).
 
 - **Never sent:** values at secret paths — any key matching
-  `/(api_?key|token|secret|password|private_?key|secret_?access_?key|access_?key_?id|credentials?|authorization)$/i`
-  or named exactly `key` (suffix match, so `maxTokens` still syncs), any value
+  `/(api_?key|token|secret|password|private_?key|secret_?access_?key|access_?key_?id|authorization)$/i`
+  or named exactly `key` (suffix match, so `maxTokens` still syncs), any key
+  ending in `credential(s)` whose value is a string or object (switches such as
+  `includeCredentials: true` still sync), any value
   below a `headers`, `env`, `environment`, `credentials` or
   `googleAuthOptions` map anywhere, and `{env:…}`/`{file:…}` references — are
   replaced with a placeholder before sending. The `server` block is omitted.
@@ -136,6 +157,12 @@ edit wins by file mtime (tie keeps local).
   present on the peer but absent locally is left absent.
 - The result is validated with the normal config schema before writing; a
   failure skips the update and is reported.
+- A pulled config that changed the file is announced with `config.updated`
+  (settings views refresh) but running instances keep the old config until
+  the user clicks "Reload to apply" on the Sync card ("Settings from <machine>
+  are ready"), which performs the same reload as a settings save (instances
+  disposed, `global.disposed`). Any reload clears the pending notice. Instances
+  are never reloaded automatically, since that would stop running chats.
 
 ### App preferences
 
@@ -148,21 +175,26 @@ window state, open tabs, drafts, phone/relay/sync credentials.
 
 The paired machine is trusted like the local user (user decision). Config
 fields that start or reach programs — MCP `command`/`url`, `plugin`,
-`permission`, `lsp`/`formatter` commands, provider `baseURL` — sync freely,
-with no confirmation step. Consequences, accepted:
+`permission`, `lsp`/`formatter` commands, provider `baseURL` — sync freely from
+the authenticated peer, with no confirmation step. What protects them is the
+signed protocol: only a request signed with the token is answered, and only a
+signed answer is used, so an on-path attacker can neither read sync data by
+replaying requests nor alter a config on its way. Consequences, accepted:
 
-- Whoever holds the pairing token can change what this machine runs. The
-  token only travels on the LAN at pairing time and is compared in constant
-  time; unpair revokes it on both sides.
+- Whoever holds the pairing token can change what this machine runs. The token
+  crosses the network once, in the pair response (see Pairing); afterwards it
+  is only used as an HMAC key. Unpair revokes it on both sides.
 - If the peer's IP address is reassigned (DHCP), the stale address could
   belong to another device. Mitigation: the gateway refreshes the stored peer
-  URL from the socket address of every request that presents the valid token,
-  so the worker follows the peer instead of polling the old address forever.
+  URL from the socket address of every signature-verified request, so the
+  worker follows the peer instead of polling the old address; another device
+  at the old address cannot sign answers, so nothing it sends is used.
 - A prompt-injected agent that edits the global config on one machine
-  propagates that edit to the other.
+  propagates that edit to the other (it still waits for "Reload to apply"
+  before running instances use it).
 - Credentials embedded in URLs or command arguments (not in a secret-named key,
   header/env map or `{env:…}` reference) cannot be recognised and are sent as
-  plain config.
+  plain config, inside the signed but unencrypted protocol.
 
 ## Sync card (Settings → Servers)
 
