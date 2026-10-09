@@ -19,7 +19,9 @@ import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
-import { useServer } from "@/context/server"
+import { ServerConnection, useServer } from "@/context/server"
+import { useTabs } from "@/context/tabs"
+import { sessionHref } from "@/utils/session-route"
 import { useServerSDK } from "@/context/server-sdk"
 import { useSDK } from "@/context/sdk"
 import { useSettings } from "@/context/settings"
@@ -164,6 +166,7 @@ export function SessionHeader() {
   const serverSDK = useServerSDK()
   const sdk = useSDK()
   const dialog = useDialog()
+  const tabs = useTabs()
 
   // The new layout routes sessions by server and ID (no `:dir` segment), so
   // fall back to the session's SDK directory.
@@ -321,7 +324,17 @@ export function SessionHeader() {
     }
     const id = params.id
     if (input.create || !id) {
-      navigate(id ? `/${base64Encode(created)}/session/${id}` : `/${base64Encode(created)}/session`)
+      if (id) {
+        openSession(created, id)
+        return
+      }
+      // The new layout has no `/:dir/session` route of its own (it would
+      // mount the classic layout inside it); new sessions are draft tabs.
+      if (isV2()) {
+        void tabs.newDraft({ server: ServerConnection.key(serverSDK().server), directory: created })
+        return
+      }
+      navigate(`/${base64Encode(created)}/session`)
       return
     }
     // A move into an already-existing worktree carries the conversation: the
@@ -378,8 +391,15 @@ export function SessionHeader() {
       // The destination session's composer picks this up once on arrival.
       if (prompt) sessionStorage.setItem(sessionPrefillKey(moved.sessionID), prompt)
     }
-    navigate(`/${base64Encode(moved.directory)}/session/${moved.sessionID}`)
+    openSession(moved.directory, moved.sessionID)
   }
+
+  const openSession = (directory: string, id: string) =>
+    navigate(
+      isV2()
+        ? sessionHref(ServerConnection.key(serverSDK().server), id)
+        : `/${base64Encode(directory)}/session/${id}`,
+    )
 
   const toggleTerminal = () => {
     const next = !view().terminal.opened()

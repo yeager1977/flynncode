@@ -21,6 +21,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { Effect } from "effect"
 import { base64Encode } from "@opencode-ai/core/util/encode"
+import { decode64 } from "@/utils/base64"
 import {
   type Component,
   createEffect,
@@ -614,32 +615,56 @@ function Routes(props: { serverScoped?: JSX.Element }) {
 
   return (
     <>
-      <Route
-        component={(routeProps) => (
-          <LegacyServerLayout serverScoped={props.serverScoped}>{routeProps.children}</LegacyServerLayout>
-        )}
-      >
-        <Show when={!settings.general.newLayoutDesigns()}>
-          {
-            <>
-              <Route path="/" component={LegacyHome} />
-              <Route path="/server/:serverKey/session/:id" component={LegacyTargetSessionRoute} />
-            </>
-          }
-        </Show>
-        <Route path="/:dir" component={DirectoryLayout}>
-          <Route path="/" component={() => <Navigate href="session" />} />
-          <Route path="/session/:id?" component={SessionRoute} />
+      {/* The classic shell only exists in the classic layout: under the new
+          layout its routes would mount LegacyLayout inside NewLayout. */}
+      <Show when={!settings.general.newLayoutDesigns()}>
+        <Route
+          component={(routeProps) => (
+            <LegacyServerLayout serverScoped={props.serverScoped}>{routeProps.children}</LegacyServerLayout>
+          )}
+        >
+          <Route path="/" component={LegacyHome} />
+          <Route path="/server/:serverKey/session/:id" component={LegacyTargetSessionRoute} />
+          <Route path="/:dir" component={DirectoryLayout}>
+            <Route path="/" component={() => <Navigate href="session" />} />
+            <Route path="/session/:id?" component={SessionRoute} />
+          </Route>
         </Route>
-      </Route>
+      </Show>
       <Show when={settings.general.newLayoutDesigns()}>
         <Route path="/" component={NewHome} />
+        <Route path="/:dir" component={() => <Navigate href="session" />} />
+        <Route path="/:dir/session" component={NewLayoutLegacyDraftRedirect} />
         <Route path="/:dir/session/:id" component={NewLayoutLegacySessionRedirect} />
         <Route path="/server/:serverKey/session/:id" component={TargetSessionRoute} />
       </Show>
       <Route path="/new-session" component={DraftRoute} />
     </>
   )
+}
+
+// Old `/:dir/session` links (bookmarks, deep links) open a draft tab for the
+// directory, carrying a `?prompt=` along.
+function NewLayoutLegacyDraftRedirect() {
+  const server = useServer()
+  const tabs = useTabs()
+  const navigate = useNavigate()
+  const params = useParams<{ dir: string }>()
+  const [search] = useSearchParams<{ prompt?: string }>()
+  let opened = false
+
+  createEffect(() => {
+    if (!tabs.ready() || opened) return
+    opened = true
+    const directory = decode64(params.dir)
+    if (!directory) {
+      navigate("/", { replace: true })
+      return
+    }
+    void tabs.newDraft({ server: server.key, directory }, search.prompt)
+  })
+
+  return null
 }
 
 function NewLayoutLegacySessionRedirect() {

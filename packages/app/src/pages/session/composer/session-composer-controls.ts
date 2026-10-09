@@ -13,6 +13,7 @@ import { useServerSDK } from "@/context/server-sdk"
 import { serverName, ServerConnection, useServer } from "@/context/server"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import { useSettings } from "@/context/settings"
 import { useTabs } from "@/context/tabs"
 import { useProviders } from "@/hooks/use-providers"
 import { pathKey } from "@/utils/path-key"
@@ -69,6 +70,7 @@ export function createPromptProjectControls() {
   const tabs = useTabs()
   const global = useGlobal()
   const pickDirectory = useDirectoryPicker()
+  const settings = useSettings()
   const [search] = useSearchParams<{ draftId?: string }>()
   const projectServer = () => serverSDK().server
   const projectServerCtx = createMemo(() => global.ensureServerCtx(projectServer()))
@@ -98,7 +100,7 @@ export function createPromptProjectControls() {
     if (!serverKey) {
       layout.projects.open(worktree)
       server.projects.touch(worktree)
-      navigate(`/${base64Encode(worktree)}/session`)
+      openNewSession(server.key, worktree)
       return
     }
 
@@ -107,6 +109,16 @@ export function createPromptProjectControls() {
     target.projects.open(worktree)
     target.projects.touch(worktree)
     server.setActive(ServerConnection.key(conn))
+    openNewSession(ServerConnection.key(conn), worktree)
+  }
+
+  // The new layout has no `/:dir/session` route of its own (it would mount the
+  // classic layout inside it); new sessions there are draft tabs.
+  const openNewSession = (key: ServerConnection.Key, worktree: string) => {
+    if (settings.general.newLayoutDesigns()) {
+      void tabs.newDraft({ server: key, directory: worktree })
+      return
+    }
     navigate(`/${base64Encode(worktree)}/session`)
   }
 
