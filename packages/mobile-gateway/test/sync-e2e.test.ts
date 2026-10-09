@@ -27,16 +27,18 @@ type Machine = {
 
 const state = { shared: "", project: "", missing: "" }
 const machines: Machine[] = []
+// Registered the moment a resource exists so a failed setup never leaks a server.
+const cleanups: Array<() => Promise<void>> = []
 
 async function freePort() {
   const probe = Bun.serve({ port: 0, fetch: () => new Response("") })
   const port = probe.port
   probe.stop(true)
+  if (port === undefined) throw new Error("no free port")
   return port
 }
 
-async function startServer(root: string) {
-  const port = await freePort()
+function spawnServer(root: string, port: number) {
   const env = Object.fromEntries(Object.entries(Bun.env).filter(([key]) => !key.startsWith("OPENCODE_")))
   const child = Bun.spawn(["bun", "run", "./src/index.ts", "serve", "--hostname", "127.0.0.1", "--port", String(port)], {
     cwd: OPENCODE_DIR,
@@ -46,6 +48,10 @@ async function startServer(root: string) {
       XDG_CONFIG_HOME: path.join(root, "config"),
       XDG_STATE_HOME: path.join(root, "state"),
       XDG_CACHE_HOME: path.join(root, "cache"),
+      // Set after the OPENCODE_* scrub above: core resolves the home directory
+      // from OPENCODE_TEST_HOME before os.homedir(), so neither can reach the real one.
+      HOME: root,
+      OPENCODE_TEST_HOME: root,
       OPENCODE_SERVER_PASSWORD: PASSWORD,
       OPENCODE_DISABLE_AUTOUPDATE: "1",
       OPENCODE_DISABLE_MODELS_FETCH: "1",
@@ -54,27 +60,38 @@ async function startServer(root: string) {
     stdout: "ignore",
     stderr: "ignore",
   })
-  const url = `http://127.0.0.1:${port}`
+  return { child, url: `http://127.0.0.1:${port}` }
+}
+
+async function waitForServer(server: { url: string }, root: string) {
   const deadline = Date.now() + 90_000
   while (Date.now() < deadline) {
-    const ready = await fetch(`${url}/flynncode-sync/manifest`, { headers: { authorization: AUTH } }).then(
+    const ready = await fetch(`${server.url}/flynncode-sync/manifest`, {
+      headers: { authorization: AUTH },
+      signal: AbortSignal.timeout(2_000),
+    }).then(
       (response) => response.ok,
       () => false,
     )
-    if (ready) return { url, child }
+    if (ready) return
     await Bun.sleep(250)
   }
-  child.kill()
   throw new Error(`opencode server in ${root} did not start`)
 }
 
 async function machine(name: string): Promise<Machine> {
   const root = await mkdtemp(path.join(tmpdir(), `flynncode-sync-${name}-`))
-  const server = await startServer(root)
+  // Both ports are chosen up front and the gateway binds before the server
+  // spawns, so the two can never be handed the same port.
+  const serverPort = await freePort()
+  const gatewayPort = await freePort()
+  if (gatewayPort === serverPort) throw new Error("ports collided")
+  const url = `http://127.0.0.1:${serverPort}`
   const paired: SyncPeer[] = []
+  // The advertised port is this gateway's real test port, never the user's 4097.
   const gate = createSyncGate({
     machineName: name,
-    gatewayPort: 4097,
+    gatewayPort,
     phoneAccess: false,
     paused: false,
     peer: undefined,
@@ -85,7 +102,7 @@ async function machine(name: string): Promise<Machine> {
     options: {
       host: "127.0.0.1",
       port: 0,
-      upstream: server.url,
+      upstream: url,
       username: "opencode",
       password: "phone",
       upstreamPassword: PASSWORD,
@@ -94,10 +111,23 @@ async function machine(name: string): Promise<Machine> {
     sync: gate,
   })
   const gateway = Bun.serve({
-    port: 0,
+    port: gatewayPort,
     hostname: "127.0.0.1",
     fetch: (request, srv) => handle(request, srv.requestIP(request)?.address),
   })
+  cleanups.push(async () => gateway.stop(true))
+  const server = spawnServer(root, serverPort)
+  cleanups.push(async () => {
+    server.child.kill()
+    // A server stuck in graceful shutdown must not hang the suite.
+    const exited = await Promise.race([server.child.exited, Bun.sleep(5_000).then(() => undefined)])
+    if (exited === undefined) {
+      server.child.kill("SIGKILL")
+      await server.child.exited
+    }
+    await rm(root, { recursive: true, force: true })
+  })
+  await waitForServer(server, root)
   const worker = createSyncWorker({
     local: { url: server.url, authorization: AUTH },
     peer: () => gate.peer(),
@@ -217,11 +247,7 @@ beforeAll(async () => {
 }, 180_000)
 
 afterAll(async () => {
-  for (const target of machines) {
-    target.gateway.stop(true)
-    target.child.kill()
-    await rm(target.root, { recursive: true, force: true })
-  }
+  for (const cleanup of cleanups.reverse()) await cleanup()
   await rm(state.shared, { recursive: true, force: true })
 })
 
@@ -235,12 +261,14 @@ describe("machine sync end to end", () => {
     starship.gate.update({ peer: result.peer })
     expect(result.peer.name).toBe("challenger")
     expect(result.peer.token).toMatch(/^[0-9a-f]{64}$/)
-    expect(challenger.paired).toEqual([{ name: "starship", url: "http://127.0.0.1:4097", token: result.peer.token }])
+    expect(challenger.paired).toEqual([
+      { name: "starship", url: `http://127.0.0.1:${challenger.gateway.port}`, token: result.peer.token },
+    ])
     // Both gateways share 127.0.0.1 here, so point challenger at starship's real port.
     challenger.gate.update({ peer: { ...result.peer, name: "starship", url: `http://127.0.0.1:${starship.gateway.port}` } })
   })
 
-  test("syncs chats, settings without secrets, and prefs both ways", async () => {
+  test("syncs chats both ways, and settings without secrets and prefs from challenger", async () => {
     const [challenger, starship] = machines
     if (!challenger || !starship) throw new Error("machines missing")
     await seed(challenger, { id: "ses_e2e_a1", title: "a1", timeUpdated: 1000 })
@@ -274,6 +302,42 @@ describe("machine sync end to end", () => {
     expect(await title(starship, "ses_e2e_a1")).toBe("edited on starship")
   }, 60_000)
 
+  test("the side holding the newer copy keeps it when it cycles first", async () => {
+    const [challenger, starship] = machines
+    if (!challenger || !starship) throw new Error("machines missing")
+    await seed(challenger, { id: "ses_e2e_a1", title: "older on challenger", timeUpdated: 4000 })
+    await seed(starship, { id: "ses_e2e_a1", title: "newer on starship", timeUpdated: 5000 })
+    await starship.worker.cycle()
+    // A pull-on-any-difference rule would have replaced starship's newer copy here.
+    expect(await title(starship, "ses_e2e_a1")).toBe("newer on starship")
+    expect(await title(challenger, "ses_e2e_a1")).toBe("older on challenger")
+    await challenger.worker.cycle()
+    expect(await title(challenger, "ses_e2e_a1")).toBe("newer on starship")
+    expect(await title(starship, "ses_e2e_a1")).toBe("newer on starship")
+  }, 60_000)
+
+  test("newer settings and prefs flow back while each machine keeps its own secrets", async () => {
+    const [challenger, starship] = machines
+    if (!challenger || !starship) throw new Error("machines missing")
+    const starshipConfig = path.join(starship.root, "config", "opencode", "opencode.jsonc")
+    await Bun.write(
+      starshipConfig,
+      `{\n  "model": "anthropic/claude-e2e-newer",\n  "provider": { "anthropic": { "options": { "apiKey": "sk-starship-secret" } } }\n}\n`,
+    )
+    const later = new Date(Date.now() + 60_000)
+    await utimes(starshipConfig, later, later)
+    starship.gate.update({ prefs: { sections: { appearance: { fontSize: 20 } }, updatedAt: 90 } })
+
+    await challenger.worker.cycle()
+
+    const challengerConfig = await Bun.file(path.join(challenger.root, "config", "opencode", "opencode.jsonc")).text()
+    expect(challengerConfig).toContain("anthropic/claude-e2e-newer")
+    expect(challengerConfig).toContain("sk-challenger-secret")
+    expect(challengerConfig).not.toContain("sk-starship-secret")
+    expect(await Bun.file(starshipConfig).text()).toContain("sk-starship-secret")
+    expect(challenger.gate.prefs()).toEqual({ sections: { appearance: { fontSize: 20 } }, updatedAt: 90 })
+  }, 60_000)
+
   test("a delete propagates and is not pulled back", async () => {
     const [challenger, starship] = machines
     if (!challenger || !starship) throw new Error("machines missing")
@@ -301,12 +365,15 @@ describe("machine sync end to end", () => {
     await starship.worker.cycle()
     expect(await title(starship, "ses_e2e_run")).toBe("run")
 
-    // A shell command marks the chat busy on starship for a few seconds.
+    // A shell command marks the chat busy on starship for several seconds (polling below does not depend on the exact length).
     const running = fetch(`${starship.url}/session/ses_e2e_run/shell`, {
       method: "POST",
       headers: { authorization: AUTH, "content-type": "application/json", "x-opencode-directory": state.project },
-      body: JSON.stringify({ agent: "build", model: { providerID: "test", modelID: "test" }, command: "sleep 4" }),
-    })
+      body: JSON.stringify({ agent: "build", model: { providerID: "test", modelID: "test" }, command: "sleep 8" }),
+    }).then(
+      (response) => response.status,
+      () => 0,
+    )
     const busy = async () =>
       (await manifest(starship)).sessions.some((session) => session.id === "ses_e2e_run" && session.busy)
     await waitFor(busy, "the chat to run on starship")
@@ -316,7 +383,7 @@ describe("machine sync end to end", () => {
     expect(skipped.skipped).toContainEqual({ id: "ses_e2e_run", reason: "local-busy" })
     expect(await title(starship, "ses_e2e_run")).not.toBe("newer on challenger")
 
-    await running
+    expect(await running).toBe(200)
     await waitFor(async () => !(await busy()), "the chat to finish on starship")
     await starship.worker.cycle()
     expect(await title(starship, "ses_e2e_run")).toBe("newer on challenger")
