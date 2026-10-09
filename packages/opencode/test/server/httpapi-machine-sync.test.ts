@@ -267,6 +267,62 @@ describe("machine sync routes", () => {
     }),
   )
 
+  it.live("applies the rest of a peer config that deleted a secret-bearing MCP server, keeping it whole", () =>
+    Effect.gen(function* () {
+      const file = Config.globalConfigFile()
+      yield* Effect.addFinalizer(() => Effect.promise(() => rm(file, { force: true })))
+      yield* Effect.promise(() =>
+        Bun.write(
+          file,
+          `{ "model": "local/model", "mcp": { "gh": { "type": "remote", "url": "https://mcp.example", "headers": { "Authorization": "Bearer local-gh" } } } }\n`,
+        ),
+      )
+      yield* Effect.promise(() => utimes(file, new Date(1_000), new Date(1_000)))
+      const response = yield* request(
+        MachineSyncPaths.settingsApply,
+        post({ config: { model: "peer/new" }, mtime: 2_000 }),
+      )
+      expect(response.status).toBe(200)
+      expect(yield* response.json).toEqual({ applied: true })
+      const text = yield* Effect.promise(() => Bun.file(file).text())
+      expect(text).toContain("peer/new")
+      expect(text).toContain("Bearer local-gh")
+      expect(text).toContain("https://mcp.example")
+      expect(() => Config.validateText(text, file)).not.toThrow()
+    }),
+  )
+
+  it.live("never echoes local config text or values in a 422", () =>
+    Effect.gen(function* () {
+      const file = Config.globalConfigFile()
+      yield* Effect.addFinalizer(() => Effect.promise(() => rm(file, { force: true })))
+      yield* Effect.promise(() =>
+        Bun.write(file, `{ "model": "local/model", "provider": { "a": { "options": { "apiKey": "sk-leak-me" } } }\n`),
+      )
+      yield* Effect.promise(() => utimes(file, new Date(1_000), new Date(1_000)))
+      // The local file does not parse: the parse error would embed the whole file.
+      const broken = yield* request(
+        MachineSyncPaths.settingsApply,
+        post({ config: { model: "peer/new" }, mtime: 2_000 }),
+      )
+      expect(broken.status).toBe(422)
+      const brokenBody = yield* broken.text
+      expect(brokenBody).not.toContain("sk-leak-me")
+      expect((JSON.parse(brokenBody) as { error: string }).error.length).toBeGreaterThan(0)
+
+      // A schema failure reports field paths, never values.
+      yield* Effect.promise(() =>
+        Bun.write(file, `{ "model": "local/model", "provider": { "a": { "options": { "apiKey": "sk-leak-me" } } } }\n`),
+      )
+      yield* Effect.promise(() => utimes(file, new Date(1_000), new Date(1_000)))
+      const invalid = yield* request(MachineSyncPaths.settingsApply, post({ config: { model: 42 }, mtime: 2_000 }))
+      expect(invalid.status).toBe(422)
+      const invalidBody = yield* invalid.text
+      expect(invalidBody).not.toContain("sk-leak-me")
+      expect(invalidBody).toContain("model")
+    }),
+  )
+
   it.live("answers an empty settings payload when there is no global config and rejects malformed applies", () =>
     Effect.gen(function* () {
       const file = Config.globalConfigFile()

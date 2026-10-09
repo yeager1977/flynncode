@@ -6,14 +6,15 @@ import { isRecord } from "@/util/record"
 export const SECRET_PLACEHOLDER = "__flynncode_sync_secret__"
 
 const SECRET_KEY = /(apiKey|api_key|token|secret|password)$/i
+// Every value below one of these maps can carry credentials.
+const SECRET_MAPS = new Set(["headers", "env", "environment"])
 const REFERENCE = /\{(env|file):[^}]*\}/
 const FORMAT = { formattingOptions: { insertSpaces: true, tabSize: 2 } }
 
 export function isSecretPath(path: readonly string[]) {
   const key = path.at(-1)
   if (key !== undefined && SECRET_KEY.test(key)) return true
-  // Any value inside a provider or MCP headers map can carry credentials.
-  return (path[0] === "provider" || path[0] === "mcp") && path.slice(0, -1).includes("headers")
+  return path.slice(0, -1).some((segment) => SECRET_MAPS.has(segment.toLowerCase()))
 }
 
 /** The global config as it may leave this machine: secrets masked, no server block. */
@@ -58,6 +59,9 @@ function restore(peer: unknown, local: unknown, path: string[]): { value: unknow
   if (isSecretPath(path) || isForeign(peer)) return keepLocal(local)
   // A local reference is a secret leaf: an edit on the peer does not replace it.
   if (isReference(local)) return { value: local }
+  // A local subtree holding secrets is never replaced by a different shape
+  // (`lsp: false` over an object, a record over an array, ...).
+  if (hasSecret(local, path) && shape(peer) !== shape(local)) return { value: local }
   if (Array.isArray(peer)) {
     // Arrays are replaced whole, so any secret on either side keeps the local array.
     if (hasSecret(peer, path) || hasSecret(local, path)) return keepLocal(local)
@@ -69,13 +73,11 @@ function restore(peer: unknown, local: unknown, path: string[]): { value: unknow
     const next = restore(value, Object.hasOwn(base, key) ? base[key] : undefined, [...path, key])
     return next ? [[key, next.value] as const] : []
   })
-  // Keys the peer no longer has go away, except the local secrets inside them.
-  const kept = Object.entries(base)
-    .filter(([key]) => !Object.hasOwn(peer, key))
-    .flatMap(([key, value]) => {
-      const secrets = secretsOnly(value, [...path, key])
-      return secrets ? [[key, secrets.value] as const] : []
-    })
+  // Keys the peer no longer has go away, unless their subtree holds a local
+  // secret: then it stays whole, so the file keeps validating.
+  const kept = Object.entries(base).filter(
+    ([key, value]) => !Object.hasOwn(peer, key) && hasSecret(value, [...path, key]),
+  )
   return { value: Object.fromEntries([...incoming, ...kept]) }
 }
 
@@ -83,15 +85,9 @@ function keepLocal(local: unknown) {
   return local === undefined ? undefined : { value: local }
 }
 
-function secretsOnly(value: unknown, path: string[]): { value: unknown } | undefined {
-  if (isSecretPath(path) || isReference(value)) return { value }
-  if (Array.isArray(value)) return hasSecret(value, path) ? { value } : undefined
-  if (!isRecord(value)) return undefined
-  const entries = Object.entries(value).flatMap(([key, item]) => {
-    const secrets = secretsOnly(item, [...path, key])
-    return secrets ? [[key, secrets.value] as const] : []
-  })
-  return entries.length > 0 ? { value: Object.fromEntries(entries) } : undefined
+function shape(value: unknown) {
+  if (Array.isArray(value)) return "array"
+  return isRecord(value) ? "record" : "primitive"
 }
 
 function patchTo(text: string, path: string[], from: unknown, to: unknown): string {

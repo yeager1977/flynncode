@@ -1,6 +1,7 @@
 import { Effect, Option, Schema } from "effect"
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http"
 import { FSUtil } from "@opencode-ai/core/fs-util"
+import { ConfigErrorV1 } from "@opencode-ai/core/v1/config/error"
 import { Config } from "@/config/config"
 import { ConfigParse } from "@/config/parse"
 import { MachineSyncConfig } from "@/machine-sync/config-sync"
@@ -116,6 +117,8 @@ export const machineSyncRoutes = HttpRouter.use((router) =>
     yield* router.add("GET", MachineSyncPaths.settings, () =>
       Effect.gen(function* () {
         const file = Config.globalConfigFile()
+        // Stat first so the mtime we send is never newer than the content we read.
+        const mtime = yield* modified(file)
         const text = yield* fs.readFileStringSafe(file).pipe(Effect.orElseSucceed(() => undefined))
         if (text === undefined) return json({ config: null, mtime: 0 })
         const parsed = yield* Effect.try({
@@ -123,7 +126,7 @@ export const machineSyncRoutes = HttpRouter.use((router) =>
           catch: (error) => error,
         }).pipe(Effect.option)
         if (Option.isNone(parsed)) return json({ config: null, mtime: 0 })
-        return json({ config: MachineSyncConfig.sanitizeConfig(parsed.value), mtime: yield* modified(file) })
+        return json({ config: MachineSyncConfig.sanitizeConfig(parsed.value), mtime })
       }),
     )
 
@@ -155,20 +158,34 @@ export const machineSyncRoutes = HttpRouter.use((router) =>
             Config.validateText(next, file)
             return next
           },
-          catch: (error) => (error instanceof Error ? error.message : String(error)),
+          catch: describeFailure,
         }).pipe(
           Effect.flatMap((next) =>
             Effect.gen(function* () {
-              if (next !== localText) yield* fs.writeWithDirs(file, next)
+              if (next !== localText)
+                yield* fs.writeWithDirs(file, next).pipe(Effect.mapError(() => "config could not be written"))
               // Stamp the peer's mtime so the next cycle on either side sees a tie.
-              yield* fs.utimes(file, new Date(mtime), new Date(mtime))
+              // The content is already applied, so a failed stamp only costs one extra cycle.
+              yield* fs
+                .utimes(file, new Date(mtime), new Date(mtime))
+                .pipe(Effect.catch(() => Effect.logWarning("machine sync could not stamp the global config mtime")))
               yield* config.invalidate()
               return json({ applied: true })
             }),
           ),
-          Effect.catch((error) => Effect.succeed(json({ error: String(error) }, 422))),
+          Effect.catch((reason) => Effect.succeed(json({ error: reason }, 422))),
         )
       }),
     )
   }),
 )
+
+// Config errors embed the file text (parse errors) or offending values
+// (schema issues), and the local file holds secrets: report only a fixed
+// message plus the paths of invalid fields.
+function describeFailure(error: unknown) {
+  if (ConfigErrorV1.JsonError.isInstance(error)) return "the config is not valid JSON"
+  if (!ConfigErrorV1.InvalidError.isInstance(error)) return "the config could not be applied"
+  const paths = (error.data.issues ?? []).flatMap((issue) => (issue.path.length > 0 ? [issue.path.join(".")] : []))
+  return paths.length > 0 ? `the config is invalid at: ${paths.join(", ")}` : "the config is invalid"
+}

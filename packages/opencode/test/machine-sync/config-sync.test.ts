@@ -75,6 +75,17 @@ describe("MachineSyncConfig.sanitizeConfig", () => {
     expect(text).not.toContain("in-array")
   })
 
+  test("masks every value under any headers, env or environment map", () => {
+    const sent = MachineSyncConfig.sanitizeConfig({
+      agent: { build: { headers: { "X-Org": "org-secret" } } },
+      shell: { env: { FOO_KEY: "foo-secret", PLAIN: "plain-secret" } },
+      mcp: { local: { type: "local", command: ["x"], environment: { ANY: "env-secret" } } },
+    })
+    const text = JSON.stringify(sent)
+    for (const secret of ["org-secret", "foo-secret", "plain-secret", "env-secret"]) expect(text).not.toContain(secret)
+    expect(text).toContain('"X-Org"')
+  })
+
   test("does not mutate its input and tolerates non-objects", () => {
     const input = { provider: { a: { options: { apiKey: "sk" } } } }
     MachineSyncConfig.sanitizeConfig(input)
@@ -91,7 +102,10 @@ describe("MachineSyncConfig.isSecretPath", () => {
     expect(MachineSyncConfig.isSecretPath(["mcp", "gh", "headers", "Authorization"])).toBe(true)
     expect(MachineSyncConfig.isSecretPath(["limit", "maxTokens"])).toBe(false)
     expect(MachineSyncConfig.isSecretPath(["model"])).toBe(false)
-    expect(MachineSyncConfig.isSecretPath(["agent", "headers", "x"])).toBe(false)
+    expect(MachineSyncConfig.isSecretPath(["agent", "a", "headers", "x"])).toBe(true)
+    expect(MachineSyncConfig.isSecretPath(["shell", "env", "FOO_KEY"])).toBe(true)
+    expect(MachineSyncConfig.isSecretPath(["mcp", "gh", "environment", "ANYTHING"])).toBe(true)
+    expect(MachineSyncConfig.isSecretPath(["mcp", "gh", "environment"])).toBe(false)
     expect(MachineSyncConfig.isSecretPath([])).toBe(false)
   })
 })
@@ -132,16 +146,78 @@ describe("MachineSyncConfig.applyPeerConfig", () => {
     expect(ConfigParse.jsonc(next, "opencode.jsonc")).toMatchObject({ provider: { openai: { options: {} } } })
   })
 
-  test("removes keys the peer dropped but never drops a local secret", () => {
+  test("removes keys the peer dropped, but keeps a dropped subtree whole when it holds a local secret", () => {
+    const text = `{ "share": "manual", "model": "old", "mcp": { "gh": { "type": "remote", "url": "https://mcp.example", "headers": { "Authorization": "Bearer local" } } } }`
+    const trimmed = MachineSyncConfig.applyPeerConfig({
+      localText: text,
+      local: ConfigParse.jsonc(text, "opencode.jsonc"),
+      peer: { model: "new" },
+    })
+    const parsed = ConfigParse.jsonc(trimmed, "opencode.jsonc")
+    expect(parsed).toEqual({
+      model: "new",
+      mcp: { gh: { type: "remote", url: "https://mcp.example", headers: { Authorization: "Bearer local" } } },
+    })
+    expect(() => Config.validateText(trimmed, "opencode.jsonc")).not.toThrow()
+  })
+
+  test("keeps local secrets and the rest of a provider the peer dropped", () => {
     const trimmed = MachineSyncConfig.applyPeerConfig({
       localText,
       local: ConfigParse.jsonc(localText, "opencode.jsonc"),
       peer: { model: "anthropic/claude-new" },
     })
-    expect(trimmed).not.toContain("https://mcp.example")
-    expect(trimmed).not.toContain("baseURL")
     expect(trimmed).toContain("sk-local")
     expect(trimmed).toContain("Bearer local")
+    expect(() => Config.validateText(trimmed, "opencode.jsonc")).not.toThrow()
+  })
+
+  describe("a peer value of a different shape never replaces a local secret subtree", () => {
+    const apply = (text: string, peer: Record<string, unknown>) =>
+      ConfigParse.jsonc(
+        MachineSyncConfig.applyPeerConfig({ localText: text, local: ConfigParse.jsonc(text, "opencode.jsonc"), peer }),
+        "opencode.jsonc",
+      )
+
+    test("lsp: false over a server with env", () => {
+      const text = `{ "lsp": { "ts": { "command": ["x"], "env": { "FOO_KEY": "lsp-secret" } } } }`
+      expect(apply(text, { lsp: false })).toEqual(ConfigParse.jsonc(text, "opencode.jsonc"))
+    })
+
+    test("formatter: false over a formatter with environment", () => {
+      const text = `{ "formatter": { "prettier": { "command": ["p"], "environment": { "TOKEN_X": "fmt-secret" } } } }`
+      expect(apply(text, { formatter: false })).toEqual(ConfigParse.jsonc(text, "opencode.jsonc"))
+    })
+
+    test("mcp oauth: false over a clientSecret", () => {
+      const text = `{ "mcp": { "gh": { "type": "remote", "url": "https://x", "oauth": { "clientId": "id", "clientSecret": "cs-local" } } } }`
+      const result = apply(text, { mcp: { gh: { type: "remote", url: "https://x", oauth: false } } })
+      expect(result).toEqual(ConfigParse.jsonc(text, "opencode.jsonc"))
+    })
+
+    test("a record over a local array with a secret, and an array over a local record with a secret", () => {
+      const arrayText = `{ "plugin": [["x", { "apiKey": "arr-secret" }]] }`
+      expect(apply(arrayText, { plugin: { a: 1 } })).toEqual(ConfigParse.jsonc(arrayText, "opencode.jsonc"))
+      const recordText = `{ "x": { "token": "rec-secret" } }`
+      expect(apply(recordText, { x: ["a"] })).toEqual(ConfigParse.jsonc(recordText, "opencode.jsonc"))
+    })
+
+    test("a subtree without secrets is still replaced by a primitive", () => {
+      const text = `{ "lsp": { "ts": { "command": ["x"] } } }`
+      expect(apply(text, { lsp: false })).toEqual({ lsp: false })
+    })
+  })
+
+  test("keeps local env values under any env map", () => {
+    const text = `{ "shell": { "env": { "FOO_KEY": "keep-me" } }, "model": "old" }`
+    const result = MachineSyncConfig.applyPeerConfig({
+      localText: text,
+      local: ConfigParse.jsonc(text, "opencode.jsonc"),
+      peer: MachineSyncConfig.sanitizeConfig({ shell: { env: { FOO_KEY: "peer-value", OTHER: "x" } }, model: "new" }),
+    })
+    expect(result).toContain("keep-me")
+    expect(result).not.toContain("peer-value")
+    expect(result).not.toContain(MachineSyncConfig.SECRET_PLACEHOLDER)
   })
 
   test("never writes a placeholder even when the peer sends it where nothing local exists", () => {
