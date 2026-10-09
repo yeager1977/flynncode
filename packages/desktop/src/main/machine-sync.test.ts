@@ -104,7 +104,7 @@ describe("createMachineSync", () => {
     const peer = peerMachine()
     const { values, posted, broadcasts, sync } = controller()
     expect(await sync.pair({ host: peer.host, code: "000000" })).toEqual({ ok: false, reason: "invalid-code" })
-    expect(await sync.pair({ host: peer.host, code: "654321" })).toEqual({ ok: true })
+    expect(await sync.pair({ host: peer.host, code: "654321" })).toEqual({ ok: true, prefs: "kept" })
     const stored = values.get("syncPeer") as { name: string; url: string; token: string }
     expect(stored.name).toBe("challenger")
     expect(stored.url).toBe(`http://${peer.host}`)
@@ -125,7 +125,7 @@ describe("createMachineSync", () => {
   test("pairing with prefs=keep tells windows to restamp and push their own prefs", async () => {
     const peer = peerMachine({ sections: { appearance: { fontSize: 22 } }, updatedAt: 5 })
     const { broadcasts, sync } = controller()
-    expect(await sync.pair({ host: peer.host, code: "654321" })).toEqual({ ok: true })
+    expect(await sync.pair({ host: peer.host, code: "654321" })).toEqual({ ok: true, prefs: "kept" })
     await sync.idle()
     expect(broadcasts.filter((entry) => entry.channel === "machine-sync-adopt-prefs")).toEqual([
       { channel: "machine-sync-adopt-prefs", payload: null },
@@ -136,7 +136,7 @@ describe("createMachineSync", () => {
     const prefs = { sections: { appearance: { fontSize: 22 } }, updatedAt: 5 }
     const peer = peerMachine(prefs)
     const { broadcasts, sync } = controller()
-    expect(await sync.pair({ host: peer.host, code: "654321", prefs: "theirs" })).toEqual({ ok: true })
+    expect(await sync.pair({ host: peer.host, code: "654321", prefs: "theirs" })).toEqual({ ok: true, prefs: "adopted" })
     await sync.idle()
     expect(broadcasts.filter((entry) => entry.channel === "machine-sync-adopt-prefs")).toEqual([
       { channel: "machine-sync-adopt-prefs", payload: prefs },
@@ -146,7 +146,7 @@ describe("createMachineSync", () => {
   test("pairing with prefs=theirs falls back to keep when the peer has no prefs", async () => {
     const peer = peerMachine()
     const { broadcasts, sync } = controller()
-    expect(await sync.pair({ host: peer.host, code: "654321", prefs: "theirs" })).toEqual({ ok: true })
+    expect(await sync.pair({ host: peer.host, code: "654321", prefs: "theirs" })).toEqual({ ok: true, prefs: "kept" })
     await sync.idle()
     expect(broadcasts.filter((entry) => entry.channel === "machine-sync-adopt-prefs")).toEqual([
       { channel: "machine-sync-adopt-prefs", payload: null },
@@ -189,24 +189,25 @@ describe("createMachineSync", () => {
 
   test("pairing with prefs=theirs broadcasts no adopt when the peer's prefs cannot be read", async () => {
     const failed = await pairTheirs(() => Promise.resolve(new Response("boom", { status: 500 })))
-    expect(failed.result).toEqual({ ok: true })
+    expect(failed.result).toEqual({ ok: true, prefs: "unread" })
     expect(failed.stored).toBe(true)
     expect(adopts(failed.broadcasts)).toEqual([])
   })
 
   test("pairing with prefs=theirs broadcasts no adopt when the peer is unreachable for prefs", async () => {
     const failed = await pairTheirs(() => Promise.reject(new Error("unreachable")))
-    expect(failed.result).toEqual({ ok: true })
+    expect(failed.result).toEqual({ ok: true, prefs: "unread" })
     expect(failed.stored).toBe(true)
     expect(adopts(failed.broadcasts)).toEqual([])
   })
 
   test("pairing with prefs=theirs broadcasts no adopt when the prefs body is invalid", async () => {
     const bad = await pairTheirs(() => Promise.resolve(Response.json({ prefs: { sections: "nope", updatedAt: "x" } })))
-    expect(bad.result).toEqual({ ok: true })
+    expect(bad.result).toEqual({ ok: true, prefs: "unread" })
     expect(bad.stored).toBe(true)
     expect(adopts(bad.broadcasts)).toEqual([])
     const noBody = await pairTheirs(() => Promise.resolve(new Response("not json")))
+    expect(noBody.result).toEqual({ ok: true, prefs: "unread" })
     expect(adopts(noBody.broadcasts)).toEqual([])
   })
 
@@ -215,6 +216,7 @@ describe("createMachineSync", () => {
     const run = await pairTheirs(() => Promise.resolve(Response.json({ prefs })))
     expect(run.events.indexOf("prefs-get")).toBeGreaterThanOrEqual(0)
     expect(run.events.indexOf("prefs-get")).toBeLessThan(run.events.indexOf("sync-config"))
+    expect(run.result).toEqual({ ok: true, prefs: "adopted" })
     expect(adopts(run.broadcasts)).toEqual([{ channel: "machine-sync-adopt-prefs", payload: prefs }])
   })
 
@@ -228,7 +230,7 @@ describe("createMachineSync", () => {
     await new Promise((resolve) => setTimeout(resolve, 10))
     console.warn = warn
     process.off("unhandledRejection", onUnhandled)
-    expect(run.result).toEqual({ ok: true })
+    expect(run.result).toEqual({ ok: true, prefs: "kept" })
     expect(run.stored).toBe(true)
     expect(unhandled).toEqual([])
   })
@@ -237,10 +239,10 @@ describe("createMachineSync", () => {
     const first = peerMachine()
     const second = peerMachine()
     const { values, sync } = controller()
-    expect(await sync.pair({ host: first.host, code: "654321" })).toEqual({ ok: true })
+    expect(await sync.pair({ host: first.host, code: "654321" })).toEqual({ ok: true, prefs: "kept" })
     const firstToken = (values.get("syncPeer") as { token: string }).token
     expect(first.gate.peer()?.token).toBe(firstToken)
-    expect(await sync.pair({ host: second.host, code: "654321" })).toEqual({ ok: true })
+    expect(await sync.pair({ host: second.host, code: "654321" })).toEqual({ ok: true, prefs: "kept" })
     await sync.idle()
     expect(first.gate.peer()).toBeUndefined()
     expect(second.gate.peer()?.token).toBe((values.get("syncPeer") as { token: string }).token)

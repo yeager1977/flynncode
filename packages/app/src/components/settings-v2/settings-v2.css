@@ -684,6 +684,11 @@
   color: var(--v2-text-text-muted);
 }
 
+/* Long sentences (hints, errors) wrap, so they need more than the 1:1 line height. */
+.settings-v2-servers-meta--wrap {
+  line-height: 1.4;
+}
+
 .settings-v2-servers-status {
   display: flex;
   flex-direction: column;

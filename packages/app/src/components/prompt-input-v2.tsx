@@ -9,7 +9,7 @@ import { KeybindV2 } from "@opencode-ai/ui/v2/keybind-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { ProjectAvatar } from "@opencode-ai/ui/v2/project-avatar-v2"
 import type { ReferenceInfo } from "@opencode-ai/sdk/v2/client"
-import { createEffect, createMemo, createSignal, on, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show } from "solid-js"
 import { ModelSelectorPopoverV2 } from "@/components/dialog-select-model"
 import { DialogSelectModelUnpaidV2 } from "@/components/dialog-select-model-unpaid-v2"
 import type { PromptInputProps } from "@/components/prompt-input/contracts"
@@ -24,6 +24,7 @@ import { useComments } from "@/context/comments"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
+import type { MachineSyncStatus } from "@/context/machine-sync-types"
 import { usePermission } from "@/context/permission"
 import { type ImageAttachmentPart, usePrompt } from "@/context/prompt"
 import { usePlatform } from "@/context/platform"
@@ -61,6 +62,23 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
   const layout = useLayout()
   const serverSync = useServerSync()
   const queryOptions = useQueryOptions()
+  const platform = usePlatform()
+  const [syncStatus, setSyncStatus] = createSignal<MachineSyncStatus>()
+  onMount(() => {
+    const api = platform.machineSync
+    if (!api) return
+    void api
+      .status()
+      .then((status) => setSyncStatus(status))
+      .catch(() => undefined)
+    onCleanup(api.subscribe((status) => setSyncStatus(status)))
+  })
+  // A chat synced from the other machine may point at a folder that does not
+  // exist here; it stays readable, but tools would fail in it.
+  const folderMissing = createMemo(() => {
+    const directory = sdk().directory
+    return !!directory && (syncStatus()?.missingDirectories.includes(directory) ?? false)
+  })
 
   const project = createMemo(() => {
     const directory = sdk().directory
@@ -84,6 +102,11 @@ export function PromptInputV2Composer(props: PromptInputV2ComposerProps) {
 
   return (
     <div class="flex flex-col gap-3">
+      <Show when={folderMissing()}>
+        <span class="text-12-regular text-text-weak px-1" data-slot="sync-folder-missing">
+          {language.t("server.sync.folderMissing")}
+        </span>
+      </Show>
       <PromptInputV2
         controller={props.controller}
         borderUnderlay={props.borderUnderlay}

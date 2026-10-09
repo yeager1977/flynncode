@@ -21,7 +21,15 @@ export type MachineSyncStatus = {
 
 export type MachineSyncPairingCode = { code: string; expiresAt: number; machineName: string; addresses: string[] }
 
-export type MachineSyncPairResult = { ok: true } | { ok: false; reason: "unreachable" | "invalid-code" | "failed" }
+/**
+ * `prefs` says what happened to app preferences: `kept` (this computer's win,
+ * including when `theirs` was asked but the other computer has none), `adopted`
+ * (the other computer's were applied) or `unread` (`theirs` was asked but the
+ * other computer's could not be fetched, so newest-wins applies as usual).
+ */
+export type MachineSyncPairResult =
+  | { ok: true; prefs: "kept" | "adopted" | "unread" }
+  | { ok: false; reason: "unreachable" | "invalid-code" | "failed" }
 
 export type MachineSyncPrefsChoice = "keep" | "theirs"
 

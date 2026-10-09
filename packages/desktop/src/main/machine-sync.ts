@@ -194,7 +194,9 @@ export function createMachineSync(deps: {
       // Re-pairing replaces the peer; tell the old one (without waiting) so its token stops working.
       if (previous && previous.token !== result.peer.token)
         background(unpairPeer({ peer: previous, fetchImpl: deps.fetchImpl }))
-      return { ok: true }
+      if (input.prefs !== "theirs") return { ok: true, prefs: "kept" }
+      if (!fetched) return { ok: true, prefs: "unread" }
+      return { ok: true, prefs: fetched.prefs ? "adopted" : "kept" }
     },
     async unpair() {
       const peer = settings().peer

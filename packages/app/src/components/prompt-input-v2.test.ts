@@ -19,3 +19,10 @@ describe("PromptInputV2Composer project control", () => {
     expect(source).toContain("fetching() && store.sessionTotal === 0")
   })
 })
+
+describe("PromptInputV2Composer machine sync notice", () => {
+  test("warns when the session folder is missing on this machine", () => {
+    expect(source).toContain('language.t("server.sync.folderMissing")')
+    expect(source).toContain("missingDirectories.includes(")
+  })
+})
