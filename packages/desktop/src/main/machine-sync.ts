@@ -18,7 +18,8 @@ import {
 import { PHONE_ACCESS_KEY, SYNC_PAUSED_KEY, SYNC_PEER_KEY, SYNC_PREFS_KEY } from "./store-keys"
 
 const SYNC_NOW_TIMEOUT_MS = 120_000
-const PEER_PREFS_TIMEOUT_MS = 10_000
+// pair() waits for this when the user chose the other computer's prefs.
+const PEER_PREFS_TIMEOUT_MS = 5_000
 
 export type SyncStore = {
   get(key: string): unknown
@@ -74,6 +75,8 @@ async function fetchPeerPrefs(peer: { url: string; token: string }, fetchImpl: t
   return prefs && { prefs }
 }
 
+type PeerPrefs = NonNullable<Awaited<ReturnType<typeof fetchPeerPrefs>>>
+
 // Main owns the persisted sync settings; the sidecar owns the live gate and
 // worker. Every change is written here first and then pushed to the sidecar,
 // so a restart always starts from the stored state.
@@ -127,18 +130,24 @@ export function createMachineSync(deps: {
   // Best-effort work that outlives the call that started it; `idle` lets tests wait.
   const tasks = new Set<Promise<unknown>>()
   const background = (task: Promise<unknown>) => {
-    tasks.add(task)
-    void task.finally(() => tasks.delete(task))
+    const tracked = task
+      .catch((error: unknown) => console.warn("[machine-sync] background task failed", error))
+      .finally(() => tasks.delete(tracked))
+    tasks.add(tracked)
   }
 
   // `keep` (null) has windows restamp and push their prefs. `theirs` hands them
   // the peer's to adopt, falling back to keep if the peer answered with none;
   // if the peer could not be asked, nothing is broadcast (plain newest-wins).
-  const adoptPeerPrefs = async (peer: { url: string; token: string }, choice: MachineSyncPrefsChoice | undefined) => {
-    if (choice !== "theirs") return deps.broadcast("machine-sync-adopt-prefs", null)
-    const fetched = await fetchPeerPrefs(peer, deps.fetchImpl)
-    if (!fetched)
-      return console.warn("[machine-sync] could not read the other computer's preferences; leaving them as is")
+  const announceAdopt = async (choice: MachineSyncPrefsChoice | undefined, fetched: PeerPrefs | undefined) => {
+    if (choice !== "theirs") {
+      deps.broadcast("machine-sync-adopt-prefs", null)
+      return
+    }
+    if (!fetched) {
+      console.warn("[machine-sync] could not read the other computer's preferences; leaving them as is")
+      return
+    }
     deps.broadcast("machine-sync-adopt-prefs", fetched.prefs)
   }
 
@@ -171,14 +180,18 @@ export function createMachineSync(deps: {
         fetchImpl: deps.fetchImpl,
       })
       if (!result.ok) return { ok: false, reason: result.reason }
+      // Read the other computer's prefs before storing the peer: storing it
+      // starts the sync worker, which could push ours over theirs first. The
+      // fetch never throws and is bounded, so pairing still completes (and the
+      // peer is stored) when it fails; the broadcast below stays out of the way.
+      const fetched = input.prefs === "theirs" ? await fetchPeerPrefs(result.peer, deps.fetchImpl) : undefined
       const previous = settings().peer
       state.worker = undefined
       deps.store.set(SYNC_PEER_KEY, result.peer)
       pushConfig()
       publish()
-      // Neither step blocks the pair result.
-      background(adoptPeerPrefs(result.peer, input.prefs))
-      // Re-pairing replaces the peer; tell the old one so its token stops working.
+      background(announceAdopt(input.prefs, fetched))
+      // Re-pairing replaces the peer; tell the old one (without waiting) so its token stops working.
       if (previous && previous.token !== result.peer.token)
         background(unpairPeer({ peer: previous, fetchImpl: deps.fetchImpl }))
       return { ok: true }

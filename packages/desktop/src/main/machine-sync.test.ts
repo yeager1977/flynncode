@@ -153,53 +153,84 @@ describe("createMachineSync", () => {
     ])
   })
 
-  test("pairing with prefs=theirs broadcasts no adopt when the peer's prefs cannot be read", async () => {
+  // Pairs with a real peer but lets the test answer (or fail) the prefs GET.
+  async function pairTheirs(prefsRoute: () => Promise<Response>, options?: { throwOnAdopt?: boolean }) {
     const peer = peerMachine({ sections: { appearance: { fontSize: 22 } }, updatedAt: 5 })
     const memory = memoryStore()
+    const events: string[] = []
     const broadcasts: Array<{ channel: string; payload: unknown }> = []
     const fetchImpl = Object.assign(
-      (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
-        String(input).endsWith("/flynncode-sync/prefs")
-          ? Promise.resolve(new Response("boom", { status: 500 }))
-          : fetch(input, init),
+      (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        if (!String(input).endsWith("/flynncode-sync/prefs")) return fetch(input, init)
+        events.push("prefs-get")
+        return prefsRoute()
+      },
       { preconnect: fetch.preconnect },
     )
     const sync = createMachineSync({
       store: memory.store,
       machineName: "starship",
-      post: () => {},
-      broadcast: (channel, payload) => broadcasts.push({ channel, payload }),
+      post: (command) => events.push(command.type),
+      broadcast: (channel, payload) => {
+        if (options?.throwOnAdopt && channel === "machine-sync-adopt-prefs") throw new Error("window destroyed")
+        broadcasts.push({ channel, payload })
+      },
       lanAddresses: () => [],
       fetchImpl,
       code: () => "123456",
     })
-    expect(await sync.pair({ host: peer.host, code: "654321", prefs: "theirs" })).toEqual({ ok: true })
+    const result = await sync.pair({ host: peer.host, code: "654321", prefs: "theirs" })
     await sync.idle()
-    expect(memory.values.has("syncPeer")).toBe(true)
-    expect(broadcasts.filter((entry) => entry.channel === "machine-sync-adopt-prefs")).toEqual([])
+    return { result, events, broadcasts, stored: memory.values.has("syncPeer") }
+  }
+
+  const adopts = (broadcasts: Array<{ channel: string; payload: unknown }>) =>
+    broadcasts.filter((entry) => entry.channel === "machine-sync-adopt-prefs")
+
+  test("pairing with prefs=theirs broadcasts no adopt when the peer's prefs cannot be read", async () => {
+    const failed = await pairTheirs(() => Promise.resolve(new Response("boom", { status: 500 })))
+    expect(failed.result).toEqual({ ok: true })
+    expect(failed.stored).toBe(true)
+    expect(adopts(failed.broadcasts)).toEqual([])
   })
 
   test("pairing with prefs=theirs broadcasts no adopt when the peer is unreachable for prefs", async () => {
-    const peer = peerMachine({ sections: { appearance: { fontSize: 22 } }, updatedAt: 5 })
-    const memory = memoryStore()
-    const broadcasts: Array<{ channel: string; payload: unknown }> = []
-    const fetchImpl = Object.assign(
-      (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
-        String(input).endsWith("/flynncode-sync/prefs") ? Promise.reject(new Error("unreachable")) : fetch(input, init),
-      { preconnect: fetch.preconnect },
-    )
-    const sync = createMachineSync({
-      store: memory.store,
-      machineName: "starship",
-      post: () => {},
-      broadcast: (channel, payload) => broadcasts.push({ channel, payload }),
-      lanAddresses: () => [],
-      fetchImpl,
-      code: () => "123456",
-    })
-    expect(await sync.pair({ host: peer.host, code: "654321", prefs: "theirs" })).toEqual({ ok: true })
-    await sync.idle()
-    expect(broadcasts.filter((entry) => entry.channel === "machine-sync-adopt-prefs")).toEqual([])
+    const failed = await pairTheirs(() => Promise.reject(new Error("unreachable")))
+    expect(failed.result).toEqual({ ok: true })
+    expect(failed.stored).toBe(true)
+    expect(adopts(failed.broadcasts)).toEqual([])
+  })
+
+  test("pairing with prefs=theirs broadcasts no adopt when the prefs body is invalid", async () => {
+    const bad = await pairTheirs(() => Promise.resolve(Response.json({ prefs: { sections: "nope", updatedAt: "x" } })))
+    expect(bad.result).toEqual({ ok: true })
+    expect(bad.stored).toBe(true)
+    expect(adopts(bad.broadcasts)).toEqual([])
+    const noBody = await pairTheirs(() => Promise.resolve(new Response("not json")))
+    expect(adopts(noBody.broadcasts)).toEqual([])
+  })
+
+  test("pairing with prefs=theirs reads the peer's prefs before the worker config is pushed", async () => {
+    const prefs = { sections: { appearance: { fontSize: 22 } }, updatedAt: 5 }
+    const run = await pairTheirs(() => Promise.resolve(Response.json({ prefs })))
+    expect(run.events.indexOf("prefs-get")).toBeGreaterThanOrEqual(0)
+    expect(run.events.indexOf("prefs-get")).toBeLessThan(run.events.indexOf("sync-config"))
+    expect(adopts(run.broadcasts)).toEqual([{ channel: "machine-sync-adopt-prefs", payload: prefs }])
+  })
+
+  test("a failing background broadcast neither rejects idle nor leaves an unhandled rejection", async () => {
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown) => unhandled.push(reason)
+    process.on("unhandledRejection", onUnhandled)
+    const warn = console.warn
+    console.warn = () => {}
+    const run = await pairTheirs(() => Promise.resolve(Response.json({ prefs: null })), { throwOnAdopt: true })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    console.warn = warn
+    process.off("unhandledRejection", onUnhandled)
+    expect(run.result).toEqual({ ok: true })
+    expect(run.stored).toBe(true)
+    expect(unhandled).toEqual([])
   })
 
   test("re-pairing tells the previous peer to drop its token", async () => {
