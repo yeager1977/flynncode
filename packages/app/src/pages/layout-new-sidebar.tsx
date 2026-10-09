@@ -152,6 +152,10 @@ export function ProjectSidebar() {
     makeEventListener(window, "pointerup", stop)
     makeEventListener(window, "pointercancel", stop)
     makeEventListener(window, "blur", stop)
+    makeEventListener(window, "keydown", (event) => {
+      if (event.key !== "Escape" || !layout.mobileSidebar.opened()) return
+      layout.mobileSidebar.hide()
+    })
   })
   onCleanup(() => {
     if (sizet !== undefined) clearTimeout(sizet)
@@ -269,7 +273,7 @@ export function ProjectSidebar() {
         <nav
           aria-label={language.t("sidebar.nav.projectsAndSessions")}
           data-component="sidebar-v2"
-          class="@container fixed inset-y-0 start-0 z-50 flex w-full max-w-[400px] overflow-hidden bg-v2-background-bg-deep transition-transform duration-200 ease-out"
+          class="@container fixed inset-y-0 start-0 z-50 flex w-[85vw] max-w-[400px] overflow-hidden bg-v2-background-bg-deep transition-transform duration-200 ease-out"
           classList={{
             "translate-x-0": layout.mobileSidebar.opened(),
             "ltr:-translate-x-full rtl:translate-x-full": !layout.mobileSidebar.opened(),

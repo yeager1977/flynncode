@@ -63,6 +63,7 @@
     --font-size-small: 12px;
     --font-weight-regular: 440;
     --font-weight-medium: 530;
+    --line-height-x-large: 150%;
   }
 
   [data-component="getting-started"] {
