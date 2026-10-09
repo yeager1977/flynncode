@@ -1,5 +1,5 @@
 import { modelRouterFallback } from "./model-router-fallback"
-import { omoSettingsFallback } from "./omo-settings-fallback"
+import { providerEnabledFallback } from "./provider-enabled-fallback"
 import { providerEditFallback } from "./provider-edit-fallback"
 import { importSessionsFallback } from "./import-sessions-fallback"
 import { dispatchFallback } from "./dispatch-fallback"
@@ -23,7 +23,7 @@ export const dict = {
   ...modelRouterFallback,
   ...sessionReviewFallback,
   ...sessionHandoffFallback,
-  ...omoSettingsFallback,
+  ...providerEnabledFallback,
   ...providerEditFallback,
   ...importSessionsFallback,
   ...dispatchFallback,

@@ -10,7 +10,6 @@ import { useLanguage } from "@/context/language"
 import { useModels } from "@/context/models"
 import { useServerSync } from "@/context/server-sync"
 import { pathKey } from "@/utils/path-key"
-import { showToast } from "@/utils/toast"
 import {
   DEFAULT_AGENT_TASKS,
   MODEL_FAMILIES,
@@ -21,7 +20,6 @@ import {
   validateForm,
   type TaskName,
 } from "./model-router-payload"
-import { hasOmoPlugin, setOmoPlugin } from "./omo-plugin"
 import {
   familyModelUnavailable,
   parseWeight,
@@ -252,31 +250,6 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
                 hideLabel
               >
                 {language.t("settings.modelRouter.enabled.title")}
-              </Switch>
-            </div>
-            <div class="model-router-enable model-router-card">
-              <div>
-                <h3>{language.t("settings.modelRouter.omo.title")}</h3>
-                <p class="model-router-muted">{language.t("settings.modelRouter.omo.description")}</p>
-              </div>
-              <Switch
-                checked={hasOmoPlugin(serverSync().data.config.plugin)}
-                disabled={state.saving}
-                onChange={(checked) => {
-                  void serverSync()
-                    .updateConfig({
-                      plugin: setOmoPlugin(serverSync().data.config.plugin, checked) as (
-                        | string
-                        | [string, { [key: string]: unknown }]
-                      )[],
-                    })
-                    .catch(() =>
-                      showToast({ variant: "error", description: language.t("settings.modelRouter.omo.toggleFailed") }),
-                    )
-                }}
-                hideLabel
-              >
-                {language.t("settings.modelRouter.omo.title")}
               </Switch>
             </div>
             <div class="model-router-enable model-router-card">

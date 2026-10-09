@@ -2,10 +2,10 @@ import { describe, expect, test } from "bun:test"
 import { splitTodoContent, todoDetail, todoSummary } from "./todo-content"
 
 const planExample =
-  "[WHERE] src/utils/validation.ts: Add validateEmail() for input sanitization - expect returns boolean"
+  "src/utils/validation.ts: Add validateEmail() for input sanitization - expect returns boolean"
 
 describe("todoSummary", () => {
-  test("strips the bracket tag and returns only the action segment for a path-pattern todo", () => {
+  test("returns only the action segment for a path-pattern todo", () => {
     expect(todoSummary(planExample)).toBe("Add validateEmail() for input sanitization")
   })
 
@@ -13,8 +13,8 @@ describe("todoSummary", () => {
     expect(todoSummary("Add dark mode")).toBe("Add dark mode")
   })
 
-  test("keeps a mixed-case bracket tag that is real content", () => {
-    expect(todoSummary("[Bug] Fix login")).toBe("[Bug] Fix login")
+  test("keeps a leading bracket tag as real content", () => {
+    expect(todoSummary("[WHERE] Add dark mode")).toBe("[WHERE] Add dark mode")
   })
 
   test("returns content unchanged when the expect marker is missing", () => {
@@ -36,10 +36,6 @@ describe("todoSummary", () => {
     const token = "x".repeat(150)
     const content = `src/utils/token.ts: ${token} - expect returns boolean`
     expect(todoSummary(content)).toBe(token)
-  })
-
-  test("strips a bracket tag when no path pattern matches", () => {
-    expect(todoSummary("[WHERE] Add dark mode")).toBe("Add dark mode")
   })
 })
 

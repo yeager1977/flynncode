@@ -195,57 +195,6 @@ describe("current session timeline rows", () => {
     expect(result.rows.every((row) => row._tag === "TurnDivider")).toBe(true)
   })
 
-  test("renders a normal user prompt ending with the OMO marker as a background divider row", () => {
-    const source = [
-      {
-        id: "msg_wake",
-        type: "user",
-        text: "wake task-agent-reliability\n<!-- OMO_INTERNAL_INITIATOR -->",
-        time: { created: 1 },
-      },
-    ] satisfies SessionMessageInfo[]
-    const normalized = normalizeSessionMessages("ses_1", source)
-    const messages = new Map(normalized.messages.map((message) => [message.id, message]))
-
-    const result = Timeline.constructSessionMessageRows(
-      source,
-      (messageID) => messages.get(messageID),
-      (messageID) => normalized.parts.get(messageID) ?? [],
-      true,
-      "idle",
-      true,
-      normalized.messages.filter((message) => message.role === "user"),
-    )
-
-    expect(result.rows.map(TimelineRow.key)).toEqual(["turn-divider:msg_wake:background"])
-    expect(result.rows.every((row) => row._tag === "TurnDivider")).toBe(true)
-  })
-
-  test("keeps a normal user prompt quoting the marker mid-text as a user message row", () => {
-    const source = [
-      {
-        id: "msg_quote",
-        type: "user",
-        text: "the marker <!-- OMO_INTERNAL_INITIATOR --> appears mid-prose",
-        time: { created: 1 },
-      },
-    ] satisfies SessionMessageInfo[]
-    const normalized = normalizeSessionMessages("ses_1", source)
-    const messages = new Map(normalized.messages.map((message) => [message.id, message]))
-
-    const result = Timeline.constructSessionMessageRows(
-      source,
-      (messageID) => messages.get(messageID),
-      (messageID) => normalized.parts.get(messageID) ?? [],
-      true,
-      "idle",
-      true,
-      normalized.messages.filter((message) => message.role === "user"),
-    )
-
-    expect(result.rows.map(TimelineRow.key)).toEqual(["user-message:msg_quote"])
-  })
-
   test("renders a genuine user message with a non-synthetic text part as a user message row", () => {
     const source = [
       {

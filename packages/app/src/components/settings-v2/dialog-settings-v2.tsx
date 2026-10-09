@@ -13,7 +13,6 @@ import { SettingsMcpV2 } from "./mcp"
 import { SettingsHooksV2 } from "./hooks"
 import { SettingsImportSessionsV2 } from "./import-sessions"
 import { SettingsModelRouterV2 } from "./model-router"
-import { SettingsOmoV2 } from "./omo-settings"
 import { SettingsRoutinesV2 } from "./routines"
 import { SettingsPreviewV2 } from "./preview"
 import { SettingsWorktreeV2 } from "./worktree"
@@ -98,10 +97,6 @@ export const DialogSettings: Component<{
                       <Icon name="models" />
                       {language.t("settings.tab.modelRouter")}
                     </TabsV2.Trigger>
-                    <TabsV2.Trigger value="omo">
-                      <Icon name="models" />
-                      {language.t("settings.tab.omo")}
-                    </TabsV2.Trigger>
                     <TabsV2.Trigger value="routines">
                       <Icon name="archive" />
                       {language.t("settings.tab.routines")}
@@ -175,9 +170,6 @@ export const DialogSettings: Component<{
         </TabsV2.Content>
         <TabsV2.Content value="model-router" class="settings-v2-panel">
           <SettingsModelRouterV2 directory={directory()} />
-        </TabsV2.Content>
-        <TabsV2.Content value="omo" class="settings-v2-panel">
-          <SettingsOmoV2 directory={directory} />
         </TabsV2.Content>
         <TabsV2.Content value="routines" class="settings-v2-panel">
           <SettingsRoutinesV2 directory={directory()} />

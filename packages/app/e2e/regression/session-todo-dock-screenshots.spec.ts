@@ -6,7 +6,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 const PATH_TODO_CONTENT =
-  "[WHERE] src/utils/validation.ts: Add validateEmail() for input sanitization - expect returns boolean"
+  "src/utils/validation.ts: Add validateEmail() for input sanitization - expect returns boolean"
 const PATH_TODO_SUMMARY = "Add validateEmail() for input sanitization"
 const PLAIN_TODO_CONTENT = "Keep the dock visible across tabs"
 const COMPLETED_TODO_CONTENT = "Implement login form validation"
@@ -24,13 +24,8 @@ const activeTodos = [
   { id: "todo-skip", content: CANCELLED_TODO_CONTENT, status: "cancelled", priority: "low" },
 ]
 
-// Derive evidence path relative to the repo root so it works in any checkout.
-// __dirname equivalent for ESM: dirname(fileURLToPath(import.meta.url))
-// spec lives at packages/app/e2e/regression/ → 4 levels up reaches repo root
-const evidenceDir = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../../../.omo/evidence/task-agent-reliability/ui",
-)
+// Screenshots land in the gitignored e2e/test-results directory.
+const evidenceDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../test-results/todo-dock-screenshots")
 
 test.use({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" })
 

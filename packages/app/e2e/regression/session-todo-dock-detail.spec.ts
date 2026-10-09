@@ -4,11 +4,11 @@ import { mockOpenCodeServer } from "../utils/mock-server"
 import { expectSessionTitle } from "../utils/waits"
 
 // Path-pattern todo: summary strips the path prefix and expect clause.
-// Full content: "[WHERE] src/utils/validation.ts: Add validateEmail() for input sanitization - expect returns boolean"
+// Full content: "src/utils/validation.ts: Add validateEmail() for input sanitization - expect returns boolean"
 // Summary:      "Add validateEmail() for input sanitization"
 // Detail:       verbatim full string (detail !== summary → toggle shown)
 const PATH_TODO_CONTENT =
-  "[WHERE] src/utils/validation.ts: Add validateEmail() for input sanitization - expect returns boolean"
+  "src/utils/validation.ts: Add validateEmail() for input sanitization - expect returns boolean"
 const PATH_TODO_SUMMARY = "Add validateEmail() for input sanitization"
 
 // Plain todo: summary === detail → no toggle shown
