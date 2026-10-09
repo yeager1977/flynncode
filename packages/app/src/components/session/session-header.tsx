@@ -163,12 +163,17 @@ export function SessionHeader() {
   const sdk = useSDK()
   const dialog = useDialog()
 
-  const projectDirectory = createMemo(() => decode64(params.dir) ?? "")
+  // The new layout routes sessions by server and ID (no `:dir` segment), so
+  // fall back to the session's SDK directory.
+  const projectDirectory = createMemo(() => decode64(params.dir) ?? sdk().directory)
   const project = createMemo(() => {
     const directory = projectDirectory()
     if (!directory) return
     return layout.projects.list().find((p) => p.worktree === directory || p.sandboxes?.includes(directory))
   })
+  // Prefer the synced project so sessions of projects missing from the local
+  // project list (another server, a closed project) still resolve their root.
+  const projectRoot = createMemo(() => sync().project?.worktree ?? project()?.worktree)
   const name = createMemo(() => {
     const current = project()
     if (current) return current.name || getFilename(current.worktree)
@@ -223,7 +228,7 @@ export function SessionHeader() {
   })
 
   const onPrimary = createMemo(() => {
-    const root = project()?.worktree
+    const root = projectRoot()
     if (!root) return true
     return pathKey(projectDirectory()) === pathKey(root)
   })
@@ -245,7 +250,7 @@ export function SessionHeader() {
 
   const handoff = async () => {
     const current = projectDirectory()
-    const root = project()?.worktree
+    const root = projectRoot()
     if (!current || !root) return
     const listed = await serverSDK()
       .client.worktree.list({ directory: root })
