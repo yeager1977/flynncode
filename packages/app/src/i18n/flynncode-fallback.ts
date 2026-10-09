@@ -122,6 +122,7 @@ const keys = [
   "server.sync.pairFailed.unreachable",
   "server.sync.pause",
   "server.sync.paused",
+  "server.sync.peerPaused",
   "server.sync.prefs.keep",
   "server.sync.prefs.label",
   "server.sync.prefs.theirs",

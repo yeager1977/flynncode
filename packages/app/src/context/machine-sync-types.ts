@@ -1,4 +1,5 @@
-export type MachineSyncPhase = "idle" | "offline" | "mismatch" | "unauthorized" | "paused" | "unpaired"
+/** `peer-paused`: the other computer is reachable but has paused sync. */
+export type MachineSyncPhase = "idle" | "offline" | "mismatch" | "unauthorized" | "paused" | "peer-paused" | "unpaired"
 
 export type MachineSyncStatus = {
   paired: boolean

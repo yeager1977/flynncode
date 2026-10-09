@@ -28,6 +28,10 @@ describe("syncHeadline", () => {
     expect(syncHeadline(status)).toEqual({ key: "server.sync.online", name: "starship" })
     expect(syncHeadline({ ...status, online: false })).toEqual({ key: "server.sync.offline", name: "starship" })
     expect(syncHeadline({ ...status, paused: true })).toEqual({ key: "server.sync.paused", name: "starship" })
+    expect(syncHeadline({ ...status, phase: "peer-paused", online: true })).toEqual({
+      key: "server.sync.peerPaused",
+      name: "starship",
+    })
     expect(syncHeadline({ ...status, paired: false, peerName: null })).toEqual({ key: "server.sync.unpaired" })
   })
 })
@@ -94,6 +98,9 @@ describe("sync copy", () => {
     expect(dict["server.sync.prefs.keep"]).toBe("Keep this computer's preferences")
     expect(dict["server.sync.prefs.theirs"]).toBe("Use the other computer's preferences")
     expect(dict["server.sync.code.hint"]).toContain("{{minutes}}")
+    // The code can have one minute left; "1 minutes" must never be shown.
+    expect(dict["server.sync.code.hint"].replace("{{minutes}}", "1")).not.toContain("1 minutes")
+    expect(dict["server.sync.peerPaused"]).toBe("Paused on {{name}}")
   })
 
   test("the card keeps no hardcoded English in its markup and is mounted in Servers", () => {

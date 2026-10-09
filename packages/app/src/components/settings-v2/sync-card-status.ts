@@ -3,6 +3,8 @@ import type { MachineSyncPairResult, MachineSyncStatus } from "@/context/machine
 export function syncHeadline(status: MachineSyncStatus) {
   if (!status.paired || status.peerName === null) return { key: "server.sync.unpaired" as const }
   if (status.paused) return { key: "server.sync.paused" as const, name: status.peerName }
+  // Reachable but paused over there: not an outage, so not "offline".
+  if (status.phase === "peer-paused") return { key: "server.sync.peerPaused" as const, name: status.peerName }
   return {
     key: status.online ? ("server.sync.online" as const) : ("server.sync.offline" as const),
     name: status.peerName,
