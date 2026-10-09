@@ -39,6 +39,7 @@ const keys = [
   "home.project.newKnowledgeSession",
   "home.sessions.emptyFilter",
   "session.artifacts.emptyFilter",
+  "session.bulk.cleanup.scopeProject",
   "session.artifacts.tab",
   "inbox.agentPlaceholder",
   "inbox.empty",

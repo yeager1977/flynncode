@@ -1692,6 +1692,7 @@ export const dict = {
   "session.bulk.cleanup.skipped.one": "{{count}} skipped because it is open or running.",
   "session.bulk.cleanup.skipped.other": "{{count}} skipped because they are open or running.",
   "session.bulk.cleanup.scopeHome": "Sessions from every directory on this server are included, not only the ones listed here.",
+  "session.bulk.cleanup.scopeProject": "Only sessions from {{project}} and its worktrees are included.",
   "session.bulk.failed.one": "Could not finish. {{count}} session was not changed.",
   "session.bulk.failed.other": "Could not finish. {{count}} sessions were not changed.",
 
