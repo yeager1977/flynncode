@@ -10,6 +10,7 @@ import {
 } from "./mobile-gateway-launch"
 import { startRelayPublisher, relayPublisherConfig } from "./relay-publisher"
 import {
+  createReconciler,
   gatewayWanted,
   parseSyncCommand,
   parseSyncStart,
@@ -68,8 +69,15 @@ let relayPublisher: { stop(): void } | undefined
 let syncGate: SyncGate | undefined
 let syncWorker: SyncWorker | undefined
 let gatewayConfig: { command: StartCommand; upstream: string } | undefined
-let gatewayQueue: Promise<void> = Promise.resolve()
 let pairingTimer: ReturnType<typeof setTimeout> | undefined
+let unpairTimer: ReturnType<typeof setTimeout> | undefined
+let gatewayError: string | null = null
+
+// Serialised so overlapping toggles never start two gateways on port 4097.
+// Failures are logged, never rejected, so quit cannot be derailed by a bad reconcile.
+const reconcileGateway = createReconciler(applyGatewayState, (error) =>
+  console.warn(`[sidecar] gateway reconcile failed: ${error instanceof Error ? error.message : String(error)}`),
+)
 
 parentPort.on("message", (event) => {
   const sync = parseSyncCommand(event.data)
@@ -78,7 +86,13 @@ parentPort.on("message", (event) => {
     return
   }
   const command = parseCommand(event.data)
-  if (!command) return
+  if (!command) {
+    // A malformed start would otherwise leave main waiting out its stall timeout.
+    if ((event.data as { type?: unknown } | null)?.type === "start") {
+      parentPort.postMessage({ type: "error", error: { message: "Invalid sidecar start message" } })
+    }
+    return
+  }
   if (command.type === "stop") {
     void stop()
     return
@@ -117,7 +131,8 @@ async function start(command: StartCommand) {
       // Give the unpair request time to answer before its gateway goes down.
       onUnpaired: () => {
         post({ type: "sync-unpaired" })
-        setTimeout(() => void reconcileGateway(), 500)
+        clearTimeout(unpairTimer)
+        unpairTimer = setTimeout(() => void reconcileGateway(), 500)
       },
     })
     syncGate = gate
@@ -150,9 +165,10 @@ async function stop() {
     syncWorker?.stop()
     syncWorker = undefined
     clearTimeout(pairingTimer)
+    clearTimeout(unpairTimer)
     // Drop the config first so a queued reconcile cannot restart the gateway.
     gatewayConfig = undefined
-    await gatewayQueue
+    await reconcileGateway()
     relayPublisher?.stop()
     relayPublisher = undefined
     mobileGateway?.stop()
@@ -195,12 +211,6 @@ async function handleSyncCommand(command: SidecarSyncCommand) {
   if (status) post({ type: "sync-status", status, requestID: command.requestID })
 }
 
-// Serialised so overlapping toggles never start two gateways on port 4097.
-function reconcileGateway() {
-  gatewayQueue = gatewayQueue.then(applyGatewayState, applyGatewayState)
-  return gatewayQueue
-}
-
 // The gateway runs while phone access is on, a peer is paired, or a pairing
 // code is waiting; the relay publisher only runs with phone access, since it
 // reads the phone inbox.
@@ -220,6 +230,7 @@ async function applyGatewayState() {
       sync: gate,
     })
   }
+  reportGatewayError(wanted && !mobileGateway ? "The LAN gateway could not start; its port may be in use" : null)
   if (!wanted && mobileGateway) {
     mobileGateway.stop()
     mobileGateway = undefined
@@ -236,6 +247,13 @@ async function applyGatewayState() {
     relayPublisher.stop()
     relayPublisher = undefined
   }
+}
+
+function reportGatewayError(error: string | null) {
+  if (error === gatewayError) return
+  gatewayError = error
+  if (error) console.warn(`[sidecar] ${error}`)
+  post({ type: "sync-gateway", error })
 }
 
 function post(message: SidecarSyncMessage) {

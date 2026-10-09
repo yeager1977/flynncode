@@ -20,6 +20,8 @@ export type SidecarSyncMessage =
   | { type: "sync-unpaired" }
   | { type: "sync-status"; status: SyncStatus; requestID?: string }
   | { type: "sync-peer-prefs"; prefs: SyncPrefs }
+  // Set while the LAN gateway is wanted but could not start (e.g. port busy).
+  | { type: "sync-gateway"; error: string | null }
 
 export function parsePeer(value: unknown): SyncPeer | undefined {
   if (!isRecord(value)) return
@@ -72,6 +74,7 @@ export function isSyncMessage(value: unknown): value is SidecarSyncMessage {
   if (value.type === "sync-unpaired") return true
   if (value.type === "sync-status") return isRecord(value.status)
   if (value.type === "sync-peer-prefs") return parsePrefs(value.prefs) !== undefined
+  if (value.type === "sync-gateway") return value.error === null || typeof value.error === "string"
   return false
 }
 
@@ -79,6 +82,18 @@ export function isSyncMessage(value: unknown): value is SidecarSyncMessage {
 // paired peer, or a pairing code waiting to be used.
 export function gatewayWanted(input: { phoneAccess: boolean; peer: SyncPeer | undefined; pairingActive: boolean }) {
   return input.phoneAccess || input.peer !== undefined || input.pairingActive
+}
+
+// Runs apply one call at a time. A failing apply is reported and swallowed so
+// the returned promise never rejects: callers can await or void it safely.
+export function createReconciler(apply: () => Promise<void>, onError: (error: unknown) => void) {
+  let queue: Promise<void> = Promise.resolve()
+  return () => {
+    queue = queue.then(apply).catch((error) => {
+      onError(error)
+    })
+    return queue
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

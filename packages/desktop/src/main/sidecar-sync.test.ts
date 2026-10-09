@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { gatewayWanted, isSyncMessage, parsePrefs, parseSyncCommand, parseSyncStart } from "./sidecar-sync"
+import { createReconciler, gatewayWanted, isSyncMessage, parsePrefs, parseSyncCommand, parseSyncStart } from "./sidecar-sync"
 
 const peer = { name: "starship", url: "http://192.168.1.20:4097", token: "a".repeat(64) }
 
@@ -62,6 +62,9 @@ describe("isSyncMessage", () => {
     expect(isSyncMessage({ type: "sync-unpaired" })).toBe(true)
     expect(isSyncMessage({ type: "sync-status", status: { phase: "idle" } })).toBe(true)
     expect(isSyncMessage({ type: "sync-peer-prefs", prefs: { sections: {}, updatedAt: 1 } })).toBe(true)
+    expect(isSyncMessage({ type: "sync-gateway", error: null })).toBe(true)
+    expect(isSyncMessage({ type: "sync-gateway", error: "port busy" })).toBe(true)
+    expect(isSyncMessage({ type: "sync-gateway", error: 1 })).toBe(false)
     expect(isSyncMessage({ type: "ready" })).toBe(false)
     expect(isSyncMessage({ type: "sync-paired", peer: {} })).toBe(false)
   })
@@ -76,5 +79,50 @@ describe("gatewayWanted", () => {
     expect(gatewayWanted({ phoneAccess: true, peer: undefined, pairingActive: false })).toBe(true)
     expect(gatewayWanted({ phoneAccess: false, peer, pairingActive: false })).toBe(true)
     expect(gatewayWanted({ phoneAccess: false, peer: undefined, pairingActive: true })).toBe(true)
+  })
+})
+
+describe("createReconciler", () => {
+  test("a throwing apply is reported and neither rejects nor blocks later runs", async () => {
+    const errors: unknown[] = []
+    const runs: number[] = []
+    let calls = 0
+    const reconcile = createReconciler(
+      async () => {
+        calls += 1
+        runs.push(calls)
+        if (calls === 1) throw new Error("boom")
+      },
+      (error) => errors.push(error),
+    )
+    await expect(reconcile()).resolves.toBeUndefined()
+    await expect(reconcile()).resolves.toBeUndefined()
+    expect(runs).toEqual([1, 2])
+    expect(errors).toHaveLength(1)
+    expect((errors[0] as Error).message).toBe("boom")
+  })
+
+  test("serialises overlapping calls", async () => {
+    const order: string[] = []
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    let calls = 0
+    const reconcile = createReconciler(
+      async () => {
+        calls += 1
+        const id = calls
+        order.push(`start${id}`)
+        if (id === 1) await gate
+        order.push(`end${id}`)
+      },
+      () => {},
+    )
+    const first = reconcile()
+    const second = reconcile()
+    await Promise.resolve()
+    expect(order).toEqual(["start1"])
+    release()
+    await Promise.all([first, second])
+    expect(order).toEqual(["start1", "end1", "start2", "end2"])
   })
 })

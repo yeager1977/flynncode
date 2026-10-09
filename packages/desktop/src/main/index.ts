@@ -62,7 +62,7 @@ import {
   SYNC_PEER_KEY,
   SYNC_PREFS_KEY,
 } from "./store-keys"
-import { parseSyncStart } from "./sidecar-sync"
+import { parsePeer, parsePrefs } from "./sidecar-sync"
 import { getOrCreateMobilePhonePassword } from "./mobile-password"
 import { generateRelayToken } from "./relay-publisher"
 import { getStore } from "./store"
@@ -458,13 +458,14 @@ const main = Effect.gen(function* () {
         userDataPath: app.getPath("userData"),
         mobilePassword,
         relay,
-        sync: parseSyncStart({
+        // Each field is parsed alone so one corrupted value cannot reset the others.
+        sync: {
           machineName: hostname(),
           phoneAccess: persisted.get(PHONE_ACCESS_KEY) === true,
           paused: persisted.get(SYNC_PAUSED_KEY) === true,
-          peer: persisted.get(SYNC_PEER_KEY) ?? null,
-          prefs: persisted.get(SYNC_PREFS_KEY) ?? null,
-        }) ?? { machineName: hostname(), phoneAccess: false, paused: false, peer: null, prefs: null },
+          peer: parsePeer(persisted.get(SYNC_PEER_KEY)) ?? null,
+          prefs: parsePrefs(persisted.get(SYNC_PREFS_KEY)) ?? null,
+        },
         onStdout: (message) => writeLog("server", "stdout", { message }),
         onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
         onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),
