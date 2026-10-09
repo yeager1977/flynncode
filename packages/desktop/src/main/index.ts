@@ -312,12 +312,12 @@ const main = Effect.gen(function* () {
     delete: (key: string) => getStore().delete(key),
   }
   // The sidecar spawns later; commands sent before it exists are dropped
-  // because its start message carries the same stored state.
-  const sidecar: { post?: (command: SidecarSyncCommand) => void } = {}
+  // (post reports false) because its start message carries the same stored state.
+  const sidecar: { post?: (command: SidecarSyncCommand) => boolean } = {}
   const machineSync = createMachineSync({
     store: syncStore,
     machineName: hostname(),
-    post: (command) => sidecar.post?.(command),
+    post: (command) => sidecar.post?.(command) ?? false,
     broadcast: (channel, payload) =>
       BrowserWindow.getAllWindows()
         .filter((win) => !win.isDestroyed())

@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test"
-import { createReconciler, gatewayWanted, isSyncMessage, parsePrefs, parseSyncCommand, parseSyncStart } from "./sidecar-sync"
+import {
+  createReconciler,
+  gatewayWanted,
+  isSyncMessage,
+  parsePrefs,
+  parseSyncCommand,
+  parseSyncStart,
+  shutdown,
+} from "./sidecar-sync"
 
 const peer = { name: "starship", url: "http://192.168.1.20:4097", token: "a".repeat(64) }
 
@@ -60,6 +68,8 @@ describe("isSyncMessage", () => {
   test("recognises sidecar sync messages only", () => {
     expect(isSyncMessage({ type: "sync-paired", peer })).toBe(true)
     expect(isSyncMessage({ type: "sync-unpaired" })).toBe(true)
+    expect(isSyncMessage({ type: "sync-peer-moved", peer })).toBe(true)
+    expect(isSyncMessage({ type: "sync-peer-moved", peer: { name: "x" } })).toBe(false)
     expect(isSyncMessage({ type: "sync-status", status: { phase: "idle" } })).toBe(true)
     expect(isSyncMessage({ type: "sync-peer-prefs", prefs: { sections: {}, updatedAt: 1 } })).toBe(true)
     expect(isSyncMessage({ type: "sync-gateway", error: null })).toBe(true)
@@ -124,5 +134,35 @@ describe("createReconciler", () => {
     release()
     await Promise.all([first, second])
     expect(order).toEqual(["start1", "end1", "start2", "end2"])
+  })
+})
+
+describe("shutdown", () => {
+  test("runs every step even when earlier ones throw or reject", async () => {
+    const ran: string[] = []
+    const failed: string[] = []
+    await shutdown(
+      [
+        {
+          name: "gateway",
+          run: () => {
+            ran.push("gateway")
+            throw new Error("gateway stop threw")
+          },
+        },
+        {
+          name: "relay",
+          run: async () => {
+            ran.push("relay")
+            throw new Error("relay stop rejected")
+          },
+        },
+        { name: "instances", run: async () => void ran.push("instances") },
+        { name: "listener", run: () => void ran.push("listener") },
+      ],
+      (name) => failed.push(name),
+    )
+    expect(ran).toEqual(["gateway", "relay", "instances", "listener"])
+    expect(failed).toEqual(["gateway", "relay"])
   })
 })

@@ -14,6 +14,7 @@ import {
   gatewayWanted,
   parseSyncCommand,
   parseSyncStart,
+  shutdown,
   type SidecarSyncCommand,
   type SidecarSyncMessage,
   type SidecarSyncStart,
@@ -124,6 +125,7 @@ async function start(command: StartCommand) {
       paused: command.sync.paused,
       peer: command.sync.peer ?? undefined,
       prefs: command.sync.prefs ?? undefined,
+      onPeerMoved: (peer) => post({ type: "sync-peer-moved", peer }),
       onPaired: (peer) => {
         post({ type: "sync-paired", peer })
         void reconcileGateway()
@@ -166,27 +168,58 @@ async function start(command: StartCommand) {
 
 async function stop() {
   try {
-    syncWorker?.stop()
-    syncWorker = undefined
-    clearTimeout(pairingTimer)
-    clearTimeout(unpairTimer)
-    // Drop the config first so a queued reconcile cannot restart the gateway.
-    gatewayConfig = undefined
-    await reconcileGateway()
-    relayPublisher?.stop()
-    relayPublisher = undefined
-    mobileGateway?.stop()
-    mobileGateway = undefined
-    // Disposing instances shuts down MCP servers (with their process trees), LSPs and
-    // shells; closing the listener alone leaves them orphaned when this process exits.
-    const { InstanceRuntime } = await import("virtual:opencode-server")
-    await InstanceRuntime.disposeAllInstances()
-    await listener?.stop()
+    // Each step runs even if an earlier one fails: disposing instances shuts down MCP
+    // servers (with their process trees), LSPs and shells, and closing the listener
+    // alone would leave them orphaned when this process exits.
+    await shutdown(
+      [
+        { name: "sync worker", run: stopSyncWorker },
+        { name: "gateway reconcile", run: settleGateway },
+        { name: "relay publisher", run: stopRelayPublisher },
+        { name: "gateway", run: stopGateway },
+        {
+          name: "instances",
+          run: async () => {
+            const { InstanceRuntime } = await import("virtual:opencode-server")
+            await InstanceRuntime.disposeAllInstances()
+          },
+        },
+        { name: "listener", run: () => listener?.stop() },
+      ],
+      (name, error) =>
+        console.warn(`[sidecar] stopping the ${name} failed: ${error instanceof Error ? error.message : String(error)}`),
+    )
   } finally {
     listener = undefined
     parentPort.postMessage({ type: "stopped" })
     setImmediate(() => process.exit(0))
   }
+}
+
+function stopSyncWorker() {
+  syncWorker?.stop()
+  syncWorker = undefined
+  clearTimeout(pairingTimer)
+  clearTimeout(unpairTimer)
+}
+
+function stopRelayPublisher() {
+  const publisher = relayPublisher
+  relayPublisher = undefined
+  publisher?.stop()
+}
+
+// Drops the config first so a queued reconcile cannot restart the gateway or
+// the relay publisher, then waits for any reconcile already running.
+async function settleGateway() {
+  gatewayConfig = undefined
+  await reconcileGateway()
+}
+
+function stopGateway() {
+  const gateway = mobileGateway
+  mobileGateway = undefined
+  gateway?.stop()
 }
 
 function logSyncError(error: unknown) {
@@ -235,6 +268,7 @@ async function applyGatewayState() {
   const config = gatewayConfig
   if (!gate || !config) return
   const wanted = gatewayWanted({ phoneAccess: gate.phoneAccess(), peer: gate.peer(), pairingActive: gate.pairingActive() })
+  const failure = { message: undefined as string | undefined }
   if (wanted && !mobileGateway) {
     mobileGateway = await startMobileGateway({
       serverPassword: config.command.password,
@@ -244,9 +278,14 @@ async function applyGatewayState() {
       relayToken: config.command.relay.token,
       host: process.env.OPENCODE_MOBILE_HOST,
       sync: gate,
+      onError: (message) => (failure.message = message),
     })
   }
-  reportGatewayError(wanted && !mobileGateway ? "The LAN gateway could not start; its port may be in use" : null)
+  reportGatewayError(
+    wanted && !mobileGateway
+      ? `The LAN gateway could not start${failure.message ? `: ${failure.message}` : "; its port may be in use"}`
+      : null,
+  )
   if (!wanted && mobileGateway) {
     mobileGateway.stop()
     mobileGateway = undefined

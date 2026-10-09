@@ -103,6 +103,38 @@ describe("startMobileGateway", () => {
     expect(handle).toBeUndefined()
   })
 
+  test("reports why the gateway did not start when another one without sync holds the port", async () => {
+    const plain = await startMobileGateway({
+      serverPassword: "upstream-secret",
+      phonePassword: "phone-secret",
+      port: 0,
+      upstream: "http://127.0.0.1:9",
+      relayToken: "",
+    })
+    if (!plain) throw new Error("plain gateway did not start")
+    handles.push(plain)
+    const sync = createSyncGate({
+      machineName: "challenger",
+      gatewayPort: 4097,
+      phoneAccess: false,
+      paused: false,
+      peer: undefined,
+      prefs: undefined,
+    })
+    const errors: string[] = []
+    const handle = await startMobileGateway({
+      serverPassword: "upstream-secret",
+      phonePassword: "phone-secret",
+      port: 0,
+      upstream: "http://127.0.0.1:9",
+      relayToken: "",
+      sync,
+      onError: (message) => errors.push(message),
+    })
+    expect(handle).toBeUndefined()
+    expect(errors).toEqual(["the LAN gateway is already running without machine sync"])
+  })
+
   test("passes the sync gate through: phone routes 404 while sync stays token-gated", async () => {
     const sync = createSyncGate({
       machineName: "challenger",

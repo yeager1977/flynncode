@@ -18,6 +18,7 @@ import {
 import { PHONE_ACCESS_KEY, SYNC_PAUSED_KEY, SYNC_PEER_KEY, SYNC_PREFS_KEY } from "./store-keys"
 
 const SYNC_NOW_TIMEOUT_MS = 120_000
+const SIDECAR_DOWN = "the local server is not running"
 // pair() waits for this when the user chose the other computer's prefs.
 const PEER_PREFS_TIMEOUT_MS = 5_000
 
@@ -83,7 +84,8 @@ type PeerPrefs = NonNullable<Awaited<ReturnType<typeof fetchPeerPrefs>>>
 export function createMachineSync(deps: {
   store: SyncStore
   machineName: string
-  post: (command: SidecarSyncCommand) => void
+  /** Sends to the sidecar; false when it is not running (the command is dropped). */
+  post: (command: SidecarSyncCommand) => boolean
   broadcast: (
     channel: "machine-sync-status" | "machine-sync-peer-prefs" | "machine-sync-adopt-prefs",
     payload: unknown,
@@ -169,7 +171,9 @@ export function createMachineSync(deps: {
     createPairingCode(): MachineSyncPairingCode {
       const code = deps.code?.() ?? String(randomInt(0, 1_000_000)).padStart(6, "0")
       const expiresAt = now() + PAIRING_CODE_TTL_MS
-      deps.post({ type: "sync-pairing-code", code, expiresAt })
+      // A code the gateway never received could never pair; say so instead of showing it.
+      if (!deps.post({ type: "sync-pairing-code", code, expiresAt }))
+        throw new Error(`Cannot create a pairing code: ${SIDECAR_DOWN}`)
       return { code, expiresAt, machineName: deps.machineName, addresses: deps.lanAddresses() }
     },
     async pair(input: { host: string; code: string; prefs?: MachineSyncPrefsChoice }): Promise<MachineSyncPairResult> {
@@ -218,7 +222,11 @@ export function createMachineSync(deps: {
           clearTimeout(timer)
           resolve(status())
         })
-        deps.post({ type: "sync-now", requestID })
+        if (deps.post({ type: "sync-now", requestID })) return
+        // Nobody will answer: report at once instead of waiting out the timeout.
+        clearTimeout(timer)
+        pending.delete(requestID)
+        resolve({ ...status(), lastError: SIDECAR_DOWN })
       })
     },
     pushPrefs(prefs: SyncPrefs): SyncPrefs | undefined {
@@ -231,6 +239,16 @@ export function createMachineSync(deps: {
     handleSidecarMessage(message: SidecarSyncMessage) {
       if (message.type === "sync-paired") {
         state.worker = undefined
+        deps.store.set(SYNC_PEER_KEY, message.peer)
+        // A sync-config sent before this arrived carried the old (or no) peer
+        // and may land after the pairing; resending the stored state wins.
+        pushConfig()
+        publish()
+        return
+      }
+      if (message.type === "sync-peer-moved") {
+        // Only the current peer moves; a late message after a re-pair is dropped.
+        if (settings().peer?.token !== message.peer.token) return
         deps.store.set(SYNC_PEER_KEY, message.peer)
         publish()
         return

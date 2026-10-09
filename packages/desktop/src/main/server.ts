@@ -195,8 +195,11 @@ export async function spawnLocalServer(
       },
     },
     health: { wait },
+    // False once the sidecar has exited, so callers can fail fast instead of waiting.
     post: (command: SidecarSyncCommand) => {
-      if (!exited) child.postMessage(command)
+      if (exited) return false
+      child.postMessage(command)
+      return true
     },
   }
 }

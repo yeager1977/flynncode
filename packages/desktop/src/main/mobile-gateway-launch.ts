@@ -34,6 +34,8 @@ export async function startMobileGateway(input: {
   relayToken: string
   host?: string
   sync?: SyncGate
+  /** Told why the gateway did not start, for the Sync card. */
+  onError?: (message: string) => void
 }): Promise<MobileGatewayHandle | undefined> {
   try {
     const resolved = resolveOptions(mobileGatewayEnv(input), input.upstream)
@@ -45,7 +47,9 @@ export async function startMobileGateway(input: {
     console.log(`[mobile-gateway] listening on http://${resolved.value.host}:${gateway.port}`)
     return gateway
   } catch (error) {
-    console.warn(`[mobile-gateway] failed to start: ${error instanceof Error ? error.message : String(error)}`)
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn(`[mobile-gateway] failed to start: ${message}`)
+    input.onError?.(message)
     return
   }
 }

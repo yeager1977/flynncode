@@ -17,6 +17,8 @@ export type SidecarSyncCommand =
 
 export type SidecarSyncMessage =
   | { type: "sync-paired"; peer: SyncPeer }
+  // The paired machine now answers at a new address (same token).
+  | { type: "sync-peer-moved"; peer: SyncPeer }
   | { type: "sync-unpaired" }
   | { type: "sync-status"; status: SyncStatus; requestID?: string }
   | { type: "sync-peer-prefs"; prefs: SyncPrefs }
@@ -70,7 +72,7 @@ export function parseSyncCommand(value: unknown): SidecarSyncCommand | undefined
 
 export function isSyncMessage(value: unknown): value is SidecarSyncMessage {
   if (!isRecord(value)) return false
-  if (value.type === "sync-paired") return parsePeer(value.peer) !== undefined
+  if (value.type === "sync-paired" || value.type === "sync-peer-moved") return parsePeer(value.peer) !== undefined
   if (value.type === "sync-unpaired") return true
   if (value.type === "sync-status") return isRecord(value.status)
   if (value.type === "sync-peer-prefs") return parsePrefs(value.prefs) !== undefined
@@ -82,6 +84,27 @@ export function isSyncMessage(value: unknown): value is SidecarSyncMessage {
 // paired peer, or a pairing code waiting to be used.
 export function gatewayWanted(input: { phoneAccess: boolean; peer: SyncPeer | undefined; pairingActive: boolean }) {
   return input.phoneAccess || input.peer !== undefined || input.pairingActive
+}
+
+// Runs every shutdown step in order. A failing step (thrown or rejected) is
+// reported and never skips the steps after it, so disposing instances and
+// closing the listener always happen.
+export async function shutdown(
+  steps: Array<{ name: string; run: () => unknown }>,
+  onError: (name: string, error: unknown) => void,
+) {
+  await steps.reduce(
+    (previous, step) =>
+      previous.then(() =>
+        Promise.resolve()
+          .then(step.run)
+          .then(
+            () => undefined,
+            (error: unknown) => onError(step.name, error),
+          ),
+      ),
+    Promise.resolve(),
+  )
 }
 
 // Runs apply one call at a time. A failing apply is reported and swallowed so

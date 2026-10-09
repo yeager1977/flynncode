@@ -24,14 +24,17 @@ function memoryStore() {
   return { values, store }
 }
 
-function controller() {
+function controller(input: { sidecarUp?: boolean } = {}) {
   const memory = memoryStore()
   const posted: SidecarSyncCommand[] = []
   const broadcasts: Array<{ channel: string; payload: unknown }> = []
   const sync = createMachineSync({
     store: memory.store,
     machineName: "starship",
-    post: (command) => posted.push(command),
+    post: (command) => {
+      posted.push(command)
+      return input.sidecarUp ?? true
+    },
     broadcast: (channel, payload) => broadcasts.push({ channel, payload }),
     lanAddresses: () => ["192.168.1.20"],
     now: () => 1_000,
@@ -295,6 +298,7 @@ describe("createMachineSync", () => {
       post: (command) => {
         if (command.type === "sync-now")
           sync.handleSidecarMessage({ type: "sync-status", status: initialStatus(), requestID: command.requestID })
+        return true
       },
       broadcast: () => {},
       lanAddresses: () => [],
@@ -324,6 +328,35 @@ describe("createMachineSync", () => {
     expect(values.get("syncPrefs")).toEqual({ sections: { sounds: {} }, updatedAt: 10 })
     expect(posted.at(-1)).toEqual({ type: "sync-prefs", prefs: { sections: { sounds: {} }, updatedAt: 10 } })
     expect(sync.pushPrefs({ sections: {}, updatedAt: 5 })).toEqual({ sections: { sounds: {} }, updatedAt: 10 })
+  })
+
+  test("fails fast for a pairing code or Sync now while the sidecar is down", async () => {
+    const { sync } = controller({ sidecarUp: false })
+    expect(() => sync.createPairingCode()).toThrow("the local server is not running")
+    const started = performance.now()
+    expect((await sync.syncNow()).lastError).toBe("the local server is not running")
+    expect(performance.now() - started).toBeLessThan(1_000)
+  })
+
+  test("resends the stored config after an inbound pairing, so a stale sync-config cannot drop the peer", () => {
+    const { values, posted, sync } = controller()
+    const peer = { name: "challenger", url: "http://192.168.1.10:4097", token: "c".repeat(64) }
+    sync.handleSidecarMessage({ type: "sync-paired", peer })
+    expect(values.get("syncPeer")).toEqual(peer)
+    expect(posted.at(-1)).toEqual({ type: "sync-config", phoneAccess: false, paused: false, peer })
+  })
+
+  test("stores the peer's new address, but only for the current token", () => {
+    const { values, sync } = controller()
+    const peer = { name: "challenger", url: "http://192.168.1.10:4097", token: "c".repeat(64) }
+    sync.handleSidecarMessage({ type: "sync-paired", peer })
+    sync.handleSidecarMessage({ type: "sync-peer-moved", peer: { ...peer, url: "http://192.168.1.11:4097" } })
+    expect(values.get("syncPeer")).toEqual({ ...peer, url: "http://192.168.1.11:4097" })
+    sync.handleSidecarMessage({
+      type: "sync-peer-moved",
+      peer: { ...peer, token: "d".repeat(64), url: "http://192.168.1.99:4097" },
+    })
+    expect(values.get("syncPeer")).toEqual({ ...peer, url: "http://192.168.1.11:4097" })
   })
 
   test("surfaces a gateway start failure in the status until it clears", () => {
