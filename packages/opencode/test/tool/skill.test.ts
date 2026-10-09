@@ -9,6 +9,8 @@ import type { Permission } from "../../src/permission"
 import type { Tool } from "@/tool/tool"
 import { SkillTool } from "../../src/tool/skill"
 import { ToolRegistry } from "@/tool/registry"
+import { InstanceStore } from "../../src/project/instance-store"
+import { InstanceBootstrap } from "../../src/project/bootstrap-service"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { testEffect } from "../lib/effect"
@@ -27,7 +29,16 @@ afterEach(async () => {
   await disposeAllInstances()
 })
 
-const it = testEffect(LayerNode.compile(LayerNode.group([ToolRegistry.node, CrossSpawnSpawner.node, Ripgrep.node])))
+// The registry graph reaches InstanceStore, whose bootstrap is only bound by
+// the app node builder.
+const it = testEffect(
+  LayerNode.compile(LayerNode.group([ToolRegistry.node, CrossSpawnSpawner.node, Ripgrep.node]), [
+    [
+      InstanceStore.bootstrapNode,
+      Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void })),
+    ],
+  ]),
+)
 
 describe("tool.skill", () => {
   it.instance("execute returns skill content block with files", () =>
