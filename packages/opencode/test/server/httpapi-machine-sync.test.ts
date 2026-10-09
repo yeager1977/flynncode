@@ -2,14 +2,18 @@ import { describe, expect } from "bun:test"
 import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { Effect, Layer, Option } from "effect"
 import { HttpClient, HttpClientRequest, HttpRouter } from "effect/unstable/http"
+import { rm, stat, utimes } from "node:fs/promises"
 import { Database } from "@opencode-ai/core/database/database"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { ProjectV2 } from "@opencode-ai/core/project"
 import { ProjectTable } from "@opencode-ai/core/project/sql"
+import { FSUtil } from "@opencode-ai/core/fs-util"
 import { AbsolutePath } from "@opencode-ai/core/schema"
 import { SessionExecution } from "@opencode-ai/core/session/execution"
 import { SessionTable } from "@opencode-ai/core/session/sql"
+import { Config } from "@/config/config"
+import { MachineSyncConfig } from "@/machine-sync/config-sync"
 import { MachineSyncStore } from "@/machine-sync/store"
 import { ServerAuth } from "@/server/auth"
 import { authorizationRouterMiddleware } from "@/server/routes/instance/httpapi/middleware/authorization"
@@ -34,7 +38,7 @@ const execution = Layer.succeed(
 const serve = (routes: typeof machineSyncRoutes) =>
   HttpRouter.serve(routes, { disableListenLog: true, disableLogger: true }).pipe(
     Layer.provideMerge(
-      AppNodeBuilder.build(LayerNode.group([MachineSyncStore.node, Database.node]), [
+      AppNodeBuilder.build(LayerNode.group([MachineSyncStore.node, Database.node, Config.node, FSUtil.node]), [
         [SessionExecution.node, execution],
       ]),
     ),
@@ -206,6 +210,71 @@ describe("machine sync routes", () => {
       const response = yield* request(MachineSyncPaths.missing)
       const body = (yield* response.json) as { directories: string[] }
       expect(body.directories).toContain("/nonexistent/flynncode-sync-route")
+    }),
+  )
+
+  it.live("sends the global config without secrets and applies only a newer peer config", () =>
+    Effect.gen(function* () {
+      const file = Config.globalConfigFile()
+      yield* Effect.addFinalizer(() => Effect.promise(() => rm(file, { force: true })))
+      yield* Effect.promise(() =>
+        Bun.write(
+          file,
+          `{\n  // keep me\n  "model": "local/model",\n  "provider": { "anthropic": { "options": { "apiKey": "sk-local" } } }\n}\n`,
+        ),
+      )
+      yield* Effect.promise(() => utimes(file, new Date(1_000), new Date(1_000)))
+
+      const sent = (yield* (yield* request(MachineSyncPaths.settings)).json) as {
+        config: Record<string, unknown>
+        mtime: number
+      }
+      expect(JSON.stringify(sent.config)).not.toContain("sk-local")
+      expect(sent.mtime).toBe(1_000)
+
+      const stale = yield* request(MachineSyncPaths.settingsApply, post({ config: { model: "peer/old" }, mtime: 500 }))
+      expect(yield* stale.json).toEqual({ applied: false })
+
+      const fresh = yield* request(
+        MachineSyncPaths.settingsApply,
+        post({
+          config: {
+            model: "peer/new",
+            provider: { anthropic: { options: { apiKey: MachineSyncConfig.SECRET_PLACEHOLDER } } },
+          },
+          mtime: 2_000,
+        }),
+      )
+      expect(yield* fresh.json).toEqual({ applied: true })
+      const text = yield* Effect.promise(() => Bun.file(file).text())
+      expect(text).toContain("// keep me")
+      expect(text).toContain("peer/new")
+      expect(text).toContain("sk-local")
+      expect(text).not.toContain(MachineSyncConfig.SECRET_PLACEHOLDER)
+      expect((yield* Effect.promise(() => stat(file))).mtimeMs).toBe(2_000)
+    }),
+  )
+
+  it.live("reports a peer config that fails validation without writing it", () =>
+    Effect.gen(function* () {
+      const file = Config.globalConfigFile()
+      yield* Effect.addFinalizer(() => Effect.promise(() => rm(file, { force: true })))
+      yield* Effect.promise(() => Bun.write(file, `{ "model": "local/model" }\n`))
+      yield* Effect.promise(() => utimes(file, new Date(1_000), new Date(1_000)))
+      const response = yield* request(MachineSyncPaths.settingsApply, post({ config: { model: 42 }, mtime: 2_000 }))
+      expect(response.status).toBe(422)
+      expect(yield* Effect.promise(() => Bun.file(file).text())).toContain("local/model")
+    }),
+  )
+
+  it.live("answers an empty settings payload when there is no global config and rejects malformed applies", () =>
+    Effect.gen(function* () {
+      const file = Config.globalConfigFile()
+      yield* Effect.promise(() => rm(file, { force: true }))
+      expect(yield* (yield* request(MachineSyncPaths.settings)).json).toEqual({ config: null, mtime: 0 })
+      expect((yield* request(MachineSyncPaths.settingsApply, post({ config: [], mtime: 1 }))).status).toBe(400)
+      expect((yield* request(MachineSyncPaths.settingsApply, post({ config: {}, mtime: "1" }))).status).toBe(400)
+      expect((yield* request(MachineSyncPaths.settingsApply, { method: "POST", body: "nope" })).status).toBe(400)
     }),
   )
 })

@@ -1,5 +1,9 @@
 import { Effect, Option, Schema } from "effect"
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http"
+import { FSUtil } from "@opencode-ai/core/fs-util"
+import { Config } from "@/config/config"
+import { ConfigParse } from "@/config/parse"
+import { MachineSyncConfig } from "@/machine-sync/config-sync"
 import { MachineSyncStore } from "@/machine-sync/store"
 import { SessionID } from "@/session/schema"
 import { isRecord } from "@/util/record"
@@ -15,6 +19,9 @@ export const MachineSyncPaths = {
   settingsApply: "/flynncode-sync/settings/apply",
 } as const
 
+// Largest timestamp a Date can represent.
+const MAX_MTIME = 8.64e15
+
 const decodeSessionID = Schema.decodeUnknownOption(SessionID)
 
 const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status })
@@ -26,6 +33,19 @@ const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body
 export const machineSyncRoutes = HttpRouter.use((router) =>
   Effect.gen(function* () {
     const store = yield* MachineSyncStore.Service
+    const fs = yield* FSUtil.Service
+    const config = yield* Config.Service
+
+    const modified = (file: string) =>
+      fs.stat(file).pipe(
+        Effect.map((info) =>
+          Option.getOrElse(
+            Option.map(info.mtime, (date) => date.getTime()),
+            () => 0,
+          ),
+        ),
+        Effect.orElseSucceed(() => 0),
+      )
 
     yield* router.add("GET", MachineSyncPaths.manifest, () =>
       store.manifest().pipe(Effect.map((manifest) => json(manifest))),
@@ -91,6 +111,64 @@ export const machineSyncRoutes = HttpRouter.use((router) =>
 
     yield* router.add("GET", MachineSyncPaths.missing, () =>
       store.missingDirectories().pipe(Effect.map((directories) => json({ directories }))),
+    )
+
+    yield* router.add("GET", MachineSyncPaths.settings, () =>
+      Effect.gen(function* () {
+        const file = Config.globalConfigFile()
+        const text = yield* fs.readFileStringSafe(file).pipe(Effect.orElseSucceed(() => undefined))
+        if (text === undefined) return json({ config: null, mtime: 0 })
+        const parsed = yield* Effect.try({
+          try: () => ConfigParse.jsonc(text, file),
+          catch: (error) => error,
+        }).pipe(Effect.option)
+        if (Option.isNone(parsed)) return json({ config: null, mtime: 0 })
+        return json({ config: MachineSyncConfig.sanitizeConfig(parsed.value), mtime: yield* modified(file) })
+      }),
+    )
+
+    yield* router.add("POST", MachineSyncPaths.settingsApply, (request) =>
+      Effect.gen(function* () {
+        const body: unknown = yield* request.json.pipe(Effect.orElseSucceed(() => undefined))
+        if (
+          !isRecord(body) ||
+          !isRecord(body.config) ||
+          typeof body.mtime !== "number" ||
+          !Number.isFinite(body.mtime) ||
+          body.mtime < 0 ||
+          body.mtime > MAX_MTIME
+        )
+          return json({ error: "bad request" }, 400)
+        const peer = body.config
+        const mtime = body.mtime
+        const file = Config.globalConfigFile()
+        // Newest edit wins by file mtime; a tie keeps the local file.
+        if (mtime <= (yield* modified(file))) return json({ applied: false })
+        const localText = (yield* fs.readFileStringSafe(file).pipe(Effect.orElseSucceed(() => undefined))) ?? "{}"
+        return yield* Effect.try({
+          try: () => {
+            const next = MachineSyncConfig.applyPeerConfig({
+              localText,
+              local: ConfigParse.jsonc(localText, file),
+              peer,
+            })
+            Config.validateText(next, file)
+            return next
+          },
+          catch: (error) => (error instanceof Error ? error.message : String(error)),
+        }).pipe(
+          Effect.flatMap((next) =>
+            Effect.gen(function* () {
+              if (next !== localText) yield* fs.writeWithDirs(file, next)
+              // Stamp the peer's mtime so the next cycle on either side sees a tie.
+              yield* fs.utimes(file, new Date(mtime), new Date(mtime))
+              yield* config.invalidate()
+              return json({ applied: true })
+            }),
+          ),
+          Effect.catch((error) => Effect.succeed(json({ error: String(error) }, 422))),
+        )
+      }),
     )
   }),
 )

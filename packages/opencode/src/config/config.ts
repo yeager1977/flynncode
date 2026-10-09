@@ -146,7 +146,7 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Co
 
 export const use = serviceUse(Service)
 
-function globalConfigFile() {
+export function globalConfigFile() {
   const candidates = ["opencode.jsonc", "opencode.json", "config.json"].map((file) =>
     path.join(Global.Path.config, file),
   )
@@ -154,6 +154,16 @@ function globalConfigFile() {
     if (existsSync(file)) return file
   }
   return candidates[0]
+}
+
+// Machine sync validates a patched global config with the normal schema
+// before it is written. Throws the same errors as loading the file.
+export function validateText(text: string, file: string) {
+  return ConfigParse.schema(
+    ConfigV1.Info,
+    ConfigV2Compat.lower(normalizeLoadedConfig(ConfigParse.jsonc(text, file)), file).value,
+    file,
+  )
 }
 
 function mergeWholeSubtrees(base: Record<string, unknown>, patch: Record<string, unknown>) {
