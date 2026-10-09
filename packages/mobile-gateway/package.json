@@ -15,6 +15,7 @@
     "./sync": "./src/sync-worker.ts",
     "./sync-gate": "./src/sync-gate.ts",
     "./sync-pair": "./src/sync-pair.ts",
+    "./sync-sign": "./src/sync-sign.ts",
     "./lan-ips": "./src/lan-ips.ts"
   },
   "files": [

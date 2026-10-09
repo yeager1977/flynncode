@@ -1,12 +1,17 @@
 import { hostname } from "node:os"
 import { listLanIPv4 } from "./lan-ips.ts"
 import type { SyncPeer } from "./sync-gate.ts"
+import { signedRequest } from "./sync-sign.ts"
 
 export const SYNC_PORT = 4097
 const PAIR_TIMEOUT_MS = 5000
 const UNPAIR_TIMEOUT_MS = 3000
 
 export type PairResult = { ok: true; peer: SyncPeer } | { ok: false; reason: "unreachable" | "invalid-code" | "failed" }
+
+// Pairing is the one exchange that carries the token: the 256-bit token comes
+// back once in the pair response. The six-digit code is single use, expires in
+// ten minutes and is burned after five wrong guesses.
 
 // Accepts what a user types: `starship.local`, `192.168.1.20`, `host:port`
 // or a full http(s) URL.
@@ -45,13 +50,15 @@ export async function pairWithPeer(input: {
 }
 
 // Best effort: an unreachable peer keeps its record until it notices the 401.
+// Like every request after pairing it is signed; the token is never sent.
 export async function unpairPeer(input: { peer: SyncPeer; fetchImpl?: typeof fetch }) {
-  await (input.fetchImpl ?? fetch)(`${input.peer.url}/flynncode-sync/unpair`, {
+  await signedRequest({
+    peer: input.peer,
+    path: "/flynncode-sync/unpair",
     method: "POST",
-    headers: { authorization: `Bearer ${input.peer.token}` },
-    redirect: "error",
-    signal: AbortSignal.timeout(UNPAIR_TIMEOUT_MS),
-  }).catch(() => undefined)
+    timeoutMs: UNPAIR_TIMEOUT_MS,
+    fetchImpl: input.fetchImpl,
+  })
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

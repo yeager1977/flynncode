@@ -1,5 +1,6 @@
 import { decide, isManifest, type Manifest, type ManifestSession, type SyncAction } from "./sync-decide.ts"
 import type { SyncPeer, SyncPrefs } from "./sync-gate.ts"
+import { signedRequest } from "./sync-sign.ts"
 
 export const POLL_MS = 60_000
 export const BACKOFF_MS = 5 * 60_000
@@ -27,6 +28,8 @@ export type SyncStatus = {
   skipped: Array<{ id: string; reason: SkipReason }>
   lastError: string | null
   consecutiveFailures: number
+  /** A pulled global config waits for "Reload to apply"; `from` names the machine it came from. */
+  configReloadPending: { from: string } | null
 }
 
 export type SyncWorker = ReturnType<typeof createSyncWorker>
@@ -41,8 +44,11 @@ type Fetched<T> =
   | { kind: "paused" }
   | { kind: "error"; status: number }
   | { kind: "invalid" }
+  // The peer's answer is unsigned or its signature does not match: never used.
+  | { kind: "unverified" }
 
 const LOCAL_UNAVAILABLE = "local server unavailable"
+const UNVERIFIED = "the other computer's reply failed verification"
 // Write outcomes that skip a chat for this cycle instead of failing it.
 const SKIPS = new Map<string, SkipReason>([
   ["busy", "local-busy"],
@@ -63,6 +69,7 @@ export function initialStatus(): SyncStatus {
     skipped: [],
     lastError: null,
     consecutiveFailures: 0,
+    configReloadPending: null,
   }
 }
 
@@ -118,7 +125,16 @@ export function createSyncWorker(options: {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     }).catch(() => undefined)
   const local = (path: string, body?: unknown) => send(`${options.local.url}${path}`, options.local.authorization, body)
-  const remote = (peer: SyncPeer, path: string) => send(`${peer.url}${path}`, `Bearer ${peer.token}`)
+  // Requests to the peer are signed with the token (never sent), and its
+  // answers are only used once their signature checks out. A 401 comes from a
+  // gateway that could not verify us, so it carries no signature.
+  const remote = async (peer: SyncPeer, path: string) => {
+    const reply = await signedRequest({ peer, path, timeoutMs: REQUEST_TIMEOUT_MS, fetchImpl })
+    if (!reply) return undefined
+    if (reply.status === 401 || reply.verified) return new Response(reply.body, { status: reply.status })
+    console.warn(`[machine-sync] ignored an unsigned or altered reply for ${path}`)
+    return "unverified" as const
+  }
 
   async function runCycle(): Promise<SyncStatus> {
     const previous = state.status
@@ -132,6 +148,8 @@ export function createSyncWorker(options: {
       return { ...previous, phase: "unauthorized", online: true, backlog: null, consecutiveFailures: 0 }
     // A paused peer is reachable, so it neither counts as an outage nor backs off.
     if (peerManifest.kind === "paused") return peerPaused(previous, previous.received)
+    if (peerManifest.kind === "unverified")
+      return { ...unreachable(previous, previous.received), lastError: UNVERIFIED }
     if (peerManifest.kind !== "ok") return unreachable(previous, previous.received)
     if (localManifest.value.schema !== peerManifest.value.schema || localManifest.value.app !== peerManifest.value.app)
       return { ...previous, phase: "mismatch", online: true, backlog: null, consecutiveFailures: 0 }
@@ -208,6 +226,7 @@ export function createSyncWorker(options: {
     const settingsError = await syncSettings(peer)
     await syncPrefs(peer)
     const missing = await read(local("/flynncode-sync/missing"), isMissing)
+    const reload = await read(local("/flynncode-sync/reload"), isReloadState)
     return {
       phase: "idle",
       online: true,
@@ -223,6 +242,7 @@ export function createSyncWorker(options: {
       skipped,
       lastError: settingsError,
       consecutiveFailures: 0,
+      configReloadPending: reload.kind === "ok" ? reload.value.pending : previous.configReloadPending,
     }
   }
 
@@ -253,12 +273,14 @@ export function createSyncWorker(options: {
     if (bundle.kind === "error" && bundle.status === 409) return { outcome: "peer-busy" }
     // Any other HTTP error is this chat's own failure; the rest of the batch continues.
     if (bundle.kind === "error") return { outcome: `fetch failed (HTTP ${bundle.status})` }
+    if (bundle.kind === "unverified") return { outcome: `fetch failed (${UNVERIFIED})` }
     if (bundle.kind !== "ok") return { outcome: `fetch failed (${bundle.kind})` }
     return { outcome: await write("/flynncode-sync/apply", { bundle: bundle.value, expected }) }
   }
 
   async function syncSettings(peer: SyncPeer): Promise<string | null> {
     const settings = await read(remote(peer, "/flynncode-sync/settings"), isSettings)
+    if (settings.kind === "unverified") return `settings: ${UNVERIFIED}`
     if (settings.kind !== "ok" || settings.value.config === null) return null
     // A null local config is either a missing file (a fresh machine, safe to
     // fill) or an unparseable one, which must never be overwritten.
@@ -267,6 +289,7 @@ export function createSyncWorker(options: {
     const outcome = await write("/flynncode-sync/settings/apply", {
       config: settings.value.config,
       mtime: settings.value.mtime,
+      from: peer.name,
     })
     return outcome === "applied" ? null : `settings: ${outcome}`
   }
@@ -333,6 +356,15 @@ export function createSyncWorker(options: {
       clearTimeout(state.timer)
     },
     syncNow: () => (state.running ? state.running.then(() => run()) : run()),
+    /** "Reload to apply": reloads this machine's instances so a pulled config takes effect. */
+    async reloadConfig() {
+      const response = await local("/flynncode-sync/reload", {})
+      state.status = response?.ok
+        ? { ...state.status, configReloadPending: null }
+        : { ...state.status, lastError: "the settings could not be reloaded" }
+      options.onStatus(state.status)
+      return state.status
+    },
     status: () => state.status,
   }
 }
@@ -365,11 +397,12 @@ function version(session: ManifestSession | undefined): Version | null {
 }
 
 async function read<T>(
-  pending: Promise<Response | undefined>,
+  pending: Promise<Response | "unverified" | undefined>,
   guard: (value: unknown) => value is T,
 ): Promise<Fetched<T>> {
   const response = await pending
   if (!response) return { kind: "unreachable" }
+  if (response === "unverified") return { kind: "unverified" }
   if (response.status === 401) return { kind: "unauthorized" }
   if (response.status === 503) {
     const body: unknown = await response.json().catch(() => undefined)
@@ -395,6 +428,11 @@ function isSettings(
   value: unknown,
 ): value is { config: Record<string, unknown> | null; mtime: number; missing?: boolean } {
   return isRecord(value) && (value.config === null || isRecord(value.config)) && typeof value.mtime === "number"
+}
+
+function isReloadState(value: unknown): value is { pending: { from: string } | null } {
+  if (!isRecord(value)) return false
+  return value.pending === null || (isRecord(value.pending) && typeof value.pending.from === "string")
 }
 
 function isPrefsPayload(value: unknown): value is { prefs: SyncPrefs | null } {

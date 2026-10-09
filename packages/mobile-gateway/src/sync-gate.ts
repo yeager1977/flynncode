@@ -1,4 +1,5 @@
 import { randomBytes, timingSafeEqual } from "node:crypto"
+import { createNonceCache, signResponse, verifyRequest } from "./sync-sign.ts"
 
 export type SyncPeer = { name: string; url: string; token: string }
 export type SyncPrefs = { sections: Record<string, unknown>; updatedAt: number }
@@ -8,7 +9,7 @@ export const PAIRING_CODE_TTL_MS = 10 * 60 * 1000
 export const MAX_PAIR_ATTEMPTS = 5
 const MAX_NAME_LENGTH = 64
 // Tokens are minted as 32 random bytes in hex; anything else stored (an empty
-// or hand-edited record) must never authorize a request.
+// or hand-edited record) must never verify a request.
 const TOKEN = /^[0-9a-f]{64}$/
 
 export type SyncGate = ReturnType<typeof createSyncGate>
@@ -41,6 +42,23 @@ export function createSyncGate(input: {
     attempts: 0,
     sent: 0,
   }
+  const nonces = createNonceCache({ now })
+
+  // The peer's stored address follows the socket address of verified
+  // requests, so a DHCP change is picked up instead of polling a stale
+  // address (possibly another device) forever. A stored host name already
+  // follows the peer through DNS and is kept, as is the stored port.
+  const follow = (token: string, remoteAddress: string | undefined) => {
+    const peer = state.peer
+    const host = remoteAddress === undefined ? undefined : urlHost(remoteAddress)
+    if (!peer || peer.token !== token || !host) return
+    const current = new URL(peer.url)
+    if (!isAddress(current.hostname) || current.hostname === host) return
+    current.hostname = host
+    const moved = { ...peer, url: current.origin }
+    state.peer = moved
+    input.onPeerMoved?.(moved)
+  }
 
   return {
     phoneAccess: () => state.phoneAccess,
@@ -48,28 +66,21 @@ export function createSyncGate(input: {
     peer: () => state.peer,
     prefs: () => state.prefs,
     pairingActive: () => state.pairing !== undefined && state.pairing.expiresAt > now(),
-    authorized: (header: string | null) =>
-      state.peer !== undefined &&
-      TOKEN.test(state.peer.token) &&
-      header !== null &&
-      safeEqual(header, `Bearer ${state.peer.token}`),
     /**
-     * Called for every request that presented the valid token: the peer's
-     * stored address follows the socket address, so a DHCP change is picked
-     * up instead of polling a stale address (possibly another device) forever.
-     * A stored host name already follows the peer through DNS and is kept, as
-     * is the stored port.
+     * Checks a request's signature, time and nonce (each nonce is accepted
+     * once). Only a verified request gets a response signer and may move the
+     * peer's stored address.
      */
-    seen(remoteAddress: string | undefined) {
+    verify(request: { method: string; target: string; headers: Headers; body: Uint8Array }) {
       const peer = state.peer
-      const host = remoteAddress === undefined ? undefined : urlHost(remoteAddress)
-      if (!peer || !host) return
-      const current = new URL(peer.url)
-      if (!isAddress(current.hostname) || current.hostname === host) return
-      current.hostname = host
-      const moved = { ...peer, url: current.origin }
-      state.peer = moved
-      input.onPeerMoved?.(moved)
+      if (!peer || !TOKEN.test(peer.token)) return
+      const nonce = verifyRequest({ token: peer.token, ...request, now: now() })
+      if (!nonce || !nonces.claim(nonce)) return
+      const token = peer.token
+      return {
+        sign: (body: Uint8Array) => signResponse(token, nonce, body),
+        seen: (remoteAddress: string | undefined) => follow(token, remoteAddress),
+      }
     },
     update(next: { phoneAccess?: boolean; paused?: boolean; peer?: SyncPeer | null; prefs?: SyncPrefs }) {
       state.phoneAccess = next.phoneAccess ?? state.phoneAccess

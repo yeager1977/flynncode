@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import type { Manifest, ManifestSession } from "../src/sync-decide.ts"
 import type { SyncPrefs } from "../src/sync-gate.ts"
+import { SYNC_RESPONSE_SIGNATURE_HEADER, signResponse, verifyRequest } from "../src/sync-sign.ts"
 import { createSyncWorker, initialStatus, nextDelay, type SyncStatus } from "../src/sync-worker.ts"
+
+const PEER_TOKEN = "e".repeat(64)
 
 type Fake = {
   manifest: Manifest
@@ -16,6 +19,9 @@ type Fake = {
   staleApply: Set<string>
   writes: Array<{ path: string; body: Record<string, unknown> }>
   paused: boolean
+  tamper: boolean
+  peerHeaders: Array<Record<string, string>>
+  reloadPending: { from: string } | null
   bundleStatus: number | null
   bundleHits: number
   bundleStatuses: Map<string, number>
@@ -52,6 +58,9 @@ function fake(sessions: ManifestSession[], schema = "s1"): Fake {
     staleApply: new Set(),
     writes: [],
     paused: false,
+    tamper: false,
+    peerHeaders: [],
+    reloadPending: null,
     bundleStatus: null,
     bundleHits: 0,
     bundleStatuses: new Map(),
@@ -62,60 +71,92 @@ function fake(sessions: ManifestSession[], schema = "s1"): Fake {
   }
 }
 
-// One fake plays either the local server (Basic auth) or the peer gateway
-// (Bearer token); the worker only sees HTTP.
-function serve(state: Fake, authorization: string) {
+// The local server takes Basic auth; the peer gateway takes requests signed
+// with PEER_TOKEN and signs its answers, as the real gateway does.
+function serve(state: Fake, auth: { basic: string } | { token: string }) {
   const server = Bun.serve({
     port: 0,
     hostname: "127.0.0.1",
     async fetch(request) {
-      if (state.down) return new Response("down", { status: 503 })
-      if (request.headers.get("authorization") !== authorization) return new Response("unauthorized", { status: 401 })
-      if (state.paused) return Response.json({ error: "paused" }, { status: 503 })
-      const path = new URL(request.url).pathname
-      if (/^\/flynncode-sync\/(delete|archive)\//.test(path)) {
-        state.writes.push({ path, body: (await request.json()) as Record<string, unknown> })
-        return Response.json({ ok: true })
-      }
-      if (path === "/flynncode-sync/manifest") {
-        state.manifestHits += 1
-        await state.gate
-        return Response.json(state.manifest)
-      }
-      if (path === "/flynncode-sync/missing") return Response.json({ directories: ["/gone"] })
-      if (path === "/flynncode-sync/settings") return Response.json(state.settings)
-      if (path === "/flynncode-sync/prefs") return Response.json({ prefs: state.prefs })
-      if (path === "/flynncode-sync/settings/apply") {
-        state.settingsApplied.push(await request.json())
-        return Response.json({ applied: true })
-      }
-      if (path === "/flynncode-sync/apply") {
-        const body = (await request.json()) as {
-          bundle: { session: { id: string; time_updated: number } }
-          expected: unknown
-        }
-        const id = body.bundle.session.id
-        state.writes.push({ path, body })
-        if (state.busyApply.has(id)) return Response.json({ error: "busy" }, { status: 409 })
-        if (state.staleApply.has(id)) return Response.json({ error: "stale" }, { status: 409 })
-        if (state.failApply.has(id)) return new Response("apply failed", { status: 422 })
-        state.applied.push(id)
-        state.manifest.sessions.push(session(id, body.bundle.session.time_updated))
-        return Response.json({ ok: true })
-      }
-      const bundle = /^\/flynncode-sync\/session\/(.+)$/.exec(path)
-      if (bundle?.[1]) state.bundleHits += 1
-      if (bundle?.[1]) state.bundleLog.push(bundle[1])
-      if (bundle?.[1]) state.onBundle?.()
-      const failing = bundle?.[1] ? state.bundleStatuses.get(bundle[1]) : undefined
-      if (failing) return new Response("bundle", { status: failing })
-      if (bundle?.[1] && state.bundleStatus) return new Response("bundle", { status: state.bundleStatus })
-      if (bundle?.[1]) return Response.json(state.bundles.get(bundle[1]))
-      return new Response("not found", { status: 404 })
+      if ("basic" in auth) return answer(state, request, auth.basic)
+      const url = new URL(request.url)
+      const nonce = verifyRequest({
+        token: auth.token,
+        method: request.method,
+        target: url.pathname + url.search,
+        headers: request.headers,
+        body: new Uint8Array(await request.arrayBuffer()),
+        now: Date.now(),
+      })
+      if (!nonce) return new Response("unauthorized", { status: 401 })
+      state.peerHeaders.push(Object.fromEntries(request.headers.entries()))
+      const response = await answer(state, request, undefined)
+      const body = new Uint8Array(await response.arrayBuffer())
+      const signature = signResponse(auth.token, nonce, body)
+      // An on-path attacker rewriting the body after it was signed.
+      const sent = state.tamper
+        ? new TextEncoder().encode(new TextDecoder().decode(body).replace("ses_", "ses_x"))
+        : body
+      return new Response(sent, { status: response.status, headers: { [SYNC_RESPONSE_SIGNATURE_HEADER]: signature } })
     },
   })
   servers.push(server)
   return `http://127.0.0.1:${server.port}`
+}
+
+async function answer(state: Fake, request: Request, basic: string | undefined): Promise<Response> {
+  if (state.down) return new Response("down", { status: 503 })
+  if (basic !== undefined && request.headers.get("authorization") !== basic)
+    return new Response("unauthorized", { status: 401 })
+  if (state.paused) return Response.json({ error: "paused" }, { status: 503 })
+  const path = new URL(request.url).pathname
+  if (/^\/flynncode-sync\/(delete|archive)\//.test(path)) {
+    state.writes.push({ path, body: (await request.json()) as Record<string, unknown> })
+    return Response.json({ ok: true })
+  }
+  if (path === "/flynncode-sync/manifest") {
+    state.manifestHits += 1
+    await state.gate
+    return Response.json(state.manifest)
+  }
+  if (path === "/flynncode-sync/missing") return Response.json({ directories: ["/gone"] })
+  if (path === "/flynncode-sync/reload" && request.method === "GET")
+    return Response.json({ pending: state.reloadPending })
+  if (path === "/flynncode-sync/reload") {
+    state.reloadPending = null
+    return Response.json({ ok: true })
+  }
+  if (path === "/flynncode-sync/settings") return Response.json(state.settings)
+  if (path === "/flynncode-sync/prefs") return Response.json({ prefs: state.prefs })
+  if (path === "/flynncode-sync/settings/apply") {
+    const body = (await request.json()) as { from?: string }
+    state.settingsApplied.push(body)
+    if (body.from) state.reloadPending = { from: body.from }
+    return Response.json({ applied: true, changed: true })
+  }
+  if (path === "/flynncode-sync/apply") {
+    const body = (await request.json()) as {
+      bundle: { session: { id: string; time_updated: number } }
+      expected: unknown
+    }
+    const id = body.bundle.session.id
+    state.writes.push({ path, body })
+    if (state.busyApply.has(id)) return Response.json({ error: "busy" }, { status: 409 })
+    if (state.staleApply.has(id)) return Response.json({ error: "stale" }, { status: 409 })
+    if (state.failApply.has(id)) return new Response("apply failed", { status: 422 })
+    state.applied.push(id)
+    state.manifest.sessions.push(session(id, body.bundle.session.time_updated))
+    return Response.json({ ok: true })
+  }
+  const bundle = /^\/flynncode-sync\/session\/(.+)$/.exec(path)
+  if (bundle?.[1]) state.bundleHits += 1
+  if (bundle?.[1]) state.bundleLog.push(bundle[1])
+  if (bundle?.[1]) state.onBundle?.()
+  const failing = bundle?.[1] ? state.bundleStatuses.get(bundle[1]) : undefined
+  if (failing) return new Response("bundle", { status: failing })
+  if (bundle?.[1] && state.bundleStatus) return new Response("bundle", { status: state.bundleStatus })
+  if (bundle?.[1]) return Response.json(state.bundles.get(bundle[1]))
+  return new Response("not found", { status: 404 })
 }
 
 function worker(input: {
@@ -126,12 +167,12 @@ function worker(input: {
   timing?: { pollMs: number; backoffMs: number; batchDelayMs: number }
   onStatus?: (status: SyncStatus) => void
 }) {
-  const localUrl = serve(input.local, "Basic local")
-  const peerUrl = serve(input.peer, "Bearer token-1")
+  const localUrl = serve(input.local, { basic: "Basic local" })
+  const peerUrl = serve(input.peer, { token: PEER_TOKEN })
   const prefs = input.prefs ?? { applied: [] }
   return createSyncWorker({
     local: { url: localUrl, authorization: "Basic local" },
-    peer: () => ({ name: "starship", url: peerUrl, token: input.token ?? "token-1" }),
+    peer: () => ({ name: "starship", url: peerUrl, token: input.token ?? PEER_TOKEN }),
     paused: () => false,
     prefs: { get: () => prefs.current, apply: (next) => prefs.applied.push(next) },
     takeSent: () => 3,
@@ -209,7 +250,7 @@ describe("sync worker", () => {
     peer.prefs = { sections: { appearance: { fontSize: 16 } }, updatedAt: 20 }
     const prefs = { current: { sections: {}, updatedAt: 10 }, applied: [] as SyncPrefs[] }
     await worker({ local, peer, prefs }).cycle()
-    expect(local.settingsApplied).toEqual([{ config: { model: "a/b" }, mtime: 9 }])
+    expect(local.settingsApplied).toEqual([{ config: { model: "a/b" }, mtime: 9, from: "starship" }])
     expect(prefs.applied).toEqual([peer.prefs])
   })
 
@@ -234,7 +275,7 @@ describe("sync worker", () => {
     const peer = fake([])
     peer.settings = { config: { model: "a/b" }, mtime: 9 }
     await worker({ local, peer }).cycle()
-    expect(local.settingsApplied).toEqual([{ config: { model: "a/b" }, mtime: 9 }])
+    expect(local.settingsApplied).toEqual([{ config: { model: "a/b" }, mtime: 9, from: "starship" }])
   })
 
   test("does not let chats that keep failing starve the rest of a backlog", async () => {
@@ -480,6 +521,44 @@ describe("sync worker", () => {
     peer.paused = false
     expect((await sync.cycle()).phase).toBe("idle")
     expect(local.applied).toEqual(["ses_a"])
+  })
+
+  test("signs every peer request without ever sending the token", async () => {
+    const local = fake([])
+    const peer = fake([session("ses_a", 10)])
+    peer.settings = { config: { model: "a/b" }, mtime: 9 }
+    peer.prefs = { sections: {}, updatedAt: 1 }
+    await worker({ local, peer }).cycle()
+    // manifest, bundle, settings and prefs
+    expect(peer.peerHeaders.length).toBe(4)
+    expect(peer.peerHeaders.every((headers) => headers["x-flynncode-sync-signature"] !== undefined)).toBe(true)
+    expect(JSON.stringify(peer.peerHeaders)).not.toContain(PEER_TOKEN)
+    expect(local.applied).toEqual(["ses_a"])
+  })
+
+  test("never uses a peer reply whose body was altered after signing", async () => {
+    const local = fake([])
+    const peer = fake([session("ses_a", 10)])
+    peer.tamper = true
+    peer.settings = { config: { model: "ses_evil" }, mtime: 9 }
+    const status = await worker({ local, peer }).cycle()
+    expect(status).toMatchObject({ phase: "offline", lastError: "the other computer's reply failed verification" })
+    expect(local.applied).toEqual([])
+    expect(local.settingsApplied).toEqual([])
+  })
+
+  test("reports a pulled config waiting for a reload and clears it on reloadConfig", async () => {
+    const local = fake([])
+    const peer = fake([])
+    local.settings = { config: { theme: "dark" }, mtime: 4 }
+    peer.settings = { config: { model: "a/b" }, mtime: 9 }
+    const statuses: SyncStatus[] = []
+    const sync = worker({ local, peer, onStatus: (status) => statuses.push(status) })
+    expect((await sync.cycle()).configReloadPending).toEqual({ from: "starship" })
+    const reloaded = await sync.reloadConfig()
+    expect(reloaded.configReloadPending).toBeNull()
+    expect(local.reloadPending).toBeNull()
+    expect(statuses.at(-1)?.configReloadPending).toBeNull()
   })
 
   test("reports unpaired when there is no peer", async () => {

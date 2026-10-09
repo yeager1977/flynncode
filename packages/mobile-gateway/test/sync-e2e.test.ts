@@ -6,6 +6,7 @@ import { createGateway } from "../src/gateway.ts"
 import type { Manifest } from "../src/sync-decide.ts"
 import { createSyncGate, type SyncGate, type SyncPeer } from "../src/sync-gate.ts"
 import { pairWithPeer } from "../src/sync-pair.ts"
+import { signedRequest } from "../src/sync-sign.ts"
 import { createSyncWorker, type SyncWorker } from "../src/sync-worker.ts"
 
 // Two real opencode servers with separate data/config dirs stand in for
@@ -26,6 +27,8 @@ type Machine = {
 }
 
 const state = { shared: "", project: "", missing: "" }
+// Every request header either gateway received, to prove the token never travels.
+const inbound: Array<Record<string, string>> = []
 const machines: Machine[] = []
 // Registered the moment a resource exists so a failed setup never leaks a server.
 const cleanups: Array<() => Promise<void>> = []
@@ -113,7 +116,10 @@ async function machine(name: string): Promise<Machine> {
   const gateway = Bun.serve({
     port: gatewayPort,
     hostname: "127.0.0.1",
-    fetch: (request, srv) => handle(request, srv.requestIP(request)?.address),
+    fetch: (request, srv) => {
+      inbound.push(Object.fromEntries(request.headers.entries()))
+      return handle(request, srv.requestIP(request)?.address)
+    },
   })
   cleanups.push(async () => gateway.stop(true))
   const server = spawnServer(root, serverPort)
@@ -405,10 +411,13 @@ describe("machine sync end to end", () => {
       (await manifest(starship)).sessions.some((session) => session.id === "ses_e2e_run" && session.busy)
     await waitFor(busy, "the chat to run on starship")
     // Asked directly mid-turn, starship's gateway refuses to hand out a half-written copy.
-    const midTurn = await fetch(`http://127.0.0.1:${starship.gateway.port}/flynncode-sync/session/ses_e2e_run`, {
-      headers: { authorization: `Bearer ${starship.gate.peer()?.token}` },
+    const midTurn = await signedRequest({
+      peer: { url: `http://127.0.0.1:${starship.gateway.port}`, token: starship.gate.peer()?.token ?? "" },
+      path: "/flynncode-sync/session/ses_e2e_run",
+      timeoutMs: 10_000,
     })
-    expect(midTurn.status).toBe(409)
+    expect(midTurn?.verified).toBe(true)
+    expect(midTurn?.status).toBe(409)
 
     await seed(challenger, { id: "ses_e2e_run", title: "newer on challenger", timeUpdated: Date.now() + 60_000, directory: state.project })
     const skipped = await starship.worker.cycle()
@@ -420,4 +429,13 @@ describe("machine sync end to end", () => {
     await starship.worker.cycle()
     expect(await title(starship, "ses_e2e_run")).toBe("newer on challenger")
   }, 90_000)
+
+  test("the pairing token never crossed the network in a request header", () => {
+    const token = machines[0]?.gate.peer()?.token
+    if (!token) throw new Error("not paired")
+    const signed = inbound.filter((headers) => headers["x-flynncode-sync-signature"] !== undefined)
+    // Manifests, bundles, settings and prefs from both workers were all signed.
+    expect(signed.length).toBeGreaterThan(10)
+    expect(JSON.stringify(inbound)).not.toContain(token)
+  })
 })
