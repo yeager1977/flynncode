@@ -142,15 +142,24 @@ export const machineSyncRoutes = HttpRouter.use((router) =>
       store.missingDirectories().pipe(Effect.map((directories) => json({ directories }))),
     )
 
-    yield* router.add("GET", MachineSyncPaths.reload, () => Effect.succeed(json({ pending: reload.pending ?? null })))
+    // `busy` lets the Sync card warn before a reload stops a running chat.
+    yield* router.add("GET", MachineSyncPaths.reload, () =>
+      store.idle().pipe(Effect.map((idle) => json({ pending: reload.pending ?? null, busy: !idle }))),
+    )
 
     // The same reload a settings save performs: instances are disposed and
     // renderers hear global.disposed, which also clears the pending state.
-    yield* router.add("POST", MachineSyncPaths.reload, () =>
-      disposeAllInstancesAndEmitGlobalDisposed().pipe(
-        Effect.provideService(InstanceStore.Service, instances),
-        Effect.as(json({ ok: true })),
-      ),
+    // While a chat runs it is refused unless the user confirmed (`force`).
+    yield* router.add("POST", MachineSyncPaths.reload, (request) =>
+      Effect.gen(function* () {
+        const body: unknown = yield* request.json.pipe(Effect.orElseSucceed(() => undefined))
+        const force = isRecord(body) && body.force === true
+        if (!force && !(yield* store.idle())) return json({ error: "busy" }, 409)
+        return yield* disposeAllInstancesAndEmitGlobalDisposed().pipe(
+          Effect.provideService(InstanceStore.Service, instances),
+          Effect.as(json({ ok: true })),
+        )
+      }),
     )
 
     yield* router.add("GET", MachineSyncPaths.settings, () =>

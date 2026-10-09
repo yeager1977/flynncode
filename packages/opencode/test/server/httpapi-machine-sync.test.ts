@@ -322,11 +322,12 @@ describe("machine sync routes", () => {
       }
       GlobalBus.on("event", listen)
       yield* Effect.addFinalizer(() => Effect.sync(() => GlobalBus.off("event", listen)))
-      const pending = () =>
+      const state = () =>
         request(MachineSyncPaths.reload).pipe(
           Effect.flatMap((response) => response.json),
-          Effect.map((body) => (body as { pending: unknown }).pending),
+          Effect.map((body) => body as { pending: unknown; busy: boolean }),
         )
+      const pending = () => state().pipe(Effect.map((body) => body.pending))
       expect(yield* pending()).toBeNull()
 
       const applied = yield* request(
@@ -345,9 +346,21 @@ describe("machine sync routes", () => {
       expect(yield* same.json).toEqual({ applied: true, changed: false })
       expect(seen).toEqual(["config.updated"])
 
-      // "Reload to apply" runs the settings-save reload and clears the pending state.
-      expect((yield* request(MachineSyncPaths.reload, { method: "POST" })).status).toBe(200)
+      // While a chat runs, a reload is refused unless the user confirmed it.
+      executing.add(SessionID.make("ses_reload_busy"))
+      yield* Effect.gen(function* () {
+        expect(yield* state()).toEqual({ pending: { from: "starship" }, busy: true })
+        const refused = yield* request(MachineSyncPaths.reload, post({}))
+        expect(refused.status).toBe(409)
+        expect(seen).toEqual(["config.updated"])
+        expect((yield* request(MachineSyncPaths.reload, post({ force: true }))).status).toBe(200)
+      }).pipe(Effect.ensuring(Effect.sync(() => executing.delete(SessionID.make("ses_reload_busy")))))
       expect(seen).toEqual(["config.updated", "global.disposed"])
+      expect(yield* state()).toEqual({ pending: null, busy: false })
+
+      // "Reload to apply" with no chat running needs no confirmation.
+      yield* request(MachineSyncPaths.settingsApply, post({ config: { model: "peer/newer" }, mtime: 4_000, from: "x" }))
+      expect((yield* request(MachineSyncPaths.reload, { method: "POST" })).status).toBe(200)
       expect(yield* pending()).toBeNull()
     }),
   )
@@ -361,7 +374,7 @@ describe("machine sync routes", () => {
       yield* request(MachineSyncPaths.settingsApply, post({ config: { model: "peer/x" }, mtime: 2_000, from: "a" }))
       GlobalBus.emit("event", { directory: "global", payload: { type: "global.disposed", properties: {} } })
       const body = yield* request(MachineSyncPaths.reload).pipe(Effect.flatMap((response) => response.json))
-      expect(body).toEqual({ pending: null })
+      expect(body).toEqual({ pending: null, busy: false })
     }),
   )
 
