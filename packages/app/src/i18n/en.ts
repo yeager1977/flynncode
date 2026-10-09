@@ -524,7 +524,7 @@ export const dict = {
   "server.sync.gatewayError": "Sync connection problem: {{error}}",
   "server.sync.code.show": "Show pairing code",
   "server.sync.code.value": "Pairing code: {{code}}",
-  "server.sync.code.hint": "Enter this code on the other computer within 10 minutes. This computer: {{name}} ({{addresses}})",
+  "server.sync.code.hint": "Enter this code on the other computer within {{minutes}} minutes. This computer: {{name}} ({{addresses}})",
   "server.sync.host.label": "Other computer",
   "server.sync.host.placeholder": "starship.local or 192.168.1.20",
   "server.sync.pairCode.label": "Pairing code",
@@ -543,6 +543,7 @@ export const dict = {
   "server.sync.resume": "Resume",
   "server.sync.unpair": "Unpair",
   "server.sync.toast.failed": "Sync failed",
+  "server.sync.toast.actionFailed": "That did not work. Try again.",
   "server.sync.folderMissing": "Folder missing on this machine",
 
   "dialog.project.edit.title": "Edit project",

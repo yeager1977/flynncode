@@ -1,14 +1,14 @@
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { SelectV2 } from "@opencode-ai/ui/v2/select-v2"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
-import { type Component, For, Show, onCleanup, onMount } from "solid-js"
-import { createStore } from "solid-js/store"
+import { type Component, For, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
-import type { MachineSyncPairingCode, MachineSyncPrefsChoice, MachineSyncStatus } from "@/context/machine-sync-types"
+import type { MachineSyncPrefsChoice, MachineSyncStatus } from "@/context/machine-sync-types"
 import { usePlatform } from "@/context/platform"
 import { showToast } from "@/utils/toast"
 import { SettingsListV2 } from "./parts/list"
-import { syncHeadline, syncNowFailed, syncPairNotice, syncProblem } from "./sync-card-status"
+import { createSyncCardController } from "./sync-card-controller"
+import { syncHeadline, syncProblem } from "./sync-card-status"
 
 const PAIR_FAILURE_KEYS = {
   unreachable: "server.sync.pairFailed.unreachable",
@@ -23,65 +23,11 @@ const PREFS_OPTIONS = [
 
 export const SyncCard: Component = () => {
   const language = useLanguage()
-  const api = usePlatform().machineSync
-  const [state, setState] = createStore({
-    status: undefined as MachineSyncStatus | undefined,
-    code: undefined as MachineSyncPairingCode | undefined,
-    host: "",
-    pairCode: "",
-    prefs: "keep" as MachineSyncPrefsChoice,
-    pairFailure: undefined as keyof typeof PAIR_FAILURE_KEYS | undefined,
-    pairNotice: undefined as ReturnType<typeof syncPairNotice>,
-    pairing: false,
+  const sync = createSyncCardController({
+    api: usePlatform().machineSync,
+    fail: (key) => showToast({ variant: "error", description: language.t(key) }),
   })
-
-  onMount(() => {
-    if (!api) return
-    void api
-      .status()
-      .then((status) => setState("status", status))
-      .catch(() => undefined)
-    onCleanup(api.subscribe((status) => setState("status", status)))
-  })
-
-  const showCode = () => {
-    void api
-      ?.createPairingCode()
-      .then((code) => setState("code", code))
-      .catch(() => undefined)
-  }
-  const pair = () => {
-    const host = state.host.trim()
-    const code = state.pairCode.trim()
-    if (!api || !host || !code) return
-    setState({ pairing: true, pairFailure: undefined, pairNotice: undefined })
-    void api
-      .pair({ host, code, prefs: state.prefs })
-      .then((result) => {
-        if (result.ok) {
-          setState({ pairing: false, host: "", pairCode: "", code: undefined, pairNotice: syncPairNotice(result) })
-          return
-        }
-        setState({ pairing: false, pairFailure: result.reason })
-      })
-      .catch(() => setState({ pairing: false, pairFailure: "failed" }))
-  }
-  const syncNow = () => {
-    void api
-      ?.syncNow()
-      .then((status) => {
-        setState("status", status)
-        if (syncNowFailed(status)) showToast({ variant: "error", description: language.t("server.sync.toast.failed") })
-      })
-      .catch(() => undefined)
-  }
-  const togglePause = () => {
-    void api?.setPaused(!state.status?.paused)
-  }
-  const unpair = () => {
-    setState("pairNotice", undefined)
-    void api?.unpair()
-  }
+  const state = sync.state
 
   const headline = (status: MachineSyncStatus) => {
     const line = syncHeadline(status)
@@ -101,7 +47,7 @@ export const SyncCard: Component = () => {
       : language.t("server.sync.lastSync", { time: new Date(status.lastSuccess).toLocaleString() })
 
   return (
-    <Show when={api && state.status}>
+    <Show when={state.status}>
       {(status) => (
         <SettingsListV2>
           <div class="settings-v2-servers-row">
@@ -136,7 +82,7 @@ export const SyncCard: Component = () => {
                 <div class="settings-v2-servers-row">
                   <div class="settings-v2-servers-lead">
                     <div class="settings-v2-servers-copy">
-                      <Show when={state.code}>
+                      <Show when={sync.code()}>
                         {(code) => (
                           <>
                             <span class="settings-v2-servers-name font-mono select-all">
@@ -146,6 +92,7 @@ export const SyncCard: Component = () => {
                               {language.t("server.sync.code.hint", {
                                 name: code().machineName,
                                 addresses: code().addresses.join(", "),
+                                minutes: code().minutes,
                               })}
                             </span>
                           </>
@@ -154,7 +101,12 @@ export const SyncCard: Component = () => {
                     </div>
                   </div>
                   <div class="settings-v2-servers-actions">
-                    <ButtonV2 size="small" variant="ghost-muted" onClick={showCode}>
+                    <ButtonV2
+                      size="small"
+                      variant="ghost-muted"
+                      disabled={state.busy === "code"}
+                      onClick={sync.showCode}
+                    >
                       {language.t("server.sync.code.show")}
                     </ButtonV2>
                   </div>
@@ -164,7 +116,7 @@ export const SyncCard: Component = () => {
                     <TextInputV2
                       appearance="base"
                       value={state.host}
-                      onInput={(event) => setState("host", event.currentTarget.value)}
+                      onInput={(event) => sync.set("host", event.currentTarget.value)}
                       placeholder={language.t("server.sync.host.placeholder")}
                       spellcheck={false}
                       autocorrect="off"
@@ -175,7 +127,7 @@ export const SyncCard: Component = () => {
                     <TextInputV2
                       appearance="base"
                       value={state.pairCode}
-                      onInput={(event) => setState("pairCode", event.currentTarget.value)}
+                      onInput={(event) => sync.set("pairCode", event.currentTarget.value)}
                       placeholder={language.t("server.sync.pairCode.placeholder")}
                       inputMode="numeric"
                       autocomplete="off"
@@ -183,7 +135,7 @@ export const SyncCard: Component = () => {
                     />
                   </div>
                   <div class="settings-v2-servers-actions">
-                    <ButtonV2 size="small" variant="ghost-muted" disabled={state.pairing} onClick={pair}>
+                    <ButtonV2 size="small" variant="ghost-muted" disabled={state.pairing} onClick={sync.pair}>
                       {language.t("server.sync.pair")}
                     </ButtonV2>
                   </div>
@@ -202,7 +154,7 @@ export const SyncCard: Component = () => {
                       current={PREFS_OPTIONS.find((option) => option.id === state.prefs)}
                       value={(option) => option.id}
                       label={(option) => language.t(option.label)}
-                      onSelect={(option) => option && setState("prefs", option.id)}
+                      onSelect={(option) => option && sync.set("prefs", option.id)}
                       placement="bottom-end"
                       gutter={6}
                     />
@@ -228,13 +180,23 @@ export const SyncCard: Component = () => {
                 </div>
               </div>
               <div class="settings-v2-servers-actions">
-                <ButtonV2 size="small" variant="ghost-muted" disabled={status().paused} onClick={syncNow}>
+                <ButtonV2
+                  size="small"
+                  variant="ghost-muted"
+                  disabled={status().paused || state.busy === "syncNow"}
+                  onClick={sync.syncNow}
+                >
                   {language.t("server.sync.syncNow")}
                 </ButtonV2>
-                <ButtonV2 size="small" variant="ghost-muted" onClick={togglePause}>
+                <ButtonV2
+                  size="small"
+                  variant="ghost-muted"
+                  disabled={state.busy === "pause"}
+                  onClick={sync.togglePause}
+                >
                   {status().paused ? language.t("server.sync.resume") : language.t("server.sync.pause")}
                 </ButtonV2>
-                <ButtonV2 size="small" variant="ghost-muted" onClick={unpair}>
+                <ButtonV2 size="small" variant="ghost-muted" disabled={state.busy === "unpair"} onClick={sync.unpair}>
                   {language.t("server.sync.unpair")}
                 </ButtonV2>
               </div>

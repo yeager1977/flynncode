@@ -66,24 +66,40 @@ describe("syncPairNotice", () => {
 })
 
 describe("sync copy", () => {
-  test("every sync key exists in English and in the Flynncode fallback", () => {
-    const keys = Object.keys(dict).filter((key) => key.startsWith("server.sync."))
-    expect(keys.length).toBe(36)
+  // Every server.sync.* key the card, its controller and the composer use must
+  // have English copy and be listed in the Flynncode fallback.
+  const used = [
+    "./sync-card.tsx",
+    "./sync-card-controller.ts",
+    "./sync-card-status.ts",
+    "../prompt-input-v2.tsx",
+  ].flatMap(
+    (file) => readFileSync(new URL(file, import.meta.url), "utf8").match(/server\.sync\.[A-Za-z.-]+[A-Za-z]/g) ?? [],
+  )
+
+  test("every sync key in use exists in English and in the Flynncode fallback", () => {
+    const keys = [...new Set(used)]
+    expect(keys.length).toBeGreaterThan(20)
+    for (const key of keys) {
+      expect(Object.hasOwn(dict, key), `${key} in en`).toBe(true)
+      expect(Object.hasOwn(flynncodeFallback, key), `${key} in fallback`).toBe(true)
+    }
+  })
+
+  test("every English sync key is in the fallback and key copy is as specified", () => {
+    for (const key of Object.keys(dict).filter((key) => key.startsWith("server.sync.")))
+      expect(Object.hasOwn(flynncodeFallback, key), key).toBe(true)
     expect(dict["server.sync.error.mismatch"]).toBe("Update Flynncode on both machines")
     expect(dict["server.sync.error.unauthorized"]).toBe("Pair again")
     expect(dict["server.sync.prefs.keep"]).toBe("Keep this computer's preferences")
     expect(dict["server.sync.prefs.theirs"]).toBe("Use the other computer's preferences")
-    for (const key of keys) expect(Object.hasOwn(flynncodeFallback, key), key).toBe(true)
+    expect(dict["server.sync.code.hint"]).toContain("{{minutes}}")
   })
 
-  test("the card uses the platform API and i18n only", () => {
+  test("the card keeps no hardcoded English in its markup and is mounted in Servers", () => {
     const source = readFileSync(new URL("./sync-card.tsx", import.meta.url), "utf8")
-    expect(source).toContain("usePlatform().machineSync")
     expect(source).not.toContain("window.api")
     expect(source.match(/>\s*[A-Z][a-z]+[^<{]*</g) ?? []).toEqual([])
-    expect(source).toContain("gatewayError")
-    expect(source).toContain("prefs: state.prefs")
-    const servers = readFileSync(new URL("./servers.tsx", import.meta.url), "utf8")
-    expect(servers).toContain("<SyncCard />")
+    expect(readFileSync(new URL("./servers.tsx", import.meta.url), "utf8")).toContain("<SyncCard />")
   })
 })

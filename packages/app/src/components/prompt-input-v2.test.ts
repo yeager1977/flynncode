@@ -21,8 +21,10 @@ describe("PromptInputV2Composer project control", () => {
 })
 
 describe("PromptInputV2Composer machine sync notice", () => {
-  test("warns when the session folder is missing on this machine", () => {
+  // Behaviour is covered in test-browser/sync-card.test.ts (createFolderMissing).
+  test("renders the notice from the folder-missing state and nothing otherwise", () => {
+    expect(source).toContain("createFolderMissing({ api: platform.machineSync")
+    expect(source).toContain("<Show when={folderMissing()}>")
     expect(source).toContain('language.t("server.sync.folderMissing")')
-    expect(source).toContain("missingDirectories.includes(")
   })
 })

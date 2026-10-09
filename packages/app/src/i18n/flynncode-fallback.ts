@@ -127,6 +127,7 @@ const keys = [
   "server.sync.resume",
   "server.sync.syncNow",
   "server.sync.title",
+  "server.sync.toast.actionFailed",
   "server.sync.toast.failed",
   "server.sync.unpair",
   "server.sync.unpaired",
