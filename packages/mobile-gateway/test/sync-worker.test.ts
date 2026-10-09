@@ -1,0 +1,193 @@
+import { afterEach, describe, expect, test } from "bun:test"
+import type { Manifest, ManifestSession } from "../src/sync-decide.ts"
+import type { SyncPrefs } from "../src/sync-gate.ts"
+import { createSyncWorker, initialStatus, nextDelay } from "../src/sync-worker.ts"
+
+type Fake = {
+  manifest: Manifest
+  bundles: Map<string, { session: { id: string; time_updated: number } }>
+  applied: string[]
+  settings: { config: Record<string, unknown> | null; mtime: number }
+  settingsApplied: unknown[]
+  prefs: SyncPrefs | null
+  down: boolean
+}
+
+const servers: Array<ReturnType<typeof Bun.serve>> = []
+afterEach(() => {
+  while (servers.length) servers.pop()?.stop(true)
+})
+
+const session = (id: string, timeUpdated: number): ManifestSession => ({
+  id,
+  parentID: null,
+  timeUpdated,
+  timeArchived: null,
+  busy: false,
+})
+
+function fake(sessions: ManifestSession[], schema = "s1"): Fake {
+  return {
+    manifest: { schema, app: "1.0.0", sessions, tombstones: [] },
+    bundles: new Map(sessions.map((item) => [item.id, { session: { id: item.id, time_updated: item.timeUpdated } }])),
+    applied: [],
+    settings: { config: null, mtime: 0 },
+    settingsApplied: [],
+    prefs: null,
+    down: false,
+  }
+}
+
+// One fake plays either the local server (Basic auth) or the peer gateway
+// (Bearer token); the worker only sees HTTP.
+function serve(state: Fake, authorization: string) {
+  const server = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    async fetch(request) {
+      if (state.down) return new Response("down", { status: 503 })
+      if (request.headers.get("authorization") !== authorization) return new Response("unauthorized", { status: 401 })
+      const path = new URL(request.url).pathname
+      if (path === "/flynncode-sync/manifest") return Response.json(state.manifest)
+      if (path === "/flynncode-sync/missing") return Response.json({ directories: ["/gone"] })
+      if (path === "/flynncode-sync/settings") return Response.json(state.settings)
+      if (path === "/flynncode-sync/prefs") return Response.json({ prefs: state.prefs })
+      if (path === "/flynncode-sync/settings/apply") {
+        state.settingsApplied.push(await request.json())
+        return Response.json({ applied: true })
+      }
+      if (path === "/flynncode-sync/apply") {
+        const body = (await request.json()) as { session: { id: string; time_updated: number } }
+        state.applied.push(body.session.id)
+        state.manifest.sessions.push(session(body.session.id, body.session.time_updated))
+        return Response.json({ ok: true })
+      }
+      const bundle = /^\/flynncode-sync\/session\/(.+)$/.exec(path)
+      if (bundle?.[1]) return Response.json(state.bundles.get(bundle[1]))
+      return new Response("not found", { status: 404 })
+    },
+  })
+  servers.push(server)
+  return `http://127.0.0.1:${server.port}`
+}
+
+function worker(input: {
+  local: Fake
+  peer: Fake
+  token?: string
+  prefs?: { current?: SyncPrefs; applied: SyncPrefs[] }
+}) {
+  const localUrl = serve(input.local, "Basic local")
+  const peerUrl = serve(input.peer, "Bearer token-1")
+  const prefs = input.prefs ?? { applied: [] }
+  return createSyncWorker({
+    local: { url: localUrl, authorization: "Basic local" },
+    peer: () => ({ name: "starship", url: peerUrl, token: input.token ?? "token-1" }),
+    paused: () => false,
+    prefs: { get: () => prefs.current, apply: (next) => prefs.applied.push(next) },
+    takeSent: () => 3,
+    onStatus: () => undefined,
+  })
+}
+
+describe("sync worker", () => {
+  test("pulls newer chats and reports the cycle", async () => {
+    const local = fake([session("ses_a", 10)])
+    const peer = fake([session("ses_a", 20), session("ses_b", 5)])
+    const status = await worker({ local, peer }).cycle()
+    expect(local.applied).toEqual(["ses_a", "ses_b"])
+    expect(status).toMatchObject({
+      phase: "idle",
+      online: true,
+      received: 2,
+      sent: 3,
+      missingDirectories: ["/gone"],
+      backlog: null,
+      failures: [],
+      consecutiveFailures: 0,
+    })
+    expect(status.lastSuccess).toBeNumber()
+  })
+
+  test("pauses on a schema or app version mismatch without applying", async () => {
+    const local = fake([], "s1")
+    const peer = fake([session("ses_a", 20)], "s2")
+    const status = await worker({ local, peer }).cycle()
+    expect(status.phase).toBe("mismatch")
+    expect(local.applied).toEqual([])
+  })
+
+  test("asks to pair again on 401", async () => {
+    const status = await worker({ local: fake([]), peer: fake([]), token: "stale" }).cycle()
+    expect(status.phase).toBe("unauthorized")
+  })
+
+  test("counts consecutive offline cycles and backs off after five", async () => {
+    const peer = fake([])
+    peer.down = true
+    const sync = worker({ local: fake([]), peer })
+    const results = []
+    for (const _ of [1, 2, 3, 4, 5]) results.push(await sync.cycle())
+    expect(results.map((status) => status.consecutiveFailures)).toEqual([1, 2, 3, 4, 5])
+    expect(results.every((status) => status.phase === "offline" && !status.online)).toBe(true)
+    expect(nextDelay(results[3]!)).toBe(60_000)
+    expect(nextDelay(results[4]!)).toBe(300_000)
+    peer.down = false
+    const recovered = await sync.cycle()
+    expect(recovered.consecutiveFailures).toBe(0)
+    expect(nextDelay(recovered)).toBe(60_000)
+  })
+
+  test("pulls at most 20 bundles per cycle and reports first-sync progress", async () => {
+    const local = fake([])
+    const peer = fake(Array.from({ length: 25 }, (_, index) => session(`ses_${String(index).padStart(2, "0")}`, 10)))
+    const sync = worker({ local, peer })
+    const first = await sync.cycle()
+    expect(local.applied.length).toBe(20)
+    expect(first.backlog).toEqual({ done: 20, total: 25 })
+    expect(nextDelay(first)).toBe(1_000)
+    const second = await sync.cycle()
+    expect(local.applied.length).toBe(25)
+    expect(second.backlog).toBeNull()
+  })
+
+  test("forwards peer settings to the local server and applies newer peer prefs", async () => {
+    const local = fake([])
+    const peer = fake([])
+    local.settings = { config: { theme: "dark" }, mtime: 4 }
+    peer.settings = { config: { model: "a/b" }, mtime: 9 }
+    peer.prefs = { sections: { appearance: { fontSize: 16 } }, updatedAt: 20 }
+    const prefs = { current: { sections: {}, updatedAt: 10 }, applied: [] as SyncPrefs[] }
+    await worker({ local, peer, prefs }).cycle()
+    expect(local.settingsApplied).toEqual([{ config: { model: "a/b" }, mtime: 9 }])
+    expect(prefs.applied).toEqual([peer.prefs])
+  })
+
+  test("treats a null config on either side as nothing to sync", async () => {
+    const unreadableLocal = fake([])
+    const peerWithConfig = fake([])
+    peerWithConfig.settings = { config: { model: "a/b" }, mtime: 9 }
+    await worker({ local: unreadableLocal, peer: peerWithConfig }).cycle()
+    expect(unreadableLocal.settingsApplied).toEqual([])
+
+    const readableLocal = fake([])
+    readableLocal.settings = { config: { theme: "dark" }, mtime: 4 }
+    const emptyPeer = fake([])
+    const status = await worker({ local: readableLocal, peer: emptyPeer }).cycle()
+    expect(readableLocal.settingsApplied).toEqual([])
+    expect(status.lastError).toBeNull()
+  })
+
+  test("reports unpaired when there is no peer", async () => {
+    const sync = createSyncWorker({
+      local: { url: "http://127.0.0.1:9", authorization: "Basic local" },
+      peer: () => undefined,
+      paused: () => false,
+      prefs: { get: () => undefined, apply: () => undefined },
+      takeSent: () => 0,
+      onStatus: () => undefined,
+    })
+    expect((await sync.cycle()).phase).toBe("unpaired")
+    expect(initialStatus().phase).toBe("unpaired")
+  })
+})

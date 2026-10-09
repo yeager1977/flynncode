@@ -12,6 +12,7 @@
     ".": "./src/config.ts",
     "./server": "./src/index.ts",
     "./gateway": "./src/gateway.ts",
+    "./sync": "./src/sync-worker.ts",
     "./sync-gate": "./src/sync-gate.ts",
     "./sync-pair": "./src/sync-pair.ts",
     "./lan-ips": "./src/lan-ips.ts"
