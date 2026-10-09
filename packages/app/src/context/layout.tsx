@@ -284,6 +284,8 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           width: DEFAULT_SIDEBAR_WIDTH,
           workspaces: {} as Record<string, boolean>,
           workspacesDefault: false,
+          // Set once the new layout has applied its open-by-default first run.
+          defaulted: false,
         },
         terminal: {
           height: DEFAULT_TERMINAL_HEIGHT,
@@ -680,6 +682,10 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         },
         toggle() {
           setStore("sidebar", "opened", (x) => !x)
+        },
+        defaulted: createMemo(() => store.sidebar.defaulted ?? false),
+        openByDefault() {
+          setStore("sidebar", { opened: true, defaulted: true })
         },
         width: createMemo(() => store.sidebar.width),
         resize(width: number) {

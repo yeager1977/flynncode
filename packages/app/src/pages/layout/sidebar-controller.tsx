@@ -53,6 +53,8 @@ export type SidebarHost = {
   tabs: boolean
   openSession: (directory: string, id: string) => void
   newSession: (directory: string) => void
+  // Tabbed layouts only: how selecting a project opens it (default: newSession).
+  openProject?: (root: string) => void
   home: () => void
   // Link targets. Without them the sidebar links to the classic
   // `/:dir/session[/:id]` routes of the listed directory.
@@ -653,9 +655,9 @@ export function createSidebarController(host: SidebarHost) {
     if (!directory) return
     const root = projectRoot(directory)
     server.projects.touch(root)
-    // Tabbed layouts start a fresh draft for the project instead of resuming.
+    // Tabbed layouts open a draft for the project instead of resuming a session.
     if (host.tabs) {
-      newSession(root)
+      go(() => (host.openProject ?? host.newSession)(root))
       return
     }
     const project = layout.projects.list().find((item) => item.worktree === root)

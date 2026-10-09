@@ -67,6 +67,8 @@ export function Titlebar(props: {
   debugTools?: { visible: boolean; toggle: () => void }
   /** Extra controls rendered before the right-side titlebar area in the new layout. */
   actions?: JSX.Element
+  /** Controls rendered first on the left of the new layout's titlebar, before Home. */
+  leading?: JSX.Element
 }) {
   const layout = useLayout()
   const platform = usePlatform()
@@ -324,7 +326,8 @@ export function Titlebar(props: {
                 id: "home.toggle",
                 title: language.t("home.title"),
                 category: language.t("command.category.view"),
-                keybind: "mod+b",
+                // mod+b belongs to the project sidebar (sidebar.toggle).
+                keybind: "mod+shift+h",
                 hidden: true,
                 onSelect: toggleHome,
               },
@@ -378,6 +381,7 @@ export function Titlebar(props: {
                 <Show when={windows() || linux()}>
                   <WindowsAppMenu command={command} platform={platform} variant="v2" />
                 </Show>
+                {props.leading}
                 <TooltipV2
                   placement="bottom"
                   value={

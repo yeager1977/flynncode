@@ -25,6 +25,46 @@
 }
 
 @layer components {
+  /* The new layout hosts the classic project sidebar. Remap the legacy tokens
+     its components read to the v2 palette, type and density so it sits on the
+     window chrome like the rest of the new layout. Utilities read the
+     --color-* aliases (resolved on :root), so both names are remapped. */
+  [data-component="sidebar-v2"] {
+    --background-base: var(--v2-background-bg-deep);
+    --background-stronger: var(--v2-background-bg-deep);
+    --surface-base-hover: var(--v2-overlay-simple-overlay-hover);
+    --surface-base-active: var(--v2-overlay-simple-overlay-pressed);
+    --surface-raised-base: var(--v2-overlay-simple-overlay-hover);
+    --surface-raised-base-hover: var(--v2-overlay-simple-overlay-hover);
+    --surface-raised-base-active: var(--v2-overlay-simple-overlay-pressed);
+    --text-strong: var(--v2-text-text-base);
+    --text-base: var(--v2-text-text-muted);
+    --text-weak: var(--v2-text-text-faint);
+    --icon-base: var(--v2-icon-icon-muted);
+    --icon-strong-base: var(--v2-icon-icon-base);
+    --border-weak-base: var(--v2-border-border-muted);
+    --border-weaker-base: var(--v2-border-border-muted);
+    --color-background-base: var(--background-base);
+    --color-background-stronger: var(--background-stronger);
+    --color-surface-base-hover: var(--surface-base-hover);
+    --color-surface-base-active: var(--surface-base-active);
+    --color-surface-raised-base: var(--surface-raised-base);
+    --color-surface-raised-base-hover: var(--surface-raised-base-hover);
+    --color-surface-raised-base-active: var(--surface-raised-base-active);
+    --color-text-strong: var(--text-strong);
+    --color-text-base: var(--text-base);
+    --color-text-weak: var(--text-weak);
+    --color-icon-base: var(--icon-base);
+    --color-icon-strong-base: var(--icon-strong-base);
+    --color-border-weak-base: var(--border-weak-base);
+    --color-border-weaker-base: var(--border-weaker-base);
+    --font-family-sans: var(--font-family-text);
+    --font-size-base: 13px;
+    --font-size-small: 12px;
+    --font-weight-regular: 440;
+    --font-weight-medium: 530;
+  }
+
   [data-component="getting-started"] {
     container-type: inline-size;
     container-name: getting-started;

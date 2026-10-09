@@ -11,6 +11,7 @@ import { usePlatform } from "@/context/platform"
 import { ActivityInboxButton } from "@/pages/dispatch/activity-inbox-button"
 import { setV2Toast, ToastRegion } from "@/utils/toast"
 import { startupTrace } from "@/utils/startup-trace"
+import { ProjectSidebar, SidebarToggle } from "./layout-new-sidebar"
 
 export default function NewLayout(props: ParentProps) {
   const platform = usePlatform()
@@ -43,6 +44,7 @@ export default function NewLayout(props: ParentProps) {
       <LayoutCommands />
       <Titlebar
         update={update}
+        leading={<SidebarToggle />}
         actions={<ActivityInboxButton />}
         debugTools={
           import.meta.env.DEV
@@ -50,9 +52,12 @@ export default function NewLayout(props: ParentProps) {
             : undefined
         }
       />
-      <main class="flex-1 min-h-0 min-w-0 overflow-x-hidden flex flex-col items-start contain-strict">
-        <Suspense>{props.children}</Suspense>
-      </main>
+      <div class="relative flex-1 min-h-0 min-w-0 flex">
+        <ProjectSidebar />
+        <main class="flex-1 min-h-0 min-w-0 overflow-x-hidden flex flex-col items-start contain-strict">
+          <Suspense>{props.children}</Suspense>
+        </main>
+      </div>
       {import.meta.env.DEV && state.debugTools && <DebugBar inline />}
       <TabsInfoPopup />
       <ToastRegion v2 />
