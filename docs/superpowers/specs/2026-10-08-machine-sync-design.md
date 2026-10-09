@@ -73,12 +73,23 @@ and `x-flynncode-sync-signature` = HMAC-SHA256(token, method + "\n" +
 path?query + "\n" + time + "\n" + nonce + "\n" + sha256(body)). The gateway
 compares in constant time, refuses a time more than 60 s from its own clock
 and refuses a nonce it has seen in the last two minutes (bounded in-memory
-cache that refuses when full). Bad or missing signatures get 401. Every answer
-to a verified request carries `x-flynncode-sync-response-signature` =
-HMAC-SHA256(token, nonce + "\n" + sha256(response body)); the worker and the
-desktop main process use no manifest, bundle, settings or prefs body whose
-signature does not match (logged; the cycle, chat or settings pull fails).
-The two clocks must agree within a minute.
+cache that refuses when full).
+
+Every answer to a request signed with the token carries
+`x-flynncode-sync-response-signature` = HMAC-SHA256(token, nonce + "\n" +
+status + "\n" + sha256(response body)); the worker and the desktop main
+process use no answer, refusals included, whose signature does not match
+(logged; the cycle, chat or settings pull fails). Refusals:
+
+- Not signed with the current or a recently revoked token, or malformed:
+  unsigned 401. The peer treats it as no answer (offline), since anyone on
+  the path could send it.
+- Signed with the current token but more than 60 s off: signed 401
+  `{ error: "clock", now }`; the peer shows "the clocks differ" instead of
+  "Pair again".
+- Signed with a token this gateway revoked (unpair, re-pair; remembered until
+  restart): signed 401 `{ error: "revoked" }`; the peer shows "Pair again".
+- A replayed nonce: signed 401 `{ error: "replay" }`, treated as no answer.
 
 ## Chat sync
 
@@ -162,7 +173,9 @@ edit wins by file mtime (tie keeps local).
   the user clicks "Reload to apply" on the Sync card ("Settings from <machine>
   are ready"), which performs the same reload as a settings save (instances
   disposed, `global.disposed`). Any reload clears the pending notice. Instances
-  are never reloaded automatically, since that would stop running chats.
+  are never reloaded automatically, since that would stop running chats; while
+  a chat runs the card says so and asks for confirmation before reloading.
+  Directories opened after the pull use the new config immediately.
 
 ### App preferences
 
@@ -176,25 +189,30 @@ window state, open tabs, drafts, phone/relay/sync credentials.
 The paired machine is trusted like the local user (user decision). Config
 fields that start or reach programs — MCP `command`/`url`, `plugin`,
 `permission`, `lsp`/`formatter` commands, provider `baseURL` — sync freely from
-the authenticated peer, with no confirmation step. What protects them is the
-signed protocol: only a request signed with the token is answered, and only a
-signed answer is used, so an on-path attacker can neither read sync data by
-replaying requests nor alter a config on its way. Consequences, accepted:
+the authenticated peer, with no confirmation step. Consequences, accepted:
 
+- Sync travels over plain HTTP on the LAN. Chat content and the sanitized
+  config are not encrypted: anyone who can see the traffic can read them.
+  Signing prevents forging, altering, replaying or redirecting requests and
+  answers; it does not prevent reading.
 - Whoever holds the pairing token can change what this machine runs. The token
   crosses the network once, in the pair response (see Pairing); afterwards it
   is only used as an HMAC key. Unpair revokes it on both sides.
 - If the peer's IP address is reassigned (DHCP), the stale address could
   belong to another device. Mitigation: the gateway refreshes the stored peer
   URL from the socket address of every signature-verified request, so the
-  worker follows the peer instead of polling the old address; another device
-  at the old address cannot sign answers, so nothing it sends is used.
+  worker follows the peer; another device at the old address cannot sign
+  answers, so nothing it sends is used.
 - A prompt-injected agent that edits the global config on one machine
-  propagates that edit to the other (it still waits for "Reload to apply"
-  before running instances use it).
+  propagates that edit to the other. "Reload to apply" only holds it back from
+  instances that are already running; a directory opened after the pull loads
+  the pulled config straight away.
+- The nonce cache lives in memory and resets when the gateway restarts, so a
+  request captured shortly before a restart can be replayed once, within its
+  60 s window. Sync requests only read, apart from unpair.
 - Credentials embedded in URLs or command arguments (not in a secret-named key,
   header/env map or `{env:…}` reference) cannot be recognised and are sent as
-  plain config, inside the signed but unencrypted protocol.
+  plain config.
 
 ## Sync card (Settings → Servers)
 
