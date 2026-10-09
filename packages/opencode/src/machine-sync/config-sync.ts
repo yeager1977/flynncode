@@ -7,17 +7,29 @@ export const SECRET_PLACEHOLDER = "__flynncode_sync_secret__"
 
 // Credential leaves, matched as a suffix so `maxTokens` and similar counters
 // still sync. A bare `key` leaf (e.g. `options.key`) is a credential as well.
-const SECRET_KEY =
-  /(api_?key|token|secret|password|private_?key|secret_?access_?key|access_?key_?id|credentials?|authorization)$/i
+const SECRET_KEY = /(api_?key|token|secret|password|private_?key|secret_?access_?key|access_?key_?id|authorization)$/i
+// `credentials` names either the secret itself (a string or a service-account
+// object) or a switch such as `includeCredentials: true`; only the former is secret.
+const CREDENTIALS_KEY = /credentials?$/i
 // Every value below one of these maps can carry credentials (lowercase names).
 const SECRET_MAPS = new Set(["headers", "env", "environment", "credentials", "googleauthoptions"])
 const REFERENCE = /\{(env|file):[^}]*\}/
 const FORMAT = { formattingOptions: { insertSpaces: true, tabSize: 2 } }
 
-export function isSecretPath(path: readonly string[]) {
+/**
+ * `values` are what sits at the path (on either side of a merge); without
+ * them a `credentials` key is treated as secret.
+ */
+export function isSecretPath(path: readonly string[], ...values: unknown[]) {
   const key = path.at(-1)
   if (key !== undefined && (SECRET_KEY.test(key) || key.toLowerCase() === "key")) return true
+  if (key !== undefined && CREDENTIALS_KEY.test(key) && (values.length === 0 || values.some(isCredentialValue)))
+    return true
   return path.slice(0, -1).some((segment) => SECRET_MAPS.has(segment.toLowerCase()))
+}
+
+function isCredentialValue(value: unknown) {
+  return typeof value === "string" || (typeof value === "object" && value !== null)
 }
 
 /** The global config as it may leave this machine: secrets masked, no server block. */
@@ -47,7 +59,7 @@ export function applyPeerConfig(input: { localText: string; local: unknown; peer
 }
 
 function mask(value: unknown, path: string[]): unknown {
-  if (isSecretPath(path) || isReference(value)) return SECRET_PLACEHOLDER
+  if (isSecretPath(path, value) || isReference(value)) return SECRET_PLACEHOLDER
   if (Array.isArray(value)) return value.map((item, index) => mask(item, [...path, String(index)]))
   if (isRecord(value))
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, mask(item, [...path, key])]))
@@ -59,7 +71,7 @@ function mask(value: unknown, path: string[]): unknown {
 function restore(peer: unknown, local: unknown, path: string[]): { value: unknown } | undefined {
   // The peer's own secrets, placeholders and references are never taken, even
   // when a hostile or buggy peer sends them in the clear.
-  if (isSecretPath(path) || isForeign(peer)) return keepLocal(local)
+  if (isSecretPath(path, peer, local) || isForeign(peer)) return keepLocal(local)
   // A local reference is a secret leaf: an edit on the peer does not replace it.
   if (isReference(local)) return { value: local }
   // A local subtree holding secrets is never replaced by a different shape
@@ -122,7 +134,7 @@ function isForeign(value: unknown) {
 
 // True when any leaf below `value` is a secret, a placeholder or a reference.
 function hasSecret(value: unknown, path: string[]): boolean {
-  if (isSecretPath(path) || isForeign(value)) return true
+  if (isSecretPath(path, value) || isForeign(value)) return true
   if (Array.isArray(value)) return value.some((item, index) => hasSecret(item, [...path, String(index)]))
   if (isRecord(value)) return Object.entries(value).some(([key, item]) => hasSecret(item, [...path, key]))
   return false

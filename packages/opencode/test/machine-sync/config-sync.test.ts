@@ -124,6 +124,30 @@ describe("MachineSyncConfig.sanitizeConfig", () => {
     expect(sent.limit).toEqual({ maxTokens: 4096, max_tokens: 2048 })
   })
 
+  test("syncs credential switches such as includeCredentials, but masks credential values", () => {
+    const sent = MachineSyncConfig.sanitizeConfig({
+      provider: { a: { options: { includeCredentials: true, credentials: "secret-cred", fetchCredentials: false } } },
+    })
+    expect(sent.provider).toEqual({
+      a: {
+        options: {
+          includeCredentials: true,
+          credentials: MachineSyncConfig.SECRET_PLACEHOLDER,
+          fetchCredentials: false,
+        },
+      },
+    })
+    const text = `{ "provider": { "a": { "options": { "includeCredentials": false } } } }`
+    const merged = MachineSyncConfig.applyPeerConfig({
+      localText: text,
+      local: ConfigParse.jsonc(text, "opencode.jsonc"),
+      peer: { provider: { a: { options: { includeCredentials: true } } } },
+    })
+    expect(ConfigParse.jsonc(merged, "opencode.jsonc")).toEqual({
+      provider: { a: { options: { includeCredentials: true } } },
+    })
+  })
+
   test("does not mutate its input and tolerates non-objects", () => {
     const input = { provider: { a: { options: { apiKey: "sk" } } } }
     MachineSyncConfig.sanitizeConfig(input)
