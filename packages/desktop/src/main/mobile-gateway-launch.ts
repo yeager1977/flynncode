@@ -1,5 +1,6 @@
 import { resolveOptions } from "@flynncode/mobile-gateway"
 import { startGateway } from "@flynncode/mobile-gateway/gateway"
+import type { SyncGate } from "@flynncode/mobile-gateway/sync-gate"
 
 export const MOBILE_GATEWAY_PORT = 4097
 
@@ -32,6 +33,7 @@ export async function startMobileGateway(input: {
   upstream: string
   relayToken: string
   host?: string
+  sync?: SyncGate
 }): Promise<MobileGatewayHandle | undefined> {
   try {
     const resolved = resolveOptions(mobileGatewayEnv(input), input.upstream)
@@ -39,7 +41,7 @@ export async function startMobileGateway(input: {
       console.warn(`[mobile-gateway] disabled: ${resolved.reason}`)
       return
     }
-    const gateway = await startGateway({ options: resolved.value })
+    const gateway = await startGateway({ options: resolved.value, sync: input.sync })
     console.log(`[mobile-gateway] listening on http://${resolved.value.host}:${gateway.port}`)
     return gateway
   } catch (error) {

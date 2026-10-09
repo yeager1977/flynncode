@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import { mkdirSync, rmSync } from "node:fs"
 import * as http from "node:http"
 import { createServer } from "node:net"
-import { homedir, tmpdir } from "node:os"
+import { homedir, hostname, tmpdir } from "node:os"
 import { join } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
@@ -52,7 +52,17 @@ import { startBackgroundCli } from "./background-cli"
 import { setNativeTranslations } from "./native-translations"
 import { museAuthStatus, runMuseAuthSync } from "./muse-auth"
 import { vendorAuthSignout, vendorAuthStatus } from "./vendor-keychain"
-import { MOBILE_PHONE_PASSWORD_KEY, RELAY_PUBLISH_URL_KEY, RELAY_REMOTE_TOKEN_KEY, RELAY_TOKEN_KEY } from "./store-keys"
+import {
+  MOBILE_PHONE_PASSWORD_KEY,
+  PHONE_ACCESS_KEY,
+  RELAY_PUBLISH_URL_KEY,
+  RELAY_REMOTE_TOKEN_KEY,
+  RELAY_TOKEN_KEY,
+  SYNC_PAUSED_KEY,
+  SYNC_PEER_KEY,
+  SYNC_PREFS_KEY,
+} from "./store-keys"
+import { parseSyncStart } from "./sidecar-sync"
 import { getOrCreateMobilePhonePassword } from "./mobile-password"
 import { generateRelayToken } from "./relay-publisher"
 import { getStore } from "./store"
@@ -399,8 +409,8 @@ const main = Effect.gen(function* () {
 
       return yield* Deferred.await(res)
     })
-    const hostname = "127.0.0.1"
-    const url = `http://${hostname}:${port}`
+    const host = "127.0.0.1"
+    const url = `http://${host}:${port}`
     const password = randomUUID()
     const persisted = getStore()
     const mobilePassword = getOrCreateMobilePhonePassword(
@@ -444,10 +454,17 @@ const main = Effect.gen(function* () {
 
     logger.log("spawning sidecar", { url })
     const { listener, health } = yield* Effect.promise(() =>
-      spawnLocalServer(hostname, port, password, {
+      spawnLocalServer(host, port, password, {
         userDataPath: app.getPath("userData"),
         mobilePassword,
         relay,
+        sync: parseSyncStart({
+          machineName: hostname(),
+          phoneAccess: persisted.get(PHONE_ACCESS_KEY) === true,
+          paused: persisted.get(SYNC_PAUSED_KEY) === true,
+          peer: persisted.get(SYNC_PEER_KEY) ?? null,
+          prefs: persisted.get(SYNC_PREFS_KEY) ?? null,
+        }) ?? { machineName: hostname(), phoneAccess: false, paused: false, peer: null, prefs: null },
         onStdout: (message) => writeLog("server", "stdout", { message }),
         onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
         onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),

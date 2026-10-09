@@ -10,3 +10,9 @@ export const RELAY_TOKEN_KEY = "relayToken"
 export const RELAY_REMOTE_TOKEN_KEY = "relayRemoteToken"
 export const RELAY_PUBLISH_URL_KEY = "relayPublishUrl"
 export const COMPUTER_USE_ALLOWED_APPS_KEY = "computerUseAllowedApps"
+// Machine sync and phone access. The peer record carries the pairing token;
+// it reaches the sidecar only through its start/IPC messages.
+export const PHONE_ACCESS_KEY = "phoneAccess"
+export const SYNC_PEER_KEY = "syncPeer"
+export const SYNC_PAUSED_KEY = "syncPaused"
+export const SYNC_PREFS_KEY = "syncPrefs"

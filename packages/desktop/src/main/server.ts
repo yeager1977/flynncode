@@ -7,6 +7,7 @@ import { getUserShell, loadShellEnv } from "./shell-env"
 import { getStore } from "./store"
 import { DEFAULT_SERVER_URL_KEY } from "./store-keys"
 import { MOBILE_GATEWAY_PORT } from "./mobile-gateway-launch"
+import { isSyncMessage, type SidecarSyncCommand, type SidecarSyncMessage, type SidecarSyncStart } from "./sidecar-sync"
 
 export type HealthCheck = { wait: Promise<void> }
 
@@ -25,6 +26,8 @@ type SpawnLocalServerOptions = {
   userDataPath: string
   mobilePassword: string
   relay: { token: string; remoteToken: string; url: string }
+  sync: SidecarSyncStart
+  onSyncMessage?: (message: SidecarSyncMessage) => void
   onStdout?: (message: string) => void
   onStderr?: (message: string) => void
   onExit?: (code: number) => void
@@ -90,6 +93,12 @@ export async function spawnLocalServer(
   child.stdout?.on("data", (chunk: Buffer) => options.onStdout?.(chunk.toString("utf8").trimEnd()))
   child.stderr?.on("data", (chunk: Buffer) => options.onStderr?.(chunk.toString("utf8").trimEnd()))
 
+  // Sync messages (pairing, status, peer prefs) arrive for the sidecar's
+  // whole lifetime, not only during startup.
+  child.on("message", (message: unknown) => {
+    if (isSyncMessage(message)) options.onSyncMessage?.(message)
+  })
+
   await new Promise<void>((resolve, reject) => {
     let done = false
     let timeout: NodeJS.Timeout
@@ -140,6 +149,7 @@ export async function spawnLocalServer(
       userDataPath: options.userDataPath,
       mobile: { password: options.mobilePassword, port: MOBILE_GATEWAY_PORT },
       relay: options.relay,
+      sync: options.sync,
     })
   }).catch((error) => {
     if (!exited) child.kill()
@@ -185,6 +195,9 @@ export async function spawnLocalServer(
       },
     },
     health: { wait },
+    post: (command: SidecarSyncCommand) => {
+      if (!exited) child.postMessage(command)
+    },
   }
 }
 

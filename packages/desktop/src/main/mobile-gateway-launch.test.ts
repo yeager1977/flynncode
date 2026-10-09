@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createServer } from "node:http"
 import { resolveOptions } from "@flynncode/mobile-gateway"
+import { createSyncGate } from "@flynncode/mobile-gateway/sync-gate"
 import {
   MOBILE_GATEWAY_PORT,
   mobileGatewayEnv,
@@ -100,5 +101,31 @@ describe("startMobileGateway", () => {
       relayToken: "",
     })
     expect(handle).toBeUndefined()
+  })
+
+  test("passes the sync gate through: phone routes 404 while sync stays token-gated", async () => {
+    const sync = createSyncGate({
+      machineName: "challenger",
+      gatewayPort: 4097,
+      phoneAccess: false,
+      paused: false,
+      peer: undefined,
+      prefs: undefined,
+    })
+    const handle = await startMobileGateway({
+      serverPassword: "upstream-secret",
+      phonePassword: "phone-secret",
+      port: 0,
+      upstream: "http://127.0.0.1:9",
+      relayToken: "",
+      sync,
+    })
+    expect(handle).toBeDefined()
+    if (!handle) return
+    handles.push(handle)
+    expect((await fetch(`http://127.0.0.1:${handle.port}/flynncode-mobile-status`)).status).toBe(404)
+    expect((await fetch(`http://127.0.0.1:${handle.port}/flynncode-sync/manifest`)).status).toBe(401)
+    sync.update({ phoneAccess: true })
+    expect((await fetch(`http://127.0.0.1:${handle.port}/flynncode-mobile-status`)).status).toBe(200)
   })
 })

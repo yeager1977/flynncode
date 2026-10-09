@@ -1,12 +1,22 @@
 import * as http from "node:http"
 import * as tls from "node:tls"
 import { hostname } from "node:os"
+import { createSyncWorker, type SyncWorker } from "@flynncode/mobile-gateway/sync"
+import { createSyncGate, type SyncGate } from "@flynncode/mobile-gateway/sync-gate"
 import {
   mobileGatewayUpstream,
   startMobileGateway,
   type MobileGatewayHandle,
 } from "./mobile-gateway-launch"
 import { startRelayPublisher, relayPublisherConfig } from "./relay-publisher"
+import {
+  gatewayWanted,
+  parseSyncCommand,
+  parseSyncStart,
+  type SidecarSyncCommand,
+  type SidecarSyncMessage,
+  type SidecarSyncStart,
+} from "./sidecar-sync"
 
 type NodeHttpWithEnvProxy = typeof http & {
   setGlobalProxyFromEnv: () => void
@@ -27,6 +37,8 @@ type StartCommand = {
   // Relay secrets travel in the start message rather than the sidecar env so
   // they never leak into agent shells, which inherit process.env.
   relay: RelaySettings
+  // The sync peer record (with its pairing token) follows the same rule.
+  sync: SidecarSyncStart
 }
 
 type RelaySettings = { token: string; remoteToken: string; url: string }
@@ -38,6 +50,7 @@ type SidecarMessage =
   | { type: "ready" }
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
+  | SidecarSyncMessage
 
 type ParentPort = {
   postMessage(message: SidecarMessage): void
@@ -52,8 +65,18 @@ const parentPort = getParentPort()
 let listener: Listener | undefined
 let mobileGateway: MobileGatewayHandle | undefined
 let relayPublisher: { stop(): void } | undefined
+let syncGate: SyncGate | undefined
+let syncWorker: SyncWorker | undefined
+let gatewayConfig: { command: StartCommand; upstream: string } | undefined
+let gatewayQueue: Promise<void> = Promise.resolve()
+let pairingTimer: ReturnType<typeof setTimeout> | undefined
 
 parentPort.on("message", (event) => {
+  const sync = parseSyncCommand(event.data)
+  if (sync) {
+    void handleSyncCommand(sync)
+    return
+  }
   const command = parseCommand(event.data)
   if (!command) return
   if (command.type === "stop") {
@@ -78,19 +101,43 @@ async function start(command: StartCommand) {
       password: command.password,
       cors: ["oc://renderer"],
     })
-    mobileGateway = await startMobileGateway({
-      serverPassword: command.password,
-      phonePassword: command.mobile.password,
-      port: command.mobile.port,
-      upstream: mobileGatewayUpstream(command.hostname, command.port),
-      relayToken: command.relay.token,
-      host: process.env.OPENCODE_MOBILE_HOST,
+    const upstream = mobileGatewayUpstream(command.hostname, command.port)
+    const gate = createSyncGate({
+      machineName: command.sync.machineName,
+      gatewayPort: command.mobile.port,
+      phoneAccess: command.sync.phoneAccess,
+      paused: command.sync.paused,
+      peer: command.sync.peer ?? undefined,
+      prefs: command.sync.prefs ?? undefined,
+      onPaired: (peer) => {
+        post({ type: "sync-paired", peer })
+        void reconcileGateway()
+        void syncWorker?.syncNow()
+      },
+      // Give the unpair request time to answer before its gateway goes down.
+      onUnpaired: () => {
+        post({ type: "sync-unpaired" })
+        setTimeout(() => void reconcileGateway(), 500)
+      },
     })
-    relayPublisher = startRelayPublisherFor({
-      relay: command.relay,
-      gatewayPort: mobileGateway?.port,
-      phonePassword: command.mobile.password,
+    syncGate = gate
+    gatewayConfig = { command, upstream }
+    await reconcileGateway()
+    syncWorker = createSyncWorker({
+      local: { url: upstream, authorization: `Basic ${Buffer.from(`opencode:${command.password}`).toString("base64")}` },
+      peer: () => gate.peer(),
+      paused: () => gate.paused(),
+      prefs: {
+        get: () => gate.prefs(),
+        apply: (prefs) => {
+          gate.update({ prefs })
+          post({ type: "sync-peer-prefs", prefs })
+        },
+      },
+      takeSent: () => gate.takeSent(),
+      onStatus: (status) => post({ type: "sync-status", status }),
     })
+    syncWorker.start()
     parentPort.postMessage({ type: "ready" })
   } catch (error) {
     parentPort.postMessage({ type: "error", error: serializeError(error) })
@@ -100,6 +147,12 @@ async function start(command: StartCommand) {
 
 async function stop() {
   try {
+    syncWorker?.stop()
+    syncWorker = undefined
+    clearTimeout(pairingTimer)
+    // Drop the config first so a queued reconcile cannot restart the gateway.
+    gatewayConfig = undefined
+    await gatewayQueue
     relayPublisher?.stop()
     relayPublisher = undefined
     mobileGateway?.stop()
@@ -114,6 +167,79 @@ async function stop() {
     parentPort.postMessage({ type: "stopped" })
     setImmediate(() => process.exit(0))
   }
+}
+
+async function handleSyncCommand(command: SidecarSyncCommand) {
+  const gate = syncGate
+  if (!gate) return
+  if (command.type === "sync-config") {
+    const peerChanged = command.peer?.token !== gate.peer()?.token
+    gate.update({ phoneAccess: command.phoneAccess, paused: command.paused, peer: command.peer })
+    await reconcileGateway()
+    if (peerChanged && command.peer) void syncWorker?.syncNow()
+    return
+  }
+  if (command.type === "sync-pairing-code") {
+    gate.setPairingCode({ code: command.code, expiresAt: command.expiresAt })
+    clearTimeout(pairingTimer)
+    // A gateway started only for pairing shuts down again once the code expires.
+    pairingTimer = setTimeout(() => void reconcileGateway(), Math.max(0, command.expiresAt - Date.now()) + 1000)
+    await reconcileGateway()
+    return
+  }
+  if (command.type === "sync-prefs") {
+    gate.update({ prefs: command.prefs })
+    return
+  }
+  const status = await syncWorker?.syncNow()
+  if (status) post({ type: "sync-status", status, requestID: command.requestID })
+}
+
+// Serialised so overlapping toggles never start two gateways on port 4097.
+function reconcileGateway() {
+  gatewayQueue = gatewayQueue.then(applyGatewayState, applyGatewayState)
+  return gatewayQueue
+}
+
+// The gateway runs while phone access is on, a peer is paired, or a pairing
+// code is waiting; the relay publisher only runs with phone access, since it
+// reads the phone inbox.
+async function applyGatewayState() {
+  const gate = syncGate
+  const config = gatewayConfig
+  if (!gate || !config) return
+  const wanted = gatewayWanted({ phoneAccess: gate.phoneAccess(), peer: gate.peer(), pairingActive: gate.pairingActive() })
+  if (wanted && !mobileGateway) {
+    mobileGateway = await startMobileGateway({
+      serverPassword: config.command.password,
+      phonePassword: config.command.mobile.password,
+      port: config.command.mobile.port,
+      upstream: config.upstream,
+      relayToken: config.command.relay.token,
+      host: process.env.OPENCODE_MOBILE_HOST,
+      sync: gate,
+    })
+  }
+  if (!wanted && mobileGateway) {
+    mobileGateway.stop()
+    mobileGateway = undefined
+  }
+  const relayWanted = gate.phoneAccess() && mobileGateway !== undefined
+  if (relayWanted && !relayPublisher) {
+    relayPublisher = startRelayPublisherFor({
+      relay: config.command.relay,
+      gatewayPort: mobileGateway?.port,
+      phonePassword: config.command.mobile.password,
+    })
+  }
+  if (!relayWanted && relayPublisher) {
+    relayPublisher.stop()
+    relayPublisher = undefined
+  }
+}
+
+function post(message: SidecarSyncMessage) {
+  parentPort.postMessage(message)
 }
 
 function prepareSidecarEnv(password: string, userDataPath: string) {
@@ -182,6 +308,8 @@ function parseCommand(value: unknown): SidecarCommand | undefined {
   }
   const relay = parseRelaySettings((command as { relay?: unknown }).relay)
   if (!relay) return
+  const sync = parseSyncStart((command as { sync?: unknown }).sync)
+  if (!sync) return
   return {
     type: "start",
     hostname: command.hostname,
@@ -190,6 +318,7 @@ function parseCommand(value: unknown): SidecarCommand | undefined {
     userDataPath: command.userDataPath,
     mobile: { password: mobilePassword, port: mobilePort },
     relay,
+    sync,
   }
 }
 
