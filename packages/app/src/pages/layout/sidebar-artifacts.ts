@@ -71,6 +71,13 @@ export function artifactSessionHref(slug: string, sessionID: string, file: strin
   return `/${slug}/session/${sessionID}?file=${encodeURIComponent(file)}`
 }
 
+// New-layout target: the session route (server + ID) plus `?file=` for file
+// artifacts, which the session page turns into a focused review diff.
+export function artifactTargetHref(sessionPath: string, artifact: Artifact) {
+  if (artifact.type === "diff" || artifact.type === "file") return `${sessionPath}?file=${encodeURIComponent(artifact.file)}`
+  return sessionPath
+}
+
 export function artifactMatchesFilter(artifact: Artifact, filter: ArtifactFilter) {
   if (filter === "changed") return artifact.type === "diff" || artifact.type === "file"
   if (filter === "screenshots") return artifact.type === "screenshot"

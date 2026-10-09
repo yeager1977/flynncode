@@ -1017,6 +1017,8 @@ export const dict = {
   "sidebar.artifacts.filter.changed": "Changed",
   "sidebar.artifacts.filter.screenshots": "Screenshots",
   "sidebar.artifacts.filter.notes": "Notes",
+  "session.artifacts.tab": "Artifacts",
+  "session.artifacts.emptyFilter": "No artifacts match this filter.",
   "history.title": "Activity",
   "history.search.placeholder": "Filter activity",
   "history.consent.title": "Screenshots are off",

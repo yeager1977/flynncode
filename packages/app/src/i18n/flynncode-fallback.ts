@@ -38,6 +38,8 @@ const keys = [
   "home.knowledge.badge",
   "home.project.newKnowledgeSession",
   "home.sessions.emptyFilter",
+  "session.artifacts.emptyFilter",
+  "session.artifacts.tab",
   "inbox.agentPlaceholder",
   "inbox.empty",
   "inbox.emptyFilter",
