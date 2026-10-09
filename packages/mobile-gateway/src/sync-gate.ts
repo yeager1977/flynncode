@@ -7,6 +7,9 @@ export type PairingCode = { code: string; expiresAt: number }
 export const PAIRING_CODE_TTL_MS = 10 * 60 * 1000
 export const MAX_PAIR_ATTEMPTS = 5
 const MAX_NAME_LENGTH = 64
+// Tokens are minted as 32 random bytes in hex; anything else stored (an empty
+// or hand-edited record) must never authorize a request.
+const TOKEN = /^[0-9a-f]{64}$/
 
 export type SyncGate = ReturnType<typeof createSyncGate>
 
@@ -24,6 +27,8 @@ export function createSyncGate(input: {
   token?: () => string
   onPaired?: (peer: SyncPeer) => void
   onUnpaired?: () => void
+  /** The paired machine now answers at a new address; persist it. */
+  onPeerMoved?: (peer: SyncPeer) => void
 }) {
   const now = input.now ?? Date.now
   const makeToken = input.token ?? (() => randomBytes(32).toString("hex"))
@@ -44,7 +49,28 @@ export function createSyncGate(input: {
     prefs: () => state.prefs,
     pairingActive: () => state.pairing !== undefined && state.pairing.expiresAt > now(),
     authorized: (header: string | null) =>
-      state.peer !== undefined && header !== null && safeEqual(header, `Bearer ${state.peer.token}`),
+      state.peer !== undefined &&
+      TOKEN.test(state.peer.token) &&
+      header !== null &&
+      safeEqual(header, `Bearer ${state.peer.token}`),
+    /**
+     * Called for every request that presented the valid token: the peer's
+     * stored address follows the socket address, so a DHCP change is picked
+     * up instead of polling a stale address (possibly another device) forever.
+     * A stored host name already follows the peer through DNS and is kept, as
+     * is the stored port.
+     */
+    seen(remoteAddress: string | undefined) {
+      const peer = state.peer
+      const host = remoteAddress === undefined ? undefined : urlHost(remoteAddress)
+      if (!peer || !host) return
+      const current = new URL(peer.url)
+      if (!isAddress(current.hostname) || current.hostname === host) return
+      current.hostname = host
+      const moved = { ...peer, url: current.origin }
+      state.peer = moved
+      input.onPeerMoved?.(moved)
+    },
     update(next: { phoneAccess?: boolean; paused?: boolean; peer?: SyncPeer | null; prefs?: SyncPrefs }) {
       state.phoneAccess = next.phoneAccess ?? state.phoneAccess
       state.paused = next.paused ?? state.paused
@@ -55,9 +81,17 @@ export function createSyncGate(input: {
       state.pairing = code
       state.attempts = 0
     },
-    pair(request: { code: string; name: string; remoteAddress: string | undefined }) {
+    pair(request: {
+      code: string
+      name: string
+      remoteAddress: string | undefined
+      /** What the caller says it can be reached at: its host name and LAN addresses. */
+      advertised?: { host?: string; addresses?: string[] }
+    }) {
       const pairing = state.pairing
       if (!pairing || pairing.expiresAt <= now()) return "invalid" as const
+      const host = peerHost(request.remoteAddress, request.advertised)
+      if (!host) return "unaddressable" as const
       if (!safeEqual(request.code.trim(), pairing.code)) {
         state.attempts += 1
         if (state.attempts < MAX_PAIR_ATTEMPTS) return "invalid" as const
@@ -67,7 +101,7 @@ export function createSyncGate(input: {
       }
       const peer = {
         name: request.name.trim().slice(0, MAX_NAME_LENGTH) || "peer",
-        url: peerUrl(request.remoteAddress, input.gatewayPort),
+        url: `http://${host}:${input.gatewayPort}`,
         token: makeToken(),
       }
       state.pairing = undefined
@@ -92,10 +126,26 @@ export function createSyncGate(input: {
 }
 
 // The paired machine runs its gateway on the same port, so its URL is the
-// caller's address plus our own gateway port.
-function peerUrl(remoteAddress: string | undefined, port: number) {
-  const host = (remoteAddress ?? "127.0.0.1").replace(/^::ffff:/i, "")
-  return host.includes(":") ? `http://[${host}]:${port}` : `http://${host}:${port}`
+// caller's address plus our own gateway port. A link-local IPv6 caller is only
+// reachable through its zone, which a URL cannot carry, so the address it
+// advertised is used instead. Without a usable address pairing is refused.
+function peerHost(remoteAddress: string | undefined, advertised: { host?: string; addresses?: string[] } | undefined) {
+  if (remoteAddress === undefined) return
+  return urlHost(remoteAddress) ?? advertised?.addresses?.find(isAddress) ?? advertised?.host
+}
+
+// The URL host for a socket address: IPv4-mapped addresses lose their prefix,
+// IPv6 gets brackets, and link-local or zoned IPv6 has no usable URL form.
+function urlHost(remoteAddress: string) {
+  const address = remoteAddress.replace(/^::ffff:(?=\d+\.\d+\.\d+\.\d+$)/i, "")
+  if (!address.includes(":")) return address
+  if (address.includes("%") || /^fe[89ab]/i.test(address)) return
+  return `[${address}]`
+}
+
+// An IP literal as it appears in a URL host (IPv6 in brackets), not a name.
+function isAddress(host: string) {
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || /^\[[0-9a-f:.]+\]$/i.test(host)
 }
 
 function safeEqual(got: string, want: string) {

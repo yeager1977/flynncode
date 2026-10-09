@@ -1,3 +1,5 @@
+import { hostname } from "node:os"
+import { listLanIPv4 } from "./lan-ips.ts"
 import type { SyncPeer } from "./sync-gate.ts"
 
 export const SYNC_PORT = 4097
@@ -20,13 +22,16 @@ export async function pairWithPeer(input: {
   host: string
   code: string
   name: string
+  /** Where the other machine can reach this one if our socket address is unusable (link-local IPv6). */
+  advertise?: { host: string; addresses: string[] }
   fetchImpl?: typeof fetch
 }): Promise<PairResult> {
   const url = peerBaseUrl(input.host)
+  const advertise = input.advertise ?? { host: hostname(), addresses: listLanIPv4() }
   const response = await (input.fetchImpl ?? fetch)(`${url}/flynncode-sync/pair`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ code: input.code.trim(), name: input.name }),
+    body: JSON.stringify({ code: input.code.trim(), name: input.name, ...advertise }),
     redirect: "error",
     signal: AbortSignal.timeout(PAIR_TIMEOUT_MS),
   }).catch(() => undefined)

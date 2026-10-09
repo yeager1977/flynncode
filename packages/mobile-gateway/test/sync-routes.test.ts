@@ -52,12 +52,27 @@ function gate(input: { phoneAccess?: boolean; peer?: SyncPeer; paused?: boolean 
   return { value, events }
 }
 
-const pairRequest = (code: string) =>
+const pairRequest = (code: string, extra: Record<string, unknown> = {}) =>
   new Request("http://gateway/flynncode-sync/pair", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ code, name: "starship" }),
+    body: JSON.stringify({ code, name: "starship", ...extra }),
   })
+
+// A body that never ends and records whether anyone read from it.
+function endlessBody() {
+  const state = { read: 0 }
+  const stream = new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        state.read += 1
+        controller.enqueue(new Uint8Array(1024).fill(65))
+      },
+    },
+    { highWaterMark: 0 },
+  )
+  return { stream, state }
+}
 
 describe("pairing", () => {
   test("a valid code mints a token and records the caller as the peer", async () => {
@@ -90,6 +105,142 @@ describe("pairing", () => {
   })
 })
 
+describe("pairing hardening", () => {
+  test("answers 403 without reading the body while no code is waiting", async () => {
+    const handle = createGateway({ options, sync: gate().value })
+    const body = endlessBody()
+    const response = await handle(
+      new Request("http://gateway/flynncode-sync/pair", { method: "POST", body: body.stream, duplex: "half" } as RequestInit),
+      "192.168.1.20",
+    )
+    expect(response.status).toBe(403)
+    expect(body.state.read).toBe(0)
+  })
+
+  test("stops reading a chunked body past 4 KiB", async () => {
+    const sync = gate()
+    sync.value.setPairingCode({ code: "482913", expiresAt: Date.now() + 60_000 })
+    const handle = createGateway({ options, sync: sync.value })
+    const body = endlessBody()
+    const response = await handle(
+      new Request("http://gateway/flynncode-sync/pair", { method: "POST", body: body.stream, duplex: "half" } as RequestInit),
+      "192.168.1.20",
+    )
+    expect(response.status).toBe(413)
+    expect(body.state.read).toBeLessThanOrEqual(6)
+    expect(sync.value.peer()).toBeUndefined()
+  })
+
+  test("stops reading an oversized chunked body sent over a real socket", async () => {
+    const sync = gate()
+    sync.value.setPairingCode({ code: "482913", expiresAt: Date.now() + 60_000 })
+    const handle = createGateway({ options, sync: sync.value })
+    const server = Bun.serve({ port: 0, fetch: (request, srv) => handle(request, srv.requestIP(request)?.address) })
+    const body = endlessBody()
+    const response = await fetch(`http://127.0.0.1:${server.port}/flynncode-sync/pair`, {
+      method: "POST",
+      body: body.stream,
+      duplex: "half",
+    } as RequestInit).catch(() => undefined)
+    // Either the 413 arrives or the server hangs up mid-upload; it never waits for the end.
+    if (response) expect(response.status).toBe(413)
+    server.stop(true)
+  })
+
+  test("refuses pairing when the caller's address is unknown", async () => {
+    const sync = gate()
+    sync.value.setPairingCode({ code: "482913", expiresAt: Date.now() + 60_000 })
+    const handle = createGateway({ options, sync: sync.value })
+    expect((await handle(pairRequest("482913"), undefined)).status).toBe(400)
+    expect(sync.value.peer()).toBeUndefined()
+  })
+
+  test("pairs a link-local IPv6 caller through the address it advertised", async () => {
+    const sync = gate()
+    sync.value.setPairingCode({ code: "482913", expiresAt: Date.now() + 60_000 })
+    const handle = createGateway({ options, sync: sync.value })
+    const response = await handle(
+      pairRequest("482913", { host: "starship", addresses: ["not-an-ip", "192.168.1.30"] }),
+      "fe80::1c2b:3a4d%eth0",
+    )
+    expect(response.status).toBe(200)
+    expect(sync.value.peer()?.url).toBe("http://192.168.1.30:4097")
+    expect(() => new URL(sync.value.peer()?.url ?? "")).not.toThrow()
+  })
+
+  test("pairs a routable IPv6 caller with a bracketed URL and falls back to the advertised name", async () => {
+    const routable = gate()
+    routable.value.setPairingCode({ code: "482913", expiresAt: Date.now() + 60_000 })
+    await createGateway({ options, sync: routable.value })(pairRequest("482913"), "2001:db8::20")
+    expect(routable.value.peer()?.url).toBe("http://[2001:db8::20]:4097")
+
+    const named = gate()
+    named.value.setPairingCode({ code: "482913", expiresAt: Date.now() + 60_000 })
+    await createGateway({ options, sync: named.value })(pairRequest("482913", { host: "starship" }), "fe80::1%wlan0")
+    expect(named.value.peer()?.url).toBe("http://starship:4097")
+
+    const nowhere = gate()
+    nowhere.value.setPairingCode({ code: "482913", expiresAt: Date.now() + 60_000 })
+    const refused = await createGateway({ options, sync: nowhere.value })(pairRequest("482913"), "fe80::1%wlan0")
+    expect(refused.status).toBe(400)
+  })
+})
+
+describe("peer address refresh", () => {
+  test("follows the socket address of requests that carry the token", async () => {
+    const moved: string[] = []
+    const value = createSyncGate({
+      machineName: "challenger",
+      gatewayPort: 4097,
+      phoneAccess: false,
+      paused: false,
+      peer: { ...peer, url: "http://192.168.1.20:5000" },
+      prefs: undefined,
+      onPeerMoved: (next) => moved.push(next.url),
+    })
+    const handle = createGateway({ options, sync: value })
+    const manifest = "http://gateway/flynncode-sync/manifest"
+    // A caller without the token never moves the peer.
+    await handle(new Request(manifest), "192.168.1.66")
+    expect(value.peer()?.url).toBe("http://192.168.1.20:5000")
+    await handle(new Request(manifest, { headers: { authorization: `Bearer ${peer.token}` } }), "::ffff:192.168.1.21")
+    // The host follows; the stored port stays.
+    expect(value.peer()?.url).toBe("http://192.168.1.21:5000")
+    // A zoned link-local address has no URL form, so the last good address stays.
+    await handle(new Request(manifest, { headers: { authorization: `Bearer ${peer.token}` } }), "fe80::1%eth0")
+    await handle(new Request(manifest, { headers: { authorization: `Bearer ${peer.token}` } }), "192.168.1.21")
+    expect(moved).toEqual(["http://192.168.1.21:5000"])
+  })
+
+  test("keeps a peer stored under a host name", async () => {
+    const value = createSyncGate({
+      machineName: "challenger",
+      gatewayPort: 4097,
+      phoneAccess: false,
+      paused: false,
+      peer: { ...peer, url: "http://starship.local:4097" },
+      prefs: undefined,
+    })
+    const handle = createGateway({ options, sync: value })
+    await handle(
+      new Request("http://gateway/flynncode-sync/manifest", { headers: { authorization: `Bearer ${peer.token}` } }),
+      "192.168.1.21",
+    )
+    expect(value.peer()?.url).toBe("http://starship.local:4097")
+  })
+
+  test("never authorizes a stored token that is empty or malformed", async () => {
+    for (const token of ["", "short", "Z".repeat(64)]) {
+      const handle = createGateway({ options, sync: gate({ peer: { ...peer, token } }).value })
+      const response = await handle(
+        new Request("http://gateway/flynncode-sync/manifest", { headers: { authorization: `Bearer ${token}` } }),
+        "192.168.1.20",
+      )
+      expect(response.status).toBe(401)
+    }
+  })
+})
+
 describe("token-gated sync routes", () => {
   test("require the pairing token; the phone password does not open them", async () => {
     const handle = createGateway({ options, sync: gate({ peer, phoneAccess: true }).value })
@@ -115,6 +266,45 @@ describe("token-gated sync routes", () => {
     ).toBe(405)
     expect(sync.value.takeSent()).toBe(1)
     expect(sync.value.takeSent()).toBe(0)
+  })
+
+  test("never forward write routes, encoded or dot-segment paths, or HEAD and OPTIONS", async () => {
+    const handle = createGateway({ options, sync: gate({ peer }).value })
+    const auth = { authorization: `Bearer ${peer.token}` }
+    const before = upstreamPaths.length
+    const attempts: Array<[string, string]> = [
+      ["GET", "/flynncode-sync/apply"],
+      ["POST", "/flynncode-sync/apply"],
+      ["GET", "/flynncode-sync/missing"],
+      ["POST", "/flynncode-sync/delete/ses_1"],
+      ["GET", "/flynncode-sync/delete/ses_1"],
+      ["POST", "/flynncode-sync/archive/ses_1"],
+      ["GET", "/flynncode-sync/archive/ses_1"],
+      ["GET", "/flynncode-sync/session/ses_1/../../apply"],
+      ["GET", "/flynncode-sync/session/%2e%2e/%2e%2e/apply"],
+      ["GET", "/flynncode-sync/session/ses_1%2F..%2F..%2Fapply"],
+      ["GET", "/flynncode-sync/session/ses_1%2Fextra"],
+      ["GET", "/flynncode-sync//manifest"],
+      ["HEAD", "/flynncode-sync/manifest"],
+      ["OPTIONS", "/flynncode-sync/manifest"],
+    ]
+    for (const [method, path] of attempts) {
+      const response = await handle(
+        new Request(`http://gateway${path}`, { method, headers: auth, body: method === "POST" ? "{}" : undefined }),
+        "192.168.1.20",
+      )
+      expect([404, 405]).toContain(response.status)
+    }
+    expect(upstreamPaths.length).toBe(before)
+  })
+
+  test("answer 502, not 401, when the local server refuses the gateway", async () => {
+    const handle = createGateway({ options: { ...options, upstreamPassword: "wrong" }, sync: gate({ peer }).value })
+    const response = await handle(
+      new Request("http://gateway/flynncode-sync/manifest", { headers: { authorization: `Bearer ${peer.token}` } }),
+      "192.168.1.20",
+    )
+    expect(response.status).toBe(502)
   })
 
   test("serve prefs from the gate and stop serving while paused", async () => {
