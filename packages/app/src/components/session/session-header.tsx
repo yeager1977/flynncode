@@ -37,6 +37,7 @@ import { fileManagerApp } from "@/utils/file-manager"
 import { Persist, persisted } from "@/utils/persist"
 import { StatusPopover, StatusPopoverV2 } from "../status-popover"
 import { ComputerUseMenu } from "./computer-use-menu"
+import { SessionFoldersMenu } from "./session-folders-menu"
 import { CiStatusStrip } from "./ci-status"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
@@ -424,6 +425,8 @@ export function SessionHeader() {
     onTasksToggle: () => view().tasks.toggle(),
     handoffLabel: language.t(onPrimary() ? "session.handoff.toWorktree" : "session.handoff.toMain"),
     onHandoff: () => void handoff(),
+    sessionID: params.id,
+    directory: projectDirectory(),
   }))
 
   const selectApp = (app: OpenApp) => {
@@ -751,6 +754,8 @@ type SessionHeaderV2ActionsState = {
   onTasksToggle: () => void
   handoffLabel: string
   onHandoff: () => void
+  sessionID: string | undefined
+  directory: string
 }
 
 function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
@@ -833,6 +838,9 @@ function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
             icon={<Icon name="checklist" />}
           />
         </TooltipV2>
+        <Show when={props.state.sessionID}>
+          {(sessionID) => <SessionFoldersMenu sessionID={sessionID()} directory={props.state.directory} />}
+        </Show>
         <TooltipV2 class="shrink-0" placement="bottom" value={props.state.handoffLabel}>
           <IconButtonV2
             type="button"
