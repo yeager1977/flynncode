@@ -13,6 +13,8 @@
  */
 import { expect } from "bun:test"
 import { Effect, Layer } from "effect"
+import { InstanceStore } from "../../src/project/instance-store"
+import { InstanceBootstrap } from "../../src/project/bootstrap-service"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import fs from "fs/promises"
 import path from "path"
@@ -91,6 +93,10 @@ const it = testEffect(
     [MCP.node, mcp],
     [LSP.node, lsp],
     [RuntimeFlags.node, RuntimeFlags.layer({ experimentalEventSystem: true })],
+    [
+      InstanceStore.bootstrapNode,
+      Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void })),
+    ],
   ]),
 )
 

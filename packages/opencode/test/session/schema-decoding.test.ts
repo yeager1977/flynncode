@@ -43,7 +43,8 @@ describe("Session.Info", () => {
       version: "0.1.0",
       time: { created: 1, updated: 2 },
     }
-    expect(decode(input)).toEqual(input)
+    // Sessions without a kind decode as code sessions.
+    expect(decode(input)).toEqual({ ...input, kind: "code" })
   })
 
   test("round-trips every optional field", () => {
@@ -63,6 +64,7 @@ describe("Session.Info", () => {
       },
       share: { url: "https://share.example.com/s/1" },
       title: "Full session",
+      kind: "knowledge" as const,
       version: "1.0.0",
       metadata: { source: "test" },
       time: { created: 100, updated: 200, compacting: 150, archived: 300 },
@@ -93,7 +95,8 @@ describe("Session.Info", () => {
       },
       time: { created: 1, updated: 2 },
     }
-    expect(decode(input)).toEqual(input)
+    // Sessions without a kind decode as code sessions.
+    expect(decode(input)).toEqual({ ...input, kind: "code" })
   })
 
   test("rejects unbranded session id", () => {
@@ -132,7 +135,8 @@ describe("Session.GlobalInfo", () => {
       time: { created: 0, updated: 0 },
       project: null,
     }
-    expect(decode(input)).toEqual(input)
+    // Sessions without a kind decode as code sessions.
+    expect(decode(input)).toEqual({ ...input, kind: "code" })
   })
 
   test("accepts populated project", () => {
@@ -146,7 +150,8 @@ describe("Session.GlobalInfo", () => {
       time: { created: 0, updated: 0 },
       project: { id: projectID, worktree: "/tmp/wt", name: "alpha" },
     }
-    expect(decode(input)).toEqual(input)
+    // Sessions without a kind decode as code sessions.
+    expect(decode(input)).toEqual({ ...input, kind: "code" })
   })
 })
 

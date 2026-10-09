@@ -16,6 +16,8 @@
  */
 import { expect } from "bun:test"
 import { Effect, Layer } from "effect"
+import { InstanceStore } from "../../src/project/instance-store"
+import { InstanceBootstrap } from "../../src/project/bootstrap-service"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Database } from "@opencode-ai/core/database/database"
@@ -89,6 +91,10 @@ const it = testEffect(
     [MCP.node, mcp],
     [LSP.node, lsp],
     [RuntimeFlags.node, RuntimeFlags.layer({ experimentalEventSystem: true })],
+    [
+      InstanceStore.bootstrapNode,
+      Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void })),
+    ],
   ]),
 )
 
@@ -123,8 +129,7 @@ it.live("classifies a part whose trailing line is the OMO initiator marker as sy
 it.live("classifies a part whose trailing lines are initiator then NOREPLY as synthetic", () =>
   provideTmpdirServer(() =>
     Effect.gen(function* () {
-      const text =
-        "wake task-agent-reliability\n<!-- OMO_INTERNAL_INITIATOR -->\n<!-- OMO_INTERNAL_NOREPLY -->"
+      const text = "wake task-agent-reliability\n<!-- OMO_INTERNAL_INITIATOR -->\n<!-- OMO_INTERNAL_NOREPLY -->"
       const part = yield* admit([{ type: "text", text }])
       expect(part.type).toBe("text")
       if (part.type === "text") {

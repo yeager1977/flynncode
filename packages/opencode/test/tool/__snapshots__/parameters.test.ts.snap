@@ -309,12 +309,28 @@ exports[`tool parameters JSON Schema (wire shape) task 1`] = `
       "description": "Run the agent in the background. You will be notified when it completes. DO NOT sleep, poll, or proactively check on its progress",
       "type": "boolean",
     },
+    "cleanup": {
+      "description": "Keep the temp worktree after the task (retain) or mark it disposable on archive (dispose)",
+      "enum": [
+        "retain",
+        "dispose",
+      ],
+      "type": "string",
+    },
     "command": {
       "description": "The command that triggered this task",
       "type": "string",
     },
     "description": {
       "description": "A short (3-5 words) description of the task",
+      "type": "string",
+    },
+    "isolation": {
+      "description": "Run the subagent in the parent directory (inherit) or in a temp worktree (worktree)",
+      "enum": [
+        "inherit",
+        "worktree",
+      ],
       "type": "string",
     },
     "prompt": {
