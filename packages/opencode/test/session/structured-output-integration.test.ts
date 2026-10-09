@@ -1,17 +1,26 @@
 import { describe, expect, test } from "bun:test"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Ripgrep } from "@opencode-ai/core/ripgrep"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Session } from "@/session/session"
 import { SessionPrompt } from "../../src/session/prompt"
 import { MessageV2 } from "../../src/session/message-v2"
 import { testEffect } from "../lib/effect"
+import { InstanceStore } from "../../src/project/instance-store"
+import { InstanceBootstrap } from "../../src/project/bootstrap-service"
 
 // Skip tests if no API key is available
 const hasApiKey = !!process.env.ANTHROPIC_API_KEY
-const it = testEffect(AppNodeBuilder.build(LayerNode.group([SessionPrompt.node, Session.node, Ripgrep.node])))
+const it = testEffect(
+  AppNodeBuilder.build(LayerNode.group([SessionPrompt.node, Session.node, Ripgrep.node]), [
+    [
+      InstanceStore.bootstrapNode,
+      Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void })),
+    ],
+  ]),
+)
 const live = hasApiKey ? it.instance : it.instance.skip
 
 describe("StructuredOutput Integration", () => {
