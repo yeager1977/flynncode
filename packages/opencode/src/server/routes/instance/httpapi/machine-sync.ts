@@ -57,7 +57,12 @@ export const machineSyncRoutes = HttpRouter.use((router) =>
       Effect.gen(function* () {
         const sessionID = decodeSessionID((yield* HttpRouter.params).id)
         const body: unknown = yield* request.json.pipe(Effect.orElseSucceed(() => undefined))
-        if (Option.isNone(sessionID) || !isRecord(body) || typeof body.timeDeleted !== "number")
+        if (
+          Option.isNone(sessionID) ||
+          !isRecord(body) ||
+          typeof body.timeDeleted !== "number" ||
+          !Number.isInteger(body.timeDeleted)
+        )
           return json({ error: "bad request" }, 400)
         return yield* store.remove({ sessionID: sessionID.value, timeDeleted: body.timeDeleted }).pipe(
           Effect.as(json({ ok: true })),
@@ -70,7 +75,12 @@ export const machineSyncRoutes = HttpRouter.use((router) =>
       Effect.gen(function* () {
         const sessionID = decodeSessionID((yield* HttpRouter.params).id)
         const body: unknown = yield* request.json.pipe(Effect.orElseSucceed(() => undefined))
-        if (Option.isNone(sessionID) || !isRecord(body) || typeof body.timeArchived !== "number")
+        if (
+          Option.isNone(sessionID) ||
+          !isRecord(body) ||
+          typeof body.timeArchived !== "number" ||
+          !Number.isInteger(body.timeArchived)
+        )
           return json({ error: "bad request" }, 400)
         return yield* store.archive({ sessionID: sessionID.value, timeArchived: body.timeArchived }).pipe(
           Effect.as(json({ ok: true })),

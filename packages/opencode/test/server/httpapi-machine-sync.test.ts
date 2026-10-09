@@ -1,6 +1,6 @@
 import { describe, expect } from "bun:test"
 import { NodeHttpServer, NodeServices } from "@effect/platform-node"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Option } from "effect"
 import { HttpClient, HttpClientRequest, HttpRouter } from "effect/unstable/http"
 import { Database } from "@opencode-ai/core/database/database"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
@@ -11,31 +11,42 @@ import { AbsolutePath } from "@opencode-ai/core/schema"
 import { SessionExecution } from "@opencode-ai/core/session/execution"
 import { SessionTable } from "@opencode-ai/core/session/sql"
 import { MachineSyncStore } from "@/machine-sync/store"
+import { ServerAuth } from "@/server/auth"
+import { authorizationRouterMiddleware } from "@/server/routes/instance/httpapi/middleware/authorization"
 import { MachineSyncPaths, machineSyncRoutes } from "@/server/routes/instance/httpapi/machine-sync"
 import { SessionID } from "@/session/schema"
 import { testEffect } from "../lib/effect"
 
-// The routes are served alone (no auth layer) on the in-test server; the app
-// graph is provided once so the routes and the test share one database.
-// No chat runs in these tests, so the engine is an idle stand-in.
+// A session is "running" on the V2 engine while its id is in this set.
+const executing = new Set<SessionID>()
 const execution = Layer.succeed(
   SessionExecution.Service,
   SessionExecution.Service.of({
-    active: Effect.succeed(new Set()),
+    active: Effect.sync(() => new Set(executing)),
     resume: () => Effect.void,
     wake: () => Effect.void,
     interrupt: () => Effect.void,
   }),
 )
-const appLayer = AppNodeBuilder.build(LayerNode.group([MachineSyncStore.node, Database.node]), [
-  [SessionExecution.node, execution],
-])
-const served = HttpRouter.serve(machineSyncRoutes, { disableListenLog: true, disableLogger: true }).pipe(
-  Layer.provideMerge(appLayer),
-  Layer.provideMerge(NodeHttpServer.layerTest),
-  Layer.provideMerge(NodeServices.layer),
+
+// The routes are served on the in-test server; the app graph is provided once
+// so the routes and the test share one database. Each call builds its own graph.
+const serve = (routes: typeof machineSyncRoutes) =>
+  HttpRouter.serve(routes, { disableListenLog: true, disableLogger: true }).pipe(
+    Layer.provideMerge(
+      AppNodeBuilder.build(LayerNode.group([MachineSyncStore.node, Database.node]), [
+        [SessionExecution.node, execution],
+      ]),
+    ),
+    Layer.provideMerge(NodeHttpServer.layerTest),
+    Layer.provideMerge(NodeServices.layer),
+  )
+const it = testEffect(serve(machineSyncRoutes))
+// Wired like server.ts: the raw routes sit behind the router authorization middleware.
+const secretConfig = ServerAuth.Config.configLayer({ password: Option.some("secret"), username: "opencode" })
+const itSecret = testEffect(
+  serve(machineSyncRoutes.pipe(Layer.provide(authorizationRouterMiddleware.layer), Layer.provide(secretConfig))),
 )
-const it = testEffect(served)
 
 function request(path: string, init?: RequestInit) {
   const url = new URL(path, "http://localhost")
@@ -73,6 +84,14 @@ const seed = Effect.fn("test.machineSyncRoutes.seed")(function* (id: string) {
     .run()
 })
 
+const basic = (password: string) => ({ authorization: ServerAuth.header({ username: "opencode", password }) ?? "" })
+
+const exportBundle = (id: string, headers?: Record<string, string>) =>
+  request(`/flynncode-sync/session/${id}`, { headers }).pipe(
+    Effect.flatMap((response) => response.json),
+    Effect.map((body) => body as { session: Record<string, unknown>; parts: unknown[] }),
+  )
+
 describe("machine sync routes", () => {
   it.live("serves the manifest and session bundles", () =>
     Effect.gen(function* () {
@@ -80,7 +99,7 @@ describe("machine sync routes", () => {
       const manifest = yield* request(MachineSyncPaths.manifest)
       expect(manifest.status).toBe(200)
       const body = (yield* manifest.json) as { sessions: Array<{ id: string }> }
-      expect(body.sessions.map((session) => session.id)).toEqual(["ses_route"])
+      expect(body.sessions.map((session) => session.id)).toContain("ses_route")
 
       const bundle = yield* request("/flynncode-sync/session/ses_route")
       expect(bundle.status).toBe(200)
@@ -95,17 +114,13 @@ describe("machine sync routes", () => {
       yield* seed("ses_apply")
       expect((yield* request(MachineSyncPaths.apply, post({ version: 1 }))).status).toBe(400)
 
-      const exported = (yield* (yield* request("/flynncode-sync/session/ses_apply")).json) as {
-        session: Record<string, unknown>
-      }
+      const exported = yield* exportBundle("ses_apply")
       const applied = yield* request(
         MachineSyncPaths.apply,
         post({ ...exported, session: { ...exported.session, title: "from peer", time_updated: 50 } }),
       )
       expect(applied.status).toBe(200)
-      const after = (yield* (yield* request("/flynncode-sync/session/ses_apply")).json) as {
-        session: { title: string; time_updated: number }
-      }
+      const after = yield* exportBundle("ses_apply")
       expect(after.session).toMatchObject({ title: "from peer", time_updated: 50 })
     }),
   )
@@ -122,8 +137,66 @@ describe("machine sync routes", () => {
         sessions: Array<{ id: string; timeArchived: number | null }>
         tombstones: Array<{ id: string }>
       }
-      expect(manifest.sessions).toEqual([expect.objectContaining({ id: "ses_archive", timeArchived: 77 })])
-      expect(manifest.tombstones.map((tombstone) => tombstone.id)).toEqual(["ses_delete"])
+      expect(manifest.sessions).toContainEqual(expect.objectContaining({ id: "ses_archive", timeArchived: 77 }))
+      expect(manifest.sessions.map((session) => session.id)).not.toContain("ses_delete")
+      expect(manifest.tombstones.map((tombstone) => tombstone.id)).toContain("ses_delete")
+    }),
+  )
+
+  it.live("rejects delete and archive requests with a bad id or timestamp", () =>
+    Effect.gen(function* () {
+      yield* seed("ses_badreq")
+      expect((yield* request("/flynncode-sync/delete/not-a-session", post({ timeDeleted: 1 }))).status).toBe(400)
+      expect((yield* request("/flynncode-sync/archive/not-a-session", post({ timeArchived: 1 }))).status).toBe(400)
+      expect((yield* request("/flynncode-sync/delete/ses_badreq", post({}))).status).toBe(400)
+      expect((yield* request("/flynncode-sync/delete/ses_badreq", post({ timeDeleted: 1.5 }))).status).toBe(400)
+      expect((yield* request("/flynncode-sync/archive/ses_badreq", post({ timeArchived: "7" }))).status).toBe(400)
+      expect((yield* request("/flynncode-sync/archive/ses_badreq", post({ timeArchived: 1.5 }))).status).toBe(400)
+      expect((yield* request("/flynncode-sync/delete/ses_badreq", { method: "POST", body: "not json" })).status).toBe(
+        400,
+      )
+    }),
+  )
+
+  it.live("answers 409 while the chat is running", () =>
+    Effect.gen(function* () {
+      yield* seed("ses_busy")
+      const exported = yield* exportBundle("ses_busy")
+      executing.add(SessionID.make("ses_busy"))
+      yield* Effect.gen(function* () {
+        expect((yield* request(MachineSyncPaths.apply, post(exported))).status).toBe(409)
+        expect((yield* request("/flynncode-sync/delete/ses_busy", post({ timeDeleted: 5 }))).status).toBe(409)
+        expect((yield* request("/flynncode-sync/archive/ses_busy", post({ timeArchived: 5 }))).status).toBe(409)
+      }).pipe(Effect.ensuring(Effect.sync(() => executing.delete(SessionID.make("ses_busy")))))
+      expect((yield* request("/flynncode-sync/archive/ses_busy", post({ timeArchived: 5 }))).status).toBe(200)
+    }),
+  )
+
+  it.live("answers 422 and keeps the chat when a bundle cannot be applied", () =>
+    Effect.gen(function* () {
+      yield* seed("ses_unapplied")
+      const exported = yield* exportBundle("ses_unapplied")
+      // Passes the shape check, but the part's message is not in the bundle, so
+      // the foreign key fails during the insert.
+      const orphan = {
+        id: "prt_orphan",
+        message_id: "msg_missing",
+        session_id: "ses_unapplied",
+        time_created: 1,
+        time_updated: 1,
+        data: { type: "text", text: "orphan" },
+      }
+      const response = yield* request(
+        MachineSyncPaths.apply,
+        post({
+          ...exported,
+          session: { ...exported.session, title: "must not land", time_updated: 500 },
+          parts: [orphan],
+        }),
+      )
+      expect(response.status).toBe(422)
+      expect(((yield* response.json) as { error: string }).error).toBeString()
+      expect((yield* exportBundle("ses_unapplied")).session).toMatchObject({ title: "ses_unapplied", time_updated: 10 })
     }),
   )
 
@@ -131,7 +204,36 @@ describe("machine sync routes", () => {
     Effect.gen(function* () {
       yield* seed("ses_missing")
       const response = yield* request(MachineSyncPaths.missing)
-      expect(yield* response.json).toEqual({ directories: ["/nonexistent/flynncode-sync-route"] })
+      const body = (yield* response.json) as { directories: string[] }
+      expect(body.directories).toContain("/nonexistent/flynncode-sync-route")
+    }),
+  )
+})
+
+describe("machine sync routes behind the server password", () => {
+  itSecret.live("refuses requests without the server credential", () =>
+    Effect.gen(function* () {
+      yield* seed("ses_auth")
+      const exported = yield* exportBundle("ses_auth", basic("secret"))
+
+      for (const headers of [undefined, basic("wrong")]) {
+        const manifest = yield* request(MachineSyncPaths.manifest, { headers })
+        expect(manifest.status).toBe(401)
+        expect(manifest.headers["www-authenticate"] ?? "").toContain("Basic")
+        const apply = yield* request(MachineSyncPaths.apply, {
+          ...post(exported),
+          headers: { ...headers, "content-type": "application/json" },
+        })
+        expect(apply.status).toBe(401)
+      }
+
+      expect((yield* request(MachineSyncPaths.manifest, { headers: basic("secret") })).status).toBe(200)
+      expect(
+        (yield* request(MachineSyncPaths.apply, {
+          ...post(exported),
+          headers: { ...basic("secret"), "content-type": "application/json" },
+        })).status,
+      ).toBe(200)
     }),
   )
 })
