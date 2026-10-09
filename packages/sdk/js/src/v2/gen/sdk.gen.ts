@@ -26,10 +26,6 @@ import type {
   ConfigHooksTrustListResponses,
   ConfigHooksTrustRevokeErrors,
   ConfigHooksTrustRevokeResponses,
-  ConfigOmoGetErrors,
-  ConfigOmoGetResponses,
-  ConfigOmoUpdateErrors,
-  ConfigOmoUpdateResponses,
   ConfigProjectGetErrors,
   ConfigProjectGetResponses,
   ConfigProvidersErrors,
@@ -98,10 +94,6 @@ import type {
   GlobalEventResponses,
   GlobalHealthErrors,
   GlobalHealthResponses,
-  GlobalOmoConfigGetErrors,
-  GlobalOmoConfigGetResponses,
-  GlobalOmoConfigUpdateErrors,
-  GlobalOmoConfigUpdateResponses,
   GlobalUpgradeErrors,
   GlobalUpgradeResponses,
   HooksHashInput,
@@ -131,7 +123,6 @@ import type {
   McpStatusResponses,
   ModelRef,
   MoveSessionDestination,
-  OmoConfigPatch,
   OutputFormat,
   Part as Part2,
   PartDeleteErrors,
@@ -1369,48 +1360,6 @@ export class Config extends HeyApiClient {
   }
 }
 
-export class OmoConfig extends HeyApiClient {
-  /**
-   * Get global Oh My OpenCode configuration
-   *
-   * Retrieve the current global Oh My OpenCode plugin configuration along with OpenCode's disabled providers.
-   */
-  public get<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<GlobalOmoConfigGetResponses, GlobalOmoConfigGetErrors, ThrowOnError>({
-      url: "/global/omo-config",
-      ...options,
-    })
-  }
-
-  /**
-   * Update global Oh My OpenCode configuration
-   *
-   * Update global Oh My OpenCode plugin configuration and OpenCode disabled providers in one call.
-   */
-  public update<ThrowOnError extends boolean = false>(
-    parameters?: {
-      omoConfigPatch?: OmoConfigPatch
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ key: "omoConfigPatch", map: "body" }] }])
-    return (options?.client ?? this.client).put<
-      GlobalOmoConfigUpdateResponses,
-      GlobalOmoConfigUpdateErrors,
-      ThrowOnError
-    >({
-      url: "/global/omo-config",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-}
-
 export class Global extends HeyApiClient {
   /**
    * Get health
@@ -1476,11 +1425,6 @@ export class Global extends HeyApiClient {
   get config(): Config {
     return (this._config ??= new Config({ client: this.client }))
   }
-
-  private _omoConfig?: OmoConfig
-  get omoConfig(): OmoConfig {
-    return (this._omoConfig ??= new OmoConfig({ client: this.client }))
-  }
 }
 
 export class Event extends HeyApiClient {
@@ -1543,75 +1487,6 @@ export class Project extends HeyApiClient {
       url: "/config/project",
       ...options,
       ...params,
-    })
-  }
-}
-
-export class Omo extends HeyApiClient {
-  /**
-   * Get project Oh My OpenCode configuration
-   *
-   * Retrieve the current project Oh My OpenCode plugin configuration along with OpenCode's disabled providers.
-   */
-  public get<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<ConfigOmoGetResponses, ConfigOmoGetErrors, ThrowOnError>({
-      url: "/config/omo",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Update project Oh My OpenCode configuration
-   *
-   * Update project Oh My OpenCode plugin configuration and OpenCode disabled providers in one call.
-   */
-  public update<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      omoConfigPatch?: OmoConfigPatch
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { key: "omoConfigPatch", map: "body" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).put<ConfigOmoUpdateResponses, ConfigOmoUpdateErrors, ThrowOnError>({
-      url: "/config/omo",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
     })
   }
 }
@@ -1842,11 +1717,6 @@ export class Config2 extends HeyApiClient {
   private _project?: Project
   get project(): Project {
     return (this._project ??= new Project({ client: this.client }))
-  }
-
-  private _omo?: Omo
-  get omo(): Omo {
-    return (this._omo ??= new Omo({ client: this.client }))
   }
 
   private _hooks?: Hooks
