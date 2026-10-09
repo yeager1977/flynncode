@@ -27,7 +27,7 @@ export type Gateway = {
   stop(): void
 }
 
-type RunningState = { server: Server; port: number; refs: number; stop: () => void }
+type RunningState = { server: Server; port: number; refs: number; sync: SyncGate | undefined; stop: () => void }
 
 let running: RunningState | undefined
 
@@ -238,6 +238,14 @@ export function createGateway(input: { options: GatewayOptions; sync?: SyncGate 
 
 export async function startGateway(input: { options: GatewayOptions; port?: number; sync?: SyncGate }): Promise<Gateway> {
   if (running) {
+    // The listener's handler is bound to the gate it started with, so joining
+    // with a different gate would silently drop (or add) machine sync.
+    if (running.sync !== input.sync)
+      throw new Error(
+        input.sync
+          ? "the LAN gateway is already running without machine sync"
+          : "the LAN gateway is already running for machine sync",
+      )
     running.refs += 1
     const state = running
     const released = { value: false }
@@ -258,6 +266,7 @@ export async function startGateway(input: { options: GatewayOptions; port?: numb
     server,
     port,
     refs: 1,
+    sync: input.sync,
     stop: () => {
       server.closeAllConnections()
       server.close()

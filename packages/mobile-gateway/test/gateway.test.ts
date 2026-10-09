@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { createGateway, startGateway, stopGateway } from "../src/gateway"
+import { createSyncGate } from "../src/sync-gate"
 import { SESSION_COOKIE } from "../src/cookies"
 import type { GatewayOptions } from "../src/config"
 
@@ -254,6 +255,26 @@ describe("startGateway", () => {
     expect(response.status).toBe(401)
     first.stop()
     await expect(fetch(`http://127.0.0.1:${first.port}/api/session`)).rejects.toThrow()
+  })
+
+  test("refuses to join a running gateway with a different sync gate", async () => {
+    const gate = createSyncGate({
+      machineName: "challenger",
+      gatewayPort: 4097,
+      phoneAccess: true,
+      paused: false,
+      peer: undefined,
+      prefs: undefined,
+    })
+    const plain = await startGateway({ options, port: 0 })
+    await expect(startGateway({ options, port: 0, sync: gate })).rejects.toThrow("without machine sync")
+    plain.stop()
+    const synced = await startGateway({ options, port: 0, sync: gate })
+    await expect(startGateway({ options, port: 0 })).rejects.toThrow("for machine sync")
+    const joined = await startGateway({ options, port: 0, sync: gate })
+    expect(joined.port).toBe(synced.port)
+    joined.stop()
+    synced.stop()
   })
 
   test("double stop on the same handle is a no-op", async () => {
