@@ -119,6 +119,8 @@ import { sessionLocationLayer } from "@opencode-ai/server/middleware/session-loc
 import { PtyEnvironment } from "@opencode-ai/server/pty-environment"
 import { schemaErrorLayer as v2SchemaErrorLayer } from "@opencode-ai/server/middleware/schema-error"
 import { workspaceHandlers } from "./handlers/workspace"
+import { MachineSyncStore } from "@/machine-sync/store"
+import { machineSyncRoutes } from "./machine-sync"
 import { instanceContextLayer } from "./middleware/instance-context"
 import { workspaceRoutingLayer } from "./middleware/workspace-routing"
 import { disposeMiddleware } from "./lifecycle"
@@ -217,6 +219,10 @@ const uiRoute = HttpRouter.use((router) =>
   }),
 ).pipe(Layer.provide(authOnlyRouterLayer))
 
+// Machine sync routes use the server's Basic auth; the LAN gateway is the only
+// path from another machine and it holds the server credential.
+const machineSyncRoute = machineSyncRoutes.pipe(Layer.provide(authOnlyRouterLayer))
+
 type RouteRequirements =
   | HttpRouter.HttpRouter
   | HttpRouter.Request<"Error", unknown>
@@ -309,6 +315,7 @@ export function createRoutes(
     instanceRoutes,
     serverRoutes,
     docRoute,
+    machineSyncRoute,
     uiRoute,
   ).pipe(
     Layer.provide([
@@ -327,6 +334,8 @@ export function createRoutes(
     Layer.provide(AppNodeBuilderV1.build(SessionV2.node, sessionReplacements)),
     Layer.provide(AppNodeBuilderV1.build(TaskTool.bindNode, sessionReplacements)),
     Layer.provide(AppNodeBuilderV1.build(MessageTool.bindNode, sessionReplacements)),
+    // The store checks SessionExecution for busy chats, so it needs the local replacement.
+    Layer.provide(AppNodeBuilderV1.build(MachineSyncStore.node, sessionReplacements)),
     Layer.provide(locationServiceMapV2),
 
     Layer.provide(AppNodeBuilderV1.build(app)),
