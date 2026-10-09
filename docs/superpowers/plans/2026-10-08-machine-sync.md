@@ -18,7 +18,7 @@
 - Pairing token: 256-bit random (`randomBytes(32).toString("hex")`, 64 hex chars), compared with `timingSafeEqual`, sent as `authorization: Bearer <token>`; the phone password never opens `/flynncode-sync/*` and the token opens nothing else.
 - Pairing code: 6 digits, valid 10 minutes (`PAIRING_CODE_TTL_MS = 600_000`), single use, invalidated after 5 wrong attempts (`MAX_PAIR_ATTEMPTS = 5`).
 - Gateway port 4097 (`MOBILE_GATEWAY_PORT`); A records B's URL as `http://<request remote IPv4>:4097`.
-- Secret paths: any key matching `/(apiKey|api_key|token|secret|password)$/i` (suffix match, so `accessToken`/`refresh_token` are secret but `maxTokens` is not); any value below a `headers` map under top-level `provider` or `mcp`; any string containing `{env:…}` or `{file:…}`. They are sent as `"__flynncode_sync_secret__"`; the top-level `server` block is never sent and never overwritten; placeholders never land in a file; a secret present on the peer but absent locally stays absent; local secret leaves always survive.
+- Secret paths: any key matching `/(api_?key|token|secret|password|private_?key|secret_?access_?key|access_?key_?id|credentials?|authorization)$/i` or named exactly `key` (suffix match, so `accessToken`/`refresh_token`/`secretAccessKey` are secret but `maxTokens` is not); any value below a `headers`, `env`, `environment`, `credentials` or `googleAuthOptions` map anywhere; any string containing `{env:…}` or `{file:…}`. They are sent as `"__flynncode_sync_secret__"`; the top-level `server` block is never sent and never overwritten; placeholders never land in a file; a secret present on the peer but absent locally stays absent; local secret leaves always survive.
 - Global config: newest file mtime wins (tie keeps local); after applying, the local file mtime is set to the peer's mtime so the next cycle sees a tie.
 - Busy means either engine is running the chat: the legacy runner's `session.status` busy/retry events OR membership in V2 `SessionExecution.Service`'s `active` set (packages/core/src/session/execution.ts). The manifest's `busy` flag and the local-busy skip both use this combined check.
 - Chats: newest `time_updated` wins per whole chat; equal keeps local; local busy → skip; peer busy → skip; parents applied before children; archived chats are never pulled when missing locally.
@@ -1750,7 +1750,8 @@ import { isRecord } from "@/util/record"
 
 export const SECRET_PLACEHOLDER = "__flynncode_sync_secret__"
 
-const SECRET_KEY = /(apiKey|api_key|token|secret|password)$/i
+const SECRET_KEY =
+  /(api_?key|token|secret|password|private_?key|secret_?access_?key|access_?key_?id|credentials?|authorization)$/i
 const REFERENCE = /\{(env|file):[^}]*\}/
 const FORMAT = { formattingOptions: { insertSpaces: true, tabSize: 2 } }
 

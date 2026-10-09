@@ -125,9 +125,11 @@ app stays usable.
 edit wins by file mtime (tie keeps local).
 
 - **Never sent:** values at secret paths — any key matching
-  `/(apiKey|api_key|token|secret|password)$/i` (suffix match, so `maxTokens` still syncs), any `headers` map value under
-  `provider` or `mcp`, and `{env:…}`/`{file:…}` references — are replaced
-  with a placeholder before sending. The `server` block is omitted.
+  `/(api_?key|token|secret|password|private_?key|secret_?access_?key|access_?key_?id|credentials?|authorization)$/i`
+  or named exactly `key` (suffix match, so `maxTokens` still syncs), any value
+  below a `headers`, `env`, `environment`, `credentials` or
+  `googleAuthOptions` map anywhere, and `{env:…}`/`{file:…}` references — are
+  replaced with a placeholder before sending. The `server` block is omitted.
 - **On apply:** the local file is patched in place with the jsonc patch
   helpers (comments survive); local values at secret paths and the local
   `server` block are kept; placeholders never land in the file. A secret path
@@ -141,6 +143,26 @@ The renderer's persisted `settings.v3` store sections `general`,
 `appearance`, `keybinds`, `notifications` and `sounds` sync, newest wins,
 with an updated-at stamp added to the store. Not synced: the `launch` store,
 window state, open tabs, drafts, phone/relay/sync credentials.
+
+### Risk acceptance (trusted peer)
+
+The paired machine is trusted like the local user (user decision). Config
+fields that start or reach programs — MCP `command`/`url`, `plugin`,
+`permission`, `lsp`/`formatter` commands, provider `baseURL` — sync freely,
+with no confirmation step. Consequences, accepted:
+
+- Whoever holds the pairing token can change what this machine runs. The
+  token only travels on the LAN at pairing time and is compared in constant
+  time; unpair revokes it on both sides.
+- If the peer's IP address is reassigned (DHCP), the stale address could
+  belong to another device. Mitigation: the gateway refreshes the stored peer
+  URL from the socket address of every request that presents the valid token,
+  so the worker follows the peer instead of polling the old address forever.
+- A prompt-injected agent that edits the global config on one machine
+  propagates that edit to the other.
+- Credentials embedded in URLs or command arguments (not in a secret-named key,
+  header/env map or `{env:…}` reference) cannot be recognised and are sent as
+  plain config.
 
 ## Sync card (Settings → Servers)
 

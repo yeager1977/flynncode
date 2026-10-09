@@ -5,15 +5,18 @@ import { isRecord } from "@/util/record"
 
 export const SECRET_PLACEHOLDER = "__flynncode_sync_secret__"
 
-const SECRET_KEY = /(apiKey|api_key|token|secret|password)$/i
-// Every value below one of these maps can carry credentials.
-const SECRET_MAPS = new Set(["headers", "env", "environment"])
+// Credential leaves, matched as a suffix so `maxTokens` and similar counters
+// still sync. A bare `key` leaf (e.g. `options.key`) is a credential as well.
+const SECRET_KEY =
+  /(api_?key|token|secret|password|private_?key|secret_?access_?key|access_?key_?id|credentials?|authorization)$/i
+// Every value below one of these maps can carry credentials (lowercase names).
+const SECRET_MAPS = new Set(["headers", "env", "environment", "credentials", "googleauthoptions"])
 const REFERENCE = /\{(env|file):[^}]*\}/
 const FORMAT = { formattingOptions: { insertSpaces: true, tabSize: 2 } }
 
 export function isSecretPath(path: readonly string[]) {
   const key = path.at(-1)
-  if (key !== undefined && SECRET_KEY.test(key)) return true
+  if (key !== undefined && (SECRET_KEY.test(key) || key.toLowerCase() === "key")) return true
   return path.slice(0, -1).some((segment) => SECRET_MAPS.has(segment.toLowerCase()))
 }
 

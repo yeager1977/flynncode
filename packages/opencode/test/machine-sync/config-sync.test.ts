@@ -86,6 +86,44 @@ describe("MachineSyncConfig.sanitizeConfig", () => {
     expect(text).toContain('"X-Org"')
   })
 
+  test("masks cloud provider credentials: Bedrock keys, Vertex service accounts, bare keys, authorization", () => {
+    const sent = MachineSyncConfig.sanitizeConfig({
+      provider: {
+        "amazon-bedrock": {
+          options: {
+            region: "us-east-1",
+            accessKeyId: "AKIA-1",
+            secretAccessKey: "bedrock-secret",
+            sessionToken: "st",
+          },
+        },
+        "google-vertex": {
+          options: {
+            project: "my-project",
+            googleAuthOptions: { credentials: { client_email: "svc@x.iam", private_key: "-----BEGIN PK-----" } },
+          },
+        },
+        vertex: { options: { credentials: { private_key: "pk-2", client_id: "cid" } } },
+        azure: { options: { key: "azure-key", authorization: "Bearer az", resourceName: "res" } },
+      },
+      limit: { maxTokens: 4096, max_tokens: 2048 },
+    })
+    const text = JSON.stringify(sent)
+    for (const secret of [
+      "AKIA-1",
+      "bedrock-secret",
+      "-----BEGIN PK-----",
+      "svc@x.iam",
+      "pk-2",
+      "cid",
+      "azure-key",
+      "Bearer az",
+    ])
+      expect(text).not.toContain(secret)
+    for (const plain of ["us-east-1", "my-project", "res"]) expect(text).toContain(plain)
+    expect(sent.limit).toEqual({ maxTokens: 4096, max_tokens: 2048 })
+  })
+
   test("does not mutate its input and tolerates non-objects", () => {
     const input = { provider: { a: { options: { apiKey: "sk" } } } }
     MachineSyncConfig.sanitizeConfig(input)
@@ -107,6 +145,14 @@ describe("MachineSyncConfig.isSecretPath", () => {
     expect(MachineSyncConfig.isSecretPath(["mcp", "gh", "environment", "ANYTHING"])).toBe(true)
     expect(MachineSyncConfig.isSecretPath(["mcp", "gh", "environment"])).toBe(false)
     expect(MachineSyncConfig.isSecretPath([])).toBe(false)
+    expect(MachineSyncConfig.isSecretPath(["provider", "b", "options", "secretAccessKey"])).toBe(true)
+    expect(MachineSyncConfig.isSecretPath(["provider", "b", "options", "accessKeyId"])).toBe(true)
+    expect(MachineSyncConfig.isSecretPath(["provider", "v", "options", "credentials", "private_key"])).toBe(true)
+    expect(MachineSyncConfig.isSecretPath(["provider", "v", "options", "googleAuthOptions", "scopes"])).toBe(true)
+    expect(MachineSyncConfig.isSecretPath(["provider", "a", "options", "key"])).toBe(true)
+    expect(MachineSyncConfig.isSecretPath(["provider", "a", "options", "authorization"])).toBe(true)
+    expect(MachineSyncConfig.isSecretPath(["keybinds", "leader"])).toBe(false)
+    expect(MachineSyncConfig.isSecretPath(["provider", "a", "models", "m", "limit", "max_tokens"])).toBe(false)
   })
 })
 
@@ -144,6 +190,31 @@ describe("MachineSyncConfig.applyPeerConfig", () => {
     expect(next).not.toContain("sk-peer")
     expect(next).not.toContain("sk-openai")
     expect(ConfigParse.jsonc(next, "opencode.jsonc")).toMatchObject({ provider: { openai: { options: {} } } })
+  })
+
+  test("keeps local cloud credentials when the peer edits the rest of the provider", () => {
+    const text = `{ "provider": { "amazon-bedrock": { "options": { "region": "us-east-1", "accessKeyId": "AKIA-local", "secretAccessKey": "local-secret" } }, "vertex": { "options": { "project": "p1", "googleAuthOptions": { "credentials": { "private_key": "local-pk" } } } } } }`
+    const sent = MachineSyncConfig.sanitizeConfig({
+      provider: {
+        "amazon-bedrock": {
+          options: { region: "eu-west-1", accessKeyId: "AKIA-peer", secretAccessKey: "peer-secret" },
+        },
+        vertex: { options: { project: "p2", googleAuthOptions: { credentials: { private_key: "peer-pk" } } } },
+      },
+    })
+    const merged = MachineSyncConfig.applyPeerConfig({
+      localText: text,
+      local: ConfigParse.jsonc(text, "opencode.jsonc"),
+      peer: sent,
+    })
+    expect(ConfigParse.jsonc(merged, "opencode.jsonc")).toEqual({
+      provider: {
+        "amazon-bedrock": {
+          options: { region: "eu-west-1", accessKeyId: "AKIA-local", secretAccessKey: "local-secret" },
+        },
+        vertex: { options: { project: "p2", googleAuthOptions: { credentials: { private_key: "local-pk" } } } },
+      },
+    })
   })
 
   test("removes keys the peer dropped, but keeps a dropped subtree whole when it holds a local secret", () => {
