@@ -22,7 +22,7 @@ import { ServerAuth } from "@/server/auth"
 import { authorizationRouterMiddleware } from "@/server/routes/instance/httpapi/middleware/authorization"
 import { MachineSyncPaths, machineSyncRoutes } from "@/server/routes/instance/httpapi/machine-sync"
 import { SessionID } from "@/session/schema"
-import { pollWithTimeout, testEffect } from "../lib/effect"
+import { testEffect } from "../lib/effect"
 
 // A session is "running" on the V2 engine while its id is in this set.
 const executing = new Set<SessionID>()
@@ -300,7 +300,7 @@ describe("machine sync routes", () => {
           mtime: 2_000,
         }),
       )
-      expect(yield* fresh.json).toEqual({ applied: true })
+      expect(yield* fresh.json).toEqual({ applied: true, changed: true })
       const text = yield* Effect.promise(() => Bun.file(file).text())
       expect(text).toContain("// keep me")
       expect(text).toContain("peer/new")
@@ -310,7 +310,7 @@ describe("machine sync routes", () => {
     }),
   )
 
-  it.live("reloads instances after a pulled config changed the file, but only once no chat runs", () =>
+  it.live("marks a pulled config as pending and reloads only when asked", () =>
     Effect.gen(function* () {
       const file = Config.globalConfigFile()
       yield* Effect.addFinalizer(() => Effect.promise(() => rm(file, { force: true })))
@@ -322,31 +322,46 @@ describe("machine sync routes", () => {
       }
       GlobalBus.on("event", listen)
       yield* Effect.addFinalizer(() => Effect.sync(() => GlobalBus.off("event", listen)))
-
-      executing.add(SessionID.make("ses_reload"))
-      yield* Effect.gen(function* () {
-        const applied = yield* request(
-          MachineSyncPaths.settingsApply,
-          post({ config: { model: "peer/new" }, mtime: 2_000 }),
+      const pending = () =>
+        request(MachineSyncPaths.reload).pipe(
+          Effect.flatMap((response) => response.json),
+          Effect.map((body) => (body as { pending: unknown }).pending),
         )
-        expect(yield* applied.json).toEqual({ applied: true })
-        // Settings views refresh right away; the reload would stop the running chat.
-        expect(seen).toEqual(["config.updated"])
-        yield* Effect.sleep("1500 millis")
-        expect(seen).toEqual(["config.updated"])
-      }).pipe(Effect.ensuring(Effect.sync(() => executing.delete(SessionID.make("ses_reload")))))
-      yield* pollWithTimeout(
-        Effect.sync(() => (seen.includes("global.disposed") ? true : undefined)),
-        "instances were not reloaded once the chat went idle",
-      )
-      expect(seen).toEqual(["config.updated", "global.disposed"])
+      expect(yield* pending()).toBeNull()
 
-      // Newer but identical content only restamps the file: nothing to reload.
-      seen.length = 0
-      const same = yield* request(MachineSyncPaths.settingsApply, post({ config: { model: "peer/new" }, mtime: 3_000 }))
-      expect(yield* same.json).toEqual({ applied: true })
+      const applied = yield* request(
+        MachineSyncPaths.settingsApply,
+        post({ config: { model: "peer/new" }, mtime: 2_000, from: "starship" }),
+      )
+      expect(yield* applied.json).toEqual({ applied: true, changed: true })
+      expect(yield* Effect.promise(() => Bun.file(file).text())).toContain("peer/new")
+      // Settings views refresh right away; instances are never disposed on their own.
       yield* Effect.sleep("1500 millis")
-      expect(seen).toEqual([])
+      expect(seen).toEqual(["config.updated"])
+      expect(yield* pending()).toEqual({ from: "starship" })
+
+      // Newer but identical content only restamps the file: nothing new to reload.
+      const same = yield* request(MachineSyncPaths.settingsApply, post({ config: { model: "peer/new" }, mtime: 3_000 }))
+      expect(yield* same.json).toEqual({ applied: true, changed: false })
+      expect(seen).toEqual(["config.updated"])
+
+      // "Reload to apply" runs the settings-save reload and clears the pending state.
+      expect((yield* request(MachineSyncPaths.reload, { method: "POST" })).status).toBe(200)
+      expect(seen).toEqual(["config.updated", "global.disposed"])
+      expect(yield* pending()).toBeNull()
+    }),
+  )
+
+  it.live("forgets a pending config once instances reload for any reason", () =>
+    Effect.gen(function* () {
+      const file = Config.globalConfigFile()
+      yield* Effect.addFinalizer(() => Effect.promise(() => rm(file, { force: true })))
+      yield* Effect.promise(() => Bun.write(file, `{ "model": "local/model" }\n`))
+      yield* Effect.promise(() => utimes(file, new Date(1_000), new Date(1_000)))
+      yield* request(MachineSyncPaths.settingsApply, post({ config: { model: "peer/x" }, mtime: 2_000, from: "a" }))
+      GlobalBus.emit("event", { directory: "global", payload: { type: "global.disposed", properties: {} } })
+      const body = yield* request(MachineSyncPaths.reload).pipe(Effect.flatMap((response) => response.json))
+      expect(body).toEqual({ pending: null })
     }),
   )
 
@@ -378,7 +393,7 @@ describe("machine sync routes", () => {
         post({ config: { model: "peer/new" }, mtime: 2_000 }),
       )
       expect(response.status).toBe(200)
-      expect(yield* response.json).toEqual({ applied: true })
+      expect(yield* response.json).toEqual({ applied: true, changed: true })
       const text = yield* Effect.promise(() => Bun.file(file).text())
       expect(text).toContain("peer/new")
       expect(text).toContain("Bearer local-gh")

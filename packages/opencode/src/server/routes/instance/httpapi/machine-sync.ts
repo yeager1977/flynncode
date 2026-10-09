@@ -1,13 +1,14 @@
-import { Effect, Option, Schema, Scope } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { ConfigErrorV1 } from "@opencode-ai/core/v1/config/error"
-import { GlobalBus } from "@/bus/global"
+import { GlobalBus, type GlobalEvent } from "@/bus/global"
 import { Config } from "@/config/config"
 import { ConfigParse } from "@/config/parse"
 import { MachineSyncConfig } from "@/machine-sync/config-sync"
 import { MachineSyncStore } from "@/machine-sync/store"
 import { InstanceStore } from "@/project/instance-store"
+import { Event } from "@/server/event"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
 import { SessionID } from "@/session/schema"
 import { isRecord } from "@/util/record"
@@ -21,13 +22,12 @@ export const MachineSyncPaths = {
   missing: "/flynncode-sync/missing",
   settings: "/flynncode-sync/settings",
   settingsApply: "/flynncode-sync/settings/apply",
+  reload: "/flynncode-sync/reload",
 } as const
 
 // Largest timestamp a Date can represent.
 const MAX_MTIME = 8.64e15
-// A pulled config waits for running chats before instances reload.
-const RELOAD_POLL = "1 second"
-const RELOAD_MAX_WAIT_MS = 60 * 60 * 1000
+const MAX_NAME_LENGTH = 64
 
 const decodeSessionID = Schema.decodeUnknownOption(SessionID)
 
@@ -43,8 +43,15 @@ export const machineSyncRoutes = HttpRouter.use((router) =>
     const fs = yield* FSUtil.Service
     const config = yield* Config.Service
     const instances = yield* InstanceStore.Service
-    const scope = yield* Scope.Scope
-    const reload = { pending: false }
+    // A pulled config is written at once but reaches running instances only
+    // when the user reloads (Sync card), since a reload stops running chats.
+    // Any reload clears it, including a settings save from this machine's UI.
+    const reload = { pending: undefined as { from: string } | undefined }
+    const cleared = (event: GlobalEvent) => {
+      if (event.directory === "global" && event.payload?.type === Event.Disposed.type) reload.pending = undefined
+    }
+    GlobalBus.on("event", cleared)
+    yield* Effect.addFinalizer(() => Effect.sync(() => GlobalBus.off("event", cleared)))
 
     const modified = (file: string) =>
       fs.stat(file).pipe(
@@ -56,27 +63,6 @@ export const machineSyncRoutes = HttpRouter.use((router) =>
         ),
         Effect.orElseSucceed(() => 0),
       )
-
-    // A pulled config reaches running instances the way a settings save does:
-    // instances reload. Renderers refresh their settings views right away,
-    // but the reload waits until no chat is running, because it would stop
-    // them. Pulls that land while one reload waits share it.
-    const reloadInstances = Effect.fn("MachineSyncRoutes.reloadInstances")(function* () {
-      GlobalBus.emit("event", { directory: "global", payload: { type: "config.updated", properties: {} } })
-      if (reload.pending) return
-      reload.pending = true
-      yield* Effect.gen(function* () {
-        const deadline = Date.now() + RELOAD_MAX_WAIT_MS
-        while (!(yield* store.idle())) {
-          if (Date.now() >= deadline)
-            return yield* Effect.logWarning("machine sync skipped an instance reload; chats stayed busy")
-          yield* Effect.sleep(RELOAD_POLL)
-        }
-        yield* disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true }).pipe(
-          Effect.provideService(InstanceStore.Service, instances),
-        )
-      }).pipe(Effect.ensuring(Effect.sync(() => (reload.pending = false))), Effect.forkIn(scope))
-    })
 
     yield* router.add("GET", MachineSyncPaths.manifest, () =>
       store.manifest().pipe(Effect.map((manifest) => json(manifest))),
@@ -156,6 +142,17 @@ export const machineSyncRoutes = HttpRouter.use((router) =>
       store.missingDirectories().pipe(Effect.map((directories) => json({ directories }))),
     )
 
+    yield* router.add("GET", MachineSyncPaths.reload, () => Effect.succeed(json({ pending: reload.pending ?? null })))
+
+    // The same reload a settings save performs: instances are disposed and
+    // renderers hear global.disposed, which also clears the pending state.
+    yield* router.add("POST", MachineSyncPaths.reload, () =>
+      disposeAllInstancesAndEmitGlobalDisposed().pipe(
+        Effect.provideService(InstanceStore.Service, instances),
+        Effect.as(json({ ok: true })),
+      ),
+    )
+
     yield* router.add("GET", MachineSyncPaths.settings, () =>
       Effect.gen(function* () {
         const file = Config.globalConfigFile()
@@ -187,6 +184,8 @@ export const machineSyncRoutes = HttpRouter.use((router) =>
           return json({ error: "bad request" }, 400)
         const peer = body.config
         const mtime = body.mtime
+        // The paired machine's name, shown as "Settings from <name> are ready".
+        const from = typeof body.from === "string" ? body.from.slice(0, MAX_NAME_LENGTH) : ""
         const file = Config.globalConfigFile()
         // Newest edit wins by file mtime; a tie keeps the local file.
         if (mtime <= (yield* modified(file))) return json({ applied: false })
@@ -213,8 +212,11 @@ export const machineSyncRoutes = HttpRouter.use((router) =>
                 .utimes(file, new Date(mtime), new Date(mtime))
                 .pipe(Effect.catch(() => Effect.logWarning("machine sync could not stamp the global config mtime")))
               yield* config.invalidate()
-              if (next !== localText) yield* reloadInstances()
-              return json({ applied: true })
+              if (next === localText) return json({ applied: true, changed: false })
+              reload.pending = { from }
+              // Settings views refresh now; running instances wait for "Reload to apply".
+              GlobalBus.emit("event", { directory: "global", payload: { type: "config.updated", properties: {} } })
+              return json({ applied: true, changed: true })
             }),
           ),
           Effect.catch((reason) => Effect.succeed(json({ error: reason }, 422))),
