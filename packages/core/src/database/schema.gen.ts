@@ -225,6 +225,12 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`session_tombstone\` (
+          \`id\` text PRIMARY KEY,
+          \`time_deleted\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`todo\` (
           \`session_id\` text NOT NULL,
           \`content\` text NOT NULL,

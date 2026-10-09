@@ -192,3 +192,11 @@ export const SessionContextEpochTable = sqliteTable("session_context_epoch", {
   snapshot: text({ mode: "json" }).notNull().$type<SystemContext.Snapshot>(),
   baseline_seq: integer().notNull(),
 })
+
+// Machine sync: a deleted session leaves a tombstone so a paired machine
+// deletes its copy instead of pulling the chat back. Tombstones older than 30
+// days are pruned when the sync manifest is built.
+export const SessionTombstoneTable = sqliteTable("session_tombstone", {
+  id: text().$type<SessionSchema.ID>().primaryKey(),
+  time_deleted: integer().notNull(),
+})

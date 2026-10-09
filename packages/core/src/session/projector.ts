@@ -12,7 +12,14 @@ import { SessionMessage } from "./message"
 import { SessionMessageUpdater } from "./message-updater"
 import { SessionInput } from "./input"
 import { WorkspaceV2 } from "../workspace"
-import { MessageTable, PartTable, SessionInputTable, SessionMessageTable, SessionTable } from "./sql"
+import {
+  MessageTable,
+  PartTable,
+  SessionInputTable,
+  SessionMessageTable,
+  SessionTable,
+  SessionTombstoneTable,
+} from "./sql"
 import type { DeepMutable } from "../schema"
 
 type DatabaseService = Database.Interface["db"]
@@ -256,7 +263,17 @@ const layer = Layer.effectDiscard(
       }),
     )
     yield* events.project(SessionV1.Event.Deleted, (event) =>
-      db.delete(SessionTable).where(eq(SessionTable.id, event.data.sessionID)).run().pipe(Effect.orDie),
+      Effect.gen(function* () {
+        yield* db.delete(SessionTable).where(eq(SessionTable.id, event.data.sessionID)).run().pipe(Effect.orDie)
+        // Machine sync reads this to delete the chat on the paired machine.
+        const time_deleted = Date.now()
+        yield* db
+          .insert(SessionTombstoneTable)
+          .values({ id: event.data.sessionID, time_deleted })
+          .onConflictDoUpdate({ target: SessionTombstoneTable.id, set: { time_deleted } })
+          .run()
+          .pipe(Effect.orDie)
+      }),
     )
     yield* events.project(SessionV1.Event.MessageUpdated, (event) =>
       Effect.gen(function* () {

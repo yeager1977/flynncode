@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "749bfd80-6b69-4e14-9303-74f95ce85a28",
+  "id": "022ce9f0-2002-4bb3-82a6-000f8825f2cf",
   "prevIds": [
-    "31bb9575-2fa4-4491-8272-0ecafef260ff"
+    "749bfd80-6b69-4e14-9303-74f95ce85a28"
   ],
   "ddl": [
     {
@@ -76,6 +76,10 @@
     },
     {
       "name": "session",
+      "entityType": "tables"
+    },
+    {
+      "name": "session_tombstone",
       "entityType": "tables"
     },
     {
@@ -1418,6 +1422,26 @@
     },
     {
       "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "session_tombstone"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_deleted",
+      "entityType": "columns",
+      "table": "session_tombstone"
+    },
+    {
+      "type": "text",
       "notNull": true,
       "autoincrement": false,
       "default": null,
@@ -1929,6 +1953,15 @@
       "nameExplicit": false,
       "name": "session_pk",
       "table": "session",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "session_tombstone_pk",
+      "table": "session_tombstone",
       "entityType": "pks"
     },
     {
