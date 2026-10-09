@@ -177,6 +177,7 @@ const keys = [
   "session.taskSuggestion.confirm.action",
   "session.taskSuggestion.confirm.description",
   "session.taskSuggestion.confirm.title",
+  "session.worktree.handoffNoTab",
   "session.worktree.menu",
   "settings.providers.vendor.signInChatGPT",
   "settings.providers.vendor.signInClaude",

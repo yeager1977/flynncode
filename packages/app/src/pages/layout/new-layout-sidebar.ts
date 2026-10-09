@@ -62,6 +62,25 @@ export function projectDraft(tabs: Tab[], server: ServerConnection.Key, director
   )
 }
 
+// Where an old `/:dir/session` link lands in the new layout: Home unless the
+// segment names an absolute path or an open project; otherwise the directory's
+// open draft (only without a `?prompt=` to deliver) or a fresh one.
+export function legacyDraftTarget(input: {
+  directory: string | undefined
+  prompt: string | undefined
+  tabs: Tab[]
+  server: ServerConnection.Key
+  projects: { worktree: string; sandboxes?: string[] }[]
+}) {
+  const directory = input.directory
+  if (!directory) return { type: "home" as const }
+  const absolute = /^(\/|[A-Za-z]:[\\/]|\\\\)/.test(directory)
+  if (!absolute && !openProjectDirectory([directory], input.projects)) return { type: "home" as const }
+  const draft = input.prompt ? undefined : projectDraft(input.tabs, input.server, directory)
+  if (draft) return { type: "select" as const, draft }
+  return { type: "new" as const, directory }
+}
+
 // Stepping to another session from the sidebar's keyboard navigation: switch
 // to its tab when open, else swap it into the current session's tab so
 // cycling does not stack a tab per step.

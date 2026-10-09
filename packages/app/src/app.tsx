@@ -47,7 +47,7 @@ import { ServerSyncProvider, useServerSync } from "@/context/server-sync"
 import { GlobalProvider, useGlobal } from "@/context/global"
 import { HighlightsProvider } from "@/context/highlights"
 import { LanguageProvider, type Locale, useLanguage } from "@/context/language"
-import { LayoutProvider } from "@/context/layout"
+import { LayoutProvider, useLayout } from "@/context/layout"
 import { ModelsProvider } from "@/context/models"
 import { NotificationProvider } from "@/context/notification"
 import { PermissionProvider } from "@/context/permission"
@@ -55,7 +55,8 @@ import { usePlatform } from "@/context/platform"
 import { PromptProvider } from "@/context/prompt"
 import { ServerConnection, ServerProvider, serverName, useServer } from "@/context/server"
 import { SettingsProvider, useSettings } from "@/context/settings"
-import { TabsProvider, useTabs, type DraftTab } from "@/context/tabs"
+import { draftHref, TabsProvider, useTabs, type DraftTab } from "@/context/tabs"
+import { legacyDraftTarget } from "@/pages/layout/new-layout-sidebar"
 import { SDKProvider, useSDK } from "@/context/sdk"
 import { WslServersProvider } from "@/wsl/context"
 import DirectoryLayout, { DirectoryDataProvider } from "@/pages/directory-layout"
@@ -644,10 +645,12 @@ function Routes(props: { serverScoped?: JSX.Element }) {
 }
 
 // Old `/:dir/session` links (bookmarks, deep links) open a draft tab for the
-// directory, carrying a `?prompt=` along.
+// directory, carrying a `?prompt=` along. Every outcome replaces the history
+// entry so Back skips the redirect instead of opening another draft.
 function NewLayoutLegacyDraftRedirect() {
   const server = useServer()
   const tabs = useTabs()
+  const layout = useLayout()
   const navigate = useNavigate()
   const params = useParams<{ dir: string }>()
   const [search] = useSearchParams<{ prompt?: string }>()
@@ -656,12 +659,22 @@ function NewLayoutLegacyDraftRedirect() {
   createEffect(() => {
     if (!tabs.ready() || opened) return
     opened = true
-    const directory = decode64(params.dir)
-    if (!directory) {
+    const target = legacyDraftTarget({
+      directory: decode64(params.dir),
+      prompt: search.prompt,
+      tabs: tabs.store,
+      server: server.key,
+      projects: layout.projects.list(),
+    })
+    if (target.type === "home") {
       navigate("/", { replace: true })
       return
     }
-    void tabs.newDraft({ server: server.key, directory }, search.prompt)
+    if (target.type === "select") {
+      navigate(draftHref(target.draft.draftID, target.draft.kind), { replace: true })
+      return
+    }
+    void tabs.newDraft({ server: server.key, directory: target.directory }, search.prompt, undefined, { replace: true })
   })
 
   return null

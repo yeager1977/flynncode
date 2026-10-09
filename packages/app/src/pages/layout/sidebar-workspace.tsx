@@ -263,9 +263,10 @@ const WorkspaceActions = (props: {
           <Show
             when={worktreeMenuActions({
               local: props.local(),
-              // Handing off needs a routed session or draft to move from.
-              busy: props.busy() || !props.canHandoff(),
+              busy: props.busy(),
               occupied: props.occupied(),
+              // Handing off needs a routed session or draft to move from.
+              routed: props.canHandoff(),
             }).find((action) => action.key === "session.worktree.handoff")}
             keyed
           >

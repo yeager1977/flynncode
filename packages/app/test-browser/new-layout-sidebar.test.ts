@@ -3,6 +3,7 @@ import { createRoot, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import {
   directoryTabs,
+  legacyDraftTarget,
   openProjectDirectory,
   openSidebarByDefault,
   projectDraft,
@@ -125,6 +126,34 @@ describe("projectDraft", () => {
 
   test("matches the directory by path key", () => {
     expect(projectDraft(tabs, local, "/repo/")?.draftID).toBe("new")
+  })
+})
+
+describe("legacyDraftTarget", () => {
+  const projects = [{ worktree: "/repo" }]
+  const target = (directory: string | undefined, tabs: Tab[] = [], prompt?: string) =>
+    legacyDraftTarget({ directory, prompt, tabs, server: local, projects })
+
+  test("sends a non-path segment Home", () => {
+    expect(target(undefined)).toEqual({ type: "home" })
+    expect(target("settings")).toEqual({ type: "home" })
+  })
+
+  test("opens a draft for an absolute path or an open project", () => {
+    expect(target("/elsewhere")).toEqual({ type: "new", directory: "/elsewhere" })
+    expect(target("C:\\work")).toEqual({ type: "new", directory: "C:\\work" })
+  })
+
+  test("reuses the draft a first visit opened, so Back does not open another", () => {
+    const first = target("/repo")
+    expect(first).toEqual({ type: "new", directory: "/repo" })
+    const tabs: Tab[] = [{ type: "draft", draftID: "made", server: local, directory: "/repo" }]
+    expect(target("/repo", tabs)).toEqual({ type: "select", draft: tabs[0] })
+  })
+
+  test("opens a fresh draft to deliver a prompt", () => {
+    const tabs: Tab[] = [{ type: "draft", draftID: "made", server: local, directory: "/repo" }]
+    expect(target("/repo", tabs, "fix it")).toEqual({ type: "new", directory: "/repo" })
   })
 })
 

@@ -23,6 +23,14 @@ describe("sidebar worktree menu", () => {
     expect(occupied.find((action) => action.key === "session.worktree.remove")?.disabled).toBe(false)
   })
 
+  test("explains a disabled handoff without an open session or draft", () => {
+    const actions = worktreeMenuActions({ local: false, busy: false, occupied: true, routed: false })
+    const handoff = actions.find((action) => action.key === "session.worktree.handoff")
+    expect(handoff?.disabled).toBe(true)
+    expect(handoff?.disabledReason).toBe("session.worktree.handoffNoTab")
+    expect(actions.find((action) => action.key === "session.worktree.remove")?.disabled).toBe(false)
+  })
+
   test("offers handoff into the local workspace", () => {
     const actions = worktreeMenuActions({ local: true, busy: false, occupied: false })
     expect(actions.map((action) => action.key)).toEqual(["session.worktree.handoff"])

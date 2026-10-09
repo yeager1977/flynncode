@@ -74,6 +74,8 @@ import { useServerSync } from "@/context/server-sync"
 import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
 import { legacySessionHref, requireServerKey, sessionHref } from "@/utils/session-route"
+import { ServerConnection } from "@/context/server"
+import { useTabs } from "@/context/tabs"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
@@ -306,6 +308,7 @@ export function MessageTimeline(props: {
   const sync = useSync()
   const serverSync = useServerSync()
   const settings = useSettings()
+  const tabs = useTabs()
   const dialog = useDialog()
   const sessionArchive = useSessionArchive()
   const language = useLanguage()
@@ -953,6 +956,11 @@ export function MessageTimeline(props: {
     WorktreeState.pending(serverSDK().scope, created.directory)
     serverSync().child(created.directory)
     layout.projects.open(created.directory)
+    // The new layout delivers the prompt through the draft tab itself.
+    if (settings.general.newLayoutDesigns()) {
+      void tabs.newDraft({ server: ServerConnection.key(serverSDK().server), directory: created.directory }, prompt)
+      return
+    }
     const slug = base64Encode(created.directory)
     setSessionHandoff(SessionStateKey.from(serverSDK().scope, SessionRouteKey.fromLegacy(slug)), {
       prompt,
