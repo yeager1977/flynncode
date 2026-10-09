@@ -55,7 +55,7 @@ import { InstanceStore } from "../../src/project/instance-store"
 import { HooksRunner } from "../../src/hooks/runner"
 import { testLayerWithHooks } from "../lib/hooks"
 import { HooksContext } from "../../src/hooks/context"
-import { InstanceBootstrap } from "../../src/project/bootstrap"
+import { InstanceBootstrap } from "../../src/project/bootstrap-service"
 import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
 import { reply, TestLLMServer } from "../lib/llm-server"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -170,6 +170,9 @@ const blockingProcessor = Layer.succeed(
 )
 
 const runtimeFlags = RuntimeFlags.layer({ experimentalEventSystem: true })
+// The real bootstrap loads config when the instance starts, before tests write
+// their opencode.json, so the loop would never see the test provider.
+const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
 
 const testLLMServerNode = LayerNode.make({ service: TestLLMServer, layer: TestLLMServer.layer, deps: [] })
 
@@ -219,7 +222,7 @@ function makePrompt(input?: { mcpInstructions?: MCP.ServerInstructions[]; proces
     [LSP.node, lsp],
     [MCP.node, makeMcp(input?.mcpInstructions)],
     [RuntimeFlags.node, runtimeFlags],
-    [InstanceStore.bootstrapNode, InstanceBootstrap.node],
+    [InstanceStore.bootstrapNode, noopBootstrap],
   ] as const
   if (input?.processor === "blocking") {
     return LayerNode.compile(promptRoot, [...replacements, [SessionProcessor.node, blockingProcessor]])
@@ -234,7 +237,7 @@ function makeHttp(input?: { mcpInstructions?: MCP.ServerInstructions[]; processo
     [LSP.node, lsp],
     [MCP.node, makeMcp(input?.mcpInstructions)],
     [RuntimeFlags.node, runtimeFlags],
-    [InstanceStore.bootstrapNode, InstanceBootstrap.node],
+    [InstanceStore.bootstrapNode, noopBootstrap],
   ] as const
   if (input?.processor === "blocking") {
     return LayerNode.compile(root, [...replacements, [SessionProcessor.node, blockingProcessor]])
@@ -253,7 +256,7 @@ const withPromptHook = testEffect(
     [LSP.node, lsp],
     [MCP.node, makeMcp()],
     [RuntimeFlags.node, runtimeFlags],
-    [InstanceStore.bootstrapNode, InstanceBootstrap.node],
+    [InstanceStore.bootstrapNode, noopBootstrap],
     [
       HooksRunner.node,
       testLayerWithHooks([
