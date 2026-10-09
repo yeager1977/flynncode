@@ -296,6 +296,8 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
         window.api.plugins.remove(name, scope, remember, projectDir),
     },
 
+    machineSync: window.api.machineSync,
+
     getDisplayBackend: async () => {
       return window.api.getDisplayBackend().catch(() => null)
     },

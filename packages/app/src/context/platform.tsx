@@ -7,6 +7,7 @@ import type { WslServersPlatform } from "../wsl/types"
 import type { UpdaterPlatform } from "../updater"
 import type { DraftStore } from "@/utils/draft-store"
 import type { PluginManagerPlatform } from "@/components/settings-v2/plugins-types"
+import type { MachineSyncPlatform } from "./machine-sync-types"
 
 type PickerPaths = string | string[] | null
 type OpenDirectoryPickerOptions = { title?: string; multiple?: boolean }
@@ -89,6 +90,9 @@ type PlatformBase = {
 
   /** Plugin catalog and config management (desktop only) */
   plugins?: PluginManagerPlatform
+
+  /** Machine sync with one paired Flynncode computer (desktop only) */
+  machineSync?: MachineSyncPlatform
 
   /** Get the preferred display backend (desktop only) */
   getDisplayBackend?(): Promise<DisplayBackend | null> | DisplayBackend | null
