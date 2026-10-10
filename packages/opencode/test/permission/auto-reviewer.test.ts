@@ -107,6 +107,26 @@ harness(text("VERDICT: allow\nRead-only inspection command")).effect(
     }),
 )
 
+harness(text("VERDICT: allow\nReason text\nVERDICT: deny")).effect(
+  "prefers deny when conflicting verdict lines appear",
+  () =>
+    Effect.gen(function* () {
+      const reviewer = yield* AutoReviewer.Service
+      const verdict = yield* reviewer.request(request)
+      expect(verdict).toBe("deny")
+    }),
+)
+
+harness(text("VERDICT: allow\nReason text\nVERDICT: allow")).effect(
+  "never approves an ambiguous repeated allow",
+  () =>
+    Effect.gen(function* () {
+      const reviewer = yield* AutoReviewer.Service
+      const verdict = yield* reviewer.request(request)
+      expect(verdict).toBe("deny")
+    }),
+)
+
 harness(text("I am honestly not sure what the right call is here.")).effect(
   "defers when the reply carries no verdict line",
   () =>

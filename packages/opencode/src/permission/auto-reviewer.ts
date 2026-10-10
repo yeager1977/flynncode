@@ -20,10 +20,13 @@ const REQUEST_TIMEOUT = "15 seconds"
 const PAYLOAD_MAX_CHARS = 4_000
 
 const parseVerdict = (text: string): Verdict => {
-  // Only an explicit anchored verdict line counts; free-form text defers.
-  const match = text.match(/^VERDICT:\s*(allow|deny)\b/m)
-  if (match?.[1] === "allow") return "allow"
-  if (match?.[1] === "deny") return "deny"
+  // Only explicit anchored verdict lines count; free-form text defers. Every
+  // line is collected, and an ambiguous reply (both verdicts appear, or more
+  // than one line total) must never approve, so ambiguity prefers deny.
+  const verdicts = [...text.matchAll(/^VERDICT:\s*(allow|deny)\b/gm)].map((match) => match[1])
+  if (verdicts.length > 1) return "deny"
+  if (verdicts[0] === "allow") return "allow"
+  if (verdicts[0] === "deny") return "deny"
   return "defer"
 }
 
