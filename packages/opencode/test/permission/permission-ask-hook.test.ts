@@ -1,6 +1,6 @@
 import { expect } from "bun:test"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
-import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer } from "effect"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Permission } from "../../src/permission"
@@ -13,6 +13,17 @@ import type { Hooks } from "@opencode-ai/plugin"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { testEffect } from "../lib/effect"
+import path from "path"
+import { pathToFileURL } from "url"
+import { Plugin } from "../../src/plugin/index"
+import { RuntimeFlags } from "../../src/effect/runtime-flags"
+import { TestInstance } from "../fixture/fixture"
+import { Auth } from "../../src/auth"
+import { AuthTest } from "../fake/auth"
+import { Account } from "../../src/account/account"
+import { AccountTest } from "../fake/account"
+import { Npm } from "@opencode-ai/core/npm"
+import { NpmTest } from "../fake/npm"
 
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
 
@@ -69,6 +80,40 @@ const denyWinsEnv = envWithHooks([
 ])
 const denyWinsIt = testEffect(denyWinsEnv)
 
+const askStatusEnv = envWithHooks([
+  {
+    "permission.ask": async (_input, output) => {
+      output.status = "ask"
+    },
+  },
+])
+const askStatusIt = testEffect(askStatusEnv)
+
+const throwEnv = envWithHooks([
+  {
+    "permission.ask": async (_input, _output) => {
+      throw new Error("plugin permission.ask hook crashed")
+    },
+  },
+])
+const throwIt = testEffect(throwEnv)
+
+// Production coverage: the tests above run the in-memory stub double; this
+// environment installs the real Plugin machinery so the aggregation and the
+// hook payload built by Plugin.triggerPermissionAsk are exercised end to end
+// through HooksRunner, exactly as Permission.ask consumes it in production.
+const prodEnv = AppNodeBuilder.build(
+  LayerNode.group([Plugin.node, Permission.node, EventV2Bridge.node, CrossSpawnSpawner.node, InstanceStore.node]),
+  [
+    [InstanceStore.bootstrapNode, noopBootstrap],
+    [Auth.node, AuthTest.empty],
+    [Account.node, AccountTest.empty],
+    [Npm.node, NpmTest.noop],
+    [RuntimeFlags.node, RuntimeFlags.layer({ disableDefaultPlugins: true })],
+  ],
+)
+const prodIt = testEffect(prodEnv)
+
 const request = (ruleset: PermissionV1.Rule[]) => ({
   sessionID: SessionID.make("session_test"),
   permission: "bash",
@@ -111,6 +156,30 @@ const subscribeAsked = () =>
     const unsub = yield* events.listen(() => Effect.sync(() => asked++))
     yield* Effect.addFinalizer(() => unsub)
     return () => asked
+  })
+
+// Writes the plugin module and its config registration into the test
+// instance directory, then runs the body (trigger.test.ts harness style).
+const withPlugin = <A, E, R>(
+  source: (dir: string) => string,
+  self: (dir: string) => Effect.Effect<A, E, R>,
+) =>
+  Effect.gen(function* () {
+    const test = yield* TestInstance
+    const file = path.join(test.directory, "plugin.ts")
+    yield* Effect.all(
+      [
+        Effect.promise(() => Bun.write(file, source(test.directory))),
+        Effect.promise(() =>
+          Bun.write(
+            path.join(test.directory, "opencode.json"),
+            JSON.stringify({ plugin: [pathToFileURL(file).href] }, null, 2),
+          ),
+        ),
+      ],
+      { discard: true, concurrency: 2 },
+    )
+    return yield* self(test.directory)
   })
 
 denyIt.instance(
@@ -181,4 +250,214 @@ allowIt.instance(
       expect(Exit.isFailure(exit)).toBe(true)
       if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(PermissionV1.RejectedError)
     }),
+)
+
+askStatusIt.instance(
+  "a plugin permission.ask ask status falls through to the pending prompt",
+  () =>
+    Effect.gen(function* () {
+      const permission = yield* Permission.Service
+      const fiber = yield* permission.ask(request([])).pipe(Effect.forkScoped)
+      const pending = yield* waitForPending(1)
+      expect(pending).toHaveLength(1)
+      yield* permission.reply({ requestID: pending[0].id, reply: "reject" })
+      const exit = yield* Fiber.await(fiber)
+      expect(Exit.isFailure(exit)).toBe(true)
+      // Fail open: the ask status reaches the user, no DeniedError.
+      if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(PermissionV1.RejectedError)
+    }),
+)
+
+throwIt.instance(
+  "a throwing plugin permission.ask hook fails open to the prompt",
+  () =>
+    Effect.gen(function* () {
+      const permission = yield* Permission.Service
+      const fiber = yield* permission.ask(request([])).pipe(Effect.forkScoped)
+      const pending = yield* waitForPending(1)
+      expect(pending).toHaveLength(1)
+      // Fail open: a crashing hook cannot deny by throwing. The prompt the
+      // user would see is reached, so the reply is a user RejectedError,
+      // never the plugin's crash or a DeniedError.
+      yield* permission.reply({ requestID: pending[0].id, reply: "reject" })
+      const exit = yield* Fiber.await(fiber)
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(PermissionV1.RejectedError)
+    }),
+)
+
+const prodRecorderSource = (mark: string) =>
+  [
+    "export const deny = async () => ({",
+    '  "permission.ask": async (input, output) => {',
+    `    const mark = ${JSON.stringify(mark)}`,
+    '    const prev = await Bun.file(mark).text().catch(() => "")',
+    "    await Bun.write(mark, prev + JSON.stringify(input) + \"\\n\")",
+    '    output.status = "deny"',
+    "  },",
+    "})",
+    "",
+  ].join("\n")
+
+prodIt.instance(
+  "production: plugin deny short-circuits the prompt and wins over an earlier plugin allow",
+  () =>
+    withPlugin(
+      () =>
+        [
+          "export const allow = async () => ({",
+          '  "permission.ask": (_input, output) => {',
+          '    output.status = "allow"',
+          "  },",
+          "})",
+          "export const deny = async () => ({",
+          '  "permission.ask": (_input, output) => {',
+          '    output.status = "deny"',
+          "  },",
+          "})",
+          "",
+        ].join("\n"),
+      () =>
+        Effect.gen(function* () {
+          const permission = yield* Permission.Service
+          const error = yield* failOf(permission.ask(request([])))
+          expect(error).toBeInstanceOf(PermissionV1.DeniedError)
+          expect(yield* permission.list()).toHaveLength(0)
+        }),
+    ),
+)
+
+prodIt.instance(
+  "production: a throwing plugin hook fails open to the prompt",
+  () =>
+    withPlugin(
+      () =>
+        [
+          "export const crash = async () => ({",
+          '  "permission.ask": async (_input, _output) => {',
+          '    throw new Error("plugin permission.ask crashed")',
+          "  },",
+          "})",
+          "",
+        ].join("\n"),
+      () =>
+        Effect.gen(function* () {
+          const permission = yield* Permission.Service
+          const fiber = yield* permission.ask(request([])).pipe(Effect.forkScoped)
+          const pending = yield* waitForPending(1)
+          expect(pending).toHaveLength(1)
+          yield* permission.reply({ requestID: pending[0].id, reply: "reject" })
+          const exit = yield* Fiber.await(fiber)
+          expect(Exit.isFailure(exit)).toBe(true)
+          // The crash falls open to the user prompt, not a plugin deny.
+          if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(PermissionV1.RejectedError)
+        }),
+    ),
+)
+
+prodIt.instance(
+  "production: no-op and ask-status hooks fall through to the pending prompt",
+  () =>
+    withPlugin(
+      () =>
+        [
+          "export const noop = async () => ({",
+          '  "permission.ask": (_input, _output) => {},',
+          "})",
+          "export const askStands = async () => ({",
+          '  "permission.ask": (_input, output) => {',
+          '    output.status = "ask"',
+          "  },",
+          "})",
+          "",
+        ].join("\n"),
+      () =>
+        Effect.gen(function* () {
+          const permission = yield* Permission.Service
+          const fiber = yield* permission.ask(request([])).pipe(Effect.forkScoped)
+          const pending = yield* waitForPending(1)
+          expect(pending).toHaveLength(1)
+          yield* permission.reply({ requestID: pending[0].id, reply: "reject" })
+          const exit = yield* Fiber.await(fiber)
+          expect(Exit.isFailure(exit)).toBe(true)
+          if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(PermissionV1.RejectedError)
+        }),
+    ),
+)
+
+prodIt.instance(
+  "production: hook payload carries the ask fields and omits absent response identity",
+  () =>
+    withPlugin(
+      (dir) => prodRecorderSource(path.join(dir, "marks.jsonl")),
+      (dir) =>
+        Effect.gen(function* () {
+          const permission = yield* Permission.Service
+          // Single pattern, no tool call identity.
+          const errorOne = yield* failOf(
+            permission.ask({
+              ...request([]),
+              patterns: ["ls"],
+            }),
+          )
+          expect(errorOne).toBeInstanceOf(PermissionV1.DeniedError)
+          // Multiple patterns: the singular `pattern` field mirrors the array.
+          const errorTwo = yield* failOf(
+            permission.ask({
+              ...request([]),
+              permission: "edit",
+              patterns: ["a.ts", "b.ts"],
+            }),
+          )
+          expect(errorTwo).toBeInstanceOf(PermissionV1.DeniedError)
+          // Tool call identity present: id/messageID/callID follow the call.
+          const errorThree = yield* failOf(
+            permission.ask({
+              ...request([]),
+              tool: { messageID: "msg_y", callID: "call_y" },
+              hook: { tool: "bash", args: { command: "git push" } },
+            }),
+          )
+          expect(errorThree).toBeInstanceOf(PermissionV1.DeniedError)
+
+          const lines = (yield* Effect.promise(() => Bun.file(path.join(dir, "marks.jsonl")).text()))
+            .split("\n")
+            .filter((line) => line !== "")
+            .map((line) => JSON.parse(line) as Record<string, unknown>)
+          expect(lines).toHaveLength(3)
+          expect(lines[0]).toMatchObject({
+            type: "bash",
+            permission: "bash",
+            patterns: ["ls"],
+            pattern: "ls",
+            sessionID: "session_test",
+            title: "bash",
+            tool: "bash",
+            args: { command: "rm -rf build" },
+          })
+          expect((lines[0].time as { created: number }).created).toBeGreaterThan(0)
+          // No fabricated sentinels: absent identity fields are omitted.
+          expect(Object.keys(lines[0])).not.toContain("id")
+          expect(Object.keys(lines[0])).not.toContain("messageID")
+          expect(Object.keys(lines[0])).not.toContain("callID")
+          expect(lines[1]).toMatchObject({
+            permission: "edit",
+            patterns: ["a.ts", "b.ts"],
+            pattern: ["a.ts", "b.ts"],
+          })
+          expect(Object.keys(lines[1])).not.toContain("id")
+          expect(lines[2]).toMatchObject({
+            id: "call_y",
+            messageID: "msg_y",
+            callID: "call_y",
+            type: "bash",
+            permission: "bash",
+            patterns: ["rm -rf build"],
+            pattern: "rm -rf build",
+            title: "bash",
+            tool: "bash",
+            args: { command: "git push" },
+          })
+        }),
+    ),
 )

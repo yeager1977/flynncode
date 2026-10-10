@@ -220,12 +220,19 @@ export type ProviderHook = {
 export type AuthOuathResult = AuthOAuthResult
 
 /**
- * The `permission.ask` hook input reuses the response-shaped {@link Permission}
- * payload and additively carries the fields the ask path knows but the
- * response shape lacks: the permission name, all patterns, the requesting
- * tool name, and its arguments.
+ * The `permission.ask` hook input carries the fields the ask path knows: the
+ * permission name, all patterns, the requesting tool name, its arguments, and
+ * the session. It reuses the response-shaped {@link Permission} payload where
+ * the ask path can fill it honestly: `type`, `pattern`, `sessionID`, `callID`,
+ * `metadata`, `title` (the tool or permission name), and `time.created` (now)
+ * are always present, while `id` and `messageID` are omitted when the ask
+ * carries no tool call identity.
  */
-export type PermissionAskInput = Permission & {
+export type PermissionAskInput = Omit<Permission, "id" | "messageID" | "title" | "time"> & {
+  id?: Permission["id"]
+  messageID?: Permission["messageID"]
+  title?: Permission["title"]
+  time?: Permission["time"]
   permission?: string
   patterns?: Array<string>
   tool?: string

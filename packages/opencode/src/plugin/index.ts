@@ -1,6 +1,7 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import type {
   Hooks,
+  PermissionAskInput,
   PluginInput,
   Plugin as PluginInstance,
   PluginModule,
@@ -382,16 +383,14 @@ const layer = Layer.effect(
       output: { status: "ask" | "deny" | "allow" },
     ) {
       const s = yield* InstanceState.get(state)
-      // The declared hook payload is the response-shaped Permission object;
-      // required response fields the ask path has no value for are filled
-      // with the closest available value: callID/messageID for identity,
-      // the tool name for the title, and Date.now() for the creation time.
-      const payload = {
-        id: input.callID ?? input.id ?? "unknown",
+      // The hook payload reuses the response-shaped Permission object for the
+      // fields the ask path can fill honestly: the tool name stands in for the
+      // title and time.created is the current wall clock. id/messageID are
+      // omitted when the ask carries no tool call identity — no sentinels.
+      const payload: PermissionAskInput = {
         type: input.permission,
         pattern: input.patterns.length === 1 ? input.patterns[0] : [...input.patterns],
         sessionID: input.sessionID,
-        messageID: input.messageID ?? "",
         callID: input.callID,
         title: input.tool ?? input.permission,
         metadata: input.metadata,
@@ -401,13 +400,31 @@ const layer = Layer.effect(
         tool: input.tool,
         args: input.args,
       }
-      // Same aggregation as tool.permission: isolated per-hook outputs, any
-      // deny short-circuits, allow is sticky, ask/no-op changes nothing.
+      if (input.id !== undefined) payload.id = input.id
+      if (input.messageID !== undefined) payload.messageID = input.messageID
+      // Intentional parity with tool.permission aggregation: isolated
+      // per-hook outputs, any deny short-circuits, allow is sticky, and
+      // ask/no-op changes nothing.
       for (const hook of s.hooks) {
         const fn = hook["permission.ask"]
         if (!fn) continue
         const perHook: { status: "ask" | "deny" | "allow" } = { status: "ask" }
-        yield* Effect.promise(async () => fn(payload, perHook))
+        const ran = yield* Effect.tryPromise({
+          // The async wrapper is load-bearing: hooks may return undefined
+          // while mutating the isolated output synchronously, which a bare
+          // tryPromise would treat as a fault (non-thenable .then).
+          try: async () => fn(payload, perHook),
+          catch: errorMessage,
+        }).pipe(
+          Effect.tapError((error) =>
+            Effect.logWarning("plugin permission.ask hook failed; falling through to the prompt", { error }),
+          ),
+          Effect.option,
+        )
+        // Fail open: a throwing plugin hook cannot deny by crashing — its
+        // isolated decision is discarded and the ask continues to the next
+        // hook or the normal prompt.
+        if (ran._tag === "None") continue
         if (perHook.status === "deny") {
           output.status = "deny"
           return output

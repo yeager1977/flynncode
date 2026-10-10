@@ -52,15 +52,25 @@ function stubPlugin(hooks: Array<Hooks>): HooksRunner.TriggerLike {
       })
     },
     triggerPermissionAsk: (input, output) => {
-      // Same aggregation as Plugin.triggerPermissionAsk: isolated per-hook
-      // outputs, any deny short-circuits, allow is sticky, ask/no-op keeps
-      // the previous verdict.
+      // Same aggregation as Plugin.triggerPermissionAsk: fail-open on a
+      // throwing hook (no deny-by-crash), then isolated per-hook outputs,
+      // any deny short-circuits, allow is sticky, ask/no-op keeps the
+      // previous verdict.
       return Effect.promise(async () => {
         for (const hook of hooks) {
           const fn = hook["permission.ask"]
           if (!fn) continue
           const perHook: { status: "ask" | "deny" | "allow" } = { status: "ask" }
-          await (fn as (input: unknown, output: Record<string, unknown>) => Promise<void>)(input, perHook)
+          // The async wrapper is load-bearing: sync hooks return undefined
+          // after mutating perHook, which a bare .then on their return value
+          // would crash on.
+          const invoke = async () =>
+            (fn as (input: unknown, output: Record<string, unknown>) => Promise<void>)(input, perHook)
+          const ran = await invoke().then(
+            () => true,
+            () => false,
+          )
+          if (!ran) continue
           if (perHook.status === "deny") {
             output.status = "deny"
             return output

@@ -113,7 +113,7 @@ const layer = Layer.effect(
         metadata: request.metadata,
         tool: hook?.tool ?? request.permission,
         args: hook?.args ?? { patterns: request.patterns, metadata: request.metadata },
-        id: request.tool?.callID ?? request.id ?? "unknown",
+        id: request.tool?.callID ?? request.id,
         messageID: request.tool?.messageID,
         callID: request.tool?.callID,
       })
