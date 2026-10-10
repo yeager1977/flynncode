@@ -132,26 +132,26 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         // defer or an absent reviewer service falls through to the normal
         // prompt path. The verdict rides on the ask input so the
         // permission.asked event can surface it to the dock.
-        let reviewer: PermissionV1.ReviewerVerdict | undefined
-        if (policy.approval === "auto" && !Permission.ALWAYS_ASK.includes(req.permission)) {
-          reviewer = Option.isSome(autoReviewer)
-            ? yield* autoReviewer.value.request({
-                sessionID: input.session.id,
-                tool: toolID,
-                args,
-                permission: req.permission,
-                patterns: req.patterns,
-              })
-            : "defer"
-          if (reviewer === "deny") {
-            return yield* Effect.orDie(
-              Effect.fail(
-                new PermissionV1.DeniedError({
-                  ruleset: ruleset.filter((rule) => Wildcard.match(req.permission, rule.permission)),
-                }),
-              ),
-            )
-          }
+        const reviewer =
+          policy.approval === "auto" && !Permission.ALWAYS_ASK.includes(req.permission)
+            ? Option.isSome(autoReviewer)
+              ? yield* autoReviewer.value.request({
+                  sessionID: input.session.id,
+                  tool: toolID,
+                  args,
+                  permission: req.permission,
+                  patterns: req.patterns,
+                })
+              : "defer"
+            : undefined
+        if (reviewer === "deny") {
+          return yield* Effect.orDie(
+            Effect.fail(
+              new PermissionV1.DeniedError({
+                ruleset: ruleset.filter((rule) => Wildcard.match(req.permission, rule.permission)),
+              }),
+            ),
+          )
         }
         return yield* permission
           .ask({
