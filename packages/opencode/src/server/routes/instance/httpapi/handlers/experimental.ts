@@ -10,6 +10,7 @@ import { InstanceStore } from "@/project/instance-store"
 import { MCP } from "@/mcp"
 import { Project } from "@/project/project"
 import { ProjectDirectories } from "@opencode-ai/core/project/directories"
+import { MaxExtras } from "@opencode-ai/core/project/folders"
 import { SessionFolders } from "@opencode-ai/core/session/folders"
 import { SessionSchema } from "@opencode-ai/core/session/schema"
 import { Session } from "@/session/session"
@@ -176,22 +177,25 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       const bound = yield* boundSessions(sessions, input.from)
 
       // Rebind one session row. Off the primary this follows the full
-      // primary-switch recipe: the destination joins the project's directory
-      // list, and the vacated checkout is demoted to the session's extra
-      // folders (mirroring the folders primary switch) before the row moves.
+      // primary-switch recipe from the session folders handler in the same
+      // recipe order (setDirectory → projectDirectories.create →
+      // sessionFolders.replace), then liveFolders.refresh and
+      // instances.reload run once for the whole batch below.
       const rebindRow = Effect.fn("ExperimentalHttpApi.rebindHandoffRow")(function* (sessionID: SessionSchema.ID) {
-        if (offPrimary) {
-          const others = (yield* sessionFolders.list(sessionID)).filter(
-            (dir) => canonicalDir(dir) !== primary && canonicalDir(dir) !== canonicalDir(input.to),
-          )
-          yield* sessionFolders.replace(sessionID, [input.from, ...others]).pipe(Effect.ignore)
-        }
         yield* sessions.setDirectory({ sessionID, directory: input.to }).pipe(Effect.ignore)
-        if (offPrimary) {
-          yield* projectDirectories
-            .create({ directory: AbsolutePath.make(input.to), projectID: inst.project.id })
-            .pipe(Effect.ignore)
-        }
+        if (!offPrimary) return
+        yield* projectDirectories
+          .create({ directory: AbsolutePath.make(input.to), projectID: inst.project.id })
+          .pipe(Effect.ignore)
+        const others = (yield* sessionFolders.list(sessionID)).filter(
+          (dir) => canonicalDir(dir) !== primary && canonicalDir(dir) !== canonicalDir(input.to),
+        )
+        // updateFolders refuses a primary switch whose extras exceed
+        // MaxExtras. The handoff has already succeeded, so this best-effort
+        // rebind skips the extras demotion instead of failing the row move;
+        // the session keeps its attachments as they are.
+        if (others.length + 1 > MaxExtras) return
+        yield* sessionFolders.replace(sessionID, [input.from, ...others]).pipe(Effect.ignore)
       })
 
       yield* Effect.forEach(bound, (item) => rebindRow(item.id), { discard: true })
