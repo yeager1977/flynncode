@@ -21,6 +21,13 @@ export function worktreeHasConfig(config: Config | undefined): boolean {
   return Boolean((config?.worktree as unknown) !== undefined)
 }
 
+// Read-side only: allow_primary_rebind is a server behavior flag, not a form
+// field, so it stays out of WorktreeForm and the save payload.
+export function worktreeAllowPrimaryRebind(config: Config | undefined): boolean {
+  const raw = config?.worktree as { allow_primary_rebind?: unknown } | undefined
+  return raw?.allow_primary_rebind === true
+}
+
 // Empty fields stay absent so a save only writes what the user set. The server
 // replaces `worktree` as a whole and removes it when the object is empty, so
 // clearing every field still persists.

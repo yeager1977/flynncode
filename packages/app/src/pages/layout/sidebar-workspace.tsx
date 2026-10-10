@@ -1,4 +1,4 @@
-import { useParams } from "@solidjs/router"
+import { useParams, useNavigate } from "@solidjs/router"
 import { createEffect, createMemo, createResource, For, onCleanup, Show, type Accessor, type JSX } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { createSortable } from "@thisbeyond/solid-dnd"
@@ -61,6 +61,7 @@ import { BulkConfirmDialog } from "../session/session-bulk-dialog"
 import { runSessionBulk, type BulkOp } from "../session/session-bulk-run"
 import { NewSessionItem, SessionItem, SessionSkeleton } from "./sidebar-items"
 import { sortedRootSessions, errorMessage, homeProjectDirectories } from "./helpers"
+import { worktreeAllowPrimaryRebind } from "@/components/settings-v2/worktree-payload"
 import { handoffErrorMessage } from "../session/checkout-handoff"
 import { useIsFetching } from "@tanstack/solid-query"
 
@@ -188,6 +189,9 @@ const WorkspaceActions = (props: {
   local: Accessor<boolean>
   busy: Accessor<boolean>
   occupied: Accessor<boolean>
+  allowLocalHandoff: Accessor<boolean>
+  localOccupied: Accessor<boolean>
+  localRouted: Accessor<boolean>
   menuOpen: Accessor<boolean>
   pendingRename: Accessor<boolean>
   setMenuOpen: (open: boolean) => void
@@ -287,6 +291,14 @@ const WorkspaceActions = (props: {
                 </DropdownMenu.Item>
               </Tooltip>
             )}
+          </Show>
+          <Show when={props.allowLocalHandoff()}>
+            <DropdownMenu.Item
+              disabled={props.busy() || props.localOccupied() || props.localRouted() || !props.canHandoff()}
+              onSelect={() => props.onHandoffWorkspace(props.root)}
+            >
+              <DropdownMenu.ItemLabel>{props.language.t("session.worktree.handoffLocal")}</DropdownMenu.ItemLabel>
+            </DropdownMenu.Item>
           </Show>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
@@ -1005,6 +1017,7 @@ export const SortableWorkspace = (props: {
   mobile?: boolean
 }): JSX.Element => {
   const params = useParams()
+  const navigate = useNavigate()
   const serverSync = useServerSync()
   const serverSDK = useServerSDK()
   const queryOptions = useQueryOptions()
@@ -1042,19 +1055,40 @@ export const SortableWorkspace = (props: {
     if (pathKey(props.ctx.routedDir() ?? "") === pathKey(props.directory)) return false
     return (workspaceStore.session ?? []).some((item) => item.time?.archived == null)
   })
+  // The Local checkout as a handoff target is opt-in through
+  // worktree.allow_primary_rebind; its own occupied guard reads the local
+  // workspace's loaded sessions the same way.
+  const [localStore] = serverSync().child(props.project.worktree, { bootstrap: false })
+  const allowLocalHandoff = createMemo(() => worktreeAllowPrimaryRebind(serverSync().data.config))
+  const localOccupied = createMemo(() => (localStore.session ?? []).some((item) => item.time?.archived == null))
+  const localRouted = createMemo(() => pathKey(props.ctx.routedDir() ?? "") === pathKey(props.project.worktree))
   const handoffTo = (target: string) => {
     const from = props.ctx.routedDir()
     if (!from) return
     void serverSDK()
       .client.worktree.handoff({ directory: props.project.worktree, worktreeHandoffInput: { from, to: target } })
-      .then((result) => {
-        if (result.data) return
-        showToast({
-          title: language.t("session.handoff.failed.title"),
-          description: language.t("session.handoff.failed.description", {
-            message: language.t("common.requestFailed"),
-          }),
-        })
+      .then(async (result) => {
+        if (!result.data) {
+          showToast({
+            title: language.t("session.handoff.failed.title"),
+            description: language.t("session.handoff.failed.description", {
+              message: language.t("common.requestFailed"),
+            }),
+          })
+          return
+        }
+        // The rebound session rows now live in the target; bootstrap the
+        // destination workspace and follow the routed session there when it
+        // actually moved (a refused rebind keeps it on its checkout).
+        serverSync().child(target, { bootstrap: true })
+        const id = params.id
+        if (!id) return
+        const moved = await serverSDK()
+          .client.experimental.session.list({ directory: from, archived: true, limit: 100 })
+          .then((page) => !(page.data ?? []).some((row) => row.id === id))
+          .catch(() => false)
+        const href = moved ? props.ctx.sessionHref?.({ directory: target, id }) : undefined
+        if (href) navigate(href)
       })
       .catch((error: unknown) => {
         showToast({
@@ -1146,6 +1180,9 @@ export const SortableWorkspace = (props: {
                 local={local}
                 busy={busy}
                 occupied={occupied}
+                allowLocalHandoff={allowLocalHandoff}
+                localOccupied={localOccupied}
+                localRouted={localRouted}
                 menuOpen={() => menu.open}
                 pendingRename={() => menu.pendingRename}
                 setMenuOpen={(open) => setMenu("open", open)}

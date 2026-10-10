@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { worktreeFromConfig, worktreeHasConfig, worktreeKeepValue, worktreeToConfig, worktreeValidationErrors } from "./worktree-payload"
+import { worktreeAllowPrimaryRebind, worktreeFromConfig, worktreeHasConfig, worktreeKeepValue, worktreeToConfig, worktreeValidationErrors } from "./worktree-payload"
 
 describe("worktree-payload", () => {
   test("reads an absent object as empty fields", () => {
@@ -34,5 +34,15 @@ describe("worktree-payload", () => {
     expect(worktreeValidationErrors({ location: ".wt", branchPrefix: "", keep: "10" })).toEqual([])
     expect(worktreeValidationErrors({ location: "", branchPrefix: "", keep: "ten" })).toEqual(["keep"])
     expect(worktreeValidationErrors({ location: "~/wt", branchPrefix: "", keep: "" })).toEqual(["location"])
+  })
+
+  test("allow_primary_rebind is a strict boolean opt-in on the config read", () => {
+    expect(worktreeAllowPrimaryRebind(undefined)).toBe(false)
+    expect(worktreeAllowPrimaryRebind({})).toBe(false)
+    expect(worktreeAllowPrimaryRebind({ worktree: {} })).toBe(false)
+    // The SDK Config type does not carry the flag yet, so the literals use the
+    // file's existing `as never` tolerance until the SDK types regenerate.
+    expect(worktreeAllowPrimaryRebind({ worktree: { allow_primary_rebind: true } } as never)).toBe(true)
+    expect(worktreeAllowPrimaryRebind({ worktree: { allow_primary_rebind: "yes" } } as never)).toBe(false)
   })
 })

@@ -905,6 +905,7 @@ export const dict = {
   "session.worktree.remove": "Remove worktree",
   "session.worktree.reset": "Reset to default branch",
   "session.worktree.handoff": "Hand off session here",
+  "session.worktree.handoffLocal": "Hand off session to the local checkout",
   "session.worktree.handoffOccupied": "That worktree already has an active session",
   "session.worktree.handoffNoTab": "Open a session to hand off from",
   "session.worktree.dispose": "Dispose disposable worktree",
