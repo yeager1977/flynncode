@@ -105,6 +105,18 @@ export const SettingsPermissionsV2: Component = () => {
     policy().sandbox === "full-access" ? [...sandboxChoices, "full-access"] : sandboxChoices,
   )
 
+  const approvalLabel = (choice: Policy["approval"]) => {
+    if (choice === "manual") return language.t("settings.permissions.approval.manual")
+    if (choice === "accept-edits") return language.t("settings.permissions.approval.acceptEdits")
+    return language.t("settings.permissions.approval.auto")
+  }
+
+  const sandboxLabel = (choice: Policy["sandbox"]) => {
+    if (choice === "readonly") return language.t("settings.permissions.sandbox.readonly")
+    if (choice === "workspace-write") return language.t("settings.permissions.sandbox.workspace")
+    return language.t("settings.permissions.sandbox.fullAccess")
+  }
+
   return (
     <>
       <div class="settings-v2-tab-header">
@@ -164,16 +176,4 @@ export const SettingsPermissionsV2: Component = () => {
       </div>
     </>
   )
-}
-
-function approvalLabel(choice: Policy["approval"]) {
-  if (choice === "manual") return "settings.permissions.approval.manual"
-  if (choice === "accept-edits") return "settings.permissions.approval.acceptEdits"
-  return "settings.permissions.approval.auto"
-}
-
-function sandboxLabel(choice: Policy["sandbox"]) {
-  if (choice === "readonly") return "settings.permissions.sandbox.readonly"
-  if (choice === "workspace-write") return "settings.permissions.sandbox.workspace"
-  return "settings.permissions.sandbox.fullAccess"
 }

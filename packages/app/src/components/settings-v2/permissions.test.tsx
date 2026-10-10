@@ -24,4 +24,24 @@ describe("settings permissions page", () => {
     expect(source).toContain("settings.permissions.sandbox.label")
     expect(source).toContain("settings.permissions.fullAccess.button")
   })
+
+  test("select option labels are translated, including the already-active full access", () => {
+    // SelectV2 renders the label prop's return value verbatim, so a bare key
+    // string leaks straight into the UI. Every option label must call
+    // language.t with its key.
+    for (const key of [
+      "settings.permissions.approval.manual",
+      "settings.permissions.approval.acceptEdits",
+      "settings.permissions.approval.auto",
+      "settings.permissions.sandbox.readonly",
+      "settings.permissions.sandbox.workspace",
+      "settings.permissions.sandbox.fullAccess",
+    ]) {
+      expect(source).toContain(`language.t("${key}")`)
+    }
+  })
+
+  test("no label function returns a bare i18n key", () => {
+    expect(source).not.toMatch(/return "settings\.permissions\./)
+  })
 })
