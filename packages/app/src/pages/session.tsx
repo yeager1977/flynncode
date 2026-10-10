@@ -1271,15 +1271,19 @@ export default function Page() {
           ? language.t("session.review.followUp.git")
           : language.t("session.review.followUp.turn")
     const text = reviewFollowUp({ header, comments: [] })
-    const context = all.map((item) => ({
-      key: `comment-${item.id}`,
-      type: "file" as const,
-      path: item.file,
-      selection: selectionFromLines(item.selection),
-      comment: item.comment,
-      commentID: item.id,
-      commentOrigin: "review" as const,
-    }))
+    const context = all.map((item) => {
+      const selection = selectionFromLines(item.selection)
+      return {
+        key: `comment-${item.id}`,
+        type: "file" as const,
+        path: item.file,
+        selection,
+        comment: item.comment,
+        commentID: item.id,
+        commentOrigin: "review" as const,
+        preview: selectionPreview(item.file, selection),
+      }
+    })
     const draft: FollowupDraft = {
       sessionID,
       sessionDirectory: sdk().directory,
