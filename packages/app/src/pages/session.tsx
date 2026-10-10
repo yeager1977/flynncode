@@ -1248,7 +1248,21 @@ export default function Page() {
     return language.t("ui.sessionReview.title.lastTurn")
   }
 
-  const addressComments = () => {
+  // One-click review handoff: the session's line comments become a follow-up
+  // turn. Comment lines render through the context items via buildRequestParts'
+  // formatCommentNote, so the prompt text only carries the review header.
+  const addressComments = (sessionID: string) => {
+    const all = comments.all()
+    if (all.length === 0) return
+    const model = local.model.current()
+    const agent = local.agent.current()
+    if (!model || !agent) {
+      showToast({
+        title: language.t("prompt.toast.modelAgentRequired.title"),
+        description: language.t("prompt.toast.modelAgentRequired.description"),
+      })
+      return
+    }
     const mode = reviewMode()
     const header =
       mode === "branch"
@@ -1256,16 +1270,36 @@ export default function Page() {
         : mode === "git"
           ? language.t("session.review.followUp.git")
           : language.t("session.review.followUp.turn")
-    const text = reviewFollowUp({
-      header,
-      comments: comments.all().map((item) => ({
-        file: item.file,
-        startLine: item.selection.start,
-        endLine: item.selection.end,
-        comment: item.comment,
-      })),
-    })
-    prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
+    const text = reviewFollowUp({ header, comments: [] })
+    const context = all.map((item) => ({
+      key: `comment-${item.id}`,
+      type: "file" as const,
+      path: item.file,
+      selection: selectionFromLines(item.selection),
+      comment: item.comment,
+      commentID: item.id,
+      commentOrigin: "review" as const,
+    }))
+    const draft: FollowupDraft = {
+      sessionID,
+      sessionDirectory: sdk().directory,
+      prompt: [{ type: "text", content: text, start: 0, end: text.length }],
+      context,
+      agent: agent.name,
+      model: { providerID: model.provider.id, modelID: model.id },
+      variant: local.model.variant.current(),
+    }
+    if (busy(sessionID)) {
+      queueFollowup(draft)
+      return
+    }
+    void sendFollowupDraft({
+      api: sdk().api.session,
+      sync: sync(),
+      serverSync: serverSync(),
+      draft,
+      optimisticBusy: true,
+    }).catch(fail)
   }
 
   const hasComments = () => comments.all().length > 0
@@ -1335,7 +1369,13 @@ export default function Page() {
       </Tooltip>
       <DropdownMenu.Portal>
         <DropdownMenu.Content>
-          <DropdownMenu.Item disabled={!hasComments()} onSelect={addressComments}>
+          <DropdownMenu.Item
+            disabled={!hasComments()}
+            onSelect={() => {
+              const id = params.id
+              if (id) addressComments(id)
+            }}
+          >
             <DropdownMenu.ItemLabel>{language.t("session.review.addressComments")}</DropdownMenu.ItemLabel>
           </DropdownMenu.Item>
           <DropdownMenu.Separator />
