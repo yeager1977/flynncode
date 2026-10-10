@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
+import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Agent } from "@/agent/agent"
+import { AutoReviewer } from "@/permission/auto-reviewer"
 import { Config } from "@/config/config"
 import { MCP } from "@/mcp"
 import { Permission } from "@/permission"
@@ -331,3 +333,140 @@ describe("resolveEffectiveArgs", () => {
     expect(resolved.warning).toBeUndefined()
   })
 })
+
+// Auto-approval ("auto") environments: a recording permission service, the
+// auto approval policy, and an optional AutoReviewer stub with a fixed
+// verdict. When `verdict` is undefined no reviewer layer is provided at all.
+function autoLayer(verdict: "allow" | "deny" | "defer" | undefined) {
+  const asks: PermissionV1.AskInput[] = []
+  return {
+    asks,
+    it: testEffect(
+      Layer.mergeAll(
+        Layer.succeed(Plugin.Service, fakePlugin),
+        testLayerWithHooks([]),
+        Layer.succeed(
+          Permission.Service,
+          Permission.Service.of({
+            ask: (input) =>
+              Effect.sync(() => {
+                asks.push(input)
+              }),
+            reply: () => Effect.void,
+            list: () => Effect.succeed([]),
+          } satisfies Permission.Interface),
+        ),
+        Layer.succeed(
+          Config.Service,
+          Config.Service.of({
+            get: () => Effect.succeed({ permission: { approval: "auto" } }),
+          } as Partial<Config.Interface> as Config.Interface),
+        ),
+        Layer.succeed(Project.Service, fakeProject),
+        Layer.succeed(MCP.Service, fakeMcp()),
+        Layer.succeed(Truncate.Service, fakeTruncate),
+        RuntimeFlags.layer(),
+        ...(verdict === undefined
+          ? []
+          : [Layer.succeed(AutoReviewer.Service, AutoReviewer.Service.of({ request: () => Effect.succeed(verdict) }))]),
+        Layer.succeed(
+          ToolRegistry.Service,
+          ToolRegistry.Service.of({
+            ids: () => Effect.succeed(["asker"]),
+            all: () => Effect.succeed([]),
+            named: () => Effect.die("unused"),
+            tools: () =>
+              Effect.succeed([
+                {
+                  id: "asker",
+                  description: "asks bash permission",
+                  parameters: Schema.Struct({}),
+                  jsonSchema: { type: "object", properties: {} },
+                  execute: (_args, ctx) =>
+                    Effect.gen(function* () {
+                      yield* ctx.ask({
+                        permission: "bash",
+                        patterns: ["git status"],
+                        metadata: {},
+                        always: [],
+                      })
+                      return { title: "asker", metadata: {}, output: "done" }
+                    }),
+                } satisfies Tool.Def,
+              ]),
+          }),
+        ),
+      ),
+    ),
+  }
+}
+
+const resolveAsker = () =>
+  Effect.gen(function* () {
+    const processor = {
+      message: { id: messageID, sessionID } as SessionV1.Assistant,
+      updateToolCall: () => Effect.succeed(undefined),
+      completeToolCall: () => Effect.void,
+    }
+    return yield* SessionTools.resolve({
+      agent,
+      model,
+      session: { id: sessionID, permission: [] } as unknown as Session.Info,
+      processor,
+      bypassAgentCheck: false,
+      messages: [],
+      promptOps: {} as never,
+    })
+  })
+
+const runAsker = () =>
+  Effect.gen(function* () {
+    const tools = yield* resolveAsker()
+    const execute = tools.asker?.execute
+    if (!execute) throw new Error("asker tool is missing execute")
+    return yield* Effect.exit(
+      Effect.promise(() => execute({}, { toolCallId: callID, abortSignal: new AbortController().signal, messages: [] })),
+    )
+  })
+
+const allowEnv = autoLayer("allow")
+allowEnv.it.effect("auto approval lets the LLM reviewer approve without prompting", () =>
+  Effect.gen(function* () {
+    const exit = yield* runAsker()
+    expect(Exit.isSuccess(exit)).toBe(true)
+    expect(allowEnv.asks.length).toBe(1)
+    expect(allowEnv.asks[0]?.reviewer).toBe("allow")
+  }),
+)
+
+const denyEnv = autoLayer("deny")
+denyEnv.it.effect("auto approval fails closed when the LLM reviewer denies", () =>
+  Effect.gen(function* () {
+    const exit = yield* runAsker()
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      expect(Cause.squash(exit.cause)).toBeInstanceOf(PermissionV1.DeniedError)
+    }
+    expect(denyEnv.asks.length).toBe(0)
+  }),
+)
+
+const deferEnv = autoLayer("defer")
+deferEnv.it.effect("auto approval falls back to the human prompt on reviewer defer", () =>
+  Effect.gen(function* () {
+    const exit = yield* runAsker()
+    expect(Exit.isSuccess(exit)).toBe(true)
+    expect(deferEnv.asks.length).toBe(1)
+    expect(deferEnv.asks[0]?.reviewer).toBe("defer")
+  }),
+)
+
+const absentEnv = autoLayer(undefined)
+absentEnv.it.effect("auto approval defers when the reviewer service is unavailable", () =>
+  Effect.gen(function* () {
+    const exit = yield* runAsker()
+    expect(Exit.isSuccess(exit)).toBe(true)
+    expect(absentEnv.asks.length).toBe(1)
+    expect(absentEnv.asks[0]?.reviewer).toBe("defer")
+  }),
+)

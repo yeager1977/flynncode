@@ -3,11 +3,14 @@ import { Config } from "@/config/config"
 import { Project } from "@/project/project"
 import { ConfigPermissionV1 } from "@opencode-ai/core/v1/config/permission"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
+import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+import { Wildcard } from "@opencode-ai/core/util/wildcard"
 import { Provider } from "@/provider/provider"
 import { ProviderTransform } from "@/provider/transform"
 import { MCP } from "@/mcp"
 import { McpCatalog } from "@/mcp/catalog"
 import { Permission } from "@/permission"
+import { AutoReviewer } from "@/permission/auto-reviewer"
 import { Sandbox } from "@/permission/sandbox"
 import { Reviewer } from "@/permission/reviewer"
 import { Tool } from "@/tool/tool"
@@ -18,7 +21,7 @@ import { Truncate } from "@/tool/truncate"
 import { HooksRunner } from "@/hooks/runner"
 import type { TaskPromptOps } from "@/tool/task"
 import { type Tool as AITool, tool, jsonSchema, type ToolExecutionOptions, asSchema } from "ai"
-import { Effect } from "effect"
+import { Effect, Option } from "effect"
 import { MessageV2 } from "./message-v2"
 import { Session } from "./session"
 import { SessionProcessor } from "./processor"
@@ -62,6 +65,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const mcp = yield* MCP.Service
   const truncate = yield* Truncate.Service
   const flags = yield* RuntimeFlags.Service
+  // Optional so minimal environments fail open: no reviewer service defers to
+  // the human prompt under approval "auto".
+  const autoReviewer = yield* Effect.serviceOption(AutoReviewer.Service)
 
   const cfg = yield* config.get()
   const policy = ConfigPermissionV1.resolveSessionPolicy(cfg.permission ?? {})
@@ -91,41 +97,74 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           },
         }
       }),
-    ask: (req) => {
-      const ruleset = Permission.merge(input.agent.permission, input.session.permission ?? [])
-      // Bash patterns are command globs, not paths; the shell tool raises external_directory
-      // for paths it touches, so bash itself is only gated by readonly.
-      if (req.permission === "bash" && policy.sandbox === "readonly") {
-        return Effect.orDie(
-          Effect.fail(new Sandbox.SandboxViolationError({ path: input.session.directory, level: policy.sandbox })),
-        )
-      }
-      // The sandbox contains writes only: reads (read/glob/grep/list/lsp/skill,
-      // Truncate output) may cross the workspace boundary through the normal
-      // external_directory prompt.
-      if (Sandbox.containsWrite({ permission: req.permission, toolID })) {
-        const blocked = req.patterns.find(
-          (target) =>
-            target !== "" && !Sandbox.isPathAllowed(target, input.session.directory, sandboxDirs, policy.sandbox),
-        )
-        if (blocked !== undefined) {
-          return Effect.orDie(Effect.fail(new Sandbox.SandboxViolationError({ path: blocked, level: policy.sandbox })))
+    ask: (req) =>
+      Effect.gen(function* () {
+        const ruleset = Permission.merge(input.agent.permission, input.session.permission ?? [])
+        // Bash patterns are command globs, not paths; the shell tool raises external_directory
+        // for paths it touches, so bash itself is only gated by readonly.
+        if (req.permission === "bash" && policy.sandbox === "readonly") {
+          return yield* Effect.orDie(
+            Effect.fail(new Sandbox.SandboxViolationError({ path: input.session.directory, level: policy.sandbox })),
+          )
         }
-      }
-      if (Reviewer.review({ permission: req.permission, patterns: req.patterns, ruleset }) === "allow") {
-        return Effect.void
-      }
-      return permission
-        .ask({
-          ...req,
-          sessionID: input.session.id,
-          tool: { messageID: input.processor.message.id, callID: options.toolCallId },
-          ruleset,
-          approval: policy.approval,
-          hook: { tool: toolID, args },
-        })
-        .pipe(Effect.orDie)
-    },
+        // The sandbox contains writes only: reads (read/glob/grep/list/lsp/skill,
+        // Truncate output) may cross the workspace boundary through the normal
+        // external_directory prompt.
+        if (Sandbox.containsWrite({ permission: req.permission, toolID })) {
+          const blocked = req.patterns.find(
+            (target) =>
+              target !== "" && !Sandbox.isPathAllowed(target, input.session.directory, sandboxDirs, policy.sandbox),
+          )
+          if (blocked !== undefined) {
+            return yield* Effect.orDie(
+              Effect.fail(new Sandbox.SandboxViolationError({ path: blocked, level: policy.sandbox })),
+            )
+          }
+        }
+        if (
+          Reviewer.review({ permission: req.permission, patterns: req.patterns, ruleset, tool: toolID, args }) ===
+          "allow"
+        ) {
+          return
+        }
+        // approval "auto": the LLM auto-reviewer vets the request before the
+        // human prompt. allow approves without prompting, deny fails closed,
+        // defer or an absent reviewer service falls through to the normal
+        // prompt path. The verdict rides on the ask input so the
+        // permission.asked event can surface it to the dock.
+        let reviewer: PermissionV1.ReviewerVerdict | undefined
+        if (policy.approval === "auto" && !Permission.ALWAYS_ASK.includes(req.permission)) {
+          reviewer = Option.isSome(autoReviewer)
+            ? yield* autoReviewer.value.request({
+                sessionID: input.session.id,
+                tool: toolID,
+                args,
+                permission: req.permission,
+                patterns: req.patterns,
+              })
+            : "defer"
+          if (reviewer === "deny") {
+            return yield* Effect.orDie(
+              Effect.fail(
+                new PermissionV1.DeniedError({
+                  ruleset: ruleset.filter((rule) => Wildcard.match(req.permission, rule.permission)),
+                }),
+              ),
+            )
+          }
+        }
+        return yield* permission
+          .ask({
+            ...req,
+            sessionID: input.session.id,
+            tool: { messageID: input.processor.message.id, callID: options.toolCallId },
+            ruleset,
+            approval: policy.approval,
+            ...(reviewer !== undefined ? { reviewer } : {}),
+            hook: { tool: toolID, args },
+          })
+          .pipe(Effect.orDie)
+      }),
   })
 
   for (const item of yield* registry.tools({

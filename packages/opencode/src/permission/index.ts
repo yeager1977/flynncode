@@ -48,7 +48,8 @@ export function evaluate(permission: string, pattern: string, ...rulesets: Permi
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Permission") {}
 
-const ALWAYS_ASK = ["computer_use", "archive"]
+// computer_use and archive always reach the user, whatever the approval mode.
+export const ALWAYS_ASK = ["computer_use", "archive"]
 
 const layer = Layer.effect(
   Service,
@@ -99,7 +100,17 @@ const layer = Layer.effect(
       const AUTO_EDIT_PERMISSIONS = ["edit", "read", "glob", "grep", "list"]
       // computer_use and archive always reach the user, whatever the approval mode.
       if (!ALWAYS_ASK.includes(request.permission)) {
-        if (approval === "auto") return
+        // approval "auto" approves only on an explicit LLM auto-reviewer allow
+        // verdict; the session tools gate (session/tools.ts) consults the
+        // reviewer and carries the verdict in `reviewer`. Direct callers
+        // without a verdict and defer/failed reviews fall through to the
+        // human prompt, and a deny verdict that bypassed the gate fails closed.
+        if (approval === "auto" && request.reviewer === "deny") {
+          return yield* new PermissionV1.DeniedError({
+            ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),
+          })
+        }
+        if (approval === "auto" && request.reviewer === "allow") return
         if (approval === "accept-edits" && AUTO_EDIT_PERMISSIONS.includes(request.permission)) return
       }
 
@@ -149,6 +160,9 @@ const layer = Layer.effect(
         metadata: request.metadata,
         always: request.always,
         tool: request.tool,
+        // An auto-review defer that reached the human prompt; the dock reads
+        // this from the permission.asked event.
+        ...(request.reviewer !== undefined ? { reviewer: request.reviewer } : {}),
       }
       yield* Effect.logInfo("asking", { id, permission: info.permission, patterns: info.patterns })
 
