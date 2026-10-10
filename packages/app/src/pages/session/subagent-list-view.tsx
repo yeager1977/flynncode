@@ -32,6 +32,7 @@ export function SubagentList(props: { sessionID: () => string }) {
         id: session.id,
         title: session.title,
         updated: session.time.updated,
+        directory: session.directory,
         status: sync().data.session_status[session.id]?.type,
         text: latestText(sync().data.message[session.id] ?? [], sync().data.part),
       }))
@@ -177,7 +178,9 @@ function Row(props: {
     if (stopping()) return
     setStopping(true)
     try {
-      await sdk().client.session.abort({ sessionID: props.child.id })
+      // Run state lives in the target's instance: a worktree-isolated subagent
+      // runs under its worktree directory (same pattern as tool/message.ts:57-60).
+      await sdk().client.session.abort({ sessionID: props.child.id, directory: props.child.directory })
     } catch {
       showToast({ title: language.t("session.subagents.stop.failed") })
     } finally {
@@ -195,6 +198,7 @@ function Row(props: {
         sessionID: props.child.id,
         parts: [{ type: "text", text }],
         delivery: "steer",
+        directory: props.child.directory,
       })
       setSteer("")
     } catch {

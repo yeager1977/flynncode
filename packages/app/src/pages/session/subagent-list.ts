@@ -4,6 +4,9 @@ export type SubagentChild = {
   id: string
   title: string
   updated: number
+  // Task-only rows have no session entry, so implicit-local subagents carry
+  // no directory.
+  directory?: string
   status: SubagentStatus | undefined
   text: string
 }
