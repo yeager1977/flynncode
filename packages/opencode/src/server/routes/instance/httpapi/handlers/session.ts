@@ -99,6 +99,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       if (!removed) return
       const inst = yield* InstanceState.context
       yield* project.removeSandbox(inst.project.id, meta.worktree).pipe(Effect.ignore)
+      // Keep-N retention also runs when sessions archive, not only on
+      // worktree creation; best-effort like the dispose above.
+      yield* worktreeSvc.retire.pipe(Effect.ignore)
     })
 
     const list = Effect.fn("SessionHttpApi.list")(function* (ctx: { query: typeof ListQuery.Type }) {

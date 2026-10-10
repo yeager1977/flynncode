@@ -59,4 +59,26 @@ describe("worktreesToRemove disposable", () => {
     ]
     expect(worktreesToRemove(entries, 1)).toEqual(["/w/old", "/w/disposable"])
   })
+
+  test("disposable entries are evicted by recency like any other", () => {
+    const now = Date.now()
+    const entries: WorktreeRetentionEntry[] = Array.from({ length: 16 }, (_, index) => ({
+      directory: `wt-${index}`,
+      updated: index,
+      // #0 is disposable but freshest by lastUsedAt; the rest spread hourly.
+      ...(index === 0
+        ? { disposable: true, lastUsedAt: now - 1 }
+        : { lastUsedAt: now - (index + 1) * 3_600_000 }),
+    }))
+    expect(worktreesToRemove(entries, 15)).toEqual([entries[15].directory])
+  })
+
+  test("a disposable entry with the newest lastUsedAt is kept despite a stale mtime", () => {
+    const entries = [
+      { directory: "/w/stale-mtime", updated: 100 },
+      { directory: "/w/fresh-mtime", updated: 1, disposable: true, lastUsedAt: 1000 },
+      { directory: "/w/mid", updated: 50 },
+    ]
+    expect(worktreesToRemove(entries, 2)).toEqual(["/w/mid"])
+  })
 })
