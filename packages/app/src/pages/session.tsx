@@ -89,7 +89,7 @@ import { createTimelineModel } from "@/pages/session/timeline/model"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { citationFromTarget, scrollCitationLine } from "@/pages/session/citation"
 import { reviewFollowUp } from "@/pages/session/review-follow-up"
-import { buildDetachedReviewText, sessionPrefillKey } from "@/pages/session/review-detached"
+import { presetArgs, buildDetachedReviewText, sessionPrefillKey } from "@/pages/session/review-detached"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { restorePromptModel, syncPromptModel, syncSessionModel } from "@/pages/session/session-model-helpers"
 import {
@@ -1284,8 +1284,9 @@ export default function Page() {
     return language.t("session.review.preset.uncommitted")
   }
   const reviewPresetArgsText = (preset: ReviewPresetOption) => {
-    if (preset === "base-branch") return (sync().data.vcs?.default_branch ?? "").trim()
-    return ""
+    // The detached menu has no commit-picker input, so only base-branch carries a target.
+    if (preset === "base-branch") return presetArgs("base-branch", sync().data.vcs?.default_branch)
+    return presetArgs(preset)
   }
   const fillReviewPrompt = (preset: ReviewPresetOption) => {
     const text = buildDetachedReviewText(reviewPresetArgsText(preset))
