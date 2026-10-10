@@ -16,5 +16,7 @@ describe("review detached delivery", () => {
     expect(presetArgs("base-branch", "main")).toBe("main")
     expect(presetArgs("commit", "abc1234")).toBe("abc1234")
     expect(presetArgs("base-branch", "  ")).toBe("")
+    expect(presetArgs("base-branch")).toBe("")
+    expect(presetArgs("commit")).toBe("")
   })
 })
