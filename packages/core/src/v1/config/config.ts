@@ -113,6 +113,10 @@ export const Info = Schema.Struct({
       keep: Schema.optional(NonNegativeInt).annotate({
         description: "Maximum number of idle worktrees to retain before pruning the oldest (default: 15)",
       }),
+      allow_primary_rebind: Schema.optional(Schema.Boolean).annotate({
+        description:
+          "Opt-in: allow checkout handoff to rebind sessions away from the primary (local) checkout into a worktree (default: false)",
+      }),
     }),
   ).annotate({ description: "Git worktree creation and retention settings" }),
   model: Schema.optional(Schema.String).annotate({

@@ -12,6 +12,7 @@ describe("ConfigWorktree.settings", () => {
       location: ".opencode/worktrees",
       branchPrefix: "opencode",
       keep: 15,
+      allowPrimaryRebind: false,
     })
   })
 
@@ -23,7 +24,26 @@ describe("ConfigWorktree.settings", () => {
       location: ".wt",
       branchPrefix: "feat",
       keep: 3,
+      allowPrimaryRebind: false,
     })
+  })
+
+  test("partial worktree blocks keep their resolved fields", () => {
+    expect(ConfigWorktree.settings(parse({ worktree: { keep: 2 } }))).toEqual({
+      location: ".opencode/worktrees",
+      branchPrefix: "opencode",
+      keep: 2,
+      allowPrimaryRebind: false,
+    })
+  })
+
+  test("allow_primary_rebind opt-in passes through", () => {
+    expect(ConfigWorktree.settings(parse({ worktree: { allow_primary_rebind: true } })).allowPrimaryRebind).toBe(true)
+  })
+
+  test("malformed allow_primary_rebind degrades to the default", () => {
+    const config = { worktree: { allow_primary_rebind: "yes" } } as never
+    expect(ConfigWorktree.settings(config).allowPrimaryRebind).toBe(false)
   })
 
   test("schema accepts keep and preserves the value", () => {
@@ -43,6 +63,7 @@ describe("ConfigWorktree.settings", () => {
       location: ".opencode/worktrees",
       branchPrefix: "opencode",
       keep: 15,
+      allowPrimaryRebind: false,
     })
   })
 

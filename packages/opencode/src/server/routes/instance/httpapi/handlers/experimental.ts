@@ -2,10 +2,16 @@ import { Account } from "@/account/account"
 import { Agent } from "@/agent/agent"
 import { BackgroundJob } from "@/background/job"
 import { Config } from "@/config/config"
+import { ConfigWorktree } from "@/config/worktree"
 import { InstanceState } from "@/effect/instance-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { AbsolutePath } from "@opencode-ai/core/schema"
+import { InstanceStore } from "@/project/instance-store"
 import { MCP } from "@/mcp"
 import { Project } from "@/project/project"
+import { ProjectDirectories } from "@opencode-ai/core/project/directories"
+import { SessionFolders } from "@opencode-ai/core/session/folders"
+import { SessionSchema } from "@opencode-ai/core/session/schema"
 import { Session } from "@/session/session"
 import type { SessionID } from "@/session/schema"
 import { ToolJsonSchema } from "@/tool/json-schema"
@@ -37,6 +43,10 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     const sessions = yield* Session.Service
     const background = yield* BackgroundJob.Service
     const flags = yield* RuntimeFlags.Service
+    const sessionFolders = yield* SessionFolders.Service
+    const liveFolders = yield* SessionFolders.Live
+    const projectDirectories = yield* ProjectDirectories.Service
+    const instances = yield* InstanceStore.Service
 
     const capabilities = Effect.fn("ExperimentalHttpApi.capabilities")(function* () {
       return { backgroundSubagents: flags.experimentalBackgroundSubagents }
@@ -154,16 +164,42 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       input: Worktree.HandoffInput,
     ) {
       const inst = yield* InstanceState.context
-      // Never rebind away from the primary checkout or the serving
-      // instance's own worktree: those sessions belong where they are.
-      if (canonicalDir(input.from) === canonicalDir(inst.project.worktree)) return
-      if (canonicalDir(input.from) === canonicalDir(inst.worktree)) return
+      const from = canonicalDir(input.from)
+      const primary = canonicalDir(inst.project.worktree)
+      // Rebinding away from the primary checkout is opt-in through
+      // worktree.allow_primary_rebind. Every other rebinding away from the
+      // serving instance's own worktree stays fatal: those sessions belong
+      // where they are.
+      if (from !== primary && from === canonicalDir(inst.worktree)) return
+      if (from === primary && !ConfigWorktree.settings(yield* config.get()).allowPrimaryRebind) return
+      const offPrimary = from === primary
       const bound = yield* boundSessions(sessions, input.from)
-      yield* Effect.forEach(
-        bound,
-        (item) => sessions.setDirectory({ sessionID: item.id, directory: input.to }).pipe(Effect.ignore),
-        { discard: true },
-      )
+
+      // Rebind one session row. Off the primary this follows the full
+      // primary-switch recipe: the destination joins the project's directory
+      // list, and the vacated checkout is demoted to the session's extra
+      // folders (mirroring the folders primary switch) before the row moves.
+      const rebindRow = Effect.fn("ExperimentalHttpApi.rebindHandoffRow")(function* (sessionID: SessionSchema.ID) {
+        if (offPrimary) {
+          const others = (yield* sessionFolders.list(sessionID)).filter(
+            (dir) => canonicalDir(dir) !== primary && canonicalDir(dir) !== canonicalDir(input.to),
+          )
+          yield* sessionFolders.replace(sessionID, [input.from, ...others]).pipe(Effect.ignore)
+        }
+        yield* sessions.setDirectory({ sessionID, directory: input.to }).pipe(Effect.ignore)
+        if (offPrimary) {
+          yield* projectDirectories
+            .create({ directory: AbsolutePath.make(input.to), projectID: inst.project.id })
+            .pipe(Effect.ignore)
+        }
+      })
+
+      yield* Effect.forEach(bound, (item) => rebindRow(item.id), { discard: true })
+      if (offPrimary) {
+        yield* liveFolders.refresh(input.from).pipe(Effect.ignore)
+        yield* instances.reload({ directory: input.to }).pipe(Effect.ignore)
+      }
+
       const disposable = bound.some(
         (item) => (item.metadata as Record<string, unknown> | undefined)?.disposable === true,
       )
