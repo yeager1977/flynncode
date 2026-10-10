@@ -10,11 +10,15 @@ import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
 import { useSessionLayout } from "./session-layout"
 import { storeArtifact } from "@/pages/layout/sidebar-artifacts"
-import { browserAnnotation } from "./hunk-revert"
+import { browserAnnotation, type BrowserAnnotationPayload } from "./hunk-revert"
 import { browserPaneUrlFor, isLocalPreviewUrl, normalizePreviewUrl, setBrowserPaneUrl } from "./browser-pane"
 import { previewDotClass, previewErrorDetail, previewManaged, type PreviewServerState } from "./preview-server"
 
-export function ReviewBrowser(props: { onAnnotate: (comment: string) => void; onClose: () => void }) {
+export function ReviewBrowser(props: {
+  file?: string
+  onAnnotate: (input: BrowserAnnotationPayload) => void
+  onClose: () => void
+}) {
   const language = useLanguage()
   const sdk = useSDK()
   const platform = usePlatform()
@@ -167,7 +171,7 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void; on
       commitUrl(state.url)
       return
     }
-    const thumbnail = state.marked ? await capture() : undefined
+    const dataUrl = state.marked ? await capture() : undefined
     const comment = state.marked
       ? browserAnnotation({
           url: state.loaded,
@@ -177,20 +181,25 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void; on
           y: state.y,
           width: state.width,
           height: state.height,
-          thumbnail,
         })
       : `${state.loaded}: ${text}`
-    props.onAnnotate(comment)
-    storeAnnotation({ url: state.loaded, note: text, thumbnail: state.marked ? thumbnail : undefined })
+    props.onAnnotate({
+      file: props.file ?? "preview",
+      comment,
+      rect: { x: state.x, y: state.y, width: state.width, height: state.height },
+      screenshot: dataUrl,
+    })
+    storeAnnotation({ url: state.loaded, note: text, thumbnail: dataUrl })
     setState({ note: "", marked: false, width: 0, height: 0, actionError: "" })
     setState("announced", language.t("session.review.browserPane.annotateSent"))
   }
   const recheck = async () => {
     const text = state.note.trim()
     if (!text || !state.marked) return
-    const thumbnail = await capture()
-    props.onAnnotate(
-      browserAnnotation({
+    const dataUrl = await capture()
+    props.onAnnotate({
+      file: props.file ?? "preview",
+      comment: browserAnnotation({
         url: state.loaded,
         path: pagePath(state.loaded),
         note: text,
@@ -198,10 +207,11 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void; on
         y: state.y,
         width: state.width,
         height: state.height,
-        thumbnail,
       }),
-    )
-    storeAnnotation({ url: state.loaded, note: text, thumbnail })
+      rect: { x: state.x, y: state.y, width: state.width, height: state.height },
+      screenshot: dataUrl,
+    })
+    storeAnnotation({ url: state.loaded, note: text, thumbnail: dataUrl })
     setState("announced", language.t("session.review.browserPane.annotateSent"))
   }
   // One-click verify: point the pane back at the running preview server and

@@ -370,14 +370,19 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
       <Show when={browserOpen()}>
         <div class="flex min-h-0 flex-1 flex-col">
           <ReviewBrowser
+            file={props.activeFile ?? "preview"}
             onClose={() => setBrowserOpen(false)}
             // The prompt context only carries file comments, so a browser note
             // rides along as a comment on the reviewed file (or "preview").
-            onAnnotate={(comment) =>
+            // The capture rides as a payload field so the session wiring can
+            // persist it as an image attachment instead of base64 in the text.
+            onAnnotate={(payload) =>
               props.onLineComment?.({
-                file: props.activeFile ?? "preview",
+                file: payload.file,
                 selection: { start: 1, end: 1 },
-                comment,
+                comment: payload.comment,
+                rect: payload.rect,
+                screenshot: payload.screenshot,
               })
             }
           />
