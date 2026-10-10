@@ -292,7 +292,7 @@ const prodRecorderSource = (mark: string) =>
     '  "permission.ask": async (input, output) => {',
     `    const mark = ${JSON.stringify(mark)}`,
     '    const prev = await Bun.file(mark).text().catch(() => "")',
-    "    await Bun.write(mark, prev + JSON.stringify(input) + \"\\n\")",
+    "    await Bun.write(mark, prev + JSON.stringify({ keys: Object.keys(input), input }) + \"\\n\")",
     '    output.status = "deny"',
     "  },",
     "})",
@@ -423,9 +423,9 @@ prodIt.instance(
           const lines = (yield* Effect.promise(() => Bun.file(path.join(dir, "marks.jsonl")).text()))
             .split("\n")
             .filter((line) => line !== "")
-            .map((line) => JSON.parse(line) as Record<string, unknown>)
+            .map((line) => JSON.parse(line) as { keys: string[]; input: Record<string, unknown> })
           expect(lines).toHaveLength(3)
-          expect(lines[0]).toMatchObject({
+          expect(lines[0].input).toMatchObject({
             type: "bash",
             permission: "bash",
             patterns: ["ls"],
@@ -435,18 +435,18 @@ prodIt.instance(
             tool: "bash",
             args: { command: "rm -rf build" },
           })
-          expect((lines[0].time as { created: number }).created).toBeGreaterThan(0)
-          // No fabricated sentinels: absent identity fields are omitted.
-          expect(Object.keys(lines[0])).not.toContain("id")
-          expect(Object.keys(lines[0])).not.toContain("messageID")
-          expect(Object.keys(lines[0])).not.toContain("callID")
-          expect(lines[1]).toMatchObject({
+          expect((lines[0].input.time as { created: number }).created).toBeGreaterThan(0)
+          // No fabricated sentinels: absent identity fields are omitted keys.
+          expect(lines[0].keys).not.toContain("id")
+          expect(lines[0].keys).not.toContain("messageID")
+          expect(lines[0].keys).not.toContain("callID")
+          expect(lines[1].input).toMatchObject({
             permission: "edit",
             patterns: ["a.ts", "b.ts"],
             pattern: ["a.ts", "b.ts"],
           })
-          expect(Object.keys(lines[1])).not.toContain("id")
-          expect(lines[2]).toMatchObject({
+          expect(lines[1].keys).not.toContain("id")
+          expect(lines[2].input).toMatchObject({
             id: "call_y",
             messageID: "msg_y",
             callID: "call_y",
@@ -458,6 +458,9 @@ prodIt.instance(
             tool: "bash",
             args: { command: "git push" },
           })
+          for (const key of ["id", "messageID", "callID", "tool", "args"]) {
+            expect(lines[2].keys).toContain(key)
+          }
         }),
     ),
 )

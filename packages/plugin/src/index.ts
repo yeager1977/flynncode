@@ -223,10 +223,11 @@ export type AuthOuathResult = AuthOAuthResult
  * The `permission.ask` hook input carries the fields the ask path knows: the
  * permission name, all patterns, the requesting tool name, its arguments, and
  * the session. It reuses the response-shaped {@link Permission} payload where
- * the ask path can fill it honestly: `type`, `pattern`, `sessionID`, `callID`,
+ * the ask path can fill it honestly: `type`, `pattern`, `sessionID`,
  * `metadata`, `title` (the tool or permission name), and `time.created` (now)
- * are always present, while `id` and `messageID` are omitted when the ask
- * carries no tool call identity.
+ * are always present, while `id`, `messageID`, `callID`, `tool`, and `args`
+ * are omitted entirely (missing keys, not sentinels) when the ask carries no
+ * value for them.
  */
 export type PermissionAskInput = Omit<Permission, "id" | "messageID" | "title" | "time"> & {
   id?: Permission["id"]
@@ -278,7 +279,13 @@ export interface Hooks {
     input: { sessionID: string; agent: string; model: Model; provider: ProviderContext; message: UserMessage },
     output: { headers: Record<string, string> },
   ) => Promise<void>
-  "permission.ask"?: (input: PermissionAskInput, output: { status: "ask" | "deny" | "allow" }) => Promise<void>
+  // Declared as a method (not a property) on purpose: parameter assignability
+  // for method signatures stays bivariant under strictFunctionTypes, so hooks
+  // explicitly annotated with the response-shaped Permission input keep
+  // compiling against the narrower PermissionAskInput payload. Verified with
+  // tsc --strict: a property-style slot (or a `Permission | PermissionAskInput`
+  // union parameter) fails TS2322 for those legacy hooks.
+  "permission.ask"?(input: PermissionAskInput, output: { status: "ask" | "deny" | "allow" }): Promise<void>
   "command.execute.before"?: (
     input: { command: string; sessionID: string; arguments: string },
     output: { parts: Part[] },

@@ -385,23 +385,23 @@ const layer = Layer.effect(
       const s = yield* InstanceState.get(state)
       // The hook payload reuses the response-shaped Permission object for the
       // fields the ask path can fill honestly: the tool name stands in for the
-      // title and time.created is the current wall clock. id/messageID are
-      // omitted when the ask carries no tool call identity — no sentinels.
+      // title and time.created is the current wall clock. Everything the ask
+      // cannot fill is an omitted key, never a sentinel placeholder.
       const payload: PermissionAskInput = {
         type: input.permission,
         pattern: input.patterns.length === 1 ? input.patterns[0] : [...input.patterns],
         sessionID: input.sessionID,
-        callID: input.callID,
         title: input.tool ?? input.permission,
         metadata: input.metadata,
         time: { created: Date.now() },
         permission: input.permission,
         patterns: [...input.patterns],
-        tool: input.tool,
-        args: input.args,
       }
       if (input.id !== undefined) payload.id = input.id
       if (input.messageID !== undefined) payload.messageID = input.messageID
+      if (input.callID !== undefined) payload.callID = input.callID
+      if (input.tool !== undefined) payload.tool = input.tool
+      if (input.args !== undefined) payload.args = input.args
       // Intentional parity with tool.permission aggregation: isolated
       // per-hook outputs, any deny short-circuits, allow is sticky, and
       // ask/no-op changes nothing.
