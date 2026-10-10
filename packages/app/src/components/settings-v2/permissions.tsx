@@ -23,6 +23,12 @@ const sandboxChoices: Array<Exclude<Policy["sandbox"], "full-access">> = ["reado
 
 export function policyFromConfig(config: Config | undefined): Policy {
   const permission = config?.permission
+  // Intentional materialization: a bare-string permission ("allow") carries no
+  // explicit session policy, so the UI shows the server's decode defaults —
+  // sandbox "workspace-write" mirrors ConfigPermissionV1.SessionPolicy's
+  // decoding default (packages/core/src/v1/config/permission.ts). Saving writes
+  // those values back verbatim, so the UI's policy always equals what the
+  // server resolves for every session.
   if (typeof permission !== "object") return { approval: "manual", sandbox: "workspace-write" }
   return { approval: approvalLevel(permission.approval), sandbox: sandboxLevel(permission.sandbox) }
 }
