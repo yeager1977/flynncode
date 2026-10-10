@@ -18,6 +18,7 @@ import { usePermission } from "@/context/permission"
 import { playSoundById } from "@/utils/sound"
 import { Worktree as WorktreeState } from "@/utils/worktree"
 import { setSessionHandoff } from "@/pages/session/handoff"
+import { legacySessionHref } from "@/utils/session-route"
 import { SessionRouteKey, SessionStateKey } from "@/utils/server-scope"
 
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -85,6 +86,9 @@ export default function LegacyLayout(props: ParentProps) {
     openSession: (directory, id) => navigate(`/${base64Encode(directory)}/session/${id}`),
     newSession: (directory) => navigate(`/${base64Encode(directory)}/session`),
     newSessionHref: (directory) => `/${base64Encode(directory)}/session`,
+    // Directory-scoped: navigating re-creates the legacy route's
+    // directory-scoped client, which is how a handoff re-points the UI.
+    sessionHref: ({ directory, id }) => legacySessionHref(directory, id),
     home: () => navigate("/"),
   })
 

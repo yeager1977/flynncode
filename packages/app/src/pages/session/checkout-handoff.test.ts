@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { carryHandoffContext, checkoutHandoff, firstPromptText, handoffErrorMessage, handoffPromptOutcome } from "./checkout-handoff"
+import { carryHandoffContext, checkoutHandoff, firstPromptText, handoffErrorMessage, handoffFollowHref, handoffPromptOutcome } from "./checkout-handoff"
 
 describe("checkoutHandoff", () => {
   test("stays on the primary checkout when the directory is not git", () => {
@@ -215,5 +215,38 @@ describe("handoffErrorMessage", () => {
     expect(handoffErrorMessage(new Error("boom"))).toBeUndefined()
     expect(handoffErrorMessage({ data: {} })).toBeUndefined()
     expect(handoffErrorMessage(undefined)).toBeUndefined()
+  })
+})
+
+describe("handoffFollowHref", () => {
+  const href = (session: { directory: string; id: string }) => `${session.directory}/session/${session.id}`
+
+  test("follows the routed session when its row moved to the handoff target", () => {
+    expect(
+      handoffFollowHref({ sessionID: "ses_1", rowDirectory: "/repo-wt", target: "/repo-wt", href }),
+    ).toBe("/repo-wt/session/ses_1")
+  })
+
+  test("suppresses the follow when the row did not move (refused rebind)", () => {
+    expect(
+      handoffFollowHref({ sessionID: "ses_1", rowDirectory: "/repo", target: "/repo-wt", href }),
+    ).toBeUndefined()
+  })
+  test("suppresses the follow when the row could not be read", () => {
+    expect(handoffFollowHref({ sessionID: "ses_1", rowDirectory: undefined, target: "/repo-wt", href })).toBeUndefined()
+  })
+
+  test("suppresses the follow without an open routed session", () => {
+    expect(handoffFollowHref({ sessionID: undefined, rowDirectory: "/repo-wt", target: "/repo-wt", href })).toBeUndefined()
+  })
+
+  test("suppresses the follow when the host supplies no href", () => {
+    expect(handoffFollowHref({ sessionID: "ses_1", rowDirectory: "/repo-wt", target: "/repo-wt", href: undefined })).toBeUndefined()
+  })
+
+  test("compares targets key-safe so spelling differences do not block the follow", () => {
+    expect(handoffFollowHref({ sessionID: "ses_1", rowDirectory: "/repo-wt/", target: "/repo-wt", href })).toBe(
+      "/repo-wt/session/ses_1",
+    )
   })
 })
