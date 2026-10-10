@@ -49,6 +49,17 @@ export interface RunnerInterface {
     callID: string
     args: Record<string, unknown>
   }) => Effect.Effect<PreToolUseDecision>
+  readonly runPermissionAsk: (input: {
+    permission: string
+    patterns: ReadonlyArray<string>
+    sessionID: string
+    metadata: Record<string, unknown>
+    tool?: string
+    args?: Record<string, unknown>
+    id?: string
+    callID?: string
+    messageID?: string
+  }) => Effect.Effect<"ask" | "deny" | "allow">
   readonly runPostToolUse: (input: {
     sessionID: string
     tool: string
@@ -96,6 +107,7 @@ export function denyWins(decisions: Array<PreToolUseDecision>): PreToolUseDecisi
 export type TriggerLike = {
   trigger: Plugin.Interface["trigger"]
   triggerDecision: Plugin.Interface["triggerDecision"]
+  triggerPermissionAsk: Plugin.Interface["triggerPermissionAsk"]
 }
 
 export type ExecutorLike = Pick<ExecutorInterface, "runDecision" | "runPostTool" | "runObserve">
@@ -168,6 +180,23 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
       return { behavior: "allow" } as const
     }
     return withContext({ behavior: "undecided" } as const, fileVerdict)
+  })
+
+  // The plugin permission.ask hook runs before the pending prompt: any deny
+  // fails the ask like a config rule, allow/ask fall through to the normal
+  // PermissionRequest hook and prompt flow.
+  const runPermissionAsk = Effect.fn("HooksRunner.runPermissionAsk")(function* (input: {
+    permission: string
+    patterns: ReadonlyArray<string>
+    sessionID: string
+    metadata: Record<string, unknown>
+    tool?: string
+    args?: Record<string, unknown>
+    id?: string
+    callID?: string
+    messageID?: string
+  }) {
+    return (yield* plugin.triggerPermissionAsk(input, { status: "ask" as const })).status
   })
 
   const runPermissionRequest = Effect.fn("HooksRunner.runPermissionRequest")(function* (input: {
@@ -421,6 +450,7 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
   return Service.of({
     runPreToolUse,
     runPermissionRequest,
+    runPermissionAsk,
     runPostToolUse,
     runSessionStart,
     runSessionEnd,
@@ -465,6 +495,7 @@ export const node = LayerNode.make({
 const noopPlugin: TriggerLike = {
   trigger: (_name, _input, output) => Effect.succeed(output as never),
   triggerDecision: (_input, output) => Effect.succeed(output),
+  triggerPermissionAsk: (_input, output) => Effect.succeed(output),
 }
 
 export * as HooksRunner from "./runner"

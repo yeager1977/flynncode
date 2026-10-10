@@ -219,6 +219,19 @@ export type ProviderHook = {
 /** @deprecated Use AuthOAuthResult instead. */
 export type AuthOuathResult = AuthOAuthResult
 
+/**
+ * The `permission.ask` hook input reuses the response-shaped {@link Permission}
+ * payload and additively carries the fields the ask path knows but the
+ * response shape lacks: the permission name, all patterns, the requesting
+ * tool name, and its arguments.
+ */
+export type PermissionAskInput = Permission & {
+  permission?: string
+  patterns?: Array<string>
+  tool?: string
+  args?: Record<string, unknown>
+}
+
 export interface Hooks {
   dispose?: () => Promise<void>
   event?: (input: { event: Event }) => Promise<void>
@@ -258,7 +271,7 @@ export interface Hooks {
     input: { sessionID: string; agent: string; model: Model; provider: ProviderContext; message: UserMessage },
     output: { headers: Record<string, string> },
   ) => Promise<void>
-  "permission.ask"?: (input: Permission, output: { status: "ask" | "deny" | "allow" }) => Promise<void>
+  "permission.ask"?: (input: PermissionAskInput, output: { status: "ask" | "deny" | "allow" }) => Promise<void>
   "command.execute.before"?: (
     input: { command: string; sessionID: string; arguments: string },
     output: { parts: Part[] },

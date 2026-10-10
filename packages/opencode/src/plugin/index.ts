@@ -62,6 +62,20 @@ export interface Interface {
     input: { tool: string; sessionID: string; callID: string; args: Record<string, unknown> },
     output: { decision: "allow" | "deny" | "undecided"; message?: string; updatedInput?: Record<string, unknown> },
   ) => Effect.Effect<{ decision: "allow" | "deny" | "undecided"; message?: string; updatedInput?: Record<string, unknown> }>
+  readonly triggerPermissionAsk: (
+    input: {
+      permission: string
+      patterns: ReadonlyArray<string>
+      sessionID: string
+      metadata: Record<string, unknown>
+      tool?: string
+      args?: Record<string, unknown>
+      id?: string
+      callID?: string
+      messageID?: string
+    },
+    output: { status: "ask" | "deny" | "allow" },
+  ) => Effect.Effect<{ status: "ask" | "deny" | "allow" }>
   readonly list: () => Effect.Effect<Hooks[]>
   readonly init: () => Effect.Effect<void>
 }
@@ -353,11 +367,62 @@ const layer = Layer.effect(
       return output
     })
 
+    const triggerPermissionAsk = Effect.fn("Plugin.triggerPermissionAsk")(function* (
+      input: {
+        permission: string
+        patterns: ReadonlyArray<string>
+        sessionID: string
+        metadata: Record<string, unknown>
+        tool?: string
+        args?: Record<string, unknown>
+        id?: string
+        callID?: string
+        messageID?: string
+      },
+      output: { status: "ask" | "deny" | "allow" },
+    ) {
+      const s = yield* InstanceState.get(state)
+      // The declared hook payload is the response-shaped Permission object;
+      // required response fields the ask path has no value for are filled
+      // with the closest available value: callID/messageID for identity,
+      // the tool name for the title, and Date.now() for the creation time.
+      const payload = {
+        id: input.callID ?? input.id ?? "unknown",
+        type: input.permission,
+        pattern: input.patterns.length === 1 ? input.patterns[0] : [...input.patterns],
+        sessionID: input.sessionID,
+        messageID: input.messageID ?? "",
+        callID: input.callID,
+        title: input.tool ?? input.permission,
+        metadata: input.metadata,
+        time: { created: Date.now() },
+        permission: input.permission,
+        patterns: [...input.patterns],
+        tool: input.tool,
+        args: input.args,
+      }
+      // Same aggregation as tool.permission: isolated per-hook outputs, any
+      // deny short-circuits, allow is sticky, ask/no-op changes nothing.
+      for (const hook of s.hooks) {
+        const fn = hook["permission.ask"]
+        if (!fn) continue
+        const perHook: { status: "ask" | "deny" | "allow" } = { status: "ask" }
+        yield* Effect.promise(async () => fn(payload, perHook))
+        if (perHook.status === "deny") {
+          output.status = "deny"
+          return output
+        }
+        if (perHook.status !== "allow") continue
+        output.status = "allow"
+      }
+      return output
+    })
+
     const init = Effect.fn("Plugin.init")(function* () {
       yield* InstanceState.get(state)
     })
 
-    return Service.of({ trigger, triggerDecision, list, init })
+    return Service.of({ trigger, triggerDecision, triggerPermissionAsk, list, init })
   }),
 )
 

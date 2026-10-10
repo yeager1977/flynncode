@@ -103,6 +103,26 @@ const layer = Layer.effect(
         if (approval === "accept-edits" && AUTO_EDIT_PERMISSIONS.includes(request.permission)) return
       }
 
+      // Plugin permission.ask hooks aggregate deny-wins before the pending
+      // prompt exists: any deny fails like a config rule, allow/ask fall
+      // through to the normal PermissionRequest hook and prompt flow.
+      const askVerdict = yield* hooksRunner.runPermissionAsk({
+        permission: request.permission,
+        patterns: request.patterns,
+        sessionID: request.sessionID,
+        metadata: request.metadata,
+        tool: hook?.tool ?? request.permission,
+        args: hook?.args ?? { patterns: request.patterns, metadata: request.metadata },
+        id: request.tool?.callID ?? request.id ?? "unknown",
+        messageID: request.tool?.messageID,
+        callID: request.tool?.callID,
+      })
+      if (askVerdict === "deny") {
+        return yield* new PermissionV1.DeniedError({
+          ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),
+        })
+      }
+
       // The PermissionRequest hook only stands in for a prompt the user would
       // actually see: config deny rules already failed above and allow/auto
       // approvals never reach here. Deny wins; allow skips the prompt;
