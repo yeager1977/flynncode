@@ -9,6 +9,7 @@ const keys = [
   "approval.mode.auto",
   "approval.mode.manual",
   "approval.reviewerApproved.note",
+  "approval.reviewerDeferred.note",
   "approval.sandboxBlocked.description",
   "approval.sandboxBlocked.title",
   "computerUse.allowlist.add",

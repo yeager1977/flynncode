@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import type { Config } from "@opencode-ai/sdk/v2/client"
 import { worktreeAllowPrimaryRebind, worktreeFromConfig, worktreeHasConfig, worktreeKeepValue, worktreeToConfig, worktreeValidationErrors } from "./worktree-payload"
 
 describe("worktree-payload", () => {
@@ -8,7 +9,7 @@ describe("worktree-payload", () => {
   })
 
   test("round-trips configured values", () => {
-    const config = { worktree: { location: ".wt", branch_prefix: "feat", keep: 5 } } as never
+    const config: Config = { worktree: { location: ".wt", branch_prefix: "feat", keep: 5 } }
     const form = worktreeFromConfig(config)
     expect(form).toEqual({ location: ".wt", branchPrefix: "feat", keep: "5" })
     expect(worktreeToConfig(form)).toEqual({ worktree: { location: ".wt", branch_prefix: "feat", keep: 5 } })
@@ -40,9 +41,9 @@ describe("worktree-payload", () => {
     expect(worktreeAllowPrimaryRebind(undefined)).toBe(false)
     expect(worktreeAllowPrimaryRebind({})).toBe(false)
     expect(worktreeAllowPrimaryRebind({ worktree: {} })).toBe(false)
-    // The SDK Config type does not carry the flag yet, so the literals use the
-    // file's existing `as never` tolerance until the SDK types regenerate.
-    expect(worktreeAllowPrimaryRebind({ worktree: { allow_primary_rebind: true } } as never)).toBe(true)
-    expect(worktreeAllowPrimaryRebind({ worktree: { allow_primary_rebind: "yes" } } as never)).toBe(false)
+    expect(worktreeAllowPrimaryRebind({ worktree: { allow_primary_rebind: true } })).toBe(true)
+    // Non-string values cannot be typed Config literals; the cast only fakes
+    // the schema violation the read guards against.
+    expect(worktreeAllowPrimaryRebind({ worktree: { allow_primary_rebind: "yes" as unknown as boolean } })).toBe(false)
   })
 })

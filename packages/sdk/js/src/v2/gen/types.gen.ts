@@ -671,6 +671,8 @@ export type Todo = {
   priority: string
 }
 
+export type PermissionReviewerVerdict = "allow" | "deny" | "defer"
+
 export type SessionStatus =
   | {
       type: "idle"
@@ -1390,6 +1392,7 @@ export type GlobalEvent = {
             messageID: string
             callID: string
           }
+          reviewer?: PermissionReviewerVerdict
         }
       }
     | {
@@ -1968,6 +1971,7 @@ export type Config = {
     location?: string
     branch_prefix?: string
     keep?: number
+    allow_primary_rebind?: boolean
   }
   model?: string
   small_model?: string
@@ -2838,6 +2842,7 @@ export type PermissionRequest = {
     messageID: string
     callID: string
   }
+  reviewer?: PermissionReviewerVerdict
 }
 
 export type PermissionNotFoundError = {
@@ -6154,6 +6159,7 @@ export type PermissionAsked = {
       messageID: string
       callID: string
     }
+    reviewer?: PermissionReviewerVerdict
   }
 }
 
@@ -7308,6 +7314,7 @@ export type EventPermissionAsked = {
       messageID: string
       callID: string
     }
+    reviewer?: PermissionReviewerVerdict
   }
 }
 

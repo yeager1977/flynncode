@@ -657,6 +657,7 @@ export const dict = {
   "approval.sandboxBlocked.title": "Blocked by sandbox",
   "approval.sandboxBlocked.description": "This action targets a path outside the session sandbox.",
   "approval.reviewerApproved.note": "Auto-approved by reviewer",
+  "approval.reviewerDeferred.note": "The auto reviewer couldn't decide — asking you.",
 
   "toast.model.none.title": "No model selected",
   "toast.model.none.description": "Connect a provider to summarize this session",

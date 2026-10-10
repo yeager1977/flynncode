@@ -81,6 +81,9 @@ export function SessionComposerRegion(props: {
                 sandbox={controller.state.permissionSandbox()}
                 approvalMode={controller.state.permissionApprovalMode()}
                 blockedBySandbox={permissionSandboxBlocked(controller.state.permissionSandbox(), request.permission)}
+                // The dock note speaks for the auto reviewer deferring to the
+                // human; the verdict rides on the pending request itself.
+                reviewerApproved={request.reviewer === "defer"}
                 onModeChange={controller.state.setPermissionApprovalMode}
               />
             </div>
