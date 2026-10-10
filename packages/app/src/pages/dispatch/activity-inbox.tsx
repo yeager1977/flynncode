@@ -173,6 +173,13 @@ export function ActivityInboxPanel() {
   const scheduleOf = (routine: StoredRoutine) =>
     routine.rrule ?? routine.dailyAt ?? routine.interval ?? language.t("settings.routines.manual")
 
+  // Same liveness pattern as the live-only session scan below: busy or retry
+  // means the routine's latest run session is still working.
+  const routineIsLive = (sessionID: string) => {
+    const type = serverSync().session.data.session_status[sessionID]?.type
+    return type === "busy" || type === "retry"
+  }
+
   const routines = createMemo(() => routinesFromConfig(serverSync().data.config.routines))
 
   const rows = createMemo(() => {
@@ -187,7 +194,7 @@ export function ActivityInboxPanel() {
       },
       (id) => notification.session.unseenCount(id),
     )
-    const routineList = routineRows(routines(), scheduleOf)
+    const routineList = routineRows(routines(), scheduleOf, routineIsLive)
     const liveOnly = projects().flatMap((project) => {
       const sessions = serverSync().child(project.worktree, { bootstrap: false })[0].session ?? []
       return sessions.flatMap((session) => {

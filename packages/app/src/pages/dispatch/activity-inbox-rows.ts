@@ -41,17 +41,19 @@ export function dispatchRows(
 export function routineRows(
   routines: readonly StoredRoutine[],
   scheduleOf: (routine: StoredRoutine) => string,
+  isLive: (sessionID: string) => boolean,
 ): InboxRow[] {
   return routines.map((routine) => {
     const runs = routine.recentRuns ?? []
     const latest = runs[runs.length - 1]
     const failed = latest?.state === "error"
+    const sessionID = latest?.sessionID
     return {
       key: `routine:${routine.id}`,
       kind: "routine",
       title: routine.name,
       subtitle: scheduleOf(routine),
-      status: failed ? "failed" : "done",
+      status: failed ? "failed" : sessionID && isLive(sessionID) ? "running" : "done",
       unread: failed,
     }
   })
