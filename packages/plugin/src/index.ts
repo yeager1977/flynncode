@@ -279,6 +279,12 @@ export interface Hooks {
     input: { sessionID: string; agent: string; model: Model; provider: ProviderContext; message: UserMessage },
     output: { headers: Record<string, string> },
   ) => Promise<void>
+  /**
+   * Runs before any approval-mode shortcut auto-approves a request that needs
+   * asking: a `deny` verdict wins in every mode (including "auto",
+   * "accept-edits", and the always-ask tools), while `allow` and `ask` fall
+   * through to the mode shortcuts and the normal prompt flow.
+   */
   // Declared as a method (not a property) on purpose: parameter assignability
   // for method signatures stays bivariant under strictFunctionTypes, so hooks
   // explicitly annotated with the response-shaped Permission input keep

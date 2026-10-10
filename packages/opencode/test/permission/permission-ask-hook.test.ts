@@ -183,6 +183,49 @@ const withPlugin = <A, E, R>(
   })
 
 denyIt.instance(
+  "a plugin permission.ask deny is evaluated before the approval auto shortcut",
+  () =>
+    Effect.gen(function* () {
+      askCalls.length = 0
+      const permission = yield* Permission.Service
+      // reviewer "allow" would auto-approve under approval "auto"; the plugin
+      // hook runs first, so its deny must win anyway.
+      const error = yield* failOf(permission.ask({ ...request([]), approval: "auto", reviewer: "allow" }))
+      expect(error).toBeInstanceOf(PermissionV1.DeniedError)
+      expect(askCalls).toHaveLength(1)
+      expect(yield* permission.list()).toHaveLength(0)
+    }),
+)
+
+denyIt.instance(
+  "a plugin permission.ask deny is evaluated before the accept-edits shortcut",
+  () =>
+    Effect.gen(function* () {
+      askCalls.length = 0
+      const permission = yield* Permission.Service
+      // "edit" is auto-approved under accept-edits; the plugin hook runs first.
+      const error = yield* failOf(
+        permission.ask({ ...request([]), permission: "edit", approval: "accept-edits" }),
+      )
+      expect(error).toBeInstanceOf(PermissionV1.DeniedError)
+      expect(askCalls).toHaveLength(1)
+      expect(yield* permission.list()).toHaveLength(0)
+    }),
+)
+
+denyIt.instance(
+  "a plugin permission.ask deny wins for an always-ask tool",
+  () =>
+    Effect.gen(function* () {
+      askCalls.length = 0
+      const permission = yield* Permission.Service
+      const error = yield* failOf(permission.ask({ ...request([]), permission: "computer_use", approval: "auto" }))
+      expect(error).toBeInstanceOf(PermissionV1.DeniedError)
+      expect(askCalls).toHaveLength(1)
+    }),
+)
+
+denyIt.instance(
   "a plugin permission.ask deny short-circuits the prompt",
   () =>
     Effect.gen(function* () {

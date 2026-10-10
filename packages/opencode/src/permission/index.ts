@@ -97,26 +97,10 @@ const layer = Layer.effect(
 
       if (!needsAsk) return
 
-      const AUTO_EDIT_PERMISSIONS = ["edit", "read", "glob", "grep", "list"]
-      // computer_use and archive always reach the user, whatever the approval mode.
-      if (!ALWAYS_ASK.includes(request.permission)) {
-        // approval "auto" approves only on an explicit LLM auto-reviewer allow
-        // verdict; the session tools gate (session/tools.ts) consults the
-        // reviewer and carries the verdict in `reviewer`. Direct callers
-        // without a verdict and defer/failed reviews fall through to the
-        // human prompt, and a deny verdict that bypassed the gate fails closed.
-        if (approval === "auto" && request.reviewer === "deny") {
-          return yield* new PermissionV1.DeniedError({
-            ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),
-          })
-        }
-        if (approval === "auto" && request.reviewer === "allow") return
-        if (approval === "accept-edits" && AUTO_EDIT_PERMISSIONS.includes(request.permission)) return
-      }
-
-      // Plugin permission.ask hooks aggregate deny-wins before the pending
-      // prompt exists: any deny fails like a config rule, allow/ask fall
-      // through to the normal PermissionRequest hook and prompt flow.
+      // Plugin permission.ask hooks run before any approval-mode shortcut, so
+      // a plugin deny (or fail-closed verdict) wins in every mode; allow/ask
+      // fall through to the mode shortcuts, the PermissionRequest hook, and
+      // the pending prompt flow.
       const askVerdict = yield* hooksRunner.runPermissionAsk({
         permission: request.permission,
         patterns: request.patterns,
@@ -132,6 +116,23 @@ const layer = Layer.effect(
         return yield* new PermissionV1.DeniedError({
           ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),
         })
+      }
+
+      const AUTO_EDIT_PERMISSIONS = ["edit", "read", "glob", "grep", "list"]
+      // computer_use and archive always reach the user, whatever the approval mode.
+      if (!ALWAYS_ASK.includes(request.permission)) {
+        // approval "auto" approves only on an explicit LLM auto-reviewer allow
+        // verdict; the session tools gate (session/tools.ts) consults the
+        // reviewer and carries the verdict in `reviewer`. Direct callers
+        // without a verdict and defer/failed reviews fall through to the
+        // human prompt, and a deny verdict that bypassed the gate fails closed.
+        if (approval === "auto" && request.reviewer === "deny") {
+          return yield* new PermissionV1.DeniedError({
+            ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),
+          })
+        }
+        if (approval === "auto" && request.reviewer === "allow") return
+        if (approval === "accept-edits" && AUTO_EDIT_PERMISSIONS.includes(request.permission)) return
       }
 
       // The PermissionRequest hook only stands in for a prompt the user would
