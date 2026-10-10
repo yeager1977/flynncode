@@ -21,4 +21,6 @@ test("composer region passes live sandbox and approval mode into the dock", asyn
   expect(source).toContain("permissionSandbox()")
   expect(source).toContain("permissionApprovalMode()")
   expect(source).toContain("setPermissionApprovalMode")
+  expect(source).toContain("permissionSandboxBlocked(")
+  expect(source).toContain("blockedBySandbox")
 })

@@ -363,6 +363,14 @@ describe("permission dock wiring", () => {
     h.dispose()
   })
 
+  test("sandbox blockers are derived for bash and write tools under readonly", () => {
+    expect(composer.permissionSandboxBlocked("readonly", "bash")).toBe(true)
+    expect(composer.permissionSandboxBlocked("readonly", "edit")).toBe(true)
+    expect(composer.permissionSandboxBlocked("workspace-write", "bash")).toBe(false)
+    expect(composer.permissionSandboxBlocked("full-access", "bash")).toBe(false)
+    expect(composer.permissionSandboxBlocked("readonly", "read")).toBe(false)
+  })
+
   test("forwards mode changes with the session id and directory", () => {
     const calls: { sessionID: string; directory: string | undefined; mode: ApprovalMode }[] = []
     permissionMock.setApprovalMode = (sessionID, directory, mode) => {
