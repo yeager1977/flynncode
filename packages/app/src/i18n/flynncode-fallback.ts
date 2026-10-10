@@ -165,6 +165,7 @@ const keys = [
   "session.review.followUp.git",
   "session.review.followUp.turn",
   "session.review.hunk.label",
+  "session.review.markPoint",
   "session.review.preset.baseBranch",
   "session.review.preset.commit",
   "session.review.preset.uncommitted",

@@ -7,7 +7,7 @@ import { DialogFooter, DialogHeader, DialogTitleGroup, DialogV2 } from "@opencod
 import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
-import { createMemo, createResource, createSignal, For, Show, type JSX } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show, type JSX } from "solid-js"
 import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
 import type { FileDiffInfo } from "@opencode-ai/client/promise"
 import {
@@ -21,6 +21,8 @@ import { DiffChanges } from "@opencode-ai/ui/v2/diff-changes-v2"
 import { ArtifactPreview } from "@/pages/session/artifact-preview-view"
 import { artifactPreviewKind } from "@/pages/session/artifact-preview"
 import { ReviewBrowser } from "@/pages/session/review-browser"
+import { useSessionKey } from "@/pages/session/session-layout"
+import type { PreviewServerState } from "@/pages/session/preview-server"
 import type {
   SessionReviewComment,
   SessionReviewCommentActions,
@@ -77,6 +79,56 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
   const dialog = useDialog()
   // The browser pane mounts only on demand so it never squeezes the diff.
   const [browserOpen, setBrowserOpen] = createSignal(false)
+  // Auto-open: when a preview server transitions to running while the pane is
+  // closed, open the pane. The first observed snapshot never opens (startup
+  // restore keeps the user's closed state), and a user-closed pane stays
+  // closed for the same session+URL key.
+  const [dismissed, setDismissed] = createSignal(new Set<string>())
+  const { params } = useSessionKey()
+  const [tick, setTick] = createSignal(0)
+  const [servers] = createResource(tick, async () => {
+    try {
+      const result = await sdk().client.preview.servers.list({ directory: sdk().directory })
+      return (result.data ?? []) as PreviewServerState[]
+    } catch {
+      return []
+    }
+  })
+  const dismissedKey = (session: string, url: string) => `${session}|${url}`
+  const runningKeys = () => {
+    const session = params.id ?? sdk().directory ?? "default"
+    return (servers() ?? []).flatMap((server) =>
+      server.state === "running" && server.url ? [dismissedKey(session, server.url)] : [],
+    )
+  }
+  let seen: Set<string> | undefined
+  let lastSession = ""
+  createEffect(() => {
+    const session = params.id ?? sdk().directory ?? "default"
+    const running = new Set(runningKeys())
+    const previous = seen
+    seen = running
+    if (previous === undefined || lastSession !== session) {
+      lastSession = session
+      return
+    }
+    lastSession = session
+    if (browserOpen()) return
+    if (![...running].some((key) => !previous.has(key) && !dismissed().has(key))) return
+    setBrowserOpen(true)
+  })
+  // The servers endpoint is a snapshot; poll while the pane is closed so a
+  // server started outside the UI still surfaces as a running transition.
+  createEffect(() => {
+    if (browserOpen()) return
+    const timer = setInterval(() => setTick((value) => value + 1), 5000)
+    onCleanup(() => clearInterval(timer))
+  })
+  const closeBrowser = () => {
+    const keys = runningKeys()
+    if (keys.length > 0) setDismissed(new Set([...dismissed(), ...keys]))
+    setBrowserOpen(false)
+  }
 
   const diffs = createMemo(() => props.diffs().filter(filterRenderableDiff))
   const filteredFiles = createMemo(() =>
@@ -235,7 +287,10 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
           state={browserOpen() ? "pressed" : undefined}
           aria-pressed={browserOpen()}
           aria-label={browserLabel()}
-          onClick={() => setBrowserOpen(!browserOpen())}
+          onClick={() => {
+            if (browserOpen()) return closeBrowser()
+            setBrowserOpen(true)
+          }}
           icon={<IconV2 name="monitor" />}
         />
       </TooltipV2>
@@ -371,7 +426,7 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
         <div class="flex min-h-0 flex-1 flex-col">
           <ReviewBrowser
             file={props.activeFile ?? "preview"}
-            onClose={() => setBrowserOpen(false)}
+            onClose={() => closeBrowser()}
             // The prompt context only carries file comments, so a browser note
             // rides along as a comment on the reviewed file (or "preview").
             // The capture rides as a payload field so the session wiring can

@@ -85,3 +85,39 @@ describe("auto-verify affordance", () => {
     expect(paneSource).toContain('language.t("session.review.browserPane.verify")')
   })
 })
+
+describe("point-mode annotation", () => {
+  const paneSource = readFileSync(new URL("./review-browser.tsx", import.meta.url), "utf8")
+
+  test("mark control offers a point mode", () => {
+    expect(paneSource).toContain('data-action="mark-point"')
+    expect(paneSource).toContain('language.t("session.review.markPoint")')
+  })
+
+  test("point mode skips the drag pass and records a zero-size percent rect", () => {
+    expect(paneSource).toContain("if (state.point) return")
+    expect(paneSource).toMatch(/width: 0, height: 0, marked: true/)
+  })
+
+  test("point mode label is registered in the i18n dictionaries", () => {
+    expect(readFileSync(new URL("../../i18n/en.ts", import.meta.url), "utf8")).toContain('"session.review.markPoint"')
+    expect(readFileSync(new URL("../../i18n/flynncode-fallback.ts", import.meta.url), "utf8")).toContain(
+      '"session.review.markPoint"',
+    )
+  })
+})
+
+describe("auto-open on running preview", () => {
+  const panelSource = readFileSync(new URL("./v2/review-panel-v2.tsx", import.meta.url), "utf8")
+
+  test("browser pane auto-opens on a running preview server", () => {
+    expect(panelSource).toContain("preview.servers.list")
+    expect(panelSource).toContain('state === "running"')
+    expect(panelSource).toContain("setBrowserOpen(true)")
+  })
+
+  test("auto-open respects a user-closed pane for the same session and URL", () => {
+    expect(panelSource).toContain("dismissed")
+    expect(panelSource).toContain("dismissedKey")
+  })
+})

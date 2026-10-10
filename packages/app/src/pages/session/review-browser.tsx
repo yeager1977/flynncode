@@ -32,6 +32,9 @@ export function ReviewBrowser(props: {
     loaded: browserPaneUrlFor(paneKey(), "http://127.0.0.1:3000"),
     note: "",
     marking: false,
+    // Point mode places a zero-size percent rect on a single pointerdown and
+    // completes the mark there; drag mode keeps the old press-move behavior.
+    point: false,
     x: 0,
     y: 0,
     width: 0,
@@ -374,12 +377,29 @@ export function ReviewBrowser(props: {
         <Button
           type="button"
           size="small"
-          variant={state.marking ? "primary" : "ghost"}
-          aria-pressed={state.marking}
+          variant={state.marking && !state.point ? "primary" : "ghost"}
+          aria-pressed={state.marking && !state.point}
           aria-label={language.t("session.review.markPreview")}
-          onClick={() => setState("marking", !state.marking)}
+          onClick={() => setState({ marking: !state.marking, point: false })}
         >
           {language.t("session.review.markPreview")}
+        </Button>
+        <Button
+          type="button"
+          size="small"
+          variant={state.marking && state.point ? "primary" : "ghost"}
+          aria-pressed={state.marking && state.point}
+          data-action="mark-point"
+          aria-label={language.t("session.review.markPoint")}
+          onClick={() => {
+            if (state.marking && state.point) {
+              setState("marking", false)
+              return
+            }
+            setState({ marking: true, point: true })
+          }}
+        >
+          {language.t("session.review.markPoint")}
         </Button>
         <Button type="submit" size="small" disabled={state.note.trim().length === 0}>
           {language.t("session.review.annotate.add")}
@@ -409,10 +429,15 @@ export function ReviewBrowser(props: {
               class="absolute inset-0 cursor-crosshair touch-none"
               data-action="review-browser-mark"
               onPointerDown={(event) => {
+                if (state.point) {
+                  mark(event, event.currentTarget, false)
+                  return
+                }
                 event.currentTarget.setPointerCapture(event.pointerId)
                 mark(event, event.currentTarget, false)
               }}
               onPointerMove={(event) => {
+                if (state.point) return
                 if (event.buttons !== 1) return
                 mark(event, event.currentTarget, true)
               }}

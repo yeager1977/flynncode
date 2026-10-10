@@ -874,6 +874,7 @@ export const dict = {
   "session.review.detached": "Open in detached chat",
   "session.review.detached.attached": "Run in this chat",
   "session.review.markPreview": "Mark preview",
+  "session.review.markPoint": "Mark point",
   "session.review.recheckPage": "Re-check page",
   "session.question.progress": "{{current}} of {{total}} questions",
   "session.question.minimize": "Minimize question",
