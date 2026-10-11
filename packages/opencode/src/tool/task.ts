@@ -10,6 +10,7 @@ import { Agent } from "../agent/agent"
 import { deriveSubagentSessionPermission, sandboxRules } from "../agent/subagent-permissions"
 import type { SessionPrompt } from "../session/prompt"
 import { Config } from "@/config/config"
+import { ConfigPermissionV1 } from "@opencode-ai/core/v1/config/permission"
 import { Effect, Exit, Option, Schema, Scope } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { HooksRunner } from "@/hooks/runner"
@@ -149,6 +150,21 @@ export const TaskTool = Tool.define(
       const isolation = params.isolation ?? agentDefaults?.isolation ?? "inherit"
       const cleanup = params.cleanup ?? "retain"
       const sandbox = agentDefaults?.sandbox
+      // The child's effective sandbox mode: its own agent config wins over the
+      // parent's inherited mode (which prefers parent session metadata, then
+      // the parent agent's config). Named profiles like "restricted" and
+      // unknown tolerant values leave the mode undefined, so the child falls
+      // back to the global policy through its own resolution.
+      const parentAgentName = parent.agent ?? ctx.agent
+      const parentMetadataSandbox = parent.metadata?.sandbox
+      const parentConfigSandbox = cfg.agent?.[parentAgentName]?.sandbox
+      const parentMode = ConfigPermissionV1.isSandboxMode(parentMetadataSandbox)
+        ? parentMetadataSandbox
+        : ConfigPermissionV1.isSandboxMode(parentConfigSandbox)
+          ? parentConfigSandbox
+          : undefined
+      const mode = ConfigPermissionV1.isSandboxMode(sandbox) ? sandbox : parentMode
+      const sandboxMeta = mode ? { sandbox: mode } : undefined
 
       const session = params.task_id
         ? yield* sessions.get(SessionID.make(params.task_id)).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
@@ -232,7 +248,19 @@ export const TaskTool = Tool.define(
             ...nextSession.metadata,
             worktree: worktreeInfo.directory,
             disposable: cleanup === "dispose",
+            ...sandboxMeta,
           },
+        })
+      }
+      // Dispatched children carry their resolved sandbox mode in session
+      // metadata so the child's tools resolution honors it there (session
+      // metadata beats agent config; the carried value is the child's own
+      // effective mode, so the two agree). Isolated children get it beside
+      // the worktree binding above; non-isolated ones get it here.
+      if (!worktreeInfo && sandboxMeta) {
+        yield* sessions.setMetadata({
+          sessionID: nextSession.id,
+          metadata: { ...nextSession.metadata, ...sandboxMeta },
         })
       }
       // The child runs in its own instance when it lives elsewhere: a fresh

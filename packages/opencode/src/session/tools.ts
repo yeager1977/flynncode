@@ -71,7 +71,21 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const autoReviewer = yield* Effect.serviceOption(AutoReviewer.Service)
 
   const cfg = yield* config.get()
-  const policy = ConfigPermissionV1.resolveSessionPolicy(cfg.permission ?? {})
+  const global = ConfigPermissionV1.resolveSessionPolicy(cfg.permission ?? {})
+  // Sandbox precedence: session metadata (task-dispatched children) beats the
+  // agent config, which beats the global policy. Only literal SandboxMode
+  // values compete here — named profiles like "restricted" confine through
+  // the permission ruleset instead, and unknown values degrade to global.
+  const agentSandbox = cfg.agent?.[input.agent.name]?.sandbox
+  const metadataSandbox = input.session.metadata?.sandbox
+  const policy = {
+    ...global,
+    sandbox: ConfigPermissionV1.isSandboxMode(metadataSandbox)
+      ? metadataSandbox
+      : ConfigPermissionV1.isSandboxMode(agentSandbox)
+        ? agentSandbox
+        : global.sandbox,
+  }
   // Write containment is session-scoped: project sandboxes plus this session's
   // own attached additional directories (InstanceRef). Deliberately not the
   // cross-session SessionFolders union — a session must not inherit another

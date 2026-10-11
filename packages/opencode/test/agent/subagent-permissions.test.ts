@@ -19,6 +19,26 @@ describe("sandboxRules", () => {
     ])
   })
 
+  test("readonly confines file access to the worktree like restricted", () => {
+    expect(sandboxRules({ sandbox: "readonly", directory: "/w/a" })).toEqual([
+      { permission: "external_directory", pattern: "*", action: "deny" },
+      { permission: "external_directory", pattern: "/w/a/*", action: "allow" },
+    ])
+  })
+
+  test("readonly denies external reads outside the worktree while keeping allow-listed dirs reachable", () => {
+    const agentPermission = Permission.fromConfig({
+      external_directory: { "*": "ask", "/data/tool-output/*": "allow" },
+    })
+    const effective = Permission.merge(
+      agentPermission,
+      sandboxRules({ sandbox: "readonly", directory: "/w/a", agentPermission }),
+    )
+    expect(Permission.evaluate("external_directory", "/w/a/file.ts", effective).action).toBe("allow")
+    expect(Permission.evaluate("external_directory", "/etc/hosts", effective).action).toBe("deny")
+    expect(Permission.evaluate("external_directory", "/data/tool-output/x", effective).action).toBe("allow")
+  })
+
   test("unknown profiles degrade to no extra rules", () => {
     expect(sandboxRules({ sandbox: "open", directory: "/w/a" })).toEqual([])
     expect(sandboxRules({ sandbox: "", directory: "/w/a" })).toEqual([])

@@ -24,6 +24,7 @@ import { Plugin } from "@/plugin"
 import { testLayerWithHooks } from "../lib/hooks"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Effect, Cause, Exit, Layer, Schema } from "effect"
+import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import { testEffect } from "../lib/effect"
 
 const callID = "call-test"
@@ -530,3 +531,153 @@ absentEnv.it.effect("auto approval defers when the reviewer service is unavailab
     expect(absentEnv.asks[0]?.reviewer).toBe("defer")
   }),
 )
+
+// Per-agent sandbox-mode override: the resolution precedence is session
+// metadata (task-dispatched children) → agent config → global policy.
+const sandboxConfig = (agent: NonNullable<Partial<ConfigV1.Info>["agent"]>) => ({
+  permission: { sandbox: "workspace-write" as const },
+  agent,
+})
+
+function sandboxEnv(config: Partial<ConfigV1.Info>, metadata?: Record<string, unknown>) {
+  const registry = ToolRegistry.Service.of({
+    ids: () => Effect.succeed(["asker", "writer"]),
+    all: () => Effect.succeed([]),
+    named: () => Effect.die("unused"),
+    tools: () =>
+      Effect.succeed([
+        {
+          id: "asker",
+          description: "asks bash permission",
+          parameters: Schema.Struct({}),
+          jsonSchema: { type: "object", properties: {} },
+          execute: (_args, ctx) =>
+            Effect.gen(function* () {
+              yield* ctx.ask({ permission: "bash", patterns: ["git status"], metadata: {}, always: [] })
+              return { title: "asker", metadata: {}, output: "done" }
+            }),
+        } satisfies Tool.Def,
+        {
+          id: "writer",
+          description: "asks edit permission outside the workspace",
+          parameters: Schema.Struct({}),
+          jsonSchema: { type: "object", properties: {} },
+          execute: (_args, ctx) =>
+            Effect.gen(function* () {
+              yield* ctx.ask({ permission: "edit", patterns: ["/etc/passwd"], metadata: {}, always: [] })
+              return { title: "writer", metadata: {}, output: "done" }
+            }),
+        } satisfies Tool.Def,
+      ]),
+  })
+  const session = {
+    id: sessionID,
+    directory: "/repo",
+    permission: [],
+    ...(metadata ? { metadata } : {}),
+  } as unknown as Session.Info
+  return {
+    session,
+    it: testEffect(
+      Layer.mergeAll(
+        Layer.succeed(Plugin.Service, fakePlugin),
+        testLayerWithHooks([]),
+        Layer.succeed(Permission.Service, fakePermission),
+        Layer.succeed(
+          Config.Service,
+          Config.Service.of({
+            get: () => Effect.succeed(config),
+          } as Partial<Config.Interface> as Config.Interface),
+        ),
+        Layer.succeed(Project.Service, fakeProject),
+        Layer.succeed(MCP.Service, fakeMcp()),
+        Layer.succeed(Truncate.Service, fakeTruncate),
+        RuntimeFlags.layer(),
+        Layer.succeed(ToolRegistry.Service, registry),
+      ),
+    ),
+  }
+}
+
+const sandboxProcessor = {
+  message: { id: messageID, sessionID } as SessionV1.Assistant,
+  updateToolCall: () => Effect.succeed(undefined),
+  completeToolCall: () => Effect.void,
+} satisfies Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall">
+
+const runSandboxTool = (env: ReturnType<typeof sandboxEnv>, name: string) =>
+  Effect.gen(function* () {
+    const tools = yield* SessionTools.resolve({
+      agent,
+      model,
+      session: env.session,
+      processor: sandboxProcessor,
+      bypassAgentCheck: false,
+      messages: [],
+      promptOps: {} as never,
+    })
+    const execute = tools[name]?.execute
+    if (!execute) throw new Error(`${name} tool is missing execute`)
+    return yield* Effect.exit(
+      Effect.promise(() => execute({}, { toolCallId: callID, abortSignal: new AbortController().signal, messages: [] })),
+    )
+  })
+
+{
+  const env = sandboxEnv(sandboxConfig({ build: { sandbox: "readonly" } }))
+  env.it.effect("agent config sandbox overrides the global policy", () =>
+    Effect.gen(function* () {
+      const exit = yield* runSandboxTool(env, "asker")
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        const err = Cause.squash(exit.cause)
+        expect(err).toBeInstanceOf(Sandbox.SandboxViolationError)
+        expect((err as Error).message).toContain("readonly")
+      }
+    }),
+  )
+}
+
+{
+  const env = sandboxEnv(sandboxConfig({ build: { sandbox: "readonly" } }), { sandbox: "workspace-write" })
+  env.it.effect("session metadata beats the agent config sandbox", () =>
+    Effect.gen(function* () {
+      expect(Exit.isSuccess(yield* runSandboxTool(env, "asker"))).toBe(true)
+    }),
+  )
+}
+
+{
+  const env = sandboxEnv({}, { sandbox: "readonly" })
+  env.it.effect("session metadata beats the global policy", () =>
+    Effect.gen(function* () {
+      const exit = yield* runSandboxTool(env, "asker")
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        expect(Cause.squash(exit.cause)).toBeInstanceOf(Sandbox.SandboxViolationError)
+      }
+    }),
+  )
+}
+
+{
+  const env = sandboxEnv(sandboxConfig({ build: { sandbox: "full-access" } }))
+  env.it.effect("agent config sandbox widens to full-access", () =>
+    Effect.gen(function* () {
+      expect(Exit.isSuccess(yield* runSandboxTool(env, "writer"))).toBe(true)
+    }),
+  )
+}
+
+{
+  const env = sandboxEnv(sandboxConfig({ build: { sandbox: "restricted" } }))
+  env.it.effect("agent config named profile keeps the global policy level", () =>
+    Effect.gen(function* () {
+      const exit = yield* runSandboxTool(env, "writer")
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        expect((Cause.squash(exit.cause) as Error).message).toContain("workspace-write")
+      }
+    }),
+  )
+}

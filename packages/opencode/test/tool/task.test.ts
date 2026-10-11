@@ -1216,3 +1216,90 @@ describe("tool.task", () => {
     { git: true },
   )
 })
+
+describe("task sandbox metadata", () => {
+  function sandboxCtx(input: { chat: Session.Info; assistant: SessionV1.Assistant }) {
+    const { chat, assistant } = input
+    return {
+      sessionID: chat.id,
+      messageID: assistant.id,
+      agent: "build",
+      abort: new AbortController().signal,
+      extra: { promptOps: stubOps() },
+      messages: [],
+      metadata: () => Effect.void,
+      ask: () => Effect.void,
+    }
+  }
+
+  it.instance(
+    "children carry their agent's sandbox mode in session metadata",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const { chat, assistant } = yield* seed()
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        const result = yield* def.execute(
+          { description: "scan", prompt: "scan", subagent_type: "general" },
+          sandboxCtx({ chat, assistant }),
+        )
+        const child = yield* sessions.get(result.metadata.sessionId)
+        expect(child.metadata?.sandbox).toBe("readonly")
+      }),
+    { config: { agent: { general: { sandbox: "readonly" } } } },
+  )
+
+  it.instance(
+    "children without their own sandbox config inherit the parent agent's mode",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const { chat, assistant } = yield* seed()
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        const result = yield* def.execute(
+          { description: "scan", prompt: "scan", subagent_type: "general" },
+          sandboxCtx({ chat, assistant }),
+        )
+        const child = yield* sessions.get(result.metadata.sessionId)
+        expect(child.metadata?.sandbox).toBe("readonly")
+      }),
+    { config: { agent: { build: { sandbox: "readonly" } } } },
+  )
+
+  it.instance(
+    "the child's own sandbox config beats the inherited mode",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const { chat, assistant } = yield* seed()
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        const result = yield* def.execute(
+          { description: "scan", prompt: "scan", subagent_type: "general" },
+          sandboxCtx({ chat, assistant }),
+        )
+        const child = yield* sessions.get(result.metadata.sessionId)
+        expect(child.metadata?.sandbox).toBe("workspace-write")
+      }),
+    { config: { agent: { build: { sandbox: "readonly" }, general: { sandbox: "workspace-write" } } } },
+  )
+
+  it.instance(
+    "children without any sandbox configuration carry no sandbox metadata",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const { chat, assistant } = yield* seed()
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        const result = yield* def.execute(
+          { description: "scan", prompt: "scan", subagent_type: "general" },
+          sandboxCtx({ chat, assistant }),
+        )
+        const child = yield* sessions.get(result.metadata.sessionId)
+        expect(child.metadata?.sandbox).toBeUndefined()
+      }),
+  )
+})
