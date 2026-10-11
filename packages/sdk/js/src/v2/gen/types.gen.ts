@@ -1688,6 +1688,7 @@ export type PermissionConfig =
       lsp?: PermissionRuleConfig
       doom_loop?: PermissionActionConfig
       skill?: PermissionRuleConfig
+      memory?: PermissionRuleConfig
       sandbox?: SandboxMode
       approval?: ApprovalMode
       [key: string]:
@@ -2323,6 +2324,7 @@ export type Config = {
           }
       >
     }>
+    disableAllHooks?: boolean
   }
   tools?: {
     [key: string]: boolean
