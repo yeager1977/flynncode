@@ -34,10 +34,28 @@ describe("routines editor", () => {
     // url + credentials.
     const withTarget = updateRoutine(before, "r1", { targetUrl: "http://deepthought:4096", targetUser: "opencode", targetPass: "secret" })
     expect(withTarget[0]?.target).toEqual({ url: "http://deepthought:4096", username: "opencode", password: "secret" })
-    // A password-less save keeps the stored password; a blank url clears all.
-    const kept = updateRoutine(withTarget, "r1", { targetUrl: "http://deepthought:5090", targetUser: "", targetPass: "" })
-    expect(kept[0]?.target).toEqual({ url: "http://deepthought:5090", password: "secret" })
-    expect(updateRoutine(kept, "r1", { targetUrl: "", targetUser: "", targetPass: "" })[0]?.target).toBeUndefined()
+    // A blank password keeps the stored one only while the url is unchanged; a
+    // changed url drops credentials so the old host's password is never
+    // attached to the new host, and a blank url clears the target entirely.
+    const sameHost = updateRoutine(withTarget, "r1", { targetUrl: "http://deepthought:4096", targetUser: "", targetPass: "" })
+    expect(sameHost[0]?.target).toEqual({ url: "http://deepthought:4096", password: "secret" })
+    const newHost = updateRoutine(withTarget, "r1", { targetUrl: "http://deepthought:5090", targetUser: "", targetPass: "" })
+    expect(newHost[0]?.target).toEqual({ url: "http://deepthought:5090" })
+    expect(updateRoutine(newHost, "r1", { targetUrl: "", targetUser: "", targetPass: "" })[0]?.target).toBeUndefined()
+  })
+
+  test("routinesToConfig and updateRoutine keep passwords verbatim, no trimming", () => {
+    const withTarget = updateRoutine(
+      routinesFromConfig({
+        routines: [{ id: "r1", name: "mornings", prompt: "Check CI", schedule: { dailyAt: "09:00" } }],
+      }),
+      "r1",
+      { targetUrl: "http://deepthought:4096", targetPass: " surrounded " },
+    )
+    expect(withTarget[0]?.target).toEqual({ url: "http://deepthought:4096", password: " surrounded " })
+    expect(routinesToConfig(withTarget).routines[0].target).toEqual({ url: "http://deepthought:4096", password: " surrounded " })
+    const kept = updateRoutine(withTarget, "r1", { targetUrl: "http://deepthought:4096", targetUser: "opencode" })
+    expect(kept[0]?.target).toEqual({ url: "http://deepthought:4096", username: "opencode", password: " surrounded " })
   })
 
   test("updateRoutine leaves the target untouched when no target field is in the patch", () => {

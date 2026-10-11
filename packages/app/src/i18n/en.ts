@@ -1157,7 +1157,7 @@ export const dict = {
   "settings.routines.targetUsername": "Remote username",
   "settings.routines.targetUsernameDescription": "Only if the remote server requires a password.",
   "settings.routines.targetPassword": "Remote password",
-  "settings.routines.targetPasswordDescription": "Stored with the routine and only sent to the remote server. Leave empty to keep the saved password.",
+  "settings.routines.targetPasswordDescription": "Stored with the routine and only sent to the remote server. Leave empty to keep the saved password; changing the host clears it.",
   "settings.routines.deleteConfirm.title": "Delete routine",
   "settings.routines.deleteConfirm.body": "Delete {{name}}? This cannot be undone.",
   "settings.routines.manual": "Manual",

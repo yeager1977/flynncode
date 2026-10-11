@@ -157,12 +157,14 @@ export type TargetInput = {
 export function routineTarget(input: TargetInput): StoredRoutineTarget | undefined {
   const url = (input.targetUrl ?? "").trim()
   if (!url) return undefined
-  const target: StoredRoutineTarget = { url }
-  const username = (input.targetUser ?? "").trim()
-  if (username) target.username = username
-  const password = (input.targetPass ?? "").trim()
-  if (password) target.password = password
-  return target
+    const target: StoredRoutineTarget = { url }
+    const username = (input.targetUser ?? "").trim()
+    if (username) target.username = username
+    // The password row is write-only and kept verbatim: surrounding whitespace
+    // may be significant.
+    const password = input.targetPass ?? ""
+    if (password) target.password = password
+    return target
 }
 
 export function addRoutine(
@@ -228,11 +230,13 @@ export function updateRoutine(routines: StoredRoutine[], id: string, patch: Rout
 }
 
 // When the edited (or new) target has no url, the target is cleared; otherwise
-// an edit that leaves the password row blank keeps the stored password.
+// an edit that leaves the password row blank keeps the stored password — but
+// only for the same host. A changed url drops stored credentials so the old
+// host's password is never attached to the new one.
 function mergeTarget(routine: StoredRoutine, next: StoredRoutineTarget | undefined) {
   if (!next) return undefined
   if (!next.password) {
-    const stored = routine.target?.password
+    const stored = routine.target?.url === next.url ? routine.target?.password : undefined
     if (stored) return { ...next, password: stored }
   }
   return next
