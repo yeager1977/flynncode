@@ -90,7 +90,7 @@ Builds on the existing opt-in computer-use tool, desktop allowlist, and Electron
 
 ## Verification strategy
 
-- **Per item:** unit tests adjacent to the code where the package already has that pattern (e.g. `*.test.ts` beside Electron main modules, Bun tests in `packages/opencode`).
+- **Per item:** unit tests adjacent to the code where the package already has that pattern (e.g. `*.test.ts` beside Electron main modules, Bun tests in `packages/flynncode`).
 - **Per phase:** `bun typecheck` + affected package tests + manual smoke of touched panes (review pane, worktree dialogs, inbox, settings, browser pane, routines UI, mobile gateway UI, computer-use settings).
 - **End of program:** typecheck across all touched packages, full merge to `dev`, push, then Muse Spark 1.3 review of the branch diff with findings addressed before declaring parity work done.
 

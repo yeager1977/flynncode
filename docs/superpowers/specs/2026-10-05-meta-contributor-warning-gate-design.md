@@ -32,7 +32,7 @@ context, tool_call, reasoning, $0.10/$0.20 per Mtok, multimodal input). No new
 model metadata is authored.
 
 The repo default config (the default-seeding path in
-`packages/opencode/src/config/config.ts`, alongside the existing
+`packages/flynncode/src/config/config.ts`, alongside the existing
 `model_router` defaults) gains a `meta` provider entry:
 
 - `npm: "@ai-sdk/openai"` (matches models.dev `meta.api.npm`)
@@ -181,7 +181,7 @@ check rides on the session ID at the call sites that send.
 - App component test: dialog renders i18n keys (English), Cancel/Continue
   wiring.
 - Config: repo default config exposes the meta provider and both models;
-  `bun run ./src/index.ts models` (from `packages/opencode`) lists both
+  `bun run ./src/index.ts models` (from `packages/flynncode`) lists both
   Contributor models when a Meta key is available.
 - Browser/manual: select the model in the picker → dialog appears → Cancel
   keeps the old model; Continue applies it and later prompts in the same

@@ -29,7 +29,7 @@ working, and external upstream services keep functioning.
 
 - All `@opencode-ai/*` package names → `@flynncode/*` (short package names unchanged:
   `@flynncode/core`, `@flynncode/sdk`, `@flynncode/app`, …).
-- `packages/opencode/` → `packages/flynncode/`; package name `opencode` → `flynncode`;
+- `packages/flynncode/` → `packages/flynncode/`; package name `opencode` → `flynncode`;
   bin key `opencode` → `flynncode`.
 - Update all `workspace:*` refs, tsconfig paths/aliases, turbo config, build scripts
   (`packages/sdk/js/script/build.ts`), GitHub Actions workflows.

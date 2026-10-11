@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
-import { collectCandidates } from "../../opencode/src/plugin/ollama-model-router/candidates"
-import { rankModels } from "../../opencode/src/plugin/ollama-model-router/rank"
-import { parseOptions } from "../../opencode/src/plugin/ollama-model-router/scorecard"
+import { collectCandidates } from "../../flynncode/src/plugin/ollama-model-router/candidates"
+import { rankModels } from "../../flynncode/src/plugin/ollama-model-router/rank"
+import { parseOptions } from "../../flynncode/src/plugin/ollama-model-router/scorecard"
 import { emptyForm, serializeForm, TASK_NAMES } from "../src/components/settings-v2/model-router-payload"
 import { previewTask, routerCatalog } from "../src/components/settings-v2/model-router-preview"
 

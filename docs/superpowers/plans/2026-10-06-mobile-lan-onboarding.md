@@ -329,7 +329,7 @@ Expected: PASS
 
 - [ ] **Step 5: Manual verify**
 
-Backend: `bun run ./src/index.ts serve --port 4096` from `packages/opencode`. App: `bun dev -- --port 4444` from `packages/app`. Open `http://localhost:4444`, Settings > Servers, confirm card shows gateway URLs.
+Backend: `bun run ./src/index.ts serve --port 4096` from `packages/flynncode`. App: `bun dev -- --port 4444` from `packages/app`. Open `http://localhost:4444`, Settings > Servers, confirm card shows gateway URLs.
 
 - [ ] **Step 6: Commit**
 

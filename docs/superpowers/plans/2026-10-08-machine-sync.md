@@ -4,7 +4,7 @@
 
 **Goal:** Two Flynncode desktops on the same LAN (challenger ↔ starship) keep the same active chats, global config and app preferences, two-way, newest-wins per whole chat, each machine fully usable offline; plus an opt-in "Phone access" switch so the LAN gateway only exposes phone routes when the user turns them on.
 
-**Architecture:** The database side lives in the server (`packages/opencode`): a `MachineSyncStore` Effect service builds the manifest, exports a whole-chat bundle and applies a bundle inside one SQLite transaction, and Flynncode-internal raw `HttpRouter` routes under `/flynncode-sync/*` (server Basic auth, outside the public HttpApi so no SDK/client regeneration) expose it. Deletions leave rows in a new core `session_tombstone` table written by the session projector. The LAN side lives in `packages/mobile-gateway`, which the desktop sidecar already runs in-process next to `Server.listen`: a `SyncGate` holds phone-access, pairing code, peer and token state; the gateway serves `/flynncode-sync/pair|unpair|prefs` itself and forwards only the read-only `manifest`, `settings` and `session/:id` routes to the local server for a Bearer-token peer, while every phone route returns 404 when phone access is off. **Decision — where the worker lives:** the sync worker is plain TypeScript in `packages/mobile-gateway/src/sync-worker.ts`, started by the sidecar (same process as the server). It never touches SQLite directly: it pulls the peer through the peer's gateway and writes its own database only through its own server's loopback-only apply routes, so every DB write stays inside the server's Effect runtime and transaction, and no Effect runtime has to be smuggled out of `Server.listen`. Pairing/peer/phone-access settings live in the desktop settings store, reach the sidecar in the `start` message and in live `sync-*` sidecar messages (never `process.env`), so turning phone access on/off and pairing take effect without an app restart (the sidecar starts/stops the gateway when `phoneAccess || peer || pairing code active` changes). **Decision — app preferences:** the renderer owns `settings.v3`; it stamps the synced sections with `syncUpdatedAt` on every local change and pushes `{ sections, updatedAt }` over IPC to desktop main, which persists it (`syncPrefs` store key) and forwards it to the sidecar's `SyncGate`; the peer pulls it from `/flynncode-sync/prefs`, and newer peer prefs travel back sidecar → main → every renderer window (`machine-sync-peer-prefs` IPC event), which applies them with the peer's stamp so nothing ping-pongs.
+**Architecture:** The database side lives in the server (`packages/flynncode`): a `MachineSyncStore` Effect service builds the manifest, exports a whole-chat bundle and applies a bundle inside one SQLite transaction, and Flynncode-internal raw `HttpRouter` routes under `/flynncode-sync/*` (server Basic auth, outside the public HttpApi so no SDK/client regeneration) expose it. Deletions leave rows in a new core `session_tombstone` table written by the session projector. The LAN side lives in `packages/mobile-gateway`, which the desktop sidecar already runs in-process next to `Server.listen`: a `SyncGate` holds phone-access, pairing code, peer and token state; the gateway serves `/flynncode-sync/pair|unpair|prefs` itself and forwards only the read-only `manifest`, `settings` and `session/:id` routes to the local server for a Bearer-token peer, while every phone route returns 404 when phone access is off. **Decision — where the worker lives:** the sync worker is plain TypeScript in `packages/mobile-gateway/src/sync-worker.ts`, started by the sidecar (same process as the server). It never touches SQLite directly: it pulls the peer through the peer's gateway and writes its own database only through its own server's loopback-only apply routes, so every DB write stays inside the server's Effect runtime and transaction, and no Effect runtime has to be smuggled out of `Server.listen`. Pairing/peer/phone-access settings live in the desktop settings store, reach the sidecar in the `start` message and in live `sync-*` sidecar messages (never `process.env`), so turning phone access on/off and pairing take effect without an app restart (the sidecar starts/stops the gateway when `phoneAccess || peer || pairing code active` changes). **Decision — app preferences:** the renderer owns `settings.v3`; it stamps the synced sections with `syncUpdatedAt` on every local change and pushes `{ sections, updatedAt }` over IPC to desktop main, which persists it (`syncPrefs` store key) and forwards it to the sidecar's `SyncGate`; the peer pulls it from `/flynncode-sync/prefs`, and newer peer prefs travel back sidecar → main → every renderer window (`machine-sync-peer-prefs` IPC event), which applies them with the peer's stamp so nothing ping-pongs.
 
 **Tech Stack:** Bun + TypeScript, Effect v4 (`effect/unstable/http` raw `HttpRouter` routes, `Context.Service`, `LayerNode`), Drizzle on SQLite (core migration generator `bun run migration`), `jsonc-parser` `modify`/`applyEdits`, `node:http` gateway, Electron main/preload/utility-process sidecar, SolidJS settings-v2 components, `bun:test`.
 
@@ -43,7 +43,7 @@
 - Modify `src/session/projector.ts` — the `SessionV1.Event.Deleted` projector also upserts a tombstone.
 - Create `test/session-tombstone.test.ts` — tombstone written on delete.
 
-**packages/opencode**
+**packages/flynncode**
 - Create `src/machine-sync/store.ts` — `MachineSyncStore` service: manifest (with busy flags and tombstone pruning), bundle export, transactional apply, delete, archive, missing directories, `isBundle` guard.
 - Create `src/machine-sync/config-sync.ts` — `MachineSyncConfig`: secret masking for the outgoing global config and comment-preserving jsonc apply of a peer config.
 - Modify `src/config/config.ts` — export `globalConfigFile()` and add `validateText(text, file)`.
@@ -281,8 +281,8 @@ EOF
 > **Amendment (reviewer):** `busy` must also be true when the session id is in `SessionExecution.Service.active` (V2 engine), not only from legacy `session.status` events. Add that service to the store's dependencies, combine both sources in `manifest()` and in the local-busy check used by apply, and add a test that marks a session active through a stub `SessionExecution` layer and expects `busy: true`.
 
 **Files:**
-- Create: `packages/opencode/src/machine-sync/store.ts`
-- Test: `packages/opencode/test/machine-sync/store.test.ts`
+- Create: `packages/flynncode/src/machine-sync/store.ts`
+- Test: `packages/flynncode/test/machine-sync/store.test.ts`
 
 **Interfaces:**
 - Consumes: `Database.Service` (`@opencode-ai/core/database/database`), `FSUtil.Service` (`@opencode-ai/core/fs-util`), `Project.Service.fromDirectory(directory: string): Effect<{ project: Project.Info; sandbox: string }>` (`@/project/project`), `Session.fromRow(row)` (`@/session/session`), `GlobalBus` + `GlobalEvent` (`@/bus/global`), `migrations` (`@opencode-ai/core/database/migration.gen`), `InstallationVersion`, tables from Task 1.
@@ -297,7 +297,7 @@ EOF
 
 - [ ] **Step 1: Write the failing test**
 
-Create `packages/opencode/test/machine-sync/store.test.ts`:
+Create `packages/flynncode/test/machine-sync/store.test.ts`:
 
 ```ts
 import { describe, expect } from "bun:test"
@@ -523,12 +523,12 @@ describe("MachineSyncStore", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd packages/opencode && bun test test/machine-sync/store.test.ts`
+Run: `cd packages/flynncode && bun test test/machine-sync/store.test.ts`
 Expected: FAIL — `Cannot find module '@/machine-sync/store'`.
 
 - [ ] **Step 3: Implement the store**
 
-Create `packages/opencode/src/machine-sync/store.ts`:
+Create `packages/flynncode/src/machine-sync/store.ts`:
 
 ```ts
 export * as MachineSyncStore from "./store"
@@ -918,18 +918,18 @@ function emit(type: "session.updated" | "session.deleted", row: SessionRow) {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd packages/opencode && bun test test/machine-sync/store.test.ts`
+Run: `cd packages/flynncode && bun test test/machine-sync/store.test.ts`
 Expected: PASS (8 tests).
 
 - [ ] **Step 5: Typecheck**
 
-Run: `cd packages/opencode && bun typecheck`
+Run: `cd packages/flynncode && bun typecheck`
 Expected: exits 0. If `tx.insert(X).values(rows)` rejects `$inferSelect` rows for a table, the mismatch is a real schema drift — fix the `Bundle` row type for that table to `typeof X.$inferInsert`, never with `as`.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/opencode/src/machine-sync/store.ts packages/opencode/test/machine-sync/store.test.ts
+git add packages/flynncode/src/machine-sync/store.ts packages/flynncode/test/machine-sync/store.test.ts
 git commit -m "$(cat <<'EOF'
 feat(opencode): add machine sync store for chat bundles
 
@@ -947,7 +947,7 @@ EOF
 - Test: `packages/mobile-gateway/test/sync-decide.test.ts`
 
 **Interfaces:**
-- Consumes: the manifest JSON shape produced by `MachineSyncStore.manifest()` (Task 2). The gateway package does not import `packages/opencode`, so the shape is redeclared here and guarded at runtime.
+- Consumes: the manifest JSON shape produced by `MachineSyncStore.manifest()` (Task 2). The gateway package does not import `packages/flynncode`, so the shape is redeclared here and guarded at runtime.
 - Produces:
   - `type ManifestSession = { id: string; parentID: string | null; timeUpdated: number; timeArchived: number | null; busy: boolean }`
   - `type Manifest = { schema: string; app: string; sessions: ManifestSession[]; tombstones: Array<{ id: string; timeDeleted: number }> }`
@@ -1213,9 +1213,9 @@ EOF
 ### Task 4: Server sync routes for chats
 
 **Files:**
-- Create: `packages/opencode/src/server/routes/instance/httpapi/machine-sync.ts`
-- Modify: `packages/opencode/src/server/routes/instance/httpapi/server.ts` (imports near line 130; route constants after `uiRoute` ~line 218; `Layer.mergeAll(...)` in `createRoutes` ~line 305; `app` group ~line 227-294)
-- Test: `packages/opencode/test/server/httpapi-machine-sync.test.ts`
+- Create: `packages/flynncode/src/server/routes/instance/httpapi/machine-sync.ts`
+- Modify: `packages/flynncode/src/server/routes/instance/httpapi/server.ts` (imports near line 130; route constants after `uiRoute` ~line 218; `Layer.mergeAll(...)` in `createRoutes` ~line 305; `app` group ~line 227-294)
+- Test: `packages/flynncode/test/server/httpapi-machine-sync.test.ts`
 
 **Interfaces:**
 - Consumes: `MachineSyncStore.Service`, `MachineSyncStore.isBundle`, `SessionID` schema (`@/session/schema`), `HttpRouter.use/params`, `HttpServerResponse.jsonUnsafe`, `authorizationRouterMiddleware` (server Basic auth, via `authOnlyRouterLayer` already defined in `server.ts`).
@@ -1230,7 +1230,7 @@ EOF
 
 - [ ] **Step 1: Write the failing test**
 
-Create `packages/opencode/test/server/httpapi-machine-sync.test.ts`:
+Create `packages/flynncode/test/server/httpapi-machine-sync.test.ts`:
 
 ```ts
 import { describe, expect } from "bun:test"
@@ -1361,12 +1361,12 @@ describe("machine sync routes", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd packages/opencode && bun test test/server/httpapi-machine-sync.test.ts`
+Run: `cd packages/flynncode && bun test test/server/httpapi-machine-sync.test.ts`
 Expected: FAIL — `Cannot find module '@/server/routes/instance/httpapi/machine-sync'`.
 
 - [ ] **Step 3: Implement the routes**
 
-Create `packages/opencode/src/server/routes/instance/httpapi/machine-sync.ts`:
+Create `packages/flynncode/src/server/routes/instance/httpapi/machine-sync.ts`:
 
 ```ts
 import { Effect, Option, Schema } from "effect"
@@ -1457,7 +1457,7 @@ export const machineSyncRoutes = HttpRouter.use((router) =>
 
 - [ ] **Step 4: Mount the routes and the store in the server**
 
-In `packages/opencode/src/server/routes/instance/httpapi/server.ts`:
+In `packages/flynncode/src/server/routes/instance/httpapi/server.ts`:
 
 1. Add imports next to the other handler imports (after `import { workspaceHandlers } from "./handlers/workspace"`):
 
@@ -1493,18 +1493,18 @@ const machineSyncRoute = machineSyncRoutes.pipe(Layer.provide(authOnlyRouterLaye
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `cd packages/opencode && bun test test/server/httpapi-machine-sync.test.ts test/server/httpapi-ui.test.ts test/server/httpapi-authorization.test.ts`
+Run: `cd packages/flynncode && bun test test/server/httpapi-machine-sync.test.ts test/server/httpapi-ui.test.ts test/server/httpapi-authorization.test.ts`
 Expected: PASS (new tests green; UI fallback and auth tests still green).
 
 - [ ] **Step 6: Typecheck**
 
-Run: `cd packages/opencode && bun typecheck`
+Run: `cd packages/flynncode && bun typecheck`
 Expected: exits 0.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add packages/opencode/src/server/routes/instance/httpapi/machine-sync.ts packages/opencode/src/server/routes/instance/httpapi/server.ts packages/opencode/test/server/httpapi-machine-sync.test.ts
+git add packages/flynncode/src/server/routes/instance/httpapi/machine-sync.ts packages/flynncode/src/server/routes/instance/httpapi/server.ts packages/flynncode/test/server/httpapi-machine-sync.test.ts
 git commit -m "$(cat <<'EOF'
 feat(opencode): serve machine sync routes for chats
 
@@ -1518,10 +1518,10 @@ EOF
 ### Task 5: Global config sync with secret filtering
 
 **Files:**
-- Create: `packages/opencode/src/machine-sync/config-sync.ts`
-- Modify: `packages/opencode/src/config/config.ts` (line 149 `function globalConfigFile()`; add `validateText` right after it)
-- Modify: `packages/opencode/src/server/routes/instance/httpapi/machine-sync.ts` (add the two settings routes)
-- Test: `packages/opencode/test/machine-sync/config-sync.test.ts`; modify `packages/opencode/test/server/httpapi-machine-sync.test.ts`
+- Create: `packages/flynncode/src/machine-sync/config-sync.ts`
+- Modify: `packages/flynncode/src/config/config.ts` (line 149 `function globalConfigFile()`; add `validateText` right after it)
+- Modify: `packages/flynncode/src/server/routes/instance/httpapi/machine-sync.ts` (add the two settings routes)
+- Test: `packages/flynncode/test/machine-sync/config-sync.test.ts`; modify `packages/flynncode/test/server/httpapi-machine-sync.test.ts`
 
 **Interfaces:**
 - Consumes: `ConfigParse.jsonc(text, file): unknown`, `ConfigParse.schema`, `ConfigV1.Info`, `ConfigV2Compat.lower`, `normalizeLoadedConfig` (all already in `config.ts`), `modify`/`applyEdits` from `jsonc-parser`, `FSUtil.Service` (`readFileStringSafe`, `stat`, `writeWithDirs`, `utimes`), `Config.Service.invalidate()`.
@@ -1532,7 +1532,7 @@ EOF
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `packages/opencode/test/machine-sync/config-sync.test.ts`:
+Create `packages/flynncode/test/machine-sync/config-sync.test.ts`:
 
 ```ts
 import { describe, expect, test } from "bun:test"
@@ -1640,7 +1640,7 @@ describe("Config.validateText", () => {
 })
 ```
 
-In `packages/opencode/test/server/httpapi-machine-sync.test.ts`:
+In `packages/flynncode/test/server/httpapi-machine-sync.test.ts`:
 
 1. Add imports:
 
@@ -1719,12 +1719,12 @@ const appLayer = AppNodeBuilder.build(
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd packages/opencode && bun test test/machine-sync/config-sync.test.ts test/server/httpapi-machine-sync.test.ts`
+Run: `cd packages/flynncode && bun test test/machine-sync/config-sync.test.ts test/server/httpapi-machine-sync.test.ts`
 Expected: FAIL — `Cannot find module '@/machine-sync/config-sync'`.
 
 - [ ] **Step 3: Export the config helpers**
 
-In `packages/opencode/src/config/config.ts` replace line 149 `function globalConfigFile() {` with `export function globalConfigFile() {` and add directly after the end of that function:
+In `packages/flynncode/src/config/config.ts` replace line 149 `function globalConfigFile() {` with `export function globalConfigFile() {` and add directly after the end of that function:
 
 ```ts
 // Machine sync validates a patched global config with the normal schema
@@ -1740,7 +1740,7 @@ export function validateText(text: string, file: string) {
 
 - [ ] **Step 4: Implement the config sync module**
 
-Create `packages/opencode/src/machine-sync/config-sync.ts`:
+Create `packages/flynncode/src/machine-sync/config-sync.ts`:
 
 ```ts
 export * as MachineSyncConfig from "./config-sync"
@@ -1849,7 +1849,7 @@ function isReference(value: unknown) {
 
 - [ ] **Step 5: Add the settings routes**
 
-In `packages/opencode/src/server/routes/instance/httpapi/machine-sync.ts` add imports:
+In `packages/flynncode/src/server/routes/instance/httpapi/machine-sync.ts` add imports:
 
 ```ts
 import { FSUtil } from "@opencode-ai/core/fs-util"
@@ -1921,18 +1921,18 @@ and add these routes after the `missing` route:
 
 - [ ] **Step 6: Run tests to verify they pass**
 
-Run: `cd packages/opencode && bun test test/machine-sync/config-sync.test.ts test/server/httpapi-machine-sync.test.ts test/config/config.test.ts`
+Run: `cd packages/flynncode && bun test test/machine-sync/config-sync.test.ts test/server/httpapi-machine-sync.test.ts test/config/config.test.ts`
 Expected: PASS (new tests green; existing config tests unaffected).
 
 - [ ] **Step 7: Typecheck**
 
-Run: `cd packages/opencode && bun typecheck`
+Run: `cd packages/flynncode && bun typecheck`
 Expected: exits 0.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add packages/opencode/src/machine-sync/config-sync.ts packages/opencode/src/config/config.ts packages/opencode/src/server/routes/instance/httpapi/machine-sync.ts packages/opencode/test/machine-sync/config-sync.test.ts packages/opencode/test/server/httpapi-machine-sync.test.ts
+git add packages/flynncode/src/machine-sync/config-sync.ts packages/flynncode/src/config/config.ts packages/flynncode/src/server/routes/instance/httpapi/machine-sync.ts packages/flynncode/test/machine-sync/config-sync.test.ts packages/flynncode/test/server/httpapi-machine-sync.test.ts
 git commit -m "$(cat <<'EOF'
 feat(opencode): sync the global config without secrets
 
@@ -5481,7 +5481,7 @@ EOF
 - Test: `packages/mobile-gateway/test/sync-e2e.test.ts`
 
 **Interfaces:**
-- Consumes: the real opencode server (`bun run ./src/index.ts serve` in `packages/opencode`, Tasks 1-5 routes), `createGateway` + `createSyncGate` (Task 6), `pairWithPeer` (Task 6), `createSyncWorker` (Task 7), the legacy `POST /session/:sessionID/shell` route (marks a chat busy while the command runs).
+- Consumes: the real opencode server (`bun run ./src/index.ts serve` in `packages/flynncode`, Tasks 1-5 routes), `createGateway` + `createSyncGate` (Task 6), `pairWithPeer` (Task 6), `createSyncWorker` (Task 7), the legacy `POST /session/:sessionID/shell` route (marks a chat busy while the command runs).
 - Produces: one end-to-end suite proving pairing, two-way chat sync, settings without secrets, prefs, a conflict, a delete, an archive and a running-chat skip.
 
 - [ ] **Step 1: Write the test**
@@ -5824,7 +5824,7 @@ Expected: PASS (6 tests). It fails at the first step whose behaviour is broken; 
 
 Run each from its package directory:
 - `cd packages/core && bun test test/session-tombstone.test.ts test/session-projector.test.ts test/database-migration.test.ts && bun typecheck`
-- `cd packages/opencode && bun test test/machine-sync test/server/httpapi-machine-sync.test.ts test/config/config.test.ts && bun typecheck`
+- `cd packages/flynncode && bun test test/machine-sync test/server/httpapi-machine-sync.test.ts test/config/config.test.ts && bun typecheck`
 - `cd packages/mobile-gateway && bun test --timeout 180000 && bun typecheck`
 - `cd packages/desktop && bun test src/main/sidecar-sync.test.ts src/main/machine-sync.test.ts src/main/mobile-gateway-launch.test.ts src/main/relay-publisher.test.ts && bun typecheck`
 - `cd packages/app && bun test --conditions=solid --preload ./happydom.ts src/context/settings-sync.test.ts src/components/settings-v2/sync-card-status.test.ts src/components/settings-v2/phone-card.test.tsx src/components/prompt-input-v2.test.ts src/i18n/parity.test.ts && bun typecheck`

@@ -26,7 +26,7 @@ Two constraints shape the solution:
    (`packages/core/src/session/projector.ts`).
 
 The existing `opencode import <file>` command
-(`packages/opencode/src/cli/cmd/import.ts:110-230`) writes directly into
+(`packages/flynncode/src/cli/cmd/import.ts:110-230`) writes directly into
 `MessageTable`/`PartTable`. That only populates the **V1** projection. The app
 timeline reads the **V2** `session_message` projection via the message protocol
 group (`packages/protocol/src/groups/message.ts:26`), while the TUI reads the V1

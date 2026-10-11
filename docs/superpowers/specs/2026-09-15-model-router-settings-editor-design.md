@@ -5,7 +5,7 @@ Status: Approved
 
 ## Problem
 
-The built-in Ollama model router (`packages/opencode/src/plugin/ollama-model-router`)
+The built-in Ollama model router (`packages/flynncode/src/plugin/ollama-model-router`)
 routes agents to ranked models from the `model_router` config key, but the app
 surfaces nothing: no status, no assignments, no way to edit the scorecard
 outside the config file. Users cannot discover or configure the feature.

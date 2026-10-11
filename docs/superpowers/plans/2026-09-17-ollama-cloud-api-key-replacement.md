@@ -25,9 +25,9 @@
 
 **Files:**
 
-- Modify: `packages/opencode/src/provider/provider.ts:1583-1612, 1664-1724, 1803-1851, 2100-2120`
-- Modify: `packages/opencode/test/provider/provider.test.ts:2088-2168`
-- Modify: `packages/opencode/test/server/httpapi-provider.test.ts:45-53, 350-410`
+- Modify: `packages/flynncode/src/provider/provider.ts:1583-1612, 1664-1724, 1803-1851, 2100-2120`
+- Modify: `packages/flynncode/test/provider/provider.test.ts:2088-2168`
+- Modify: `packages/flynncode/test/server/httpapi-provider.test.ts:45-53, 350-410`
 
 **Interfaces:**
 
@@ -115,7 +115,7 @@ expect(JSON.stringify(body)).not.toContain("saved-provider-secret")
 Run:
 
 ```bash
-cd packages/opencode
+cd packages/flynncode
 bun test test/provider/provider.test.ts --test-name-pattern "saved API auth overrides"
 bun test test/server/httpapi-provider.test.ts --test-name-pattern "provider API keys"
 ```
@@ -178,7 +178,7 @@ In `toPublicInfo`, override the private field before JSON serialization:
 Run:
 
 ```bash
-cd packages/opencode
+cd packages/flynncode
 bun test test/provider/provider.test.ts --test-name-pattern "saved API auth overrides"
 bun test test/server/httpapi-provider.test.ts --test-name-pattern "provider API keys"
 bun typecheck
@@ -189,7 +189,7 @@ Expected: all commands pass and no output contains either sentinel key.
 - [ ] **Step 7: Commit the provider fix**
 
 ```bash
-git add packages/opencode/src/provider/provider.ts packages/opencode/test/provider/provider.test.ts packages/opencode/test/server/httpapi-provider.test.ts
+git add packages/flynncode/src/provider/provider.ts packages/flynncode/test/provider/provider.test.ts packages/flynncode/test/server/httpapi-provider.test.ts
 git commit -m "fix(opencode): prefer saved provider credentials"
 ```
 
@@ -291,7 +291,7 @@ git commit -m "feat(app): replace Ollama Cloud API keys"
 
 **Files:**
 
-- Verify: `packages/opencode`
+- Verify: `packages/flynncode`
 - Verify: `packages/app`
 - Verify: `packages/session-ui`
 - Verify: `packages/desktop`
@@ -308,7 +308,7 @@ git commit -m "feat(app): replace Ollama Cloud API keys"
 Run from each package directory, never from the repository root:
 
 ```bash
-cd packages/opencode && bun test test/provider/provider.test.ts test/server/httpapi-provider.test.ts && bun typecheck
+cd packages/flynncode && bun test test/provider/provider.test.ts test/server/httpapi-provider.test.ts && bun typecheck
 cd packages/app && bun run test:unit && bun run test:browser && bun typecheck
 cd packages/session-ui && bun typecheck
 cd packages/desktop && bun typecheck

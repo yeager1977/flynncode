@@ -29,7 +29,7 @@ const ECOSYSTEM_HTML = `
 <section id="plugins">
   <table>
     <tr><th>Name</th><th>Description</th></tr>
-    <tr><td><a href="https://github.com/daytona/integrations/tree/main/packages/opencode-plugin">opencode-daytona</a></td><td>Run sessions in Daytona sandboxes</td></tr>
+    <tr><td><a href="https://github.com/daytona/integrations/tree/main/packages/flynncode-plugin">opencode-daytona</a></td><td>Run sessions in Daytona sandboxes</td></tr>
     <tr><td><a href="https://github.com/H2Shami/opencode-helicone-session">opencode-helicone-session</a></td><td>Inject Helicone session headers</td></tr>
   </table>
 </section>`
@@ -39,7 +39,7 @@ const AWESOME_MD = `
 
 ## Plugins
 
-- [opencode-daytona](https://github.com/daytona/integrations/tree/main/packages/opencode-plugin) - Run sessions in Daytona sandboxes
+- [opencode-daytona](https://github.com/daytona/integrations/tree/main/packages/flynncode-plugin) - Run sessions in Daytona sandboxes
 - [opencode-wakatime](https://github.com/angristan/opencode-wakatime) - Track usage with Wakatime
 `
 
@@ -220,7 +220,7 @@ describe("createCatalogFetcher", () => {
   test("maps tree/blob URLs to last path segment for npm fallback, strips inline tags in descriptions", async () => {
     const treeHtml = `
 <table>
-  <tr><td><a href="https://github.com/daytona/integrations/tree/main/packages/opencode-plugin">Daytona Integration</a></td><td>Run sessions in Daytona sandboxes</td></tr>
+  <tr><td><a href="https://github.com/daytona/integrations/tree/main/packages/flynncode-plugin">Daytona Integration</a></td><td>Run sessions in Daytona sandboxes</td></tr>
   <tr><td><a href="https://github.com/willytop8/OpenCode-goal-plugin">opencode-goal-plugin</a></td><td>Session-scoped <code dir="auto">/goal</code> workflow</td></tr>
 </table>`
     const fetchImpl: typeof fetch = async (input) => {

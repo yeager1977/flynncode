@@ -156,7 +156,7 @@ above is the automatic pool.
 - Pins in `taskModels` enforce review and architecture primaries regardless
   of close scores.
 
-## Plugin Changes (packages/opencode/src/plugin/ollama-model-router)
+## Plugin Changes (packages/flynncode/src/plugin/ollama-model-router)
 
 - `TaskName` gains `architecture`; it is a valid tag, task weight, pin, and
   `route_task` target. Settings payload and language strings gain it.

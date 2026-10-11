@@ -62,7 +62,7 @@ specific model per purpose:
 - App payload and preview tests mirror the plugin contract, including a
   cross-package contract test that compares preview output with the real plugin
   for hidden, pinned, tagged, and unscored candidates.
-- `bun typecheck` in `packages/opencode`; app unit tests, app typecheck, and
+- `bun typecheck` in `packages/flynncode`; app unit tests, app typecheck, and
   e2e typecheck.
 
 ## Out of Scope

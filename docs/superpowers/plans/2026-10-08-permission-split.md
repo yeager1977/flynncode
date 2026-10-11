@@ -14,7 +14,7 @@
 - No `any` type anywhere; use `Schema.Unknown`/`Schema.Json` for opaque values and narrow at the consumer.
 - No star imports (`import * as Foo`) and no aliased imports (`import { foo as bar }`); import the module's own exported namespace by name (e.g. `import { Permission } from "@/permission"`).
 - Conventional commits only: `type(scope): summary` with types `feat|fix|docs|chore|refactor|test`.
-- Run tests from package dirs (never repo root): `bun test <path>` inside `packages/opencode` or `packages/app`.
+- Run tests from package dirs (never repo root): `bun test <path>` inside `packages/flynncode` or `packages/app`.
 - Run `bun typecheck` from the touched package dir after every task; never `tsc` directly.
 - Backends self-hosted or user-owned only; no vendor-hosted clouds, Sites hosting, or voice products in scope.
 - Sandbox enforcement is local path containment (worktree + registered sandboxes); no new daemon, no OS seatbelt/bubblewrap bindings in this workstream.
@@ -25,8 +25,8 @@
 
 **Files:**
 - Modify: `packages/core/src/v1/config/permission.ts`
-- Modify: `packages/opencode/src/permission/index.ts` (only the `fromConfig` loop entry line)
-- Test: `packages/opencode/test/permission/sandbox-config.test.ts` (create)
+- Modify: `packages/flynncode/src/permission/index.ts` (only the `fromConfig` loop entry line)
+- Test: `packages/flynncode/test/permission/sandbox-config.test.ts` (create)
 
 **Interfaces:**
 - Consumes: existing `ConfigPermissionV1.Info`, `Action`, `Rule` schemas.
@@ -60,7 +60,7 @@ test("resolveSessionPolicy ignores tool rules when reading policy", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/permission/sandbox-config.test.ts` (in `packages/opencode`)
+Run: `bun test test/permission/sandbox-config.test.ts` (in `packages/flynncode`)
 Expected: FAIL with "resolveSessionPolicy is not a function"
 
 - [ ] **Step 3: Write minimal implementation**
@@ -105,7 +105,7 @@ export * as ConfigPermissionV1 from "./permission"
 
 Note: the file already ends with `export * as ConfigPermissionV1 from "./permission"` self-reexport; add new exports above that line, do not duplicate it. Validate rejection via Schema decode throw (no try/catch in test needed; `toThrow` asserts it).
 
-Then update `Permission.fromConfig` in `packages/opencode/src/permission/index.ts` to strip reserved keys on entry (one-line change inside that function, full test in Task 3):
+Then update `Permission.fromConfig` in `packages/flynncode/src/permission/index.ts` to strip reserved keys on entry (one-line change inside that function, full test in Task 3):
 
 ```ts
 export function fromConfig(permission: ConfigPermissionV1.Info) {
@@ -115,23 +115,23 @@ export function fromConfig(permission: ConfigPermissionV1.Info) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun test test/permission/sandbox-config.test.ts` (in `packages/opencode`)
+Run: `bun test test/permission/sandbox-config.test.ts` (in `packages/flynncode`)
 Expected: PASS (4 tests)
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun test test/permission/sandbox-config.test.ts` (in `packages/opencode`)
+Run: `bun test test/permission/sandbox-config.test.ts` (in `packages/flynncode`)
 Expected: PASS (3 tests)
 
 - [ ] **Step 5: Typecheck**
 
-Run: `bun typecheck` (in `packages/opencode`)
+Run: `bun typecheck` (in `packages/flynncode`)
 Expected: exit 0, no errors
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/core/src/v1/config/permission.ts packages/opencode/src/permission/index.ts packages/opencode/test/permission/sandbox-config.test.ts
+git add packages/core/src/v1/config/permission.ts packages/flynncode/src/permission/index.ts packages/flynncode/test/permission/sandbox-config.test.ts
 git commit -m "feat(core): add sandbox and approval mode policy schema"
 ```
 
@@ -140,8 +140,8 @@ git commit -m "feat(core): add sandbox and approval mode policy schema"
 ### Task 2: Server sandbox resolver + path containment
 
 **Files:**
-- Create: `packages/opencode/src/permission/sandbox.ts`
-- Test: `packages/opencode/test/permission/sandbox.test.ts` (create)
+- Create: `packages/flynncode/src/permission/sandbox.ts`
+- Test: `packages/flynncode/test/permission/sandbox.test.ts` (create)
 
 **Interfaces:**
 - Consumes: `ConfigPermissionV1.SandboxMode`, worktree root string, sandbox dir list (`string[]` from `Project.sandboxes`).
@@ -177,12 +177,12 @@ test("resolveLevel defaults to workspace-write", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/permission/sandbox.test.ts` (in `packages/opencode`)
+Run: `bun test test/permission/sandbox.test.ts` (in `packages/flynncode`)
 Expected: FAIL with "Cannot find module '../../src/permission/sandbox'"
 
 - [ ] **Step 3: Write minimal implementation**
 
-Create `packages/opencode/src/permission/sandbox.ts`:
+Create `packages/flynncode/src/permission/sandbox.ts`:
 
 ```ts
 import { Schema } from "effect"
@@ -219,18 +219,18 @@ export * as Sandbox from "./sandbox"
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun test test/permission/sandbox.test.ts` (in `packages/opencode`)
+Run: `bun test test/permission/sandbox.test.ts` (in `packages/flynncode`)
 Expected: PASS (5 tests)
 
 - [ ] **Step 5: Typecheck**
 
-Run: `bun typecheck` (in `packages/opencode`)
+Run: `bun typecheck` (in `packages/flynncode`)
 Expected: exit 0
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/opencode/src/permission/sandbox.ts packages/opencode/test/permission/sandbox.test.ts
+git add packages/flynncode/src/permission/sandbox.ts packages/flynncode/test/permission/sandbox.test.ts
 git commit -m "feat(opencode): add sandbox path containment resolver"
 ```
 
@@ -239,8 +239,8 @@ git commit -m "feat(opencode): add sandbox path containment resolver"
 ### Task 3: Thread approval mode through permission ask (deny>ask>allow preserved)
 
 **Files:**
-- Modify: `packages/opencode/src/permission/index.ts`
-- Test: `packages/opencode/test/permission/approval-mode.test.ts` (create)
+- Modify: `packages/flynncode/src/permission/index.ts`
+- Test: `packages/flynncode/test/permission/approval-mode.test.ts` (create)
 
 **Interfaces:**
 - Consumes: `ConfigPermissionV1.ApprovalMode`, existing `Permission.Service.ask` / `reply` / `list`, existing `PermissionV1.AskInput`.
@@ -318,12 +318,12 @@ it.instance("accept-edits auto-resolves edit but prompts bash", () =>
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/permission/approval-mode.test.ts` (in `packages/opencode`)
+Run: `bun test test/permission/approval-mode.test.ts` (in `packages/flynncode`)
 Expected: FAIL (type error: `approval` does not exist on AskInput, or auto still prompts)
 
 - [ ] **Step 3: Write minimal implementation**
 
-In `packages/opencode/src/permission/index.ts`:
+In `packages/flynncode/src/permission/index.ts`:
 1. Extend the ask input type: change `Interface["ask"]` signature to accept `PermissionV1.AskInput & { approval?: ConfigPermissionV1.ApprovalMode }`. Import `ConfigPermissionV1` from `@opencode-ai/core/v1/config/permission` (no alias, no star).
 2. At the top of the `ask` effect, after destructuring `input`, read `input.approval ?? "manual"`.
 3. After the deny loop and before creating the pending request, insert the short-circuit (keep deny loop untouched so deny>ask>allow precedence is preserved):
@@ -338,18 +338,18 @@ if (approval === "accept-edits" && AUTO_EDIT_PERMISSIONS.includes(request.permis
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun test test/permission/approval-mode.test.ts test/permission/next.test.ts` (in `packages/opencode`)
+Run: `bun test test/permission/approval-mode.test.ts test/permission/next.test.ts` (in `packages/flynncode`)
 Expected: PASS (all suites; `next.test.ts` guards the unchanged manual path)
 
 - [ ] **Step 5: Typecheck**
 
-Run: `bun typecheck` (in `packages/opencode`)
+Run: `bun typecheck` (in `packages/flynncode`)
 Expected: exit 0
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/opencode/src/permission/index.ts packages/opencode/test/permission/approval-mode.test.ts
+git add packages/flynncode/src/permission/index.ts packages/flynncode/test/permission/approval-mode.test.ts
 git commit -m "feat(opencode): thread approval mode through permission ask"
 ```
 
@@ -358,9 +358,9 @@ git commit -m "feat(opencode): thread approval mode through permission ask"
 ### Task 4: Enforce sandbox in tool execution + non-mutating reviewer
 
 **Files:**
-- Create: `packages/opencode/src/permission/reviewer.ts`
-- Modify: `packages/opencode/src/session/tools.ts`
-- Test: `packages/opencode/test/permission/reviewer.test.ts` (create)
+- Create: `packages/flynncode/src/permission/reviewer.ts`
+- Modify: `packages/flynncode/src/session/tools.ts`
+- Test: `packages/flynncode/test/permission/reviewer.test.ts` (create)
 
 **Interfaces:**
 - Consumes: `Sandbox.isPathAllowed`, `Permission.Service.ask` with `approval`, session worktree root + sandbox dirs, tool permission name + patterns.
@@ -391,12 +391,12 @@ test("reviewer never allows archive or destructive shell", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/permission/reviewer.test.ts` (in `packages/opencode`)
+Run: `bun test test/permission/reviewer.test.ts` (in `packages/flynncode`)
 Expected: FAIL with "Cannot find module '../../src/permission/reviewer'"
 
 - [ ] **Step 3: Write reviewer implementation**
 
-Create `packages/opencode/src/permission/reviewer.ts`:
+Create `packages/flynncode/src/permission/reviewer.ts`:
 
 ```ts
 const AUTO_ALLOW = ["read", "glob", "grep", "list", "webfetch", "websearch", "lsp"]
@@ -411,7 +411,7 @@ export * as Reviewer from "./reviewer"
 
 - [ ] **Step 4: Wire sandbox + reviewer into `session/tools.ts`**
 
-In `packages/opencode/src/session/tools.ts`, inside `resolve`:
+In `packages/flynncode/src/session/tools.ts`, inside `resolve`:
 1. Add two service yields next to the existing ones (`const permission = yield* Permission.Service` block): `const config = yield* Config.Service` importing `Config` from `@/config/config`, and `const project = yield* Project.Service` importing `Project` from `@/project/project`. Run `bun typecheck` after; if the layer graph lacks either service, add it to the session layer deps alongside the existing service nodes and re-run.
 2. Before the `context()` definition, resolve the policy once per session:
 
@@ -471,18 +471,18 @@ Rules: deny always wins (checked first via `Permission.evaluate`, matching the d
 
 - [ ] **Step 5: Run tests**
 
-Run: `bun test test/permission/reviewer.test.ts test/permission/sandbox.test.ts test/permission/next.test.ts test/permission/approval-mode.test.ts` (in `packages/opencode`)
+Run: `bun test test/permission/reviewer.test.ts test/permission/sandbox.test.ts test/permission/next.test.ts test/permission/approval-mode.test.ts` (in `packages/flynncode`)
 Expected: PASS all suites
 
 - [ ] **Step 6: Typecheck**
 
-Run: `bun typecheck` (in `packages/opencode`)
+Run: `bun typecheck` (in `packages/flynncode`)
 Expected: exit 0
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add packages/opencode/src/permission/reviewer.ts packages/opencode/src/session/tools.ts packages/opencode/test/permission/reviewer.test.ts
+git add packages/flynncode/src/permission/reviewer.ts packages/flynncode/src/session/tools.ts packages/flynncode/test/permission/reviewer.test.ts
 git commit -m "feat(opencode): enforce sandbox and reviewer in tool execution"
 ```
 
@@ -574,7 +574,7 @@ git commit -m "feat(app): split sandbox badge from approval controls"
 
 - [ ] **Step 1: Run opencode permission tests**
 
-Run: `bun test test/permission/` (in `packages/opencode`)
+Run: `bun test test/permission/` (in `packages/flynncode`)
 Expected: PASS, 0 failures
 
 - [ ] **Step 2: Run app tests for touched areas**
@@ -584,7 +584,7 @@ Expected: PASS, 0 failures
 
 - [ ] **Step 3: Typecheck both packages**
 
-Run: `bun typecheck` (in `packages/opencode`), then `bun typecheck` (in `packages/app`)
+Run: `bun typecheck` (in `packages/flynncode`), then `bun typecheck` (in `packages/app`)
 Expected: exit 0 in both
 
 - [ ] **Step 4: Commit any fallout fixes** (only if failures occurred)

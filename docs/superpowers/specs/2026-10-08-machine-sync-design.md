@@ -36,7 +36,7 @@ on loopback) and mobile gateway (LAN, port 4097). Sync adds:
    by requests signed with the pairing token (see "Request signing"). The
    phone password does not open them and the pairing token opens nothing
    else. The gateway forwards them to the local server.
-2. **Sync endpoints on the server** (`packages/opencode`, Flynncode-owned),
+2. **Sync endpoints on the server** (`packages/flynncode`, Flynncode-owned),
    read-only from the peer's point of view: `manifest`, `session bundle`,
    `settings`. They are mounted only for gateway-forwarded sync requests.
 3. **A sync worker in the server** that, every 60 s while paired and unpaused,

@@ -24,17 +24,17 @@
 ### Task 1: Replace provider subtrees in global config patches
 
 **Files:**
-- Modify: `packages/opencode/src/config/config.ts:150-174` (`patchJsonc`)
-- Modify: `packages/opencode/src/config/config.ts:668-696` (`updateGlobal`)
-- Create: `packages/opencode/test/config/fixtures/v2-compat/update-global/provider-replace-input.jsonc`
-- Create: `packages/opencode/test/config/fixtures/v2-compat/update-global/provider-replace-patch.json`
-- Create (generated): `packages/opencode/test/config/fixtures/v2-compat/update-global/provider-replace-output.jsonc`
-- Create (generated): `packages/opencode/test/config/fixtures/v2-compat/update-global/provider-replace-normalized.json`
-- Create: `packages/opencode/test/config/fixtures/v2-compat/update-global/provider-replace-json-input.json`
-- Create: `packages/opencode/test/config/fixtures/v2-compat/update-global/provider-replace-json-patch.json`
-- Create (generated): `packages/opencode/test/config/fixtures/v2-compat/update-global/provider-replace-json-output.json`
-- Create (generated): `packages/opencode/test/config/fixtures/v2-compat/update-global/provider-replace-json-normalized.json`
-- Test: `packages/opencode/test/config/config.test.ts` (existing fixture runner at lines 443-462 discovers the new fixtures automatically)
+- Modify: `packages/flynncode/src/config/config.ts:150-174` (`patchJsonc`)
+- Modify: `packages/flynncode/src/config/config.ts:668-696` (`updateGlobal`)
+- Create: `packages/flynncode/test/config/fixtures/v2-compat/update-global/provider-replace-input.jsonc`
+- Create: `packages/flynncode/test/config/fixtures/v2-compat/update-global/provider-replace-patch.json`
+- Create (generated): `packages/flynncode/test/config/fixtures/v2-compat/update-global/provider-replace-output.jsonc`
+- Create (generated): `packages/flynncode/test/config/fixtures/v2-compat/update-global/provider-replace-normalized.json`
+- Create: `packages/flynncode/test/config/fixtures/v2-compat/update-global/provider-replace-json-input.json`
+- Create: `packages/flynncode/test/config/fixtures/v2-compat/update-global/provider-replace-json-patch.json`
+- Create (generated): `packages/flynncode/test/config/fixtures/v2-compat/update-global/provider-replace-json-output.json`
+- Create (generated): `packages/flynncode/test/config/fixtures/v2-compat/update-global/provider-replace-json-normalized.json`
+- Test: `packages/flynncode/test/config/config.test.ts` (existing fixture runner at lines 443-462 discovers the new fixtures automatically)
 
 **Interfaces:**
 - Consumes: existing `mergeDeep` (remeda), `isRecord` (`@/util/record`), `modify`/`applyEdits` (`jsonc-parser`).
@@ -42,7 +42,7 @@
 
 - [ ] **Step 1: Write the failing fixtures**
 
-Create `packages/opencode/test/config/fixtures/v2-compat/update-global/provider-replace-input.jsonc`. This input has an `example` provider with headers, a base URL, an API key, and models, plus an `other` provider that must survive untouched:
+Create `packages/flynncode/test/config/fixtures/v2-compat/update-global/provider-replace-input.jsonc`. This input has an `example` provider with headers, a base URL, an API key, and models, plus an `other` provider that must survive untouched:
 
 ```jsonc
 {
@@ -67,7 +67,7 @@ Create `packages/opencode/test/config/fixtures/v2-compat/update-global/provider-
 }
 ```
 
-Create `packages/opencode/test/config/fixtures/v2-compat/update-global/provider-replace-patch.json`. The `example` entry is complete (as the edit dialog will send it), omits the old headers and old model, and includes a new base URL and new model:
+Create `packages/flynncode/test/config/fixtures/v2-compat/update-global/provider-replace-patch.json`. The `example` entry is complete (as the edit dialog will send it), omits the old headers and old model, and includes a new base URL and new model:
 
 ```json
 {
@@ -85,7 +85,7 @@ Create `packages/opencode/test/config/fixtures/v2-compat/update-global/provider-
 }
 ```
 
-Create the non-jsonc input `packages/opencode/test/config/fixtures/v2-compat/update-global/provider-replace-json-input.json`:
+Create the non-jsonc input `packages/flynncode/test/config/fixtures/v2-compat/update-global/provider-replace-json-input.json`:
 
 ```json
 {
@@ -108,7 +108,7 @@ Create the non-jsonc input `packages/opencode/test/config/fixtures/v2-compat/upd
 }
 ```
 
-Create `packages/opencode/test/config/fixtures/v2-compat/update-global/provider-replace-json-patch.json`:
+Create `packages/flynncode/test/config/fixtures/v2-compat/update-global/provider-replace-json-patch.json`:
 
 ```json
 {
@@ -127,7 +127,7 @@ Create `packages/opencode/test/config/fixtures/v2-compat/update-global/provider-
 
 - [ ] **Step 2: Generate expected outputs and confirm the failure**
 
-Run from `packages/opencode`:
+Run from `packages/flynncode`:
 
 ```sh
 UPDATE_CONFIG_FIXTURES=1 bun test test/config/config.test.ts test/config/v2-compat.test.ts --timeout 30000
@@ -139,7 +139,7 @@ Also inspect `provider-replace-json-output.json` and confirm `mergeDeep` keeps t
 
 - [ ] **Step 3: Implement provider subtree replacement in `patchJsonc`**
 
-In `packages/opencode/src/config/config.ts`, add a `provider` branch next to the existing `model_router` branch in `patchJsonc`:
+In `packages/flynncode/src/config/config.ts`, add a `provider` branch next to the existing `model_router` branch in `patchJsonc`:
 
 ```ts
 function patchJsonc(input: string, patch: unknown, path: string[] = []): string {
@@ -184,7 +184,7 @@ function patchJsonc(input: string, patch: unknown, path: string[] = []): string 
 
 - [ ] **Step 4: Implement provider subtree replacement in `updateGlobal`**
 
-In `packages/opencode/src/config/config.ts`, replace the inline `model_router` conditional in `updateGlobal` with a shared helper. Add this helper above `patchJsonc` (after `globalConfigFile`):
+In `packages/flynncode/src/config/config.ts`, replace the inline `model_router` conditional in `updateGlobal` with a shared helper. Add this helper above `patchJsonc` (after `globalConfigFile`):
 
 ```ts
 function mergeWholeSubtrees(base: Record<string, unknown>, patch: Record<string, unknown>) {
@@ -220,13 +220,13 @@ with:
 
 - [ ] **Step 5: Regenerate outputs and verify they are correct**
 
-Run from `packages/opencode`:
+Run from `packages/flynncode`:
 
 ```sh
 UPDATE_CONFIG_FIXTURES=1 bun test test/config/config.test.ts test/config/v2-compat.test.ts --timeout 30000
 ```
 
-Inspect `packages/opencode/test/config/fixtures/v2-compat/update-global/provider-replace-output.jsonc`. Verify:
+Inspect `packages/flynncode/test/config/fixtures/v2-compat/update-global/provider-replace-output.jsonc`. Verify:
 - `example` no longer has `X-Old` headers.
 - `example` has `"baseURL": "https://new.example.com/v1"`.
 - `example.models` is `{ "new-model": { "name": "New Model" } }` only.
@@ -237,7 +237,7 @@ Inspect `provider-replace-json-output.json` and verify the same `example` replac
 
 - [ ] **Step 6: Run the config tests without regeneration**
 
-Run from `packages/opencode`:
+Run from `packages/flynncode`:
 
 ```sh
 bun test test/config/config.test.ts test/config/v2-compat.test.ts --timeout 30000
@@ -248,7 +248,7 @@ Expected: PASS. The checked-in fixtures now assert the fixed behavior.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add packages/opencode/src/config/config.ts packages/opencode/test/config/fixtures/v2-compat/update-global packages/opencode/test/config/config.test.ts
+git add packages/flynncode/src/config/config.ts packages/flynncode/test/config/fixtures/v2-compat/update-global packages/flynncode/test/config/config.test.ts
 git commit -m "fix(opencode): replace provider config subtrees on update"
 ```
 
@@ -1283,7 +1283,7 @@ git commit -m "feat(app): open provider connection edit from settings"
 
 - [ ] **Step 1: Run the opencode config tests**
 
-Run from `packages/opencode`:
+Run from `packages/flynncode`:
 
 ```sh
 bun test test/config/config.test.ts test/config/v2-compat.test.ts --timeout 30000
@@ -1293,7 +1293,7 @@ Expected: PASS, including the two `provider-replace` fixtures.
 
 - [ ] **Step 2: Run the opencode typecheck**
 
-Run from `packages/opencode`:
+Run from `packages/flynncode`:
 
 ```sh
 bun typecheck
@@ -1314,7 +1314,7 @@ Expected: PASS. The existing `provider-catalog.test.ts` assertion that only Olla
 
 - [ ] **Step 4: Browser check**
 
-Start the backend from `packages/opencode`:
+Start the backend from `packages/flynncode`:
 
 ```sh
 bun run ./src/index.ts serve --port 4096

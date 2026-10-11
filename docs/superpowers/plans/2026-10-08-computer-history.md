@@ -575,4 +575,4 @@ Expected: all PASS.
 
 - [ ] **Step 3: Verify in local UI**
 
-Run backend from `packages/opencode` with `bun run ./src/index.ts serve --port 4096`, then app from `packages/app` with `bun dev -- --port 4444`, open `http://localhost:4444`, open any session, confirm the Activity section lists runs/changes/approvals, text filter narrows rows, screenshots stay hidden until the per-session toggle, and Export downloads `history-<sessionID>.json`. Never restart shared app/server processes; use the separate ports above.
+Run backend from `packages/flynncode` with `bun run ./src/index.ts serve --port 4096`, then app from `packages/app` with `bun dev -- --port 4444`, open `http://localhost:4444`, open any session, confirm the Activity section lists runs/changes/approvals, text filter narrows rows, screenshots stay hidden until the per-session toggle, and Export downloads `history-<sessionID>.json`. Never restart shared app/server processes; use the separate ports above.

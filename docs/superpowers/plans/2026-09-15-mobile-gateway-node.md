@@ -638,7 +638,7 @@ Note: the spec's "reuse the server password" behavior is preserved exactly when 
 - Consumes: `resolveOptions(env, fallbackUpstream?)` from Task 3, `startGateway` from Task 1.
 - Produces: the plugin resolves its upstream from `input.serverUrl` when `OPENCODE_MOBILE_UPSTREAM` is unset, so the desktop's rotating port is followed automatically.
 
-The desktop binds a random port each launch. `PluginInput` exposes the live URL (`packages/opencode/src/plugin/index.ts:165-167`), so the plugin should default to it rather than to `4096`.
+The desktop binds a random port each launch. `PluginInput` exposes the live URL (`packages/flynncode/src/plugin/index.ts:165-167`), so the plugin should default to it rather than to `4096`.
 
 - [ ] **Step 1: Write the failing test**
 

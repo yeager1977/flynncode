@@ -44,8 +44,8 @@ test("updateRoutine rejects an invalid rrule", () => {
 ### Task 2: Routine runs history endpoint [item 6]
 
 **Files:**
-- Modify: `packages/opencode/src/plugin/routines/index.ts` — export `readRoutineRuns(file?)` (read jsonl via existing `parseRunRecords`, tail-capped)
-- Modify: `packages/opencode/src/server/routes/instance/httpapi/groups/global.ts` — `GET /global/routines/runs` (+ `routineId` query), success `Schema.Array(RunRecord)` mirroring `RoutineRun`; handler in `handlers/global.ts`
+- Modify: `packages/flynncode/src/plugin/routines/index.ts` — export `readRoutineRuns(file?)` (read jsonl via existing `parseRunRecords`, tail-capped)
+- Modify: `packages/flynncode/src/server/routes/instance/httpapi/groups/global.ts` — `GET /global/routines/runs` (+ `routineId` query), success `Schema.Array(RunRecord)` mirroring `RoutineRun`; handler in `handlers/global.ts`
 - Modify: `packages/app/src/components/settings-v2/routines.tsx` — history list prefers `serverSDK.client.global.routinesRuns({ query })`, falls back to embedded `recentRuns`; optionally inbox run counts
 - Codegen: `bun run generate` from `packages/client`
 - Test: extend plugin runs test (helper); handler-level test modeled on existing global handler tests (grep `test/server/httpapi-global*`)
@@ -55,26 +55,26 @@ test("updateRoutine rejects an invalid rrule", () => {
 ### Task 3: Deepthought (remote-host) targeting [item 6]
 
 **Files:**
-- Modify: `packages/opencode/src/plugin/routines/parse.ts` — `Routine.target?: "local" | { url, username?, password? }`; `readTarget` validation (error style of `readRrule`)
-- Modify: `packages/opencode/src/plugin/routines/index.ts` — `runOne` builds/caches a per-target `createOpencodeClient({ baseUrl: target.url, headers: ServerAuth.headers({ username, password }) })` (precedent `plugin/index.ts:174–179`, `server/auth.ts:36–48`); `scheduler.active` status polls go to the TARGET client for targeted runs; unreachable host ⇒ existing error-run persistence (assert this in test)
+- Modify: `packages/flynncode/src/plugin/routines/parse.ts` — `Routine.target?: "local" | { url, username?, password? }`; `readTarget` validation (error style of `readRrule`)
+- Modify: `packages/flynncode/src/plugin/routines/index.ts` — `runOne` builds/caches a per-target `createOpencodeClient({ baseUrl: target.url, headers: ServerAuth.headers({ username, password }) })` (precedent `plugin/index.ts:174–179`, `server/auth.ts:36–48`); `scheduler.active` status polls go to the TARGET client for targeted runs; unreachable host ⇒ existing error-run persistence (assert this in test)
 - Modify: `packages/app/src/components/settings-v2/routines-edit.ts` — optional `target` carried through `routinesToConfig` + a host picker sourced from the servers list (`useServer().list`) when present
-- Test: `packages/opencode/test/plugin/routines/scheduler.test.ts` (extend — fakeClient keyed by base URL; offline host ⇒ error record in jsonl + recentRuns, lastRun advances)
+- Test: `packages/flynncode/test/plugin/routines/scheduler.test.ts` (extend — fakeClient keyed by base URL; offline host ⇒ error record in jsonl + recentRuns, lastRun advances)
 
 - [ ] **Steps 1–5:** standard TDD loop. Commit `feat(opencode): target routines at a remote host` (+ app follow commit). **Security note:** credentials live in routine config (user-authored, local) — never render them in UI copy or logs; document in the settings row description.
 
 ### Task 4: Permission JSONL record in run [item 10 residue]
 
 **Files:**
-- Modify: `packages/opencode/src/cli/cmd/run.ts` (`permission.asked` branch ~L840–860 — `emit("permission", { permission })` before the reply in BOTH auto and deny paths, json mode only)
-- Test: `packages/opencode/test/cli/run/run-process.test.ts` (extend — deny mode assertion: JSONL contains a `permission` record before `session_end`
+- Modify: `packages/flynncode/src/cli/cmd/run.ts` (`permission.asked` branch ~L840–860 — `emit("permission", { permission })` before the reply in BOTH auto and deny paths, json mode only)
+- Test: `packages/flynncode/test/cli/run/run-process.test.ts` (extend — deny mode assertion: JSONL contains a `permission` record before `session_end`
 
 - [ ] **Steps 1–5:** standard loop; commit `feat(cli): emit permission records in run json events`.
 
 ### Task 5: Honor `retryCount` for structured output [item 10 residue]
 
 **Files:**
-- Modify: `packages/opencode/src/session/prompt.ts` (structured-output failure path ~L1423–1451/1444–1451 — instead of immediately breaking with `StructuredOutputError` retries:0, loop: on missing structured output with `retryCount > 0`, issue one more provider turn re-prompting for the StructuredOutput tool, bounded by the declared count; decrement-and-retain in the failure metadata)
-- Test: `packages/opencode/test/session/structured-output.test.ts` (extend — stub LLM replying with tool-less turn then a StructuredOutput turn ⇒ success after 1 retry; exhausted retries ⇒ StructuredOutputError with retries count)
+- Modify: `packages/flynncode/src/session/prompt.ts` (structured-output failure path ~L1423–1451/1444–1451 — instead of immediately breaking with `StructuredOutputError` retries:0, loop: on missing structured output with `retryCount > 0`, issue one more provider turn re-prompting for the StructuredOutput tool, bounded by the declared count; decrement-and-retain in the failure metadata)
+- Test: `packages/flynncode/test/session/structured-output.test.ts` (extend — stub LLM replying with tool-less turn then a StructuredOutput turn ⇒ success after 1 retry; exhausted retries ⇒ StructuredOutputError with retries count)
 
 - [ ] **Steps 1–5:** standard loop; commit `feat(opencode): retry structured output per format retryCount`. **Ruling if implementation balloon risk:** on BLOCKED, fall back to documenting the field inert (annotation + sdk.mdx note) — either way ledger the choice.
 
@@ -105,12 +105,12 @@ test("updateRoutine rejects an invalid rrule", () => {
 
 **Files:**
 - Create: `packages/schema/src/v1/computer-use.ts` — `ComputerUse.Requested` event schema (`{ requestID, sessionID, action, appID, args: {x?,y?,text?,key?,deltaX?,deltaY?}, time }`) + reply types
-- Create: `packages/opencode/src/computer-use/index.ts` — `ComputerUseExecutor` Question-shaped service (`packages/opencode/src/question/index.ts` is the template: pending `Map<RequestID, {request, defer}>` in InstanceState-shaped state, `Effect.serviceOption` availability, `execute(request)` = publish `Event.ComputerUse.Requested` via EventV2Bridge + `Deferred.await` with a SHORT timeout (e.g. 10s) → `ComputerUseExecutorUnavailableError`; `reply(requestID, result)` resolves)
-- Modify: `packages/opencode/src/server/routes/instance/httpapi/groups/computer-use.ts` (create) — `GET /computer-use/requests` (list pending)? NO — phone/dock not involved; keep minimal: `POST /computer-use/execute/reply` + `GET /computer-use/requests` for the desktop listener bootstrap; handler in `handlers/computer-use.ts` (create)
-- Modify: `packages/opencode/src/api.ts` / protocol registration + `packages/opencode/src/server/routes/instance/httpapi/server.ts` (mount group; mirror how question group mounts)
+- Create: `packages/flynncode/src/computer-use/index.ts` — `ComputerUseExecutor` Question-shaped service (`packages/flynncode/src/question/index.ts` is the template: pending `Map<RequestID, {request, defer}>` in InstanceState-shaped state, `Effect.serviceOption` availability, `execute(request)` = publish `Event.ComputerUse.Requested` via EventV2Bridge + `Deferred.await` with a SHORT timeout (e.g. 10s) → `ComputerUseExecutorUnavailableError`; `reply(requestID, result)` resolves)
+- Modify: `packages/flynncode/src/server/routes/instance/httpapi/groups/computer-use.ts` (create) — `GET /computer-use/requests` (list pending)? NO — phone/dock not involved; keep minimal: `POST /computer-use/execute/reply` + `GET /computer-use/requests` for the desktop listener bootstrap; handler in `handlers/computer-use.ts` (create)
+- Modify: `packages/flynncode/src/api.ts` / protocol registration + `packages/flynncode/src/server/routes/instance/httpapi/server.ts` (mount group; mirror how question group mounts)
 - Codegen: `bun run generate` from `packages/client`
 - Modify: `packages/app/src/context/platform` consumer chain (desktop-gated listener: platform === "desktop", native preview flag on) — subscribes to the event, executes via `window.api.computerUse.*` / `window.api.previewHost.capture()`, POSTs the reply
-- Test: `packages/opencode/test/computer-use/executor.test.ts` (new — pending map, Deferred, publish/subscribe roundtrip via EventV2Bridge test helpers, timeout→Unavailable, reply→resolution; `pollWithTimeout` style, no fixed sleeps)
+- Test: `packages/flynncode/test/computer-use/executor.test.ts` (new — pending map, Deferred, publish/subscribe roundtrip via EventV2Bridge test helpers, timeout→Unavailable, reply→resolution; `pollWithTimeout` style, no fixed sleeps)
 
 - [ ] **Step 1: Write the failing service test**
 
@@ -128,7 +128,7 @@ it.effect("times out to ComputerUseExecutorUnavailableError when no client answe
   }))
 ```
 
-(Assemble from the Question-service test shape — `packages/opencode/test/question/` or wherever its tests live; pollWithTimeout style, no fixed sleeps.)
+(Assemble from the Question-service test shape — `packages/flynncode/test/question/` or wherever its tests live; pollWithTimeout style, no fixed sleeps.)
 
 - [ ] **Steps 2–5:** standard loop; commit `feat(opencode): computer-use executor bridge (question-shaped)`.
 
@@ -137,10 +137,10 @@ it.effect("times out to ComputerUseExecutorUnavailableError when no client answe
 ### Task 9: Tool wiring + per-action tiers + appID vocabulary [item 16]
 
 **Files:**
-- Modify: `packages/opencode/src/tool/computer-use.ts` — order: config resolve (enabled/allowlist fail-closed, unchanged) → `executor` availability probe (before ask — preserves fail-before-ask honesty; `ComputerUseExecutorUnavailableError` + honest "not performed" text when absent) → `ctx.ask({ permission: "computer_use", patterns: [appID, action], metadata: { action, appID }, always: [] })` → executor dispatch → screenshot action returns `attachments: [{ type: "file", mime: "image/png", url: dataUrl }]` (captureView source); rejection/timeout ⇒ honest failure text
-- Modify: `packages/core/src/v1/config/config.ts` + `packages/opencode/src/config/computer-use.ts` — extend `ComputerUsePolicy` with optional per-action tiers: `tiers?: { observe?: { enabled?: boolean }, mutate?: { enabled?: boolean } }` — `observe` gates `screenshot`, `mutate` gates `click|type|keypress|scroll`; tiers TIGHTEN only (a disabled tier fails closed BEFORE ask; unknown tier keys tolerated-fail-closed); consent stays at the human (ALWAYS_ASK) — `appID` vocabulary: reserved pseudo-app id `flynncode:browser-pane` (documented in tool txt + consent copy; exact-match)
-- Modify: `packages/opencode/src/tool/computer-use.txt` (description: pane-scoped semantics, the reserved app id, tier gating, never-self-approving note)
-- Test: `packages/opencode/test/tool/computer-use.test.ts` (extend — ask recorded with `[appID, action]` once executor available; unavailable ⇒ fail BEFORE ask (`asked` array empty); tier disabled ⇒ fail before ask; screenshot attachment present)
+- Modify: `packages/flynncode/src/tool/computer-use.ts` — order: config resolve (enabled/allowlist fail-closed, unchanged) → `executor` availability probe (before ask — preserves fail-before-ask honesty; `ComputerUseExecutorUnavailableError` + honest "not performed" text when absent) → `ctx.ask({ permission: "computer_use", patterns: [appID, action], metadata: { action, appID }, always: [] })` → executor dispatch → screenshot action returns `attachments: [{ type: "file", mime: "image/png", url: dataUrl }]` (captureView source); rejection/timeout ⇒ honest failure text
+- Modify: `packages/core/src/v1/config/config.ts` + `packages/flynncode/src/config/computer-use.ts` — extend `ComputerUsePolicy` with optional per-action tiers: `tiers?: { observe?: { enabled?: boolean }, mutate?: { enabled?: boolean } }` — `observe` gates `screenshot`, `mutate` gates `click|type|keypress|scroll`; tiers TIGHTEN only (a disabled tier fails closed BEFORE ask; unknown tier keys tolerated-fail-closed); consent stays at the human (ALWAYS_ASK) — `appID` vocabulary: reserved pseudo-app id `flynncode:browser-pane` (documented in tool txt + consent copy; exact-match)
+- Modify: `packages/flynncode/src/tool/computer-use.txt` (description: pane-scoped semantics, the reserved app id, tier gating, never-self-approving note)
+- Test: `packages/flynncode/test/tool/computer-use.test.ts` (extend — ask recorded with `[appID, action]` once executor available; unavailable ⇒ fail BEFORE ask (`asked` array empty); tier disabled ⇒ fail before ask; screenshot attachment present)
 - Test: extend `test/permission/computer-use-guard.test.ts` (tier-map semantics)
 
 - [ ] **Steps 1–5:** standard loop; commit `feat(opencode): wire computer-use tool to the executor with action tiers`.
@@ -174,7 +174,7 @@ it.effect("times out to ComputerUseExecutorUnavailableError when no client answe
 ## Verification (phase gate)
 
 ```bash
-# packages/opencode: bun typecheck; bun test ./test/computer-use/ ./test/tool/ ./test/session/ ./test/cli/ ./test/permission/ ./test/plugin/routines/
+# packages/flynncode: bun typecheck; bun test ./test/computer-use/ ./test/tool/ ./test/session/ ./test/cli/ ./test/permission/ ./test/plugin/routines/
 # packages/core: bun typecheck + agent-config/command tests
 # packages/app: bun typecheck; bun run test:unit
 # packages/desktop: bun typecheck; bun test ./src/main/

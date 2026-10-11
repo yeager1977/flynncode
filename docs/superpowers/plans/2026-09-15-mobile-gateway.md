@@ -19,7 +19,7 @@
 - Session cookie: `HttpOnly`, `SameSite=Lax`, `Path=/`, `Max-Age=2592000`. Tokens in memory only; lost on restart.
 - Cookie name `oc_mobile_session`.
 - A request reaches upstream only when it presents a valid session cookie, or presents Basic credentials that match the gateway's own environment. Anything else is rejected with 401 before any upstream call.
-- Proxy must strip `content-encoding`, `content-length`, and `transfer-encoding` from forwarded responses (matches `packages/opencode/src/server/shared/ui.ts:30-38`).
+- Proxy must strip `content-encoding`, `content-length`, and `transfer-encoding` from forwarded responses (matches `packages/flynncode/src/server/shared/ui.ts:30-38`).
 - SSE streams must be forwarded unbuffered, including `cache-control: no-cache, no-transform` and `x-accel-buffering: no` when upstream sends them.
 - No new runtime dependencies. Dev deps only, from catalog: `@tsconfig/bun`, `@types/bun`, `@typescript/native-preview`, `typescript`.
 - Use `bun test` from the package directory; never run tests from repo root.
@@ -1095,7 +1095,7 @@ git commit -m "feat(mobile-gateway): add authenticated reverse proxy gateway"
 - Consumes: `resolveOptions` (Task 1); `startGateway`, `stopGateway` (Task 6).
 - Produces: the default export `{ id: "@flynncode/mobile-gateway", server: Plugin }` where `Plugin` is `(input: PluginInput, options?: PluginOptions) => Promise<Hooks>`.
 
-The plugin must never throw during load: a missing password or a busy port logs a message and returns empty hooks, because a throwing plugin is logged as a failure and skipped by the loader (`packages/opencode/src/plugin/index.ts:226-243`).
+The plugin must never throw during load: a missing password or a busy port logs a message and returns empty hooks, because a throwing plugin is logged as a failure and skipped by the loader (`packages/flynncode/src/plugin/index.ts:226-243`).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1324,7 +1324,7 @@ git commit -m "feat(mobile-gateway): add standalone bin"
 ### Task 9: Wire into the repo and document setup
 
 **Files:**
-- Modify: none in `packages/opencode` (no code change needed)
+- Modify: none in `packages/flynncode` (no code change needed)
 - Create: `packages/mobile-gateway/README.md`
 
 **Interfaces:**
@@ -1333,7 +1333,7 @@ git commit -m "feat(mobile-gateway): add standalone bin"
 
 - [ ] **Step 1: Confirm the plugin loads through the real loader**
 
-From `packages/opencode`, run the loader against the package directory to confirm entrypoint resolution, using an inline script:
+From `packages/flynncode`, run the loader against the package directory to confirm entrypoint resolution, using an inline script:
 
 ```bash
 bun -e 'import { createPluginEntry } from "./src/plugin/shared"; const entry = await createPluginEntry("../../packages/mobile-gateway", "../../packages/mobile-gateway", "server"); console.log(JSON.stringify(entry, null, 2))'

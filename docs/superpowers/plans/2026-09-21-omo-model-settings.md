@@ -21,7 +21,7 @@
 - A project OpenCode `disabled_providers` write is the global OpenCode bans plus the project extras. Never write only `["xai"]`.
 - JSONC edits use `jsonc-parser` `modify`. Unknown keys and comments stay. `disabled_providers` is replaced, not deep-merged.
 - Visible UI copy uses `language.t`. English is added in `en.ts` and spread through a fallback module. Do not invent translations.
-- Tests run from `packages/app` or `packages/opencode`, never the repo root.
+- Tests run from `packages/app` or `packages/flynncode`, never the repo root.
 - In Effect generators, bind services to named variables before calling methods.
 - Branch names are at most three hyphenated words. Commits are `type(scope): summary`.
 - Config is load-once. Copy must say quit and restart, and that a picker selection still wins until the next session.
@@ -34,12 +34,12 @@
 - Create: `packages/app/src/components/settings-v2/omo-catalog.ts`
 - Create: `packages/app/src/components/settings-v2/omo-config-payload.ts`
 - Test: `packages/app/src/components/settings-v2/omo-config-payload.test.ts`
-- Create: `packages/opencode/src/config/omo-files.ts`
-- Test: `packages/opencode/test/config/omo-files.test.ts`
-- Modify: `packages/opencode/src/server/routes/instance/httpapi/groups/global.ts`
-- Modify: `packages/opencode/src/server/routes/instance/httpapi/groups/config.ts`
-- Modify: `packages/opencode/src/server/routes/instance/httpapi/handlers/global.ts`
-- Modify: `packages/opencode/src/server/routes/instance/httpapi/handlers/config.ts`
+- Create: `packages/flynncode/src/config/omo-files.ts`
+- Test: `packages/flynncode/test/config/omo-files.test.ts`
+- Modify: `packages/flynncode/src/server/routes/instance/httpapi/groups/global.ts`
+- Modify: `packages/flynncode/src/server/routes/instance/httpapi/groups/config.ts`
+- Modify: `packages/flynncode/src/server/routes/instance/httpapi/handlers/global.ts`
+- Modify: `packages/flynncode/src/server/routes/instance/httpapi/handlers/config.ts`
 - Create: `packages/app/src/components/settings-v2/omo-settings.tsx`
 - Modify: `packages/app/src/components/settings-v2/dialog-settings-v2.tsx`
 - Modify: `packages/app/src/i18n/en.ts`
@@ -332,8 +332,8 @@ git commit -m "test(app): define Oh My OpenCode pin and ban payload"
 ### Task 4: Plugin file reader and writer
 
 **Files:**
-- Create: `packages/opencode/src/config/omo-files.ts`
-- Test: `packages/opencode/test/config/omo-files.test.ts`
+- Create: `packages/flynncode/src/config/omo-files.ts`
+- Test: `packages/flynncode/test/config/omo-files.test.ts`
 
 **Interfaces:**
 - Consumes: payload shapes from Task 3, called by the handler in Task 5
@@ -407,7 +407,7 @@ describe("readPlugin", () => {
 
 - [ ] **Step 2: Run it and confirm failure**
 
-Run from `packages/opencode`: `bun test test/config/omo-files.test.ts`
+Run from `packages/flynncode`: `bun test test/config/omo-files.test.ts`
 Expected: FAIL, module not found.
 
 - [ ] **Step 3: Implement `omo-files.ts`**
@@ -424,13 +424,13 @@ Use `jsonc-parser` `modify` / `applyEdits` for `.jsonc` text, including text tha
 
 - [ ] **Step 4: Re-run the test**
 
-Run from `packages/opencode`: `bun test test/config/omo-files.test.ts`
+Run from `packages/flynncode`: `bun test test/config/omo-files.test.ts`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/config/omo-files.ts packages/opencode/test/config/omo-files.test.ts
+git add packages/flynncode/src/config/omo-files.ts packages/flynncode/test/config/omo-files.test.ts
 git commit -m "feat(opencode): patch Oh My OpenCode config files"
 ```
 
@@ -439,10 +439,10 @@ git commit -m "feat(opencode): patch Oh My OpenCode config files"
 ### Task 5: HTTP endpoints
 
 **Files:**
-- Modify: `packages/opencode/src/server/routes/instance/httpapi/groups/global.ts`
-- Modify: `packages/opencode/src/server/routes/instance/httpapi/groups/config.ts`
-- Modify: `packages/opencode/src/server/routes/instance/httpapi/handlers/global.ts`
-- Modify: `packages/opencode/src/server/routes/instance/httpapi/handlers/config.ts`
+- Modify: `packages/flynncode/src/server/routes/instance/httpapi/groups/global.ts`
+- Modify: `packages/flynncode/src/server/routes/instance/httpapi/groups/config.ts`
+- Modify: `packages/flynncode/src/server/routes/instance/httpapi/handlers/global.ts`
+- Modify: `packages/flynncode/src/server/routes/instance/httpapi/handlers/config.ts`
 - Generate: `packages/client` via `bun run generate`
 
 **Interfaces:**
@@ -501,7 +501,7 @@ Bind `FileSystem.FileSystem` and `Path.Path` once in the handler layer. Do not c
 
 - [ ] **Step 3: Add a handler test**
 
-Extend `packages/opencode/test/config/omo-files.test.ts` only if the write logic stays in `omo-files.ts`. Add one Effect test beside the existing config tests if the handler grows a branch the pure module cannot see. The required assertion is: a project save with global bans `["ollama-local"]` and extra `xai` writes both files, the OpenCode file contains both ids, and `<directory>/config.json` does not exist.
+Extend `packages/flynncode/test/config/omo-files.test.ts` only if the write logic stays in `omo-files.ts`. Add one Effect test beside the existing config tests if the handler grows a branch the pure module cannot see. The required assertion is: a project save with global bans `["ollama-local"]` and extra `xai` writes both files, the OpenCode file contains both ids, and `<directory>/config.json` does not exist.
 
 - [ ] **Step 4: Generate the client**
 
@@ -510,13 +510,13 @@ Expected: generated client gains the new operations. Do not hand-edit generated 
 
 - [ ] **Step 5: Typecheck the server package**
 
-Run from `packages/opencode`: `bun typecheck`
+Run from `packages/flynncode`: `bun typecheck`
 Expected: PASS, or only failures that already exist on `dev` and do not mention these files.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/opencode/src/server packages/opencode/src/config/omo-files.ts packages/opencode/test/config/omo-files.test.ts packages/client
+git add packages/flynncode/src/server packages/flynncode/src/config/omo-files.ts packages/flynncode/test/config/omo-files.test.ts packages/client
 git commit -m "feat(opencode): expose Oh My OpenCode config endpoints"
 ```
 

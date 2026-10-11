@@ -6,7 +6,7 @@
 
 **Architecture:** File-backed project knowledge under `.opencode/knowledge/` plus a new native primary `knowledge` agent with docs-write-only permissions; Home and New Session views gain a session-kind switch that selects the agent and folder scope without forking routes or lists; all execution stays local via existing SessionRunner and Location placement.
 
-**Tech Stack:** Bun + TypeScript monorepo, SolidJS app (`packages/app`), Effect services (`packages/opencode/src`), Drizzle/SQLite via `@opencode-ai/core`, typed i18n keys in `packages/app/src/i18n/en.ts`.
+**Tech Stack:** Bun + TypeScript monorepo, SolidJS app (`packages/app`), Effect services (`packages/flynncode/src`), Drizzle/SQLite via `@opencode-ai/core`, typed i18n keys in `packages/app/src/i18n/en.ts`.
 
 ## Global Constraints
 
@@ -18,8 +18,8 @@
 - Keep runtime dependencies directed from Schema to Core and Protocol, then Core and Protocol to Server; Client runtime depends on Schema and Protocol but never Core or Server.
 - Do not edit `packages/client/src/generated` or `src/generated-effect` directly; after Protocol or Server HttpApi changes run `bun run generate` from `packages/client`.
 - After changing public Protocol or Server HttpApi, run `bun run generate` from `packages/client`.
-- Run `bun typecheck` from package directories (e.g. `packages/opencode`, `packages/app`), never `tsc` directly.
-- Run tests from package dirs like `packages/opencode`, never from repo root.
+- Run `bun typecheck` from package directories (e.g. `packages/flynncode`, `packages/app`), never `tsc` directly.
+- Run tests from package dirs like `packages/flynncode`, never from repo root.
 - Branch name max three words hyphen-separated, no slashes or type prefixes; default branch is `dev`.
 - Commits and PR titles use conventional style: `type(scope): summary` with types `feat`, `fix`, `docs`, `chore`, `refactor`, `test`.
 - Follow SolidJS rule: prefer `createStore` over multiple `createSignal` calls in app code.
@@ -33,20 +33,20 @@
 
 **Backend — knowledge store (new):**
 
-- Create: `packages/opencode/src/knowledge/knowledge.ts` — Effect service `Knowledge` with file-backed CRUD for `<worktree>/.opencode/knowledge/<slug>.md`, slug validation, frontmatter title parsing, list/get/save/remove scoped to session directory.
-- Create: `packages/opencode/src/knowledge/knowledge.test.ts` — service tests against temp dirs using real filesystem, no mocks.
-- Modify: `packages/opencode/src/project/bootstrap.ts` — register knowledge service init if the bootstrap file lists per-service inits (verify exact export names before editing).
+- Create: `packages/flynncode/src/knowledge/knowledge.ts` — Effect service `Knowledge` with file-backed CRUD for `<worktree>/.opencode/knowledge/<slug>.md`, slug validation, frontmatter title parsing, list/get/save/remove scoped to session directory.
+- Create: `packages/flynncode/src/knowledge/knowledge.test.ts` — service tests against temp dirs using real filesystem, no mocks.
+- Modify: `packages/flynncode/src/project/bootstrap.ts` — register knowledge service init if the bootstrap file lists per-service inits (verify exact export names before editing).
 
 **Backend — knowledge agent (extend existing):**
 
-- Modify: `packages/opencode/src/agent/agent.ts:140-265` — add native primary `knowledge` agent entry alongside `build`/`plan` with docs-write-only permissions and description for non-coding knowledge work.
-- Create: `packages/opencode/src/agent/prompt/knowledge.txt` — system prompt for the knowledge agent (folder-scoped research, summarize, draft docs, no code edits, cite sources).
-- Modify: `packages/opencode/src/agent/agent.ts:11-16` — add static import for the new prompt text file following existing `PROMPT_EXPLORE` pattern.
+- Modify: `packages/flynncode/src/agent/agent.ts:140-265` — add native primary `knowledge` agent entry alongside `build`/`plan` with docs-write-only permissions and description for non-coding knowledge work.
+- Create: `packages/flynncode/src/agent/prompt/knowledge.txt` — system prompt for the knowledge agent (folder-scoped research, summarize, draft docs, no code edits, cite sources).
+- Modify: `packages/flynncode/src/agent/agent.ts:11-16` — add static import for the new prompt text file following existing `PROMPT_EXPLORE` pattern.
 
 **Backend — session kind wiring (extend existing):**
 
-- Modify: `packages/opencode/src/session/session.ts` — only if a durable `kind` column is needed; preferred approach is no schema change: knowledge sessions are sessions whose `agent` is `knowledge`. Inspect this file first; if agent name already persists on the session row, do not add a column.
-- Modify: `packages/opencode/src/config/agent.ts` — no change expected; verify `load`/`loadMode` already surfaces the native `knowledge` agent without config entries.
+- Modify: `packages/flynncode/src/session/session.ts` — only if a durable `kind` column is needed; preferred approach is no schema change: knowledge sessions are sessions whose `agent` is `knowledge`. Inspect this file first; if agent name already persists on the session row, do not add a column.
+- Modify: `packages/flynncode/src/config/agent.ts` — no change expected; verify `load`/`loadMode` already surfaces the native `knowledge` agent without config entries.
 
 **Frontend — Home coherent list:**
 
@@ -71,7 +71,7 @@
 
 ## Interfaces
 
-**Knowledge service (`packages/opencode/src/knowledge/knowledge.ts`):**
+**Knowledge service (`packages/flynncode/src/knowledge/knowledge.ts`):**
 
 ```ts
 import { Knowledge } from "@/knowledge/knowledge"
@@ -94,7 +94,7 @@ Slug rule: `^[a-z0-9][a-z0-9-]{0,63}$`. Invalid slug fails with `Knowledge.Inval
 Consumes: `FileSystem.FileSystem` for file I/O, `Path.Path` for joins, `Effect` for composition.
 Produces: `Knowledge.Service` with `list`, `get`, `save`, `remove` used by Task 4 system-prompt injection and future knowledge UI.
 
-**Knowledge agent (`packages/opencode/src/agent/agent.ts` addition):**
+**Knowledge agent (`packages/flynncode/src/agent/agent.ts` addition):**
 
 ```ts
 knowledge: {
@@ -232,9 +232,9 @@ git commit -m "feat(app): add knowledge-home i18n keys"
 ### Task 2: Create knowledge agent prompt plus registration
 
 **Files:**
-- Create: `packages/opencode/src/agent/prompt/knowledge.txt`
-- Modify: `packages/opencode/src/agent/agent.ts`
-- Test: `packages/opencode/test/agent/knowledge-agent.test.ts` (create; check `packages/opencode/test` layout first and mirror the closest agent test path if different)
+- Create: `packages/flynncode/src/agent/prompt/knowledge.txt`
+- Modify: `packages/flynncode/src/agent/agent.ts`
+- Test: `packages/flynncode/test/agent/knowledge-agent.test.ts` (create; check `packages/flynncode/test` layout first and mirror the closest agent test path if different)
 
 **Interfaces:**
 - Consumes: `PROMPT_EXPLORE` static-text import pattern, `defaults` / `readonlyExternalDirectory` / `user` locals, `Permission.merge`, `Permission.fromConfig`.
@@ -242,7 +242,7 @@ git commit -m "feat(app): add knowledge-home i18n keys"
 
 - [ ] **Step 1: Write the failing test**
 
-Create `packages/opencode/test/agent/knowledge-agent.test.ts`:
+Create `packages/flynncode/test/agent/knowledge-agent.test.ts`:
 
 ```ts
 import { describe, expect, test } from "bun:test"
@@ -269,12 +269,12 @@ If `makeTestRuntime` does not exist at that path, read the nearest existing agen
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/agent/knowledge-agent.test.ts` with `workdir` `packages/opencode`
+Run: `bun test test/agent/knowledge-agent.test.ts` with `workdir` `packages/flynncode`
 Expected: FAIL with knowledge agent undefined.
 
 - [ ] **Step 3: Create the prompt file**
 
-Create `packages/opencode/src/agent/prompt/knowledge.txt` with this exact content:
+Create `packages/flynncode/src/agent/prompt/knowledge.txt` with this exact content:
 
 ```txt
 You are a knowledge-work agent for non-coding tasks. Research the folders in scope, summarize documents, and draft markdown notes.
@@ -289,7 +289,7 @@ Rules:
 
 - [ ] **Step 4: Register the agent**
 
-In `packages/opencode/src/agent/agent.ts`, add the static import next to `PROMPT_EXPLORE`:
+In `packages/flynncode/src/agent/agent.ts`, add the static import next to `PROMPT_EXPLORE`:
 
 ```ts
 import PROMPT_KNOWLEDGE from "./prompt/knowledge.txt"
@@ -343,18 +343,18 @@ Note: the file uses dot notation and no destructuring per repo style; use `Permi
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `bun test test/agent/knowledge-agent.test.ts` with `workdir` `packages/opencode`
+Run: `bun test test/agent/knowledge-agent.test.ts` with `workdir` `packages/flynncode`
 Expected: PASS.
 
 - [ ] **Step 6: Typecheck**
 
-Run: `bun typecheck` with `workdir` `packages/opencode`
+Run: `bun typecheck` with `workdir` `packages/flynncode`
 Expected: PASS.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add packages/opencode/src/agent/prompt/knowledge.txt packages/opencode/src/agent/agent.ts packages/opencode/test/agent/knowledge-agent.test.ts
+git add packages/flynncode/src/agent/prompt/knowledge.txt packages/flynncode/src/agent/agent.ts packages/flynncode/test/agent/knowledge-agent.test.ts
 git commit -m "feat(opencode): add knowledge primary agent"
 ```
 
@@ -363,9 +363,9 @@ git commit -m "feat(opencode): add knowledge primary agent"
 ### Task 3: File-backed project knowledge service
 
 **Files:**
-- Create: `packages/opencode/src/knowledge/knowledge.ts`
-- Test: `packages/opencode/test/knowledge/knowledge.test.ts`
-- Modify: `packages/opencode/src/project/bootstrap.ts` (only if it enumerates service inits; read first and skip if init is automatic)
+- Create: `packages/flynncode/src/knowledge/knowledge.ts`
+- Test: `packages/flynncode/test/knowledge/knowledge.test.ts`
+- Modify: `packages/flynncode/src/project/bootstrap.ts` (only if it enumerates service inits; read first and skip if init is automatic)
 
 **Interfaces:**
 - Consumes: `FileSystem.FileSystem`, `Path.Path`, `Effect`, `Schema`.
@@ -373,7 +373,7 @@ git commit -m "feat(opencode): add knowledge primary agent"
 
 - [ ] **Step 1: Write the failing test**
 
-Create `packages/opencode/test/knowledge/knowledge.test.ts`:
+Create `packages/flynncode/test/knowledge/knowledge.test.ts`:
 
 ```ts
 import { describe, expect, test } from "bun:test"
@@ -425,27 +425,27 @@ If the repo test helper has a different name, use the exact name from the neares
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/knowledge/knowledge.test.ts` with `workdir` `packages/opencode`
+Run: `bun test test/knowledge/knowledge.test.ts` with `workdir` `packages/flynncode`
 Expected: FAIL with module `@/knowledge/knowledge` not found.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Create `packages/opencode/src/knowledge/knowledge.ts` following the `export * as Knowledge from "."` self-reexport pattern used by `src/project/project.ts` and `src/foo/foo.ts` module-shape guidance. Implement `Service` as a `Context.Service`, a `layer` with `Layer.effect`, `use` via `serviceUse(Service)`, and `node` via `LayerNode.make` with deps on filesystem and path services. Implement slug validation with `Schema.TaggedErrorClass`, directory creation before save, frontmatter `title:` line parsing on get/list, mtime descending sort on list, and no-op remove on missing files. Keep helpers non-exported at file bottom. Bind yielded services to named variables (`const fs = yield* FileSystem.FileSystem`) before use. Do not return `Effect` from synchronous helpers like slug validation or frontmatter parsing.
+Create `packages/flynncode/src/knowledge/knowledge.ts` following the `export * as Knowledge from "."` self-reexport pattern used by `src/project/project.ts` and `src/foo/foo.ts` module-shape guidance. Implement `Service` as a `Context.Service`, a `layer` with `Layer.effect`, `use` via `serviceUse(Service)`, and `node` via `LayerNode.make` with deps on filesystem and path services. Implement slug validation with `Schema.TaggedErrorClass`, directory creation before save, frontmatter `title:` line parsing on get/list, mtime descending sort on list, and no-op remove on missing files. Keep helpers non-exported at file bottom. Bind yielded services to named variables (`const fs = yield* FileSystem.FileSystem`) before use. Do not return `Effect` from synchronous helpers like slug validation or frontmatter parsing.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun test test/knowledge/knowledge.test.ts` with `workdir` `packages/opencode`
+Run: `bun test test/knowledge/knowledge.test.ts` with `workdir` `packages/flynncode`
 Expected: PASS.
 
 - [ ] **Step 5: Typecheck**
 
-Run: `bun typecheck` with `workdir` `packages/opencode`
+Run: `bun typecheck` with `workdir` `packages/flynncode`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/opencode/src/knowledge/knowledge.ts packages/opencode/test/knowledge/knowledge.test.ts
+git add packages/flynncode/src/knowledge/knowledge.ts packages/flynncode/test/knowledge/knowledge.test.ts
 git commit -m "feat(opencode): add file-backed project knowledge service"
 ```
 
@@ -557,7 +557,7 @@ In `new-session-view.tsx`, above `PromptInputV2Composer`, render a two-option se
 
 - [ ] **Step 3: Verify UI locally**
 
-Run backend from `packages/opencode` with `bun run ./src/index.ts serve --port 4096` and app from `packages/app` with `bun dev -- --port 4444`, then open `http://localhost:4444`. Confirm: new-session page shows Code/Knowledge switch, choosing Knowledge sets agent to knowledge in the model picker, extra folders still attach, and Home filter from Task 4 reflects the created session after first prompt. Do not restart shared dev servers owned by others; use local ports only.
+Run backend from `packages/flynncode` with `bun run ./src/index.ts serve --port 4096` and app from `packages/app` with `bun dev -- --port 4444`, then open `http://localhost:4444`. Confirm: new-session page shows Code/Knowledge switch, choosing Knowledge sets agent to knowledge in the model picker, extra folders still attach, and Home filter from Task 4 reflects the created session after first prompt. Do not restart shared dev servers owned by others; use local ports only.
 
 - [ ] **Step 4: Typecheck**
 
@@ -576,9 +576,9 @@ git commit -m "feat(app): add session-new knowledge kind switch"
 ### Task 6: Knowledge grounding in system prompt plus empty state
 
 **Files:**
-- Modify: `packages/opencode/src/session/system.ts` (read first; if system prompt assembly lives elsewhere, modify that file instead and note the path in the commit)
+- Modify: `packages/flynncode/src/session/system.ts` (read first; if system prompt assembly lives elsewhere, modify that file instead and note the path in the commit)
 - Modify: `packages/app/src/pages/new-session/new-session-view.tsx` (empty-state hint area from Task 5)
-- Test: `packages/opencode/test/session/knowledge-system.test.ts`
+- Test: `packages/flynncode/test/session/knowledge-system.test.ts`
 
 **Interfaces:**
 - Consumes: Task 3 `Knowledge.Service.list`, Task 2 `knowledge` agent name.
@@ -586,7 +586,7 @@ git commit -m "feat(app): add session-new knowledge kind switch"
 
 - [ ] **Step 1: Write the failing test**
 
-Create `packages/opencode/test/session/knowledge-system.test.ts` asserting a pure helper `buildKnowledgePrologue(entries)` returns an empty string for zero entries and a bullet list of `title (slug)` lines otherwise. Keep the helper synchronous and pure so the test needs no filesystem.
+Create `packages/flynncode/test/session/knowledge-system.test.ts` asserting a pure helper `buildKnowledgePrologue(entries)` returns an empty string for zero entries and a bullet list of `title (slug)` lines otherwise. Keep the helper synchronous and pure so the test needs no filesystem.
 
 ```ts
 import { describe, expect, test } from "bun:test"
@@ -607,7 +607,7 @@ describe("buildKnowledgePrologue", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/session/knowledge-system.test.ts` with `workdir` `packages/opencode`
+Run: `bun test test/session/knowledge-system.test.ts` with `workdir` `packages/flynncode`
 Expected: FAIL with `buildKnowledgePrologue` not exported.
 
 - [ ] **Step 3: Implement grounding**
@@ -616,10 +616,10 @@ Add exported synchronous `buildKnowledgePrologue(entries: Array<{ slug: string; 
 
 - [ ] **Step 4: Run test and typecheck**
 
-Run: `bun test test/session/knowledge-system.test.ts` with `workdir` `packages/opencode`
+Run: `bun test test/session/knowledge-system.test.ts` with `workdir` `packages/flynncode`
 Expected: PASS.
 
-Run: `bun typecheck` with `workdir` `packages/opencode`
+Run: `bun typecheck` with `workdir` `packages/flynncode`
 Expected: PASS.
 
 Run: `bun typecheck` with `workdir` `packages/app`
@@ -628,7 +628,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/session/system.ts packages/opencode/test/session/knowledge-system.test.ts packages/app/src/pages/new-session/new-session-view.tsx
+git add packages/flynncode/src/session/system.ts packages/flynncode/test/session/knowledge-system.test.ts packages/app/src/pages/new-session/new-session-view.tsx
 git commit -m "feat(knowledge): ground knowledge sessions in project notes"
 ```
 

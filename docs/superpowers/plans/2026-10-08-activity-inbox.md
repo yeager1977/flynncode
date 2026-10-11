@@ -53,7 +53,7 @@ Import rules for all edits: no `any`, no star imports, no aliased imports; routi
 
 - [ ] **Step 1: Confirm the three thin lists and their seams**
 
-Run from repo root: `grep -rn "LIMIT" packages/app/src/pages/dispatch/dispatch-store.ts`, `grep -n "setInterval" packages/opencode/src/plugin/routines/index.ts`, `grep -n "MAX_NOTIFICATIONS\|unseenCount" packages/app/src/context/notification.tsx`. Record outputs in your working notes.
+Run from repo root: `grep -rn "LIMIT" packages/app/src/pages/dispatch/dispatch-store.ts`, `grep -n "setInterval" packages/flynncode/src/plugin/routines/index.ts`, `grep -n "MAX_NOTIFICATIONS\|unseenCount" packages/app/src/context/notification.tsx`. Record outputs in your working notes.
 Expected: `LIMIT = 40`, `setInterval(...30_000)`, `MAX_NOTIFICATIONS = 500` with session/project unseen indexes.
 
 - [ ] **Step 2: Run the existing dispatch suites as baseline**
@@ -175,7 +175,7 @@ Commit: `test(app): cover inbox filtering and unread` (only if tests were added/
 ## Explicit non-goals
 
 - No new server endpoints, no schema changes, no Protocol/HttpApi edits (and therefore no `bun run generate`).
-- No changes to `packages/opencode/src/plugin/routines/` scheduling, RRULE expansion, or run history — WS7 (`2026-10-08-routine-cadence.md`) owns those; this plan only reads `config.routines` + inline `recentRuns`.
+- No changes to `packages/flynncode/src/plugin/routines/` scheduling, RRULE expansion, or run history — WS7 (`2026-10-08-routine-cadence.md`) owns those; this plan only reads `config.routines` + inline `recentRuns`.
 - No changes to notification persistence, TTL, OS-notify gating, or settings toggles.
 - No TUI inbox (TUI keeps its existing attention/toast path); no phone/deepthought needs-input delivery (WS12 phone item stays separate).
 - No removal of the routines settings tab — inbox routine rows link to it.

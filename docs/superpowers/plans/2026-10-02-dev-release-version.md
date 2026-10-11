@@ -23,5 +23,5 @@ generator. Its desktop and backend consumers continue using `Script.version`.
 - [ ] Execute the actual generator for default, dev, beta, and an explicit
   `OPENCODE_VERSION=1.18.99`; assert the version strings and override priority.
 - [ ] Run `bun typecheck` from `packages/script` if available; otherwise use
-  `bun typecheck` from the consuming `packages/opencode` package.
+  `bun typecheck` from the consuming `packages/flynncode` package.
 - [ ] Review the diff and report results and rebuild instructions.

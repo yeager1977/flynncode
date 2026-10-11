@@ -354,7 +354,7 @@ The resolution uses `sdk().directory`. On the new-session screen that directory 
 
 - [ ] **Step 1: Verify manually per dev-server instructions in packages/app/AGENTS.md**
 
-Backend: `bun run ./src/index.ts serve --port 4096` from `packages/opencode`; App: `bun dev -- --port 4444` from `packages/app`; open `http://localhost:4444`.
+Backend: `bun run ./src/index.ts serve --port 4096` from `packages/flynncode`; App: `bun dev -- --port 4444` from `packages/app`; open `http://localhost:4444`.
 Check: session view shows project left of model; popover shows path + sessions; new-session screen shows the selected project; no project → control absent.
 DO NOT restart any server process while it runs (per AGENTS.md debugging rule).
 

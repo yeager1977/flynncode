@@ -6,7 +6,7 @@
 
 **Architecture:** Server owns a disabled-by-default `ComputerUse` config plus a client-executed `computer_use` local tool that fails closed unless enabled, app-allowlisted, and per-action approved through the existing `Permission.Service.ask` path. The desktop actuator is pane-scoped only: screenshots via the existing `app:capturePage` IPC and input via `WebContentsView.sendInputEvent` on the browser-pane view. No OS-wide pointer takeover, no background loop, no new native input dependency. Hosted `computer_use_call` from `packages/llm` stays `providerExecuted: true` and is never mapped to the local actuator. The WS4 reviewer always defers `computer_use`; approval modes never short-circuit it.
 
-**Tech Stack:** Bun + TypeScript, Effect (`Effect.gen`, `Effect.fn`, `Schema.Struct`, `Schema.TaggedErrorClass`, `InstanceState` where noted), `Tool.define` local tool pattern (`packages/opencode/src/tool/read.ts`), Electron 42 `WebContentsView.sendInputEvent` + existing `app:capturePage` IPC, SolidJS app UI with `language.t(...)` keys in `packages/app/src/i18n/en.ts`, `bun:test`, `bun typecheck` per package.
+**Tech Stack:** Bun + TypeScript, Effect (`Effect.gen`, `Effect.fn`, `Schema.Struct`, `Schema.TaggedErrorClass`, `InstanceState` where noted), `Tool.define` local tool pattern (`packages/flynncode/src/tool/read.ts`), Electron 42 `WebContentsView.sendInputEvent` + existing `app:capturePage` IPC, SolidJS app UI with `language.t(...)` keys in `packages/app/src/i18n/en.ts`, `bun:test`, `bun typecheck` per package.
 
 ## Global Constraints
 
@@ -19,7 +19,7 @@
 - Rely on type inference; avoid explicit annotations unless needed for exports or clarity.
 - Prefer `const` over `let`; prefer early returns over `else`.
 - Renderer code calls `window.api` only; main-process IPC handlers register in `packages/desktop/src/main/ipc.ts`.
-- Run tests from package directories (for example `packages/opencode`, `packages/desktop`, `packages/app`), never from the repo root.
+- Run tests from package directories (for example `packages/flynncode`, `packages/desktop`, `packages/app`), never from the repo root.
 - Run `bun typecheck` from each touched package directory before committing.
 - Do not restart the app or server processes.
 - Scope is explicit user-invoked GUI tasks only. No autonomous background operation, no screen-history recording, no terminal driving, no ChatGPT-app self-driving.
@@ -30,21 +30,21 @@
 
 **Create:**
 
-- `packages/opencode/src/config/computer-use.ts` — `ComputerUse` config Schema + `resolveComputerUse` + `isAppAllowed` pure helpers.
-- `packages/opencode/test/config/computer-use.test.ts` — unit tests for defaults and allowlist matching.
-- `packages/opencode/src/tool/computer-use.ts` — `ComputerUseTool` via `Tool.define` (actions: `screenshot`, `click`, `type`, `keypress`, `scroll`).
-- `packages/opencode/src/tool/computer-use.txt` — tool description text (one line, consent-gated fallback wording).
-- `packages/opencode/test/tool/computer-use.test.ts` — parameter schema + fail-closed tests.
+- `packages/flynncode/src/config/computer-use.ts` — `ComputerUse` config Schema + `resolveComputerUse` + `isAppAllowed` pure helpers.
+- `packages/flynncode/test/config/computer-use.test.ts` — unit tests for defaults and allowlist matching.
+- `packages/flynncode/src/tool/computer-use.ts` — `ComputerUseTool` via `Tool.define` (actions: `screenshot`, `click`, `type`, `keypress`, `scroll`).
+- `packages/flynncode/src/tool/computer-use.txt` — tool description text (one line, consent-gated fallback wording).
+- `packages/flynncode/test/tool/computer-use.test.ts` — parameter schema + fail-closed tests.
 - `packages/desktop/src/main/computer-use.ts` — pane-scoped actuator (`screenshotPane`, `clickPane`, `typePane`, `keypressPane`, `scrollPane` via `sendInputEvent`).
 - `packages/desktop/src/main/computer-use.test.ts` — pure unit tests for coordinate clamping + allowlist check (no Electron instance).
 - `packages/app/src/pages/session/computer-use-panel.test.ts` — source-assertion suite for the consent panel wiring.
 
 **Modify:**
 
-- `packages/opencode/src/config/config.ts` — add `computer_use` field to root config Schema plus self-export line for the new module.
-- `packages/opencode/src/tool/registry.ts` — register `ComputerUseTool` behind the enabled flag (tool hidden when disabled).
-- `packages/opencode/src/permission/reviewer.ts` — document `computer_use` as always defer (no code change if generic defer already covers it; add explicit guard).
-- `packages/opencode/src/permission/index.ts` — add `computer_use` never-auto guard in `ask` (ignore `approval` mode for this permission).
+- `packages/flynncode/src/config/config.ts` — add `computer_use` field to root config Schema plus self-export line for the new module.
+- `packages/flynncode/src/tool/registry.ts` — register `ComputerUseTool` behind the enabled flag (tool hidden when disabled).
+- `packages/flynncode/src/permission/reviewer.ts` — document `computer_use` as always defer (no code change if generic defer already covers it; add explicit guard).
+- `packages/flynncode/src/permission/index.ts` — add `computer_use` never-auto guard in `ask` (ignore `approval` mode for this permission).
 - `packages/desktop/src/main/ipc.ts` — register `computer-use:*` handlers delegating to the actuator.
 - `packages/desktop/src/preload/index.ts` — expose `computerUse` namespace on `window.api`.
 - `packages/desktop/src/preload/types.ts` — add `ComputerUseAPI` type.
@@ -67,9 +67,9 @@
 
 **Files:**
 
-- Create: `packages/opencode/src/config/computer-use.ts`
-- Modify: `packages/opencode/src/config/config.ts`
-- Test: `packages/opencode/test/config/computer-use.test.ts`
+- Create: `packages/flynncode/src/config/computer-use.ts`
+- Modify: `packages/flynncode/src/config/config.ts`
+- Test: `packages/flynncode/test/config/computer-use.test.ts`
 
 **Interfaces:**
 
@@ -78,7 +78,7 @@
 
 - [ ] **Step 1: Write the failing test**
 
-Create `packages/opencode/test/config/computer-use.test.ts` with:
+Create `packages/flynncode/test/config/computer-use.test.ts` with:
 
 ```ts
 import { describe, expect, test } from "bun:test"
@@ -113,12 +113,12 @@ describe("isAppAllowed", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run from `packages/opencode`: `bun test test/config/computer-use.test.ts`
+Run from `packages/flynncode`: `bun test test/config/computer-use.test.ts`
 Expected: FAIL with "Cannot find module '../../src/config/computer-use'".
 
 - [ ] **Step 3: Write minimal implementation**
 
-Create `packages/opencode/src/config/computer-use.ts` with:
+Create `packages/flynncode/src/config/computer-use.ts` with:
 
 ```ts
 import { Schema } from "effect"
@@ -145,22 +145,22 @@ export function isAppAllowed(appID: string, allowedApps: string[]): boolean {
 export * as ComputerUse from "./computer-use"
 ```
 
-In `packages/opencode/src/config/config.ts`: add `export * as ConfigComputerUse from "./computer-use"` alongside the existing self-export lines at the top of the file, and add `computer_use: Schema.optional(ConfigComputerUse.ComputerUsePolicy)` to the root config Struct where sibling optional blocks (for example `preview`) are declared.
+In `packages/flynncode/src/config/config.ts`: add `export * as ConfigComputerUse from "./computer-use"` alongside the existing self-export lines at the top of the file, and add `computer_use: Schema.optional(ConfigComputerUse.ComputerUsePolicy)` to the root config Struct where sibling optional blocks (for example `preview`) are declared.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run from `packages/opencode`: `bun test test/config/computer-use.test.ts`
+Run from `packages/flynncode`: `bun test test/config/computer-use.test.ts`
 Expected: PASS (4 tests).
 
 - [ ] **Step 5: Run typecheck**
 
-Run from `packages/opencode`: `bun typecheck`
+Run from `packages/flynncode`: `bun typecheck`
 Expected: no new errors.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/opencode/src/config/computer-use.ts packages/opencode/src/config/config.ts packages/opencode/test/config/computer-use.test.ts
+git add packages/flynncode/src/config/computer-use.ts packages/flynncode/src/config/config.ts packages/flynncode/test/config/computer-use.test.ts
 git commit -m "feat(opencode): add opt-in computer-use config with app allowlist"
 ```
 
@@ -170,10 +170,10 @@ git commit -m "feat(opencode): add opt-in computer-use config with app allowlist
 
 **Files:**
 
-- Create: `packages/opencode/src/tool/computer-use.ts`
-- Create: `packages/opencode/src/tool/computer-use.txt`
-- Modify: `packages/opencode/src/tool/registry.ts`
-- Test: `packages/opencode/test/tool/computer-use.test.ts`
+- Create: `packages/flynncode/src/tool/computer-use.ts`
+- Create: `packages/flynncode/src/tool/computer-use.txt`
+- Modify: `packages/flynncode/src/tool/registry.ts`
+- Test: `packages/flynncode/test/tool/computer-use.test.ts`
 
 **Interfaces:**
 
@@ -182,7 +182,7 @@ git commit -m "feat(opencode): add opt-in computer-use config with app allowlist
 
 - [ ] **Step 1: Write the failing test**
 
-Create `packages/opencode/test/tool/computer-use.test.ts` with:
+Create `packages/flynncode/test/tool/computer-use.test.ts` with:
 
 ```ts
 import { describe, expect, test } from "bun:test"
@@ -213,18 +213,18 @@ describe("computer-use fail-closed", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run from `packages/opencode`: `bun test test/tool/computer-use.test.ts`
+Run from `packages/flynncode`: `bun test test/tool/computer-use.test.ts`
 Expected: FAIL with "Cannot find module '../../src/tool/computer-use'".
 
 - [ ] **Step 3: Write minimal implementation**
 
-Create `packages/opencode/src/tool/computer-use.txt` with one line:
+Create `packages/flynncode/src/tool/computer-use.txt` with one line:
 
 ```txt
 Local GUI fallback after the browser pane. Disabled by default; requires per-app allowlist plus per-action approval. Never background operation.
 ```
 
-Create `packages/opencode/src/tool/computer-use.ts` with:
+Create `packages/flynncode/src/tool/computer-use.ts` with:
 
 ```ts
 import { Effect, Schema } from "effect"
@@ -290,22 +290,22 @@ export * as ComputerUseToolModule from "./computer-use"
 
 Notes: the `sessionID` placeholder is replaced with the real session id at registry bind time in the next edit; the tool body never branches on `approval` mode because Task 3 makes `ask` ignore it for this permission. The actuator payload (screenshot bytes / input dispatch) is added in Task 3; this task only proves fail-closed gating.
 
-In `packages/opencode/src/tool/registry.ts`: register `ComputerUseTool` next to sibling tool registrations, guarded so the tool definition list excludes it when `resolveComputerUse(cfg.computer_use).enabled` is false (tool hidden when disabled). Follow the existing registry conditional pattern; do not add a new registry helper.
+In `packages/flynncode/src/tool/registry.ts`: register `ComputerUseTool` next to sibling tool registrations, guarded so the tool definition list excludes it when `resolveComputerUse(cfg.computer_use).enabled` is false (tool hidden when disabled). Follow the existing registry conditional pattern; do not add a new registry helper.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run from `packages/opencode`: `bun test test/tool/computer-use.test.ts test/config/computer-use.test.ts`
+Run from `packages/flynncode`: `bun test test/tool/computer-use.test.ts test/config/computer-use.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Run typecheck**
 
-Run from `packages/opencode`: `bun typecheck`
+Run from `packages/flynncode`: `bun typecheck`
 Expected: no new errors.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/opencode/src/tool/computer-use.ts packages/opencode/src/tool/computer-use.txt packages/opencode/src/tool/registry.ts packages/opencode/test/tool/computer-use.test.ts
+git add packages/flynncode/src/tool/computer-use.ts packages/flynncode/src/tool/computer-use.txt packages/flynncode/src/tool/registry.ts packages/flynncode/test/tool/computer-use.test.ts
 git commit -m "feat(opencode): add fail-closed computer_use tool with allowlist gate"
 ```
 
@@ -315,9 +315,9 @@ git commit -m "feat(opencode): add fail-closed computer_use tool with allowlist 
 
 **Files:**
 
-- Modify: `packages/opencode/src/permission/reviewer.ts`
-- Modify: `packages/opencode/src/permission/index.ts`
-- Test: extend `packages/opencode/test/permission/reviewer.test.ts` via new `packages/opencode/test/permission/computer-use-guard.test.ts` (create)
+- Modify: `packages/flynncode/src/permission/reviewer.ts`
+- Modify: `packages/flynncode/src/permission/index.ts`
+- Test: extend `packages/flynncode/test/permission/reviewer.test.ts` via new `packages/flynncode/test/permission/computer-use-guard.test.ts` (create)
 
 **Interfaces:**
 
@@ -326,7 +326,7 @@ git commit -m "feat(opencode): add fail-closed computer_use tool with allowlist 
 
 - [ ] **Step 1: Write the failing test**
 
-Create `packages/opencode/test/permission/computer-use-guard.test.ts` with:
+Create `packages/flynncode/test/permission/computer-use-guard.test.ts` with:
 
 ```ts
 import { describe, expect, test } from "bun:test"
@@ -346,12 +346,12 @@ describe("computer-use never self-approving", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run from `packages/opencode`: `bun test test/permission/computer-use-guard.test.ts`
+Run from `packages/flynncode`: `bun test test/permission/computer-use-guard.test.ts`
 Expected: FAIL on the reviewer assertion (returns `allow`) or on the source assertion (no `computer_use` branch yet).
 
 - [ ] **Step 3: Write minimal implementation**
 
-In `packages/opencode/src/permission/reviewer.ts`: add an explicit early defer so future allow-list expansion cannot self-approve this tool:
+In `packages/flynncode/src/permission/reviewer.ts`: add an explicit early defer so future allow-list expansion cannot self-approve this tool:
 
 ```ts
 if (input.permission === "computer_use") return "defer"
@@ -359,7 +359,7 @@ if (input.permission === "computer_use") return "defer"
 
 placed before the `AUTO_ALLOW` check.
 
-In `packages/opencode/src/permission/index.ts`: at the top of the `ask` effect after the deny loop and before any `approval === "auto"` or `accept-edits` short-circuit, insert:
+In `packages/flynncode/src/permission/index.ts`: at the top of the `ask` effect after the deny loop and before any `approval === "auto"` or `accept-edits` short-circuit, insert:
 
 ```ts
 if (request.permission === "computer_use") {
@@ -371,18 +371,18 @@ implemented as a guard that skips both short-circuit branches for this permissio
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run from `packages/opencode`: `bun test test/permission/computer-use-guard.test.ts test/permission/reviewer.test.ts test/permission/approval-mode.test.ts test/permission/next.test.ts`
+Run from `packages/flynncode`: `bun test test/permission/computer-use-guard.test.ts test/permission/reviewer.test.ts test/permission/approval-mode.test.ts test/permission/next.test.ts`
 Expected: PASS all suites.
 
 - [ ] **Step 5: Run typecheck**
 
-Run from `packages/opencode`: `bun typecheck`
+Run from `packages/flynncode`: `bun typecheck`
 Expected: exit 0.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/opencode/src/permission/reviewer.ts packages/opencode/src/permission/index.ts packages/opencode/test/permission/computer-use-guard.test.ts
+git add packages/flynncode/src/permission/reviewer.ts packages/flynncode/src/permission/index.ts packages/flynncode/test/permission/computer-use-guard.test.ts
 git commit -m "fix(opencode): never self-approve computer_use actions"
 ```
 
@@ -617,7 +617,7 @@ Expected: no new errors.
 
 - [ ] **Step 7: Manual verify in dev**
 
-Run backend from `packages/opencode`: `bun run ./src/index.ts serve --port 4096`. Run app from `packages/app`: `bun dev -- --port 4444`. Open `http://localhost:4444`, confirm computer use reads OFF by default, enable it, allowlist one app, trigger one `click`, confirm the per-action prompt appears and Deny blocks the input event.
+Run backend from `packages/flynncode`: `bun run ./src/index.ts serve --port 4096`. Run app from `packages/app`: `bun dev -- --port 4444`. Open `http://localhost:4444`, confirm computer use reads OFF by default, enable it, allowlist one app, trigger one `click`, confirm the per-action prompt appears and Deny blocks the input event.
 
 - [ ] **Step 8: Commit**
 
@@ -644,7 +644,7 @@ Above line 551 (`computer_use_call`), add:
 
 - [ ] **Step 2: Run opencode tests**
 
-Run from `packages/opencode`: `bun test test/config/computer-use.test.ts test/tool/computer-use.test.ts test/permission/computer-use-guard.test.ts test/permission/reviewer.test.ts test/permission/next.test.ts`
+Run from `packages/flynncode`: `bun test test/config/computer-use.test.ts test/tool/computer-use.test.ts test/permission/computer-use-guard.test.ts test/permission/reviewer.test.ts test/permission/next.test.ts`
 Expected: PASS, 0 failures.
 
 - [ ] **Step 3: Run desktop tests**
@@ -659,7 +659,7 @@ Expected: PASS. When `browser-pane.test.ts` is absent, run only the computer-use
 
 - [ ] **Step 5: Typecheck all touched packages**
 
-Run `bun typecheck` in `packages/opencode`, then `packages/desktop`, then `packages/app`, then `packages/llm`.
+Run `bun typecheck` in `packages/flynncode`, then `packages/desktop`, then `packages/app`, then `packages/llm`.
 Expected: exit 0 in all four.
 
 - [ ] **Step 6: Commit**

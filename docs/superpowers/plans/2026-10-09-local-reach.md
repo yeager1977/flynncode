@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Branch: `codex-parity-build` (continues Phase 1; `dev` untouched until program end).
-- Tests run from package dirs only (`packages/app`, `packages/desktop`, `packages/opencode`, `packages/core`), never repo root. App unit command pattern: `bun test --isolate --conditions=solid --preload ./happydom.ts <paths>`.
+- Tests run from package dirs only (`packages/app`, `packages/desktop`, `packages/flynncode`, `packages/core`), never repo root. App unit command pattern: `bun test --isolate --conditions=solid --preload ./happydom.ts <paths>`.
 - Typecheck via `bun typecheck` from package dirs, never `tsc` directly.
 - i18n: English source `packages/app/src/i18n/en.ts`; new keys registered in `packages/app/src/i18n/flynncode-fallback.ts`; never hardcode English; never mutate existing English strings.
 - Generated SDK: run `bun run generate` from `packages/client` when HttpApi/schema surface changes; never edit `packages/sdk/js/src/generated*` or `src/v2/gen` by hand.
@@ -142,7 +142,7 @@ git commit -m "feat(app): point-mode browser annotation and auto-open on running
 - Modify: `packages/desktop/src/preload/index.ts` + `packages/desktop/src/preload/types.ts` (typed accessors)
 - Modify: `packages/app/src/app.tsx` (`Window.api` declaration ~L272–285 — optional members)
 - Modify: `packages/app/src/pages/session/review-browser.tsx` (use native host when available + config flag on)
-- Modify: `packages/opencode/src/config/preview.ts` (add `nativeHost?: boolean` per-server or global, tolerant, default `false`)
+- Modify: `packages/flynncode/src/config/preview.ts` (add `nativeHost?: boolean` per-server or global, tolerant, default `false`)
 - Modify: `packages/app/src/components/settings-v2/preview.tsx` (+ payload) — toggle for the flag
 - Test: `preview-host.test.ts` (new, injectable-deps style mirroring `muse-auth.test.ts`)
 
@@ -180,10 +180,10 @@ test("element payload is clamped and sanitized", () => {
 
 - [ ] **Step 5: Typecheck + commit**
 
-`bun typecheck` from `packages/desktop`, `packages/app`, `packages/opencode`; run `bun run generate` from `packages/client` (config schema changed). Commit:
+`bun typecheck` from `packages/desktop`, `packages/app`, `packages/flynncode`; run `bun run generate` from `packages/client` (config schema changed). Commit:
 
 ```bash
-git add packages/desktop/src/main/preview-host.ts packages/desktop/src/main/preview-host.test.ts packages/desktop/src/main/ipc.ts packages/desktop/src/preload packages/app/src/app.tsx packages/app/src/pages/session/review-browser.tsx packages/opencode/src/config/preview.ts packages/app/src/components/settings-v2/preview.tsx packages/app/src/components/settings-v2/preview-payload.ts
+git add packages/desktop/src/main/preview-host.ts packages/desktop/src/main/preview-host.test.ts packages/desktop/src/main/ipc.ts packages/desktop/src/preload packages/app/src/app.tsx packages/app/src/pages/session/review-browser.tsx packages/flynncode/src/config/preview.ts packages/app/src/components/settings-v2/preview.tsx packages/app/src/components/settings-v2/preview-payload.ts
 git commit -m "feat(desktop): native preview host with element inspection behind a flag"
 ```
 
@@ -278,10 +278,10 @@ expect(source).toContain("quickEntryEnabled")  // toggle consulted before regist
 ### Task 6: Memory entries become per-topic with update/remove [item 11]
 
 **Files:**
-- Modify: `packages/opencode/src/memory/memory.ts` (extend `Interface`: `update(entry: { scope, slug, text })`, `remove(entry: { scope, slug })`, `listDetailed()`; switch extraction output from per-day overwrite to per-topic slugs)
-- Modify: `packages/opencode/src/session/prompt.ts` (`extractMemory` ~L1207–1256 — extraction prompt asks for topic slugs; write via `update` with dedup on existing slugs)
-- Modify: `packages/opencode/src/memory/extract.ts` (prompt builder ~L10–18 — structured `SLUG:`/`TEXT:` output contract)
-- Test: `packages/opencode/test/memory/memory.test.ts` (extend), `packages/opencode/test/memory/extract.test.ts` (extend)
+- Modify: `packages/flynncode/src/memory/memory.ts` (extend `Interface`: `update(entry: { scope, slug, text })`, `remove(entry: { scope, slug })`, `listDetailed()`; switch extraction output from per-day overwrite to per-topic slugs)
+- Modify: `packages/flynncode/src/session/prompt.ts` (`extractMemory` ~L1207–1256 — extraction prompt asks for topic slugs; write via `update` with dedup on existing slugs)
+- Modify: `packages/flynncode/src/memory/extract.ts` (prompt builder ~L10–18 — structured `SLUG:`/`TEXT:` output contract)
+- Test: `packages/flynncode/test/memory/memory.test.ts` (extend), `packages/flynncode/test/memory/extract.test.ts` (extend)
 
 **Interfaces:**
 - Consumes: current `append` whole-file overwrite (`memory.ts:87–99`, `fs.writeWithDirs`), filename sanitize (`:27–33`), redaction at write (`:93`) / read (`:81`); glob layout (`*.md` at `:60–72`).
@@ -312,7 +312,7 @@ test("extraction prompt demands topic slugs", () => {
 })
 ```
 
-- [ ] **Step 2: Run to verify failure** — from `packages/opencode`: `bun test ./test/memory/`; FAIL.
+- [ ] **Step 2: Run to verify failure** — from `packages/flynncode`: `bun test ./test/memory/`; FAIL.
 
 - [ ] **Step 3: Implement**
 
@@ -329,10 +329,10 @@ test("extraction prompt demands topic slugs", () => {
 ### Task 7: Agent self-curation via a `memory` tool [item 11]
 
 **Files:**
-- Create: `packages/opencode/src/tool/memory.ts` (+ description txt `memory.txt`)
+- Create: `packages/flynncode/src/tool/memory.ts` (+ description txt `memory.txt`)
 - Modify: `packages/core/src/v1/config/permission.ts` (`Info` known keys gains `memory`)
 - Modify: tool registry wiring (mirror how `session-manage` registers — find the registry list consumed in `session/tools.ts` / registry module)
-- Test: `packages/opencode/test/tool/memory-tool.test.ts` (new)
+- Test: `packages/flynncode/test/tool/memory-tool.test.ts` (new)
 
 **Interfaces:**
 - Consumes: `Tool.define` pattern (`tool/session-manage.ts`), `ctx.ask` permission gating, `Memory.node` service (Task 6's `update`/`remove`/`listDetailed`).
@@ -353,15 +353,15 @@ test("extraction prompt demands topic slugs", () => {
 ### Task 8: Memory extraction triggers at compact/idle [item 11]
 
 **Files:**
-- Modify: `packages/opencode/src/session/compaction.ts` (fold a memory-extraction call at pre-compact, ~L382 hook region)
-- Modify: `packages/opencode/src/session/prompt.ts` (`extractMemory` gains a reusable `extractMemoryFor(messages)` core; compact/idle call sites reuse it)
-- Test: extend `packages/opencode/test/session/` (mirror the status-hooks/compaction test style; grep `test/compaction` first)
+- Modify: `packages/flynncode/src/session/compaction.ts` (fold a memory-extraction call at pre-compact, ~L382 hook region)
+- Modify: `packages/flynncode/src/session/prompt.ts` (`extractMemory` gains a reusable `extractMemoryFor(messages)` core; compact/idle call sites reuse it)
+- Test: extend `packages/flynncode/test/session/` (mirror the status-hooks/compaction test style; grep `test/compaction` first)
 
 **Interfaces:**
 - Consumes: extraction core (`prompt.ts:1207–1256`), compaction hook sites (`compaction.ts:382/:587`), `MemoryExtract.shouldExtract` gate (reuse `min_turns` unchanged).
 - Produces: extraction also fires (best-effort, `Effect.ignore` + forked, never blocking) at pre-compaction and at idle (`runIdle` path — mirror how extractMemory forks at drain completion, `prompt.ts:1534`), with the min_turns gate unchanged.
 
-- [ ] **Step 1: Write failing tests** (extend the existing compaction/idle test file — locate via grep; if a compaction test file doesn't exist, create `packages/opencode/test/session/compaction-memory.test.ts`):
+- [ ] **Step 1: Write failing tests** (extend the existing compaction/idle test file — locate via grep; if a compaction test file doesn't exist, create `packages/flynncode/test/session/compaction-memory.test.ts`):
 
 ```ts
 it.effect("compaction triggers memory extraction above min_turns", () =>
@@ -386,9 +386,9 @@ it.effect("compaction skips extraction below min_turns", () =>
 
 **Files:**
 - Modify: `packages/app/src/components/settings-v2/general.tsx` + new payload/controller (copy `hooks-payload.ts` naming pattern → `memory-payload.ts`)
-- Modify: `packages/opencode/src/memory/redact.ts` (extend patterns: JWT `eyJ…`, `anthropic` key shapes, GCP `AIza…`, Stripe `sk_live|rk_live_…`)
+- Modify: `packages/flynncode/src/memory/redact.ts` (extend patterns: JWT `eyJ…`, `anthropic` key shapes, GCP `AIza…`, Stripe `sk_live|rk_live_…`)
 - Modify: `packages/app/src/i18n/en.ts` + `flynncode-fallback.ts` (settings.memory.* keys)
-- Test: `packages/opencode/test/memory/redact.test.ts` (extend); app parity + settings-v2 source-contract test
+- Test: `packages/flynncode/test/memory/redact.test.ts` (extend); app parity + settings-v2 source-contract test
 
 **Interfaces:**
 - Consumes: settings payload/controller split pattern (`hooks-payload.ts`, `general-controllers.ts`); config write path used by Phase-1 Task 11 (`permission` block) — same full-value construction discipline for the `memory` block; redact table (`redact.ts:1–14`).
@@ -420,8 +420,8 @@ test("memory settings writes the memory config block", () => {
 ### Task 10: Sandbox containment honors attached extra folders [item 13 — bug fix]
 
 **Files:**
-- Modify: `packages/opencode/src/session/tools.ts` (~L74–76 `sandboxDirs`; write containment ~L113–123)
-- Test: `packages/opencode/test/session/tools.test.ts` (extend the sandbox block ~L276–311)
+- Modify: `packages/flynncode/src/session/tools.ts` (~L74–76 `sandboxDirs`; write containment ~L113–123)
+- Test: `packages/flynncode/test/session/tools.test.ts` (extend the sandbox block ~L276–311)
 
 **Interfaces:**
 - Consumes: `InstanceContext.additionalDirectories` (available in the same resolve layer); `Sandbox.isPathAllowed(target, session.directory, sandboxDirs, level)` (`permission/sandbox.ts:34–44`).
@@ -445,10 +445,10 @@ it.effect("workspace-write allows edits inside an attached additional directory"
 ### Task 11: Extras in the file tree, environment prompt, and nested AGENTS walk [item 13]
 
 **Files:**
-- Modify: `packages/opencode/src/server/routes/instance/httpapi/handlers/file.ts` (list endpoint ~L86 — enumerate extras)
-- Modify: `packages/opencode/src/session/system.ts` (~L71–107 — announce "Additional project folders" after the worktree/env block)
-- Modify: `packages/opencode/src/session/instruction.ts` (`resolve` walk ~L217 — nested `.opencode`/AGENTS walk stops at whatever boundary root contains the file: primary OR any extra)
-- Test: extend `packages/opencode/test/instruction/multifold-basepaths.test.ts` (keep the base-path pin!) + a file-list test (`test/server/httpapi-session-folders.test.ts` add cases)
+- Modify: `packages/flynncode/src/server/routes/instance/httpapi/handlers/file.ts` (list endpoint ~L86 — enumerate extras)
+- Modify: `packages/flynncode/src/session/system.ts` (~L71–107 — announce "Additional project folders" after the worktree/env block)
+- Modify: `packages/flynncode/src/session/instruction.ts` (`resolve` walk ~L217 — nested `.opencode`/AGENTS walk stops at whatever boundary root contains the file: primary OR any extra)
+- Test: extend `packages/flynncode/test/instruction/multifold-basepaths.test.ts` (keep the base-path pin!) + a file-list test (`test/server/httpapi-session-folders.test.ts` add cases)
 
 **Interfaces:**
 - Consumes: `file.ts` boundary code (`:104–116` selects owning root already); `system.ts` environment template; `instruction.ts` nested-file attach walk (`current.startsWith(root)`).
@@ -462,10 +462,10 @@ it.effect("workspace-write allows edits inside an attached additional directory"
 
 **Files:**
 - Modify: `packages/core/src/v1/config/agent.ts` (`TolerantSandbox` L27–34/109 — admit `SandboxMode` values; normalize degradation kept)
-- Modify: `packages/opencode/src/session/tools.ts` (~L73 policy resolution — override `policy.sandbox` from the agent's sandbox when the value is a `SandboxMode`)
-- Modify: `packages/opencode/src/tool/task.ts` (~L151, ~L229–236 — thread the resolved mode into the child: `sessions.setMetadata({ sandbox: mode })` beside `worktree`)
-- Modify: `packages/opencode/src/agent/subagent-permissions.ts` (`sandboxRules` ~L41–55 — map `readonly` to external_directory confinement like `restricted`, keep named profiles)
-- Test: `packages/core/test/agent-config.test.ts` (extend), `packages/opencode/test/subagent-permissions.test.ts` / tools.test.ts (extend)
+- Modify: `packages/flynncode/src/session/tools.ts` (~L73 policy resolution — override `policy.sandbox` from the agent's sandbox when the value is a `SandboxMode`)
+- Modify: `packages/flynncode/src/tool/task.ts` (~L151, ~L229–236 — thread the resolved mode into the child: `sessions.setMetadata({ sandbox: mode })` beside `worktree`)
+- Modify: `packages/flynncode/src/agent/subagent-permissions.ts` (`sandboxRules` ~L41–55 — map `readonly` to external_directory confinement like `restricted`, keep named profiles)
+- Test: `packages/core/test/agent-config.test.ts` (extend), `packages/flynncode/test/subagent-permissions.test.ts` / tools.test.ts (extend)
 
 **Interfaces:**
 - Consumes: `resolveSessionPolicy(cfg.permission)` (`core/v1/config/permission.ts:74–81`) — resolution precedence: session metadata `sandbox` (task-dispatched child) → agent config `cfg.agent[name].sandbox` → global policy; `SandboxMode` literals unchanged.
@@ -478,9 +478,9 @@ it.effect("workspace-write allows edits inside an attached additional directory"
 ### Task 13: Isolation error fallback + frontmatter decode pin + dead key [item 14 leftovers]
 
 **Files:**
-- Modify: `packages/opencode/src/tool/task.ts` (~L159, ~L212, ~L466) — translate `Worktree.NotGitError`/`CreateFailedError` into a clean `ToolExecutionError`-style failure with an actionable message ("isolation: worktree requires a git project") instead of `Effect.orDie` defect leak
-- Test: `packages/opencode/test/tool/task-isolation.test.ts` (extend: non-git directory → clean error text, not defect)
-- Test: `packages/opencode/test/config/markdown.test.ts` (extend: agent `.md` frontmatter with `isolation: worktree`, `sandbox: readonly`, `model:` decodes into `cfg.agent`)
+- Modify: `packages/flynncode/src/tool/task.ts` (~L159, ~L212, ~L466) — translate `Worktree.NotGitError`/`CreateFailedError` into a clean `ToolExecutionError`-style failure with an actionable message ("isolation: worktree requires a git project") instead of `Effect.orDie` defect leak
+- Test: `packages/flynncode/test/tool/task-isolation.test.ts` (extend: non-git directory → clean error text, not defect)
+- Test: `packages/flynncode/test/config/markdown.test.ts` (extend: agent `.md` frontmatter with `isolation: worktree`, `sandbox: readonly`, `model:` decodes into `cfg.agent`)
 - Modify: `packages/app/src/i18n/en.ts` — wire or delete dead key `session.subagents.isolationWorktree` (`:915`): wire it into the new-session workspace selector's isolation hint if the surface supports it cheaply (prompt-workspace-selector), else delete the key + fallback entry
 
 - [ ] **Step 1: Write failing tests**
@@ -505,7 +505,7 @@ test("agent markdown frontmatter decodes isolation, sandbox and model", () => {
 })
 ```
 
-- [ ] **Step 2: Run to verify failure** — from `packages/opencode`: `bun test ./test/tool/task-isolation.test.ts ./test/config/markdown.test.ts`; FAIL (clean-failure path absent; frontmatter already decodes but untested).
+- [ ] **Step 2: Run to verify failure** — from `packages/flynncode`: `bun test ./test/tool/task-isolation.test.ts ./test/config/markdown.test.ts`; FAIL (clean-failure path absent; frontmatter already decodes but untested).
 - [ ] **Step 3: Implement** — error translation in `task.ts` (~L466 area: catch `Worktree.NotGitError`/`CreateFailedError` from the create pipeline, `Effect.fail` with an actionable message; do not broad-catch); i18n key decision (wire into `prompt-workspace-selector`'s isolation hint or delete key + fallback entry).
 - [ ] **Step 4: Run tests; PASS.**
 - [ ] **Step 5: Commit** (split commits as listed in Files).
@@ -515,8 +515,8 @@ test("agent markdown frontmatter decodes isolation, sandbox and model", () => {
 ### Task 14: Hook output-shape parity fixes [item 15 gaps #1–#2]
 
 **Files:**
-- Modify: `packages/opencode/src/hooks/executor.ts` (`collectCommand` observe branches ~L366–391 — non-JSON non-empty stdout → `additionalContext` for SessionStart/SubagentStart/UserPromptSubmit; exit-2 reason reads `spawned.stderr.trim() || spawned.stdout.trim() || fallback` ~L367; update comment block ~L18)
-- Test: `packages/opencode/test/hooks/executor.test.ts` (extend — real-process scripts per its `it.live` pattern)
+- Modify: `packages/flynncode/src/hooks/executor.ts` (`collectCommand` observe branches ~L366–391 — non-JSON non-empty stdout → `additionalContext` for SessionStart/SubagentStart/UserPromptSubmit; exit-2 reason reads `spawned.stderr.trim() || spawned.stdout.trim() || fallback` ~L367; update comment block ~L18)
+- Test: `packages/flynncode/test/hooks/executor.test.ts` (extend — real-process scripts per its `it.live` pattern)
 
 **Interfaces:**
 - Consumes: current behavior non-JSON → `{}` (`executor.ts:389`), stdout-only reason (`:367`); Codex doc semantics (plain stdout = developer context on observe events; stderr carries the exit-2 reason).
@@ -545,8 +545,8 @@ it.live("exit 2 reason prefers stderr over stdout", () =>
 
 **Files:**
 - Modify: `packages/core/src/v1/config/hooks.ts` (top-level `disableAllHooks?: boolean` default false in hooks Info/schema)
-- Modify: `packages/opencode/src/hooks/executor.ts` (`trusted()` ~L196–204 consults the flag; managed hooks unaffected-by-flag? NO — kill switch disables everything, managed pre-trust included; document)
-- Modify: `packages/opencode/src/hooks/executor.ts` payload builders (~L565–571, ~L591–598, ~L623 — add `cwd`, `model`, `permission_mode` where the context has them; additive optional fields)
+- Modify: `packages/flynncode/src/hooks/executor.ts` (`trusted()` ~L196–204 consults the flag; managed hooks unaffected-by-flag? NO — kill switch disables everything, managed pre-trust included; document)
+- Modify: `packages/flynncode/src/hooks/executor.ts` payload builders (~L565–571, ~L591–598, ~L623 — add `cwd`, `model`, `permission_mode` where the context has them; additive optional fields)
 - Test: `test/hooks/trust.test.ts` (extend — flag disables managed too), executor payload test
 
 **Interfaces:**
@@ -589,7 +589,7 @@ it.live("disableAllHooks suppresses even managed hooks", () => Effect.gen(functi
 ## Verification (phase gate)
 
 ```bash
-# packages/opencode
+# packages/flynncode
 bun typecheck && bun test ./test/memory/ ./test/tool/ ./test/session/ ./test/hooks/ ./test/instruction/ ./test/config/ ./test/permission/
 # packages/core
 bun typecheck && bun test ./test/agent-config.test.ts ./test/command.test.ts

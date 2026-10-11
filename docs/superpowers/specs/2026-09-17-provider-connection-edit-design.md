@@ -74,7 +74,7 @@ Prefill sources:
   (`packages/app/src/components/settings-v2/providers.tsx:90`): `npm` is
   `@ai-sdk/openai-compatible` and the model list is non-empty.
 - API key: never prefilled or displayed. `toPublicInfo` strips `key` and
-  `options.apiKey` (`packages/opencode/src/provider/provider.ts:1122`), and the
+  `options.apiKey` (`packages/flynncode/src/provider/provider.ts:1122`), and the
   config store carries no secret.
 
 Auth kind:

@@ -149,7 +149,7 @@ export function createCatalogFetcher(deps: {
   const npmName = (entry: RawEntry): string | undefined => {
     // Prefer npm-looking names; try slug of name first, then repo name from URL.
     const candidates = [entry.name.trim()]
-    // For deep links like .../tree/main/packages/opencode-plugin the repo slug
+    // For deep links like .../tree/main/packages/flynncode-plugin the repo slug
     // ("integrations") is misleading — the last path segment is the package.
     const deep = entry.url?.match(/github\.com\/[^/]+\/[^/]+\/(?:tree|blob)\/[^/]+\/(.+?)(?:\/)?(?:[?#].*)?$/)?.[1]
     if (deep) {

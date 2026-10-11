@@ -6,11 +6,11 @@
 
 **Architecture:** A new top-level `model_family` config key is declared in the Effect Schema config and read by a new `provider-family.ts` module inside the ollama-model-router plugin for per-class candidate resolution, and by `Provider.defaultModel`/`getSmallModel` for global default-model selection. The GPT-6 baseline is authored as static chains in `omo-catalog.ts` and, separately, as a user-config edit to `~/.omo/omo.jsonc`.
 
-**Tech Stack:** TypeScript, Effect (packages/core, packages/opencode), SolidJS (packages/app), Bun test.
+**Tech Stack:** TypeScript, Effect (packages/core, packages/flynncode), SolidJS (packages/app), Bun test.
 
 ## Global Constraints
 
-- Test commands run from package directories, never repo root: `bun test --timeout 30000 --only-failures` (packages/opencode), `bun test --conditions=solid --preload ./happydom.ts ./src` (packages/app), `bun typecheck` (both).
+- Test commands run from package directories, never repo root: `bun test --timeout 30000 --only-failures` (packages/flynncode), `bun test --conditions=solid --preload ./happydom.ts ./src` (packages/app), `bun typecheck` (both).
 - The default branch is `dev`; use `dev` or `origin/dev` for diffs.
 - Conventional commits: `type(scope): summary` with scope `core`, `opencode`, `app`, or `plugin`.
 - No `as any`, no `@ts-ignore`, no `try`/`catch` where avoidable, no star/aliased imports.
@@ -36,7 +36,7 @@
 
 **Files:**
 - Modify: `packages/core/src/v1/config/config.ts` (near `small_model`, currently ~L84)
-- Test: `packages/opencode/test/provider/provider.test.ts` (existing config-parse coverage; add a focused assertion)
+- Test: `packages/flynncode/test/provider/provider.test.ts` (existing config-parse coverage; add a focused assertion)
 
 **Interfaces:**
 - Produces: `ConfigV1.Info` accepts optional `model_family: "auto" | "ollama" | "openai" | "anthropic"`. Later tasks read it via `cfg.model_family`.
@@ -44,7 +44,7 @@
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `packages/opencode/test/provider/provider.test.ts` near the existing `defaultModel respects config model setting` test (L359-368), using that file's established fixture helpers:
+Add to `packages/flynncode/test/provider/provider.test.ts` near the existing `defaultModel respects config model setting` test (L359-368), using that file's established fixture helpers:
 
 ```ts
 test("defaultModel honors model_family override without config model", async () => {
@@ -82,15 +82,15 @@ Expected: schema accepts the key; the resolution half still needs Task 2, so kee
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/core/src/v1/config/config.ts packages/opencode/test/provider/provider.test.ts
+git add packages/core/src/v1/config/config.ts packages/flynncode/test/provider/provider.test.ts
 git commit -m "feat(core): declare model_family config key"
 ```
 
 ### Task 2: Provider-family resolution module
 
 **Files:**
-- Create: `packages/opencode/src/plugin/ollama-model-router/provider-family.ts`
-- Test: `packages/opencode/test/plugin/ollama-model-router/provider-family.test.ts`
+- Create: `packages/flynncode/src/plugin/ollama-model-router/provider-family.ts`
+- Test: `packages/flynncode/test/plugin/ollama-model-router/provider-family.test.ts`
 
 **Interfaces:**
 - Produces:
@@ -204,17 +204,17 @@ Expected: PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/plugin/ollama-model-router/provider-family.ts packages/opencode/test/plugin/ollama-model-router/provider-family.test.ts
+git add packages/flynncode/src/plugin/ollama-model-router/provider-family.ts packages/flynncode/test/plugin/ollama-model-router/provider-family.test.ts
 git commit -m "feat(plugin): add provider family tier resolution"
 ```
 
 ### Task 3: Router consumes `model_family`
 
 **Files:**
-- Modify: `packages/opencode/src/plugin/ollama-model-router/index.ts` (resolveOptions L53-65; catalog load L38-51)
-- Modify: `packages/opencode/src/plugin/ollama-model-router/candidates.ts` (`selected()` L28-33)
-- Modify: `packages/opencode/src/plugin/ollama-model-router/rank.ts` (`rankModels` L40, pin handling L69-74)
-- Test: `packages/opencode/test/plugin/ollama-model-router/plugin.test.ts`
+- Modify: `packages/flynncode/src/plugin/ollama-model-router/index.ts` (resolveOptions L53-65; catalog load L38-51)
+- Modify: `packages/flynncode/src/plugin/ollama-model-router/candidates.ts` (`selected()` L28-33)
+- Modify: `packages/flynncode/src/plugin/ollama-model-router/rank.ts` (`rankModels` L40, pin handling L69-74)
+- Test: `packages/flynncode/test/plugin/ollama-model-router/plugin.test.ts`
 
 **Interfaces:**
 - Consumes: `ConfigV1.Info.model_family` (Task 1), `resolveFamilyModel`/`familyProviders` (Task 2).
@@ -254,15 +254,15 @@ Expected: PASS, all existing tests unbroken.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/plugin/ollama-model-router/
+git add packages/flynncode/src/plugin/ollama-model-router/
 git commit -m "feat(plugin): honor model_family in task routing"
 ```
 
 ### Task 4: Global default-model resolution
 
 **Files:**
-- Modify: `packages/opencode/src/provider/provider.ts` (`getSmallModel` L2041, `defaultModel` L2110)
-- Test: `packages/opencode/test/provider/provider.test.ts`
+- Modify: `packages/flynncode/src/provider/provider.ts` (`getSmallModel` L2041, `defaultModel` L2110)
+- Test: `packages/flynncode/test/provider/provider.test.ts`
 
 **Interfaces:**
 - Consumes: `ConfigV1.Info.model_family` (Task 1), `resolveFamilyModel` (Task 2 — import path `@/plugin/ollama-model-router/provider-family`).
@@ -302,7 +302,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/provider/provider.ts packages/opencode/test/provider/provider.test.ts
+git add packages/flynncode/src/provider/provider.ts packages/flynncode/test/provider/provider.test.ts
 git commit -m "feat(provider): honor model_family in default model resolution"
 ```
 
@@ -468,7 +468,7 @@ This task changes runtime config outside the repo; the plan records it so the im
 - [ ] **Step 1: Run the opencode suites**
 
 ```bash
-cd packages/opencode && bun test --timeout 30000 --only-failures test/provider test/plugin/ollama-model-router test/config
+cd packages/flynncode && bun test --timeout 30000 --only-failures test/provider test/plugin/ollama-model-router test/config
 ```
 Expected: 0 failures.
 
@@ -482,7 +482,7 @@ Expected: 0 failures, typecheck exit 0.
 - [ ] **Step 3: Full opencode typecheck**
 
 ```bash
-cd packages/opencode && bun typecheck
+cd packages/flynncode && bun typecheck
 ```
 Expected: exit 0.
 

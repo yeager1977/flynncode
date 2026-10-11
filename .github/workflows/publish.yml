@@ -89,7 +89,7 @@ jobs:
       - name: Build
         id: build
         run: |
-          ./packages/opencode/script/build.ts ${{ (github.ref_name == 'beta' && '--sourcemaps') || '' }}
+          ./packages/flynncode/script/build.ts ${{ (github.ref_name == 'beta' && '--sourcemaps') || '' }}
           ./packages/cli/script/build.ts ${{ (github.ref_name == 'beta' && '--sourcemaps') || '' }}
         env:
           OPENCODE_VERSION: ${{ needs.version.outputs.version }}
@@ -101,13 +101,13 @@ jobs:
         with:
           name: opencode-cli
           path: |
-            packages/opencode/dist/opencode-darwin*
-            packages/opencode/dist/opencode-linux*
+            packages/flynncode/dist/opencode-darwin*
+            packages/flynncode/dist/opencode-linux*
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: opencode-cli-windows
-          path: packages/opencode/dist/opencode-windows*
+          path: packages/flynncode/dist/opencode-windows*
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -135,7 +135,7 @@ jobs:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: opencode-cli
-          path: packages/opencode/dist
+          path: packages/flynncode/dist
 
       - name: Setup git committer
         id: committer
@@ -153,13 +153,13 @@ jobs:
           fi
 
           for name in opencode-darwin-arm64 opencode-darwin-x64 opencode-darwin-x64-baseline; do
-            file="packages/opencode/dist/$name/bin/opencode"
+            file="packages/flynncode/dist/$name/bin/opencode"
             chmod +x "$file"
             codesign \
               --force \
               --timestamp \
               --options runtime \
-              --entitlements packages/opencode/script/entitlements.plist \
+              --entitlements packages/flynncode/script/entitlements.plist \
               --sign "$identity" \
               "$file"
             codesign --verify --deep --strict --verbose=4 "$file"
@@ -167,10 +167,10 @@ jobs:
           done
 
       - name: Smoke test signed binary
-        run: ./packages/opencode/dist/opencode-darwin-arm64/bin/opencode --version
+        run: ./packages/flynncode/dist/opencode-darwin-arm64/bin/opencode --version
 
       - name: Repack macOS CLI archives
-        working-directory: packages/opencode/dist
+        working-directory: packages/flynncode/dist
         run: |
           for name in opencode-darwin-arm64 opencode-darwin-x64 opencode-darwin-x64-baseline; do
             rm -f "$name.zip"
@@ -183,9 +183,9 @@ jobs:
           GH_TOKEN: ${{ steps.committer.outputs.token }}
         run: |
           gh release upload "v${{ needs.version.outputs.version }}" \
-            packages/opencode/dist/opencode-darwin-arm64.zip \
-            packages/opencode/dist/opencode-darwin-x64.zip \
-            packages/opencode/dist/opencode-darwin-x64-baseline.zip \
+            packages/flynncode/dist/opencode-darwin-arm64.zip \
+            packages/flynncode/dist/opencode-darwin-x64.zip \
+            packages/flynncode/dist/opencode-darwin-x64-baseline.zip \
             --clobber \
             --repo "${{ needs.version.outputs.repo }}"
 
@@ -193,10 +193,10 @@ jobs:
         with:
           name: opencode-cli-signed-macos
           path: |
-            packages/opencode/dist/opencode-darwin-arm64
-            packages/opencode/dist/opencode-darwin-x64
-            packages/opencode/dist/opencode-darwin-x64-baseline
-            packages/opencode/dist/opencode-darwin-*.zip
+            packages/flynncode/dist/opencode-darwin-arm64
+            packages/flynncode/dist/opencode-darwin-x64
+            packages/flynncode/dist/opencode-darwin-x64-baseline
+            packages/flynncode/dist/opencode-darwin-*.zip
           if-no-files-found: error
 
   sign-cli-windows:
@@ -218,7 +218,7 @@ jobs:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: opencode-cli-windows
-          path: packages/opencode/dist
+          path: packages/flynncode/dist
 
       - name: Setup git committer
         id: committer
@@ -271,7 +271,7 @@ jobs:
           }
 
       - name: Repack Windows CLI archives
-        working-directory: packages/opencode/dist
+        working-directory: packages/flynncode/dist
         shell: pwsh
         run: |
           Compress-Archive -Path "opencode-windows-arm64\bin\*" -DestinationPath "opencode-windows-arm64.zip" -Force
@@ -295,9 +295,9 @@ jobs:
         with:
           name: opencode-cli-signed-windows
           path: |
-            packages/opencode/dist/opencode-windows-arm64
-            packages/opencode/dist/opencode-windows-x64
-            packages/opencode/dist/opencode-windows-x64-baseline
+            packages/flynncode/dist/opencode-windows-arm64
+            packages/flynncode/dist/opencode-windows-x64
+            packages/flynncode/dist/opencode-windows-x64-baseline
 
   build-electron:
     needs:
@@ -518,25 +518,25 @@ jobs:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: opencode-cli
-          path: packages/opencode/dist
+          path: packages/flynncode/dist
 
       - name: Remove unsigned macOS CLI binaries
-        run: rm -rf packages/opencode/dist/opencode-darwin*
+        run: rm -rf packages/flynncode/dist/opencode-darwin*
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: opencode-cli-signed-macos
-          path: packages/opencode/dist
+          path: packages/flynncode/dist
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: opencode-cli-windows
-          path: packages/opencode/dist
+          path: packages/flynncode/dist
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: opencode-cli-signed-windows
-          path: packages/opencode/dist
+          path: packages/flynncode/dist
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:

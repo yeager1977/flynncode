@@ -80,13 +80,13 @@ except where the table's per-task cost implies a different lane.
 
 ## Implementation Map
 
-- `packages/opencode/src/plugin/ollama-model-router/scorecard.ts`: add
+- `packages/flynncode/src/plugin/ollama-model-router/scorecard.ts`: add
   `VALUE_TASK_WEIGHTS` and a `parseTaskVariant(variant)` helper returning the
   base task and whether it is a value variant.
-- `packages/opencode/src/plugin/ollama-model-router/index.ts`: build
+- `packages/flynncode/src/plugin/ollama-model-router/index.ts`: build
   `ROUTER_VARIANTS` from tasks plus `-value` siblings; in the sentinel
   resolver, select value weights and drop the pin for value variants.
-- `packages/opencode/src/plugin/ollama-model-router/assign.ts`: allow a weights
+- `packages/flynncode/src/plugin/ollama-model-router/assign.ts`: allow a weights
   override and an explicit pin suppression in task resolution.
 - Config `opencode.jsonc`: the coding weights, review pin, and resynced cards.
 

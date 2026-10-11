@@ -38,7 +38,7 @@ Out of scope:
 
 ## Approach
 
-- `packages/opencode/src/plugin/routines/` (built-in Flynncode plugin):
+- `packages/flynncode/src/plugin/routines/` (built-in Flynncode plugin):
   `parse.ts` (validate + defaults), `scheduler.ts` (interval tick, due
   check, session spawn via SDK client), `index.ts` (plugin hooks).
 - App: settings-v2 `routines.tsx` page reusing SettingsRowV2 list patterns;

@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Branch: `codex-parity-build`. Never commit directly to `dev`; single final no-ff merge happens after all four phases (not in this plan).
-- Tests run from package dirs only (guard: `do-not-run-tests-from-root`), e.g. `bun test <path>` from `packages/opencode`, `bun test --isolate --conditions=solid --only-failures --preload ./happydom.ts <path>` from `packages/app`.
+- Tests run from package dirs only (guard: `do-not-run-tests-from-root`), e.g. `bun test <path>` from `packages/flynncode`, `bun test --isolate --conditions=solid --only-failures --preload ./happydom.ts <path>` from `packages/app`.
 - Typecheck via `bun typecheck` from package directories, never `tsc` directly.
 - i18n: English source in `packages/app/src/i18n/en.ts`; new Flynncode-only keys registered in `packages/app/src/i18n/flynncode-fallback.ts` keys array; never hardcode English in components; never mutate existing English strings.
 - Reuse existing route/tool/service names exactly; do not invent APIs. HttpApi shape changes require `bun run generate` from `packages/client` (never edit `src/generated`/`src/generated-effect`).
@@ -93,10 +93,10 @@ git commit -m "fix(app): route subagent stop and steer through the child's direc
 ### Task 2: Dedicated read-only `review` agent pinned by `/review` [item 8]
 
 **Files:**
-- Create: `packages/opencode/src/agent/prompt/review.txt`
-- Modify: `packages/opencode/src/agent/agent.ts` (built-in `agents` record, after `explore` at ~L242–264)
-- Modify: `packages/opencode/src/command/index.ts` (~L85, `agent: "explore"` → `agent: "review"`)
-- Test: `packages/opencode/test/command/review-command.test.ts` (new)
+- Create: `packages/flynncode/src/agent/prompt/review.txt`
+- Modify: `packages/flynncode/src/agent/agent.ts` (built-in `agents` record, after `explore` at ~L242–264)
+- Modify: `packages/flynncode/src/command/index.ts` (~L85, `agent: "explore"` → `agent: "review"`)
+- Test: `packages/flynncode/test/command/review-command.test.ts` (new)
 
 **Interfaces:**
 - Consumes: built-in agent registration pattern (`plan`/`explore` entries, `agent.ts` L162–264; `Permission.merge` + `Permission.fromConfig`; hidden hidden-agent pattern); command registry `commands[Default.REVIEW]`.
@@ -104,7 +104,7 @@ git commit -m "fix(app): route subagent stop and steer through the child's direc
 
 - [ ] **Step 1: Write the failing test**
 
-`packages/opencode/test/command/review-command.test.ts` — mirror the instance-test style of `test/server/session-actions.test.ts` (`it.instance` + `TestInstance` + `requestInDirectory` + `httpApiLayer`); write the full arrangement with the same imports that file already uses. Assertions are the contract (harness plumbing mirrors existing instance tests):
+`packages/flynncode/test/command/review-command.test.ts` — mirror the instance-test style of `test/server/session-actions.test.ts` (`it.instance` + `TestInstance` + `requestInDirectory` + `httpApiLayer`); write the full arrangement with the same imports that file already uses. Assertions are the contract (harness plumbing mirrors existing instance tests):
 
 ```ts
 it.instance("review command pins a dedicated read-only review agent", () =>
@@ -126,12 +126,12 @@ it.instance("review command pins a dedicated read-only review agent", () =>
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run from `packages/opencode`: `bun test ./test/command/review-command.test.ts`
+Run from `packages/flynncode`: `bun test ./test/command/review-command.test.ts`
 Expected: FAIL (`review` agent does not exist; command pins `explore`).
 
 - [ ] **Step 3: Create the review prompt**
 
-`packages/opencode/src/agent/prompt/review.txt` — a focused reviewer prompt (modeled on `explore.txt`'s tone, no tool-ceremony, never mutates; instructs: read-only review, report findings as severity-tagged list, explicitly do not run tests, do not apply edits):
+`packages/flynncode/src/agent/prompt/review.txt` — a focused reviewer prompt (modeled on `explore.txt`'s tone, no tool-ceremony, never mutates; instructs: read-only review, report findings as severity-tagged list, explicitly do not run tests, do not apply edits):
 
 ```
 You are a code review agent. You review changes and NEVER modify files.
@@ -145,7 +145,7 @@ End with a one-paragraph verdict: approve or request changes.
 
 - [ ] **Step 4: Register the agent + switch the command**
 
-In `packages/opencode/src/agent/agent.ts`, add to the built-in `agents` record after `explore` (following the `explore` shape at L242–264):
+In `packages/flynncode/src/agent/agent.ts`, add to the built-in `agents` record after `explore` (following the `explore` shape at L242–264):
 
 ```ts
 review: {
@@ -169,19 +169,19 @@ review: {
 },
 ```
 
-with `import PROMPT_REVIEW from "./agent/prompt/review.txt"` near the other prompt imports. Then in `packages/opencode/src/command/index.ts:85` change `agent: "explore"` → `agent: "review"`.
+with `import PROMPT_REVIEW from "./agent/prompt/review.txt"` near the other prompt imports. Then in `packages/flynncode/src/command/index.ts:85` change `agent: "explore"` → `agent: "review"`.
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run from `packages/opencode`: `bun test ./test/command/review-command.test.ts`
+Run from `packages/flynncode`: `bun test ./test/command/review-command.test.ts`
 Expected: PASS.
 
 - [ ] **Step 6: Typecheck + commit**
 
-Run from `packages/opencode`: `bun typecheck`. Then:
+Run from `packages/flynncode`: `bun typecheck`. Then:
 
 ```bash
-git add packages/opencode/src/agent/prompt/review.txt packages/opencode/src/agent/agent.ts packages/opencode/src/command/index.ts packages/opencode/test/command/review-command.test.ts
+git add packages/flynncode/src/agent/prompt/review.txt packages/flynncode/src/agent/agent.ts packages/flynncode/src/command/index.ts packages/flynncode/test/command/review-command.test.ts
 git commit -m "feat(core): add dedicated read-only review agent for /review"
 ```
 
@@ -195,7 +195,7 @@ git commit -m "feat(core): add dedicated read-only review agent for /review"
 - Test: `packages/app/src/pages/session/review-detached.test.ts` (extend)
 
 **Interfaces:**
-- Consumes: `reviewPresetArgs` from `packages/opencode/src/command/review-preset.ts` — but packages/app must not import from packages/opencode runtime. **Resolve this by inlining the 7-line pure function into `review-detached.ts` as `presetArgs(preset, target)` with a comment pointing at the server twin, and extend BOTH unit tests in lockstep** (`packages/opencode/test/command/review-preset.test.ts` already pins the server side). Rationale: cross-package runtime imports violate the dependency direction (Core/Server not importable from app shell).
+- Consumes: `reviewPresetArgs` from `packages/flynncode/src/command/review-preset.ts` — but packages/app must not import from packages/flynncode runtime. **Resolve this by inlining the 7-line pure function into `review-detached.ts` as `presetArgs(preset, target)` with a comment pointing at the server twin, and extend BOTH unit tests in lockstep** (`packages/flynncode/test/command/review-preset.test.ts` already pins the server side). Rationale: cross-package runtime imports violate the dependency direction (Core/Server not importable from app shell).
 - Produces: `presetArgs(preset: "uncommitted" | "base-branch" | "commit", target?: string): string`.
 
 - [ ] **Step 1: Write the failing test**
@@ -221,8 +221,8 @@ Expected: FAIL (`presetArgs` not exported).
 In `review-detached.ts`:
 
 ```ts
-// Mirrors packages/opencode/src/command/review-preset.ts (server twin) —
-// kept in app because runtime imports must not cross into packages/opencode.
+// Mirrors packages/flynncode/src/command/review-preset.ts (server twin) —
+// kept in app because runtime imports must not cross into packages/flynncode.
 export function presetArgs(preset: ReviewPreset, target?: string) {
   const trimmed = target?.trim() ?? ""
   if (preset === "base-branch" || preset === "commit") return trimmed
@@ -367,9 +367,9 @@ git commit -m "feat(app): make address-comments turn review comments into a foll
 ### Task 5: Populate retention entries + sweep on archive [item 2]
 
 **Files:**
-- Modify: `packages/opencode/src/worktree/index.ts` (`createAndRetain` ~L758–812 entry building at :789–795; extract sweep into an exported service member `retire`)
-- Modify: `packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts` (`disposeArchivedWorktree` ~L88–102)
-- Test: `packages/opencode/test/worktree/retention.test.ts` (extend), `packages/opencode/test/worktree/retention-live.test.ts` (extend — check existing name; if a live retention test doesn't exist, add `retention-sweep.test.ts`)
+- Modify: `packages/flynncode/src/worktree/index.ts` (`createAndRetain` ~L758–812 entry building at :789–795; extract sweep into an exported service member `retire`)
+- Modify: `packages/flynncode/src/server/routes/instance/httpapi/handlers/session.ts` (`disposeArchivedWorktree` ~L88–102)
+- Test: `packages/flynncode/test/worktree/retention.test.ts` (extend), `packages/flynncode/test/worktree/retention-live.test.ts` (extend — check existing name; if a live retention test doesn't exist, add `retention-sweep.test.ts`)
 
 **Interfaces:**
 - Consumes: `worktreesToRemove(entries, limit)` (retention.ts:10), `boundSessions` (bound-sessions.ts:26), `shouldDispose` (session-binding.ts), `Worktree.Service.list`.
@@ -377,7 +377,7 @@ git commit -m "feat(app): make address-comments turn review comments into a foll
 
 - [ ] **Step 1: Write the failing test**
 
-New file `packages/opencode/test/worktree/retention-sweep.test.ts`, modeled on `test/worktree/handoff.test.ts` harness (`testEffect` + `LayerNode.compile` + `it.instance(..., { git: true })`):
+New file `packages/flynncode/test/worktree/retention-sweep.test.ts`, modeled on `test/worktree/handoff.test.ts` harness (`testEffect` + `LayerNode.compile` + `it.instance(..., { git: true })`):
 
 ```ts
 it.instance("disposable worktrees beyond keep are retired on sweep", () =>
@@ -406,7 +406,7 @@ test("disposable entries are evicted by recency like any other", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run from `packages/opencode`: `bun test ./test/worktree/retention-sweep.test.ts ./test/worktree/retention.test.ts`
+Run from `packages/flynncode`: `bun test ./test/worktree/retention-sweep.test.ts ./test/worktree/retention.test.ts`
 Expected: FAIL — `retire` not on the Service; entries lack `disposable`/`lastUsedAt`.
 
 - [ ] **Step 3: Implement**
@@ -420,14 +420,14 @@ Expected: FAIL — `retire` not on the Service; entries lack `disposable`/`lastU
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run from `packages/opencode`: `bun test ./test/worktree/` (full dir). Expected: PASS (retention ordering tests keep asserting that disposable entries are NOT evicted-first — do not change that semantics).
+Run from `packages/flynncode`: `bun test ./test/worktree/` (full dir). Expected: PASS (retention ordering tests keep asserting that disposable entries are NOT evicted-first — do not change that semantics).
 
 - [ ] **Step 5: Typecheck + commit**
 
-Run from `packages/opencode`: `bun typecheck`. Then:
+Run from `packages/flynncode`: `bun typecheck`. Then:
 
 ```bash
-git add packages/opencode/src/worktree/index.ts packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts packages/opencode/test/worktree/
+git add packages/flynncode/src/worktree/index.ts packages/flynncode/src/server/routes/instance/httpapi/handlers/session.ts packages/flynncode/test/worktree/
 git commit -m "feat(worktree): enforce keep-N retention on archive and populate disposable entries"
 ```
 
@@ -437,10 +437,10 @@ git commit -m "feat(worktree): enforce keep-N retention on archive and populate 
 
 **Files:**
 - Modify: `packages/core/src/v1/config/config.ts` (~L104–117, `worktree` block)
-- Modify: `packages/opencode/src/config/worktree.ts` (`settings()` + `defaults`)
-- Modify: `packages/opencode/src/server/routes/instance/httpapi/handlers/experimental.ts` (`rebindHandoffSessions` guards at ~L158–160, and complete the primary-switch sequence from `handlers/session.ts:503–541`)
+- Modify: `packages/flynncode/src/config/worktree.ts` (`settings()` + `defaults`)
+- Modify: `packages/flynncode/src/server/routes/instance/httpapi/handlers/experimental.ts` (`rebindHandoffSessions` guards at ~L158–160, and complete the primary-switch sequence from `handlers/session.ts:503–541`)
 - Modify: `packages/app/src/pages/layout/sidebar-workspace.tsx` (`handoffTo` ~L1045–1067 — offer "Local" as target when flag on)
-- Test: `packages/opencode/test/worktree/handoff-rebind.test.ts` (extend)
+- Test: `packages/flynncode/test/worktree/handoff-rebind.test.ts` (extend)
 
 **Interfaces:**
 - Consumes: `SessionV2.setDirectory`, `projectDirectories.create`, `sessionFolders.replace`, `liveFolders.refresh`, `instances.reload` (the `updateFolders` primary-switch recipe, `handlers/session.ts:503–541`); `Worktree.handoff`.
@@ -448,7 +448,7 @@ git commit -m "feat(worktree): enforce keep-N retention on archive and populate 
 
 - [ ] **Step 1: Write the failing test**
 
-Extend `packages/opencode/test/worktree/handoff-rebind.test.ts` (full arrangement using the exact fixture helpers that file already imports — `testEffect` + `LayerNode.compile` + `it.instance(..., { git: true })`):
+Extend `packages/flynncode/test/worktree/handoff-rebind.test.ts` (full arrangement using the exact fixture helpers that file already imports — `testEffect` + `LayerNode.compile` + `it.instance(..., { git: true })`):
 
 ```ts
 it.instance("rebinds sessions off the primary when allow_primary_rebind is set", () =>
@@ -474,26 +474,26 @@ The arrangement uses only APIs the existing test files already exercise; if acce
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run from `packages/opencode`: `bun test ./test/worktree/handoff-rebind.test.ts`
+Run from `packages/flynncode`: `bun test ./test/worktree/handoff-rebind.test.ts`
 Expected: FAIL — the primary-source guard refuses rebinding.
 
 - [ ] **Step 3: Implement**
 
-1. Config: add `allow_primary_rebind?: Schema.optional(Schema.Boolean)` inside the `worktree` struct (`core/src/v1/config/config.ts:104–117`); in `packages/opencode/src/config/worktree.ts`, extend `settings()` with `allowPrimaryRebind: cfg.allow_primary_rebind === true` (tolerant default) and add to `defaults` (`false`).
+1. Config: add `allow_primary_rebind?: Schema.optional(Schema.Boolean)` inside the `worktree` struct (`core/src/v1/config/config.ts:104–117`); in `packages/flynncode/src/config/worktree.ts`, extend `settings()` with `allowPrimaryRebind: cfg.allow_primary_rebind === true` (tolerant default) and add to `defaults` (`false`).
 2. Handler: in `rebindHandoffSessions`, allow `from`-is-primary when `settings().allowPrimaryRebind` is true (keep the serving-instance guard at :160 — that one stays fatal). When rebinding across checkouts, run the full primary-switch sequence from `updateFolders` (setDirectory → projectDirectories.create → sessionFolders.replace → liveFolders.refresh → instances.reload) instead of bare `setDirectory`.
 3. App: in `sidebar-workspace.tsx`, when `settings` exposes the resolved flag through the existing worktree settings plumbing (`packages/app/src/components/settings-v2/worktree.tsx` read path), render the "Local" entry as a handoff target into `handoffTo` (occupied-target guard at :1041–1044 already covers downstream safety), and after a successful handoff re-bootstrap the routed client following `submit.ts:469–475` (`serverSync().child(newDirectory)` → `createClient({ directory })` → navigate).
 4. Because the config schema is inside packages/schema/core decode paths only (no HttpApi change), no SDK regen is required; if typegen complains, run `bun run generate` from `packages/client`.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run from `packages/opencode`: `bun test ./test/worktree/` — including existing `handoff.test.ts` (the worktree→worktree path must be unchanged when flag is off; default stays refusal). Expected: PASS.
+Run from `packages/flynncode`: `bun test ./test/worktree/` — including existing `handoff.test.ts` (the worktree→worktree path must be unchanged when flag is off; default stays refusal). Expected: PASS.
 
 - [ ] **Step 5: Typecheck (both packages) + commit**
 
-`bun typecheck` from `packages/opencode` and `packages/app`. Then:
+`bun typecheck` from `packages/flynncode` and `packages/app`. Then:
 
 ```bash
-git add packages/core/src/v1/config/config.ts packages/opencode/src/config/worktree.ts packages/opencode/src/server/routes/instance/httpapi/handlers/experimental.ts packages/app/src/pages/layout/sidebar-workspace.tsx packages/opencode/test/worktree/handoff-rebind.test.ts
+git add packages/core/src/v1/config/config.ts packages/flynncode/src/config/worktree.ts packages/flynncode/src/server/routes/instance/httpapi/handlers/experimental.ts packages/app/src/pages/layout/sidebar-workspace.tsx packages/flynncode/test/worktree/handoff-rebind.test.ts
 git commit -m "feat(worktree): opt-in local rebind for checkout handoff"
 ```
 
@@ -631,10 +631,10 @@ git commit -m "feat(app): badge sandbox-blocked permission requests in the dock"
 ### Task 9: Trigger the `permission.ask` plugin hook [item 4a]
 
 **Files:**
-- Modify: `packages/opencode/src/plugin/index.ts` (hook aggregation ~L320–354 — add `"permission.ask"` deny-wins trigger)
+- Modify: `packages/flynncode/src/plugin/index.ts` (hook aggregation ~L320–354 — add `"permission.ask"` deny-wins trigger)
 - Modify: `packages/plugin/src/index.ts` (hook type `Hooks.permission.ask` already declared at :261 — verify shape)
-- Modify: `packages/opencode/src/permission/index.ts` (ask path — invoke plugin hooks before pending-prompt creation)
-- Test: `packages/opencode/test/permission/permission-ask-hook.test.ts` (new)
+- Modify: `packages/flynncode/src/permission/index.ts` (ask path — invoke plugin hooks before pending-prompt creation)
+- Test: `packages/flynncode/test/permission/permission-ask-hook.test.ts` (new)
 
 **Interfaces:**
 - Consumes: plugin `triggerDecision` pattern for `"tool.permission"` (opencode/src/plugin/index.ts:320–354, aggregate deny-wins).
@@ -642,7 +642,7 @@ git commit -m "feat(app): badge sandbox-blocked permission requests in the dock"
 
 - [ ] **Step 1: Write the failing test**
 
-`packages/opencode/test/permission/permission-ask-hook.test.ts` — mirror `test/permission/permission-request-hook.test.ts`'s harness (plugin hook fixture + Permission service resolution):
+`packages/flynncode/test/permission/permission-ask-hook.test.ts` — mirror `test/permission/permission-request-hook.test.ts`'s harness (plugin hook fixture + Permission service resolution):
 
 ```ts
 // A plugin whose permission.ask hook returns { decision: "deny" } causes
@@ -658,23 +658,23 @@ it.effect("plugin permission.ask deny short-circuits the prompt", () =>
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run from `packages/opencode`: `bun test ./test/permission/permission-ask-hook.test.ts`
+Run from `packages/flynncode`: `bun test ./test/permission/permission-ask-hook.test.ts`
 Expected: FAIL — no `permission.ask` trigger exists.
 
 - [ ] **Step 3: Implement**
 
-In `packages/opencode/src/plugin/index.ts`, extend the trigger aggregation (~L320–354) to accept `permission.ask` events with the deny-wins aggregation used by `tool.permission` (a plugin returning `allow` is a no-op; only `deny` and `ask`-to-user decisions matter). In `packages/opencode/src/permission/index.ts` `Service.ask`, run the plugin trigger right after the deny/allow rule evaluation but BEFORE `hooksRunner.runPermissionRequest` (~L110) and before the pending prompt is created; a plugin deny fails with the existing `PermissionV1.DeniedError`.
+In `packages/flynncode/src/plugin/index.ts`, extend the trigger aggregation (~L320–354) to accept `permission.ask` events with the deny-wins aggregation used by `tool.permission` (a plugin returning `allow` is a no-op; only `deny` and `ask`-to-user decisions matter). In `packages/flynncode/src/permission/index.ts` `Service.ask`, run the plugin trigger right after the deny/allow rule evaluation but BEFORE `hooksRunner.runPermissionRequest` (~L110) and before the pending prompt is created; a plugin deny fails with the existing `PermissionV1.DeniedError`.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run from `packages/opencode`: `bun test ./test/permission/` — full dir, including `permission-request-hook.test.ts` (file-config hooks keep denying) and `computer-use-guard.test.ts`. Expected: PASS.
+Run from `packages/flynncode`: `bun test ./test/permission/` — full dir, including `permission-request-hook.test.ts` (file-config hooks keep denying) and `computer-use-guard.test.ts`. Expected: PASS.
 
 - [ ] **Step 5: Typecheck + commit**
 
-`bun typecheck` from `packages/opencode`, then validate plugin SDK surface: `bun typecheck` from `packages/plugin`. Then:
+`bun typecheck` from `packages/flynncode`, then validate plugin SDK surface: `bun typecheck` from `packages/plugin`. Then:
 
 ```bash
-git add packages/opencode/src/plugin/index.ts packages/opencode/src/permission/index.ts packages/plugin/src/index.ts packages/opencode/test/permission/permission-ask-hook.test.ts
+git add packages/flynncode/src/plugin/index.ts packages/flynncode/src/permission/index.ts packages/plugin/src/index.ts packages/flynncode/test/permission/permission-ask-hook.test.ts
 git commit -m "feat(plugin): invoke permission.ask plugin hook before permission prompts"
 ```
 
@@ -683,11 +683,11 @@ git commit -m "feat(plugin): invoke permission.ask plugin hook before permission
 ### Task 10: LLM auto-reviewer for `approval: "auto"` [item 4b]
 
 **Files:**
-- Modify: `packages/opencode/src/permission/reviewer.ts` (accept `{ tool, args }`, keep the static AUTO_ALLOW fast path)
-- Create: `packages/opencode/src/permission/auto-reviewer.ts` (agent-backed reviewer service)
-- Modify: `packages/opencode/src/agent/agent.ts` (hidden `auto-review` agent, mirroring `compaction`/`title` at :265–295)
-- Modify: `packages/opencode/src/session/tools.ts` (`ctx.ask` at :94–128 — auto-review gate between the static reviewer (:115) and `permission.ask` (:118))
-- Test: `packages/opencode/test/permission/auto-reviewer.test.ts` (new), extend `test/permission/reviewer.test.ts`
+- Modify: `packages/flynncode/src/permission/reviewer.ts` (accept `{ tool, args }`, keep the static AUTO_ALLOW fast path)
+- Create: `packages/flynncode/src/permission/auto-reviewer.ts` (agent-backed reviewer service)
+- Modify: `packages/flynncode/src/agent/agent.ts` (hidden `auto-review` agent, mirroring `compaction`/`title` at :265–295)
+- Modify: `packages/flynncode/src/session/tools.ts` (`ctx.ask` at :94–128 — auto-review gate between the static reviewer (:115) and `permission.ask` (:118))
+- Test: `packages/flynncode/test/permission/auto-reviewer.test.ts` (new), extend `test/permission/reviewer.test.ts`
 
 **Interfaces:**
 - Consumes: `Reviewer.review` static allowlist; hidden-agent pattern (`agent.ts` `hidden: true`, `"*": "deny"`); the LLM one-shot invocation used by the title/summary hidden agents (`src/session/prompt.ts` title-generation path) — mirror that call shape.
@@ -722,7 +722,7 @@ test("review receives tool and args for AUTO_ALLOW decisions", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run from `packages/opencode`: `bun test ./test/permission/auto-reviewer.test.ts ./test/permission/reviewer.test.ts`
+Run from `packages/flynncode`: `bun test ./test/permission/auto-reviewer.test.ts ./test/permission/reviewer.test.ts`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement**
@@ -734,15 +734,15 @@ Expected: FAIL.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run from `packages/opencode`: `bun test ./test/permission/ ./test/session/tools.test.ts`
+Run from `packages/flynncode`: `bun test ./test/permission/ ./test/session/tools.test.ts`
 Expected: PASS — including existing `approval-mode.test.ts` (approval `"auto"` semantics now go through the reviewer; its existing fixtures must be updated only if they assert unconditional auto-approval of non-ALWAYS_ASK tools — adjust those fixtures to stub the reviewer with `allow`).
 
 - [ ] **Step 5: Typecheck + commit**
 
-Run from `packages/opencode` and `packages/core`: `bun typecheck`. Then:
+Run from `packages/flynncode` and `packages/core`: `bun typecheck`. Then:
 
 ```bash
-git add packages/opencode/src/permission/reviewer.ts packages/opencode/src/permission/auto-reviewer.ts packages/opencode/src/agent/agent.ts packages/opencode/src/session/tools.ts packages/opencode/test/permission/
+git add packages/flynncode/src/permission/reviewer.ts packages/flynncode/src/permission/auto-reviewer.ts packages/flynncode/src/agent/agent.ts packages/flynncode/src/session/tools.ts packages/flynncode/test/permission/
 git commit -m "feat(permission): agent-backed auto reviewer for approval auto mode"
 ```
 
@@ -822,7 +822,7 @@ git commit -m "feat(app): permission settings page with confirmation-gated full 
 Run after Task 11:
 
 ```bash
-# from packages/opencode
+# from packages/flynncode
 bun typecheck && bun test ./test/permission/ ./test/worktree/ ./test/command/
 # from packages/app
 bun typecheck && bun run test:unit

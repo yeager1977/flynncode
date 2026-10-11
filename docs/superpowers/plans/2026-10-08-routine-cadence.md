@@ -4,9 +4,9 @@
 
 **Goal:** Routines support real RRULE recurrence, per-routine persisted run history visible in settings, placement on sidecar vs deepthought via the existing servers UI, and self-hosted poll-based triggers — with no vendor clouds and no inbound public webhooks.
 
-**Architecture:** Extend the existing `packages/opencode/src/plugin/routines/` plugin in place (parse → due → index stays the scheduler owner). RRULE is expanded with the `rrule` npm library against `lastRun`, not passed through as a string. Run history reuses the existing JSONL log plus a bounded `recentRuns` array stored inline on each routine so the settings UI (which already reads `config.routines`) needs no new server API. Placement reuses per-server config: a routine runs on whichever Flynncode server holds it in config. Triggers are poll-only inside the 30s tick.
+**Architecture:** Extend the existing `packages/flynncode/src/plugin/routines/` plugin in place (parse → due → index stays the scheduler owner). RRULE is expanded with the `rrule` npm library against `lastRun`, not passed through as a string. Run history reuses the existing JSONL log plus a bounded `recentRuns` array stored inline on each routine so the settings UI (which already reads `config.routines`) needs no new server API. Placement reuses per-server config: a routine runs on whichever Flynncode server holds it in config. Triggers are poll-only inside the 30s tick.
 
-**Tech Stack:** Bun + TypeScript, `rrule` (new dependency in `packages/opencode`), `chokidar` (already a dependency), `@octokit/rest` (already a dependency), SolidJS settings UI, existing `Flock` serialization, `bun test`, `bun typecheck`.
+**Tech Stack:** Bun + TypeScript, `rrule` (new dependency in `packages/flynncode`), `chokidar` (already a dependency), `@octokit/rest` (already a dependency), SolidJS settings UI, existing `Flock` serialization, `bun test`, `bun typecheck`.
 
 ## Global Constraints
 
@@ -17,7 +17,7 @@
 - Run history persisted per routine (inline `recentRuns`, full log stays in JSONL).
 - Backends self-hosted or user-owned only (deepthought host 192.168.4.251 over Tailscale); vendor clouds, Sites hosting, voice stay OUT.
 - No inbound public webhooks operated by Flynncode; triggers are poll-based or via user-owned relay only.
-- Tests run from package dirs (`packages/opencode`), never repo root; typecheck with `bun typecheck` from package dirs, never `tsc` directly.
+- Tests run from package dirs (`packages/flynncode`), never repo root; typecheck with `bun typecheck` from package dirs, never `tsc` directly.
 - Branch name: `routine-cadence` (max three words, hyphens, no slashes/prefixes). Commits use `type(scope): summary`.
 - Follow the repo style guide: dot notation over destructuring, `const` over `let`, early returns over `else`, `Bun.file()`/`Bun.write()` for file I/O.
 
@@ -26,8 +26,8 @@
 ### Task 1: RRULE schedule kind in parse
 
 **Files:**
-- Modify: `packages/opencode/src/plugin/routines/parse.ts`
-- Test: `packages/opencode/test/plugin/routines/parse.test.ts`
+- Modify: `packages/flynncode/src/plugin/routines/parse.ts`
+- Test: `packages/flynncode/test/plugin/routines/parse.test.ts`
 
 **Interfaces:**
 - Consumes: nothing new.
@@ -35,8 +35,8 @@
 
 - [ ] **Step 1: Add the dependency**
 
-Run: `bun add rrule` with `workdir` `packages/opencode`
-Expected: `rrule` appears in `packages/opencode/package.json` dependencies.
+Run: `bun add rrule` with `workdir` `packages/flynncode`
+Expected: `rrule` appears in `packages/flynncode/package.json` dependencies.
 
 - [ ] **Step 2: Write the failing test**
 
@@ -70,16 +70,16 @@ describe("rrule schedule", () => {
 }
 ```
 
-Append to `packages/opencode/test/plugin/routines/parse.test.ts`.
+Append to `packages/flynncode/test/plugin/routines/parse.test.ts`.
 
 - [ ] **Step 3: Run test to verify it fails**
 
-Run: `bun test test/plugin/routines/parse.test.ts` with `workdir` `packages/opencode`
+Run: `bun test test/plugin/routines/parse.test.ts` with `workdir` `packages/flynncode`
 Expected: FAIL (unknown schedule shape / missing `rrule` field).
 
 - [ ] **Step 4: Implement**
 
-In `packages/opencode/src/plugin/routines/parse.ts`, add at top (no star import, no alias):
+In `packages/flynncode/src/plugin/routines/parse.ts`, add at top (no star import, no alias):
 
 ```ts
 import { RRule } from "rrule"
@@ -133,18 +133,18 @@ function readRrule(rrule: unknown, index: number, errors: string[]) {
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `bun test test/plugin/routines/parse.test.ts` with `workdir` `packages/opencode`
+Run: `bun test test/plugin/routines/parse.test.ts` with `workdir` `packages/flynncode`
 Expected: PASS.
 
 - [ ] **Step 6: Typecheck**
 
-Run: `bun typecheck` with `workdir` `packages/opencode`
+Run: `bun typecheck` with `workdir` `packages/flynncode`
 Expected: clean.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add packages/opencode/src/plugin/routines/parse.ts packages/opencode/test/plugin/routines/parse.test.ts packages/opencode/package.json packages/opencode/bun.lock
+git add packages/flynncode/src/plugin/routines/parse.ts packages/flynncode/test/plugin/routines/parse.test.ts packages/flynncode/package.json packages/flynncode/bun.lock
 git commit -m "feat(routines): accept RRULE schedule kind"
 ```
 
@@ -153,8 +153,8 @@ git commit -m "feat(routines): accept RRULE schedule kind"
 ### Task 2: RRULE due expansion
 
 **Files:**
-- Modify: `packages/opencode/src/plugin/routines/due.ts`
-- Test: `packages/opencode/test/plugin/routines/due.test.ts`
+- Modify: `packages/flynncode/src/plugin/routines/due.ts`
+- Test: `packages/flynncode/test/plugin/routines/due.test.ts`
 
 **Interfaces:**
 - Consumes: `Routine.rrule` from Task 1.
@@ -187,16 +187,16 @@ describe("rrule", () => {
 })
 ```
 
-Append to `packages/opencode/test/plugin/routines/due.test.ts`. Note the local `routine()` helper defaults `dailyAt: "09:00"`, so RRULE tests pass `dailyAt: undefined` explicitly.
+Append to `packages/flynncode/test/plugin/routines/due.test.ts`. Note the local `routine()` helper defaults `dailyAt: "09:00"`, so RRULE tests pass `dailyAt: undefined` explicitly.
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/plugin/routines/due.test.ts` with `workdir` `packages/opencode`
+Run: `bun test test/plugin/routines/due.test.ts` with `workdir` `packages/flynncode`
 Expected: FAIL (`rrule` ignored, weekly routine never due).
 
 - [ ] **Step 3: Implement real expansion**
 
-In `packages/opencode/src/plugin/routines/due.ts`, replace the import line with:
+In `packages/flynncode/src/plugin/routines/due.ts`, replace the import line with:
 
 ```ts
 import { RRule } from "rrule"
@@ -244,18 +244,18 @@ Note: `RRule.fromString` parses in local time, matching the existing `dailyAt` l
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun test test/plugin/routines/due.test.ts` with `workdir` `packages/opencode`
+Run: `bun test test/plugin/routines/due.test.ts` with `workdir` `packages/flynncode`
 Expected: PASS.
 
 - [ ] **Step 5: Typecheck**
 
-Run: `bun typecheck` with `workdir` `packages/opencode`
+Run: `bun typecheck` with `workdir` `packages/flynncode`
 Expected: clean.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/opencode/src/plugin/routines/due.ts packages/opencode/test/plugin/routines/due.test.ts
+git add packages/flynncode/src/plugin/routines/due.ts packages/flynncode/test/plugin/routines/due.test.ts
 git commit -m "feat(routines): expand RRULE occurrences for due checks"
 ```
 
@@ -264,8 +264,8 @@ git commit -m "feat(routines): expand RRULE occurrences for due checks"
 ### Task 3: Per-routine run history persisted inline + JSONL
 
 **Files:**
-- Modify: `packages/opencode/src/plugin/routines/parse.ts`, `packages/opencode/src/plugin/routines/index.ts`
-- Test: `packages/opencode/test/plugin/routines/parse.test.ts` (extend), new `packages/opencode/test/plugin/routines/runs.test.ts`
+- Modify: `packages/flynncode/src/plugin/routines/parse.ts`, `packages/flynncode/src/plugin/routines/index.ts`
+- Test: `packages/flynncode/test/plugin/routines/parse.test.ts` (extend), new `packages/flynncode/test/plugin/routines/runs.test.ts`
 
 **Interfaces:**
 - Consumes: `RoutineRun` and `recordRoutineRun` already in `index.ts`.
@@ -273,7 +273,7 @@ git commit -m "feat(routines): expand RRULE occurrences for due checks"
 
 - [ ] **Step 1: Write the failing test**
 
-Create `packages/opencode/test/plugin/routines/runs.test.ts`:
+Create `packages/flynncode/test/plugin/routines/runs.test.ts`:
 
 ```ts
 import { describe, expect, test } from "bun:test"
@@ -309,12 +309,12 @@ describe("parseRunRecords", () => {
 
 - [ ] **Step 2: Run test to verify it passes already (characterization)**
 
-Run: `bun test test/plugin/routines/runs.test.ts` with `workdir` `packages/opencode`
+Run: `bun test test/plugin/routines/runs.test.ts` with `workdir` `packages/flynncode`
 Expected: PASS (locks in existing JSONL behavior before extending it).
 
 - [ ] **Step 3: Extend parse with recentRuns**
 
-In `packages/opencode/src/plugin/routines/parse.ts`, add to `Routine`:
+In `packages/flynncode/src/plugin/routines/parse.ts`, add to `Routine`:
 
 ```ts
 recentRuns?: RoutineRunSummary[]
@@ -336,7 +336,7 @@ In `parseRoutine`, read `row.recentRuns`: keep entries that are objects with str
 
 - [ ] **Step 4: Persist recentRuns on every run**
 
-In `packages/opencode/src/plugin/routines/index.ts`:
+In `packages/flynncode/src/plugin/routines/index.ts`:
 - `stored()` must include `recentRuns: routine.recentRuns` (round-trip; `recentRuns: undefined` serializes away under JSON).
 - In the `due.map` tick, after `recordRoutineRun` succeeds, build the summary from the same timestamps/state and call `markRan` with both the id and the summary. Change `markRanEffect`'s `ids: string[]` param to `runs: { id: string; summary: RoutineRunSummary }[]` and set `{ ...current, lastRun: now.toISOString(), recentRuns: [...(current.recentRuns ?? []), summary].slice(-10) }`. Update the single caller in the tick.
 - Error path: record the error summary inline too (same as ok path), so failed runs appear in history.
@@ -345,18 +345,18 @@ Import the summary type from `./parse` with a type-only import: `import { parseR
 
 - [ ] **Step 5: Run all routine tests**
 
-Run: `bun test test/plugin/routines/` with `workdir` `packages/opencode`
+Run: `bun test test/plugin/routines/` with `workdir` `packages/flynncode`
 Expected: PASS.
 
 - [ ] **Step 6: Typecheck**
 
-Run: `bun typecheck` with `workdir` `packages/opencode`
+Run: `bun typecheck` with `workdir` `packages/flynncode`
 Expected: clean.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add packages/opencode/src/plugin/routines/ packages/opencode/test/plugin/routines/
+git add packages/flynncode/src/plugin/routines/ packages/flynncode/test/plugin/routines/
 git commit -m "feat(routines): persist per-routine recent run history"
 ```
 
@@ -428,9 +428,9 @@ git commit -m "feat(app): RRULE field, run history, and placement picker for rou
 ### Task 5: Poll-based file trigger (no webhooks)
 
 **Files:**
-- Create: `packages/opencode/src/plugin/routines/trigger.ts`
-- Modify: `packages/opencode/src/plugin/routines/parse.ts`, `packages/opencode/src/plugin/routines/due.ts`, `packages/opencode/src/plugin/routines/index.ts`
-- Test: `packages/opencode/test/plugin/routines/trigger.test.ts`
+- Create: `packages/flynncode/src/plugin/routines/trigger.ts`
+- Modify: `packages/flynncode/src/plugin/routines/parse.ts`, `packages/flynncode/src/plugin/routines/due.ts`, `packages/flynncode/src/plugin/routines/index.ts`
+- Test: `packages/flynncode/test/plugin/routines/trigger.test.ts`
 
 **Interfaces:**
 - Consumes: `Routine` gains `trigger?: { files?: string[] }`; scheduler passes the plugin `directory`.
@@ -438,7 +438,7 @@ git commit -m "feat(app): RRULE field, run history, and placement picker for rou
 
 - [ ] **Step 1: Write the failing test**
 
-Create `packages/opencode/test/plugin/routines/trigger.test.ts`:
+Create `packages/flynncode/test/plugin/routines/trigger.test.ts`:
 
 ```ts
 import { describe, expect, test } from "bun:test"
@@ -482,12 +482,12 @@ describe("triggerDue", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/plugin/routines/trigger.test.ts` with `workdir` `packages/opencode`
+Run: `bun test test/plugin/routines/trigger.test.ts` with `workdir` `packages/flynncode`
 Expected: FAIL (`trigger.ts` does not exist).
 
 - [ ] **Step 3: Implement poll trigger**
 
-Create `packages/opencode/src/plugin/routines/trigger.ts`:
+Create `packages/flynncode/src/plugin/routines/trigger.ts`:
 
 ```ts
 import { Glob } from "bun"
@@ -515,16 +515,16 @@ export async function triggerDue(routine: Routine, directory: string) {
 
 - [ ] **Step 4: Run tests**
 
-Run: `bun test test/plugin/routines/` with `workdir` `packages/opencode`
+Run: `bun test test/plugin/routines/` with `workdir` `packages/flynncode`
 Expected: PASS.
 
 - [ ] **Step 5: Typecheck and commit**
 
-Run: `bun typecheck` with `workdir` `packages/opencode`
+Run: `bun typecheck` with `workdir` `packages/flynncode`
 Expected: clean.
 
 ```bash
-git add packages/opencode/src/plugin/routines/ packages/opencode/test/plugin/routines/trigger.test.ts
+git add packages/flynncode/src/plugin/routines/ packages/flynncode/test/plugin/routines/trigger.test.ts
 git commit -m "feat(routines): poll-based file trigger"
 ```
 
@@ -533,8 +533,8 @@ git commit -m "feat(routines): poll-based file trigger"
 ### Task 6: Poll-based GitHub trigger (REST poll, no webhooks)
 
 **Files:**
-- Modify: `packages/opencode/src/plugin/routines/trigger.ts`, `packages/opencode/src/plugin/routines/parse.ts`, `packages/opencode/src/plugin/routines/index.ts`
-- Test: `packages/opencode/test/plugin/routines/trigger.test.ts` (extend)
+- Modify: `packages/flynncode/src/plugin/routines/trigger.ts`, `packages/flynncode/src/plugin/routines/parse.ts`, `packages/flynncode/src/plugin/routines/index.ts`
+- Test: `packages/flynncode/test/plugin/routines/trigger.test.ts` (extend)
 
 **Interfaces:**
 - Consumes: `triggerDue` from Task 5; `Routine.trigger.github?: { owner: string; repo: string; event: "pr" | "issue" }`.
@@ -575,7 +575,7 @@ test("github trigger requires owner, repo, and event", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/plugin/routines/trigger.test.ts` with `workdir` `packages/opencode`
+Run: `bun test test/plugin/routines/trigger.test.ts` with `workdir` `packages/flynncode`
 Expected: FAIL (github trigger shape unknown).
 
 - [ ] **Step 3: Implement**
@@ -587,11 +587,11 @@ Expected: FAIL (github trigger shape unknown).
 
 - [ ] **Step 4: Run tests, typecheck, commit**
 
-Run: `bun test test/plugin/routines/` then `bun typecheck`, both with `workdir` `packages/opencode`
+Run: `bun test test/plugin/routines/` then `bun typecheck`, both with `workdir` `packages/flynncode`
 Expected: PASS / clean.
 
 ```bash
-git add packages/opencode/src/plugin/routines/ packages/opencode/test/plugin/routines/trigger.test.ts
+git add packages/flynncode/src/plugin/routines/ packages/flynncode/test/plugin/routines/trigger.test.ts
 git commit -m "feat(routines): poll-based GitHub trigger without webhooks"
 ```
 
@@ -610,7 +610,7 @@ Add a `## 2026-10-08 WS7 addendum: RRULE cadence + run history + self-hosted tri
 
 - [ ] **Step 2: Full verification**
 
-Run: `bun test test/plugin/routines/` and `bun typecheck` with `workdir` `packages/opencode`; `bun typecheck` with `workdir` `packages/app`.
+Run: `bun test test/plugin/routines/` and `bun typecheck` with `workdir` `packages/flynncode`; `bun typecheck` with `workdir` `packages/app`.
 Expected: all PASS / clean.
 
 - [ ] **Step 3: Commit**

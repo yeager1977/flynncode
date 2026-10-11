@@ -4,7 +4,7 @@
 
 **Goal:** Make the default-model priority list rank Claude 5.x models (Sonnet 5.5 first) instead of defaulting Anthropic users to claude-sonnet-4-6.
 
-**Architecture:** One-line change to the hardcoded `priority` substring array in `packages/opencode/src/provider/provider.ts` (~line 2178), which drives `sort()` and default-model resolution. Under `sort()`'s verified descending findIndex semantics (last matching entry wins), `claude-sonnet` moves to the last position and `claude-opus-5` is inserted at index 1 as a Sonnet-less fallback.
+**Architecture:** One-line change to the hardcoded `priority` substring array in `packages/flynncode/src/provider/provider.ts` (~line 2178), which drives `sort()` and default-model resolution. Under `sort()`'s verified descending findIndex semantics (last matching entry wins), `claude-sonnet` moves to the last position and `claude-opus-5` is inserted at index 1 as a Sonnet-less fallback.
 
 **Tech Stack:** TypeScript, Bun test runner, remeda `sortBy` (existing).
 
@@ -15,8 +15,8 @@
 - Default branch is `dev`; diff against `dev` or `origin/dev` (`main` may not exist).
 - Branch name: at most three hyphen-separated words, no slashes or type prefixes → use `claude-5-priority`.
 - Conventional commits: `fix(provider): ...` / `test(provider): ...`.
-- Tests MUST be run from `packages/opencode`, never the repo root.
-- Type checking: `bun typecheck` from `packages/opencode`, never `tsc` directly.
+- Tests MUST be run from `packages/flynncode`, never the repo root.
+- Type checking: `bun typecheck` from `packages/flynncode`, never `tsc` directly.
 - Do not commit anything beyond this plan's stated files (repo has unrelated pre-existing dirty files — leave them).
 - No suppressions: no `as any` in new production code (the test file's local `as any[]` fixture convention is preserved, matching the existing test at line 996).
 
@@ -25,8 +25,8 @@
 ### Task 1: Re-rank `priority` array with TDD ranking tests
 
 **Files:**
-- Modify: `packages/opencode/src/provider/provider.ts:2178`
-- Test: `packages/opencode/test/provider/provider.test.ts` (insert new tests directly after the existing `test("provider.sort prioritizes preferred models", ...)` block, which ends near line 1003)
+- Modify: `packages/flynncode/src/provider/provider.ts:2178`
+- Test: `packages/flynncode/test/provider/provider.test.ts` (insert new tests directly after the existing `test("provider.sort prioritizes preferred models", ...)` block, which ends near line 1003)
 
 **Interfaces:**
 - Consumes: `Provider.sort` (exported at `provider.ts:2208-2215`, already imported by the test file — existing tests call `Provider.sort(models)` at line 998).
@@ -99,17 +99,17 @@ so the last matching entry wins; tiebreaks: `latest`-containing IDs first, then 
 
 - [ ] **Step 3: Run the new tests to verify they FAIL**
 
-Run from `packages/opencode` (never repo root):
+Run from `packages/flynncode` (never repo root):
 
 ```bash
-cd packages/opencode && bun test test/provider/provider.test.ts -t "provider.sort"
+cd packages/flynncode && bun test test/provider/provider.test.ts -t "provider.sort"
 ```
 
 Expected: FAIL — under the current array `["gpt-5", "claude-sonnet-4", "big-pickle", "gemini-3-pro"]`, the 5.x models are unranked (rank -1), so test 1 sorts `claude-sonnet-5-5` into second place behind `claude-sonnet-4-6` (and test 2 puts `some-legacy-model` first). The existing test `provider.sort prioritizes preferred models` must PASS at this point (it is regression-neutral; if it already fails, STOP and investigate before proceeding).
 
 - [ ] **Step 4: Update the `priority` array**
 
-In `packages/opencode/src/provider/provider.ts` at line ~2178 (just above the
+In `packages/flynncode/src/provider/provider.ts` at line ~2178 (just above the
 `familyWinner` comment block, below `Service`), replace:
 
 ```ts
@@ -134,7 +134,7 @@ Must-not-touch constraints for this task: `smallModelFamilyPriority` (line ~2179
 - [ ] **Step 5: Run the new tests to verify they PASS**
 
 ```bash
-cd packages/opencode && bun test test/provider/provider.test.ts -t "provider.sort"
+cd packages/flynncode && bun test test/provider/provider.test.ts -t "provider.sort"
 ```
 
 Expected: PASS — all four `provider.sort` tests (three new + existing
@@ -143,7 +143,7 @@ Expected: PASS — all four `provider.sort` tests (three new + existing
 - [ ] **Step 6: Run the full provider test directory for regressions**
 
 ```bash
-cd packages/opencode && bun test test/provider/
+cd packages/flynncode && bun test test/provider/
 ```
 
 Expected: PASS. The default-model `it.instance` tests (e.g. "defaultModel uses
@@ -156,7 +156,7 @@ consequence table and consult before changing an assertion.
 - [ ] **Step 7: Run the model-router suite (spec spot-check)**
 
 ```bash
-cd packages/opencode && bun test test/plugin/ollama-model-router/
+cd packages/flynncode && bun test test/plugin/ollama-model-router/
 ```
 
 Expected: PASS unchanged — router tiers (`provider-family.ts`) are untouched by
@@ -166,7 +166,7 @@ this change and still resolve `claude-opus-5-5` (flagship) / `claude-sonnet-5`
 - [ ] **Step 8: Typecheck**
 
 ```bash
-cd packages/opencode && bun typecheck
+cd packages/flynncode && bun typecheck
 ```
 
 Expected: exit 0, no new errors (an empty change-set must already be clean; if
@@ -175,14 +175,14 @@ proceeding).
 
 - [ ] **Step 9: LSP diagnostics on the changed file**
 
-Run LSP diagnostics on `packages/opencode/src/provider/provider.ts`.
+Run LSP diagnostics on `packages/flynncode/src/provider/provider.ts`.
 
 Expected: no new errors or warnings attributable to the edit.
 
 - [ ] **Step 10: Commit**
 
 ```bash
-git -C /home/yeager1977/GitHub/flynncode add packages/opencode/src/provider/provider.ts packages/opencode/test/provider/provider.test.ts
+git -C /home/yeager1977/GitHub/flynncode add packages/flynncode/src/provider/provider.ts packages/flynncode/test/provider/provider.test.ts
 git -C /home/yeager1977/GitHub/flynncode commit -m "fix(provider): rank Claude 5.x models in default-model priority"
 ```
 

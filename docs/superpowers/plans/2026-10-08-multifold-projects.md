@@ -16,7 +16,7 @@
 - No `any`, no star imports, no aliased imports. Import namespaces by name (e.g. `import { Project } from "@opencode-ai/core/project"` then `Project.Service`).
 - In Effect generators bind services to named variables before calling methods; never nest yields like `yield* (yield* Foo.Service).bar()`.
 - After any public Protocol or Server HttpApi change, run `bun run generate` from `packages/client`. Never edit `src/generated` or `src/generated-effect` by hand.
-- Tests run from package dirs (e.g. `packages/opencode`, `packages/app`), never repo root. Typecheck with `bun typecheck` from package dirs, never bare `tsc`.
+- Tests run from package dirs (e.g. `packages/flynncode`, `packages/app`), never repo root. Typecheck with `bun typecheck` from package dirs, never bare `tsc`.
 - Commit style `type(scope): summary` with types `feat|fix|docs|chore|refactor|test`. Do not commit unless the user asks; messages below are exact text to use when committing.
 - V2 Session Core: one Session ID owns one drain; `SessionExecution` stays process-global keyed by Session ID; `SessionRunner`, tool registry, permissions, filesystem stay Location-scoped; omitted `Location.workspaceID` means implicit-local placement.
 
@@ -24,8 +24,8 @@
 
 - `primary directory` = `Location.Ref.directory` = `InstanceContext.directory` = `Session.directory` = placement key = InstanceStore cache key = SessionExecution drain lookup key.
 - Git identity (`Project.resolve`), project id, `worktree`, and `vcs.store` derive ONLY from the primary directory. Extra folders never change project id, never create a second project row, and never split one session across two drains.
-- AGENTS.md / CLAUDE.md / CONTEXT.md / MEMORY.md instruction base paths (`packages/opencode/src/session/instruction.ts` `resolveBasePaths`) walk ONLY `ctx.directory` up to `ctx.worktree` of the primary. Extra folders contribute only via explicit `read` tool loads and per-file `Instruction.resolve` claims, never via base-path stacking.
-- opencode.json / opencode.jsonc / config.json discovery (`packages/opencode/src/config/config.ts`, `packages/opencode/src/config/omo-files.ts`) loads ONLY from the primary directory chain plus global config. Extra folders never supply project config.
+- AGENTS.md / CLAUDE.md / CONTEXT.md / MEMORY.md instruction base paths (`packages/flynncode/src/session/instruction.ts` `resolveBasePaths`) walk ONLY `ctx.directory` up to `ctx.worktree` of the primary. Extra folders contribute only via explicit `read` tool loads and per-file `Instruction.resolve` claims, never via base-path stacking.
+- opencode.json / opencode.jsonc / config.json discovery (`packages/flynncode/src/config/config.ts`, `packages/flynncode/src/config/omo-files.ts`) loads ONLY from the primary directory chain plus global config. Extra folders never supply project config.
 - File tools, glob, search, watcher subscriptions, PTY spawn cwd, and `containsPath` checks accept primary plus extras. Permission `external_directory` prompts do not fire for paths inside any attached folder.
 - Session listing by directory matches primary directory only; extras are visible via the session folders endpoint, not via `list` filters.
 
@@ -33,10 +33,10 @@
 
 Create:
 - `packages/core/src/project/folders.ts` — pure helpers: normalize, dedupe, primary-first ordering, containment check.
-- `packages/opencode/test/project/folders.test.ts` — unit tests for the helpers.
+- `packages/flynncode/test/project/folders.test.ts` — unit tests for the helpers.
 - `packages/core/test/project-folders.test.ts` — core-level ordering/dedupe tests if core test runner exists there, else fold into opencode test above (see Task 1 step 1).
-- `packages/opencode/test/session/multifold-create.test.ts` — session create with extras validation tests.
-- `packages/opencode/test/instruction/multifold-basepaths.test.ts` — instruction base-path primary-only tests.
+- `packages/flynncode/test/session/multifold-create.test.ts` — session create with extras validation tests.
+- `packages/flynncode/test/instruction/multifold-basepaths.test.ts` — instruction base-path primary-only tests.
 - `packages/app/src/components/session-folders-controller.test.ts` — folder list model tests (primary radio, remove, set-primary).
 - `packages/app/src/pages/new-session/new-session-folders-controller.test.ts` — new-session multi-folder picker model tests.
 
@@ -44,14 +44,14 @@ Modify:
 - `packages/schema/src/location.ts` — add optional `additionalDirectories` to `Location.Ref` documentation only if needed; default is to NOT change the wire Ref and instead carry extras via session folders API (see Task 2 decision record).
 - `packages/core/src/project/directories.ts` — add `type` column usage (`main` for primary, `root` for extras); add `setPrimary` helper.
 - `packages/core/src/project/sql.ts` — no schema change (`type` column already exists); only document `main` vs `root` usage.
-- `packages/opencode/src/project/project.ts` — `fromDirectory` accepts `{ directory, additionalDirectories }`; persists extras as `root` rows; `addSandbox`/`removeSandbox` cover extras add/remove.
-- `packages/opencode/src/project/instance-context.ts` — add `additionalDirectories: string[]` to `InstanceContext`; extend `containsPath` to union.
-- `packages/opencode/src/project/instance-store.ts` — `LoadInput` gains `additionalDirectories`; cache key stays resolved primary directory.
-- `packages/opencode/src/session/session.ts` — `create`/`createNext` accept `additionalDirectories`; validate and persist via `ProjectDirectories`.
-- `packages/opencode/src/session/instruction.ts` — lock `resolveBasePaths` to primary; add `resolveExtra` note that extras load only on explicit read.
-- `packages/opencode/src/config/config.ts` — assert config directory walk uses `ctx.directory`/`ctx.worktree` of primary only; add regression test hook if walk is parameterized.
-- `packages/opencode/src/server/routes/instance/httpapi/groups/session.ts` — extend session create payload with `additionalDirectories`; add `session.folders` get/set endpoints.
-- `packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts` — implement folders get/set with validation.
+- `packages/flynncode/src/project/project.ts` — `fromDirectory` accepts `{ directory, additionalDirectories }`; persists extras as `root` rows; `addSandbox`/`removeSandbox` cover extras add/remove.
+- `packages/flynncode/src/project/instance-context.ts` — add `additionalDirectories: string[]` to `InstanceContext`; extend `containsPath` to union.
+- `packages/flynncode/src/project/instance-store.ts` — `LoadInput` gains `additionalDirectories`; cache key stays resolved primary directory.
+- `packages/flynncode/src/session/session.ts` — `create`/`createNext` accept `additionalDirectories`; validate and persist via `ProjectDirectories`.
+- `packages/flynncode/src/session/instruction.ts` — lock `resolveBasePaths` to primary; add `resolveExtra` note that extras load only on explicit read.
+- `packages/flynncode/src/config/config.ts` — assert config directory walk uses `ctx.directory`/`ctx.worktree` of primary only; add regression test hook if walk is parameterized.
+- `packages/flynncode/src/server/routes/instance/httpapi/groups/session.ts` — extend session create payload with `additionalDirectories`; add `session.folders` get/set endpoints.
+- `packages/flynncode/src/server/routes/instance/httpapi/handlers/session.ts` — implement folders get/set with validation.
 - `packages/protocol/src/groups/session.ts` — mirror payload change for generated SDK.
 - `packages/app/src/pages/new-session/new-session-workspace-controller.ts` — multi-folder picker model with primary index.
 - `packages/app/src/pages/layout/sidebar-workspace.tsx` — folder list with primary badge, set-primary, remove, add-folder actions.
@@ -91,7 +91,7 @@ New i18n keys (all in `packages/app/src/i18n/en.ts`):
 
 **Files:**
 - Create: `packages/core/src/project/folders.ts`
-- Create: `packages/opencode/test/project/folders.test.ts`
+- Create: `packages/flynncode/test/project/folders.test.ts`
 
 **Interfaces:**
 - Consumes: nothing new.
@@ -99,8 +99,8 @@ New i18n keys (all in `packages/app/src/i18n/en.ts`):
 
 - [ ] **Step 1: Confirm test runner location**
 
-Run: `ls packages/core/test packages/opencode/test/project` (workdir `/home/yeager1977/GitHub/flynncode`)
-Expected: `packages/opencode/test/project` exists or is creatable; if `packages/core/test` does not exist, put all tests in `packages/opencode/test/project/folders.test.ts` only.
+Run: `ls packages/core/test packages/flynncode/test/project` (workdir `/home/yeager1977/GitHub/flynncode`)
+Expected: `packages/flynncode/test/project` exists or is creatable; if `packages/core/test` does not exist, put all tests in `packages/flynncode/test/project/folders.test.ts` only.
 
 - [ ] **Step 2: Write the failing test**
 
@@ -126,7 +126,7 @@ Note: `promoteToPrimary` takes the full attached list with primary first; caller
 
 - [ ] **Step 3: Run test to verify it fails**
 
-Run: `bun test test/project/folders.test.ts` (workdir `/home/yeager1977/GitHub/flynncode/packages/opencode`)
+Run: `bun test test/project/folders.test.ts` (workdir `/home/yeager1977/GitHub/flynncode/packages/flynncode`)
 Expected: FAIL with module not found.
 
 - [ ] **Step 4: Write minimal implementation**
@@ -164,26 +164,26 @@ Follow repo style: no `else`, no alias imports, dot notation. Place helpers belo
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `bun test test/project/folders.test.ts` (workdir `/home/yeager1977/GitHub/flynncode/packages/opencode`)
+Run: `bun test test/project/folders.test.ts` (workdir `/home/yeager1977/GitHub/flynncode/packages/flynncode`)
 Expected: PASS, 3 tests.
 
 - [ ] **Step 6: Typecheck**
 
-Run: `bun typecheck` (workdir `/home/yeager1977/GitHub/flynncode/packages/opencode`)
+Run: `bun typecheck` (workdir `/home/yeager1977/GitHub/flynncode/packages/flynncode`)
 Expected: PASS with no errors.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add packages/core/src/project/folders.ts packages/opencode/test/project/folders.test.ts
+git add packages/core/src/project/folders.ts packages/flynncode/test/project/folders.test.ts
 git commit -m "feat(core): add multifold folder helpers"
 ```
 
 ### Task 2: Instance context plus store carry extras, key stays primary
 
 **Files:**
-- Modify: `packages/opencode/src/project/instance-context.ts`
-- Modify: `packages/opencode/src/project/instance-store.ts`
+- Modify: `packages/flynncode/src/project/instance-context.ts`
+- Modify: `packages/flynncode/src/project/instance-store.ts`
 
 **Interfaces:**
 - Consumes: `normalizeFolders` from Task 1.
@@ -204,16 +204,16 @@ describe("multifold containsPath", () => {
 })
 ```
 
-Put in `packages/opencode/test/project/multifold-context.test.ts`.
+Put in `packages/flynncode/test/project/multifold-context.test.ts`.
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/project/multifold-context.test.ts` (workdir `/home/yeager1977/GitHub/flynncode/packages/opencode`)
+Run: `bun test test/project/multifold-context.test.ts` (workdir `/home/yeager1977/GitHub/flynncode/packages/flynncode`)
 Expected: FAIL — `additionalDirectories` unknown property.
 
 - [ ] **Step 3: Write minimal implementation**
 
-In `packages/opencode/src/project/instance-context.ts`:
+In `packages/flynncode/src/project/instance-context.ts`:
 
 ```ts
 import { LocalContext } from "@/util/local-context"
@@ -239,29 +239,29 @@ export function containsPath(filepath: string, ctx: InstanceContext): boolean {
 }
 ```
 
-In `packages/opencode/src/project/instance-store.ts`, extend `LoadInput` with `additionalDirectories?: string[]`, thread into `boot` so `ctx.additionalDirectories` equals `input.additionalDirectories ?? []`, and keep `cache` key as `FSUtil.resolve(input.directory)` only. Update `boot` construction branch for explicit `input.project && input.worktree` to include `additionalDirectories: input.additionalDirectories ?? []`.
+In `packages/flynncode/src/project/instance-store.ts`, extend `LoadInput` with `additionalDirectories?: string[]`, thread into `boot` so `ctx.additionalDirectories` equals `input.additionalDirectories ?? []`, and keep `cache` key as `FSUtil.resolve(input.directory)` only. Update `boot` construction branch for explicit `input.project && input.worktree` to include `additionalDirectories: input.additionalDirectories ?? []`.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun test test/project/multifold-context.test.ts test/project/folders.test.ts` (workdir `/home/yeager1977/GitHub/flynncode/packages/opencode`)
+Run: `bun test test/project/multifold-context.test.ts test/project/folders.test.ts` (workdir `/home/yeager1977/GitHub/flynncode/packages/flynncode`)
 Expected: PASS.
 
 - [ ] **Step 5: Typecheck**
 
-Run: `bun typecheck` (workdir `/home/yeager1977/GitHub/flynncode/packages/opencode`)
+Run: `bun typecheck` (workdir `/home/yeager1977/GitHub/flynncode/packages/flynncode`)
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/opencode/src/project/instance-context.ts packages/opencode/src/project/instance-store.ts packages/opencode/test/project/multifold-context.test.ts
+git add packages/flynncode/src/project/instance-context.ts packages/flynncode/src/project/instance-store.ts packages/flynncode/test/project/multifold-context.test.ts
 git commit -m "feat(opencode): carry extra folders on instance context"
 ```
 
 ### Task 3: Project persistence for extras as root rows
 
 **Files:**
-- Modify: `packages/opencode/src/project/project.ts`
+- Modify: `packages/flynncode/src/project/project.ts`
 
 **Interfaces:**
 - Consumes: `InstanceContext.additionalDirectories`, `ProjectDirectories.Service`.
@@ -269,7 +269,7 @@ git commit -m "feat(opencode): carry extra folders on instance context"
 
 - [ ] **Step 1: Write the failing test**
 
-Extend `packages/opencode/test/project/multifold-context.test.ts` with an integration test that calls `Project.fromDirectory` with extras only if a test harness exists; otherwise write a pure persistence-shape test asserting `fromDirectory` accepts a second arg. Minimal failing assertion:
+Extend `packages/flynncode/test/project/multifold-context.test.ts` with an integration test that calls `Project.fromDirectory` with extras only if a test harness exists; otherwise write a pure persistence-shape test asserting `fromDirectory` accepts a second arg. Minimal failing assertion:
 
 ```ts
 test("fromDirectory accepts extras without changing worktree", async () => {
@@ -282,33 +282,33 @@ This step locks the import path before editing.
 
 - [ ] **Step 2: Implement fromDirectory extras**
 
-In `packages/opencode/src/project/project.ts`, change `fromDirectory` signature to `fromDirectory(directory: string, additionalDirectories?: string[])`. After existing `saveProjectDirectory({ projectID, directory: data.directory })`, loop extras via the existing `normalizeFolders` helper (import from `@opencode-ai/core/project/folders` by name, no alias) and call `saveProjectDirectory` equivalent with a `type` of `root`. Reuse `projectDirectories.create({ projectID, directory: opened })` directly for extras since `saveProjectDirectory` hardcodes no type; add inline create with try/catch warning matching existing `saveProjectDirectory` error handling. Do not change `worktree`, `vcs`, or project id derivation.
+In `packages/flynncode/src/project/project.ts`, change `fromDirectory` signature to `fromDirectory(directory: string, additionalDirectories?: string[])`. After existing `saveProjectDirectory({ projectID, directory: data.directory })`, loop extras via the existing `normalizeFolders` helper (import from `@opencode-ai/core/project/folders` by name, no alias) and call `saveProjectDirectory` equivalent with a `type` of `root`. Reuse `projectDirectories.create({ projectID, directory: opened })` directly for extras since `saveProjectDirectory` hardcodes no type; add inline create with try/catch warning matching existing `saveProjectDirectory` error handling. Do not change `worktree`, `vcs`, or project id derivation.
 
 - [ ] **Step 3: Run tests**
 
-Run: `bun test test/project/multifold-context.test.ts` (workdir `/home/yeager1977/GitHub/flynncode/packages/opencode`)
+Run: `bun test test/project/multifold-context.test.ts` (workdir `/home/yeager1977/GitHub/flynncode/packages/flynncode`)
 Expected: PASS.
 
 - [ ] **Step 4: Typecheck**
 
-Run: `bun typecheck` (workdir `/home/yeager1977/GitHub/flynncode/packages/opencode`)
+Run: `bun typecheck` (workdir `/home/yeager1977/GitHub/flynncode/packages/flynncode`)
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/project/project.ts packages/opencode/test/project/multifold-context.test.ts
+git add packages/flynncode/src/project/project.ts packages/flynncode/test/project/multifold-context.test.ts
 git commit -m "feat(opencode): persist extra folders as project roots"
 ```
 
 ### Task 4: Session create plus folders endpoints
 
 **Files:**
-- Modify: `packages/opencode/src/session/session.ts`
-- Modify: `packages/opencode/src/server/routes/instance/httpapi/groups/session.ts`
-- Modify: `packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts`
+- Modify: `packages/flynncode/src/session/session.ts`
+- Modify: `packages/flynncode/src/server/routes/instance/httpapi/groups/session.ts`
+- Modify: `packages/flynncode/src/server/routes/instance/httpapi/handlers/session.ts`
 - Modify: `packages/protocol/src/groups/session.ts`
-- Create: `packages/opencode/test/session/multifold-create.test.ts`
+- Create: `packages/flynncode/test/session/multifold-create.test.ts`
 
 **Interfaces:**
 - Consumes: Task 2 context, Task 3 persistence.
@@ -331,11 +331,11 @@ This locks module paths; real validation tests run against the handler with temp
 
 - [ ] **Step 2: Extend session create**
 
-In `packages/opencode/src/session/session.ts`: add `additionalDirectories?: string[]` to `CreateInput` schema and `Interface["create"]` input and `createNext` input. Validate: resolve each extra, drop non-absolute, reject duplicates of `ctx.directory` (filter, do not fail), fail on missing path via filesystem exists check, fail over 8 with `SessionMultifoldError`. Pass extras into `InstanceStore.load` via `provide` path used by session routes (check the session route handler that calls `InstanceStore.provide` or `load`; thread `additionalDirectories` there, do not change drain logic). Persist via `ProjectDirectories.create` with `root` type after `createNext` succeeds.
+In `packages/flynncode/src/session/session.ts`: add `additionalDirectories?: string[]` to `CreateInput` schema and `Interface["create"]` input and `createNext` input. Validate: resolve each extra, drop non-absolute, reject duplicates of `ctx.directory` (filter, do not fail), fail on missing path via filesystem exists check, fail over 8 with `SessionMultifoldError`. Pass extras into `InstanceStore.load` via `provide` path used by session routes (check the session route handler that calls `InstanceStore.provide` or `load`; thread `additionalDirectories` there, do not change drain logic). Persist via `ProjectDirectories.create` with `root` type after `createNext` succeeds.
 
 - [ ] **Step 3: Add folders endpoints**
 
-In `packages/opencode/src/server/routes/instance/httpapi/groups/session.ts` add:
+In `packages/flynncode/src/server/routes/instance/httpapi/groups/session.ts` add:
 - `GET /api/session/:sessionID/folders` returning `Schema.Struct({ primary: Schema.String, extras: Schema.Array(Schema.String) })`.
 - `POST /api/session/:sessionID/folders` accepting `Schema.Struct({ extras: Schema.optional(Schema.Array(Schema.String)), primary: Schema.optional(Schema.String) })`.
 
@@ -347,23 +347,23 @@ In `packages/protocol/src/groups/session.ts` mirror the two endpoints with ident
 
 - [ ] **Step 5: Run tests and typecheck**
 
-Run: `bun test test/session/multifold-create.test.ts test/project/multifold-context.test.ts` (workdir `/home/yeager1977/GitHub/flynncode/packages/opencode`)
+Run: `bun test test/session/multifold-create.test.ts test/project/multifold-context.test.ts` (workdir `/home/yeager1977/GitHub/flynncode/packages/flynncode`)
 Expected: PASS.
-Run: `bun typecheck` (workdir `/home/yeager1977/GitHub/flynncode/packages/opencode`)
+Run: `bun typecheck` (workdir `/home/yeager1977/GitHub/flynncode/packages/flynncode`)
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/opencode/src/session/session.ts packages/opencode/src/server/routes/instance/httpapi/groups/session.ts packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts packages/protocol/src/groups/session.ts packages/client/src/generated packages/client/src/generated-effect packages/opencode/test/session/multifold-create.test.ts
+git add packages/flynncode/src/session/session.ts packages/flynncode/src/server/routes/instance/httpapi/groups/session.ts packages/flynncode/src/server/routes/instance/httpapi/handlers/session.ts packages/protocol/src/groups/session.ts packages/client/src/generated packages/client/src/generated-effect packages/flynncode/test/session/multifold-create.test.ts
 git commit -m "feat(session): attach extra folders with primary ownership"
 ```
 
 ### Task 5: Lock instruction and config discovery to primary
 
 **Files:**
-- Modify: `packages/opencode/src/session/instruction.ts`
-- Create: `packages/opencode/test/instruction/multifold-basepaths.test.ts`
+- Modify: `packages/flynncode/src/session/instruction.ts`
+- Create: `packages/flynncode/test/instruction/multifold-basepaths.test.ts`
 
 **Interfaces:**
 - Consumes: Task 2 context.
@@ -384,22 +384,22 @@ describe("multifold instruction base", () => {
 
 - [ ] **Step 2: Implement primary-only lock**
 
-In `packages/opencode/src/session/instruction.ts` `resolveBasePaths`: confirm it reads `ctx.directory` and `ctx.worktree` only; add comment `// Multifold: base instruction discovery uses the primary folder only; extras load via explicit read.` No logic change unless it iterates extras — if it does, remove that branch. In `resolve`: keep upward walk bounded by `root = path.resolve(ctx.directory)` so files under extras never attach implicitly. Add the same one-line comment to `packages/opencode/src/config/config.ts` directory-walk site (no behavior change): `// Multifold: project config loads from the primary folder chain only.`
+In `packages/flynncode/src/session/instruction.ts` `resolveBasePaths`: confirm it reads `ctx.directory` and `ctx.worktree` only; add comment `// Multifold: base instruction discovery uses the primary folder only; extras load via explicit read.` No logic change unless it iterates extras — if it does, remove that branch. In `resolve`: keep upward walk bounded by `root = path.resolve(ctx.directory)` so files under extras never attach implicitly. Add the same one-line comment to `packages/flynncode/src/config/config.ts` directory-walk site (no behavior change): `// Multifold: project config loads from the primary folder chain only.`
 
 - [ ] **Step 3: Run tests**
 
-Run: `bun test test/instruction/multifold-basepaths.test.ts` (workdir `/home/yeager1977/GitHub/flynncode/packages/opencode`)
+Run: `bun test test/instruction/multifold-basepaths.test.ts` (workdir `/home/yeager1977/GitHub/flynncode/packages/flynncode`)
 Expected: PASS.
 
 - [ ] **Step 4: Typecheck**
 
-Run: `bun typecheck` (workdir `/home/yeager1977/GitHub/flynncode/packages/opencode`)
+Run: `bun typecheck` (workdir `/home/yeager1977/GitHub/flynncode/packages/flynncode`)
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/session/instruction.ts packages/opencode/src/config/config.ts packages/opencode/test/instruction/multifold-basepaths.test.ts
+git add packages/flynncode/src/session/instruction.ts packages/flynncode/src/config/config.ts packages/flynncode/test/instruction/multifold-basepaths.test.ts
 git commit -m "fix(session): lock instruction and config to primary folder"
 ```
 
@@ -463,10 +463,10 @@ git commit -m "feat(app): manage multifold project folders"
 ### Task 7: File tools, watcher, PTY, and permissions accept extras
 
 **Files:**
-- Modify: `packages/opencode/src/tool/registry.ts` (or the filesystem boundary check module it delegates to)
-- Modify: `packages/opencode/src/project/instance-context.ts` call sites (permission `external_directory` check)
-- Modify: `packages/opencode/src/server/routes/instance/httpapi/handlers/file.ts`
-- Modify: `packages/opencode/src/server/routes/instance/httpapi/handlers/pty.ts`
+- Modify: `packages/flynncode/src/tool/registry.ts` (or the filesystem boundary check module it delegates to)
+- Modify: `packages/flynncode/src/project/instance-context.ts` call sites (permission `external_directory` check)
+- Modify: `packages/flynncode/src/server/routes/instance/httpapi/handlers/file.ts`
+- Modify: `packages/flynncode/src/server/routes/instance/httpapi/handlers/pty.ts`
 
 **Interfaces:**
 - Consumes: Task 2 `containsPath`.
@@ -478,23 +478,23 @@ Replace direct `FSUtil.contains(ctx.directory, ...)` comparisons in permission c
 
 - [ ] **Step 2: Verify with existing suites**
 
-Run: `bun test test/project test/session test/tool` (workdir `/home/yeager1977/GitHub/flynncode/packages/opencode`)
+Run: `bun test test/project test/session test/tool` (workdir `/home/yeager1977/GitHub/flynncode/packages/flynncode`)
 Expected: PASS with no new failures.
 
 - [ ] **Step 3: Typecheck**
 
-Run: `bun typecheck` (workdir `/home/yeager1977/GitHub/flynncode/packages/opencode`)
+Run: `bun typecheck` (workdir `/home/yeager1977/GitHub/flynncode/packages/flynncode`)
 Expected: PASS.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add packages/opencode/src/tool/registry.ts packages/opencode/src/server/routes/instance/httpapi/handlers/file.ts packages/opencode/src/server/routes/instance/httpapi/handlers/pty.ts
+git add packages/flynncode/src/tool/registry.ts packages/flynncode/src/server/routes/instance/httpapi/handlers/file.ts packages/flynncode/src/server/routes/instance/httpapi/handlers/pty.ts
 git commit -m "feat(opencode): scope file tools to attached folders"
 ```
 
 ## Verification
 
-- `bun typecheck` in `packages/opencode`, `packages/core`, `packages/app`, `packages/client`.
-- `bun test` in `packages/opencode` (`test/project/folders.test.ts`, `test/project/multifold-context.test.ts`, `test/session/multifold-create.test.ts`, `test/instruction/multifold-basepaths.test.ts`) and `packages/app` (both new controller tests).
+- `bun typecheck` in `packages/flynncode`, `packages/core`, `packages/app`, `packages/client`.
+- `bun test` in `packages/flynncode` (`test/project/folders.test.ts`, `test/project/multifold-context.test.ts`, `test/session/multifold-create.test.ts`, `test/instruction/multifold-basepaths.test.ts`) and `packages/app` (both new controller tests).
 - Manual: create session with primary `/repo` plus extra `/docs`; confirm Git branch, AGENTS.md banner, and config reflect `/repo`; confirm read/glob/search reach `/docs` without `external_directory` prompt; set `/docs` as primary and confirm instance reboots and session directory rebinds; remove extra and confirm tools deny outside paths again.

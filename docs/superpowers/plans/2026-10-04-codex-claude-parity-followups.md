@@ -26,7 +26,7 @@
 3. Add a small "Re-check page" button in the browser panel that re-fires the annotation with the same coords. No new IPC.
 4. Tests: extend `review-browser.test.tsx` (or add `review-capture.test.ts`); assert the annotation includes the thumbnail when provided, and falls back to rect-only otherwise.
 
-## Lane 3 — Routines: cadence + recovery + records (`packages/opencode`)
+## Lane 3 — Routines: cadence + recovery + records (`packages/flynncode`)
 
 **Goal:** a local routine can be hourly/weekly and survive app restart, with an inspectable run history.
 
@@ -46,11 +46,11 @@
 3. When Lane 2 ships, accept the captured screenshot into the artifact store with the session id.
 4. Tests: extend `sidebar-artifacts.test.ts`.
 
-## Lane 5 — Checkout handoff: carry context (`packages/opencode` + `packages/app`)
+## Lane 5 — Checkout handoff: carry context (`packages/flynncode` + `packages/app`)
 
 **Goal:** a handoff keeps the conversation meaningful in the destination.
 
-1. In `packages/opencode/src/worktree`, add `handoff { from, to }` that rejects identical paths and unknown source, and does the actual filesystem/link work; reuse the existing `copy` helper. Register the endpoint under the same experimental route as `worktree`/`worktreeRemove`.
+1. In `packages/flynncode/src/worktree`, add `handoff { from, to }` that rejects identical paths and unknown source, and does the actual filesystem/link work; reuse the existing `copy` helper. Register the endpoint under the same experimental route as `worktree`/`worktreeRemove`.
 2. In the app, route the handoff branch of `checkout-handoff.ts` through existing UI surfaces: call the endpoint, then start a new session in the destination bound to the same first-prompt text. Archive or mark the source session as "moved" when explicitly selected. Non-git projects stay disabled with the same message copy.
 3. Edges: if the destination does not exist yet, the endpoint should fail with the existing form error; if the source session is missing, allow the move with an empty new session and surface a toast.
 4. Tests: opencode worktree tests assert handoff rejects identical paths, copies semantics, and errors on unknown FROM; app decision tests assert the move notes behavior in `checkout-handoff.test.ts`.
@@ -63,9 +63,9 @@
 |---|---|---|
 | 1 | implementer + reviewer | `packages/app/src/pages/dispatch/*`, `src/context/notification.tsx` |
 | 2 | implementer + reviewer | `packages/app/src/pages/session/review-browser.tsx`, `hunk-revert.ts` |
-| 3 | implementer + reviewer | `packages/opencode/src/plugin/routines/*`, `app/.../settings-v2/routines.tsx` |
+| 3 | implementer + reviewer | `packages/flynncode/src/plugin/routines/*`, `app/.../settings-v2/routines.tsx` |
 | 4 | implementer + reviewer | `packages/app/src/pages/layout/sidebar-artifacts.*` |
-| 5 | implementer + reviewer | `packages/opencode/src/worktree/*`, `app/.../session-header.tsx` |
+| 5 | implementer + reviewer | `packages/flynncode/src/worktree/*`, `app/.../session-header.tsx` |
 
 Reserved/out-of-scope: cloud, Web Push, full RRULE, full `/review` web-submit, Codex cloud triggers. Every lane touches a disjoint file set and commits independently.
 

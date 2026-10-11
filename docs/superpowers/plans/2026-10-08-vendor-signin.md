@@ -15,8 +15,8 @@
 - UI copy via i18n keys (en only); never hardcode user-visible English in production code.
 - No `any` type; no star imports; no aliased imports.
 - Tokens never logged, never in URLs, never in shell history.
-- Run `bun typecheck` from package dirs (e.g. `packages/opencode`), never `tsc` directly.
-- Run tests from package dirs (e.g. `packages/opencode`), never from repo root.
+- Run `bun typecheck` from package dirs (e.g. `packages/flynncode`), never `tsc` directly.
+- Run tests from package dirs (e.g. `packages/flynncode`), never from repo root.
 - Use conventional commits `type(scope): summary` with types `feat`, `fix`, `docs`, `chore`, `refactor`, `test`.
 - Branch names max three words, hyphens, no slashes or type prefixes.
 - In `src/config`, follow existing self-export pattern when adding config modules.
@@ -27,31 +27,31 @@
 
 ## Files
 
-- Create: `packages/opencode/src/auth/vendor-import.ts` — pure parsers for `~/.claude/.credentials.json`, `~/.codex/auth.json`, env keys; redacted errors.
-- Create: `packages/opencode/src/auth/vendor-import.test.ts` — fixture-first tests for parsers.
-- Create: `packages/opencode/src/auth/keychain.ts` — `VendorCredentialStore` Effect service, file fallback at `Global.Path.data/vendor-auth.json` mode 0600, delegates to `Auth.Service`.
-- Create: `packages/opencode/src/auth/keychain.test.ts` — live temp-dir tests for set/get/remove, perms, no secret in errors.
-- Create: `packages/opencode/src/plugin/anthropic/subscription.ts` — built-in Anthropic OAuth + API-key + import plugin (`auth.provider: "anthropic"`).
-- Create: `packages/opencode/src/plugin/anthropic/subscription.test.ts` — loader/refresh/model-filter tests.
-- Modify: `packages/opencode/src/plugin/openai/codex.ts` — add import-from-Codex-CLI method, route through keychain store, keep existing browser/headless OAuth untouched.
-- Modify: `packages/opencode/src/plugin/openai/codex.test.ts` — cover import path (create if missing; check existing test layout first).
-- Modify: `packages/opencode/src/plugin/index.ts` — register Anthropic subscription plugin in `internalPlugins`.
-- Modify: `packages/opencode/src/plugin/ollama-model-router/scorecard.ts` — bundled scorecard entries for `anthropic/*` subscription and `openai/gpt-6-sol`, `openai/gpt-6-luna`, `openai/gpt-6-astra` when vendor-connected.
-- Modify: `packages/opencode/src/plugin/ollama-model-router/tools.ts` — add `auth_status` tool reporting connected/elgible counts without secret values.
-- Modify: `packages/opencode/src/plugin/ollama-model-router/candidates.ts` — no logic change unless vendor providers filtered; verify `openai`/`anthropic` pass `selectedWithFallback` when connected (add regression test instead of code if already passing).
-- Create: `packages/opencode/src/plugin/ollama-model-router/vendor-visibility.test.ts` — catalog with `anthropic`+`openai` connected yields candidates and `auth_status` output.
+- Create: `packages/flynncode/src/auth/vendor-import.ts` — pure parsers for `~/.claude/.credentials.json`, `~/.codex/auth.json`, env keys; redacted errors.
+- Create: `packages/flynncode/src/auth/vendor-import.test.ts` — fixture-first tests for parsers.
+- Create: `packages/flynncode/src/auth/keychain.ts` — `VendorCredentialStore` Effect service, file fallback at `Global.Path.data/vendor-auth.json` mode 0600, delegates to `Auth.Service`.
+- Create: `packages/flynncode/src/auth/keychain.test.ts` — live temp-dir tests for set/get/remove, perms, no secret in errors.
+- Create: `packages/flynncode/src/plugin/anthropic/subscription.ts` — built-in Anthropic OAuth + API-key + import plugin (`auth.provider: "anthropic"`).
+- Create: `packages/flynncode/src/plugin/anthropic/subscription.test.ts` — loader/refresh/model-filter tests.
+- Modify: `packages/flynncode/src/plugin/openai/codex.ts` — add import-from-Codex-CLI method, route through keychain store, keep existing browser/headless OAuth untouched.
+- Modify: `packages/flynncode/src/plugin/openai/codex.test.ts` — cover import path (create if missing; check existing test layout first).
+- Modify: `packages/flynncode/src/plugin/index.ts` — register Anthropic subscription plugin in `internalPlugins`.
+- Modify: `packages/flynncode/src/plugin/ollama-model-router/scorecard.ts` — bundled scorecard entries for `anthropic/*` subscription and `openai/gpt-6-sol`, `openai/gpt-6-luna`, `openai/gpt-6-astra` when vendor-connected.
+- Modify: `packages/flynncode/src/plugin/ollama-model-router/tools.ts` — add `auth_status` tool reporting connected/elgible counts without secret values.
+- Modify: `packages/flynncode/src/plugin/ollama-model-router/candidates.ts` — no logic change unless vendor providers filtered; verify `openai`/`anthropic` pass `selectedWithFallback` when connected (add regression test instead of code if already passing).
+- Create: `packages/flynncode/src/plugin/ollama-model-router/vendor-visibility.test.ts` — catalog with `anthropic`+`openai` connected yields candidates and `auth_status` output.
 - Create: `packages/desktop/src/main/vendor-keychain.ts` — `safeStorage`-backed get/set/remove with file fallback, no logging of secrets.
 - Create: `packages/desktop/src/main/vendor-keychain.test.ts` — fallback path + redaction tests.
 - Modify: `packages/desktop/src/main/ipc.ts` — add `vendor-auth-status`, `vendor-auth-signout` handlers wired to keychain + `Auth` via sidecar client.
 - Modify: `packages/desktop/src/preload/types.ts` — add typed `vendorAuth` bridge.
 - Modify: `packages/app/src/i18n/desktop-native.ts` — add `DESKTOP_NATIVE_ENGLISH` keys under `desktop.vendorAuth.*` (en only).
 - Modify: `packages/app/src/` settings screen owning provider connection UI (resolve exact file in Task 6 by grepping `Manage Models` / `disabled_providers`) — add Sign in / Import / Sign out rows using `language.t(...)`.
-- Modify: `packages/opencode/src/cli/cmd/providers.ts` — ensure `opencode auth login anthropic` and `opencode auth login openai` list new methods (no new command; verify labels surface).
+- Modify: `packages/flynncode/src/cli/cmd/providers.ts` — ensure `opencode auth login anthropic` and `opencode auth login openai` list new methods (no new command; verify labels surface).
 
 ## Interfaces
 
 ```ts
-// packages/opencode/src/auth/vendor-import.ts
+// packages/flynncode/src/auth/vendor-import.ts
 export type VendorID = "anthropic" | "openai"
 export type ImportedCredential =
   | { vendor: VendorID; kind: "oauth"; refresh: string; access: string; expires: number; accountId?: string }
@@ -62,7 +62,7 @@ export function readEnvCredential(vendor: VendorID, env: Record<string, string |
 ```
 
 ```ts
-// packages/opencode/src/auth/keychain.ts
+// packages/flynncode/src/auth/keychain.ts
 export class KeychainError extends Schema.TaggedErrorClass<KeychainError>()("VendorKeychainError", {
   message: Schema.String,
   cause: Schema.optional(Schema.Defect()),
@@ -79,7 +79,7 @@ export * as VendorKeychain from "."
 ```
 
 ```ts
-// packages/opencode/src/plugin/anthropic/subscription.ts
+// packages/flynncode/src/plugin/anthropic/subscription.ts
 export async function AnthropicSubscriptionPlugin(input: PluginInput): Promise<Hooks>
 // auth.provider = "anthropic", methods:
 //   { label from i18n via caller, type: "oauth", authorize browser PKCE }
@@ -114,8 +114,8 @@ Consumes/Produces chain: Task 1 parsers → Task 2 store persists `ImportedCrede
 ### Task 1: Vendor credential import parsers
 
 **Files:**
-- Create: `packages/opencode/src/auth/vendor-import.ts`
-- Create: `packages/opencode/src/auth/vendor-import.test.ts`
+- Create: `packages/flynncode/src/auth/vendor-import.ts`
+- Create: `packages/flynncode/src/auth/vendor-import.test.ts`
 
 **Interfaces:**
 - Consumes: nothing (pure functions; fixture JSON shaped like `~/.claude/.credentials.json` `{ claudeAiOauth: { accessToken, refreshToken, expiresAt } }` and `~/.codex/auth.json` `{ tokens: { id_token, access_token, refresh_token } }`).
@@ -158,7 +158,7 @@ describe("readEnvCredential", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test src/auth/vendor-import.test.ts` (workdir `packages/opencode`)
+Run: `bun test src/auth/vendor-import.test.ts` (workdir `packages/flynncode`)
 Expected: FAIL with "Cannot find module './vendor-import'"
 
 - [ ] **Step 3: Write minimal implementation**
@@ -218,21 +218,21 @@ export function readEnvCredential(vendor: VendorID, env: Record<string, string |
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun test src/auth/vendor-import.test.ts` (workdir `packages/opencode`)
+Run: `bun test src/auth/vendor-import.test.ts` (workdir `packages/flynncode`)
 Expected: PASS (4 pass)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/auth/vendor-import.ts packages/opencode/src/auth/vendor-import.test.ts
+git add packages/flynncode/src/auth/vendor-import.ts packages/flynncode/src/auth/vendor-import.test.ts
 git commit -m "feat(auth): add vendor credential import parsers"
 ```
 
 ### Task 2: Keychain-first credential store with file fallback
 
 **Files:**
-- Create: `packages/opencode/src/auth/keychain.ts`
-- Create: `packages/opencode/src/auth/keychain.test.ts`
+- Create: `packages/flynncode/src/auth/keychain.ts`
+- Create: `packages/flynncode/src/auth/keychain.test.ts`
 
 **Interfaces:**
 - Consumes: `ImportedCredential`, `VendorID` from Task 1; `Auth.Service`, `Global.Path.data`, `FSUtil.Service`.
@@ -261,7 +261,7 @@ describe("VendorKeychain file fallback", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test src/auth/keychain.test.ts` (workdir `packages/opencode`)
+Run: `bun test src/auth/keychain.test.ts` (workdir `packages/flynncode`)
 Expected: FAIL with "Cannot find module './keychain'"
 
 - [ ] **Step 3: Write minimal implementation**
@@ -333,24 +333,24 @@ Notes: file mode 0600 already enforced by `Auth.Service.set` via `FSUtil.writeJs
 
 - [ ] **Step 4: Run tests and typecheck**
 
-Run: `bun test src/auth/keychain.test.ts` (workdir `packages/opencode`)
+Run: `bun test src/auth/keychain.test.ts` (workdir `packages/flynncode`)
 Expected: PASS
-Run: `bun typecheck` (workdir `packages/opencode`)
+Run: `bun typecheck` (workdir `packages/flynncode`)
 Expected: PASS with no errors
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/auth/keychain.ts packages/opencode/src/auth/keychain.test.ts
+git add packages/flynncode/src/auth/keychain.ts packages/flynncode/src/auth/keychain.test.ts
 git commit -m "feat(auth): add keychain-first vendor credential store"
 ```
 
 ### Task 3: Anthropic subscription plugin (OAuth + API key + import)
 
 **Files:**
-- Create: `packages/opencode/src/plugin/anthropic/subscription.ts`
-- Create: `packages/opencode/src/plugin/anthropic/subscription.test.ts`
-- Modify: `packages/opencode/src/plugin/index.ts`
+- Create: `packages/flynncode/src/plugin/anthropic/subscription.ts`
+- Create: `packages/flynncode/src/plugin/anthropic/subscription.test.ts`
+- Modify: `packages/flynncode/src/plugin/index.ts`
 
 **Interfaces:**
 - Consumes: `VendorKeychain.KeychainService`, `parseClaudeCredentials` from Tasks 1–2; `OauthCallbackPage` from `@opencode-ai/core/oauth/page`; `PluginInput`, `Hooks`.
@@ -378,7 +378,7 @@ describe("subscription helpers", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test src/plugin/anthropic/subscription.test.ts` (workdir `packages/opencode`)
+Run: `bun test src/plugin/anthropic/subscription.test.ts` (workdir `packages/flynncode`)
 Expected: FAIL with "Cannot find module './subscription'"
 
 - [ ] **Step 3: Write minimal implementation**
@@ -496,25 +496,25 @@ Follow-up hardening inside same task before commit: strip `authorization` header
 
 - [ ] **Step 4: Run tests and typecheck**
 
-Run: `bun test src/plugin/anthropic/subscription.test.ts` (workdir `packages/opencode`)
+Run: `bun test src/plugin/anthropic/subscription.test.ts` (workdir `packages/flynncode`)
 Expected: PASS
-Run: `bun typecheck` (workdir `packages/opencode`)
+Run: `bun typecheck` (workdir `packages/flynncode`)
 Expected: PASS
 
 - [ ] **Step 5: Register plugin and commit**
 
-Edit `packages/opencode/src/plugin/index.ts`: import `AnthropicSubscriptionPlugin` from `./anthropic/subscription` (no alias, no star) and insert it in `internalPlugins` before `OllamaModelRouterPlugin`.
+Edit `packages/flynncode/src/plugin/index.ts`: import `AnthropicSubscriptionPlugin` from `./anthropic/subscription` (no alias, no star) and insert it in `internalPlugins` before `OllamaModelRouterPlugin`.
 
 ```bash
-git add packages/opencode/src/plugin/anthropic/subscription.ts packages/opencode/src/plugin/anthropic/subscription.test.ts packages/opencode/src/plugin/index.ts
+git add packages/flynncode/src/plugin/anthropic/subscription.ts packages/flynncode/src/plugin/anthropic/subscription.test.ts packages/flynncode/src/plugin/index.ts
 git commit -m "feat(plugin): add anthropic subscription sign-in"
 ```
 
 ### Task 4: Codex CLI import on the OpenAI plugin
 
 **Files:**
-- Modify: `packages/opencode/src/plugin/openai/codex.ts`
-- Modify: `packages/opencode/src/plugin/openai/codex.test.ts` (create alongside if absent)
+- Modify: `packages/flynncode/src/plugin/openai/codex.ts`
+- Modify: `packages/flynncode/src/plugin/openai/codex.test.ts` (create alongside if absent)
 
 **Interfaces:**
 - Consumes: `parseCodexAuth` from Task 1; existing `CodexAuthPlugin(input, options)` signature unchanged.
@@ -534,16 +534,16 @@ describe("codex import", () => {
 })
 ```
 
-Place in `packages/opencode/src/plugin/openai/codex.test.ts` alongside existing plugin tests.
+Place in `packages/flynncode/src/plugin/openai/codex.test.ts` alongside existing plugin tests.
 
 - [ ] **Step 2: Run test to verify it fails (or passes trivially, then extend)**
 
-Run: `bun test src/plugin/openai/codex.test.ts` (workdir `packages/opencode`)
+Run: `bun test src/plugin/openai/codex.test.ts` (workdir `packages/flynncode`)
 Expected: FAIL on first run if file is new; if file exists, new assertion fails until import method added.
 
 - [ ] **Step 3: Write minimal implementation**
 
-In `packages/opencode/src/plugin/openai/codex.ts`, add to `methods` array after headless entry:
+In `packages/flynncode/src/plugin/openai/codex.ts`, add to `methods` array after headless entry:
 
 ```ts
 {
@@ -573,24 +573,24 @@ Add top import `import { parseCodexAuth } from "../../auth/vendor-import"` and `
 
 - [ ] **Step 4: Run tests and typecheck**
 
-Run: `bun test src/plugin/openai/codex.test.ts` (workdir `packages/opencode`)
+Run: `bun test src/plugin/openai/codex.test.ts` (workdir `packages/flynncode`)
 Expected: PASS
-Run: `bun typecheck` (workdir `packages/opencode`)
+Run: `bun typecheck` (workdir `packages/flynncode`)
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/plugin/openai/codex.ts packages/opencode/src/plugin/openai/codex.test.ts
+git add packages/flynncode/src/plugin/openai/codex.ts packages/flynncode/src/plugin/openai/codex.test.ts
 git commit -m "feat(plugin): add codex cli credential import"
 ```
 
 ### Task 5: Router visibility and auth_status
 
 **Files:**
-- Modify: `packages/opencode/src/plugin/ollama-model-router/scorecard.ts`
-- Modify: `packages/opencode/src/plugin/ollama-model-router/tools.ts`
-- Create: `packages/opencode/src/plugin/ollama-model-router/vendor-visibility.test.ts`
+- Modify: `packages/flynncode/src/plugin/ollama-model-router/scorecard.ts`
+- Modify: `packages/flynncode/src/plugin/ollama-model-router/tools.ts`
+- Create: `packages/flynncode/src/plugin/ollama-model-router/vendor-visibility.test.ts`
 
 **Interfaces:**
 - Consumes: connected catalog from `input.client.provider.list()` (`connected: anthropic/openai` appears once Tasks 3–4 store OAuth/API); `collectCandidates`, `rankModels`, `resolveCatalog`.
@@ -621,7 +621,7 @@ describe("vendor visibility", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test src/plugin/ollama-model-router/vendor-visibility.test.ts` (workdir `packages/opencode`)
+Run: `bun test src/plugin/ollama-model-router/vendor-visibility.test.ts` (workdir `packages/flynncode`)
 Expected: FAIL with "Cannot find module" or assertion failure if providers list filters vendor out.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -658,15 +658,15 @@ auth_status: tool({
 
 - [ ] **Step 4: Run tests and typecheck**
 
-Run: `bun test src/plugin/ollama-model-router/vendor-visibility.test.ts src/plugin/ollama-model-router/tools.test.ts` (workdir `packages/opencode`; if `tools.test.ts` absent, run only the new file)
+Run: `bun test src/plugin/ollama-model-router/vendor-visibility.test.ts src/plugin/ollama-model-router/tools.test.ts` (workdir `packages/flynncode`; if `tools.test.ts` absent, run only the new file)
 Expected: PASS
-Run: `bun typecheck` (workdir `packages/opencode`)
+Run: `bun typecheck` (workdir `packages/flynncode`)
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/plugin/ollama-model-router/scorecard.ts packages/opencode/src/plugin/ollama-model-router/tools.ts packages/opencode/src/plugin/ollama-model-router/vendor-visibility.test.ts
+git add packages/flynncode/src/plugin/ollama-model-router/scorecard.ts packages/flynncode/src/plugin/ollama-model-router/tools.ts packages/flynncode/src/plugin/ollama-model-router/vendor-visibility.test.ts
 git commit -m "feat(plugin): show vendor auth in model router"
 ```
 
@@ -796,11 +796,11 @@ git commit -m "feat(app): add vendor sign-in settings rows"
 
 **Interfaces:**
 - Consumes: all prior tasks.
-- Produces: passing `bun typecheck` in `packages/opencode`, `packages/desktop`, `packages/app`; grep proofs of no secret leakage.
+- Produces: passing `bun typecheck` in `packages/flynncode`, `packages/desktop`, `packages/app`; grep proofs of no secret leakage.
 
 - [ ] **Step 1: Add redaction regression test**
 
-In `packages/opencode/src/memory/redact.test.ts` (or new `packages/opencode/src/auth/vendor-security.test.ts` if clearer), assert vendor token shapes redact:
+In `packages/flynncode/src/memory/redact.test.ts` (or new `packages/flynncode/src/auth/vendor-security.test.ts` if clearer), assert vendor token shapes redact:
 
 ```ts
 import { describe, expect, it } from "bun:test"
@@ -815,26 +815,26 @@ describe("vendor token redaction", () => {
 
 - [ ] **Step 2: Run leakage scans (must pass before commit)**
 
-Run: `rg -n "console\\.(log|warn|error).*access|apiKey|refresh_token" packages/opencode/src/plugin/anthropic packages/opencode/src/plugin/openai/codex.ts packages/desktop/src/main/vendor-keychain.ts` (workdir repo root)
+Run: `rg -n "console\\.(log|warn|error).*access|apiKey|refresh_token" packages/flynncode/src/plugin/anthropic packages/flynncode/src/plugin/openai/codex.ts packages/desktop/src/main/vendor-keychain.ts` (workdir repo root)
 Expected: no hits printing secret values (only redacted/static strings).
-Run: `rg -n "access_token|refresh_token|api_key.*\\?|token=|apiKey=.*\\$" packages/opencode/src/plugin/anthropic/subscription.ts packages/opencode/src/plugin/openai/codex.ts` (workdir repo root)
+Run: `rg -n "access_token|refresh_token|api_key.*\\?|token=|apiKey=.*\\$" packages/flynncode/src/plugin/anthropic/subscription.ts packages/flynncode/src/plugin/openai/codex.ts` (workdir repo root)
 Expected: no token interpolated into URL strings.
-Run: `rg -n "history|HISTORY|shell.*history" packages/opencode/src/auth/keychain.ts packages/desktop/src/main/vendor-keychain.ts`
+Run: `rg -n "history|HISTORY|shell.*history" packages/flynncode/src/auth/keychain.ts packages/desktop/src/main/vendor-keychain.ts`
 Expected: no shell-history writes.
 
 - [ ] **Step 3: Run full verification**
 
-Run: `bun typecheck` (workdir `packages/opencode`)
+Run: `bun typecheck` (workdir `packages/flynncode`)
 Expected: PASS
 Run: `bun typecheck` (workdir `packages/desktop`)
 Expected: PASS
-Run: `bun test src/auth/vendor-import.test.ts src/auth/keychain.test.ts src/plugin/anthropic/subscription.test.ts` (workdir `packages/opencode`)
+Run: `bun test src/auth/vendor-import.test.ts src/auth/keychain.test.ts src/plugin/anthropic/subscription.test.ts` (workdir `packages/flynncode`)
 Expected: PASS
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add packages/opencode/src/auth/vendor-security.test.ts
+git add packages/flynncode/src/auth/vendor-security.test.ts
 git commit -m "test(auth): verify vendor tokens never leak"
 ```
 

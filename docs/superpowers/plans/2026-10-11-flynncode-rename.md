@@ -42,7 +42,7 @@ EXCL=(--exclude-dir=node_modules --exclude-dir=.worktrees --exclude-dir=.turbo -
 
 label=${1:-baseline}
 echo "=== rename audit: $label ==="
-for pat in '@opencode-ai/' '^const app = "opencode"' 'packages/opencode' '\.opencode' 'opencode\.json' '~/.config/opencode' '~/.local/share/opencode' 'opencode\.ai' '"OpenCode"' 'ai\.opencode' 'OPENCODE_[A-Z]+' 'productName: "opencode"' 'schemes: \["opencode"\]'; do
+for pat in '@opencode-ai/' '^const app = "opencode"' 'packages/flynncode' '\.opencode' 'opencode\.json' '~/.config/opencode' '~/.local/share/opencode' 'opencode\.ai' '"OpenCode"' 'ai\.opencode' 'OPENCODE_[A-Z]+' 'productName: "opencode"' 'schemes: \["opencode"\]'; do
   n=$(grep -rE --color=never "${pat}" . "${EXCL[@]}" -l 2>/dev/null | wc -l)
   printf '%-40s %s files\n' "$pat" "$n"
 done
@@ -141,7 +141,7 @@ cd packages/core && bun typecheck
 cd ../opencode && bun typecheck && bun test src/config src/auth --timeout 30000 --only-failures 2>/dev/null || bun test --timeout 30000 --only-failures
 ```
 
-Run tests from `packages/opencode` (dir still named opencode until Task 3), never the repo root.
+Run tests from `packages/flynncode` (dir still named opencode until Task 3), never the repo root.
 
 - [ ] **Step 7: Commit**
 
@@ -155,8 +155,8 @@ git commit -m "chore(core): rename npm scope @opencode-ai to @flynncode"
 ### Task 3: Core package dir, name, and bin
 
 **Files:**
-- Rename: `packages/opencode/` → `packages/flynncode/` (via `git mv`, keeps AGENTS.md at `packages/flynncode/AGENTS.md`)
-- Modify: `packages/flynncode/package.json` (name + bin), every reference to `packages/opencode/...` in scripts, workflows, configs, and TS code; `packages/opencode/bin/opencode` → `bin/flynncode`
+- Rename: `packages/flynncode/` → `packages/flynncode/` (via `git mv`, keeps AGENTS.md at `packages/flynncode/AGENTS.md`)
+- Modify: `packages/flynncode/package.json` (name + bin), every reference to `packages/flynncode/...` in scripts, workflows, configs, and TS code; `packages/flynncode/bin/opencode` → `bin/flynncode`
 
 **Interfaces:**
 - Consumes: Task 2's `@flynncode/*` names
@@ -165,7 +165,7 @@ git commit -m "chore(core): rename npm scope @opencode-ai to @flynncode"
 - [ ] **Step 1: Move the directory and the bin file**
 
 ```bash
-git mv packages/opencode packages/flynncode
+git mv packages/flynncode packages/flynncode
 git mv packages/flynncode/bin/opencode packages/flynncode/bin/flynncode
 ```
 
@@ -176,11 +176,11 @@ git mv packages/flynncode/bin/opencode packages/flynncode/bin/flynncode
 - [ ] **Step 3: Codemod path references**
 
 ```bash
-grep -rl 'packages/opencode' packages sdks github script .github install docs specs \
+grep -rl 'packages/flynncode' packages sdks github script .github install docs specs \
   --exclude-dir=node_modules --exclude-dir=.turbo 2>/dev/null \
-  | xargs sed -i 's|packages/opencode|packages/flynncode|g'
-grep -rl 'packages/opencode' packages/flynncode --exclude-dir=node_modules 2>/dev/null \
-  | xargs sed -i 's|packages/opencode|packages/flynncode|g'
+  | xargs sed -i 's|packages/flynncode|packages/flynncode|g'
+grep -rl 'packages/flynncode' packages/flynncode --exclude-dir=node_modules 2>/dev/null \
+  | xargs sed -i 's|packages/flynncode|packages/flynncode|g'
 ```
 
 Also `bun.lock` gains the new path through `bun install` later in this task.
@@ -714,7 +714,7 @@ git diff | grep -E '^\+.*(from "@opencode-ai/client|new OpenCode\b)'
 
 - [ ] **Step 3: Update root docs and AGENTS.md**
 
-Root `AGENTS.md`: the V2 Session Core and repo-conventions text keep their meaning; update package paths (`packages/opencode/src/plugin/ollama-model-router` → `packages/flynncode/...`). `CONTRIBUTING.md`/`SECURITY.md`/`README.md`: brand-level swaps (command, scope, product name), plus one sentence in README: flynncode imports existing opencode data once on first run. `packages/flynncode/AGENTS.md`: dev-server section (`bun dev`, tmux session `opencode-dev` → `flynncode-dev`, `packages/opencode` path references).
+Root `AGENTS.md`: the V2 Session Core and repo-conventions text keep their meaning; update package paths (`packages/flynncode/src/plugin/ollama-model-router` → `packages/flynncode/...`). `CONTRIBUTING.md`/`SECURITY.md`/`README.md`: brand-level swaps (command, scope, product name), plus one sentence in README: flynncode imports existing opencode data once on first run. `packages/flynncode/AGENTS.md`: dev-server section (`bun dev`, tmux session `opencode-dev` → `flynncode-dev`, `packages/flynncode` path references).
 
 - [ ] **Step 4: This-binary prose in runtime code**
 

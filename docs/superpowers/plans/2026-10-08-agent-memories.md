@@ -20,7 +20,7 @@
 - Prefer functional array methods with type guards over for loops.
 - Prefer `const` over `let`; ternaries or early returns instead of reassignment; no `else` statements.
 - In Effect generators bind services to named variables before calling methods; never `yield* (yield* Foo.Service).bar()`.
-- Tests run from package dirs (e.g. `packages/opencode`), never repo root.
+- Tests run from package dirs (e.g. `packages/flynncode`), never repo root.
 - Typecheck with `bun typecheck` from package dirs, never `tsc` directly.
 - Branch names: max three words, hyphens, no slashes or type prefixes (e.g. `agent-memories`).
 - Commits/PRs: conventional style `type(scope): summary` with types feat/fix/docs/chore/refactor/test.
@@ -33,7 +33,7 @@
 **Files:**
 - Create: `packages/core/src/v1/config/memory.ts`
 - Modify: `packages/core/src/v1/config/config.ts:32-233` (add `memory` field to `Info` struct)
-- Test: `packages/core/test/config-memory.test.ts` (check actual config test dir first; if `packages/core/test/` does not exist, create test as `packages/opencode/test/config/memory.test.ts` instead — do not create both)
+- Test: `packages/core/test/config-memory.test.ts` (check actual config test dir first; if `packages/core/test/` does not exist, create test as `packages/flynncode/test/config/memory.test.ts` instead — do not create both)
 
 **Interfaces:**
 - Consumes: `Schema` from `effect`, existing `ConfigV1.Info` struct pattern.
@@ -69,7 +69,7 @@ describe("memory config", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/config-memory.test.ts` (from `packages/core`; if placed under `packages/opencode`, run `bun test test/config/memory.test.ts` from `packages/opencode`)
+Run: `bun test test/config-memory.test.ts` (from `packages/core`; if placed under `packages/flynncode`, run `bun test test/config/memory.test.ts` from `packages/flynncode`)
 Expected: FAIL with "Cannot find module .../v1/config/memory"
 
 - [ ] **Step 3: Write minimal implementation**
@@ -140,8 +140,8 @@ git commit -m "feat(core): add opt-in memory config schema"
 ### Task 2: Pure secret redaction module (no I/O, fully unit-tested)
 
 **Files:**
-- Create: `packages/opencode/src/memory/redact.ts`
-- Test: `packages/opencode/test/memory/redact.test.ts`
+- Create: `packages/flynncode/src/memory/redact.ts`
+- Test: `packages/flynncode/test/memory/redact.test.ts`
 
 **Interfaces:**
 - Consumes: nothing (pure string functions).
@@ -183,7 +183,7 @@ describe("redactSecrets", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/memory/redact.test.ts` from `packages/opencode`
+Run: `bun test test/memory/redact.test.ts` from `packages/flynncode`
 Expected: FAIL with "Cannot find module .../memory/redact"
 
 - [ ] **Step 3: Write minimal implementation**
@@ -220,13 +220,13 @@ export * as MemoryRedact from "./redact"
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun test test/memory/redact.test.ts` from `packages/opencode`
+Run: `bun test test/memory/redact.test.ts` from `packages/flynncode`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/memory/redact.ts packages/opencode/test/memory/redact.test.ts
+git add packages/flynncode/src/memory/redact.ts packages/flynncode/test/memory/redact.test.ts
 git commit -m "feat(opencode): add memory secret redaction"
 ```
 
@@ -235,8 +235,8 @@ git commit -m "feat(opencode): add memory secret redaction"
 ### Task 3: Memory service — paths, load, append with redaction gate
 
 **Files:**
-- Create: `packages/opencode/src/memory/memory.ts`
-- Test: `packages/opencode/test/memory/memory.test.ts`
+- Create: `packages/flynncode/src/memory/memory.ts`
+- Test: `packages/flynncode/test/memory/memory.test.ts`
 
 **Interfaces:**
 - Consumes: `Config.Service` (reads `memory` field from Task 1), `Global.Service` (`config` dir + `home`), `FileSystem.FileSystem` (or `FSUtil.Service` — match `instruction.ts` which uses `FSUtil.Service`), `InstanceState` context (`directory`, `worktree`), `MemoryRedact.redactSecrets` from Task 2.
@@ -279,7 +279,7 @@ Full bodies: case 1 asserts `(yield* (yield* Memory.Service).list()).length === 
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/memory/memory.test.ts` from `packages/opencode`
+Run: `bun test test/memory/memory.test.ts` from `packages/flynncode`
 Expected: FAIL with "Cannot find module .../memory/memory"
 
 - [ ] **Step 3: Write minimal implementation**
@@ -401,13 +401,13 @@ Verify `FSUtil` exposes `glob(pattern, opts)`, `readFileString`, `writeWithDirs`
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun test test/memory/memory.test.ts` from `packages/opencode`
+Run: `bun test test/memory/memory.test.ts` from `packages/flynncode`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/memory/memory.ts packages/opencode/test/memory/memory.test.ts
+git add packages/flynncode/src/memory/memory.ts packages/flynncode/test/memory/memory.test.ts
 git commit -m "feat(opencode): add memory store with redaction gate"
 ```
 
@@ -416,9 +416,9 @@ git commit -m "feat(opencode): add memory store with redaction gate"
 ### Task 4: Surface memories into agent context via Instruction.system()
 
 **Files:**
-- Modify: `packages/opencode/src/session/instruction.ts:34-44,69-113,146-185` (extend `systemPaths`/`system` or add adjacent `memory()` wired the same way)
-- Modify: `packages/opencode/src/memory/memory.ts` (only if a dependency edge is needed — prefer consuming `Memory.Service` from `instruction.ts`, not the reverse)
-- Test: `packages/opencode/test/session/instruction.test.ts` (add `describe("memories")` block) plus fixtures under tmp dirs
+- Modify: `packages/flynncode/src/session/instruction.ts:34-44,69-113,146-185` (extend `systemPaths`/`system` or add adjacent `memory()` wired the same way)
+- Modify: `packages/flynncode/src/memory/memory.ts` (only if a dependency edge is needed — prefer consuming `Memory.Service` from `instruction.ts`, not the reverse)
+- Test: `packages/flynncode/test/session/instruction.test.ts` (add `describe("memories")` block) plus fixtures under tmp dirs
 
 **Interfaces:**
 - Consumes: `Memory.Service.load()` from Task 3.
@@ -439,7 +439,7 @@ Write both cases following the existing `withFiles` helper in `instruction.test.
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/session/instruction.test.ts` from `packages/opencode`
+Run: `bun test test/session/instruction.test.ts` from `packages/flynncode`
 Expected: FAIL (no "Memory from:" in output)
 
 - [ ] **Step 3: Write minimal implementation**
@@ -459,13 +459,13 @@ return [
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun test test/session/instruction.test.ts` from `packages/opencode`
+Run: `bun test test/session/instruction.test.ts` from `packages/flynncode`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/session/instruction.ts packages/opencode/test/session/instruction.test.ts
+git add packages/flynncode/src/session/instruction.ts packages/flynncode/test/session/instruction.test.ts
 git commit -m "feat(opencode): surface memories into agent context"
 ```
 
@@ -474,9 +474,9 @@ git commit -m "feat(opencode): surface memories into agent context"
 ### Task 5: Session-end extraction with short-session skip (prompt.ts hook)
 
 **Files:**
-- Modify: `packages/opencode/src/session/prompt.ts:1440-1455` (near `compaction.prune` fire-and-forget at end of `runLoopOnce`; add memory extraction the same way)
-- Create: `packages/opencode/src/memory/extract.ts` (pure turn-gate + prompt builder; no LLM call inside)
-- Test: `packages/opencode/test/memory/extract.test.ts`
+- Modify: `packages/flynncode/src/session/prompt.ts:1440-1455` (near `compaction.prune` fire-and-forget at end of `runLoopOnce`; add memory extraction the same way)
+- Create: `packages/flynncode/src/memory/extract.ts` (pure turn-gate + prompt builder; no LLM call inside)
+- Test: `packages/flynncode/test/memory/extract.test.ts`
 
 **Interfaces:**
 - Consumes: `SessionV1.WithParts[]` message list, resolved memory settings (`min_turns`).
@@ -519,7 +519,7 @@ describe("buildExtractionPrompt", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/memory/extract.test.ts` from `packages/opencode`
+Run: `bun test test/memory/extract.test.ts` from `packages/flynncode`
 Expected: FAIL with "Cannot find module .../memory/extract"
 
 - [ ] **Step 3: Write minimal implementation**
@@ -557,13 +557,13 @@ where `extractMemory` is a module-local `Effect.fn("SessionPrompt.extractMemory"
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun test test/memory/extract.test.ts` from `packages/opencode`
+Run: `bun test test/memory/extract.test.ts` from `packages/flynncode`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/memory/extract.ts packages/opencode/src/session/prompt.ts packages/opencode/test/memory/extract.test.ts
+git add packages/flynncode/src/memory/extract.ts packages/flynncode/src/session/prompt.ts packages/flynncode/test/memory/extract.test.ts
 git commit -m "feat(opencode): extract memories at session end with skip"
 ```
 
@@ -572,10 +572,10 @@ git commit -m "feat(opencode): extract memories at session end with skip"
 ### Task 6: Never-synced guarantees + docs + typecheck sweep
 
 **Files:**
-- Modify: `packages/opencode/src/session/share.ts` (or wherever share payload is built — grep for `share` payload assembly; assert memory paths are not included; if share ships whole session messages, add a filter dropping `Memory from:` lines OR document why message text is out of scope — do the grep before editing)
+- Modify: `packages/flynncode/src/session/share.ts` (or wherever share payload is built — grep for `share` payload assembly; assert memory paths are not included; if share ships whole session messages, add a filter dropping `Memory from:` lines OR document why message text is out of scope — do the grep before editing)
 - Modify: `.gitignore` docs? No — project memory dir `.opencode/memories/` SHOULD be committable (conventions); global `memories/` is outside repos by construction. Document this instead of gitignoring.
-- Create: `docs/superpowers/plans/2026-10-08-agent-memories.md` already exists (this file); add user docs at `packages/opencode/docs/memory.md` ONLY if a memory docs page pattern exists — otherwise append a `memory` section to the existing config docs file found by grepping for `compaction` in docs.
-- Test: `packages/opencode/test/memory/never-sync.test.ts` asserting: `Memory.globalDir()` lives outside any repo worktree (starts with `global.config`), `projectDir()` lives under `.opencode/`, and `load()` output never contains raw secrets (property check with token fixtures from Task 2).
+- Create: `docs/superpowers/plans/2026-10-08-agent-memories.md` already exists (this file); add user docs at `packages/flynncode/docs/memory.md` ONLY if a memory docs page pattern exists — otherwise append a `memory` section to the existing config docs file found by grepping for `compaction` in docs.
+- Test: `packages/flynncode/test/memory/never-sync.test.ts` asserting: `Memory.globalDir()` lives outside any repo worktree (starts with `global.config`), `projectDir()` lives under `.opencode/`, and `load()` output never contains raw secrets (property check with token fixtures from Task 2).
 
 **Interfaces:**
 - Consumes: `Memory.Service.globalDir/projectDir/load` from Task 3.
@@ -594,7 +594,7 @@ Follow the `provideTmpdirInstance` + enabled-`TestConfig` pattern from Task 3. A
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/memory/never-sync.test.ts` from `packages/opencode`
+Run: `bun test test/memory/never-sync.test.ts` from `packages/flynncode`
 Expected: FAIL (file missing) on first run; after Task 3–5 it should PASS as written — if it passes immediately, strengthen it with a second token family (e.g. `xoxb-` slack token → add `slack` pattern to redact.ts via Task 2 amendment commit).
 
 - [ ] **Step 3: Write minimal implementation**
@@ -603,15 +603,15 @@ No new runtime code expected. Changes: (a) share-payload grep + filter if needed
 
 - [ ] **Step 4: Run verification**
 
-Run: `bun test test/memory/` from `packages/opencode`
+Run: `bun test test/memory/` from `packages/flynncode`
 Expected: PASS (all memory suites)
-Run: `bun typecheck` from `packages/opencode` and from `packages/core`
+Run: `bun typecheck` from `packages/flynncode` and from `packages/core`
 Expected: PASS with no errors
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/test/memory/never-sync.test.ts <docs file> <share file if changed>
+git add packages/flynncode/test/memory/never-sync.test.ts <docs file> <share file if changed>
 git commit -m "docs(opencode): document memory never-synced guarantees"
 ```
 

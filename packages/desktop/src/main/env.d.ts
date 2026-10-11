@@ -8,15 +8,15 @@ interface ImportMeta {
 
 declare module "virtual:opencode-server" {
   export namespace Server {
-    export const listen: typeof import("../../../opencode/dist/types/src/node").Server.listen
-    export type Listener = import("../../../opencode/dist/types/src/node").Server.Listener
+    export const listen: typeof import("../../../flynncode/dist/types/src/node").Server.listen
+    export type Listener = import("../../../flynncode/dist/types/src/node").Server.Listener
   }
   export namespace Config {
-    export const get: typeof import("../../../opencode/dist/types/src/node").Config.get
-    export type Info = import("../../../opencode/dist/types/src/node").Config.Info
+    export const get: typeof import("../../../flynncode/dist/types/src/node").Config.get
+    export type Info = import("../../../flynncode/dist/types/src/node").Config.Info
   }
   export namespace InstanceRuntime {
-    export const disposeAllInstances: typeof import("../../../opencode/dist/types/src/node").InstanceRuntime.disposeAllInstances
+    export const disposeAllInstances: typeof import("../../../flynncode/dist/types/src/node").InstanceRuntime.disposeAllInstances
   }
-  export const bootstrap: typeof import("../../../opencode/dist/types/src/node").bootstrap
+  export const bootstrap: typeof import("../../../flynncode/dist/types/src/node").bootstrap
 }

@@ -1,7 +1,7 @@
 # Development release-base versions
 
 Approved format: `1.18.34-dev-<timestamp>` for this checkout, with the base read
-from `packages/opencode/package.json` rather than hard-coded.
+from `packages/flynncode/package.json` rather than hard-coded.
 
 The shared build generator will replace the `0.0.0` preview base with the
 backend package's release version. Existing channel and timestamp formatting

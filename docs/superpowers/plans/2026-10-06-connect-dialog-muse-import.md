@@ -396,7 +396,7 @@ git commit -m "feat(app): add Muse CLI import to Meta connect dialog"
 
 - [ ] **Step 1: Build and run the desktop app locally**
 
-Follow `packages/app/AGENTS.md` local-dev: backend from `packages/opencode` (`bun run ./src/index.ts serve --port 4096`), app from `packages/app` (`bun dev -- --port 4444`), open `http://localhost:4444`. NEVER restart shared processes; use the documented dev servers.
+Follow `packages/app/AGENTS.md` local-dev: backend from `packages/flynncode` (`bun run ./src/index.ts serve --port 4096`), app from `packages/app` (`bun dev -- --port 4444`), open `http://localhost:4444`. NEVER restart shared processes; use the documented dev servers.
 
 - [ ] **Step 2: Import flow**
 

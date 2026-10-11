@@ -435,7 +435,7 @@ const ECOSYSTEM_HTML = `
 <section id="plugins">
   <table>
     <tr><th>Name</th><th>Description</th></tr>
-    <tr><td><a href="https://github.com/daytona/integrations/tree/main/packages/opencode-plugin">opencode-daytona</a></td><td>Run sessions in Daytona sandboxes</td></tr>
+    <tr><td><a href="https://github.com/daytona/integrations/tree/main/packages/flynncode-plugin">opencode-daytona</a></td><td>Run sessions in Daytona sandboxes</td></tr>
     <tr><td><a href="https://github.com/H2Shami/opencode-helicone-session">opencode-helicone-session</a></td><td>Inject Helicone session headers</td></tr>
   </table>
 </section>`
@@ -445,7 +445,7 @@ const AWESOME_MD = `
 
 ## Plugins
 
-- [opencode-daytona](https://github.com/daytona/integrations/tree/main/packages/opencode-plugin) - Run sessions in Daytona sandboxes
+- [opencode-daytona](https://github.com/daytona/integrations/tree/main/packages/flynncode-plugin) - Run sessions in Daytona sandboxes
 - [opencode-wakatime](https://github.com/angristan/opencode-wakatime) - Track usage with Wakatime
 `
 

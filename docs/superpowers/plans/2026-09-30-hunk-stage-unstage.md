@@ -27,8 +27,8 @@
 ### Task 1: Apply argument mapping
 
 **Files:**
-- Create: `packages/opencode/src/git/apply-args.ts`
-- Test: `packages/opencode/test/git/apply-args.test.ts`
+- Create: `packages/flynncode/src/git/apply-args.ts`
+- Test: `packages/flynncode/test/git/apply-args.test.ts`
 
 **Interfaces:**
 - Consumes: nothing
@@ -55,7 +55,7 @@ describe("applyArgs", () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run from `packages/opencode`: `bun test test/git/apply-args.test.ts`
+Run from `packages/flynncode`: `bun test test/git/apply-args.test.ts`
 Expected: FAIL because `apply-args` is missing.
 
 - [ ] **Step 3: Write the mapping**
@@ -72,15 +72,15 @@ export function applyArgs(index: ApplyIndex = "worktree") {
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run from `packages/opencode`: `bun test test/git/apply-args.test.ts`
+Run from `packages/flynncode`: `bun test test/git/apply-args.test.ts`
 Expected: PASS
 
 ### Task 2: Wire Git and Vcs
 
 **Files:**
-- Modify: `packages/opencode/src/git/index.ts`
-- Modify: `packages/opencode/src/project/vcs.ts`
-- Test: `packages/opencode/test/git/git.test.ts`
+- Modify: `packages/flynncode/src/git/index.ts`
+- Modify: `packages/flynncode/src/project/vcs.ts`
+- Test: `packages/flynncode/test/git/git.test.ts`
 
 **Interfaces:**
 - Consumes: `applyArgs`, `ApplyIndex`
@@ -88,7 +88,7 @@ Expected: PASS
 
 - [ ] **Step 1: Extend the Git method**
 
-In `packages/opencode/src/git/index.ts`, import `{ applyArgs, type ApplyIndex } from "./apply-args"`.
+In `packages/flynncode/src/git/index.ts`, import `{ applyArgs, type ApplyIndex } from "./apply-args"`.
 
 Change the interface and implementation to:
 
@@ -104,7 +104,7 @@ const applyPatch = Effect.fn("Git.applyPatch")(function* (cwd: string, patch: st
 
 - [ ] **Step 2: Extend ApplyInput**
 
-In `packages/opencode/src/project/vcs.ts`, import `ApplyIndex` from `@/git/apply-args` only if that alias resolves. If `@/git` is the existing import style, add the type import next to `import { Git } from "@/git"`.
+In `packages/flynncode/src/project/vcs.ts`, import `ApplyIndex` from `@/git/apply-args` only if that alias resolves. If `@/git` is the existing import style, add the type import next to `import { Git } from "@/git"`.
 
 ```ts
 export const ApplyInput = Schema.Struct({
@@ -123,7 +123,7 @@ Do not change the `non-git` or `not-clean` error reasons.
 
 - [ ] **Step 3: Add a live git test**
 
-Append to `packages/opencode/test/git/git.test.ts` inside `describe("Git")`:
+Append to `packages/flynncode/test/git/git.test.ts` inside `describe("Git")`:
 
 ```ts
 it.live("stage moves a worktree hunk to the index and unstage moves it back", () =>
@@ -145,16 +145,16 @@ it.live("stage moves a worktree hunk to the index and unstage moves it back", ()
 )
 ```
 
-Confirm `git.patch` returns `{ text: string }` by reading `Patch` in `packages/opencode/src/git/index.ts` before writing the test. If the field name differs, use the real field. Do not invent a second patch reader.
+Confirm `git.patch` returns `{ text: string }` by reading `Patch` in `packages/flynncode/src/git/index.ts` before writing the test. If the field name differs, use the real field. Do not invent a second patch reader.
 
 - [ ] **Step 4: Run the git tests**
 
-Run from `packages/opencode`: `bun test test/git/apply-args.test.ts test/git/git.test.ts`
+Run from `packages/flynncode`: `bun test test/git/apply-args.test.ts test/git/git.test.ts`
 Expected: PASS
 
 - [ ] **Step 5: Typecheck the server package**
 
-Run from `packages/opencode`: `bun typecheck`
+Run from `packages/flynncode`: `bun typecheck`
 Expected: exit 0
 
 ### Task 3: Regenerate clients

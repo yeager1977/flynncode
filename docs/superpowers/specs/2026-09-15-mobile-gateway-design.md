@@ -12,7 +12,7 @@ from an iPhone on the same network.
 Constraints discovered while exploring the repo:
 
 - The opencode plugin API cannot register HTTP routes on the main server. The
-  route tree is static (`packages/opencode/src/server/routes/instance/httpapi/api.ts`).
+  route tree is static (`packages/flynncode/src/server/routes/instance/httpapi/api.ts`).
 - Plugin code does run in the server's Bun process, and three built-in plugins
   already open their own listeners there for OAuth callbacks
   (`plugin/openai/codex.ts:161`, `plugin/digitalocean.ts:64`,
@@ -20,7 +20,7 @@ Constraints discovered while exploring the repo:
 - `plugin.server(input)` is **not** invoked at `opencode serve` startup. It is
   demand-driven per directory: `InstanceContextMiddleware` →
   `InstanceStore.load` → `InstanceBootstrap.run` → `Plugin.init()`
-  (`packages/opencode/src/project/bootstrap.ts:38`). Under `opencode serve` with
+  (`packages/flynncode/src/project/bootstrap.ts:38`). Under `opencode serve` with
   no traffic, plugins never load at all.
 - The server binds `127.0.0.1` by default and supports only Basic auth
   (`OPENCODE_SERVER_PASSWORD`).
@@ -69,7 +69,7 @@ packages/mobile-gateway/
 
 `package.json` declares `exports["./server"]` for the plugin, plus a `bin`, and
 an `engines.opencode` range so `opencode` can load it. This matches the entrypoint
-contract in `packages/opencode/src/plugin/shared.ts`.
+contract in `packages/flynncode/src/plugin/shared.ts`.
 
 Two ways to start it, both calling the same `gateway.ts`:
 
@@ -95,7 +95,7 @@ A reverse proxy that listens on the LAN and forwards to the main server:
 - Proxies every path, including `/api/event`, `/event`, and `/api/session/:id/event`
   SSE streams, preserving streaming semantics (no buffering, no body
   coalescing). Verified against the proxy header rules in
-  `packages/opencode/src/server/shared/ui.ts:30-38`, which strips
+  `packages/flynncode/src/server/shared/ui.ts:30-38`, which strips
   `content-encoding`, `content-length`, and `transfer-encoding` when forwarding
   decoded bodies; the gateway applies the same rule.
 - Injects `Authorization: Basic` upstream from the environment so the phone

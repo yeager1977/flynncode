@@ -15,7 +15,7 @@ projection (the TUI), so it appears natively in both surfaces.
 
 The plugin must be loaded by the TUI plugin loader, which reads the module's
 **default export** and requires it to expose `tui()` (see
-`packages/opencode/src/plugin/shared.ts`, `readV1Plugin`). The
+`packages/flynncode/src/plugin/shared.ts`, `readV1Plugin`). The
 `@flynncode/plugin` npm package's `./tui` export resolves to the plugin types
 module, which has no default export, and no `"tui-import"` options key is read
 by the loader — so the plugin must be enabled as a **file-based local plugin**

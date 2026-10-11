@@ -14,19 +14,19 @@
 - Do not delete scorecards, `~/.omo/`, or the router plugin.
 - English UI copy is source; add keys to `packages/app/src/i18n/en.ts` only (locales inherit via `model-router-fallback.ts`).
 - Never hardcode user-visible English in production UI.
-- Tests run from package dirs (`packages/opencode`, `packages/app`), never repo root.
+- Tests run from package dirs (`packages/flynncode`, `packages/app`), never repo root.
 - Branch names: at most three hyphenated words. Commits: `type(scope): summary`.
 - Config is load-once; Settings already says routing applies after restart.
 
 ## File map
 
-- Modify: `packages/opencode/src/plugin/ollama-model-router/types.ts` — `enabled` on `RouterOptions`
-- Modify: `packages/opencode/src/plugin/ollama-model-router/scorecard.ts` — parse `enabled`
-- Modify: `packages/opencode/src/plugin/ollama-model-router/index.ts` — skip inject/assign when disabled
-- Modify: `packages/opencode/src/plugin/ollama-model-router/tools.ts` — execute-time disabled message
-- Modify: `packages/opencode/src/plugin/ollama-model-router/README.md`
-- Test: `packages/opencode/test/plugin/ollama-model-router/scorecard.test.ts`
-- Test: `packages/opencode/test/plugin/ollama-model-router/plugin.test.ts`
+- Modify: `packages/flynncode/src/plugin/ollama-model-router/types.ts` — `enabled` on `RouterOptions`
+- Modify: `packages/flynncode/src/plugin/ollama-model-router/scorecard.ts` — parse `enabled`
+- Modify: `packages/flynncode/src/plugin/ollama-model-router/index.ts` — skip inject/assign when disabled
+- Modify: `packages/flynncode/src/plugin/ollama-model-router/tools.ts` — execute-time disabled message
+- Modify: `packages/flynncode/src/plugin/ollama-model-router/README.md`
+- Test: `packages/flynncode/test/plugin/ollama-model-router/scorecard.test.ts`
+- Test: `packages/flynncode/test/plugin/ollama-model-router/plugin.test.ts`
 - Modify: `packages/app/src/components/settings-v2/model-router-payload.ts` — form `enabled` + retarget helpers
 - Test: `packages/app/src/components/settings-v2/model-router-payload.test.ts`
 - Create: `packages/app/src/components/settings-v2/omo-plugin.ts`
@@ -40,9 +40,9 @@
 ### Task 1: Parse `model_router.enabled`
 
 **Files:**
-- Modify: `packages/opencode/src/plugin/ollama-model-router/types.ts`
-- Modify: `packages/opencode/src/plugin/ollama-model-router/scorecard.ts`
-- Test: `packages/opencode/test/plugin/ollama-model-router/scorecard.test.ts`
+- Modify: `packages/flynncode/src/plugin/ollama-model-router/types.ts`
+- Modify: `packages/flynncode/src/plugin/ollama-model-router/scorecard.ts`
+- Test: `packages/flynncode/test/plugin/ollama-model-router/scorecard.test.ts`
 
 **Interfaces:**
 - Consumes: existing `parseOptions`
@@ -70,7 +70,7 @@ test("parses enabled false", () => {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `bun test test/plugin/ollama-model-router/scorecard.test.ts` from `packages/opencode`
+Run: `bun test test/plugin/ollama-model-router/scorecard.test.ts` from `packages/flynncode`
 
 Expected: FAIL because `enabled` is not on options.
 
@@ -88,14 +88,14 @@ Include `enabled` in the returned `options` object.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `bun test test/plugin/ollama-model-router/scorecard.test.ts` from `packages/opencode`
+Run: `bun test test/plugin/ollama-model-router/scorecard.test.ts` from `packages/flynncode`
 
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/plugin/ollama-model-router/types.ts packages/opencode/src/plugin/ollama-model-router/scorecard.ts packages/opencode/test/plugin/ollama-model-router/scorecard.test.ts
+git add packages/flynncode/src/plugin/ollama-model-router/types.ts packages/flynncode/src/plugin/ollama-model-router/scorecard.ts packages/flynncode/test/plugin/ollama-model-router/scorecard.test.ts
 git commit -m "feat(plugin): parse model_router.enabled"
 ```
 
@@ -104,9 +104,9 @@ git commit -m "feat(plugin): parse model_router.enabled"
 ### Task 2: Make the plugin inert when `enabled` is false
 
 **Files:**
-- Modify: `packages/opencode/src/plugin/ollama-model-router/index.ts`
-- Modify: `packages/opencode/src/plugin/ollama-model-router/tools.ts`
-- Test: `packages/opencode/test/plugin/ollama-model-router/plugin.test.ts`
+- Modify: `packages/flynncode/src/plugin/ollama-model-router/index.ts`
+- Modify: `packages/flynncode/src/plugin/ollama-model-router/tools.ts`
+- Test: `packages/flynncode/test/plugin/ollama-model-router/plugin.test.ts`
 
 **Interfaces:**
 - Consumes: `RouterOptions.enabled` from Task 1
@@ -169,7 +169,7 @@ test("rank_models reports disabled when enabled is false", async () => {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `bun test test/plugin/ollama-model-router/plugin.test.ts` from `packages/opencode`
+Run: `bun test test/plugin/ollama-model-router/plugin.test.ts` from `packages/flynncode`
 
 Expected: FAIL (sentinel still injected; rank_models still ranks).
 
@@ -215,14 +215,14 @@ if (!options) return disabledMessage(deps.getOptionsError())
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `bun test test/plugin/ollama-model-router` from `packages/opencode`
+Run: `bun test test/plugin/ollama-model-router` from `packages/flynncode`
 
 Expected: all pass, including the three new tests.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/plugin/ollama-model-router/index.ts packages/opencode/src/plugin/ollama-model-router/tools.ts packages/opencode/test/plugin/ollama-model-router/plugin.test.ts
+git add packages/flynncode/src/plugin/ollama-model-router/index.ts packages/flynncode/src/plugin/ollama-model-router/tools.ts packages/flynncode/test/plugin/ollama-model-router/plugin.test.ts
 git commit -m "feat(plugin): no-op model router when disabled"
 ```
 
@@ -458,7 +458,7 @@ Do not wait for the Model Router Save button for this switch.
 
 - [ ] **Step 4: Typecheck**
 
-Run: `bun typecheck` from `packages/app` and `packages/opencode`
+Run: `bun typecheck` from `packages/app` and `packages/flynncode`
 
 Expected: clean.
 
@@ -474,7 +474,7 @@ git commit -m "feat(app): add model router and oh-my-openagent toggles"
 ### Task 6: Router README
 
 **Files:**
-- Modify: `packages/opencode/src/plugin/ollama-model-router/README.md`
+- Modify: `packages/flynncode/src/plugin/ollama-model-router/README.md`
 
 **Interfaces:**
 - Consumes: `enabled` from Task 1
@@ -492,7 +492,7 @@ In the jsonc example, add `"enabled": true,` before `autoRoute`. After the inert
 - [ ] **Step 2: Commit**
 
 ```bash
-git add packages/opencode/src/plugin/ollama-model-router/README.md
+git add packages/flynncode/src/plugin/ollama-model-router/README.md
 git commit -m "docs(plugin): document model_router.enabled"
 ```
 
@@ -518,7 +518,7 @@ If that binary is missing, `bunx oh-my-opencode install`. Follow the installer. 
 
 - [ ] **Step 2: Patch user config after the installer**
 
-Using the repo jsonc parser (`packages/opencode/src/config/parse.ts` `ConfigParse.jsonc`) to validate after edits:
+Using the repo jsonc parser (`packages/flynncode/src/config/parse.ts` `ConfigParse.jsonc`) to validate after edits:
 
 - Ensure `plugin` includes `oh-my-openagent` or `oh-my-opencode`.
 - Set `model_router.enabled` to `false`. Keep every other `model_router` field.
@@ -527,7 +527,7 @@ Using the repo jsonc parser (`packages/opencode/src/config/parse.ts` `ConfigPars
 - [ ] **Step 3: Verify**
 
 ```bash
-# from packages/opencode
+# from packages/flynncode
 bun -e '
 import { ConfigParse } from "./src/config/parse.ts"
 const data = ConfigParse.jsonc(await Bun.file("/home/yeager1977/.config/opencode/opencode.jsonc").text(), "opencode.jsonc")

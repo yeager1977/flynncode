@@ -13,7 +13,7 @@ Usability cleanup is in scope only where it blocks that loop: task rows that wil
 ## What already exists
 
 - Review pane with line comments (`addCommentToContext` in `packages/app/src/pages/session.tsx`).
-- Git worktree create, list, remove, and reset (`packages/opencode/src/worktree/index.ts`). New-session can create a worktree. There is no per-session disposable retention and no checkout handoff. `packages/app/src/pages/session/handoff.ts` moves prompts and selected lines between UI surfaces. It does not move a branch.
+- Git worktree create, list, remove, and reset (`packages/flynncode/src/worktree/index.ts`). New-session can create a worktree. There is no per-session disposable retention and no checkout handoff. `packages/app/src/pages/session/handoff.ts` moves prompts and selected lines between UI surfaces. It does not move a branch.
 - PTY terminal, file tree, permission docks (`once`, `always`, `reject`), todo dock, subagent list, timeline, composer.
 - Routines (`dailyAt` only), dispatch (cap 40), artifacts sidebar, unfocused-window notifications.
 - Desktop deep links (`opencode://`) already reach the main process.

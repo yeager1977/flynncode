@@ -10,7 +10,7 @@ Stage and unstage a hunk through the existing `vcs.apply` endpoint. Do not add a
 
 ## What already exists
 
-- `POST /vcs/apply` takes `{ patch }` and runs `git apply -` (`packages/opencode/src/project/vcs.ts`, `packages/opencode/src/git/index.ts`).
+- `POST /vcs/apply` takes `{ patch }` and runs `git apply -` (`packages/flynncode/src/project/vcs.ts`, `packages/flynncode/src/git/index.ts`).
 - The review pane already reverses a file patch and applies it for "Revert hunk" (`packages/app/src/pages/session/hunk-revert.ts`, `packages/app/src/pages/session/v2/review-panel-v2.tsx`).
 - Review scopes are last turn, unstaged (`git`), and branch. Message revert stays on the revert dock.
 

@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Plugin directory: `/home/yeager1977/GitHub/opencode/ollama-model-router/`
-- Plugin must default-export `{ id: "ollama-model-router", server: (input, options) => Promise<Hooks> }`. Path plugins that lack `id` are rejected by the loader (`packages/opencode/src/plugin/shared.ts:304`).
+- Plugin must default-export `{ id: "ollama-model-router", server: (input, options) => Promise<Hooks> }`. Path plugins that lack `id` are rejected by the loader (`packages/flynncode/src/plugin/shared.ts:304`).
 - Plugin must never throw during loading or hooks. Wrap hook bodies in try/catch; log via `console.warn`/`console.error` with a `[ollama-model-router]` prefix.
 - Model keys are `providerID/modelID` (e.g. `ollama-cloud/glm-5.3-flash:cloud`). Always quote them in JSON config; an unquoted `provider:model` becomes an npm specifier in the plugin array.
 - Scores are integers 1–10. `price`: 10 = most expensive; `capability`/`speed`: 10 = best.

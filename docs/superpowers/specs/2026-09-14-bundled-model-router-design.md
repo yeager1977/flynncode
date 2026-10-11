@@ -22,7 +22,7 @@ scorecard and options configured through opencode's global config.
 Move the plugin implementation into the server package:
 
 ```
-packages/opencode/src/plugin/ollama-model-router/
+packages/flynncode/src/plugin/ollama-model-router/
   index.ts        plugin factory: server(input) -> Hooks
   candidates.ts
   rank.ts
@@ -32,7 +32,7 @@ packages/opencode/src/plugin/ollama-model-router/
   types.ts
 ```
 
-`packages/opencode/src/plugin/index.ts` already imports built-in plugins
+`packages/flynncode/src/plugin/index.ts` already imports built-in plugins
 (`xai`, `cerebras`, copilot auth, ...) and registers them in
 `internalPlugins(flags)`. Add the router there, exported as a
 `PluginInstance` (`(input, options?) => Promise<Hooks>`). Internal plugins are
@@ -73,7 +73,7 @@ both would register the plugin twice.
 ### 4. Tests
 
 The plugin's unit tests move to
-`packages/opencode/test/plugin/ollama-model-router/` (imports adjusted to the
+`packages/flynncode/test/plugin/ollama-model-router/` (imports adjusted to the
 new source location). One new test covers options resolution from
 `cfg.model_router` vs the tuple fallback.
 

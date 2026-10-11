@@ -7,7 +7,7 @@ Status: Approved (Approach A); amended 2026-09-29 after dry-run verification of
 ## Problem
 
 Flynncode resolves the default model for a provider via a hardcoded priority list
-of model-ID substrings in `packages/opencode/src/provider/provider.ts`:
+of model-ID substrings in `packages/flynncode/src/provider/provider.ts`:
 
 ```ts
 const priority = ["gpt-5", "claude-sonnet-4", "big-pickle", "gemini-3-pro"]
@@ -34,12 +34,12 @@ against the live models.dev catalog (2026-09-29):
   `claude-sonnet-5-5`, `claude-haiku-4-5` with correct pricing, 1M context, and
   effort options `low/medium/high/xhigh/max`. No repo-side model list exists to
   edit.
-- Request transforms (`packages/opencode/src/provider/transform.ts`): adaptive
+- Request transforms (`packages/flynncode/src/provider/transform.ts`): adaptive
   thinking gate (`major > 4`), full effort ladder, thinking binding for 5.1+,
   Mythos 5.1 exception, Opus 5.5+/Fable 5.1+ forced-tool-choice rejection — all
   present and correct. No changes.
 - Ollama model router tiers
-  (`packages/opencode/src/plugin/ollama-model-router/provider-family.ts`):
+  (`packages/flynncode/src/plugin/ollama-model-router/provider-family.ts`):
   `claude-opus-5-5` / `claude-sonnet-5` / `claude-fable-5-1` are real live
   catalog IDs. No changes.
 - Small-model selection (`provider.ts`): matches on `model.family`
@@ -64,7 +64,7 @@ Opus's (1).
 
 ## Change (Approach A — family-prefix matching)
 
-In `packages/opencode/src/provider/provider.ts`, replace the `priority` array:
+In `packages/flynncode/src/provider/provider.ts`, replace the `priority` array:
 
 ```ts
 // Before
@@ -101,7 +101,7 @@ model ID only ever competes within its own provider's catalog — no
 OpenAI/Gemini ID contains `claude-opus-5` or `claude-sonnet`, and
 Anthropic-side ranking is unaffected by the OpenAI entries' relative order.
 
-Known cross-provider exception: `packages/opencode/src/acp/service.ts:811-814`
+Known cross-provider exception: `packages/flynncode/src/acp/service.ts:811-814`
 sorts a flat list across **all** providers to pick ACP's "best" model. With
 `claude-sonnet` ranked above `gpt-5`/`big-pickle` there, an aggregate catalog
 listing both flips its top pick from a GPT model to the newest Claude Sonnet.
@@ -127,15 +127,15 @@ already exposes it deliberately at its `balanced-writing` tier.
 
 | File | Change |
 | --- | --- |
-| `packages/opencode/src/provider/provider.ts` (line ~2178; `sort` at ~2208) | Update `priority` array |
-| `packages/opencode/test/provider/provider.test.ts` (new tests after the existing `provider.sort` test at ~line 990) | Ranking assertions (see Testing) |
+| `packages/flynncode/src/provider/provider.ts` (line ~2178; `sort` at ~2208) | Update `priority` array |
+| `packages/flynncode/test/provider/provider.test.ts` (new tests after the existing `provider.sort` test at ~line 990) | Ranking assertions (see Testing) |
 
 No protocol/API changes, no SDK regeneration, no schema changes, no migration.
 
 ## Testing
 
 1. New pure unit tests next to the existing `provider.sort` test in
-   `packages/opencode/test/provider/provider.test.ts`, asserting the verified
+   `packages/flynncode/test/provider/provider.test.ts`, asserting the verified
    descending-last-match-wins semantics:
    - both families present → `claude-sonnet-5-5` ranks first, above
      `claude-sonnet-4-6`, above `claude-opus-5`.
@@ -148,7 +148,7 @@ No protocol/API changes, no SDK regeneration, no schema changes, no migration.
    still ranks first and `gpt-5-turbo` above the unranked entries.
 3. Existing provider/transform tests must pass unchanged — the change must not
    alter OpenAI, Gemini, or Bedrock/Vertex transform behavior.
-4. `bun typecheck` from `packages/opencode` (never `tsc` directly).
+4. `bun typecheck` from `packages/flynncode` (never `tsc` directly).
 5. Spot-check: `provider-family.ts` tier resolution still yields
    `claude-opus-5-5` (flagship) and `claude-sonnet-5` (balanced) for an
    Anthropic-family selection — untouched by this change, covered by existing

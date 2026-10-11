@@ -12,7 +12,7 @@ import { createSyncWorker, type SyncWorker } from "../src/sync-worker.ts"
 // Two real opencode servers with separate data/config dirs stand in for
 // challenger and starship; gateways, gates and workers run in this process
 // exactly as the desktop sidecar runs them.
-const OPENCODE_DIR = path.resolve(import.meta.dir, "../../opencode")
+const OPENCODE_DIR = path.resolve(import.meta.dir, "../../flynncode")
 const PASSWORD = "e2e-server-secret"
 const AUTH = `Basic ${Buffer.from(`opencode:${PASSWORD}`).toString("base64")}`
 

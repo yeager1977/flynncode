@@ -6,7 +6,7 @@
 
 **Architecture:** Keep the existing scope model (`git`/`branch`/`turn` via `sessionReviewMode`, `turnDiffs` from the last user message summary) and the existing `vcs.apply` endpoint; add a pure per-hunk patch splitter consumed by both review panels, move `reviewFollowUp` headers behind i18n keys, and add a pure `/review` preset-arg builder plus a fork-and-prefill detached path that reuses the existing `session.fork` API.
 
-**Tech Stack:** SolidJS (packages/app, packages/session-ui), Effect v4 service conventions (packages/opencode command module), existing generated SDK (`sdk().client.vcs.apply`, `sdk().client.session.fork`), `bun:test`, `bun typecheck`.
+**Tech Stack:** SolidJS (packages/app, packages/session-ui), Effect v4 service conventions (packages/flynncode command module), existing generated SDK (`sdk().client.vcs.apply`, `sdk().client.session.fork`), `bun:test`, `bun typecheck`.
 
 ## Global Constraints
 
@@ -33,8 +33,8 @@
 - `packages/app/src/pages/session/split-patch.test.ts` — splitter unit tests.
 - `packages/app/src/pages/session/review-detached.ts` — pure detached-review prompt/prefill-key builders.
 - `packages/app/src/pages/session/review-detached.test.ts` — detached builder unit tests.
-- `packages/opencode/src/command/review-preset.ts` — pure `/review` preset-arg builder.
-- `packages/opencode/test/command/review-preset.test.ts` — preset-arg unit tests.
+- `packages/flynncode/src/command/review-preset.ts` — pure `/review` preset-arg builder.
+- `packages/flynncode/test/command/review-preset.test.ts` — preset-arg unit tests.
 
 **Modify:**
 
@@ -45,7 +45,7 @@
 - `packages/app/src/pages/session/v2/review-panel-v2.tsx` — per-hunk stage/unstage/revert buttons.
 - `packages/app/src/pages/session/review-tab.tsx` — accept and forward `indexActions` plus `onApplied` into v1.
 - `packages/session-ui/src/components/session-review.tsx` — per-hunk action buttons in the v1 accordion.
-- `packages/opencode/src/command/template/review.txt` — document the three preset arg shapes (`base <branch>`, `commit <sha>`, empty for uncommitted) without changing review behavior.
+- `packages/flynncode/src/command/template/review.txt` — document the three preset arg shapes (`base <branch>`, `commit <sha>`, empty for uncommitted) without changing review behavior.
 
 **Interfaces:**
 
@@ -509,9 +509,9 @@ git commit -m "fix(app): disable address-comments with zero line comments"
 
 **Files:**
 
-- Create: `packages/opencode/src/command/review-preset.ts`
-- Create: `packages/opencode/test/command/review-preset.test.ts`
-- Modify: `packages/opencode/src/command/template/review.txt` (document preset shapes only)
+- Create: `packages/flynncode/src/command/review-preset.ts`
+- Create: `packages/flynncode/test/command/review-preset.test.ts`
+- Modify: `packages/flynncode/src/command/template/review.txt` (document preset shapes only)
 
 **Interfaces:**
 
@@ -520,7 +520,7 @@ git commit -m "fix(app): disable address-comments with zero line comments"
 
 - [ ] **Step 1: Write the failing test**
 
-Create `packages/opencode/test/command/review-preset.test.ts` with:
+Create `packages/flynncode/test/command/review-preset.test.ts` with:
 
 ```ts
 import { describe, expect, test } from "bun:test"
@@ -548,12 +548,12 @@ describe("reviewPresetArgs", () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run from `packages/opencode`: `bun test test/command/review-preset.test.ts`
+Run from `packages/flynncode`: `bun test test/command/review-preset.test.ts`
 Expected: FAIL because `src/command/review-preset.ts` does not exist.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Create `packages/opencode/src/command/review-preset.ts` with:
+Create `packages/flynncode/src/command/review-preset.ts` with:
 
 ```ts
 export type ReviewPreset = "uncommitted" | "base-branch" | "commit"
@@ -567,7 +567,7 @@ export function reviewPresetArgs(preset: ReviewPreset, target?: string) {
 export * as ReviewPresetBuilder from "./review-preset"
 ```
 
-Append to `packages/opencode/src/command/template/review.txt` under "Determining What to Review":
+Append to `packages/flynncode/src/command/template/review.txt` under "Determining What to Review":
 
 ```txt
 Preset shapes (the caller passes one of these as $ARGUMENTS):
@@ -578,18 +578,18 @@ Preset shapes (the caller passes one of these as $ARGUMENTS):
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run from `packages/opencode`: `bun test test/command/review-preset.test.ts`
+Run from `packages/flynncode`: `bun test test/command/review-preset.test.ts`
 Expected: PASS (4 tests).
 
 - [ ] **Step 5: Typecheck**
 
-Run from `packages/opencode`: `bun typecheck`
+Run from `packages/flynncode`: `bun typecheck`
 Expected: PASS with no errors.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/opencode/src/command/review-preset.ts packages/opencode/test/command/review-preset.test.ts packages/opencode/src/command/template/review.txt
+git add packages/flynncode/src/command/review-preset.ts packages/flynncode/test/command/review-preset.test.ts packages/flynncode/src/command/template/review.txt
 git commit -m "feat(opencode): add review preset arg builder"
 ```
 

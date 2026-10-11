@@ -36,8 +36,8 @@ Out of scope:
 
 Three existing pieces, no new terminal widget:
 
-- `packages/opencode/src/tool/shell/prompt.ts` owns the parameter schema and a pure classifier, `needsInteractiveTerminal(command, interactive)`.
-- `packages/opencode/src/tool/shell.ts` keeps the current non-interactive spawn. The interactive branch calls `Pty.create` with the command, records `ptyID` on tool metadata, and waits for `pty.exited` or timeout.
+- `packages/flynncode/src/tool/shell/prompt.ts` owns the parameter schema and a pure classifier, `needsInteractiveTerminal(command, interactive)`.
+- `packages/flynncode/src/tool/shell.ts` keeps the current non-interactive spawn. The interactive branch calls `Pty.create` with the command, records `ptyID` on tool metadata, and waits for `pty.exited` or timeout.
 - `packages/app` session UI, on a shell tool part whose metadata includes `ptyID`, opens the terminal panel and selects that PTY. Keystrokes keep using the existing Ghostty writer and PTY websocket.
 
 ## Data flow

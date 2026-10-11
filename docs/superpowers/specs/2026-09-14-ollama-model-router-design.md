@@ -192,7 +192,7 @@ Runs once after plugin load, before agents are materialized
 Note: `config` hooks receive the live merged config object; mutating
 `cfg.agent[...].model` before the Agent service reads it is what makes
 auto-routing effective. This was verified against opencode 1.18.31
-(`packages/opencode/src/plugin/index.ts:247`, `config/config.ts:620`,
+(`packages/flynncode/src/plugin/index.ts:247`, `config/config.ts:620`,
 `agent/agent.ts:100`).
 
 ### `chat.message`
@@ -229,7 +229,7 @@ Args: `{ task: string, prompt: string, execute?: boolean, wait?: boolean }`.
 `promptAsync` + subtask part vs child session: child session is used because
 the task tool's background mode requires an experimental flag, while
 `session.promptAsync` is stable and returns 204 immediately
-(`packages/opencode/src/server/routes/instance/httpapi/handlers/session.ts:311`).
+(`packages/flynncode/src/server/routes/instance/httpapi/handlers/session.ts:311`).
 
 ## Command: `/route`
 
@@ -306,19 +306,19 @@ Manual verification:
 ## Verification performed for this spec
 
 - Path plugins require a default-exported object with `id` and `server`
-  (`packages/opencode/src/plugin/shared.ts:272,304`).
+  (`packages/flynncode/src/plugin/shared.ts:272,304`).
 - Plugin options arrive as the factory's second argument
   (`packages/plugin/src/index.ts:51,68,74`).
 - `config` hook runs after plugins load and before Agent state is built
-  (`packages/opencode/src/plugin/index.ts:247`,
-  `packages/opencode/src/project/bootstrap.ts:38`,
-  `packages/opencode/src/agent/agent.ts:100`).
+  (`packages/flynncode/src/plugin/index.ts:247`,
+  `packages/flynncode/src/project/bootstrap.ts:38`,
+  `packages/flynncode/src/agent/agent.ts:100`).
 - `client.session.create` + `promptAsync` exist in the v1 SDK
   (`packages/sdk/js/src/gen/sdk.gen.ts:445,639`).
 - Plugin tools are registered from `Hooks.tool` with Zod arg shapes
-  (`packages/plugin/src/tool.ts:43`, `packages/opencode/src/tool/registry.ts:125`).
+  (`packages/plugin/src/tool.ts:43`, `packages/flynncode/src/tool/registry.ts:125`).
 - Local directory plugins resolve `index.ts` with no compatibility gate
-  (`packages/opencode/src/plugin/shared.ts:169-196`).
+  (`packages/flynncode/src/plugin/shared.ts:169-196`).
 
 ## Future work
 

@@ -4,7 +4,7 @@
 
 **Goal:** Extend the existing `plugin.server` Hooks system to Codex Hooks GA parity (PreToolUse, PermissionRequest, PostToolUse, SessionStart, SessionEnd, plus PreCompact, PostCompact, UserPromptSubmit, SubagentStart, SubagentStop, Stop, Interrupt) with an explicit block/mutate-vs-observe trust model.
 
-**Architecture:** Keep the single `Hooks` map in `packages/plugin` plus `Plugin.trigger` in `packages/opencode/src/plugin/index.ts` as the only extension point; add a decision-aware `HooksRunner` layer beside it that interprets hook return values (deny/allow/mutate vs observe-only), a `ConfigHooks` schema module for matcher config, and a `HooksTrust` store for hash-pinned review. Wire call sites that already exist (`tool.execute.before/after`, `permission.ask`, session create/delete/idle, compaction, prompt submit) to the new event names without building a parallel mechanism.
+**Architecture:** Keep the single `Hooks` map in `packages/plugin` plus `Plugin.trigger` in `packages/flynncode/src/plugin/index.ts` as the only extension point; add a decision-aware `HooksRunner` layer beside it that interprets hook return values (deny/allow/mutate vs observe-only), a `ConfigHooks` schema module for matcher config, and a `HooksTrust` store for hash-pinned review. Wire call sites that already exist (`tool.execute.before/after`, `permission.ask`, session create/delete/idle, compaction, prompt submit) to the new event names without building a parallel mechanism.
 
 **Tech Stack:** Bun + TypeScript monorepo, Effect (`Effect.gen`, `Effect.fn`, `InstanceState`, `LayerNode`), existing `Plugin.Service.trigger`, `Permission.Service`, `SessionTools.resolve`, `SessionStatus.Service`, `ConfigV1` Schema, `bun:test` + `testEffect` harness.
 
@@ -18,8 +18,8 @@
 - Prefer functional array methods with type guards over for loops.
 - In Effect generators bind services to named variables before calling methods; never nest yields like `yield* (yield* Foo.Service).bar()`.
 - Use `Bun.file()` for file reads where applicable.
-- Run `bun typecheck` from `packages/opencode` after each implementation task, never `tsc` directly.
-- Run tests from package dirs like `packages/opencode`, never from repo root.
+- Run `bun typecheck` from `packages/flynncode` after each implementation task, never `tsc` directly.
+- Run tests from package dirs like `packages/flynncode`, never from repo root.
 - Default branch is `dev`; branch names max three words hyphen-separated, no slashes or type prefixes.
 - Commits use conventional style `type(scope): summary` with types feat, fix, docs, chore, refactor, test.
 
@@ -30,21 +30,21 @@
 - Modify: `packages/plugin/src/index.ts` — add new `Hooks` event keys with exact input/output shapes and decision return types.
 - Create: `packages/core/src/v1/config/hooks.ts` — `ConfigHooksV1` Schema (event, matcher regex string, handler list: command + mcp_tool + plugin fn), self-reexports as `export * as ConfigHooksV1 from "./hooks"`.
 - Modify: `packages/core/src/v1/config/config.ts:32` — add `hooks` field to `Info` struct referencing `ConfigHooksV1.Info`.
-- Create: `packages/opencode/src/hooks/runner.ts` — `HooksRunner` Effect service: `runPreToolUse`, `runPermissionRequest`, `runPostToolUse`, `runSessionStart`, `runSessionEnd`, `runUserPromptSubmit`, `runCompact`, `runSubagent`, `runStop`, `runInterrupt`. Self-reexports `export * as HooksRunner from "./runner"`.
-- Create: `packages/opencode/src/hooks/trust.ts` — `HooksTrust` service: hash hook definitions (SHA-256 of canonical JSON), load trusted hashes from `~/.local/share/flynncode/hooks-trust.json`, `isTrusted`, `trust`, `revoke`. Self-reexports `export * as HooksTrust from "./trust"`.
-- Create: `packages/opencode/src/hooks/config.ts` — pure functions `matchHooks(event, toolOrSource, entries)` (regex match, empty matcher matches all) and `expandMcpInput(template, eventPayload)` (`${field.nested}` expansion, whole-value preserves JSON type). Self-reexports `export * as HooksConfig from "./config"`.
-- Modify: `packages/opencode/src/plugin/index.ts:294` — add `triggerDecision` helper beside `trigger` that short-circuits on first deny and merges `updatedInput`/`additionalContext`; keep `trigger` for observe-only events.
-- Modify: `packages/opencode/src/session/tools.ts:137` — route registry + MCP tool `execute` through `HooksRunner.runPreToolUse` (mutate args or deny) before `item.execute`, and `runPostToolUse` (observe + block-replace output) after.
-- Modify: `packages/opencode/src/permission/index.ts:69` — call `HooksRunner.runPermissionRequest` at top of `ask` before ruleset evaluation; deny wins, allow short-circuits prompt, undecided falls through.
-- Modify: `packages/opencode/src/session/session.ts:500` — publish `SessionStart` after `SessionV1.Event.Created` (line 536) and `SessionEnd` beside `SessionV1.Event.Deleted` (line 623).
-- Modify: `packages/opencode/src/session/status.ts:39` — publish `Stop` observe hook when `set` transitions to idle.
-- Modify: `packages/opencode/src/session/prompt.ts` — call `runUserPromptSubmit` before prompt admission and `runInterrupt` on cancellation path.
-- Modify: `packages/opencode/src/session/compaction.ts:372` — call `runCompact` Pre/Post around compaction prompt build.
-- Modify: `packages/opencode/src/tool/task.ts` — call `runSubagent` Start/Stop around child session spawn and completion.
-- Create: `packages/opencode/test/hooks/match.test.ts` — matcher + MCP template expansion unit tests.
-- Create: `packages/opencode/test/hooks/runner.test.ts` — deny-wins, allow-rewrite, observe-only, trust-skip tests via `testEffect` + `Plugin.node`.
-- Create: `packages/opencode/test/hooks/trust.test.ts` — hash pinning, revoke, changed-definition re-review tests.
-- Modify: `packages/opencode/src/cli/cmd/run.ts` — surface hook `systemMessage` warnings in stream transport (reuse existing `session-data.ts` permission block path).
+- Create: `packages/flynncode/src/hooks/runner.ts` — `HooksRunner` Effect service: `runPreToolUse`, `runPermissionRequest`, `runPostToolUse`, `runSessionStart`, `runSessionEnd`, `runUserPromptSubmit`, `runCompact`, `runSubagent`, `runStop`, `runInterrupt`. Self-reexports `export * as HooksRunner from "./runner"`.
+- Create: `packages/flynncode/src/hooks/trust.ts` — `HooksTrust` service: hash hook definitions (SHA-256 of canonical JSON), load trusted hashes from `~/.local/share/flynncode/hooks-trust.json`, `isTrusted`, `trust`, `revoke`. Self-reexports `export * as HooksTrust from "./trust"`.
+- Create: `packages/flynncode/src/hooks/config.ts` — pure functions `matchHooks(event, toolOrSource, entries)` (regex match, empty matcher matches all) and `expandMcpInput(template, eventPayload)` (`${field.nested}` expansion, whole-value preserves JSON type). Self-reexports `export * as HooksConfig from "./config"`.
+- Modify: `packages/flynncode/src/plugin/index.ts:294` — add `triggerDecision` helper beside `trigger` that short-circuits on first deny and merges `updatedInput`/`additionalContext`; keep `trigger` for observe-only events.
+- Modify: `packages/flynncode/src/session/tools.ts:137` — route registry + MCP tool `execute` through `HooksRunner.runPreToolUse` (mutate args or deny) before `item.execute`, and `runPostToolUse` (observe + block-replace output) after.
+- Modify: `packages/flynncode/src/permission/index.ts:69` — call `HooksRunner.runPermissionRequest` at top of `ask` before ruleset evaluation; deny wins, allow short-circuits prompt, undecided falls through.
+- Modify: `packages/flynncode/src/session/session.ts:500` — publish `SessionStart` after `SessionV1.Event.Created` (line 536) and `SessionEnd` beside `SessionV1.Event.Deleted` (line 623).
+- Modify: `packages/flynncode/src/session/status.ts:39` — publish `Stop` observe hook when `set` transitions to idle.
+- Modify: `packages/flynncode/src/session/prompt.ts` — call `runUserPromptSubmit` before prompt admission and `runInterrupt` on cancellation path.
+- Modify: `packages/flynncode/src/session/compaction.ts:372` — call `runCompact` Pre/Post around compaction prompt build.
+- Modify: `packages/flynncode/src/tool/task.ts` — call `runSubagent` Start/Stop around child session spawn and completion.
+- Create: `packages/flynncode/test/hooks/match.test.ts` — matcher + MCP template expansion unit tests.
+- Create: `packages/flynncode/test/hooks/runner.test.ts` — deny-wins, allow-rewrite, observe-only, trust-skip tests via `testEffect` + `Plugin.node`.
+- Create: `packages/flynncode/test/hooks/trust.test.ts` — hash pinning, revoke, changed-definition re-review tests.
+- Modify: `packages/flynncode/src/cli/cmd/run.ts` — surface hook `systemMessage` warnings in stream transport (reuse existing `session-data.ts` permission block path).
 
 ## Interfaces
 
@@ -57,7 +57,7 @@ export type HookObserve = { additionalContext?: string; systemMessage?: string; 
 ```
 
 ```ts
-// packages/opencode/src/hooks/runner.ts
+// packages/flynncode/src/hooks/runner.ts
 export interface RunnerInput {
   sessionID: string
   tool?: string
@@ -73,7 +73,7 @@ Consumes: `Plugin.Service.trigger`, `HooksTrust.Service.isTrusted`, `HooksConfig
 Produces: `HooksRunner.runPreToolUse(input) -> Effect<HookDecision>`, `runPermissionRequest(input) -> Effect<HookDecision>`, `runPostToolUse(input) -> Effect<HookObserve & { blockedOutput?: string }>`, `runSessionStart/runSessionEnd/runUserPromptSubmit/runCompact/runSubagent/runStop/runInterrupt -> Effect<HookObserve>`.
 
 ```ts
-// packages/opencode/src/hooks/trust.ts
+// packages/flynncode/src/hooks/trust.ts
 export interface TrustRecord { hash: string; event: string; matcher: string; command: string; trustedAt: number }
 ```
 
@@ -113,7 +113,7 @@ export const Info = Schema.Struct({
 **Files:**
 - Create: `packages/core/src/v1/config/hooks.ts`
 - Modify: `packages/core/src/v1/config/config.ts`
-- Test: `packages/opencode/test/hooks/match.test.ts` (schema decode part)
+- Test: `packages/flynncode/test/hooks/match.test.ts` (schema decode part)
 
 **Interfaces:**
 - Consumes: `Schema` from `effect`, existing `ConfigV1.Info` struct pattern.
@@ -136,7 +136,7 @@ test("decodes PreToolUse Bash group", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/hooks/match.test.ts` from `packages/opencode`
+Run: `bun test test/hooks/match.test.ts` from `packages/flynncode`
 Expected: FAIL with "Cannot find module '@opencode-ai/core/v1/config/hooks'"
 
 - [ ] **Step 3: Write minimal implementation**
@@ -193,21 +193,21 @@ Add to `packages/core/src/v1/config/config.ts` imports `import { ConfigHooksV1 }
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun test test/hooks/match.test.ts` from `packages/opencode`
+Run: `bun test test/hooks/match.test.ts` from `packages/flynncode`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/core/src/v1/config/hooks.ts packages/core/src/v1/config/config.ts packages/opencode/test/hooks/match.test.ts
+git add packages/core/src/v1/config/hooks.ts packages/core/src/v1/config/config.ts packages/flynncode/test/hooks/match.test.ts
 git commit -m "feat(core): add hooks config schema"
 ```
 
 ### Task 2: Pure matcher plus MCP template expansion
 
 **Files:**
-- Create: `packages/opencode/src/hooks/config.ts`
-- Test: `packages/opencode/test/hooks/match.test.ts`
+- Create: `packages/flynncode/src/hooks/config.ts`
+- Test: `packages/flynncode/test/hooks/match.test.ts`
 
 **Interfaces:**
 - Consumes: `ConfigHooksV1.HookGroup` from Task 1.
@@ -234,7 +234,7 @@ test("whole-value placeholder preserves JSON type", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/hooks/match.test.ts` from `packages/opencode`
+Run: `bun test test/hooks/match.test.ts` from `packages/flynncode`
 Expected: FAIL with "Cannot find module '../../src/hooks/config'"
 
 - [ ] **Step 3: Write minimal implementation**
@@ -297,21 +297,21 @@ export * as HooksConfig from "./config"
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun test test/hooks/match.test.ts` from `packages/opencode`
+Run: `bun test test/hooks/match.test.ts` from `packages/flynncode`
 Expected: PASS (adjust test import to `matchHooks("PreToolUse", "Bash", groups)` three-arg form)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/hooks/config.ts packages/opencode/test/hooks/match.test.ts
+git add packages/flynncode/src/hooks/config.ts packages/flynncode/test/hooks/match.test.ts
 git commit -m "feat(opencode): add hooks matcher and template expansion"
 ```
 
 ### Task 3: Trust store with hash pinning
 
 **Files:**
-- Create: `packages/opencode/src/hooks/trust.ts`
-- Test: `packages/opencode/test/hooks/trust.test.ts`
+- Create: `packages/flynncode/src/hooks/trust.ts`
+- Test: `packages/flynncode/test/hooks/trust.test.ts`
 
 **Interfaces:**
 - Consumes: Node `crypto` SHA-256, trust file at `~/.local/share/flynncode/hooks-trust.json`.
@@ -344,7 +344,7 @@ describe("hooks trust", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/hooks/trust.test.ts` from `packages/opencode`
+Run: `bun test test/hooks/trust.test.ts` from `packages/flynncode`
 Expected: FAIL with "Cannot find module '../../src/hooks/trust'"
 
 - [ ] **Step 3: Write minimal implementation**
@@ -431,13 +431,13 @@ export * as HooksTrust from "./trust"
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun test test/hooks/trust.test.ts` from `packages/opencode`
+Run: `bun test test/hooks/trust.test.ts` from `packages/flynncode`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/hooks/trust.ts packages/opencode/test/hooks/trust.test.ts
+git add packages/flynncode/src/hooks/trust.ts packages/flynncode/test/hooks/trust.test.ts
 git commit -m "feat(opencode): add hooks trust store"
 ```
 
@@ -445,7 +445,7 @@ git commit -m "feat(opencode): add hooks trust store"
 
 **Files:**
 - Modify: `packages/plugin/src/index.ts:222`
-- Test: `packages/opencode/test/hooks/runner.test.ts` (type-level import check)
+- Test: `packages/flynncode/test/hooks/runner.test.ts` (type-level import check)
 
 **Interfaces:**
 - Consumes: existing `Hooks` interface.
@@ -465,7 +465,7 @@ test("hooks expose session lifecycle keys", () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/hooks/runner.test.ts` from `packages/opencode`
+Run: `bun test test/hooks/runner.test.ts` from `packages/flynncode`
 Expected: FAIL with type error "session.start is not assignable to keyof Hooks"
 
 - [ ] **Step 3: Write minimal implementation**
@@ -511,22 +511,22 @@ Existing `tool.execute.before`, `tool.execute.after`, `permission.ask` stay as t
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun test test/hooks/runner.test.ts` from `packages/opencode`
+Run: `bun test test/hooks/runner.test.ts` from `packages/flynncode`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/plugin/src/index.ts packages/opencode/test/hooks/runner.test.ts
+git add packages/plugin/src/index.ts packages/flynncode/test/hooks/runner.test.ts
 git commit -m "feat(plugin): add session lifecycle hook types"
 ```
 
 ### Task 5: Decision-aware HooksRunner service
 
 **Files:**
-- Create: `packages/opencode/src/hooks/runner.ts`
-- Modify: `packages/opencode/src/plugin/index.ts:294`
-- Test: `packages/opencode/test/hooks/runner.test.ts`
+- Create: `packages/flynncode/src/hooks/runner.ts`
+- Modify: `packages/flynncode/src/plugin/index.ts:294`
+- Test: `packages/flynncode/test/hooks/runner.test.ts`
 
 **Interfaces:**
 - Consumes: `Plugin.Service`, `HooksTrust.Service`, Task 2 `HooksConfig`, Task 4 hook keys.
@@ -557,7 +557,7 @@ Test layer registers two in-memory plugin hooks: one allow+rewrite, one deny; ru
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/hooks/runner.test.ts` from `packages/opencode`
+Run: `bun test test/hooks/runner.test.ts` from `packages/flynncode`
 Expected: FAIL with "Cannot find module '../../src/hooks/runner'"
 
 - [ ] **Step 3: Write minimal implementation**
@@ -652,24 +652,24 @@ Full deny-wins merging across multiple plugin hook outputs plus trust skipping l
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun test test/hooks/runner.test.ts` from `packages/opencode`
+Run: `bun test test/hooks/runner.test.ts` from `packages/flynncode`
 Expected: PASS
 
-Run: `bun typecheck` from `packages/opencode`
+Run: `bun typecheck` from `packages/flynncode`
 Expected: PASS with no errors
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/hooks/runner.ts packages/opencode/src/plugin/index.ts packages/opencode/test/hooks/runner.test.ts
+git add packages/flynncode/src/hooks/runner.ts packages/flynncode/src/plugin/index.ts packages/flynncode/test/hooks/runner.test.ts
 git commit -m "feat(opencode): add decision-aware hooks runner"
 ```
 
 ### Task 6: Wire Pre/PostToolUse into tool execution
 
 **Files:**
-- Modify: `packages/opencode/src/session/tools.ts:137`
-- Test: `packages/opencode/test/hooks/runner.test.ts`
+- Modify: `packages/flynncode/src/session/tools.ts:137`
+- Test: `packages/flynncode/test/hooks/runner.test.ts`
 
 **Interfaces:**
 - Consumes: `HooksRunner.runPreToolUse/runPostToolUse` from Task 5.
@@ -689,12 +689,12 @@ it.effect("rewritten Bash args reach tool execute", () =>
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/hooks/runner.test.ts` from `packages/opencode`
+Run: `bun test test/hooks/runner.test.ts` from `packages/flynncode`
 Expected: FAIL with undecided instead of allow+rewrite
 
 - [ ] **Step 3: Write minimal implementation**
 
-In `packages/opencode/src/session/tools.ts` inside registry `execute`, replace direct `plugin.trigger("tool.execute.before", ...)` with:
+In `packages/flynncode/src/session/tools.ts` inside registry `execute`, replace direct `plugin.trigger("tool.execute.before", ...)` with:
 
 ```ts
 const runner = yield* HooksRunner.Service
@@ -711,24 +711,24 @@ Apply the same replacement to the three MCP resource tools (`list`, `listTemplat
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun test test/hooks/runner.test.ts` from `packages/opencode`
+Run: `bun test test/hooks/runner.test.ts` from `packages/flynncode`
 Expected: PASS
 
-Run: `bun typecheck` from `packages/opencode`
+Run: `bun typecheck` from `packages/flynncode`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/session/tools.ts packages/opencode/test/hooks/runner.test.ts
+git add packages/flynncode/src/session/tools.ts packages/flynncode/test/hooks/runner.test.ts
 git commit -m "feat(opencode): enforce pre/post tool hooks"
 ```
 
 ### Task 7: Wire PermissionRequest into permission ask
 
 **Files:**
-- Modify: `packages/opencode/src/permission/index.ts:69`
-- Test: `packages/opencode/test/permission/next.test.ts` (append hook decision cases)
+- Modify: `packages/flynncode/src/permission/index.ts:69`
+- Test: `packages/flynncode/test/permission/next.test.ts` (append hook decision cases)
 
 **Interfaces:**
 - Consumes: `HooksRunner.runPermissionRequest` from Task 5.
@@ -752,12 +752,12 @@ With a test hook returning allow for `echo hi`, `ask` must resolve without publi
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/permission/next.test.ts` from `packages/opencode`
+Run: `bun test test/permission/next.test.ts` from `packages/flynncode`
 Expected: FAIL (prompt published / hangs without reply)
 
 - [ ] **Step 3: Write minimal implementation**
 
-At top of `ask` in `packages/opencode/src/permission/index.ts`, after destructuring `ruleset`:
+At top of `ask` in `packages/flynncode/src/permission/index.ts`, after destructuring `ruleset`:
 
 ```ts
 const runner = yield* HooksRunner.Service
@@ -770,24 +770,24 @@ Any deny among multiple matching hooks wins; allow proceeds without surfacing th
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun test test/permission/next.test.ts` from `packages/opencode`
+Run: `bun test test/permission/next.test.ts` from `packages/flynncode`
 Expected: PASS
 
-Run: `bun typecheck` from `packages/opencode`
+Run: `bun typecheck` from `packages/flynncode`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/permission/index.ts packages/opencode/test/permission/next.test.ts
+git add packages/flynncode/src/permission/index.ts packages/flynncode/test/permission/next.test.ts
 git commit -m "feat(opencode): gate permission prompts with hooks"
 ```
 
 ### Task 8: Wire session lifecycle (Start/End, prompt, compact, subagent, idle/interrupt)
 
 **Files:**
-- Modify: `packages/opencode/src/session/session.ts:536`, `packages/opencode/src/session/session.ts:623`, `packages/opencode/src/session/status.ts:39`, `packages/opencode/src/session/prompt.ts`, `packages/opencode/src/session/compaction.ts:372`, `packages/opencode/src/tool/task.ts`
-- Test: `packages/opencode/test/hooks/runner.test.ts`
+- Modify: `packages/flynncode/src/session/session.ts:536`, `packages/flynncode/src/session/session.ts:623`, `packages/flynncode/src/session/status.ts:39`, `packages/flynncode/src/session/prompt.ts`, `packages/flynncode/src/session/compaction.ts:372`, `packages/flynncode/src/tool/task.ts`
+- Test: `packages/flynncode/test/hooks/runner.test.ts`
 
 **Interfaces:**
 - Consumes: `HooksRunner.runSessionStart/runSessionEnd` plus new `runSessionPrompt/runCompact/runSubagent/runIdle/runInterrupt` (added to runner in this task following Task 5 pattern).
@@ -807,12 +807,12 @@ it.effect("session start injects additional context", () =>
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/hooks/runner.test.ts` from `packages/opencode`
+Run: `bun test test/hooks/runner.test.ts` from `packages/flynncode`
 Expected: FAIL with additionalContext undefined
 
 - [ ] **Step 3: Write minimal implementation**
 
-Add to `packages/opencode/src/hooks/runner.ts`:
+Add to `packages/flynncode/src/hooks/runner.ts`:
 
 ```ts
 const runSessionPrompt = Effect.fn("HooksRunner.runSessionPrompt")(function* (input: { sessionID: string; prompt: string }) {
@@ -831,25 +831,25 @@ Call sites: after `events.publish(SessionV1.Event.Created)` in `session.ts:536` 
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun test test/hooks/runner.test.ts` from `packages/opencode`
+Run: `bun test test/hooks/runner.test.ts` from `packages/flynncode`
 Expected: PASS
 
-Run: `bun typecheck` from `packages/opencode`
+Run: `bun typecheck` from `packages/flynncode`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/hooks/runner.ts packages/opencode/src/session/session.ts packages/opencode/src/session/status.ts packages/opencode/src/session/prompt.ts packages/opencode/src/session/compaction.ts packages/opencode/src/tool/task.ts
+git add packages/flynncode/src/hooks/runner.ts packages/flynncode/src/session/session.ts packages/flynncode/src/session/status.ts packages/flynncode/src/session/prompt.ts packages/flynncode/src/session/compaction.ts packages/flynncode/src/tool/task.ts
 git commit -m "feat(opencode): wire session lifecycle hooks"
 ```
 
 ### Task 9: Config file discovery, merge, and CLI surfacing
 
 **Files:**
-- Modify: `packages/opencode/src/config/config.ts` (merge `hooks.json` + inline `hooks` table + plugin-bundled `hooks/hooks.json`; warn on dual representation per layer)
-- Modify: `packages/opencode/src/cli/cmd/run.ts` (surface `systemMessage` warnings)
-- Test: `packages/opencode/test/hooks/trust.test.ts` (layer merge case)
+- Modify: `packages/flynncode/src/config/config.ts` (merge `hooks.json` + inline `hooks` table + plugin-bundled `hooks/hooks.json`; warn on dual representation per layer)
+- Modify: `packages/flynncode/src/cli/cmd/run.ts` (surface `systemMessage` warnings)
+- Test: `packages/flynncode/test/hooks/trust.test.ts` (layer merge case)
 
 **Interfaces:**
 - Consumes: `ConfigHooksV1.Info` from Task 1, `HooksTrust` from Task 3.
@@ -871,25 +871,25 @@ it.effect("project and global hooks merge without replacing", () =>
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `bun test test/hooks/trust.test.ts` from `packages/opencode`
+Run: `bun test test/hooks/trust.test.ts` from `packages/flynncode`
 Expected: FAIL with merger undefined
 
 - [ ] **Step 3: Write minimal implementation**
 
-Implement `mergeHooksConfigs(globalHooks, projectHooks, pluginHooks)` in `packages/opencode/src/hooks/config.ts`: concatenate per-event arrays in global, project, plugin order; if a single layer contains both `hooks.json` and inline `hooks` table, merge both and log one startup warning. Discovery order: `~/.config/opencode/hooks.json`, `~/.config/opencode/opencode.json` inline table, `<repo>/.opencode/hooks.json`, `<repo>/opencode.json` inline table, enabled-plugin `hooks/hooks.json` (or manifest `hooks` entry, resolved inside plugin root). Project-local entries apply only when project layer is trusted; otherwise skip with warning. Untrusted definitions are skipped at run time (Task 3) and listed by `/hooks`. Managed `requirements.toml` hooks bypass trust and cannot be disabled; `--dangerously-bypass-hook-trust` CLI flag skips trust check for one invocation. Surface hook `systemMessage` through existing stream transport warning path in `cli/cmd/run.ts`.
+Implement `mergeHooksConfigs(globalHooks, projectHooks, pluginHooks)` in `packages/flynncode/src/hooks/config.ts`: concatenate per-event arrays in global, project, plugin order; if a single layer contains both `hooks.json` and inline `hooks` table, merge both and log one startup warning. Discovery order: `~/.config/opencode/hooks.json`, `~/.config/opencode/opencode.json` inline table, `<repo>/.opencode/hooks.json`, `<repo>/opencode.json` inline table, enabled-plugin `hooks/hooks.json` (or manifest `hooks` entry, resolved inside plugin root). Project-local entries apply only when project layer is trusted; otherwise skip with warning. Untrusted definitions are skipped at run time (Task 3) and listed by `/hooks`. Managed `requirements.toml` hooks bypass trust and cannot be disabled; `--dangerously-bypass-hook-trust` CLI flag skips trust check for one invocation. Surface hook `systemMessage` through existing stream transport warning path in `cli/cmd/run.ts`.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `bun test test/hooks/trust.test.ts` from `packages/opencode`
+Run: `bun test test/hooks/trust.test.ts` from `packages/flynncode`
 Expected: PASS
 
-Run: `bun typecheck` from `packages/opencode`
+Run: `bun typecheck` from `packages/flynncode`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/opencode/src/hooks/config.ts packages/opencode/src/config/config.ts packages/opencode/src/cli/cmd/run.ts packages/opencode/test/hooks/trust.test.ts
+git add packages/flynncode/src/hooks/config.ts packages/flynncode/src/config/config.ts packages/flynncode/src/cli/cmd/run.ts packages/flynncode/test/hooks/trust.test.ts
 git commit -m "feat(opencode): merge hooks config layers"
 ```
 

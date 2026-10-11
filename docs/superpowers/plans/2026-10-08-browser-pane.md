@@ -6,7 +6,7 @@
 
 **Architecture:** Phase 1 mounts the existing iframe-based `ReviewBrowser` (`packages/app/src/pages/session/review-browser.tsx`, currently unmounted) as a docked pane beside the review tab with a URL bar, reusing the `/preview/servers` lifecycle dropdown and the `browserAnnotation` + `onAnnotate` composer path. Phase 2 graduates hosting to an Electron `WebContentsView` with a separate persistent partition (clean profile, keeps dev-server cookies/localStorage that the sandboxed iframe's opaque origin breaks), driven from the main process. Phase 3 wires annotate-to-chat end to end (mark region, note, screenshot thumbnail, composer prefill) plus auto-verify via the existing `verify_page` tool.
 
-**Tech Stack:** SolidJS (packages/app), Electron 42 `WebContentsView` with `partition: persist:flynncode-browser` (packages/desktop, main + preload + `window.api`), existing generated SDK (`sdk().client.preview.servers.*`), existing `app:capturePage` IPC, existing `verify_page` tool (`packages/opencode/src/plugin/preview/index.ts`), `bun:test`, `bun typecheck`.
+**Tech Stack:** SolidJS (packages/app), Electron 42 `WebContentsView` with `partition: persist:flynncode-browser` (packages/desktop, main + preload + `window.api`), existing generated SDK (`sdk().client.preview.servers.*`), existing `app:capturePage` IPC, existing `verify_page` tool (`packages/flynncode/src/plugin/preview/index.ts`), `bun:test`, `bun typecheck`.
 
 ## Global Constraints
 
@@ -216,7 +216,7 @@ Expected: no new errors.
 
 - [ ] **Step 6: Manual verify in dev**
 
-Run backend from `packages/opencode`: `bun run ./src/index.ts serve --port 4096`. Run app from `packages/app`: `bun dev -- --port 4444`. Open `http://localhost:4444`, start a dev server on `http://127.0.0.1:3000`, open the session review column, confirm the Browser pane shows the URL bar and the page loads in the iframe.
+Run backend from `packages/flynncode`: `bun run ./src/index.ts serve --port 4096`. Run app from `packages/app`: `bun dev -- --port 4444`. Open `http://localhost:4444`, start a dev server on `http://127.0.0.1:3000`, open the session review column, confirm the Browser pane shows the URL bar and the page loads in the iframe.
 
 - [ ] **Step 7: Commit**
 
@@ -492,7 +492,7 @@ git commit -m "feat(app): send browser annotations to chat with screenshot"
 
 **Interfaces:**
 
-- Consumes: existing `verify_page` tool contract from `packages/opencode/src/plugin/preview/index.ts` and the `preview.settings.autoVerify` setting (already in en.ts); pane `loaded` URL + reload counter `frame`.
+- Consumes: existing `verify_page` tool contract from `packages/flynncode/src/plugin/preview/index.ts` and the `preview.settings.autoVerify` setting (already in en.ts); pane `loaded` URL + reload counter `frame`.
 - Produces: agent-visible page status after edits; no new SDK surface.
 
 - [ ] **Step 1: Write the failing test**

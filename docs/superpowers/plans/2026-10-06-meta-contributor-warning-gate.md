@@ -35,7 +35,7 @@ Expected: output contains `meta/muse-spark-1.2-contributor` and `meta/muse-spark
 
 - [ ] **Step 2: Confirm the router cannot route to them**
 
-Run: `grep -rn "muse-spark" packages/opencode/src/plugin/ollama-model-router/`
+Run: `grep -rn "muse-spark" packages/flynncode/src/plugin/ollama-model-router/`
 Expected: no matches (no scorecard entry, so `allowUnscored: false` excludes them).
 
 - [ ] **Step 3: Record the outcome**
@@ -590,7 +590,7 @@ Inspect the Muse CLI's local storage for the auto-connected credential from onbo
 
 - [ ] **Step 3: Install it as opencode's `meta` key**
 
-Paste it into the connect-provider dialog for Meta, or set `META_MODEL_API_KEY`. Verify `bun run ./src/index.ts models` (from `packages/opencode`) still lists both Contributor IDs, and confirm a Contributor model is selectable in the desktop picker.
+Paste it into the connect-provider dialog for Meta, or set `META_MODEL_API_KEY`. Verify `bun run ./src/index.ts models` (from `packages/flynncode`) still lists both Contributor IDs, and confirm a Contributor model is selectable in the desktop picker.
 
 - [ ] **Step 4: Record the outcome**
 

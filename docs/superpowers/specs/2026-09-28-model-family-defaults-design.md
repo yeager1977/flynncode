@@ -2,7 +2,7 @@
 
 **Status:** Draft for review
 **Date:** 2026-09-28
-**Area:** `packages/core/src/v1/config`, `packages/opencode/src/plugin/ollama-model-router`, `packages/app/src/components/settings-v2`
+**Area:** `packages/core/src/v1/config`, `packages/flynncode/src/plugin/ollama-model-router`, `packages/app/src/components/settings-v2`
 
 ## Goal
 
@@ -22,7 +22,7 @@ distinct chain sources**, and they must not be confused:
 
 - **Runtime defaults:** the installed OMO package, configured through
   `oh-my-openagent.jsonc`. This file is written by
-  `packages/opencode/src/config/omo-files.ts` and holds `agents`, `categories`,
+  `packages/flynncode/src/config/omo-files.ts` and holds `agents`, `categories`,
   and `disabled_providers`. These values actually drive OMO model selection at
   runtime.
 - **UI snapshot:** `packages/app/src/components/settings-v2/omo-catalog.ts`. It
@@ -40,7 +40,7 @@ chains live (the OMO package / `oh-my-openagent.jsonc`), not by editing
 keeping the UI snapshot in sync. This scope split is an open question below.
 
 Flynncode's own model taxonomy is the router task classes in
-`packages/opencode/src/plugin/ollama-model-router/types.ts`:
+`packages/flynncode/src/plugin/ollama-model-router/types.ts`:
 
 ```
 coding | planning | review | architecture | lookup | writing | long-context
@@ -53,7 +53,7 @@ winner. Catalog models expose a `family` field, which is the discriminator the
 override uses.
 
 The `model_router` config key is already an opaque record validated by
-`scorecard.ts parseOptions`, and `packages/opencode/src/config/config.ts`
+`scorecard.ts parseOptions`, and `packages/flynncode/src/config/config.ts`
 treats it as a whole-subtree replacement on patch.
 
 ## Non-Goals
@@ -141,11 +141,11 @@ Where this is authored (OMO package vs. in-repo snapshot) is open question 1.
 ## Components
 
 - `packages/core/src/v1/config/config.ts`: declare `model_family`.
-- `packages/opencode/src/plugin/ollama-model-router/provider-family.ts` (new):
+- `packages/flynncode/src/plugin/ollama-model-router/provider-family.ts` (new):
   tier table, family order, dynamic resolution against `CatalogLike`.
-- `packages/opencode/src/plugin/ollama-model-router/index.ts`: read
+- `packages/flynncode/src/plugin/ollama-model-router/index.ts`: read
   `model_family` in the config hook and pass it into candidate selection.
-- `packages/opencode/src/plugin/ollama-model-router/candidates.ts`: apply the
+- `packages/flynncode/src/plugin/ollama-model-router/candidates.ts`: apply the
   family constraint before scoring.
 - `packages/app/src/components/settings-v2/model-router.tsx` and
   `model-router-payload.ts`: dropdown plus form serialization.
@@ -163,7 +163,7 @@ Where this is authored (OMO package vs. in-repo snapshot) is open question 1.
 ## Testing
 
 - Unit tests for the tier table and family fallback order in
-  `packages/opencode/test/plugin/ollama-model-router/`.
+  `packages/flynncode/test/plugin/ollama-model-router/`.
 - `parseOptions`/config validation test for `model_family`.
 - Payload round-trip test for the new dropdown in `model-router-payload.test.ts`.
 - Chain assertions in an `omo-catalog` test covering the deepseek/glm skip rule.

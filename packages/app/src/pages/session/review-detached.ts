@@ -1,5 +1,5 @@
-// Mirrors packages/opencode/src/command/review-preset.ts (server twin) —
-// kept in the app because app runtime must not import from packages/opencode.
+// Mirrors packages/flynncode/src/command/review-preset.ts (server twin) —
+// kept in the app because app runtime must not import from packages/flynncode.
 export type ReviewPreset = "uncommitted" | "base-branch" | "commit"
 
 export function presetArgs(preset: ReviewPreset, target?: string) {

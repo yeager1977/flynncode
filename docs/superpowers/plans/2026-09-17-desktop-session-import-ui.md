@@ -805,10 +805,10 @@ git commit -m "feat(app): add desktop session import settings section"
 
 - [ ] **Step 1: Verify the routes against a live server**
 
-Start an authed server (use tmux per `packages/opencode/AGENTS.md`, and pick a free port):
+Start an authed server (use tmux per `packages/flynncode/AGENTS.md`, and pick a free port):
 
 ```bash
-cd packages/opencode
+cd packages/flynncode
 OPENCODE_SERVER_PASSWORD=e2e-pass bun run ./src/index.ts serve --port 4531 --hostname 127.0.0.1
 ```
 

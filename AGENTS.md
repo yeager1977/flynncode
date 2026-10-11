@@ -2,7 +2,7 @@
 
 This repo is Flynncode, a fork of the opencode desktop app. All work here targets
 Flynncode, not upstream opencode. The Ollama model router is a Flynncode-specific
-plugin (`packages/opencode/src/plugin/ollama-model-router`) and third-party
+plugin (`packages/flynncode/src/plugin/ollama-model-router`) and third-party
 plugins must be verified against it before adoption.
 
 ## Repo Conventions
@@ -151,11 +151,11 @@ const table = sqliteTable("session", {
 
 - Avoid mocks as much as possible, you shouldn't be using globalThis.\* at all unless it's the only option.
 - Test actual implementation, do not duplicate logic into tests
-- Tests cannot run from repo root (guard: `do-not-run-tests-from-root`); run from package dirs like `packages/opencode`.
+- Tests cannot run from repo root (guard: `do-not-run-tests-from-root`); run from package dirs like `packages/flynncode`.
 
 ## Type Checking
 
-- Always run `bun typecheck` from package directories (e.g., `packages/opencode`), never `tsc` directly.
+- Always run `bun typecheck` from package directories (e.g., `packages/flynncode`), never `tsc` directly.
 
 ## V2 Session Core
 

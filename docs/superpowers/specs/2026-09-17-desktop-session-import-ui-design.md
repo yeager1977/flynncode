@@ -9,7 +9,7 @@ Depends on: `2026-09-17-session-import-design.md` (phase 1: core service, routes
 Phase 1 shipped session import with a TUI plugin as the only interface. The
 desktop app cannot host TUI plugins: the TUI plugin host
 (`createLegacyTuiPluginHost`) exists only in the CLI
-(`packages/opencode/src/cli/cmd/tui.ts:272`, `attach.ts:132`), and the packaged
+(`packages/flynncode/src/cli/cmd/tui.ts:272`, `attach.ts:132`), and the packaged
 desktop `app.asar` contains no reference to it. The desktop app therefore has no
 UI to trigger the import that already exists on the server.
 

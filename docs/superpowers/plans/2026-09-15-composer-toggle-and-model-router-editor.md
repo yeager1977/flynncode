@@ -11,19 +11,19 @@ Specs:
 - Reuse existing UI primitives (`@opencode-ai/ui/v2/*`); no new IPC.
 - Plugin public behavior (routing, tools) must not change.
 - New i18n keys must satisfy `packages/app/src/i18n/parity.test.ts`.
-- Tests run from `packages/app` or `packages/opencode`, never repo root.
+- Tests run from `packages/app` or `packages/flynncode`, never repo root.
 - Commits: `git -c user.name="Chris Flynn" -c user.email="chrisflynn1977@gmail.com"`.
   Do not push.
 - App single-file test command:
-  `cd packages/opencode`/`packages/app` then
+  `cd packages/flynncode`/`packages/app` then
   `bun test --conditions=solid --preload ./happydom.ts ./src/<path>` (app).
 
 ## Task 1 — server: model_router subtree replace (DONE)
 
 Commit `668c71510f`. `patchJsonc` treats top-level `model_router` as a leaf;
 plain-JSON branch overrides after mergeDeep. Fixtures under
-`packages/opencode/test/config/fixtures/v2-compat/update-global/`.
-Tests: `bun test test/config/` from `packages/opencode` → 232 pass.
+`packages/flynncode/test/config/fixtures/v2-compat/update-global/`.
+Tests: `bun test test/config/` from `packages/flynncode` → 232 pass.
 
 ## Task 2 — payload module (packages/app)
 
@@ -41,7 +41,7 @@ Types (must match plugin `types.ts`/`scorecard.ts`):
 
 Functions:
 - `DEFAULT_AGENT_TASKS`, `DEFAULT_TASK_WEIGHTS`, `TASK_NAMES` (copy values from
-  `packages/opencode/src/plugin/ollama-model-router/scorecard.ts`).
+  `packages/flynncode/src/plugin/ollama-model-router/scorecard.ts`).
 - `emptyForm()`
 - `formFromConfig(config: Record<string, unknown> | undefined)` — normalize; absent → defaults.
 - `serializeForm(form)` — returns config object; omit `models` when empty; always include autoRoute.
@@ -197,7 +197,7 @@ Commit: `feat(app): add model router and permission toggle strings`
 ## Task 7 — build and verify
 
 - `cd packages/app && bun run typecheck`
-- `cd packages/opencode && bun run typecheck && bun test test/plugin/ollama-model-router test/config`
+- `cd packages/flynncode && bun run typecheck && bun test test/plugin/ollama-model-router test/config`
 - `cd packages/app && bun run test:unit`
 - `cd packages/desktop && OPENCODE_CHANNEL=dev bun run build`
 - Verify router markers in `out/main/chunks/*.js`, then

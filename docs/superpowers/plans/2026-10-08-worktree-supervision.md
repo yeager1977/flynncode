@@ -4,7 +4,7 @@
 
 **Goal:** Every chat session can own a disposable git worktree with enforced retention and one-click checkout handoff, and every subagent can run isolated in a temp worktree with per-agent model and permission overrides.
 
-**Architecture:** The `Worktree` Effect service in `packages/opencode/src/worktree/index.ts` already implements create-and-retain (default keep 15), list, remove, reset, and dirty-state-carrying handoff behind the experimental HttpApi; this workstream wires those primitives into session lifecycle (per-chat ownership plus dispose-on-archive) and into the task tool (temp-worktree child sessions), then surfaces retention, handoff, and isolation controls in the new-session view and sidebar workspace menu behind i18n keys. Session-to-worktree binding stays a plain directory association plus project sandbox row; no new durable session table is introduced. Per-agent isolation and model override resolve from existing agent config (`model`, `permission`, `mode` in `packages/core/src/v1/config/agent.ts`) extended with two optional fields, consumed only by the task tool at spawn time.
+**Architecture:** The `Worktree` Effect service in `packages/flynncode/src/worktree/index.ts` already implements create-and-retain (default keep 15), list, remove, reset, and dirty-state-carrying handoff behind the experimental HttpApi; this workstream wires those primitives into session lifecycle (per-chat ownership plus dispose-on-archive) and into the task tool (temp-worktree child sessions), then surfaces retention, handoff, and isolation controls in the new-session view and sidebar workspace menu behind i18n keys. Session-to-worktree binding stays a plain directory association plus project sandbox row; no new durable session table is introduced. Per-agent isolation and model override resolve from existing agent config (`model`, `permission`, `mode` in `packages/core/src/v1/config/agent.ts`) extended with two optional fields, consumed only by the task tool at spawn time.
 
 **Tech Stack:** Bun + TypeScript monorepo, Effect v4 services (`Worktree.Service`, `Session.Service`, `Agent.Service`, `TaskTool`), Server HttpApi experimental worktree group with generated JS SDK, SolidJS app (`packages/app/src/pages/new-session`, `packages/app/src/pages/layout`), typed i18n (`packages/app/src/i18n/en.ts` plus `worktree-fallback.ts`).
 
@@ -16,28 +16,28 @@
 - No `any`, no star imports, no aliased imports. Import namespaces by name (e.g. `import { Worktree } from "@/worktree/index"` then `Worktree.Service`).
 - In Effect generators bind services to named variables before calling methods; never nest yields like `yield* (yield* Foo.Service).bar()`.
 - After any public Protocol or Server HttpApi change, run `bun run generate` from `packages/client`. Never edit `src/generated` or `src/generated-effect` by hand.
-- Tests run from package dirs (e.g. `packages/opencode`, `packages/app`), never repo root. Typecheck with `bun typecheck` from package dirs, never bare `tsc`.
+- Tests run from package dirs (e.g. `packages/flynncode`, `packages/app`), never repo root. Typecheck with `bun typecheck` from package dirs, never bare `tsc`.
 - Commit style `type(scope): summary` with types `feat|fix|docs|chore|refactor|test`. Do not commit unless the user asks; messages below are exact text to use when committing.
 
 ## Exact Files to Create / Modify
 
 Create:
-- `packages/opencode/src/worktree/session-binding.ts` — pure helpers mapping session directory to worktree ownership (owner session id, disposable flag, dispose policy).
-- `packages/opencode/test/worktree/session-binding.test.ts` — unit tests for the helpers.
-- `packages/opencode/test/worktree/subagent-isolation.test.ts` — unit tests for temp-worktree name/dir resolution and cleanup decision.
-- `packages/opencode/test/tool/task-isolation.test.ts` — task-tool isolation option parsing and child permission merge.
+- `packages/flynncode/src/worktree/session-binding.ts` — pure helpers mapping session directory to worktree ownership (owner session id, disposable flag, dispose policy).
+- `packages/flynncode/test/worktree/session-binding.test.ts` — unit tests for the helpers.
+- `packages/flynncode/test/worktree/subagent-isolation.test.ts` — unit tests for temp-worktree name/dir resolution and cleanup decision.
+- `packages/flynncode/test/tool/task-isolation.test.ts` — task-tool isolation option parsing and child permission merge.
 - `packages/app/src/pages/new-session/new-session-worktree-controller.test.ts` — controller tests for disposable-worktree selection.
 - `packages/app/src/pages/layout/sidebar-worktree-menu.test.ts` — menu model tests for remove/reset/handoff actions.
 
 Modify:
-- `packages/opencode/src/tool/task.ts` — add `isolation` and `cleanup` params; spawn child session in temp worktree via `Worktree.Service`.
-- `packages/opencode/src/agent/subagent-permissions.ts` — accept per-agent permission override for isolated children.
+- `packages/flynncode/src/tool/task.ts` — add `isolation` and `cleanup` params; spawn child session in temp worktree via `Worktree.Service`.
+- `packages/flynncode/src/agent/subagent-permissions.ts` — accept per-agent permission override for isolated children.
 - `packages/core/src/v1/config/agent.ts` — add optional `isolation` and `sandbox` fields to agent info.
-- `packages/opencode/src/worktree/index.ts` — add `createDisposable` (temp worktree bound to session id) and `disposeIfIdle` (remove only when no loaded instance); keep existing `createAndRetain`, `remove`, `reset`, `handoff` signatures.
-- `packages/opencode/src/worktree/retention.ts` — extend entry with `disposable` and `lastUsedAt`; keep `worktreesToRemove(entries, limit)` signature.
-- `packages/opencode/src/server/routes/instance/httpapi/groups/experimental.ts` — add `worktreeDispose` endpoint only if a new route is needed; otherwise reuse `worktreeRemove`.
-- `packages/opencode/src/server/routes/instance/httpapi/handlers/experimental.ts` — handle dispose/handoff session rebinding.
-- `packages/opencode/src/session/session.ts` — accept `directory` override on create (already present) plus record disposable binding via `session-binding` helper; rebind directory on handoff.
+- `packages/flynncode/src/worktree/index.ts` — add `createDisposable` (temp worktree bound to session id) and `disposeIfIdle` (remove only when no loaded instance); keep existing `createAndRetain`, `remove`, `reset`, `handoff` signatures.
+- `packages/flynncode/src/worktree/retention.ts` — extend entry with `disposable` and `lastUsedAt`; keep `worktreesToRemove(entries, limit)` signature.
+- `packages/flynncode/src/server/routes/instance/httpapi/groups/experimental.ts` — add `worktreeDispose` endpoint only if a new route is needed; otherwise reuse `worktreeRemove`.
+- `packages/flynncode/src/server/routes/instance/httpapi/handlers/experimental.ts` — handle dispose/handoff session rebinding.
+- `packages/flynncode/src/session/session.ts` — accept `directory` override on create (already present) plus record disposable binding via `session-binding` helper; rebind directory on handoff.
 - `packages/app/src/pages/new-session/new-session-workspace-controller.ts` — add disposable-worktree option (`main | create | disposable | <existing>`).
 - `packages/app/src/pages/new-session/new-session-draft-controller.ts` — thread disposable flag into session creation.
 - `packages/app/src/pages/layout/sidebar-workspace.tsx` — add per-worktree remove/reset/handoff menu items and retention count display.
@@ -46,7 +46,7 @@ Modify:
 
 ## Interfaces
 
-`packages/opencode/src/worktree/session-binding.ts` consumes `{ sessionID: string; directory: string; disposable: boolean }` and produces `{ ownerKey: string; disposeOnArchive: boolean; displayName: string }`. Pure functions:
+`packages/flynncode/src/worktree/session-binding.ts` consumes `{ sessionID: string; directory: string; disposable: boolean }` and produces `{ ownerKey: string; disposeOnArchive: boolean; displayName: string }`. Pure functions:
 - `bindingKey(sessionID: string, directory: string): string`
 - `shouldDispose(binding: Binding, opts: { archived: boolean; running: boolean }): boolean`
 - `displayName(directory: string, projectRoot: string): string`
@@ -80,8 +80,8 @@ New i18n keys (all in `packages/app/src/i18n/en.ts`):
 ### Task 1: Session-binding pure helpers plus tests
 
 **Files:**
-- Create: `packages/opencode/src/worktree/session-binding.ts`
-- Test: `packages/opencode/test/worktree/session-binding.test.ts`
+- Create: `packages/flynncode/src/worktree/session-binding.ts`
+- Test: `packages/flynncode/test/worktree/session-binding.test.ts`
 
 **Interfaces:**
 - Consumes: `{ sessionID, directory, disposable }`
@@ -114,7 +114,7 @@ describe("session-binding", () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run from `packages/opencode`: `bun test test/worktree/session-binding.test.ts`
+Run from `packages/flynncode`: `bun test test/worktree/session-binding.test.ts`
 Expected: FAIL with `Cannot find module "../../src/worktree/session-binding"`.
 
 - [ ] **Step 3: Implement `session-binding.ts`**
@@ -123,12 +123,12 @@ Write pure functions only: `bindingKey` joins with `::`; `shouldDispose` returns
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run from `packages/opencode`: `bun test test/worktree/session-binding.test.ts`
+Run from `packages/flynncode`: `bun test test/worktree/session-binding.test.ts`
 Expected: PASS, 3 tests, 0 failures.
 
 - [ ] **Step 5: Typecheck**
 
-Run from `packages/opencode`: `bun typecheck`
+Run from `packages/flynncode`: `bun typecheck`
 Expected: exit 0, no errors.
 
 - [ ] **Step 6: Commit**
@@ -138,8 +138,8 @@ Exact commit message: `feat(worktree): add session-binding helpers`
 ### Task 2: Retention entries carry disposable plus last-used
 
 **Files:**
-- Modify: `packages/opencode/src/worktree/retention.ts`
-- Test: `packages/opencode/test/worktree/retention.test.ts` (check for existing file first with `glob test/worktree/*`; create it if absent)
+- Modify: `packages/flynncode/src/worktree/retention.ts`
+- Test: `packages/flynncode/test/worktree/retention.test.ts` (check for existing file first with `glob test/worktree/*`; create it if absent)
 
 **Interfaces:**
 - Consumes: `WorktreeRetentionEntry` with new optional `disposable?: boolean` and `lastUsedAt?: number`
@@ -169,7 +169,7 @@ describe("worktreesToRemove disposable", () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run from `packages/opencode`: `bun test test/worktree/retention.test.ts`
+Run from `packages/flynncode`: `bun test test/worktree/retention.test.ts`
 Expected: FAIL on the new case (disposable entry not ordered for removal first) or file-missing error if creating new.
 
 - [ ] **Step 3: Implement**
@@ -178,12 +178,12 @@ Extend `WorktreeRetentionEntry` with `disposable?: boolean` and `lastUsedAt?: nu
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run from `packages/opencode`: `bun test test/worktree/retention.test.ts`
+Run from `packages/flynncode`: `bun test test/worktree/retention.test.ts`
 Expected: PASS, all tests green.
 
 - [ ] **Step 5: Typecheck**
 
-Run from `packages/opencode`: `bun typecheck`
+Run from `packages/flynncode`: `bun typecheck`
 Expected: exit 0.
 
 - [ ] **Step 6: Commit**
@@ -193,8 +193,8 @@ Exact commit message: `feat(worktree): order retention by last use with disposab
 ### Task 3: `createDisposable` plus `disposeIfIdle` on the Worktree service
 
 **Files:**
-- Modify: `packages/opencode/src/worktree/index.ts`
-- Test: `packages/opencode/test/worktree/subagent-isolation.test.ts` (create; covers name/dir resolution plus cleanup decision against `session-binding.shouldDispose`)
+- Modify: `packages/flynncode/src/worktree/index.ts`
+- Test: `packages/flynncode/test/worktree/subagent-isolation.test.ts` (create; covers name/dir resolution plus cleanup decision against `session-binding.shouldDispose`)
 
 **Interfaces:**
 - Consumes: `{ sessionID: string; name?: string }`
@@ -217,21 +217,21 @@ describe("subagent isolation cleanup", () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run from `packages/opencode`: `bun test test/worktree/subagent-isolation.test.ts`
+Run from `packages/flynncode`: `bun test test/worktree/subagent-isolation.test.ts`
 Expected: FAIL with missing `session-binding` module until Task 1 lands; if Task 1 landed, this test passes and the remaining failure is the missing `createDisposable`/`disposeIfIdle` exports asserted in Step 3 implementation check via `bun typecheck`.
 
 - [ ] **Step 3: Implement**
 
-In `packages/opencode/src/worktree/index.ts`: add `createDisposable` to the `Interface` and service return object. Implement it by calling the existing `makeWorktreeInfo({ name: session-${sessionID-slug} })` then `createFromInfo(info)`. Add `disposeIfIdle`: canonicalize the directory, read `store.loadedDirectories()`, return false when the canonical key is present (still running) or equals the current `ctx.worktree`; otherwise call existing `remove({ directory })` and return true. Reuse `canonical`, `remove`, `candidate` helpers; add no new git commands.
+In `packages/flynncode/src/worktree/index.ts`: add `createDisposable` to the `Interface` and service return object. Implement it by calling the existing `makeWorktreeInfo({ name: session-${sessionID-slug} })` then `createFromInfo(info)`. Add `disposeIfIdle`: canonicalize the directory, read `store.loadedDirectories()`, return false when the canonical key is present (still running) or equals the current `ctx.worktree`; otherwise call existing `remove({ directory })` and return true. Reuse `canonical`, `remove`, `candidate` helpers; add no new git commands.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run from `packages/opencode`: `bun test test/worktree/session-binding.test.ts test/worktree/subagent-isolation.test.ts test/worktree/retention.test.ts`
+Run from `packages/flynncode`: `bun test test/worktree/session-binding.test.ts test/worktree/subagent-isolation.test.ts test/worktree/retention.test.ts`
 Expected: PASS across all three files.
 
 - [ ] **Step 5: Typecheck**
 
-Run from `packages/opencode`: `bun typecheck`
+Run from `packages/flynncode`: `bun typecheck`
 Expected: exit 0.
 
 - [ ] **Step 6: Commit**
@@ -297,9 +297,9 @@ Exact commit message: `feat(agent): add isolation and sandbox overrides`
 ### Task 5: Task tool spawns isolated children in temp worktrees
 
 **Files:**
-- Modify: `packages/opencode/src/tool/task.ts`
-- Modify: `packages/opencode/src/agent/subagent-permissions.ts`
-- Test: `packages/opencode/test/tool/task-isolation.test.ts`
+- Modify: `packages/flynncode/src/tool/task.ts`
+- Modify: `packages/flynncode/src/agent/subagent-permissions.ts`
+- Test: `packages/flynncode/test/tool/task-isolation.test.ts`
 
 **Interfaces:**
 - Consumes: `isolation` (`inherit | worktree`, default `inherit`), `cleanup` (`retain | dispose`, default `retain`), agent `isolation`/`sandbox` defaults
@@ -339,7 +339,7 @@ describe("task isolation params", () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run from `packages/opencode`: `bun test test/tool/task-isolation.test.ts`
+Run from `packages/flynncode`: `bun test test/tool/task-isolation.test.ts`
 Expected: FAIL (`isolation`/`cleanup` unknown fields stripped).
 
 - [ ] **Step 3: Implement**
@@ -348,12 +348,12 @@ In `task.ts`: extend `BaseParameterFields` with `isolation` and `cleanup` Schema
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run from `packages/opencode`: `bun test test/tool/task-isolation.test.ts`
+Run from `packages/flynncode`: `bun test test/tool/task-isolation.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Typecheck**
 
-Run from `packages/opencode`: `bun typecheck`
+Run from `packages/flynncode`: `bun typecheck`
 Expected: exit 0.
 
 - [ ] **Step 6: Commit**
@@ -363,9 +363,9 @@ Exact commit message: `feat(task): run subagents in temp worktrees`
 ### Task 6: Handoff rebinds session directory plus dispose-on-archive
 
 **Files:**
-- Modify: `packages/opencode/src/server/routes/instance/httpapi/handlers/experimental.ts`
-- Modify: `packages/opencode/src/session/session.ts`
-- Test: existing worktree handler tests if present (`glob test/**/experimental*.test.ts` and `test/session/*.test.ts` from `packages/opencode`); otherwise add `packages/opencode/test/worktree/handoff-rebind.test.ts` exercising `shouldDispose` + directory rebind decision logic
+- Modify: `packages/flynncode/src/server/routes/instance/httpapi/handlers/experimental.ts`
+- Modify: `packages/flynncode/src/session/session.ts`
+- Test: existing worktree handler tests if present (`glob test/**/experimental*.test.ts` and `test/session/*.test.ts` from `packages/flynncode`); otherwise add `packages/flynncode/test/worktree/handoff-rebind.test.ts` exercising `shouldDispose` + directory rebind decision logic
 
 **Interfaces:**
 - Consumes: `HandoffInput { from, to }` plus session id from route context
@@ -390,7 +390,7 @@ Extend with a session-directory rebinding assertion against the real `Session.cr
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run from `packages/opencode`: `bun test test/worktree/handoff-rebind.test.ts`
+Run from `packages/flynncode`: `bun test test/worktree/handoff-rebind.test.ts`
 Expected: FAIL until the handler rebinds the session row (directory unchanged after handoff).
 
 - [ ] **Step 3: Implement**
@@ -399,12 +399,12 @@ In `handlers/experimental.ts` `worktreeHandoff`: after `worktreeSvc.handoff(ctx.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run from `packages/opencode`: `bun test test/worktree/handoff-rebind.test.ts`
+Run from `packages/flynncode`: `bun test test/worktree/handoff-rebind.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Typecheck**
 
-Run from `packages/opencode`: `bun typecheck`
+Run from `packages/flynncode`: `bun typecheck`
 Expected: exit 0. If the HttpApi surface changed (new `worktreeDispose` endpoint), run `bun run generate` from `packages/client` and assert `git status --porcelain packages/client/src` shows only regenerated files.
 
 - [ ] **Step 6: Commit**
@@ -482,11 +482,11 @@ Exact commit message: `feat(app): disposable worktrees with handoff menu`
 
 ## Verification Checklist
 
-- [ ] `bun test test/worktree/` passes from `packages/opencode`
-- [ ] `bun test test/tool/task-isolation.test.ts` passes from `packages/opencode`
+- [ ] `bun test test/worktree/` passes from `packages/flynncode`
+- [ ] `bun test test/tool/task-isolation.test.ts` passes from `packages/flynncode`
 - [ ] `bun test test/agent-config.test.ts` passes from `packages/core`
 - [ ] New-session plus sidebar menu tests pass from `packages/app`
-- [ ] `bun typecheck` clean in `packages/opencode`, `packages/core`, `packages/app`
+- [ ] `bun typecheck` clean in `packages/flynncode`, `packages/core`, `packages/app`
 - [ ] `bun run generate` from `packages/client` produces no diff unless the HttpApi changed, in which case only generated files differ
 - [ ] No hardcoded English copy in modified UI files (`grep -n "language.t" ` covers every new label)
 - [ ] No `any`, no star imports, no aliased imports in new/modified files
