@@ -28,7 +28,7 @@ const TolerantSandbox = Schema.declare<string | undefined>(
   (_input): _input is string | undefined => true,
   {
     description:
-      "Sandbox profile for isolated subagent sessions. 'restricted' confines file access to the temp worktree; other values degrade to default.",
+      "Sandbox profile for isolated subagent sessions. Modes 'readonly', 'workspace-write' and 'full-access' set the session sandbox level; 'restricted' confines file access to the temp worktree; other values degrade to default.",
     toArbitrary: () => (fc) => fc.oneof(fc.string(), fc.constant(undefined)),
   },
 )

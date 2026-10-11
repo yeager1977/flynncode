@@ -13,4 +13,16 @@ describe("agent isolation config", () => {
     const decoded = Schema.decodeUnknownSync(ConfigAgentV1.Info)({ isolation: "cloud-vm" })
     expect(decoded.isolation).toBeUndefined()
   })
+
+  test("accepts sandbox mode values alongside named profiles", () => {
+    for (const sandbox of ["readonly", "workspace-write", "full-access"]) {
+      const decoded = Schema.decodeUnknownSync(ConfigAgentV1.Info)({ sandbox })
+      expect(decoded.sandbox).toBe(sandbox)
+    }
+  })
+
+  test("keeps unknown sandbox values instead of failing config load", () => {
+    const decoded = Schema.decodeUnknownSync(ConfigAgentV1.Info)({ sandbox: "bogus-profile" })
+    expect(decoded.sandbox).toBe("bogus-profile")
+  })
 })

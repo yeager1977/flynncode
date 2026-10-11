@@ -16,6 +16,10 @@ export const SandboxMode = Schema.Literals(["readonly", "workspace-write", "full
 })
 export type SandboxMode = Schema.Schema.Type<typeof SandboxMode>
 
+// Cheap guard separating literal sandbox modes from named profiles such as
+// "restricted" and from unknown tolerant values, which consumers ignore here.
+export const isSandboxMode = Schema.is(SandboxMode)
+
 export const ApprovalMode = Schema.Literals(["manual", "accept-edits", "auto"]).annotate({
   identifier: "ApprovalMode",
 })
