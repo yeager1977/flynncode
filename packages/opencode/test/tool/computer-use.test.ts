@@ -10,17 +10,24 @@ import { ComputerUseTool } from "../../src/tool/computer-use"
 import { MessageID, SessionID } from "../../src/session/schema"
 import { testEffect } from "../lib/effect"
 
+// The fake executor records what it was asked; reads go through functions
+// with explicit return types so type inference in one test cannot narrow the
+// values captured in the fake layer's closure.
+const recorded: {
+  request: ComputerUseExecutor.ExecuteRequest | undefined
+  result: ComputerUseExecutor.Result
+} = { request: undefined, result: { ok: true, output: "acted" } }
+const lastRequest = (): ComputerUseExecutor.ExecuteRequest | undefined => recorded.request
+const lastResult = (): ComputerUseExecutor.Result => recorded.result
+
 const fakeExecutorLayer = Layer.mock(ComputerUseExecutor.Service, {
   execute: (request: ComputerUseExecutor.ExecuteRequest) => {
-    lastRequest = request
-    return Effect.succeed(lastResult)
+    recorded.request = request
+    return Effect.succeed(lastResult())
   },
   reply: () => Effect.void,
   list: () => Effect.succeed([] as Array<ComputerUseExecutor.Request>),
 })
-
-let lastRequest: ComputerUseExecutor.ExecuteRequest | undefined
-let lastResult: ComputerUseExecutor.Result = { ok: true, output: "acted" }
 
 const baseLayer = LayerNode.compile(LayerNode.group([Config.node, Truncate.node, Agent.node]))
 // Tool runs that exercise the wired path get a fake executor; the fail-closed
@@ -147,8 +154,8 @@ describe("computer-use fail-closed", () => {
     () =>
       Effect.gen(function* () {
         asked.length = 0
-        lastRequest = undefined
-        lastResult = { ok: true, output: "clicked" }
+        recorded.request = undefined
+        recorded.result = { ok: true, output: "clicked" }
         const info = yield* ComputerUseTool
         const tool = yield* info.init()
         const result = yield* tool.execute(
@@ -156,10 +163,12 @@ describe("computer-use fail-closed", () => {
           ctx,
         )
         expect(asked).toEqual([{ permission: "computer_use", patterns: ["flynncode:browser-pane", "click"] }])
-        expect(lastRequest?.sessionID).toBe("ses_test")
-        expect(lastRequest?.action).toBe("click")
-        expect(lastRequest?.appID).toBe("flynncode:browser-pane")
-        expect(lastRequest?.args).toEqual({ x: 10, y: 20 })
+        const request = lastRequest()
+        if (!request) throw new Error("the executor was never called")
+        expect(request.sessionID).toBe(SessionID.make("ses_test"))
+        expect(request.action).toBe("click")
+        expect(request.appID).toBe("flynncode:browser-pane")
+        expect(request.args).toEqual({ x: 10, y: 20 })
         expect(result.output).toBe("clicked")
       }),
     {
@@ -176,7 +185,7 @@ describe("computer-use fail-closed", () => {
     "returns the screenshot as a png attachment",
     () =>
       Effect.gen(function* () {
-        lastResult = { ok: true, screenshot: "data:image/png;base64,AAAA" }
+        recorded.result = { ok: true, screenshot: "data:image/png;base64,AAAA" }
         const info = yield* ComputerUseTool
         const tool = yield* info.init()
         const result = yield* tool.execute({ action: "screenshot", appID: "flynncode:browser-pane" }, ctx)
@@ -191,7 +200,7 @@ describe("computer-use fail-closed", () => {
     "reports refused actions honestly without acknowledging execution",
     () =>
       Effect.gen(function* () {
-        lastResult = { ok: false, error: "app is not allowlisted for computer use" }
+        recorded.result = { ok: false, error: "app is not allowlisted for computer use" }
         const info = yield* ComputerUseTool
         const tool = yield* info.init()
         const exit = yield* tool.execute({ action: "screenshot", appID: "flynncode:browser-pane" }, ctx).pipe(Effect.exit)
@@ -205,7 +214,7 @@ describe("computer-use fail-closed", () => {
     "reports unconfirmed outcomes as unknown instead of unperformed",
     () =>
       Effect.gen(function* () {
-        lastResult = { ok: false, error: "reply delivery failed; the outcome is unconfirmed", unconfirmed: true }
+        recorded.result = { ok: false, error: "reply delivery failed; the outcome is unconfirmed", unconfirmed: true }
         const info = yield* ComputerUseTool
         const tool = yield* info.init()
         const exit = yield* tool.execute({ action: "click", appID: "flynncode:browser-pane", x: 1, y: 1 }, ctx).pipe(Effect.exit)
