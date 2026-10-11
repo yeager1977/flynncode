@@ -11,7 +11,7 @@ import { useLanguage } from "@/context/language"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
-import { addRoutine, isValidRrule, removeRoutine, routinesFromConfig, routinesToConfig, toggleRoutine } from "./routines-edit"
+import { addRoutine, isValidRrule, removeRoutine, routinesFromConfig, routinesToConfig, toggleRoutine, updateRoutine, type StoredRoutine } from "./routines-edit"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 
@@ -21,6 +21,7 @@ export const SettingsRoutinesV2: Component<{ directory?: string }> = (props) => 
   const serverSync = useServerSync()
   const serverSDK = useServerSDK()
   const [draft, setDraft] = createStore({
+    editingId: "",
     name: "",
     prompt: "",
     dailyAt: "",
@@ -41,18 +42,21 @@ export const SettingsRoutinesV2: Component<{ directory?: string }> = (props) => 
     return ok
   }
 
+  const resetDraft = () => setDraft({ editingId: "", name: "", prompt: "", dailyAt: "", interval: "", rrule: "", error: "" })
+
+  const draftScheduleError = () => {
+    if (draft.rrule && !isValidRrule(draft.rrule)) return "settings.routines.rruleInvalid"
+    if (draft.dailyAt && !/^([01]\d|2[0-3]):[0-5]\d$/.test(draft.dailyAt)) return "settings.routines.timeInvalid"
+    if (draft.interval && !["15m", "1h", "6h", "1d", "1w"].includes(draft.interval))
+      return "settings.routines.intervalInvalid"
+    return ""
+  }
+
   const create = async () => {
     if (!draft.name.trim() || !draft.prompt.trim()) return
-    if (draft.rrule && !isValidRrule(draft.rrule)) {
-      setDraft("error", language.t("settings.routines.rruleInvalid"))
-      return
-    }
-    if (draft.dailyAt && !/^([01]\d|2[0-3]):[0-5]\d$/.test(draft.dailyAt)) {
-      setDraft("error", language.t("settings.routines.timeInvalid"))
-      return
-    }
-    if (draft.interval && !["15m", "1h", "6h", "1d", "1w"].includes(draft.interval)) {
-      setDraft("error", language.t("settings.routines.intervalInvalid"))
+    const errorKey = draftScheduleError()
+    if (errorKey) {
+      setDraft("error", language.t(errorKey))
       return
     }
     const ok = await save(
@@ -65,7 +69,39 @@ export const SettingsRoutinesV2: Component<{ directory?: string }> = (props) => 
       }),
     )
     // Keep the draft on failure so the user can retry without retyping.
-    if (ok) setDraft({ name: "", prompt: "", dailyAt: "", interval: "", rrule: "" })
+    if (ok) resetDraft()
+  }
+
+  const startEdit = (routine: StoredRoutine) =>
+    setDraft({
+      editingId: routine.id,
+      name: routine.name,
+      prompt: routine.prompt,
+      dailyAt: routine.dailyAt ?? "",
+      interval: routine.interval ?? "",
+      rrule: routine.rrule ?? "",
+      error: "",
+    })
+
+  // updateRoutine enforces the same one-of schedule precedence as addRoutine,
+  // so passing every draft field is safe: the winning field clears the rest.
+  const update = async () => {
+    if (!draft.editingId || !draft.name.trim() || !draft.prompt.trim()) return
+    const errorKey = draftScheduleError()
+    if (errorKey) {
+      setDraft("error", language.t(errorKey))
+      return
+    }
+    const ok = await save(
+      updateRoutine(routines(), draft.editingId, {
+        name: draft.name,
+        prompt: draft.prompt,
+        dailyAt: draft.dailyAt || undefined,
+        interval: draft.interval || undefined,
+        rrule: draft.rrule || undefined,
+      }),
+    )
+    if (ok) resetDraft()
   }
 
   // Runs in the project the settings dialog was opened from, never a guessed one.
@@ -183,10 +219,28 @@ export const SettingsRoutinesV2: Component<{ directory?: string }> = (props) => 
         </SettingsRowV2>
       </SettingsListV2>
       <p class="text-12-regular text-text-weak">{language.t("settings.routines.targetDescription")}</p>
-      <div>
-        <ButtonV2 disabled={draft.saving || !draft.name.trim() || !draft.prompt.trim()} onClick={() => void create()}>
-          {language.t("settings.routines.add")}
-        </ButtonV2>
+      <div class="flex gap-2">
+        <Show
+          when={draft.editingId}
+          fallback={
+            <ButtonV2
+              disabled={draft.saving || !draft.name.trim() || !draft.prompt.trim()}
+              onClick={() => void create()}
+            >
+              {language.t("settings.routines.add")}
+            </ButtonV2>
+          }
+        >
+          <ButtonV2
+            disabled={draft.saving || !draft.name.trim() || !draft.prompt.trim()}
+            onClick={() => void update()}
+          >
+            {language.t("settings.routines.save")}
+          </ButtonV2>
+          <ButtonV2 variant="ghost" disabled={draft.saving} onClick={resetDraft}>
+            {language.t("common.cancel")}
+          </ButtonV2>
+        </Show>
       </div>
       <Show when={draft.error}>
         <p class="text-text-critical">{draft.error}</p>
@@ -235,6 +289,9 @@ export const SettingsRoutinesV2: Component<{ directory?: string }> = (props) => 
                 onClick={() => void run(routine.id)}
               >
                 {language.t("settings.routines.run")}
+              </ButtonV2>
+              <ButtonV2 size="small" variant="ghost" disabled={draft.saving} onClick={() => startEdit(routine)}>
+                {language.t("settings.routines.edit")}
               </ButtonV2>
               <ButtonV2 size="small" variant="ghost" disabled={draft.saving} onClick={() => confirmDelete(routine)}>
                 {language.t("settings.routines.delete")}

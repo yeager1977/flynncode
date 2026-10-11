@@ -1156,7 +1156,9 @@ export const dict = {
   "settings.routines.deleteConfirm.body": "Delete {{name}}? This cannot be undone.",
   "settings.routines.manual": "Manual",
   "settings.routines.run": "Run",
+  "settings.routines.edit": "Edit",
   "settings.routines.delete": "Delete",
+  "settings.routines.save": "Save",
   "settings.tab.worktree": "Worktrees",
   "settings.worktree.title": "Worktrees",
   "settings.worktree.description":

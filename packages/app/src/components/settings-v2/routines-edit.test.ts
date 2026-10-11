@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { addRoutine, isValidRrule, removeRoutine, routinesFromConfig, routinesToConfig, toggleRoutine } from "./routines-edit"
+import { addRoutine, isValidRrule, removeRoutine, routinesFromConfig, routinesToConfig, toggleRoutine, updateRoutine } from "./routines-edit"
 
 describe("routines editor", () => {
   test("reads and writes the stored shape", () => {
@@ -31,6 +31,35 @@ describe("routines editor", () => {
     expect(added[0]?.id).toBe("triage")
     expect(toggleRoutine(added, "triage")[0]?.enabled).toBe(false)
     expect(removeRoutine(added, "triage")).toEqual([])
+  })
+
+  test("updateRoutine replaces one routine's schedule fields", () => {
+    const before = routinesFromConfig({
+      routines: [{ id: "r1", name: "mornings", prompt: "Check CI", schedule: { dailyAt: "09:00" } }],
+    })
+    const after = updateRoutine(before, "r1", { rrule: "FREQ=WEEKLY;BYDAY=MO" })
+    const target = after[0]
+    expect(target?.rrule).toBe("FREQ=WEEKLY;BYDAY=MO")
+    expect(target?.dailyAt).toBeUndefined() // one-of constraint
+    expect(target?.name).toBe("mornings")
+  })
+
+  test("updateRoutine rejects an invalid rrule", () => {
+    const before = routinesFromConfig({
+      routines: [{ id: "r1", name: "mornings", prompt: "Check CI", schedule: { dailyAt: "09:00" } }],
+    })
+    expect(() => updateRoutine(before, "r1", { rrule: "FREQ=" })).toThrow()
+  })
+
+  test("updateRoutine clears the schedule when every schedule patch field is absent-valued", () => {
+    const before = routinesFromConfig({
+      routines: [{ id: "r1", name: "mornings", prompt: "Check CI", schedule: { dailyAt: "09:00" } }],
+    })
+    const after = updateRoutine(before, "r1", { dailyAt: undefined, interval: undefined, rrule: undefined })
+    const target = after[0]
+    expect(target?.dailyAt).toBeUndefined()
+    expect(target?.interval).toBeUndefined()
+    expect(target?.rrule).toBeUndefined()
   })
 
   test("accepts bare and extended RRULE input like the backend", () => {

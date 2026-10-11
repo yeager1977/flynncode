@@ -146,6 +146,35 @@ export function toggleRoutine(routines: StoredRoutine[], id: string) {
   return routines.map((routine) => (routine.id === id ? { ...routine, enabled: !routine.enabled } : routine))
 }
 
+export type RoutinePatch = Partial<Pick<StoredRoutine, "name" | "prompt" | "dailyAt" | "interval" | "rrule" | "directory">>
+
+// Mirrors addRoutine's one-of precedence: rrule wins, then dailyAt, then
+// interval. Schedule keys present with undefined values clear the schedule
+// (manual); schedule keys absent leave it untouched.
+export function updateRoutine(routines: StoredRoutine[], id: string, patch: RoutinePatch) {
+  if (patch.rrule !== undefined && !isValidRrule(patch.rrule)) throw new Error(`Invalid rrule: ${patch.rrule}`)
+  const schedule = patch.rrule !== undefined
+    ? { rrule: patch.rrule }
+    : patch.dailyAt !== undefined
+      ? { dailyAt: patch.dailyAt }
+      : patch.interval !== undefined
+        ? { interval: patch.interval }
+        : undefined
+  const editsSchedule = "rrule" in patch || "dailyAt" in patch || "interval" in patch
+  return routines.map((routine) => {
+    if (routine.id !== id) return routine
+    return {
+      ...routine,
+      name: patch.name ?? routine.name,
+      prompt: patch.prompt ?? routine.prompt,
+      directory: patch.directory ?? routine.directory,
+      dailyAt: schedule?.dailyAt ?? (editsSchedule ? undefined : routine.dailyAt),
+      interval: schedule?.interval ?? (editsSchedule ? undefined : routine.interval),
+      rrule: schedule?.rrule ?? (editsSchedule ? undefined : routine.rrule),
+    }
+  })
+}
+
 export function removeRoutine(routines: StoredRoutine[], id: string) {
   return routines.filter((routine) => routine.id !== id)
 }
