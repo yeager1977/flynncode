@@ -42,12 +42,15 @@ export interface RunnerInterface {
     tool: string
     callID: string
     args: Record<string, unknown>
+    model?: string
+    permissionMode?: string
   }) => Effect.Effect<PreToolUseDecision>
   readonly runPermissionRequest: (input: {
     sessionID: string
     tool: string
     callID: string
     args: Record<string, unknown>
+    permissionMode?: string
   }) => Effect.Effect<PreToolUseDecision>
   readonly runPermissionAsk: (input: {
     permission: string
@@ -66,6 +69,8 @@ export interface RunnerInterface {
     callID: string
     args: Record<string, unknown>
     result: ToolResultView
+    model?: string
+    permissionMode?: string
   }) => Effect.Effect<ToolResultView>
   readonly runSessionStart: (input: {
     sessionID: string
@@ -145,6 +150,8 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
     tool: string
     callID: string
     args: Record<string, unknown>
+    model?: string
+    permissionMode?: string
   }) {
     // Fail closed: permission deny short-circuits before any rewrite or execution.
     const verdict = yield* plugin.triggerDecision(
@@ -160,6 +167,8 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
           sessionID: input.sessionID,
           callID: input.callID,
           args: input.args,
+          model: input.model,
+          permissionMode: input.permissionMode,
         })
       : undefined
     if (fileVerdict?.behavior === "deny") return fileVerdict
@@ -204,6 +213,7 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
     tool: string
     callID: string
     args: Record<string, unknown>
+    permissionMode?: string
   }) {
     const output: {
       decision: "allow" | "deny" | "undecided"
@@ -226,6 +236,7 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
           sessionID: input.sessionID,
           callID: input.callID,
           args: input.args,
+          permissionMode: input.permissionMode,
         })
       : undefined
     // Fail closed on malformed hook output: unknown decision shapes fall through
@@ -248,6 +259,8 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
     callID: string
     args: Record<string, unknown>
     result: ToolResultView
+    model?: string
+    permissionMode?: string
   }) {
     // Plugins mutate this view in place; their title/output/metadata edits are
     // the tool result the model sees. Only a file hook's block replaces it.
@@ -269,6 +282,8 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
       callID: input.callID,
       args: input.args,
       output: view.output,
+      model: input.model,
+      permissionMode: input.permissionMode,
     })
     if (filePost.blocked) return { ...view, output: filePost.reason }
     return view

@@ -86,6 +86,12 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         ? agentSandbox
         : global.sandbox,
   }
+  // Additive hook payload context: the model id and policy approval value
+  // this turn runs under.
+  const hookContext = {
+    model: `${input.model.providerID}/${input.model.id}`,
+    permissionMode: policy.approval,
+  }
   // Write containment is session-scoped: project sandboxes plus this session's
   // own attached additional directories (InstanceRef). Deliberately not the
   // cross-session SessionFolders union — a session must not inherit another
@@ -205,6 +211,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           Effect.gen(function* () {
             const ctx = context(args, options, item.id)
             const decision = yield* hooksRunner.runPreToolUse({
+              ...hookContext,
               sessionID: ctx.sessionID,
               tool: item.id,
               callID: options.toolCallId ?? ctx.callID ?? "unknown",
@@ -225,6 +232,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               })),
             }
             const post = yield* hooksRunner.runPostToolUse({
+              ...hookContext,
               sessionID: ctx.sessionID,
               tool: item.id,
               callID: options.toolCallId ?? ctx.callID ?? "unknown",
@@ -282,6 +290,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               ? [`mcp:${parsed.server}:*`]
               : resourceServers.map((server) => `mcp:${server}:*`)
             const preList = yield* hooksRunner.runPreToolUse({
+              ...hookContext,
               sessionID: ctx.sessionID,
               tool: MCP_RESOURCE_TOOLS.list,
               callID: opts.toolCallId,
@@ -317,6 +326,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               output: truncated.content,
             }
             const postList = yield* hooksRunner.runPostToolUse({
+              ...hookContext,
               sessionID: ctx.sessionID,
               tool: MCP_RESOURCE_TOOLS.list,
               callID: opts.toolCallId,
@@ -370,6 +380,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               ? [`mcp:${parsed.server}:*`]
               : resourceServers.map((server) => `mcp:${server}:*`)
             const preTemplates = yield* hooksRunner.runPreToolUse({
+              ...hookContext,
               sessionID: ctx.sessionID,
               tool: MCP_RESOURCE_TOOLS.listTemplates,
               callID: opts.toolCallId,
@@ -405,6 +416,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               output: truncated.content,
             }
             const postTemplates = yield* hooksRunner.runPostToolUse({
+              ...hookContext,
               sessionID: ctx.sessionID,
               tool: MCP_RESOURCE_TOOLS.listTemplates,
               callID: opts.toolCallId,
@@ -455,6 +467,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               throw new Error(`MCP server "${parsed.server}" does not support resources`)
             }
             const preRead = yield* hooksRunner.runPreToolUse({
+              ...hookContext,
               sessionID: ctx.sessionID,
               tool: MCP_RESOURCE_TOOLS.read,
               callID: opts.toolCallId,
@@ -492,6 +505,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               })),
             }
             const postRead = yield* hooksRunner.runPostToolUse({
+              ...hookContext,
               sessionID: ctx.sessionID,
               tool: MCP_RESOURCE_TOOLS.read,
               callID: opts.toolCallId,
@@ -524,6 +538,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         Effect.gen(function* () {
           const ctx = context(args, opts, key)
           const preMcp = yield* hooksRunner.runPreToolUse({
+            ...hookContext,
             sessionID: ctx.sessionID,
             tool: key,
             callID: opts.toolCallId,
@@ -607,6 +622,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             content: result.content,
           }
           const postMcp = yield* hooksRunner.runPostToolUse({
+            ...hookContext,
             sessionID: ctx.sessionID,
             tool: key,
             callID: opts.toolCallId,

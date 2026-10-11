@@ -67,17 +67,24 @@ export function mergeHooksConfigs(
   ...layers: Array<ConfigHooksV1.Info | undefined>
 ) {
   const merged: Record<string, Array<ConfigHooksV1.HookGroup>> = {}
+  // The kill switch is fail-safe: any layer enabling it keeps every hook
+  // disabled, and a later layer without it never re-enables hooks.
+  let disableAllHooks = false
   for (const layer of layers) {
     if (!layer) continue
+    if (layer.disableAllHooks === true) disableAllHooks = true
     for (const entry of Object.entries(layer)) {
       const key = entry[0]
+      // disableAllHooks is the kill-switch flag, not an event: never merged
+      // as a groups array here.
+      if (key === "disableAllHooks") continue
       const groups = entry[1] as Array<ConfigHooksV1.HookGroup> | undefined
-      if (!groups) continue
+      if (!Array.isArray(groups)) continue
       const existing = merged[key] ?? []
       merged[key] = [...existing, ...groups]
     }
   }
-  return merged as ConfigHooksV1.Info
+  return (disableAllHooks ? { ...merged, disableAllHooks: true } : merged) as ConfigHooksV1.Info
 }
 
 export * as HooksConfig from "./config"

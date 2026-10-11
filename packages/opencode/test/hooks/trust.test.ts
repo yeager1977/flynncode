@@ -1,24 +1,46 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import os from "os"
 import path from "path"
 import { testEffect } from "../lib/effect"
 import { HooksTrust } from "../../src/hooks/trust"
 import { HooksConfig } from "../../src/hooks/config"
+import { HooksExecutor } from "../../src/hooks/executor"
+import { HooksManaged } from "../../src/hooks/managed"
+import { Config } from "@/config/config"
+import { RuntimeFlags } from "@/effect/runtime-flags"
 import { tmpdir } from "../fixture/fixture"
 
 const it = testEffect(LayerNode.compile(HooksTrust.node))
 
 const trustPath = path.join(os.tmpdir(), `opencode-hooks-trust-${process.pid}.json`)
 
+// Managed-hook fixture for the kill-switch test: mirrors managed.test.ts so
+// the executor layer sees a hook the managed policy pre-trusts.
+const killManagedDir = path.join(os.tmpdir(), `opencode-hooks-kill-${process.pid}`)
+const killManagedScript = path.join(killManagedDir, "managed.sh")
+const killMarker = path.join(killManagedDir, "marker.txt")
+
 beforeEach(async () => {
   process.env["FLYNNCODE_HOOKS_TRUST_FILE"] = trustPath
   const file = Bun.file(trustPath)
   if (await file.exists()) await Bun.write(trustPath, "[]")
+  process.env["OPENCODE_TEST_MANAGED_CONFIG_DIR"] = killManagedDir
+  await Bun.write(
+    path.join(killManagedDir, "opencode.json"),
+    JSON.stringify({
+      hooks: { PreToolUse: [{ hooks: [{ type: "command", command: killManagedScript }] }] },
+    }),
+  )
+  await Bun.write(killMarker, "pristine")
+  await Bun.write(killManagedScript, `#!/bin/sh\necho ran > "${killMarker}"\n`)
+  const { chmod } = await import("node:fs/promises")
+  await chmod(killManagedScript, 0o755)
 })
 
 afterEach(async () => {
+  delete process.env["OPENCODE_TEST_MANAGED_CONFIG_DIR"]
   try {
     await Bun.write(trustPath, "[]")
   } catch {
@@ -133,4 +155,46 @@ test("project and global hooks merge without replacing", () => {
     { PreToolUse: [{ matcher: "^Bash$", hooks: [{ type: "command", command: "project.py" }] }] },
   )
   expect(merged.PreToolUse?.length).toBe(2)
+})
+
+function configLayer(hooks: Record<string, unknown>) {
+  return Layer.succeed(
+    Config.Service,
+    { get: () => Effect.succeed({ hooks }) } as Partial<Config.Interface> as Config.Interface,
+  )
+}
+
+describe("hooks kill switch", () => {
+  // The kill switch is orthogonal to the trust bypass flag: it wins in both
+  // directions, so the bypass flag is deliberately ON here to pin that
+  // disableAllHooks still suppresses everything.
+  const killIt = testEffect(
+    LayerNode.compile(LayerNode.group([HooksExecutor.node, HooksManaged.node]), [
+      [
+        Config.node,
+        configLayer({
+          disableAllHooks: true,
+          PreToolUse: [{ hooks: [{ type: "command", command: killManagedScript }] }],
+        }),
+      ],
+      [RuntimeFlags.node, RuntimeFlags.layer({ bypassHookTrust: true })],
+    ]),
+  )
+
+  killIt.live("disableAllHooks suppresses even managed hooks", () =>
+    Effect.gen(function* () {
+      const executor = yield* HooksExecutor.Service
+      const decision = yield* executor.runDecision({
+        event: "PreToolUse",
+        matchName: "Bash",
+        tool: "Bash",
+        sessionID: "ses_1",
+        callID: "c1",
+        args: { command: "ls" },
+      })
+      // The event is skipped entirely: no spawn, no deny, default undecided.
+      expect(decision).toEqual({ behavior: "undecided" })
+      expect(yield* Effect.promise(() => Bun.file(killMarker).text())).toBe("pristine")
+    }),
+  )
 })

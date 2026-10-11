@@ -144,6 +144,7 @@ const layer = Layer.effect(
         tool: hook?.tool ?? request.permission,
         callID: request.tool?.callID ?? request.id ?? "unknown",
         args: hook?.args ?? { patterns: request.patterns, metadata: request.metadata },
+        permissionMode: approval,
       })
       if (verdict.behavior === "deny") {
         return yield* new PermissionV1.DeniedError({

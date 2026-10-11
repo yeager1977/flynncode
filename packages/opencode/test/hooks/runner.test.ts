@@ -266,3 +266,45 @@ describe("hooks runner file post block", () => {
     }),
   )
 })
+
+const seenDecision: Array<Record<string, unknown>> = []
+const contextIt = testEffect(
+  testLayerWithHooks([], {
+    runDecision: (input) => {
+      seenDecision.push(input as Record<string, unknown>)
+      return Effect.succeed({ behavior: "undecided" })
+    },
+    runPostTool: () => Effect.succeed({ blocked: false } as const),
+    runObserve: () => Effect.succeed({} as const),
+  }),
+)
+
+describe("hooks runner payload context", () => {
+  contextIt.effect("model and permission mode pass through to the executor when provided", () =>
+    Effect.gen(function* () {
+      seenDecision.length = 0
+      const runner = yield* HooksRunner.Service
+      yield* runner.runPreToolUse({
+        sessionID: "ses_1",
+        tool: "Bash",
+        callID: "c1",
+        args: { command: "ls" },
+        model: "prov/claude-x",
+        permissionMode: "auto",
+      })
+      yield* runner.runPreToolUse({
+        sessionID: "ses_1",
+        tool: "Bash",
+        callID: "c1",
+        args: { command: "ls" },
+      })
+      expect(seenDecision.length).toBe(2)
+      expect(seenDecision[0]?.["model"]).toBe("prov/claude-x")
+      expect(seenDecision[0]?.["permissionMode"]).toBe("auto")
+      // The runner passes the values through verbatim; the executor payload
+      // drops them entirely when unknown (pinned in executor.test.ts).
+      expect(seenDecision[1]?.["model"]).toBeUndefined()
+      expect(seenDecision[1]?.["permissionMode"]).toBeUndefined()
+    }),
+  )
+})

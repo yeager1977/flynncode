@@ -54,6 +54,8 @@ export interface ExecutorInterface {
     sessionID: string
     callID: string
     args: Record<string, unknown>
+    model?: string
+    permissionMode?: string
     timeoutMaxMs?: number
   }) => Effect.Effect<HooksRunner.PreToolUseDecision, never, never>
   readonly runPostTool: (input: {
@@ -63,6 +65,8 @@ export interface ExecutorInterface {
     callID: string
     args: Record<string, unknown>
     output: string
+    model?: string
+    permissionMode?: string
     timeoutMaxMs?: number
   }) => Effect.Effect<HooksRunner.PostToolUseOutcome, never, never>
   readonly runObserve: (input: {
@@ -88,6 +92,17 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined
 }
 
+// Additive Codex-parity context for every hook JSON payload: model and
+// permission_mode ride along only when the caller has them — unknown values
+// are omitted entirely, never set to null or undefined (cwd is added at the
+// payload build sites, which always have it).
+function contextFields(input: { model?: string; permissionMode?: string }): Record<string, unknown> {
+  return {
+    ...(input.model !== undefined && { model: input.model }),
+    ...(input.permissionMode !== undefined && { permission_mode: input.permissionMode }),
+  }
+}
+
 export function resolveTimeoutMs(entryTimeoutSec: number | undefined, defaultMs: number, maxMs?: number) {
   const ms = entryTimeoutSec === undefined ? defaultMs : Math.max(0, entryTimeoutSec * 1000)
   if (maxMs === undefined) return ms
@@ -95,7 +110,10 @@ export function resolveTimeoutMs(entryTimeoutSec: number | undefined, defaultMs:
 }
 
 function matchedHandlers(hooks: ConfigHooksV1.Info | undefined, event: string, matchName: string) {
-  const groups = HooksConfig.matchHooks(event, matchName, hooks?.[event as keyof ConfigHooksV1.Info] ?? [])
+  // disableAllHooks is the kill-switch flag, not an event: only array values
+  // on real event keys match.
+  const value = hooks?.[event as keyof ConfigHooksV1.Info]
+  const groups = HooksConfig.matchHooks(event, matchName, Array.isArray(value) ? value : [])
   return groups.flatMap((group) =>
     group.hooks.map((handler) => ({ def: HooksTrust.fromHandler(event, group.matcher, handler), handler })),
   )
@@ -107,7 +125,9 @@ export function enumerateHooks(hooks: ConfigHooksV1.Info | undefined) {
   return Object.entries(hooks ?? {}).flatMap((entry) => {
     const event = entry[0]
     const groups = entry[1] as Array<ConfigHooksV1.HookGroup> | undefined
-    if (!groups) return []
+    // disableAllHooks is the kill-switch flag, not an event: skip non-array
+    // values when walking the event table.
+    if (!Array.isArray(groups)) return []
     return groups.flatMap((group) =>
       group.hooks.map((handler) => {
         const def = HooksTrust.fromHandler(event, group.matcher, handler)
@@ -199,6 +219,12 @@ export const node = LayerNode.make({
       })
 
       const trusted = Effect.fn("HooksExecutor.trusted")(function* (def: HooksTrust.HookDef) {
+        // Kill switch first: hooks.disableAllHooks disables every hook
+        // unconditionally — managed (pre-trusted) hooks included — and is
+        // intentionally orthogonal to the trust bypass flag, which can never
+        // re-enable hooks while the kill switch is on.
+        const cfg = yield* config.get()
+        if (cfg.hooks?.disableAllHooks === true) return false
         const managed = yield* Effect.serviceOption(HooksManaged.ManagedHooks)
         if (Option.isSome(managed) && managed.value.isManaged(def)) return true
         if (flags.bypassHookTrust) return true
@@ -570,8 +596,11 @@ export const node = LayerNode.make({
         sessionID: string
         callID: string
         args: Record<string, unknown>
+        model?: string
+        permissionMode?: string
         timeoutMaxMs?: number
       }) {
+        const cwd = yield* workdir
         const collected = yield* runHandlers({
           kind: "decision",
           event: input.event,
@@ -583,6 +612,8 @@ export const node = LayerNode.make({
             tool: input.tool,
             callID: input.callID,
             args: input.args,
+            cwd,
+            ...contextFields(input),
           },
           timeoutMaxMs: input.timeoutMaxMs,
         })
@@ -596,8 +627,11 @@ export const node = LayerNode.make({
         callID: string
         args: Record<string, unknown>
         output: string
+        model?: string
+        permissionMode?: string
         timeoutMaxMs?: number
       }) {
+        const cwd = yield* workdir
         const collected = yield* runHandlers({
           kind: "post",
           event: "PostToolUse",
@@ -610,6 +644,8 @@ export const node = LayerNode.make({
             callID: input.callID,
             args: input.args,
             output: input.output,
+            cwd,
+            ...contextFields(input),
           },
           timeoutMaxMs: input.timeoutMaxMs,
         })
@@ -630,12 +666,15 @@ export const node = LayerNode.make({
         timeoutMaxMs?: number
         defaultTimeoutMs?: number
       }) {
+        // Observe events are session-scoped: only the instance directory is
+        // available here, so model/permission_mode stay omitted.
+        const cwd = yield* workdir
         const collected = yield* runHandlers({
           kind: "observe",
           event: input.event,
           matchName: input.matchName,
           sessionID: input.sessionID,
-          payload: { event: input.event, sessionID: input.sessionID, ...input.payload },
+          payload: { event: input.event, sessionID: input.sessionID, cwd, ...input.payload },
           timeoutMaxMs: input.timeoutMaxMs,
           defaultTimeoutMs: input.defaultTimeoutMs,
         })
