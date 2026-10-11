@@ -147,6 +147,7 @@ describe("task isolation params", () => {
           .pipe(Effect.exit)
 
         expect(Exit.isFailure(result)).toBe(true)
+        if (Exit.isSuccess(result)) throw new Error("expected task failure")
         const failure = Cause.squash(result.cause)
         expect(failure).toBeInstanceOf(Error)
         if (!(failure instanceof Error)) throw new Error("expected Error defect")
