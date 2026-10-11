@@ -913,7 +913,6 @@ export const dict = {
   "session.worktree.dispose": "Dispose disposable worktree",
   "session.worktree.menu": "Worktree actions",
   "session.subagents.isolatedIn": "Isolated in {{directory}}",
-  "session.subagents.isolationWorktree": "Run in temp worktree",
   "toast.worktree.disposed.description": "Disposable worktree removed",
   "session.handoff.movedWithoutSession.title": "Moved without the original session",
   "session.handoff.movedWithoutSession.description": "The original session could not be found, so a new session was started in the destination workspace.",
