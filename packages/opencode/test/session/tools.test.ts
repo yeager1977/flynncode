@@ -18,6 +18,8 @@ import { Sandbox } from "@/permission/sandbox"
 import { Tool } from "@/tool/tool"
 import { ToolRegistry } from "@/tool/registry"
 import { Truncate } from "@/tool/truncate"
+import { InstanceRef } from "@/effect/instance-ref"
+import type { InstanceContext } from "@/project/instance-context"
 import { Plugin } from "@/plugin"
 import { testLayerWithHooks } from "../lib/hooks"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -120,6 +122,22 @@ const layer = Layer.mergeAll(
                   always: [],
                 })
                 return { title: "writer", metadata: {}, output: "done" }
+              }),
+          } satisfies Tool.Def,
+          {
+            id: "extra-writer",
+            description: "asks edit permission for a path inside an attached additional directory",
+            parameters: Schema.Struct({}),
+            jsonSchema: { type: "object", properties: {} },
+            execute: (_args, ctx) =>
+              Effect.gen(function* () {
+                yield* ctx.ask({
+                  permission: "edit",
+                  metadata: {},
+                  patterns: ["/extra/src/ok.ts"],
+                  always: [],
+                })
+                return { title: "extra-writer", metadata: {}, output: "done" }
               }),
           } satisfies Tool.Def,
           ...["read", "write"].map(
@@ -309,6 +327,48 @@ it.effect("sandbox contains external_directory for write tools but not reads", (
       expect(err).toBeInstanceOf(Sandbox.SandboxViolationError)
       expect((err as Error).message).toContain("/etc/*")
       expect((err as Error).message).toContain("workspace-write")
+    }
+  }),
+)
+
+it.effect("workspace-write allows edits inside a session's attached additional directory", () =>
+  Effect.gen(function* () {
+    const instanceCtx = {
+      directory: "/repo",
+      worktree: "/repo",
+      project: { id: "p_test" } as Project.Info,
+      additionalDirectories: ["/extra"],
+    } satisfies InstanceContext
+    const tools = yield* SessionTools.resolve({
+      agent,
+      model,
+      session: { id: sessionID, directory: "/repo", permission: [] } as unknown as Session.Info,
+      processor: {
+        message: { id: messageID, sessionID } as SessionV1.Assistant,
+        updateToolCall: () => Effect.succeed(undefined),
+        completeToolCall: () => Effect.void,
+      },
+      bypassAgentCheck: false,
+      messages: [],
+      promptOps: {} as never,
+    }).pipe(Effect.provideService(InstanceRef, instanceCtx))
+    const call = (name: string) => {
+      const execute = tools[name]?.execute
+      if (!execute) throw new Error(`${name} tool is missing execute`)
+      return Effect.exit(
+        Effect.promise(() => execute({}, { toolCallId: callID, abortSignal: new AbortController().signal, messages: [] })),
+      )
+    }
+
+    // The attached extra directory is inside this session's boundaries.
+    expect(Exit.isSuccess(yield* call("extra-writer"))).toBe(true)
+    // Writes outside every boundary still fail, even with extras attached.
+    const blocked = yield* call("writer")
+    expect(Exit.isFailure(blocked)).toBe(true)
+    if (Exit.isFailure(blocked)) {
+      const err = Cause.squash(blocked.cause)
+      expect(err).toBeInstanceOf(Sandbox.SandboxViolationError)
+      expect((err as Sandbox.SandboxViolationError).path).toBe("/etc/passwd")
     }
   }),
 )
