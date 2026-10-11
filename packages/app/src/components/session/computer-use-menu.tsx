@@ -31,7 +31,8 @@ export function ComputerUseMenu(props: { variant?: "v2" }) {
     serverSync().data.config.computer_use?.tiers?.[tier]?.enabled !== false
 
   // Mirror the allowlist into the desktop store only once the server accepted it,
-  // so the two never disagree about which apps are allowed.
+  // so the two never disagree about which apps are allowed. The tiers payload is
+  // always written complete so an allowlist edit cannot drop tier settings.
   const save = (next: {
     enabled: boolean
     allowedApps: string[]
@@ -40,7 +41,10 @@ export function ComputerUseMenu(props: { variant?: "v2" }) {
     serverSync()
       .updateConfig({
         computer_use: {
-          ...(next.tiers ? { tiers: next.tiers } : {}),
+          tiers: {
+            observe: { enabled: next.tiers?.observe?.enabled ?? tierEnabled("observe") },
+            mutate: { enabled: next.tiers?.mutate?.enabled ?? tierEnabled("mutate") },
+          },
           enabled: next.enabled,
           allowedApps: next.allowedApps,
         },
