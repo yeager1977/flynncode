@@ -121,6 +121,16 @@ describe("native preview host wiring", () => {
     expect(paneSource).toContain("host.detach()")
     expect(paneSource).toContain("onHostTeardown")
   })
+
+  test("native marking freezes the live view instead of collapsing the viewport", () => {
+    // The old behavior shrank the native view to 0x0 while marking, which
+    // exposed the always-mounted sandboxed iframe underneath it.
+    expect(paneSource).not.toContain("host.setBounds({ x: 0, y: 0, width: 0, height: 0 })")
+    // The pane shows a frozen capture of the actual native page for selection.
+    expect(paneSource).toContain("state.frozen")
+    expect(paneSource).toContain("setVisible?.(false)")
+    expect(paneSource).toContain("setVisible?.(true)")
+  })
 })
 
 describe("auto-open on running preview", () => {

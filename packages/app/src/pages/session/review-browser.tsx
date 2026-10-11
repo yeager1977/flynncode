@@ -52,6 +52,9 @@ export function ReviewBrowser(props: {
     actionError: "",
     announced: "",
     native: false,
+    // While marking, the native view is shown as this frozen capture instead
+    // of live compositing; the native viewport never shrinks during marking.
+    frozen: "",
   })
   // Normalizes raw URL-bar input against the currently loaded URL and
   // remembers the result for this session.
@@ -158,17 +161,14 @@ export function ReviewBrowser(props: {
     onCleanup(() => unsubscribe?.())
   })
   // The native view composites above the renderer window, so it must be told
-  // where the pane sits (CSS px → DIP conversion happens main-side) and must
-  // shrink to nothing while the mark overlay needs pointer events. A bounds
+  // where the pane sits (CSS px → DIP conversion happens main-side). A bounds
   // failure means the view no longer matches the pane; the first rejection
   // falls back to the iframe (fail-fast: no retry loop against a dead view).
+  // A renderer-hidden view keeps its bounds during marking, so resize tracking
+  // stays live and the coordinate space never collapses under the selection.
   const syncNativeBounds = () => {
     const host = nativeApi()
     if (!host || !state.native) return
-    if (state.marking) {
-      void host.setBounds({ x: 0, y: 0, width: 0, height: 0 }).catch(failHost)
-      return
-    }
     const box = paneBox?.getBoundingClientRect()
     if (!box || box.width === 0 || box.height === 0) return
     void host.setBounds({ x: box.x, y: box.y, width: box.width, height: box.height }).catch(failHost)
@@ -191,6 +191,29 @@ export function ReviewBrowser(props: {
     if (!host) return
     void host.detach().catch(() => {})
   })
+  // Marking on the native pane must never mark a different page: the live
+  // native view is frozen into the overlay and its compositing/input is turned
+  // off main-side while the coordinate space stays untouched. A capture
+  // failure keeps the pane live (and blocks the marking) instead of silently
+  // annotating the wrong page through the sandboxed iframe.
+  const beginMarking = async (point: boolean) => {
+    if (!state.native) {
+      setState({ marking: true, point })
+      return
+    }
+    const shot = await capture()
+    if (typeof shot !== "string" || !shot.startsWith("data:")) {
+      setState("actionError", language.t("session.review.browserPane.markCaptureFailed"))
+      return
+    }
+    setState({ frozen: shot, marking: true, point, marked: false, width: 0, height: 0 })
+    void nativeApi()?.setVisible?.(false)
+  }
+  const endMarking = () => {
+    const wasNative = state.native
+    setState({ marking: false, point: false, frozen: "" })
+    if (wasNative) void nativeApi()?.setVisible?.(true)
+  }
   const mark = (event: PointerEvent, el: HTMLElement, drag: boolean) => {
     const box = el.getBoundingClientRect()
     if (box.width === 0 || box.height === 0) return
@@ -222,9 +245,12 @@ export function ReviewBrowser(props: {
   // Capture only the browser pane, never the whole window (chat, sidebar).
   // In native mode the host view is what the user actually sees, so capture
   // through the preview host first and fall back to the iframe capture when
-  // it is unavailable or returns nothing.
+  // it is unavailable or returns nothing. While marking, the frozen overlay
+  // capture is the picture the user is selecting on; the hidden native view
+  // may not re-capture faithfully.
   const capture = async () => {
     if (state.native) {
+      if (state.frozen) return state.frozen
       const native = await nativeApi()?.capture().catch(() => undefined)
       if (typeof native === "string" && native.startsWith("data:")) return native
     }
@@ -497,7 +523,7 @@ export function ReviewBrowser(props: {
           variant={state.marking && !state.point ? "primary" : "ghost"}
           aria-pressed={state.marking && !state.point}
           aria-label={language.t("session.review.markPreview")}
-          onClick={() => setState({ marking: !state.marking, point: false })}
+          onClick={() => (state.marking ? endMarking() : void beginMarking(false))}
         >
           {language.t("session.review.markPreview")}
         </Button>
@@ -510,10 +536,10 @@ export function ReviewBrowser(props: {
           aria-label={language.t("session.review.markPoint")}
           onClick={() => {
             if (state.marking && state.point) {
-              setState("marking", false)
+              endMarking()
               return
             }
-            setState({ marking: true, point: true })
+            void beginMarking(true)
           }}
         >
           {language.t("session.review.markPoint")}
@@ -568,6 +594,19 @@ export function ReviewBrowser(props: {
                   event.currentTarget.releasePointerCapture(event.pointerId)
               }}
             >
+              <Show when={state.frozen}>
+                {(freeze) => (
+                  // This is the native page itself, frozen at marking start;
+                  // the sandboxed iframe underneath stays untouched and unused
+                  // for the selection.
+                  <img
+                    src={freeze()}
+                    alt=""
+                    draggable={false}
+                    class="absolute inset-0 -z-0 size-full select-none"
+                  />
+                )}
+              </Show>
               <Show when={state.marked}>
                 <div
                   class="absolute border border-border-strong-base bg-surface-warning-base/30"
