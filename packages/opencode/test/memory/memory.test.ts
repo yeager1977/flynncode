@@ -89,6 +89,45 @@ describe("Memory", () => {
       }).pipe(Effect.provide(memoryLayer({ enabled: true }, { home: dir, config: dir, data: dir }))),
     ),
   )
+
+  it.live("update creates then replaces a topic entry", () =>
+    provideTmpdirInstance((dir) =>
+      Effect.gen(function* () {
+        const svc = yield* Memory.Service
+        const target = yield* svc.update({ scope: "project", slug: "test-runner", text: "always use bun" })
+        expect(target.endsWith("test-runner.md")).toBe(true)
+        expect((yield* svc.load()).some((m) => m.content.includes("always use bun"))).toBe(true)
+        yield* svc.update({ scope: "project", slug: "test-runner", text: "vitest only" })
+        const after = yield* svc.load()
+        expect(after.length).toBe(1)
+        expect(after[0].content).toContain("vitest only")
+        expect(after[0].content).not.toContain("always use bun")
+        expect(yield* svc.remove({ scope: "project", slug: "test-runner" })).toBe(true)
+        expect(yield* svc.load()).toEqual([])
+      }).pipe(Effect.provide(memoryLayer({ enabled: true }, { home: dir, config: dir, data: dir }))),
+    ),
+  )
+
+  it.live("update skips empty text and sanitizes slug traversal", () =>
+    provideTmpdirInstance((dir) =>
+      Effect.gen(function* () {
+        const svc = yield* Memory.Service
+        expect(yield* svc.update({ scope: "project", slug: "empty-topic", text: "   " })).toBe("")
+        expect(yield* svc.load()).toEqual([])
+        const projectDir = yield* svc.projectDir()
+        const target = yield* svc.update({
+          scope: "project",
+          slug: "../../evil slug",
+          text: "Use ripgrep.",
+        })
+        expect(target.startsWith(projectDir)).toBe(true)
+        expect(target.endsWith("evil-slug.md")).toBe(true)
+        expect(yield* svc.remove({ scope: "project", slug: "@/escape" })).toBe(false)
+        const fs = yield* FileSystem.FileSystem
+        expect(yield* fs.readFileString(target)).toContain("Use ripgrep.")
+      }).pipe(Effect.provide(memoryLayer({ enabled: true }, { home: dir, config: dir, data: dir }))),
+    ),
+  )
 })
 
 export { tmpdirScoped }

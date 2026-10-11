@@ -29,4 +29,37 @@ describe("buildExtractionPrompt", () => {
     expect(prompt).toMatch(/never.*secret|no.*secret|forbid.*secret/i)
     expect(prompt).toContain("prefers bun")
   })
+
+  test("extraction prompt demands topic slugs", () => {
+    const prompt = MemoryExtract.buildExtractionPrompt({ conversation: "prefers bun" })
+    expect(prompt).toContain("SLUG:")
+    expect(prompt).toContain("NOTHING TO REMEMBER")
+  })
+})
+
+describe("parseExtractionTopics", () => {
+  test("parses SLUG blocks into topics", () => {
+    const topics = MemoryExtract.parseExtractionTopics(
+      "SLUG: test-runner\n- always use bun\n\nSLUG: commit style\n- conventional commits\n- keep it short",
+    )
+    expect(topics.length).toBe(2)
+    expect(topics[0].slug).toBe("test-runner")
+    expect(topics[0].text).toBe("- always use bun")
+    expect(topics[1].slug).toBe("commit-style")
+    expect(topics[1].text).toContain("conventional commits")
+  })
+
+  test("dedupes repeated slugs and skips blocks without bullets", () => {
+    const topics = MemoryExtract.parseExtractionTopics(
+      "SLUG: test-runner\n- bun only\nSLUG: test-runner\n- avoid vitest\nSLUG: empty-topic\n",
+    )
+    expect(topics.length).toBe(1)
+    expect(topics[0].slug).toBe("test-runner")
+    expect(topics[0].text).toBe("- bun only\n- avoid vitest")
+  })
+
+  test("returns nothing for prose-only output", () => {
+    expect(MemoryExtract.parseExtractionTopics("NOTHING TO REMEMBER")).toEqual([])
+    expect(MemoryExtract.parseExtractionTopics("just some notes without slugs")).toEqual([])
+  })
 })

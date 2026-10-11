@@ -1249,10 +1249,15 @@ const layer = Layer.effect(
         )
       const cleaned = text.trim()
       if (!cleaned || cleaned === "NOTHING TO REMEMBER") return
-      const body = MemoryRedact.redactSecrets(cleaned)
-      if (!body.trim()) return
-      const filename = `${new Date().toISOString().slice(0, 10)}-session.md`
-      yield* memory.append({ scope: "project", filename, text: body }).pipe(Effect.catch(() => Effect.succeed("")))
+      for (const topic of MemoryExtract.parseExtractionTopics(cleaned)) {
+        // Belt and suspenders: re-redact at write even though the prompt forbids secrets.
+        const body = MemoryRedact.redactSecrets(topic.text)
+        if (!body.trim()) {
+          yield* memory.remove({ scope: "project", slug: topic.slug }).pipe(Effect.catch(() => Effect.succeed(false)))
+          continue
+        }
+        yield* memory.update({ scope: "project", slug: topic.slug, text: body }).pipe(Effect.catch(() => Effect.succeed("")))
+      }
     })
 
     const runLoopOnce: (sessionID: SessionID) => Effect.Effect<[SessionV1.WithParts, SessionV1.User]> = Effect.fn(

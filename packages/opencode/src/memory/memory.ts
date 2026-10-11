@@ -18,7 +18,10 @@ export interface Interface {
   readonly globalDir: () => Effect.Effect<string>
   readonly projectDir: () => Effect.Effect<string>
   readonly list: () => Effect.Effect<string[]>
+  readonly listDetailed: () => Effect.Effect<Array<{ scope: "global" | "project"; filepath: string }>>
   readonly load: () => Effect.Effect<LoadedMemory[]>
+  readonly update: (input: { scope: "global" | "project"; slug: string; text: string }) => Effect.Effect<string>
+  readonly remove: (input: { scope: "global" | "project"; slug: string }) => Effect.Effect<boolean>
   readonly append: (input: { scope: "global" | "project"; filename: string; text: string }) => Effect.Effect<string>
 }
 
@@ -30,6 +33,19 @@ function sanitizeFilename(raw: string) {
   if (!cleaned.endsWith(".md")) return "memory.md"
   if (!/^[a-z0-9][a-z0-9._-]*\.md$/.test(cleaned)) return "memory.md"
   return cleaned
+}
+
+// Slugs become memory filenames, so restrict to kebab characters (no dots,
+// no separators) to guarantee path.join can never escape the memories dir.
+function sanitizeSlug(raw: string) {
+  const cleaned = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64)
+  if (!cleaned) return "topic.md"
+  return `${cleaned}.md`
 }
 
 const layer = Layer.effect(
@@ -57,18 +73,25 @@ const layer = Layer.effect(
       return path.join(root, ".opencode", "memories")
     })
 
-    const list = Effect.fn("Memory.list")(function* () {
+    const listDetailed = Effect.fn("Memory.listDetailed")(function* () {
       if (!(yield* isEnabled())) return []
-      const dirs = [yield* globalDir(), yield* projectDir()]
-      const found: string[] = []
-      for (const dir of dirs) {
-        const entries = yield* fs.glob("*.md", { cwd: dir, absolute: true, include: "file" }).pipe(
+      const dirs: Array<{ scope: "global" | "project"; dir: string }> = [
+        { scope: "global", dir: yield* globalDir() },
+        { scope: "project", dir: yield* projectDir() },
+      ]
+      const found: Array<{ scope: "global" | "project"; filepath: string }> = []
+      for (const entry of dirs) {
+        const entries = yield* fs.glob("*.md", { cwd: entry.dir, absolute: true, include: "file" }).pipe(
           Effect.catch(() => Effect.succeed([] as string[])),
         )
-        found.push(...entries.toSorted())
+        found.push(...entries.toSorted().map((filepath) => ({ scope: entry.scope, filepath })))
       }
       const limit = (yield* settings()).max_files
       return found.slice(0, limit)
+    })
+
+    const list = Effect.fn("Memory.list")(function* () {
+      return (yield* listDetailed()).map((entry) => entry.filepath)
     })
 
     const load = Effect.fn("Memory.load")(function* () {
@@ -84,6 +107,8 @@ const layer = Layer.effect(
       return out
     })
 
+    // Deprecated: append overwrites the whole file, which caused per-day
+    // data loss in extraction. Use `update` for per-topic create-or-replace.
     const append = Effect.fn("Memory.append")(function* (input: {
       scope: "global" | "project"
       filename: string
@@ -98,7 +123,35 @@ const layer = Layer.effect(
       return target
     })
 
-    return Service.of({ isEnabled, globalDir, projectDir, list, load, append })
+    const update = Effect.fn("Memory.update")(function* (input: {
+      scope: "global" | "project"
+      slug: string
+      text: string
+    }) {
+      if (!(yield* isEnabled())) return ""
+      const body = MemoryRedact.redactSecrets(input.text)
+      // Effective-empty text is a no-op: never write an empty topic file.
+      if (!body.trim()) return ""
+      const dir = input.scope === "global" ? yield* globalDir() : yield* projectDir()
+      const target = path.join(dir, sanitizeSlug(input.slug))
+      yield* fs.writeWithDirs(target, body).pipe(Effect.orDie)
+      return target
+    })
+
+    const remove = Effect.fn("Memory.remove")(function* (input: {
+      scope: "global" | "project"
+      slug: string
+    }) {
+      if (!(yield* isEnabled())) return false
+      const dir = input.scope === "global" ? yield* globalDir() : yield* projectDir()
+      const target = path.join(dir, sanitizeSlug(input.slug))
+      return yield* fs.remove(target).pipe(
+        Effect.map(() => true),
+        Effect.catch(() => Effect.succeed(false)),
+      )
+    })
+
+    return Service.of({ isEnabled, globalDir, projectDir, list, listDetailed, load, update, remove, append })
   }),
 )
 
