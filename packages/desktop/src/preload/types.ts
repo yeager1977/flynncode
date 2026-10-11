@@ -60,11 +60,26 @@ export type MobileGatewayStatus = {
 
 export type CaptureRect = { x: number; y: number; width: number; height: number }
 
+// Every pane call reports an explicit outcome instead of resolving void, so a
+// refused or unclaimed request can never be mistaken for a performed one.
+// "unavailable" marks a window that cannot serve the request (claim lost or no
+// preview pane); the caller stays silent and the claimed executor answers.
+export type ComputerUseActuation =
+  | { status: "performed" }
+  | { status: "refused"; reason: string }
+  | { status: "unavailable" }
+
+export type ComputerUseScreenshot =
+  | { status: "performed"; screenshot: string }
+  | { status: "refused"; reason: string }
+  | { status: "unavailable" }
+
 export type ComputerUseAPI = {
-  click: (appID: string, x: number, y: number) => Promise<void>
-  typeText: (appID: string, text: string) => Promise<void>
-  keypress: (appID: string, key: string) => Promise<void>
-  scroll: (appID: string, deltaX: number, deltaY: number) => Promise<void>
+  screenshot: (requestID: string, appID: string) => Promise<ComputerUseScreenshot>
+  click: (appID: string, x: number, y: number, requestID: string) => Promise<ComputerUseActuation>
+  typeText: (appID: string, text: string, requestID: string) => Promise<ComputerUseActuation>
+  keypress: (appID: string, key: string, requestID: string) => Promise<ComputerUseActuation>
+  scroll: (appID: string, deltaX: number, deltaY: number, requestID: string) => Promise<ComputerUseActuation>
 }
 
 export type PreviewHostElement = {
@@ -78,6 +93,7 @@ export type PreviewHostElement = {
 export type PreviewHostAPI = {
   attach: (url: string) => Promise<void>
   setBounds: (rect: CaptureRect) => Promise<void>
+  setVisible: (visible: boolean) => Promise<void>
   detach: () => Promise<void>
   capture: () => Promise<string | undefined>
   inspect: (rect?: CaptureRect) => Promise<PreviewHostElement | null>

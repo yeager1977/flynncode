@@ -31,7 +31,17 @@ import { createDesktopDraftStore } from "./draft-store"
 import { nativeT } from "./native-translations"
 import { registerPluginManager } from "./plugin-manager"
 import type { VendorStatus } from "./vendor-keychain"
-import { clickPane, isComputerUseTargetAllowed, keypressPane, scrollPane, typePane } from "./computer-use"
+import type { ComputerUseActuation, ComputerUseScreenshot } from "./computer-use"
+import {
+  claimComputerUseExecution,
+  clickPane,
+  isComputerUseTargetAllowed,
+  keypressPane,
+  scrollPane,
+  screenshotPane,
+  typePane,
+  type ExecutionClaims,
+} from "./computer-use"
 import {
   attachView,
   captureView,
@@ -40,6 +50,7 @@ import {
   isHostable,
   parsePreviewRect,
   setViewBounds,
+  setViewVisible,
 } from "./preview-host"
 import { COMPUTER_USE_ALLOWED_APPS_KEY, MOBILE_PHONE_PASSWORD_KEY } from "./store-keys"
 
@@ -227,34 +238,94 @@ export function registerIpcHandlers(deps: Deps) {
     // Native PNG capture: toDataURL already yields a data:image/png;base64 URL.
     return win.webContents.capturePage(rect).then((image) => (image.isEmpty() ? undefined : image.toDataURL()))
   })
-  ipcMain.handle("computer-use-click", (event: IpcMainInvokeEvent, appID: string, x: number, y: number) => {
-    if (typeof appID !== "string" || typeof x !== "number" || typeof y !== "number") return
-    if (isComputerUseTargetAllowed(appID, readComputerUseAllowedApps()) === false) return
+  // Exactly-once actuation claims: every desktop window hears every broadcast
+  // computer-use request, but the main process (one per app) hands each
+  // requestID to exactly one window's executor. Losers get "unavailable" and
+  // must not actuate or reply.
+  const computerUseClaims: ExecutionClaims = new Map()
+
+  // Fail closed: without a request id the desktop cannot arbitrate exactly-once
+  // actuation, so the call is refused outright instead of performed.
+  const computerUseGate = (
+    event: IpcMainInvokeEvent,
+    values: Array<[unknown, "string" | "number"]>,
+    requestID: unknown,
+  ): { win: BrowserWindow; requestID: string } | ComputerUseActuation | ComputerUseScreenshot => {
+    if (typeof requestID !== "string" || requestID === "")
+      return { status: "refused", reason: "malformed computer-use request id" }
+    for (const [value, kind] of values) {
+      if (kind === "string" && typeof value !== "string") return { status: "refused", reason: "malformed computer-use parameters" }
+      if (kind === "number" && (typeof value !== "number" || !Number.isFinite(value)))
+        return { status: "refused", reason: "malformed computer-use parameters" }
+    }
     const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win || win.isDestroyed()) return
-    clickPane(win, x, y)
+    if (!win || win.isDestroyed()) return { status: "unavailable" }
+    return { win, requestID }
+  }
+
+  const computerUseAllowlist = (appID: string) =>
+    isComputerUseTargetAllowed(appID, readComputerUseAllowedApps())
+      ? undefined
+      : { status: "refused" as const, reason: "app is not allowlisted for computer use" }
+
+  ipcMain.handle("computer-use-screenshot", async (event: IpcMainInvokeEvent, requestID: string, appID: string) => {
+    const gate = computerUseGate(event, [[appID, "string"]], requestID)
+    if ("status" in gate) return gate
+    const allowed = computerUseAllowlist(appID)
+    if (allowed) return allowed
+    if (!claimComputerUseExecution(computerUseClaims, gate.requestID, Date.now())) return { status: "unavailable" }
+    return screenshotPane(gate.win)
   })
-  ipcMain.handle("computer-use-type", (event: IpcMainInvokeEvent, appID: string, text: string) => {
-    if (typeof appID !== "string" || typeof text !== "string") return
-    if (isComputerUseTargetAllowed(appID, readComputerUseAllowedApps()) === false) return
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win || win.isDestroyed()) return
-    typePane(win, text)
-  })
-  ipcMain.handle("computer-use-keypress", (event: IpcMainInvokeEvent, appID: string, key: string) => {
-    if (typeof appID !== "string" || typeof key !== "string") return
-    if (isComputerUseTargetAllowed(appID, readComputerUseAllowedApps()) === false) return
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win || win.isDestroyed()) return
-    keypressPane(win, key)
-  })
-  ipcMain.handle("computer-use-scroll", (event: IpcMainInvokeEvent, appID: string, deltaX: number, deltaY: number) => {
-    if (typeof appID !== "string" || typeof deltaX !== "number" || typeof deltaY !== "number") return
-    if (isComputerUseTargetAllowed(appID, readComputerUseAllowedApps()) === false) return
-    const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win || win.isDestroyed()) return
-    scrollPane(win, deltaX, deltaY)
-  })
+  ipcMain.handle(
+    "computer-use-click",
+    (event: IpcMainInvokeEvent, appID: string, x: number, y: number, requestID: string): ComputerUseActuation => {
+      const gate = computerUseGate(event, [[appID, "string"], [x, "number"], [y, "number"]], requestID)
+      if ("status" in gate) return gate
+      const allowed = computerUseAllowlist(appID)
+      if (allowed) return allowed
+      if (!claimComputerUseExecution(computerUseClaims, gate.requestID, Date.now())) return { status: "unavailable" }
+      return clickPane(gate.win, x, y)
+    },
+  )
+  ipcMain.handle(
+    "computer-use-type",
+    (event: IpcMainInvokeEvent, appID: string, text: string, requestID: string): ComputerUseActuation => {
+      const gate = computerUseGate(event, [[appID, "string"], [text, "string"]], requestID)
+      if ("status" in gate) return gate
+      const allowed = computerUseAllowlist(appID)
+      if (allowed) return allowed
+      if (!claimComputerUseExecution(computerUseClaims, gate.requestID, Date.now())) return { status: "unavailable" }
+      return typePane(gate.win, text)
+    },
+  )
+  ipcMain.handle(
+    "computer-use-keypress",
+    (event: IpcMainInvokeEvent, appID: string, key: string, requestID: string): ComputerUseActuation => {
+      const gate = computerUseGate(event, [[appID, "string"], [key, "string"]], requestID)
+      if ("status" in gate) return gate
+      const allowed = computerUseAllowlist(appID)
+      if (allowed) return allowed
+      if (!claimComputerUseExecution(computerUseClaims, gate.requestID, Date.now())) return { status: "unavailable" }
+      return keypressPane(gate.win, key)
+    },
+  )
+  ipcMain.handle(
+    "computer-use-scroll",
+    (
+      event: IpcMainInvokeEvent,
+      appID: string,
+      deltaX: number,
+      deltaY: number,
+      requestID: string,
+    ): ComputerUseActuation => {
+      const gate = computerUseGate(event, [[appID, "string"], [deltaX, "number"], [deltaY, "number"]], requestID)
+      if ("status" in gate) return gate
+      const allowed = computerUseAllowlist(appID)
+      if (allowed) return allowed
+      if (!claimComputerUseExecution(computerUseClaims, gate.requestID, Date.now())) return { status: "unavailable" }
+      return scrollPane(gate.win, deltaX, deltaY)
+    },
+  )
   ipcMain.handle("preview-host:attach", (event: IpcMainInvokeEvent, url: string) => {
     // Re-validate here: the renderer gate alone is not trusted.
     if (typeof url !== "string" || !isHostable(url))
@@ -269,6 +340,11 @@ export function registerIpcHandlers(deps: Deps) {
     const rect = parsePreviewRect(input, event.sender.getZoomFactor())
     if (!rect) return
     setViewBounds(win, rect)
+  })
+  ipcMain.handle("preview-host:set-visible", (event: IpcMainInvokeEvent, visible: boolean) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
+    setViewVisible(win, visible === true)
   })
   ipcMain.handle("preview-host:detach", (event: IpcMainInvokeEvent) => {
     const win = BrowserWindow.fromWebContents(event.sender)

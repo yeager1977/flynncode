@@ -335,15 +335,18 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
   })
 
   // This window is the pane actuator for local servers: every published
-  // computer-use request is decoded here, executed against the pane surface,
-  // and its result is posted back to the executor bridge. Web shells and
-  // remote servers never gain actuation; the desktop main process
-  // re-checks its allowlist for every action.
+  // This window is one candidate pane actuator for local servers: every
+  // published computer-use request is decoded here, offered to the desktop
+  // main's exactly-once claim alongside every other desktop window, executed
+  // against the pane surface when claimed, and its result posted back to the
+  // executor bridge. Web shells and remote servers never gain actuation; the
+  // desktop main process re-checks its allowlist for every action, and windows
+  // that lose the claim or have no preview pane stay silent instead of
+  // answering the bridge.
   if (platform.platform === "desktop" && ServerConnection.local(server) && window.api?.computerUse && window.api?.previewHost) {
     const executor = createComputerUseExecutor({
       surface: {
         computerUse: window.api.computerUse,
-        previewHost: window.api.previewHost,
       },
       postReply: async (payload) => {
         const url = new URL("/computer-use/execute/reply", server.http.url)

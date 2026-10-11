@@ -280,15 +280,49 @@ declare global {
       capturePage?: (rect?: { x: number; y: number; width: number; height: number }) => Promise<string | undefined>
       storeGet?: (name: string, key: string) => Promise<string | null>
       storeSet?: (name: string, key: string, value: string) => Promise<void>
+      // Mirrors desktop preload types; the app package cannot import them.
       computerUse?: {
-        click: (appID: string, x: number, y: number) => Promise<void>
-        typeText: (appID: string, text: string) => Promise<void>
-        keypress: (appID: string, key: string) => Promise<void>
-        scroll: (appID: string, deltaX: number, deltaY: number) => Promise<void>
+        screenshot: (
+          requestID: string,
+          appID: string,
+        ) => Promise<
+          { status: "performed"; screenshot: string } | { status: "refused"; reason: string } | { status: "unavailable" }
+        >
+        click: (
+          appID: string,
+          x: number,
+          y: number,
+          requestID: string,
+        ) => Promise<
+          { status: "performed" } | { status: "refused"; reason: string } | { status: "unavailable" }
+        >
+        typeText: (
+          appID: string,
+          text: string,
+          requestID: string,
+        ) => Promise<
+          { status: "performed" } | { status: "refused"; reason: string } | { status: "unavailable" }
+        >
+        keypress: (
+          appID: string,
+          key: string,
+          requestID: string,
+        ) => Promise<
+          { status: "performed" } | { status: "refused"; reason: string } | { status: "unavailable" }
+        >
+        scroll: (
+          appID: string,
+          deltaX: number,
+          deltaY: number,
+          requestID: string,
+        ) => Promise<
+          { status: "performed" } | { status: "refused"; reason: string } | { status: "unavailable" }
+        >
       }
       previewHost?: {
         attach: (url: string) => Promise<void>
         setBounds: (rect: { x: number; y: number; width: number; height: number }) => Promise<void>
+        setVisible?: (visible: boolean) => Promise<void>
         detach: () => Promise<void>
         capture: () => Promise<string | undefined>
         inspect: (rect?: { x: number; y: number; width: number; height: number }) => Promise<{

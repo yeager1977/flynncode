@@ -76,10 +76,14 @@ const electron = () => import("electron")
 // the same session object per partition name and no other view uses this one.
 let previewSession: Session | undefined
 
-function previewViewFor(win: BrowserWindow): WebContentsView | undefined {
-  if (!previewSession) return undefined
+export function previewViewForSession(win: BrowserWindow, session: Session | undefined) {
+  if (!session) return undefined
   const children = win.contentView.children as unknown as Array<WebContentsView>
-  return children.find((child) => child.webContents?.session === previewSession)
+  return children.find((child) => child.webContents?.session === session)
+}
+
+export function previewViewFor(win: BrowserWindow): WebContentsView | undefined {
+  return previewViewForSession(win, previewSession)
 }
 
 // Stored so detachView can remove it; WeakMap cleans up when the window does.
@@ -96,9 +100,10 @@ function hookOwnerLifecycle(win: BrowserWindow) {
   win.webContents.on("did-navigate", () => detachView(win))
 }
 
-// The preview view is trusted with loopback-only main-frame navigation: a
-// guest that redirects or client-navigates elsewhere tears the view down and
-// the renderer falls back to the iframe.
+// Loopback-only navigation: a guest that redirects or client-navigates
+// elsewhere tears the view down and the renderer falls back to the iframe.
+// Subframe commits are checked too: a remote subframe document is also too
+// late to trust. (In-guest fetch of remote URLs stays a documented limitation.)
 function guardGuestNavigation(win: BrowserWindow, view: WebContentsView) {
   view.webContents.on("will-navigate", (event, url) => {
     if (isHostable(url)) return
@@ -113,6 +118,17 @@ function guardGuestNavigation(win: BrowserWindow, view: WebContentsView) {
     detachView(win)
     notifyTeardown(win)
   })
+  view.webContents.on("did-frame-navigate", (event, url, _httpResponseCode, isMainFrame) => {
+    if (isMainFrame || isHostable(url)) return
+    event.preventDefault()
+    detachView(win)
+    notifyTeardown(win)
+  })
+  // window.open / target=_blank must never spawn a window outside this guest's
+  // loopback guard: denying outright is the least privilege for a pane tier
+  // that has no use for popups (the app renderer's own external-url policy
+  // does not apply to this untrusted guest).
+  view.webContents.setWindowOpenHandler(() => ({ action: "deny" }))
 }
 
 function notifyTeardown(win: BrowserWindow) {
@@ -130,8 +146,11 @@ export async function attachView(win: BrowserWindow, url: string) {
     webPreferences: { sandbox: true, contextIsolation: true, partition: "preview" },
   })
   win.contentView.addChildView(view)
-  const content = win.getContentBounds()
-  view.setBounds({ x: 0, y: 0, width: content.width, height: content.height })
+  // The guest is created hidden and without bounds: a slow-loading loopback
+  // page must not composite over chat, sidebar, or controls, and must not
+  // receive whole-window input. It becomes visible only when the renderer's
+  // setBounds claims the pane geometry it owns.
+  view.setVisible(false)
   // Closing the window removes the view with its content view, but the guest
   // webContents needs an explicit close so it never outlives the window.
   const onClosed = () => {
@@ -144,7 +163,26 @@ export async function attachView(win: BrowserWindow, url: string) {
 }
 
 export function setViewBounds(win: BrowserWindow, rect: PreviewRect) {
-  previewViewFor(win)?.setBounds(rect)
+  const view = previewViewFor(win)
+  if (!view) return
+  view.setBounds(rect)
+  // First valid ownership bounds reveal the view (I10: the guest starts
+  // hidden); a zero-size rect keeps it hidden. A renderer-hidden view (marking
+  // freeze keeps the bounds intact, so resizes during marking stay in sync)
+  // must not be revealed by a bounds refresh.
+  if (hiddenByRenderer.get(win) === true) return
+  view.setVisible(rect.width > 0 && rect.height > 0)
+}
+
+// Hides the guest's compositing and input without collapsing its bounds, so
+// the coordinate space of the marking overlay keeps matching the live view.
+const hiddenByRenderer = new WeakMap<BrowserWindow, boolean>()
+
+export function setViewVisible(win: BrowserWindow, visible: boolean) {
+  const view = previewViewFor(win)
+  if (!view) return
+  hiddenByRenderer.set(win, !visible)
+  view.setVisible(visible)
 }
 
 export function detachView(win: BrowserWindow) {

@@ -52,6 +52,11 @@ export const Result = Schema.Union([
   Schema.Struct({
     ok: Schema.Literal(false),
     error: Schema.String.annotate({ description: "Why the action could not be performed" }),
+    // Additive honesty flag: the action went out but no confirmed receipt came
+    // back, so the outcome is unknown and must not be read as "not performed".
+    unconfirmed: optional(Schema.Boolean).annotate({
+      description: "A desktop may have started the action, but no confirmed receipt arrived",
+    }),
   }),
 ]).annotate({ identifier: "ComputerUseResult" })
 export type Result = typeof Result.Type
