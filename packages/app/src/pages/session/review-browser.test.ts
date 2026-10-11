@@ -133,6 +133,48 @@ describe("native preview host wiring", () => {
   })
 })
 
+describe("marking honesty across host teardown and page change", () => {
+  const paneSource = readFileSync(new URL("./review-browser.tsx", import.meta.url), "utf8")
+
+  const fnSource = (start: string, end: string) => {
+    const from = paneSource.indexOf(start)
+    const to = paneSource.indexOf(end, from + 1)
+    if (from === -1 || to === -1) throw new Error(`marker not found: ${start}`)
+    return paneSource.slice(from, to)
+  }
+
+  test("host teardown ends marking so the frozen capture cannot annotate the stale page", () => {
+    const teardown = fnSource("window.api?.onHostTeardown?.(", "onCleanup(() => unsubscribe?.())")
+    expect(teardown).toContain("abortMarking")
+  })
+
+  test("a host failure aborts marking alongside the native flag", () => {
+    const fail = fnSource("const failHost", "createEffect(")
+    expect(fail).toContain("abortMarking")
+  })
+
+  test("a url commit or reload ends marking under the frozen capture", () => {
+    expect(paneSource).toMatch(/createEffect\(\(\) => \{\s*state\.loaded\s*state\.frame\s*[\s\S]*?abortMarking\(\)/)
+  })
+
+  test("an unexpected marking exit drops the frozen rect state entirely", () => {
+    expect(paneSource).toMatch(/const abortMarking[\s\S]*?marked: false[\s\S]*?(width: 0, height: 0|height: 0)/)
+    expect(paneSource).toMatch(/abortMarking = \(\) => \{\s*endMarking\(\)/)
+  })
+
+  test("ending marking reissues the reveal even after the native flag dropped", () => {
+    const end = fnSource("const endMarking", "const mark = (")
+    expect(end).toContain("setVisible?.(true)")
+    expect(end).not.toContain("wasNative")
+  })
+
+  test("a capture racing the page change never freezes a different page", () => {
+    const begin = fnSource("const beginMarking", "const endMarking")
+    expect(begin).toContain("urlAtStart")
+    expect(begin).toContain("state.loaded !== urlAtStart")
+  })
+})
+
 describe("auto-open on running preview", () => {
   const panelSource = readFileSync(new URL("./v2/review-panel-v2.tsx", import.meta.url), "utf8")
 

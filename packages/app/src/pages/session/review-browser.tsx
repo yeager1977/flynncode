@@ -123,6 +123,7 @@ export function ReviewBrowser(props: {
   // downgrade the newer attach's state or detach the newer view.
   let attachTag = 0
   const failHost = () => {
+    if (state.marking) abortMarking()
     setState("native", false)
     void nativeApi()
       ?.detach()
@@ -154,11 +155,23 @@ export function ReviewBrowser(props: {
   })
   // The main process tears the view down underneath us when a guest navigates
   // away from loopback (or the host renderer reloads); return to the iframe.
+  // While marking, that teardown invalidates the frozen capture, so the
+  // marking is aborted too: an annotation must never bind the current URL to
+  // a screenshot of a page that is no longer hosted.
   createEffect(() => {
     const unsubscribe = window.api?.onHostTeardown?.(() => {
+      if (state.marking) abortMarking()
       if (state.native) setState("native", false)
     })
     onCleanup(() => unsubscribe?.())
+  })
+  // A commit or reload replaces the guest page while the frozen capture still
+  // shows the previous one; abort the marking so the selection never applies
+  // to a page that is no longer the one being annotated.
+  createEffect(() => {
+    state.loaded
+    state.frame
+    if (state.marking) abortMarking()
   })
   // The native view composites above the renderer window, so it must be told
   // where the pane sits (CSS px → DIP conversion happens main-side). A bounds
@@ -201,18 +214,32 @@ export function ReviewBrowser(props: {
       setState({ marking: true, point })
       return
     }
+    const urlAtStart = state.loaded
     const shot = await capture()
     if (typeof shot !== "string" || !shot.startsWith("data:")) {
       setState("actionError", language.t("session.review.browserPane.markCaptureFailed"))
       return
     }
+    // The capture awaited the host: a teardown or page change during it would
+    // freeze a stale picture, so the marking never starts on one.
+    if (!state.native || state.loaded !== urlAtStart) return
     setState({ frozen: shot, marking: true, point, marked: false, width: 0, height: 0 })
     void nativeApi()?.setVisible?.(false)
   }
   const endMarking = () => {
-    const wasNative = state.native
+    const frozen = state.frozen
     setState({ marking: false, point: false, frozen: "" })
-    if (wasNative) void nativeApi()?.setVisible?.(true)
+    // The reveal is reissued whenever the view was actually hidden, even after
+    // state.native dropped (a host teardown may have raced the manual exit);
+    // main-side it is a no-op once the view detached.
+    if (frozen) void nativeApi()?.setVisible?.(true)
+  }
+  // A host teardown or page change invalidates the frozen capture: the whole
+  // selection is dropped, not just the overlay, so no annotation can bind the
+  // current URL to a rect or screenshot of a different page.
+  const abortMarking = () => {
+    endMarking()
+    setState({ marked: false, x: 0, y: 0, width: 0, height: 0 })
   }
   const mark = (event: PointerEvent, el: HTMLElement, drag: boolean) => {
     const box = el.getBoundingClientRect()
