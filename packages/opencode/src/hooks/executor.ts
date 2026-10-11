@@ -15,9 +15,14 @@ import { HooksManaged } from "@/hooks/managed"
 // File-hook execution protocol (stdin JSON in, stdout JSON out):
 // - exit 0 + JSON decision: PreToolUse/PermissionRequest honor
 //   {"behavior":"deny","message"?} | {"behavior":"allow","updatedInput"?,"additionalContext"?} | {"behavior":"undecided","additionalContext"?}.
-// - exit 2: deny (decision hooks) or blocked output (PostToolUse), stdout is the message.
+// - exit 2: deny (decision hooks) or blocked output (PostToolUse); the message
+//   prefers a trimmed non-empty stderr, then stdout, else a generic fallback.
 // - PostToolUse JSON may carry {"blockedOutput": string} to replace the model-visible result.
 // - Observe hooks honor {"additionalContext"?,"systemMessage"?,"continue"?,"stopReason"?}.
+//   Non-JSON non-empty stdout on observe events is promoted wholesale to
+//   additionalContext (Codex parity: plain stdout is developer context),
+//   bounded by `additionalContextLimit`; valid-JSON output keeps the parsed
+//   behavior and empty stdout stays a no-op.
 // - Non-zero exit (other than 2), timeout, or unparseable output fails closed:
 //   deny for decision hooks, warn-and-ignore for observe/post hooks.
 // - Hook `timeout` is in seconds. Defaults: 600s everywhere except SessionEnd
@@ -364,7 +369,8 @@ export const node = LayerNode.make({
           return observed({})
         }
         if (spawned.code === 2) {
-          const message = spawned.stdout.trim() || `Hook blocked: ${input.command}`
+          const message =
+            spawned.stderr.trim() || spawned.stdout.trim() || `Hook blocked: ${input.command}`
           if (input.kind === "decision") return decided({ behavior: "deny", message })
           if (input.kind === "post") return posted(true, message)
           yield* Effect.logWarning("hook exited blocking", { command: input.command })
@@ -386,9 +392,18 @@ export const node = LayerNode.make({
           return posted(false, undefined, limitContext(context, input.limit))
         }
         if (input.kind === "observe") {
-          const observe = readObserveJson(spawned.stdout) ?? {}
-          if (observe.additionalContext) observe.additionalContext = limitContext(observe.additionalContext, input.limit)
-          return observed(observe)
+          const observe = readObserveJson(spawned.stdout)
+          if (observe) {
+            if (observe.additionalContext) observe.additionalContext = limitContext(observe.additionalContext, input.limit)
+            return observed(observe)
+          }
+          // Plain-text stdout on observe events is developer context (Codex
+          // parity): only non-JSON output is promoted, so any valid-JSON
+          // output keeps its previous parsed-or-empty behavior, and empty
+          // output stays a no-op.
+          const text = spawned.stdout.trim()
+          const parsed = Option.getOrElse(decodeJson(text), () => undefined)
+          return observed(parsed === undefined && text ? { additionalContext: limitContext(text, input.limit) } : {})
         }
         const decision = readDecisionJson(spawned.stdout)
         if (!decision) {

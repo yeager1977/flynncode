@@ -16,7 +16,10 @@ const markerPath = path.join(dir, "marker.txt")
 const allowScript = path.join(dir, "allow.sh")
 const captureScript = path.join(dir, "capture.sh")
 const denyScript = path.join(dir, "deny2.sh")
+const denyStderrScript = path.join(dir, "deny2-stderr.sh")
 const markScript = path.join(dir, "mark.sh")
+const observeTextScript = path.join(dir, "observe-text.sh")
+const observeJsonScript = path.join(dir, "observe-json.sh")
 
 beforeEach(async () => {
   process.env["FLYNNCODE_HOOKS_TRUST_FILE"] = trustPath
@@ -29,9 +32,15 @@ beforeEach(async () => {
     `#!/bin/sh\ncat > "${capturePath}"\nprintf '{"behavior":"allow"}'\n`,
   )
   await Bun.write(denyScript, `#!/bin/sh\necho no-allow\nexit 2\n`)
+  await Bun.write(denyStderrScript, `#!/bin/sh\necho "stdout says no"\necho "stderr reason" >&2\nexit 2\n`)
   await Bun.write(markScript, `#!/bin/sh\necho ran > "${markerPath}"\n`)
+  await Bun.write(observeTextScript, `#!/bin/sh\nprintf 'Build docs live in ./docs'\n`)
+  await Bun.write(
+    observeJsonScript,
+    `#!/bin/sh\nprintf '{"additionalContext":"from json","systemMessage":"sm"}'\n`,
+  )
   const { chmod } = await import("node:fs/promises")
-  for (const script of [allowScript, captureScript, denyScript, markScript]) {
+  for (const script of [allowScript, captureScript, denyScript, denyStderrScript, markScript, observeTextScript, observeJsonScript]) {
     await chmod(script, 0o755)
   }
 })
@@ -118,6 +127,100 @@ describe("hooks executor", () => {
         })
         expect(decision).toEqual({ behavior: "deny", message: "no-allow" })
       }),
+  )
+
+  testEffect(executorLayer({ PreToolUse: [{ hooks: [{ type: "command", command: denyStderrScript }] }] })).effect(
+    "exit-2 deny reason prefers stderr over stdout",
+    () =>
+      Effect.gen(function* () {
+        const def = HooksTrust.fromHandler("PreToolUse", undefined, { type: "command", command: denyStderrScript })
+        yield* Effect.promise(() => trustDef(def))
+        const executor = yield* HooksExecutor.Service
+        const decision = yield* executor.runDecision({
+          event: "PreToolUse",
+          matchName: "Bash",
+          tool: "Bash",
+          sessionID: "ses_1",
+          callID: "c1",
+          args: { command: "rm -rf /" },
+        })
+        expect(decision).toEqual({ behavior: "deny", message: "stderr reason" })
+      }),
+  )
+
+  testEffect(
+    executorLayer({ SessionStart: [{ hooks: [{ type: "command", command: observeTextScript }] }] }),
+  ).effect("observe events promote plain stdout to additionalContext", () =>
+    Effect.gen(function* () {
+      const def = HooksTrust.fromHandler("SessionStart", undefined, { type: "command", command: observeTextScript })
+      yield* Effect.promise(() => trustDef(def))
+      const executor = yield* HooksExecutor.Service
+      const out = yield* executor.runObserve({
+        event: "SessionStart",
+        matchName: "startup",
+        sessionID: "ses_1",
+        payload: { source: "startup" },
+      })
+      expect(out.additionalContext).toBe("Build docs live in ./docs")
+    }),
+  )
+
+  testEffect(
+    executorLayer({
+      SessionStart: [{ hooks: [{ type: "command", command: observeTextScript, additionalContextLimit: 5 }] }],
+    }),
+  ).effect("plain observe stdout respects additionalContextLimit", () =>
+    Effect.gen(function* () {
+      const def = HooksTrust.fromHandler("SessionStart", undefined, {
+        type: "command",
+        command: observeTextScript,
+        additionalContextLimit: 5,
+      })
+      yield* Effect.promise(() => trustDef(def))
+      const executor = yield* HooksExecutor.Service
+      const out = yield* executor.runObserve({
+        event: "SessionStart",
+        matchName: "startup",
+        sessionID: "ses_1",
+        payload: { source: "startup" },
+      })
+      expect(out.additionalContext).toBe("Build")
+    }),
+  )
+
+  testEffect(executorLayer({ SessionStart: [{ hooks: [{ type: "command", command: "true" }] }] })).effect(
+    "empty observe stdout carries no additionalContext",
+    () =>
+      Effect.gen(function* () {
+        const def = HooksTrust.fromHandler("SessionStart", undefined, { type: "command", command: "true" })
+        yield* Effect.promise(() => trustDef(def))
+        const executor = yield* HooksExecutor.Service
+        const out = yield* executor.runObserve({
+          event: "SessionStart",
+          matchName: "startup",
+          sessionID: "ses_1",
+          payload: { source: "startup" },
+        })
+        expect(out).toEqual({})
+      }),
+  )
+
+  testEffect(
+    executorLayer({ SessionStart: [{ hooks: [{ type: "command", command: observeJsonScript }] }] }),
+  ).effect("JSON observe output is still parsed as before", () =>
+    Effect.gen(function* () {
+      const def = HooksTrust.fromHandler("SessionStart", undefined, { type: "command", command: observeJsonScript })
+      yield* Effect.promise(() => trustDef(def))
+      const executor = yield* HooksExecutor.Service
+      const out = yield* executor.runObserve({
+        event: "SessionStart",
+        matchName: "startup",
+        sessionID: "ses_1",
+        payload: { source: "startup" },
+      })
+      expect(out.additionalContext).toBe("from json")
+      expect(out.systemMessage).toBe("sm")
+    }),
   )
 
   testEffect(executorLayer({ PreToolUse: [{ hooks: [{ type: "command", command: "sleep 30", timeout: 0.05 }] }] })).effect(
