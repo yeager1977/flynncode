@@ -267,6 +267,8 @@ describe("hooks runner file post block", () => {
   )
 })
 
+// Shared module-level collector for the mock executor below; each test
+// clears it before use, so stale entries cannot leak into its assertions.
 const seenDecision: Array<Record<string, unknown>> = []
 const contextIt = testEffect(
   testLayerWithHooks([], {

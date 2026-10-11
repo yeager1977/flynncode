@@ -197,4 +197,34 @@ describe("hooks kill switch", () => {
       expect(yield* Effect.promise(() => Bun.file(killMarker).text())).toBe("pristine")
     }),
   )
+
+  // Positive control for the suppression test above: the same fixture with
+  // the flag off proves the managed pre-trust is live and the hook spawns.
+  const runIt = testEffect(
+    LayerNode.compile(LayerNode.group([HooksExecutor.node, HooksManaged.node]), [
+      [
+        Config.node,
+        configLayer({ PreToolUse: [{ hooks: [{ type: "command", command: killManagedScript }] }] }),
+      ],
+      [RuntimeFlags.node, RuntimeFlags.layer({})],
+    ]),
+  )
+
+  runIt.live("kill switch off lets the managed hook run", () =>
+    Effect.gen(function* () {
+      const executor = yield* HooksExecutor.Service
+      const decision = yield* executor.runDecision({
+        event: "PreToolUse",
+        matchName: "Bash",
+        tool: "Bash",
+        sessionID: "ses_1",
+        callID: "c1",
+        args: { command: "ls" },
+      })
+      // The hook spawned (proving the fixture is live): its echo redirects
+      // into the marker, so empty stdout stays an undecided no-op.
+      expect(decision).toEqual({ behavior: "undecided" })
+      expect(yield* Effect.promise(() => Bun.file(killMarker).text())).toBe("ran\n")
+    }),
+  )
 })

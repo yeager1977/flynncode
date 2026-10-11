@@ -143,6 +143,10 @@ type Collected =
   | { kind: "post"; blocked: boolean; reason?: string; additionalContext?: string }
   | { kind: "observe"; observe: HooksRunner.SessionObserve }
 
+// "trusted" spawns; "killed" and "untrusted" are skipped, each with its own
+// log wording.
+type TrustVerdict = "trusted" | "untrusted" | "killed"
+
 function decided(decision: HooksRunner.PreToolUseDecision): Collected {
   return { kind: "decision", decision }
 }
@@ -219,19 +223,22 @@ export const node = LayerNode.make({
       })
 
       const trusted = Effect.fn("HooksExecutor.trusted")(function* (def: HooksTrust.HookDef) {
-        // Kill switch first: hooks.disableAllHooks disables every hook
-        // unconditionally — managed (pre-trusted) hooks included — and is
-        // intentionally orthogonal to the trust bypass flag, which can never
-        // re-enable hooks while the kill switch is on.
+        // Kill switch first: hooks.disableAllHooks stops every file-config
+        // hook unconditionally — managed (pre-trusted) hooks included — and
+        // is intentionally orthogonal to the trust bypass flag, which can
+        // never re-enable hooks while the kill switch is on. In-process
+        // plugin hooks (the runner's plugin trigger edges) are unaffected;
+        // gating them is a separate follow-up.
         const cfg = yield* config.get()
-        if (cfg.hooks?.disableAllHooks === true) return false
+        if (cfg.hooks?.disableAllHooks === true) return "killed"
         const managed = yield* Effect.serviceOption(HooksManaged.ManagedHooks)
-        if (Option.isSome(managed) && managed.value.isManaged(def)) return true
-        if (flags.bypassHookTrust) return true
+        if (Option.isSome(managed) && managed.value.isManaged(def)) return "trusted"
+        if (flags.bypassHookTrust) return "trusted"
         // Trust is per project and covers referenced project scripts.
         const bound = yield* HooksTrust.bindToInstance(def)
         // Fail closed: trust lookup failures read as untrusted.
-        return yield* trust.isTrusted(bound).pipe(Effect.orElseSucceed(() => false))
+        const trusted = yield* trust.isTrusted(bound).pipe(Effect.orElseSucceed(() => false))
+        return trusted ? "trusted" : "untrusted"
       })
 
       type Spawned = { code: number; stdout: string; stderr: string; timedOut: boolean }
@@ -519,9 +526,9 @@ export const node = LayerNode.make({
         for (const entry of entries) {
           const def = entry.def
           const handler = entry.handler
-          const ok = yield* trusted(def)
-          if (!ok) {
-            yield* Effect.logWarning("skipping untrusted hook", {
+          const verdict = yield* trusted(def)
+          if (verdict !== "trusted") {
+            yield* Effect.logWarning(verdict === "killed" ? "hook skipped by hooks.disableAllHooks" : "skipping untrusted hook", {
               event: def.event,
               matcher: def.matcher,
               command: def.command ?? `${def.server}/${def.tool}`,
