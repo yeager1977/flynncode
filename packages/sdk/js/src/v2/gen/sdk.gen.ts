@@ -17,6 +17,11 @@ import type {
   AuthSetResponses,
   CommandListErrors,
   CommandListResponses,
+  ComputerUseReply,
+  ComputerUseReplyErrors,
+  ComputerUseReplyResponses,
+  ComputerUseRequestsErrors,
+  ComputerUseRequestsResponses,
   Config as Config3,
   ConfigGetErrors,
   ConfigGetResponses,
@@ -1743,6 +1748,75 @@ export class Config2 extends HeyApiClient {
   private _hooks?: Hooks
   get hooks(): Hooks {
     return (this._hooks ??= new Hooks({ client: this.client }))
+  }
+}
+
+export class ComputerUse extends HeyApiClient {
+  /**
+   * List pending computer-use requests
+   *
+   * Get all pending computer-use executor requests across all sessions.
+   */
+  public requests<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ComputerUseRequestsResponses, ComputerUseRequestsErrors, ThrowOnError>({
+      url: "/computer-use/requests",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Reply to a computer-use request
+   *
+   * Deliver the desktop executor's result for a pending computer-use request.
+   */
+  public reply<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      computerUseReply?: ComputerUseReply
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "computerUseReply", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<ComputerUseReplyResponses, ComputerUseReplyErrors, ThrowOnError>({
+      url: "/computer-use/execute/reply",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
   }
 }
 
@@ -7955,6 +8029,11 @@ export class OpencodeClient extends HeyApiClient {
   private _config?: Config2
   get config(): Config2 {
     return (this._config ??= new Config2({ client: this.client }))
+  }
+
+  private _computerUse?: ComputerUse
+  get computerUse(): ComputerUse {
+    return (this._computerUse ??= new ComputerUse({ client: this.client }))
   }
 
   private _tool?: Tool

@@ -15,6 +15,9 @@ import { showToast } from "@/utils/toast"
 // step with `computer_use.allowedApps`, which the server tool checks.
 const COMPUTER_USE_STORE = "opencode.settings"
 const COMPUTER_USE_KEY = "computerUseAllowedApps"
+// The one real pane surface in this tier. The tool's txt documents the same
+// reserved id; it allowlists exactly like a user-supplied app id.
+const RESERVED_PANE_APP_ID = "flynncode:browser-pane"
 
 // `v2` renders the trigger like the neighbouring V2 header actions; the legacy
 // header keeps its titlebar button.
@@ -24,12 +27,24 @@ export function ComputerUseMenu(props: { variant?: "v2" }) {
   const [candidate, setCandidate] = createSignal("")
   const enabled = createMemo(() => serverSync().data.config.computer_use?.enabled === true)
   const allowedApps = createMemo(() => serverSync().data.config.computer_use?.allowedApps ?? [])
+  const tierEnabled = (tier: "observe" | "mutate") =>
+    serverSync().data.config.computer_use?.tiers?.[tier]?.enabled !== false
 
   // Mirror the allowlist into the desktop store only once the server accepted it,
   // so the two never disagree about which apps are allowed.
-  const save = (next: { enabled: boolean; allowedApps: string[] }) =>
+  const save = (next: {
+    enabled: boolean
+    allowedApps: string[]
+    tiers?: { observe?: { enabled?: boolean }; mutate?: { enabled?: boolean } }
+  }) =>
     serverSync()
-      .updateConfig({ computer_use: next })
+      .updateConfig({
+        computer_use: {
+          ...(next.tiers ? { tiers: next.tiers } : {}),
+          enabled: next.enabled,
+          allowedApps: next.allowedApps,
+        },
+      })
       .then(() => window.api?.storeSet?.(COMPUTER_USE_STORE, COMPUTER_USE_KEY, JSON.stringify(next.allowedApps)))
       .catch((err: unknown) => {
         showToast({
@@ -68,7 +83,54 @@ export function ComputerUseMenu(props: { variant?: "v2" }) {
         />
       </div>
       <div class="flex flex-col gap-1">
+        <span class="text-12-medium text-text-strong">{language.t("computerUse.tiers.label")}</span>
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-12-regular text-text-base">{language.t("computerUse.tier.observe")}</span>
+          <Switch
+            checked={tierEnabled("observe")}
+            onChange={(checked) =>
+              void save({
+                enabled: enabled(),
+                allowedApps: allowedApps(),
+                tiers: { observe: { enabled: checked }, mutate: { enabled: tierEnabled("mutate") } },
+              })
+            }
+            aria-label={language.t("computerUse.tier.observe")}
+          />
+        </div>
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-12-regular text-text-base">{language.t("computerUse.tier.mutate")}</span>
+          <Switch
+            checked={tierEnabled("mutate")}
+            onChange={(checked) =>
+              void save({
+                enabled: enabled(),
+                allowedApps: allowedApps(),
+                tiers: { observe: { enabled: tierEnabled("observe") }, mutate: { enabled: checked } },
+              })
+            }
+            aria-label={language.t("computerUse.tier.mutate")}
+          />
+        </div>
+      </div>
+      <div class="flex flex-col gap-1">
         <span class="text-12-medium text-text-strong">{language.t("computerUse.allowlist.label")}</span>
+        <span class="text-12-regular text-text-weak">{language.t("computerUse.pane.hint")}</span>
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-12-regular text-text-base truncate">{language.t("computerUse.pane.label")}</span>
+          <Switch
+            checked={allowedApps().includes(RESERVED_PANE_APP_ID)}
+            onChange={(checked) =>
+              void save({
+                enabled: enabled(),
+                allowedApps: checked
+                  ? [...allowedApps(), RESERVED_PANE_APP_ID]
+                  : allowedApps().filter((app) => app !== RESERVED_PANE_APP_ID),
+              })
+            }
+            aria-label={language.t("computerUse.pane.label")}
+          />
+        </div>
         <Show
           when={allowedApps().length > 0}
           fallback={<span class="text-12-regular text-text-weak">{language.t("computerUse.allowlist.empty")}</span>}

@@ -67,6 +67,7 @@ export type Event =
   | EventQuestionV2Asked
   | EventQuestionV2Replied
   | EventQuestionV2Rejected
+  | EventComputerUseRequested
   | EventTodoUpdated
   | EventLspUpdated
   | EventPermissionAsked
@@ -94,6 +95,33 @@ export type Event =
   | EventServerConnected
   | EventGlobalDisposed
   | EventServerInstanceDisposed
+
+export type ComputerUseRequest = {
+  requestID: string
+  sessionID: string
+  action: ComputerUseAction
+  /**
+   * Allowlisted GUI app id owning the target pane
+   */
+  appID: string
+  args?: ComputerUseArgs
+  time: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type ComputerUseResult =
+  | {
+      ok: true
+      screenshot?: string
+      output?: string
+    }
+  | {
+      ok: false
+      /**
+       * Why the action could not be performed
+       */
+      error: string
+      unconfirmed?: boolean
+    }
 
 export type QuestionReplied = {
   sessionID: string
@@ -654,6 +682,17 @@ export type Pty = {
   status: "running" | "exited"
   pid: number
   exitCode?: number
+}
+
+export type ComputerUseAction = "screenshot" | "click" | "type" | "keypress" | "scroll"
+
+export type ComputerUseArgs = {
+  x?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  y?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  text?: string
+  key?: string
+  deltaX?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  deltaY?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
 }
 
 export type Todo = {
@@ -1363,6 +1402,21 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "computer_use.requested"
+        properties: {
+          requestID: string
+          sessionID: string
+          action: ComputerUseAction
+          /**
+           * Allowlisted GUI app id owning the target pane
+           */
+          appID: string
+          args?: ComputerUseArgs
+          time: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        }
+      }
+    | {
+        id: string
         type: "todo.updated"
         properties: {
           sessionID: string
@@ -1967,6 +2021,14 @@ export type Config = {
   computer_use?: {
     enabled?: boolean
     allowedApps?: Array<string>
+    tiers?: {
+      observe?: {
+        enabled?: boolean
+      }
+      mutate?: {
+        enabled?: boolean
+      }
+    }
   }
   enabled_providers?: Array<string>
   worktree?: {
@@ -2491,6 +2553,11 @@ export type HooksTrustList = {
 
 export type HooksHashInput = {
   hash: string
+}
+
+export type ComputerUseReply = {
+  requestID: string
+  result: ComputerUseResult
 }
 
 export type ExperimentalCapabilities = {
@@ -3252,6 +3319,15 @@ export type OutputFormat1 =
       retryCount?: number
     }
 
+export type ComputerUseArgs1 = {
+  x?: number | "NaN" | "Infinity" | "-Infinity"
+  y?: number | "NaN" | "Infinity" | "-Infinity"
+  text?: string
+  key?: string
+  deltaX?: number | "NaN" | "Infinity" | "-Infinity"
+  deltaY?: number | "NaN" | "Infinity" | "-Infinity"
+}
+
 export type SessionStatus2 = {
   id: string
   metadata?: {
@@ -3370,6 +3446,7 @@ export type V2Event =
   | QuestionV2Asked
   | QuestionV2Replied
   | QuestionV2Rejected
+  | ComputerUseRequested
   | TodoUpdated
   | LspUpdated
   | PermissionAsked
@@ -3414,6 +3491,15 @@ export type ProjectCopyError = {
 
 export type EffectHttpApiErrorForbidden = {
   _tag: "Forbidden"
+}
+
+export type ComputerUseArgs2 = {
+  x?: number | "NaN" | "Infinity" | "-Infinity"
+  y?: number | "NaN" | "Infinity" | "-Infinity"
+  text?: string
+  key?: string
+  deltaX?: number | "NaN" | "Infinity" | "-Infinity"
+  deltaY?: number | "NaN" | "Infinity" | "-Infinity"
 }
 
 export type EventTuiPromptAppend2 = {
@@ -3469,6 +3555,21 @@ export type EventTuiSessionSelect2 = {
      */
     sessionID: string
   }
+}
+
+export type ComputerUseRequest1 = {
+  requestID: string
+  sessionID: string
+  action: ComputerUseAction
+  /**
+   * Allowlisted GUI app id owning the target pane
+   */
+  appID: string
+  args?: ComputerUseArgs2
+  /**
+   * Request epoch time in milliseconds
+   */
+  time: number | "NaN" | "Infinity" | "-Infinity"
 }
 
 export type CredentialValue = CredentialOAuth | CredentialKey
@@ -6114,6 +6215,34 @@ export type QuestionV2Rejected = {
   }
 }
 
+export type ComputerUseRequested = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "computer_use.requested"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    requestID: string
+    sessionID: string
+    action: ComputerUseAction
+    /**
+     * Allowlisted GUI app id owning the target pane
+     */
+    appID: string
+    args?: ComputerUseArgs1
+    /**
+     * Request epoch time in milliseconds
+     */
+    time: number | "NaN" | "Infinity" | "-Infinity"
+  }
+}
+
 export type TodoUpdated = {
   id: string
   metadata?: {
@@ -7296,6 +7425,25 @@ export type EventQuestionV2Rejected = {
   }
 }
 
+export type EventComputerUseRequested = {
+  id: string
+  type: "computer_use.requested"
+  properties: {
+    requestID: string
+    sessionID: string
+    action: ComputerUseAction
+    /**
+     * Allowlisted GUI app id owning the target pane
+     */
+    appID: string
+    args?: ComputerUseArgs2
+    /**
+     * Request epoch time in milliseconds
+     */
+    time: number | "NaN" | "Infinity" | "-Infinity"
+  }
+}
+
 export type EventTodoUpdated = {
   id: string
   type: "todo.updated"
@@ -8090,6 +8238,62 @@ export type ConfigHooksTrustRevokeResponses = {
 }
 
 export type ConfigHooksTrustRevokeResponse = ConfigHooksTrustRevokeResponses[keyof ConfigHooksTrustRevokeResponses]
+
+export type ComputerUseRequestsData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/computer-use/requests"
+}
+
+export type ComputerUseRequestsErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ComputerUseRequestsError = ComputerUseRequestsErrors[keyof ComputerUseRequestsErrors]
+
+export type ComputerUseRequestsResponses = {
+  /**
+   * List of pending computer-use requests
+   */
+  200: Array<ComputerUseRequest>
+}
+
+export type ComputerUseRequestsResponse = ComputerUseRequestsResponses[keyof ComputerUseRequestsResponses]
+
+export type ComputerUseReplyData = {
+  body?: ComputerUseReply
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/computer-use/execute/reply"
+}
+
+export type ComputerUseReplyErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ComputerUseReplyError = ComputerUseReplyErrors[keyof ComputerUseReplyErrors]
+
+export type ComputerUseReplyResponses = {
+  /**
+   * Result recorded
+   */
+  200: boolean
+}
+
+export type ComputerUseReplyResponse = ComputerUseReplyResponses[keyof ComputerUseReplyResponses]
 
 export type ExperimentalCapabilitiesGetData = {
   body?: never

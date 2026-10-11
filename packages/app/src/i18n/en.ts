@@ -1908,4 +1908,9 @@ export const dict = {
   "computerUse.consent.title": "Allow this GUI action?",
   "computerUse.consent.note": "Flynncode never approves its own GUI actions.",
   "computerUse.saveFailed": "Could not save computer use settings",
+  "computerUse.pane.label": "In-app browser pane",
+  "computerUse.pane.hint": "The reserved app id for the pane is flynncode:browser-pane.",
+  "computerUse.tiers.label": "Action tiers",
+  "computerUse.tier.observe": "Observe (screenshots)",
+  "computerUse.tier.mutate": "Mutate (click, type, keys, scroll)",
 }
