@@ -15,17 +15,21 @@ export type PreviewRawServer = {
 export type PreviewForm = {
   servers: PreviewRawServer[]
   autoVerify: boolean
+  nativeHost: boolean
 }
 
 export function previewFromConfig(config: Config | undefined): PreviewForm {
-  const raw = config?.preview as { servers?: unknown; autoVerify?: unknown } | undefined
+  const raw = config?.preview as { servers?: unknown; autoVerify?: unknown; nativeHost?: unknown } | undefined
   return {
     servers: Array.isArray(raw?.servers) ? (raw?.servers as PreviewRawServer[]) : [],
     autoVerify: raw?.autoVerify === false ? false : true,
+    nativeHost: raw?.nativeHost === true,
   }
 }
 
-export function previewToConfig(form: PreviewForm): { preview?: { servers: PreviewRawServer[]; autoVerify: boolean } } {
+export function previewToConfig(form: PreviewForm): {
+  preview?: { servers: PreviewRawServer[]; autoVerify: boolean; nativeHost: boolean }
+} {
   const servers = form.servers.filter((server) => typeof server.name === "string" && server.name !== "")
-  return { preview: { servers, autoVerify: form.autoVerify } }
+  return { preview: { servers, autoVerify: form.autoVerify, nativeHost: form.nativeHost } }
 }

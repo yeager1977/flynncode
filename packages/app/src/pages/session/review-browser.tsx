@@ -1,4 +1,4 @@
-import { createEffect, createResource, For, Show } from "solid-js"
+import { createEffect, createResource, For, onCleanup, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
@@ -8,6 +8,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
+import { useServerSync } from "@/context/server-sync"
 import { useSessionLayout } from "./session-layout"
 import { storeArtifact } from "@/pages/layout/sidebar-artifacts"
 import { browserAnnotation, type BrowserAnnotationPayload } from "./hunk-revert"
@@ -24,6 +25,7 @@ export function ReviewBrowser(props: {
   const platform = usePlatform()
   const dialog = useDialog()
   const layout = useSessionLayout()
+  const sync = useServerSync()
   // The pane URL persists per session: switching sessions restores each
   // session's URL from the module record instead of resetting to default.
   const paneKey = () => layout.params.id ?? sdk().directory ?? "default"
@@ -45,6 +47,7 @@ export function ReviewBrowser(props: {
     busy: "",
     actionError: "",
     announced: "",
+    native: false,
   })
   // Normalizes raw URL-bar input against the currently loaded URL and
   // remembers the result for this session.
@@ -100,10 +103,67 @@ export function ReviewBrowser(props: {
     const module = await import("@/components/settings-v2")
     void dialog.show(() => <module.DialogSettings defaultValue="preview" />)
   }
-  // The sandboxed iframe keeps an opaque origin, so only loopback http(s)
-  // targets can load; anything needing cookies/localStorage waits for a
-  // future native host.
+  // The sandboxed iframe keeps an opaque origin, so cookies/localStorage do
+  // not persist across reloads; the native host (flag on, desktop only)
+  // hosts the same page in a real view instead.
   const local = () => isLocalPreviewUrl(state.loaded)
+  // Native preview host (desktop only): the pane prefers the native view when
+  // the config flag is on and the desktop API exists. Any host failure tears
+  // the view down and returns the pane to the sandboxed iframe.
+  const nativeApi = () => window.api?.previewHost
+  const nativeWanted = () => nativeApi() !== undefined && sync().data.config.preview?.nativeHost === true && local()
+  createEffect(() => {
+    const host = nativeApi()
+    if (!host) return
+    if (nativeWanted()) {
+      // Reading state.frame tracks reload bumps so the reload button reloads
+      // the native view too; attach always performs a fresh loadURL.
+      state.frame
+      void host.attach(state.loaded).then(
+        () => setState("native", true),
+        () => {
+          setState("native", false)
+          void host.detach().catch(() => {})
+        },
+      )
+      return
+    }
+    if (!state.native) return
+    setState("native", false)
+    void host.detach().catch(() => {})
+  })
+  // The native view composites above the renderer window, so it must be told
+  // where the pane sits (CSS px → DIP conversion happens main-side) and must
+  // shrink to nothing while the mark overlay needs pointer events.
+  const syncNativeBounds = () => {
+    const host = nativeApi()
+    if (!host || !state.native) return
+    if (state.marking) {
+      void host.setBounds({ x: 0, y: 0, width: 0, height: 0 }).catch(() => {})
+      return
+    }
+    const box = paneBox?.getBoundingClientRect()
+    if (!box || box.width === 0 || box.height === 0) return
+    void host.setBounds({ x: box.x, y: box.y, width: box.width, height: box.height }).catch(() => {})
+  }
+  createEffect(() => {
+    if (!state.native) return
+    syncNativeBounds()
+    const observer = new ResizeObserver(syncNativeBounds)
+    if (paneBox) observer.observe(paneBox)
+    document.addEventListener("scroll", syncNativeBounds, true)
+    window.addEventListener("resize", syncNativeBounds)
+    onCleanup(() => {
+      observer.disconnect()
+      document.removeEventListener("scroll", syncNativeBounds, true)
+      window.removeEventListener("resize", syncNativeBounds)
+    })
+  })
+  onCleanup(() => {
+    const host = nativeApi()
+    if (!host) return
+    void host.detach().catch(() => {})
+  })
   const mark = (event: PointerEvent, el: HTMLElement, drag: boolean) => {
     const box = el.getBoundingClientRect()
     if (box.width === 0 || box.height === 0) return
@@ -131,6 +191,7 @@ export function ReviewBrowser(props: {
     }
   }
   let frame: HTMLIFrameElement | undefined
+  let paneBox: HTMLDivElement | undefined
   // Capture only the browser pane, never the whole window (chat, sidebar).
   const capture = async () => {
     const box = frame?.getBoundingClientRect()
@@ -412,7 +473,12 @@ export function ReviewBrowser(props: {
         when={local()}
         fallback={<div class="p-3 text-12-regular text-text-weak">{language.t("session.review.browserLocalOnly")}</div>}
       >
-        <div class="relative min-h-0 flex-1">
+        <div
+          ref={(element) => {
+            paneBox = element
+          }}
+          class="relative min-h-0 flex-1"
+        >
           <iframe
             ref={(element) => {
               frame = element

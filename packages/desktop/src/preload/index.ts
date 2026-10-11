@@ -185,6 +185,13 @@ const api: ElectronAPI = {
     keypress: (appID, key) => ipcRenderer.invoke("computer-use-keypress", appID, key),
     scroll: (appID, deltaX, deltaY) => ipcRenderer.invoke("computer-use-scroll", appID, deltaX, deltaY),
   },
+  previewHost: {
+    attach: (url) => ipcRenderer.invoke("preview-host:attach", url),
+    setBounds: (rect) => ipcRenderer.invoke("preview-host:set-bounds", rect),
+    detach: () => ipcRenderer.invoke("preview-host:detach"),
+    capture: () => ipcRenderer.invoke("preview-host:capture"),
+    inspect: (rect) => ipcRenderer.invoke("preview-host:inspect", rect),
+  },
   setForceFocus: (enabled) => ipcRenderer.invoke("set-force-focus", enabled),
   recordFatalRendererError: (error) => ipcRenderer.invoke("record-fatal-renderer-error", error),
   setNativeTranslations: (bundle) => ipcRenderer.invoke("set-native-translations", bundle),

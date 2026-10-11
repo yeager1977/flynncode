@@ -66,6 +66,22 @@ export type ComputerUseAPI = {
   scroll: (appID: string, deltaX: number, deltaY: number) => Promise<void>
 }
 
+export type PreviewHostElement = {
+  tag: string
+  id?: string
+  classes?: string
+  text?: string
+  rect: CaptureRect
+}
+
+export type PreviewHostAPI = {
+  attach: (url: string) => Promise<void>
+  setBounds: (rect: CaptureRect) => Promise<void>
+  detach: () => Promise<void>
+  capture: () => Promise<string | undefined>
+  inspect: (rect?: CaptureRect) => Promise<PreviewHostElement | null>
+}
+
 export type ElectronAPI = {
   killSidecar: () => Promise<void>
   installCli: () => Promise<string>
@@ -158,6 +174,7 @@ export type ElectronAPI = {
   exportDebugLogs: () => Promise<string>
   capturePage: (rect?: CaptureRect) => Promise<string | undefined>
   computerUse: ComputerUseAPI
+  previewHost: PreviewHostAPI
   setForceFocus: (enabled: boolean) => Promise<void>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>
   setNativeTranslations: (bundle: DesktopNativeBundle) => Promise<void>

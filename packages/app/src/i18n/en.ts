@@ -1190,6 +1190,8 @@ export const dict = {
   "preview.settings.globalToggle": "Apply to all projects",
   "preview.settings.autoVerify": "Auto-verify edited pages",
   "preview.settings.autoVerifyDescription": "After the agent edits files, the verify_page tool reports the page status for the running server.",
+  "preview.settings.nativeHost": "Native preview browser",
+  "preview.settings.nativeHostDescription": "Open the review pane in a desktop-native view with real page storage and inspectable elements. Desktop app only; other surfaces keep the sandboxed iframe.",
   "preview.settings.saveFailed": "Could not save preview settings",
   "preview.settings.loadFailed": "Could not load project settings",
   "preview.settings.saved": "Preview settings saved",

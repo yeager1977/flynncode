@@ -30,6 +30,15 @@ import { nativeT } from "./native-translations"
 import { registerPluginManager } from "./plugin-manager"
 import type { VendorStatus } from "./vendor-keychain"
 import { clickPane, isComputerUseTargetAllowed, keypressPane, scrollPane, typePane } from "./computer-use"
+import {
+  attachView,
+  captureView,
+  detachView,
+  inspectView,
+  isHostable,
+  parsePreviewRect,
+  setViewBounds,
+} from "./preview-host"
 import { COMPUTER_USE_ALLOWED_APPS_KEY, MOBILE_PHONE_PASSWORD_KEY } from "./store-keys"
 
 const MOBILE_GATEWAY_PORT = 4097
@@ -237,6 +246,40 @@ export function registerIpcHandlers(deps: Deps) {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win || win.isDestroyed()) return
     scrollPane(win, deltaX, deltaY)
+  })
+  ipcMain.handle("preview-host:attach", (event: IpcMainInvokeEvent, url: string) => {
+    // Re-validate here: the renderer gate alone is not trusted.
+    if (typeof url !== "string" || !isHostable(url))
+      throw new Error("preview-host: only local http(s) URLs can be hosted")
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) throw new Error("preview-host: window not found")
+    return attachView(win, url)
+  })
+  ipcMain.handle("preview-host:set-bounds", (event: IpcMainInvokeEvent, input: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
+    const rect = parsePreviewRect(input, event.sender.getZoomFactor())
+    if (!rect) return
+    setViewBounds(win, rect)
+  })
+  ipcMain.handle("preview-host:detach", (event: IpcMainInvokeEvent) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
+    detachView(win)
+  })
+  ipcMain.handle("preview-host:capture", (event: IpcMainInvokeEvent) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return undefined
+    return captureView(win)
+  })
+  ipcMain.handle("preview-host:inspect", (event: IpcMainInvokeEvent, input: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return null
+    // A rect that is present but malformed inspects nothing rather than the
+    // viewport center.
+    const rect = input === undefined ? undefined : parsePreviewRect(input, event.sender.getZoomFactor())
+    if (input !== undefined && !rect) return null
+    return inspectView(win, rect)
   })
   ipcMain.handle("set-force-focus", (event: IpcMainInvokeEvent, enabled: boolean) =>
     setForceFocus(event.sender, enabled),

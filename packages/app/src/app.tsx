@@ -280,6 +280,19 @@ declare global {
       capturePage?: (rect?: { x: number; y: number; width: number; height: number }) => Promise<string | undefined>
       storeGet?: (name: string, key: string) => Promise<string | null>
       storeSet?: (name: string, key: string, value: string) => Promise<void>
+      previewHost?: {
+        attach: (url: string) => Promise<void>
+        setBounds: (rect: { x: number; y: number; width: number; height: number }) => Promise<void>
+        detach: () => Promise<void>
+        capture: () => Promise<string | undefined>
+        inspect: (rect?: { x: number; y: number; width: number; height: number }) => Promise<{
+          tag: string
+          id?: string
+          classes?: string
+          text?: string
+          rect: { x: number; y: number; width: number; height: number }
+        } | null>
+      }
     }
   }
 }

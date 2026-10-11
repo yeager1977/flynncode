@@ -1958,6 +1958,7 @@ export type Config = {
   preview?: {
     servers?: Array<unknown>
     autoVerify?: boolean
+    nativeHost?: boolean
   }
   routines?: {
     [key: string]: unknown
