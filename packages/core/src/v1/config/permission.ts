@@ -43,6 +43,7 @@ const InputObject = Schema.StructWithRest(
     lsp: Schema.optional(Rule),
     doom_loop: Schema.optional(Action),
     skill: Schema.optional(Rule),
+    memory: Schema.optional(Rule),
     // Session policy keys, not tool rules: stripPolicyKeys removes them before building rulesets.
     sandbox: Schema.optional(SandboxMode),
     approval: Schema.optional(ApprovalMode),
