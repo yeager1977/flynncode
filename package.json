@@ -143,8 +143,11 @@
     "@opentui/core": "catalog:",
     "@opentui/keymap": "catalog:",
     "@opentui/solid": "catalog:",
+    "@standard-community/standard-openapi": "0.2.9",
     "@types/bun": "catalog:",
     "@types/node": "catalog:",
+    "gcp-metadata": "8.1.2",
+    "pacote": "21.5.0",
     "open": "11.0.4"
   },
   "patchedDependencies": {
