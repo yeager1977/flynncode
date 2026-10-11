@@ -87,6 +87,11 @@ IMPORTANT:
 
 const STRUCTURED_OUTPUT_SYSTEM_PROMPT = `IMPORTANT: The user has requested structured output. You MUST use the StructuredOutput tool to provide your final response. Do NOT respond with plain text - you MUST call the StructuredOutput tool with your answer formatted according to the schema.`
 
+// Continuation persisted between structured-output retries: the previous turn
+// finished without calling the StructuredOutput tool, so the drain re-prompts
+// once per granted retry instead of failing immediately.
+const STRUCTURED_OUTPUT_RETRY_PROMPT = `Your previous response finished without calling the StructuredOutput tool, so the required structured output is missing. ${STRUCTURED_OUTPUT_SYSTEM_PROMPT}`
+
 function mcpResourceBase64Size(value: string) {
   const trimmed = value.replace(/\s/g, "")
   const padding = trimmed.endsWith("==") ? 2 : trimmed.endsWith("=") ? 1 : 0
@@ -1208,6 +1213,10 @@ const layer = Layer.effect(
       const ctx = yield* InstanceState.context
       let structured: unknown
       let step = 0
+      // Remaining structured-output re-prompts for the user message being
+      // finished. Keyed by user ID because a steer can move the drain onto a
+      // different prompt mid-finish, which restarts the budget.
+      let structuredRetries: { user: string; remaining: number } | undefined
       const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
       // The newer-user message this drain last observed, carried across loop
       // iterations so the post-loop re-check can compare against the right turn.
@@ -1442,9 +1451,49 @@ const layer = Layer.effect(
                 return "break" as const
               }
               if (format.type === "json_schema") {
+                const remaining =
+                  structuredRetries && structuredRetries.user === lastUser.id
+                    ? structuredRetries.remaining
+                    : (format.retryCount ?? 2)
+                // Message republish encodes Format as a schema class, but a DB
+                // roundtrip returns plain objects: re-decode before forwarding
+                // the format on the retry prompt.
+                const retryFormat = Option.getOrUndefined(
+                  Schema.decodeUnknownOption(SessionV1.Format)(lastUser.format),
+                )
+                if (remaining > 0 && retryFormat) {
+                  // Persist a synthetic continuation user message carrying the
+                  // original prompt's format metadata so the next provider turn
+                  // re-prompts for the StructuredOutput tool. The remaining
+                  // budget follows the continuation message, so each miss in
+                  // this chain consumes one retry; a different user message
+                  // (steer, compaction) starts a fresh budget bounded by
+                  // OutputFormatJsonSchema.retryCount (schema default: 2).
+                  const retry = yield* sessions.updateMessage({
+                    id: MessageID.ascending(),
+                    role: "user",
+                    sessionID,
+                    time: { created: Date.now() },
+                    agent: lastUser.agent,
+                    model: lastUser.model,
+                    format: retryFormat,
+                    tools: lastUser.tools,
+                    system: lastUser.system,
+                  })
+                  structuredRetries = { user: retry.id, remaining: remaining - 1 }
+                  yield* sessions.updatePart({
+                    id: PartID.ascending(),
+                    messageID: retry.id,
+                    sessionID,
+                    type: "text",
+                    synthetic: true,
+                    text: STRUCTURED_OUTPUT_RETRY_PROMPT,
+                  })
+                  return "continue" as const
+                }
                 handle.message.error = new SessionV1.StructuredOutputError({
                   message: "Model did not produce structured output",
-                  retries: 0,
+                  retries: remaining,
                 }).toObject()
                 yield* sessions.updateMessage(handle.message)
                 return "break" as const
