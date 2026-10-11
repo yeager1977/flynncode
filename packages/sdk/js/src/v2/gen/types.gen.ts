@@ -2365,6 +2365,18 @@ export type Config = {
   }
 }
 
+export type RoutineRun = {
+  routineId: string
+  sessionID?: string
+  agent: string
+  startedAt: string
+  endedAt: string
+  state: "ok" | "error"
+  error?: string
+}
+
+export type RoutineRunHistory = Array<RoutineRun>
+
 export type Model = {
   id: string
   providerID: string
@@ -7771,6 +7783,33 @@ export type GlobalConfigUpdateResponses = {
 }
 
 export type GlobalConfigUpdateResponse = GlobalConfigUpdateResponses[keyof GlobalConfigUpdateResponses]
+
+export type GlobalRoutinesRunsData = {
+  body?: never
+  path?: never
+  query?: {
+    routineId?: string
+  }
+  url: "/global/routines/runs"
+}
+
+export type GlobalRoutinesRunsErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type GlobalRoutinesRunsError = GlobalRoutinesRunsErrors[keyof GlobalRoutinesRunsErrors]
+
+export type GlobalRoutinesRunsResponses = {
+  /**
+   * Routine run history
+   */
+  200: RoutineRunHistory
+}
+
+export type GlobalRoutinesRunsResponse = GlobalRoutinesRunsResponses[keyof GlobalRoutinesRunsResponses]
 
 export type GlobalDisposeData = {
   body?: never

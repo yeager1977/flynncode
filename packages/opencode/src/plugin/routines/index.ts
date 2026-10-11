@@ -141,6 +141,14 @@ export function parseRunRecords(text: string): RoutineRun[] {
     .slice(-MAX_RUNS)
 }
 
+// History readers skip the flock: the writer serializes its own
+// read-append-rewrite, so readers just need a consistent snapshot.
+export async function readRoutineRuns(file: string = RUNS_FILE) {
+  const runs = Bun.file(file)
+  if (!(await runs.exists())) return []
+  return parseRunRecords(await runs.text())
+}
+
 export async function recordRoutineRun(record: RoutineRun, file: string = RUNS_FILE) {
   // Serialize read-append-rewrite across concurrent runs (Promise.allSettled
   // scheduler) so parallel records cannot drop each other's writes.

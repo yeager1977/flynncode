@@ -94,6 +94,8 @@ import type {
   GlobalEventResponses,
   GlobalHealthErrors,
   GlobalHealthResponses,
+  GlobalRoutinesRunsErrors,
+  GlobalRoutinesRunsResponses,
   GlobalUpgradeErrors,
   GlobalUpgradeResponses,
   HooksHashInput,
@@ -1382,6 +1384,25 @@ export class Global extends HeyApiClient {
     return (options?.client ?? this.client).sse.get<GlobalEventResponses, GlobalEventErrors, ThrowOnError>({
       url: "/global/event",
       ...options,
+    })
+  }
+
+  /**
+   * Get routine run history
+   *
+   * Retrieve the recent run history for routines, optionally filtered by routine ID.
+   */
+  public routinesRuns<ThrowOnError extends boolean = false>(
+    parameters?: {
+      routineId?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "routineId" }] }])
+    return (options?.client ?? this.client).get<GlobalRoutinesRunsResponses, GlobalRoutinesRunsErrors, ThrowOnError>({
+      url: "/global/routines/runs",
+      ...options,
+      ...params,
     })
   }
 
