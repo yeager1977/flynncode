@@ -24,8 +24,10 @@ export interface ExecuteRequest {
   readonly args?: ComputerUseV1.Args
 }
 
-// No desktop client answered, so the action was requested but never performed;
-// callers must treat the action as never having happened.
+// The executor service itself is not part of this process's graph (no desktop
+// bridge is installed), so nothing was ever requested and nothing performed.
+// Tool call sites probe availability with Effect.serviceOption and raise this
+// before asking the user for approval.
 export class ComputerUseExecutorUnavailableError extends Schema.TaggedErrorClass<ComputerUseExecutorUnavailableError>()(
   "ComputerUseExecutorUnavailableError",
   { appID: Schema.String, action: Schema.String },
@@ -35,9 +37,22 @@ export class ComputerUseExecutorUnavailableError extends Schema.TaggedErrorClass
   }
 }
 
+// The request went out to desktop clients but no receipt came back, so the
+// outcome is genuinely unknown: a desktop may be actuating right now. Callers
+// must not claim either direction; the honest recovery is to re-verify on
+// screen (e.g. request a screenshot) or ask the user.
+export class ComputerUseOutcomeUnconfirmedError extends Schema.TaggedErrorClass<ComputerUseOutcomeUnconfirmedError>()(
+  "ComputerUseOutcomeUnconfirmedError",
+  { requestID: Schema.String, appID: Schema.String, action: Schema.String },
+) {
+  override get message() {
+    return `The ${this.action} request for ${this.appID} expired without an executor receipt; it may or may not have been performed. Do not assume either way; re-verify on screen (for example request a screenshot), ask the user, and continue another way.`
+  }
+}
+
 interface PendingEntry {
   request: ComputerUseV1.Request
-  deferred: Deferred.Deferred<ComputerUseV1.Result, ComputerUseExecutorUnavailableError>
+  deferred: Deferred.Deferred<ComputerUseV1.Result, ComputerUseOutcomeUnconfirmedError>
 }
 
 interface State {
@@ -45,7 +60,10 @@ interface State {
 }
 
 export interface Interface {
-  readonly execute: (request: ExecuteRequest) => Effect.Effect<Result, ComputerUseExecutorUnavailableError>
+  readonly execute: (request: ExecuteRequest) => Effect.Effect<
+    Result,
+    ComputerUseExecutorUnavailableError | ComputerUseOutcomeUnconfirmedError
+  >
   readonly reply: (requestID: string, result: Result | { error: string }) => Effect.Effect<void>
   readonly list: () => Effect.Effect<ReadonlyArray<ComputerUseV1.Request>>
 }
@@ -53,7 +71,7 @@ export interface Interface {
 export class Service extends Context.Service<Service, Interface>()("@opencode/ComputerUseExecutor") {}
 
 // Short gate: the renderer listener is expected to answer within this window;
-// otherwise the action is reported as never having happened.
+// otherwise the action is reported as unconfirmed, not as never happened.
 export const BRIDGE_TIMEOUT = Duration.seconds(10)
 
 const normalize = (result: Result | { error: string }): Result =>
@@ -67,16 +85,22 @@ const layer = Layer.effect(
       Effect.fn("ComputerUseExecutor.state")(function* () {
         const state = {
           pending: new Map<string, PendingEntry>(),
+          id: Math.random().toString(36).slice(2, 8),
         }
 
         yield* Effect.addFinalizer(() =>
           Effect.gen(function* () {
-            // The instance is gone, so nothing can execute the pending actions
-            // anymore; the callers learn the executor became unavailable.
+            // The instance is gone while requests were still pending; they were
+            // published, so a desktop may have started actuating. The honest
+            // outcome is "unconfirmed", not "never performed".
             for (const item of state.pending.values()) {
               yield* Deferred.fail(
                 item.deferred,
-                new ComputerUseExecutorUnavailableError({ appID: item.request.appID, action: item.request.action }),
+                new ComputerUseOutcomeUnconfirmedError({
+                  requestID: item.request.requestID,
+                  appID: item.request.appID,
+                  action: item.request.action,
+                }),
               )
             }
             state.pending.clear()
@@ -88,9 +112,8 @@ const layer = Layer.effect(
     )
 
     const execute = Effect.fn("ComputerUseExecutor.execute")(function* (request: ExecuteRequest) {
-      const pending = (yield* InstanceState.get(state)).pending
       const requestID = ComputerUseV1.ID.ascending()
-      const deferred = yield* Deferred.make<ComputerUseV1.Result, ComputerUseExecutorUnavailableError>()
+      const deferred = yield* Deferred.make<ComputerUseV1.Result, ComputerUseOutcomeUnconfirmedError>()
       const info: ComputerUseV1.Request = {
         requestID,
         sessionID: request.sessionID,
@@ -99,15 +122,32 @@ const layer = Layer.effect(
         ...(request.args ? { args: request.args } : {}),
         time: Date.now(),
       }
-      pending.set(requestID, { request: info, deferred })
-      yield* Effect.logInfo("computer-use requested", { requestID, action: request.action, appID: request.appID })
-      yield* events.publish(Event.Requested, info)
-
-      return yield* Deferred.await(deferred).pipe(
-        Effect.ensuring(Effect.sync(() => pending.delete(requestID))),
+      // Insert, publish, and await all live inside one cleanup-covered,
+      // deadline-bounded region: publication blocks on every listener, and
+      // cancelling a fiber parked on a blocked publish must still remove the
+      // pending entry (the review's own probe showed it leaking otherwise).
+      const requestLifetime = Effect.gen(function* () {
+        const pending = (yield* InstanceState.get(state)).pending
+        pending.set(requestID, { request: info, deferred })
+        yield* Effect.logInfo("computer-use requested", { requestID, action: request.action, appID: request.appID })
+        yield* events.publish(Event.Requested, info)
+        return yield* Deferred.await(deferred)
+      })
+      return yield* requestLifetime.pipe(
+        Effect.ensuring(
+          InstanceState.get(state).pipe(
+            Effect.flatMap((s) => Effect.sync(() => s.pending.delete(requestID))),
+          ),
+        ),
         Effect.timeout(BRIDGE_TIMEOUT),
         Effect.catchTag("TimeoutError", () =>
-          Effect.fail(new ComputerUseExecutorUnavailableError({ appID: request.appID, action: request.action })),
+          Effect.fail(
+            new ComputerUseOutcomeUnconfirmedError({
+              requestID,
+              appID: request.appID,
+              action: request.action,
+            }),
+          ),
         ),
       )
     })

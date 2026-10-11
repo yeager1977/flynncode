@@ -1,14 +1,14 @@
 import { afterEach, expect } from "bun:test"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { Cause, Effect, Exit, Fiber, Layer, Queue, Schema } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Queue, Schema } from "effect"
 import * as TestClock from "effect/testing/TestClock"
 import { ComputerUseV1 } from "@opencode-ai/schema/computer-use-v1"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { ComputerUseExecutor } from "../../src/computer-use"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { SessionID } from "../../src/session/schema"
-import { disposeAllInstances, provideTmpdirInstance } from "../fixture/fixture"
-import { awaitWithTimeout, testEffect } from "../lib/effect"
+import { disposeAllInstances, disposeAllInstancesEffect, provideTmpdirInstance } from "../fixture/fixture"
+import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
 
 const computerUseLayer = LayerNode.compile(
   LayerNode.group([ComputerUseExecutor.node, EventV2Bridge.node, CrossSpawnSpawner.node]),
@@ -64,7 +64,7 @@ it.effect(
 )
 
 it.effect(
-  "times out to ComputerUseExecutorUnavailableError when no client answers",
+  "times out to an unconfirmed outcome when no client answers",
   () =>
     provideTmpdirInstance(() =>
       Effect.gen(function* () {
@@ -81,10 +81,99 @@ it.effect(
         const exit = yield* Fiber.await(fiber)
         expect(Exit.isFailure(exit)).toBe(true)
         if (Exit.isFailure(exit)) {
-          expect(Cause.squash(exit.cause)).toBeInstanceOf(ComputerUseExecutor.ComputerUseExecutorUnavailableError)
+          // A deadline hit with no receipt is an UNKNOWN outcome, not a proof
+          // of non-execution: the broadcast was already delivered to desktops
+          // that may have started actuating before the reply was lost.
+          expect(Cause.squash(exit.cause)).toBeInstanceOf(
+            ComputerUseExecutor.ComputerUseOutcomeUnconfirmedError,
+          )
         }
-        // A timed-out request must be treated as never having happened.
+        // A timed-out request is off the books either way.
         expect(yield* executor.list()).toEqual([])
+      }),
+    ),
+)
+
+it.effect(
+  "instance disposal resolves pending requests as unconfirmed",
+  () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const executor = yield* ComputerUseExecutor.Service
+        const queue = yield* requested
+
+        const fiber = yield* executor.execute(screenshotRequest).pipe(Effect.forkScoped)
+        yield* awaitWithTimeout(Queue.take(queue), "computer-use request was never published")
+
+        yield* disposeAllInstancesEffect
+
+        const exit = yield* Fiber.await(fiber)
+        expect(Exit.isFailure(exit)).toBe(true)
+        if (Exit.isFailure(exit)) {
+          // The request was published before the instance went away, so the
+          // outcome may have been performed; only a request that never went
+          // out can honestly be "not performed".
+          expect(Cause.squash(exit.cause)).toBeInstanceOf(
+            ComputerUseExecutor.ComputerUseOutcomeUnconfirmedError,
+          )
+        }
+        expect(yield* executor.list()).toEqual([])
+      }),
+    ),
+)
+
+it.effect(
+  "cancelling execute while publication is in flight does not leak the pending entry",
+  () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const executor = yield* ComputerUseExecutor.Service
+        const events = yield* EventV2Bridge.Service
+        const queue = yield* requested
+        // A listener that never finishes replying keeps publication in flight;
+        // the old code deleted the pending entry only after publication, so a
+        // fiber cancelled in this window leaked the entry permanently.
+        const gate = yield* Deferred.make<void>()
+        const off = yield* events.listen(() => Deferred.await(gate))
+        yield* Effect.addFinalizer(() => off)
+
+        const fiber = yield* executor.execute(screenshotRequest).pipe(Effect.forkScoped)
+        // The queue listener runs before the gate listener, so this resolves
+        // while publication is still delivering (blocked on the gate).
+        yield* awaitWithTimeout(Queue.take(queue), "computer-use request was never published")
+
+        yield* Fiber.interrupt(fiber)
+        expect(yield* executor.list()).toEqual([])
+        yield* Deferred.succeed(gate, undefined)
+      }),
+    ),
+)
+
+it.effect(
+  "the deadline bounds blocked publication too",
+  () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const executor = yield* ComputerUseExecutor.Service
+        const events = yield* EventV2Bridge.Service
+        const queue = yield* requested
+        const gate = yield* Deferred.make<void>()
+        const off = yield* events.listen(() => Deferred.await(gate))
+        yield* Effect.addFinalizer(() => off)
+
+        const fiber = yield* executor.execute(screenshotRequest).pipe(Effect.forkScoped)
+        yield* awaitWithTimeout(Queue.take(queue), "computer-use request was never published")
+        yield* TestClock.adjust(ComputerUseExecutor.BRIDGE_TIMEOUT)
+
+        const exit = yield* Fiber.await(fiber)
+        expect(Exit.isFailure(exit)).toBe(true)
+        if (Exit.isFailure(exit)) {
+          expect(Cause.squash(exit.cause)).toBeInstanceOf(
+            ComputerUseExecutor.ComputerUseOutcomeUnconfirmedError,
+          )
+        }
+        expect(yield* executor.list()).toEqual([])
+        yield* Deferred.succeed(gate, undefined)
       }),
     ),
 )
