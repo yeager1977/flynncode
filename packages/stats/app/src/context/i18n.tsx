@@ -1,4 +1,4 @@
-import { createSimpleContext } from "@opencode-ai/ui/context"
+import { createSimpleContext } from "@flynncode/ui/context"
 import { translate, type Key } from "../i18n"
 import { useLanguage } from "./language"
 

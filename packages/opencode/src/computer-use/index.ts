@@ -1,5 +1,5 @@
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { ComputerUseV1 } from "@opencode-ai/schema/computer-use-v1"
+import { LayerNode } from "@flynncode/core/effect/layer-node"
+import { ComputerUseV1 } from "@flynncode/schema/computer-use-v1"
 import { Context, Deferred, Duration, Effect, Layer, Schema } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { EventV2Bridge } from "@/event-v2-bridge"

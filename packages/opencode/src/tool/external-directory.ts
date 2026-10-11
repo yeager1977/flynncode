@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import { SessionWorkspace } from "@/session/workspace"
 import type { Tool } from "./tool"
 import { containsPath } from "../project/instance-context"
-import { FSUtil } from "@opencode-ai/core/fs-util"
+import { FSUtil } from "@flynncode/core/fs-util"
 
 type Kind = "file" | "directory"
 

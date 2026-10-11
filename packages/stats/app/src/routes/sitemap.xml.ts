@@ -1,5 +1,5 @@
-import { getStatsHomeData } from "@opencode-ai/stats-core/domain/home"
-import { runtime } from "@opencode-ai/stats-core/runtime"
+import { getStatsHomeData } from "@flynncode/stats-core/domain/home"
+import { runtime } from "@flynncode/stats-core/runtime"
 import {
   canonicalFamilyComparisonPath,
   canonicalModelComparisonPath,

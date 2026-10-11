@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import path from "path"
 import { ConfigProvider, Effect, Layer } from "effect"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
+import { AppNodeBuilder } from "@flynncode/core/effect/app-node-builder"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
 import { it } from "../lib/effect"
 
@@ -404,7 +404,7 @@ async function probeBypass(script: string, env: Record<string, string> = {}) {
       "-e",
       [
         'import { Effect } from "effect"',
-        'import { LayerNode } from "@opencode-ai/core/effect/layer-node"',
+        'import { LayerNode } from "@flynncode/core/effect/layer-node"',
         'import { RuntimeFlags } from "@/effect/runtime-flags"',
         script,
         "const flags = await Effect.runPromise(Effect.gen(function* () { return yield* RuntimeFlags.Service }).pipe(Effect.provide(LayerNode.compile(RuntimeFlags.node))))",

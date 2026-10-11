@@ -1,9 +1,9 @@
 import { createSignal, For, Show } from "solid-js"
-import { getFilename } from "@opencode-ai/core/util/path"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { DialogBody, DialogFooter, DialogHeader, DialogTitleGroup, DialogV2 } from "@opencode-ai/ui/v2/dialog-v2"
-import { RadioGroupV2, RadioItemV2 } from "@opencode-ai/ui/v2/radio-v2"
+import { getFilename } from "@flynncode/core/util/path"
+import { useDialog } from "@flynncode/ui/context/dialog"
+import { ButtonV2 } from "@flynncode/ui/v2/button-v2"
+import { DialogBody, DialogFooter, DialogHeader, DialogTitleGroup, DialogV2 } from "@flynncode/ui/v2/dialog-v2"
+import { RadioGroupV2, RadioItemV2 } from "@flynncode/ui/v2/radio-v2"
 import { useLanguage } from "@/context/language"
 
 // Confirms a worktree handoff before anything moves or is archived, naming the

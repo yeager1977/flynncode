@@ -1,4 +1,4 @@
-import type { Config } from "@opencode-ai/sdk/v2/client"
+import type { Config } from "@flynncode/sdk/v2/client"
 
 // Mirror of ConfigMemoryV1.defaults (packages/core/src/v1/config/memory.ts):
 // the server decodes unset fields to these values, so the UI shows — and a

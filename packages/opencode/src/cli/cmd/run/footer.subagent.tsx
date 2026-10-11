@@ -1,10 +1,10 @@
 /** @jsxImportSource @opentui/solid */
 import type { ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
 import { useKeyboard } from "@opentui/solid"
-import { OPENCODE_BASE_MODE, useBindings } from "@opencode-ai/tui/keymap"
-import { registerOpencodeSpinner } from "@opencode-ai/tui/component/register-spinner"
+import { OPENCODE_BASE_MODE, useBindings } from "@flynncode/tui/keymap"
+import { registerOpencodeSpinner } from "@flynncode/tui/component/register-spinner"
 import { Show, createMemo, indexArray } from "solid-js"
-import { SPINNER_FRAMES } from "@opencode-ai/tui/component/spinner"
+import { SPINNER_FRAMES } from "@flynncode/tui/component/spinner"
 import { RunEntryContent, separatorRows } from "./scrollback.writer"
 import type { FooterSubagentDetail, FooterSubagentTab, RunDiffStyle, RunTuiConfig } from "./types"
 import type { RunFooterTheme, RunTheme } from "./theme"

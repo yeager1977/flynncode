@@ -1,6 +1,6 @@
 import { expect } from "bun:test"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { PROMPT_KNOWLEDGE } from "@opencode-ai/core/plugin/agent"
+import { LayerNode } from "@flynncode/core/effect/layer-node"
+import { PROMPT_KNOWLEDGE } from "@flynncode/core/plugin/agent"
 import { Effect, Layer } from "effect"
 import { testEffect } from "../lib/effect"
 import { Agent } from "../../src/agent/agent"

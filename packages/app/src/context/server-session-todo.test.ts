@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
-import type { Session, Todo } from "@opencode-ai/sdk/v2/client"
-import { OpencodeClient } from "@opencode-ai/sdk/v2/client"
+import type { Session, Todo } from "@flynncode/sdk/v2/client"
+import { OpencodeClient } from "@flynncode/sdk/v2/client"
 import { createServerSession } from "./server-session"
 
 const todo = (content: string): Todo => ({ content, status: "pending", priority: "low" })

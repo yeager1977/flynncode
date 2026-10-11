@@ -1,6 +1,6 @@
 export * as ConfigPreview from "./preview"
 
-import type { ConfigV1 } from "@opencode-ai/core/v1/config/config"
+import type { ConfigV1 } from "@flynncode/core/v1/config/config"
 
 const PREFIX = "[preview]"
 

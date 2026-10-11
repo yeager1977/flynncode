@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
-import { parseClaudeCode } from "@opencode-ai/core/session/import-source/claude-code"
-import { parseCodex } from "@opencode-ai/core/session/import-source/codex"
+import { parseClaudeCode } from "@flynncode/core/session/import-source/claude-code"
+import { parseCodex } from "@flynncode/core/session/import-source/codex"
 
 const line = (value: unknown) => JSON.stringify(value)
 

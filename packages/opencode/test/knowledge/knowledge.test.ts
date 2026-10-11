@@ -1,7 +1,7 @@
 import { describe, expect } from "bun:test"
 import { Effect, FileSystem } from "effect"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { LayerNodePlatform } from "@opencode-ai/core/effect/app-node-platform"
+import { LayerNode } from "@flynncode/core/effect/layer-node"
+import { LayerNodePlatform } from "@flynncode/core/effect/app-node-platform"
 import { Knowledge } from "../../src/knowledge/knowledge"
 import { testEffect } from "../lib/effect"
 

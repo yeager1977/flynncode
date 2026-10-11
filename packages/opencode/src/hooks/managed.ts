@@ -1,9 +1,9 @@
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { Context, Effect, Layer, Option, Schema } from "effect"
 import path from "path"
 import { parse as parseJsonc } from "jsonc-parser"
 import { ConfigManaged } from "@/config/managed"
-import { ConfigHooksV1 } from "@opencode-ai/core/v1/config/hooks"
+import { ConfigHooksV1 } from "@flynncode/core/v1/config/hooks"
 import { HooksTrust } from "@/hooks/trust"
 import { isRecord } from "@/util/record"
 

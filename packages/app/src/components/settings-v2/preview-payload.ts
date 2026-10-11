@@ -1,4 +1,4 @@
-import type { Config } from "@opencode-ai/sdk/v2/client"
+import type { Config } from "@flynncode/sdk/v2/client"
 
 // Raw preview server entry as written in opencode.json (tolerant tunnel).
 export type PreviewRawServer = {

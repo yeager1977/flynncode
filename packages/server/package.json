@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@opencode-ai/server",
+  "name": "@flynncode/server",
   "version": "1.18.34",
   "private": true,
   "type": "module",
@@ -13,8 +13,8 @@
     "test": "bun test --timeout 30000 --only-failures"
   },
   "dependencies": {
-    "@opencode-ai/core": "workspace:*",
-    "@opencode-ai/protocol": "workspace:*",
+    "@flynncode/core": "workspace:*",
+    "@flynncode/protocol": "workspace:*",
     "drizzle-orm": "catalog:",
     "effect": "catalog:"
   },

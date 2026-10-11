@@ -8,11 +8,11 @@ import {
   type DragEvent,
 } from "@thisbeyond/solid-dnd"
 import { ConstrainDragXAxis } from "@/utils/solid-dnd"
-import { IconButton } from "@opencode-ai/ui/icon-button"
-import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
-import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
-import { Icon } from "@opencode-ai/ui/v2/icon"
-import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
+import { IconButton } from "@flynncode/ui/icon-button"
+import { Tooltip, TooltipKeybind } from "@flynncode/ui/tooltip"
+import { IconButtonV2 } from "@flynncode/ui/v2/icon-button-v2"
+import { Icon } from "@flynncode/ui/v2/icon"
+import { TooltipV2 } from "@flynncode/ui/v2/tooltip-v2"
 import { type LocalProject } from "@/context/layout"
 
 export type SidebarFooter = {

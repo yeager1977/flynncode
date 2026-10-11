@@ -1,4 +1,4 @@
-import type { Hooks, PluginInput, PluginOptions } from "@opencode-ai/plugin"
+import type { Hooks, PluginInput, PluginOptions } from "@flynncode/plugin"
 import { assignAgents, resolveTaskModel } from "./assign"
 import { ROUTER_MODEL_ID, ROUTER_PROVIDER_ID, type CatalogLike } from "./candidates"
 import { MODEL_FAMILIES, type ModelFamily } from "./provider-family"

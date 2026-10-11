@@ -1,6 +1,6 @@
-import type { Session } from "@opencode-ai/sdk/v2/client"
-import { preloadMarkdown } from "@opencode-ai/session-ui/markdown-cache"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
+import type { Session } from "@flynncode/sdk/v2/client"
+import { preloadMarkdown } from "@flynncode/session-ui/markdown-cache"
+import { useDialog } from "@flynncode/ui/context/dialog"
 import { useQuery } from "@tanstack/solid-query"
 import { DateTime } from "luxon"
 import { useParams } from "@solidjs/router"
@@ -31,7 +31,7 @@ import { filterSessionsByKind, type SessionKindFilter } from "./home-kind-filter
 import { useSessionTabAvatarState } from "@/pages/layout/project-avatar-state"
 import { pathKey } from "@/utils/path-key"
 import { showToast } from "@/utils/toast"
-import { Binary } from "@opencode-ai/core/util/binary"
+import { Binary } from "@flynncode/core/util/binary"
 import { archiveHomeSession } from "../home-session-archive"
 import {
   cleanupCandidates,

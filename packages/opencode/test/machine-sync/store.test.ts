@@ -1,17 +1,17 @@
 import { describe, expect } from "bun:test"
 import { eq } from "drizzle-orm"
 import { DateTime, Effect, Layer, Schema } from "effect"
-import { Database } from "@opencode-ai/core/database/database"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { EventSequenceTable } from "@opencode-ai/core/event/sql"
-import { ModelV2 } from "@opencode-ai/core/model"
-import { ProjectV2 } from "@opencode-ai/core/project"
-import { ProjectTable } from "@opencode-ai/core/project/sql"
-import { ProviderV2 } from "@opencode-ai/core/provider"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { SessionExecution } from "@opencode-ai/core/session/execution"
-import { SessionMessage } from "@opencode-ai/core/session/message"
+import { Database } from "@flynncode/core/database/database"
+import { AppNodeBuilder } from "@flynncode/core/effect/app-node-builder"
+import { LayerNode } from "@flynncode/core/effect/layer-node"
+import { EventSequenceTable } from "@flynncode/core/event/sql"
+import { ModelV2 } from "@flynncode/core/model"
+import { ProjectV2 } from "@flynncode/core/project"
+import { ProjectTable } from "@flynncode/core/project/sql"
+import { ProviderV2 } from "@flynncode/core/provider"
+import { AbsolutePath } from "@flynncode/core/schema"
+import { SessionExecution } from "@flynncode/core/session/execution"
+import { SessionMessage } from "@flynncode/core/session/message"
 import {
   MessageTable,
   PartTable,
@@ -19,7 +19,7 @@ import {
   SessionMessageTable,
   SessionTable,
   SessionTombstoneTable,
-} from "@opencode-ai/core/session/sql"
+} from "@flynncode/core/session/sql"
 import { tmpdir } from "node:os"
 import { GlobalBus } from "@/bus/global"
 import { MachineSyncStore } from "@/machine-sync/store"

@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { FSUtil } from "@opencode-ai/core/fs-util"
+import { FSUtil } from "@flynncode/core/fs-util"
 import { Session } from "@/session/session"
 
 // Canonicalize a worktree directory for comparison: resolve symlinks like

@@ -1,6 +1,6 @@
 import { useParams, useSearchParams } from "@solidjs/router"
 import { createStore } from "solid-js/store"
-import { base64Encode } from "@opencode-ai/core/util/encode"
+import { base64Encode } from "@flynncode/core/util/encode"
 import { useSDK } from "@/context/sdk"
 import { Persist, persisted } from "@/utils/persist"
 import { isContributorAcked, markContributorAcked } from "./contributor-models"

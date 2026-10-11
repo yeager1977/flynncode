@@ -127,7 +127,7 @@ beforeAll(async () => {
     useSearchParams: () => [search, () => undefined],
   }))
 
-  mock.module("@opencode-ai/sdk/v2/client", () => ({
+  mock.module("@flynncode/sdk/v2/client", () => ({
     createOpencodeClient: (input: { directory: string }) => {
       createdClients.push(input.directory)
       return clientFor(input.directory)
@@ -138,12 +138,12 @@ beforeAll(async () => {
     showToast: () => 0,
   }))
 
-  mock.module("@opencode-ai/core/util/encode", () => ({
+  mock.module("@flynncode/core/util/encode", () => ({
     base64Encode: (value: string) => value,
     checksum: (value: string) => value,
   }))
 
-  mock.module("@opencode-ai/ui/context/dialog", () => ({
+  mock.module("@flynncode/ui/context/dialog", () => ({
     useDialog: () => ({
       show: () => undefined,
     }),

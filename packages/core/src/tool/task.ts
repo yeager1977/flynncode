@@ -1,6 +1,6 @@
 export * as TaskTool from "./task"
 
-import { ToolFailure } from "@opencode-ai/llm"
+import { ToolFailure } from "@flynncode/llm"
 import { Effect, Layer } from "effect"
 import { AgentV2 } from "../agent"
 import { BackgroundJob } from "../background-job"

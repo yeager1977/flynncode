@@ -1,5 +1,5 @@
-import type { Hooks, PluginInput } from "@opencode-ai/plugin"
-import { OauthCallbackPage } from "@opencode-ai/core/oauth/page"
+import type { Hooks, PluginInput } from "@flynncode/plugin"
+import { OauthCallbackPage } from "@flynncode/core/oauth/page"
 import { OAUTH_DUMMY_KEY } from "../../auth"
 import { parseClaudeCredentials } from "../../auth/vendor-import"
 import os from "os"

@@ -1,5 +1,5 @@
-import { AppProcess } from "@opencode-ai/core/process"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { AppProcess } from "@flynncode/core/process"
+import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { Context, Effect, Layer, Schema } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 

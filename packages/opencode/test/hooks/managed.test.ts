@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { LayerNode } from "@flynncode/core/effect/layer-node"
 import os from "os"
 import path from "path"
 import { testEffect } from "../lib/effect"

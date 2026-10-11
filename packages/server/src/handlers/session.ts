@@ -1,14 +1,14 @@
-import { SessionV2 } from "@opencode-ai/core/session"
-import { SessionFolders } from "@opencode-ai/core/session/folders"
-import { SessionTable } from "@opencode-ai/core/session/sql"
-import { Database } from "@opencode-ai/core/database/database"
+import { SessionV2 } from "@flynncode/core/session"
+import { SessionFolders } from "@flynncode/core/session/folders"
+import { SessionTable } from "@flynncode/core/session/sql"
+import { Database } from "@flynncode/core/database/database"
 import { eq } from "drizzle-orm"
-import { FSUtil } from "@opencode-ai/core/fs-util"
-import { MaxExtras, normalizeFolders } from "@opencode-ai/core/project/folders"
+import { FSUtil } from "@flynncode/core/fs-util"
+import { MaxExtras, normalizeFolders } from "@flynncode/core/project/folders"
 import { DateTime, Effect, Option, Stream } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
-import { SessionsCursor } from "@opencode-ai/protocol/groups/session"
+import { SessionsCursor } from "@flynncode/protocol/groups/session"
 import {
   ConflictError,
   InvalidCursorError,
@@ -17,8 +17,8 @@ import {
   ServiceUnavailableError,
   SessionNotFoundError,
   UnknownError,
-} from "@opencode-ai/protocol/errors"
-import { AbsolutePath } from "@opencode-ai/core/schema"
+} from "@flynncode/protocol/errors"
+import { AbsolutePath } from "@flynncode/core/schema"
 
 const DefaultSessionsLimit = 50
 const DefaultSessionHistoryLimit = 50

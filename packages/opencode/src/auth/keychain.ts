@@ -1,4 +1,4 @@
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Auth } from "./index"
 import type { ImportedCredential, VendorID } from "./vendor-import"

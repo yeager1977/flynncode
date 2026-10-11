@@ -1,4 +1,4 @@
-# @opencode-ai/slack
+# @flynncode/slack
 
 Slack bot integration for opencode that creates threaded conversations.
 

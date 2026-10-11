@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
-import { ConfigHooksV1 } from "@opencode-ai/core/v1/config/hooks"
+import { ConfigHooksV1 } from "@flynncode/core/v1/config/hooks"
 import { HooksConfig } from "../../src/hooks/config"
 
 test("decodes PreToolUse Bash group", () => {

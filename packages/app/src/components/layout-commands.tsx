@@ -1,5 +1,5 @@
-import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme/context"
+import { useDialog } from "@flynncode/ui/context/dialog"
+import { useTheme, type ColorScheme } from "@flynncode/ui/theme/context"
 import { useCommand, type CommandOption } from "@/context/command"
 import { useLanguage, type Locale } from "@/context/language"
 import { showToast } from "@/utils/toast"

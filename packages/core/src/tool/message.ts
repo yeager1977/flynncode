@@ -1,6 +1,6 @@
 export * as MessageTool from "./message"
 
-import { ToolFailure } from "@opencode-ai/llm"
+import { ToolFailure } from "@flynncode/llm"
 import { Effect, Layer, Schema } from "effect"
 import { makeGlobalNode, makeLocationNode } from "../effect/app-node"
 import { PermissionV2 } from "../permission"

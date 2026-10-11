@@ -3,7 +3,7 @@ import path from "path"
 import fs from "fs/promises"
 import os from "os"
 import * as LSPServer from "@/lsp/server"
-import { ProjectV2 } from "@opencode-ai/core/project"
+import { ProjectV2 } from "@flynncode/core/project"
 import type { InstanceContext } from "@/project/instance-context"
 
 // ---------------------------------------------------------------------------

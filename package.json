@@ -111,9 +111,9 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.933.0",
-    "@opencode-ai/plugin": "workspace:*",
-    "@opencode-ai/script": "workspace:*",
-    "@opencode-ai/sdk": "workspace:*",
+    "@flynncode/plugin": "workspace:*",
+    "@flynncode/script": "workspace:*",
+    "@flynncode/sdk": "workspace:*",
     "heap-snapshot-toolkit": "1.1.3",
     "typescript": "catalog:"
   },
@@ -138,6 +138,8 @@
   ],
   "overrides": {
     "@ai-sdk/anthropic": "3.0.111",
+    "@opencode-ai/plugin": "workspace:packages/plugin",
+    "@opencode-ai/sdk": "workspace:packages/sdk/js",
     "@opentui/core": "catalog:",
     "@opentui/keymap": "catalog:",
     "@opentui/solid": "catalog:",

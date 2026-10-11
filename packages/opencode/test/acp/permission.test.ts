@@ -5,8 +5,8 @@ import type {
   RequestPermissionResponse,
   SessionUpdate,
 } from "@agentclientprotocol/sdk"
-import type { Event, OpencodeClient } from "@opencode-ai/sdk/v2"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import type { Event, OpencodeClient } from "@flynncode/sdk/v2"
+import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { createTwoFilesPatch } from "diff"
 import { Effect, ManagedRuntime } from "effect"
 import { mkdtemp, rm } from "node:fs/promises"

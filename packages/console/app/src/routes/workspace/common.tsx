@@ -1,11 +1,11 @@
-import { Resource } from "@opencode-ai/console-resource"
-import { Actor } from "@opencode-ai/console-core/actor.js"
+import { Resource } from "@flynncode/console-resource"
+import { Actor } from "@flynncode/console-core/actor.js"
 import { action, json, query } from "@solidjs/router"
 import { withActor } from "~/context/auth.withActor"
-import { Billing } from "@opencode-ai/console-core/billing.js"
-import { and, Database, desc, eq, isNull } from "@opencode-ai/console-core/drizzle/index.js"
-import { WorkspaceTable } from "@opencode-ai/console-core/schema/workspace.sql.js"
-import { UserTable } from "@opencode-ai/console-core/schema/user.sql.js"
+import { Billing } from "@flynncode/console-core/billing.js"
+import { and, Database, desc, eq, isNull } from "@flynncode/console-core/drizzle/index.js"
+import { WorkspaceTable } from "@flynncode/console-core/schema/workspace.sql.js"
+import { UserTable } from "@flynncode/console-core/schema/user.sql.js"
 import { checkCheckoutRateLimit } from "~/routes/zen/util/redis"
 
 export function formatDateForTable(date: Date) {

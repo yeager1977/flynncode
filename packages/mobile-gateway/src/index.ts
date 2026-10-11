@@ -1,4 +1,4 @@
-import type { Hooks, PluginInput, PluginOptions } from "@opencode-ai/plugin"
+import type { Hooks, PluginInput, PluginOptions } from "@flynncode/plugin"
 import { resolveOptions } from "./config.ts"
 import { startGateway } from "./gateway.ts"
 import { buildLauncherUrls, listLanIPv4 } from "./lan-ips.ts"

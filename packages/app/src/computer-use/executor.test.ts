@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
-import { ComputerUseV1 } from "@opencode-ai/schema/computer-use-v1"
+import { ComputerUseV1 } from "@flynncode/schema/computer-use-v1"
 import {
   createComputerUseExecutor,
   type ComputerUseActuation,

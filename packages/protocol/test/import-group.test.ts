@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import { Schema } from "effect"
 import { HttpApi, OpenApi } from "effect/unstable/httpapi"
-import { ImportedMessage, makeImportGroup } from "@opencode-ai/protocol/groups/import"
+import { ImportedMessage, makeImportGroup } from "@flynncode/protocol/groups/import"
 
 const decode = Schema.decodeUnknownSync(ImportedMessage)
 

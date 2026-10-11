@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
-import { AgentV2 } from "@opencode-ai/core/agent"
-import { bind, makeDispatch, renderOutput } from "@opencode-ai/core/tool/task"
-import { SessionV2 } from "@opencode-ai/core/session"
-import { SessionMessage } from "@opencode-ai/core/session/message"
+import { AgentV2 } from "@flynncode/core/agent"
+import { bind, makeDispatch, renderOutput } from "@flynncode/core/tool/task"
+import { SessionV2 } from "@flynncode/core/session"
+import { SessionMessage } from "@flynncode/core/session/message"
 
 const parent = SessionV2.ID.make("ses_parent")
 const child = SessionV2.ID.make("ses_child")

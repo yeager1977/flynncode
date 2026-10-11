@@ -12,21 +12,21 @@ import {
 import { getStore } from "./store"
 import { createCatalogFetcher } from "./plugin-catalog"
 
-// Shared type contracts live in @opencode-ai/app so the renderer and main
+// Shared type contracts live in @flynncode/app so the renderer and main
 // process import the exact same shapes (precedent: desktop-menu, wsl/types).
 import type {
   CatalogResult,
   PluginConfigsPayload,
   PluginEntry as PluginEntryContract,
   RecentlyRemoved,
-} from "@opencode-ai/app/components/settings-v2/plugins-types"
+} from "@flynncode/app/components/settings-v2/plugins-types"
 export type {
   CatalogEntry,
   CatalogResult,
   PluginConfigsPayload,
   PluginEntry,
   RecentlyRemoved,
-} from "@opencode-ai/app/components/settings-v2/plugins-types"
+} from "@flynncode/app/components/settings-v2/plugins-types"
 
 const PLUGIN_STORE = "plugin-manager"
 const RECENTLY_REMOVED_KEY = "recently-removed"

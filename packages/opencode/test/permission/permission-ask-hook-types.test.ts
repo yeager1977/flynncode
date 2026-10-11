@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
-import type { Hooks } from "@opencode-ai/plugin"
-import type { Permission } from "@opencode-ai/sdk"
+import type { Hooks } from "@flynncode/plugin"
+import type { Permission } from "@flynncode/sdk"
 
 // Type-level guard: a legacy hook explicitly annotated with the response
 // shaped Permission input must stay assignable to Hooks["permission.ask"].

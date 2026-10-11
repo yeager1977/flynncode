@@ -1,4 +1,4 @@
-import { ServerConnection, useServer, useSettings, useTabs } from "@opencode-ai/app"
+import { ServerConnection, useServer, useSettings, useTabs } from "@flynncode/app"
 import { onMount } from "solid-js"
 
 export function DesktopFirstLaunchOnboarding(props: { initialUrl: string }) {

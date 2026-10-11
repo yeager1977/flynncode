@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import path from "path"
 import { Effect, FileSystem } from "effect"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { LayerNodePlatform } from "@opencode-ai/core/effect/app-node-platform"
-import { FSUtil } from "@opencode-ai/core/fs-util"
-import { SessionKnowledge, buildKnowledgePrologue, parseKnowledgeTitle } from "@opencode-ai/core/session/knowledge"
+import { LayerNode } from "@flynncode/core/effect/layer-node"
+import { LayerNodePlatform } from "@flynncode/core/effect/app-node-platform"
+import { FSUtil } from "@flynncode/core/fs-util"
+import { SessionKnowledge, buildKnowledgePrologue, parseKnowledgeTitle } from "@flynncode/core/session/knowledge"
 import { testEffect } from "./lib/effect"
 
 describe("buildKnowledgePrologue", () => {

@@ -1,4 +1,4 @@
-import type { PreviewServer } from "@opencode-ai/sdk/v2/client"
+import type { PreviewServer } from "@flynncode/sdk/v2/client"
 
 // Error body of the server's declared PreviewError contract.
 type PreviewErrorBody = {

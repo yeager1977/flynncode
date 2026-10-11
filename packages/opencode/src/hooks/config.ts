@@ -1,4 +1,4 @@
-import { ConfigHooksV1 } from "@opencode-ai/core/v1/config/hooks"
+import { ConfigHooksV1 } from "@flynncode/core/v1/config/hooks"
 
 export function matchesMatcher(toolOrSource: string, matcher: string | undefined) {
   if (!matcher) return true

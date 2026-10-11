@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron"
 import type { ElectronAPI, WslServersEvent } from "./types"
-import type { MachineSyncPrefs, MachineSyncStatus } from "@opencode-ai/app/machine-sync-types"
-import type { UpdaterState } from "@opencode-ai/app/updater"
+import type { MachineSyncPrefs, MachineSyncStatus } from "@flynncode/app/machine-sync-types"
+import type { UpdaterState } from "@flynncode/app/updater"
 
 const updaterCallbacks = new Set<(state: UpdaterState) => void>()
 let updaterState: UpdaterState | undefined

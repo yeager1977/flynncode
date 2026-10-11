@@ -1,5 +1,5 @@
 import { createResource, Show } from "solid-js"
-import { Markdown } from "@opencode-ai/session-ui/markdown"
+import { Markdown } from "@flynncode/session-ui/markdown"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { artifactMime, artifactPreviewKind, artifactText } from "./artifact-preview"

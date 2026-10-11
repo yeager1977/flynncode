@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { isAttached, normalizeFolders, promoteToPrimary } from "@opencode-ai/core/project/folders"
+import { isAttached, normalizeFolders, promoteToPrimary } from "@flynncode/core/project/folders"
 
 describe("multifold helpers", () => {
   test("drops primary duplicates and preserves order", () => {

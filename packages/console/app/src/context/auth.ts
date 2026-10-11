@@ -1,10 +1,10 @@
 import { getRequestEvent } from "solid-js/web"
-import { and, Database, eq, inArray, isNotNull, isNull, sql } from "@opencode-ai/console-core/drizzle/index.js"
-import { UserTable } from "@opencode-ai/console-core/schema/user.sql.js"
-import { WorkspaceTable } from "@opencode-ai/console-core/schema/workspace.sql.js"
-import { BillingTable } from "@opencode-ai/console-core/schema/billing.sql.js"
+import { and, Database, eq, inArray, isNotNull, isNull, sql } from "@flynncode/console-core/drizzle/index.js"
+import { UserTable } from "@flynncode/console-core/schema/user.sql.js"
+import { WorkspaceTable } from "@flynncode/console-core/schema/workspace.sql.js"
+import { BillingTable } from "@flynncode/console-core/schema/billing.sql.js"
 import { redirect } from "@solidjs/router"
-import { Actor } from "@opencode-ai/console-core/actor.js"
+import { Actor } from "@flynncode/console-core/actor.js"
 
 import { createClient } from "@openauthjs/openauth/client"
 
@@ -14,7 +14,7 @@ export const AuthClient = createClient({
 })
 
 import { useSession } from "@solidjs/start/http"
-import { Resource } from "@opencode-ai/console-resource"
+import { Resource } from "@flynncode/console-resource"
 
 export interface AuthSession {
   account?: Record<

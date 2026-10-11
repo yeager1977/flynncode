@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import type { NormalizedProviderListResponse } from "@opencode-ai/session-ui/context"
+import type { NormalizedProviderListResponse } from "@flynncode/session-ui/context"
 import {
   canReplaceProviderApiKey,
   completeProviderConnection,

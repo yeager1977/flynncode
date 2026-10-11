@@ -1,7 +1,7 @@
 import { For, Show, type Component } from "solid-js"
-import { IconButton } from "@opencode-ai/ui/icon-button"
-import { Button } from "@opencode-ai/ui/button"
-import { TextareaV2 } from "@opencode-ai/ui/v2/textarea-v2"
+import { IconButton } from "@flynncode/ui/icon-button"
+import { Button } from "@flynncode/ui/button"
+import { TextareaV2 } from "@flynncode/ui/v2/textarea-v2"
 import type { SideTurn } from "./session-side-chat-store"
 
 // Composer-region dock for side chats (`/btw`). The open/close lifecycle and

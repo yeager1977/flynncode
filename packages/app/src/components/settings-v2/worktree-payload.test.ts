@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Config } from "@opencode-ai/sdk/v2/client"
+import type { Config } from "@flynncode/sdk/v2/client"
 import { worktreeAllowPrimaryRebind, worktreeFromConfig, worktreeHasConfig, worktreeKeepValue, worktreeToConfig, worktreeValidationErrors } from "./worktree-payload"
 
 describe("worktree-payload", () => {

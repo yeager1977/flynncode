@@ -1,5 +1,5 @@
 import { Context, Effect } from "effect"
-import { SessionFolders } from "@opencode-ai/core/session/folders"
+import { SessionFolders } from "@flynncode/core/session/folders"
 import { InstanceState } from "@/effect/instance-state"
 import type { SessionID } from "./schema"
 

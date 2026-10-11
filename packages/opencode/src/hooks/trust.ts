@@ -1,9 +1,9 @@
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { Context, Effect, Layer, Option, Schema } from "effect"
 import { createHash } from "crypto"
 import os from "os"
 import path from "path"
-import { ConfigHooksV1 } from "@opencode-ai/core/v1/config/hooks"
+import { ConfigHooksV1 } from "@flynncode/core/v1/config/hooks"
 import { InstanceState } from "@/effect/instance-state"
 
 // Full normative hook model: every field that changes hook behavior is part

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { unlink } from "node:fs/promises"
-import type { Part } from "@opencode-ai/sdk/v2"
+import type { Part } from "@flynncode/sdk/v2"
 import { parseOutputSchema, readStructuredResult } from "@/cli/cmd/run/output-schema"
 
 const written: string[] = []

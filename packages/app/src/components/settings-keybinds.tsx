@@ -1,14 +1,14 @@
 import { Component, For, Show, createMemo, createResource, lazy, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import { Button } from "@opencode-ai/ui/button"
-import { Icon } from "@opencode-ai/ui/icon"
-import { IconButton } from "@opencode-ai/ui/icon-button"
-import { Switch } from "@opencode-ai/ui/v2/switch-v2"
-import { TextField } from "@opencode-ai/ui/text-field"
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
-import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
+import { Button } from "@flynncode/ui/button"
+import { Icon } from "@flynncode/ui/icon"
+import { IconButton } from "@flynncode/ui/icon-button"
+import { Switch } from "@flynncode/ui/v2/switch-v2"
+import { TextField } from "@flynncode/ui/text-field"
+import { ButtonV2 } from "@flynncode/ui/v2/button-v2"
+import { IconButtonV2 } from "@flynncode/ui/v2/icon-button-v2"
+import { TextInputV2 } from "@flynncode/ui/v2/text-input-v2"
 import { showToast } from "@/utils/toast"
 import fuzzysort from "fuzzysort"
 import { DEFAULT_PALETTE_KEYBIND, formatKeybind, parseKeybind, useCommand } from "@/context/command"
@@ -19,7 +19,7 @@ import { SettingsList } from "./settings-list"
 import { SettingsListV2 } from "./settings-v2/parts/list"
 import { SettingsRowV2 } from "./settings-v2/parts/row"
 
-const IconV2 = lazy(() => import("@opencode-ai/ui/v2/icon").then((module) => ({ default: module.Icon })))
+const IconV2 = lazy(() => import("@flynncode/ui/v2/icon").then((module) => ({ default: module.Icon })))
 
 const IS_MAC = typeof navigator === "object" && /(Mac|iPod|iPhone|iPad)/.test(navigator.platform)
 const PALETTE_ID = "command.palette"

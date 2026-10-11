@@ -1,20 +1,20 @@
 import { describe, expect, test } from "bun:test"
 import { eq } from "drizzle-orm"
 import { Effect } from "effect"
-import { Database } from "@opencode-ai/core/database/database"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { EventV2 } from "@opencode-ai/core/event"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { SessionV2 } from "@opencode-ai/core/session"
-import { SessionExecution } from "@opencode-ai/core/session/execution"
+import { Database } from "@flynncode/core/database/database"
+import { AppNodeBuilder } from "@flynncode/core/effect/app-node-builder"
+import { LayerNode } from "@flynncode/core/effect/layer-node"
+import { EventV2 } from "@flynncode/core/event"
+import { AbsolutePath } from "@flynncode/core/schema"
+import { SessionV2 } from "@flynncode/core/session"
+import { SessionExecution } from "@flynncode/core/session/execution"
 import {
   decodeProvenance,
   encodeProvenance,
   findImported,
-} from "@opencode-ai/core/session/import-registry"
-import { SessionProjector } from "@opencode-ai/core/session/projector"
-import { SessionTable } from "@opencode-ai/core/session/sql"
+} from "@flynncode/core/session/import-registry"
+import { SessionProjector } from "@flynncode/core/session/projector"
+import { SessionTable } from "@flynncode/core/session/sql"
 import { testEffect } from "./lib/effect"
 
 const it = testEffect(AppNodeBuilder.build(LayerNode.group([Database.node, EventV2.node, SessionProjector.node])))

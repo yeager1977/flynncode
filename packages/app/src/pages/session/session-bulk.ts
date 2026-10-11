@@ -1,4 +1,4 @@
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { Session } from "@flynncode/sdk/v2/client"
 import { pathKey } from "@/utils/path-key"
 
 const DAY = 86_400_000

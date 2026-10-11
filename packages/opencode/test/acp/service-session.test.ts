@@ -10,9 +10,9 @@ import type {
   SessionConfigSelectOption,
   SetSessionConfigOptionResponse,
 } from "@agentclientprotocol/sdk"
-import type { AssistantMessage, Event, OpencodeClient } from "@opencode-ai/sdk/v2"
-import { ProviderV2 } from "@opencode-ai/core/provider"
-import { ModelV2 } from "@opencode-ai/core/model"
+import type { AssistantMessage, Event, OpencodeClient } from "@flynncode/sdk/v2"
+import { ProviderV2 } from "@flynncode/core/provider"
+import { ModelV2 } from "@flynncode/core/model"
 import { Effect } from "effect"
 import * as ACPService from "@/acp/service"
 import * as ACPError from "@/acp/error"

@@ -8,7 +8,7 @@ import type {
   MachineSyncPairResult,
   MachineSyncPrefsChoice,
   MachineSyncStatus,
-} from "@opencode-ai/app/machine-sync-types"
+} from "@flynncode/app/machine-sync-types"
 import {
   parsePeer,
   parsePrefs,

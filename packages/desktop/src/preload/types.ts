@@ -1,13 +1,13 @@
-import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
-import type { WslServersPlatform } from "@opencode-ai/app/wsl/types"
-import type { MachineSyncPlatform } from "@opencode-ai/app/machine-sync-types"
-import type { UpdaterState } from "@opencode-ai/app/updater"
-import type { DesktopNativeBundle } from "@opencode-ai/app/i18n/desktop-native"
+import type { DesktopMenuAction } from "@flynncode/app/desktop-menu"
+import type { WslServersPlatform } from "@flynncode/app/wsl/types"
+import type { MachineSyncPlatform } from "@flynncode/app/machine-sync-types"
+import type { UpdaterState } from "@flynncode/app/updater"
+import type { DesktopNativeBundle } from "@flynncode/app/i18n/desktop-native"
 import type {
   CatalogResult,
   PluginConfigsPayload,
   PluginEntry,
-} from "@opencode-ai/app/components/settings-v2/plugins-types"
+} from "@flynncode/app/components/settings-v2/plugins-types"
 import type { RelayConfigUpdate } from "../main/sidecar-sync"
 export type {
   WslDistroProbe,
@@ -21,7 +21,7 @@ export type {
   WslServerRuntime,
   WslServersEvent,
   WslServersState,
-} from "@opencode-ai/app/wsl/types"
+} from "@flynncode/app/wsl/types"
 
 export type ServerReadyData = {
   url: string

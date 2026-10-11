@@ -16,7 +16,7 @@ projection (the TUI), so it appears natively in both surfaces.
 The plugin must be loaded by the TUI plugin loader, which reads the module's
 **default export** and requires it to expose `tui()` (see
 `packages/opencode/src/plugin/shared.ts`, `readV1Plugin`). The
-`@opencode-ai/plugin` npm package's `./tui` export resolves to the plugin types
+`@flynncode/plugin` npm package's `./tui` export resolves to the plugin types
 module, which has no default export, and no `"tui-import"` options key is read
 by the loader — so the plugin must be enabled as a **file-based local plugin**
 pointing directly at `src/import/tui.tsx`.
@@ -36,7 +36,7 @@ Notes:
 
 - Absolute paths work as well: `"/absolute/path/to/packages/plugin/src/import/tui.tsx"`.
 - The path must point at the `.tsx` file itself. A directory spec resolves to
-  its `index.ts`/`index.tsx`, and an npm spec for `@opencode-ai/plugin` would
+  its `index.ts`/`index.tsx`, and an npm spec for `@flynncode/plugin` would
   resolve the `./tui` export to `src/tui.ts` (the types module, which has no
   default export) — neither loads this plugin.
 - The loader requires the default export to be `{ id, tui }`; the named export

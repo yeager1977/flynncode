@@ -1,9 +1,9 @@
-import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+import { PermissionV1 } from "@flynncode/core/v1/permission"
 import { test, expect } from "bun:test"
 import os from "os"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
-import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import { CrossSpawnSpawner } from "@flynncode/core/cross-spawn-spawner"
 import { Permission } from "../../src/permission"
 import { HooksRunner } from "../../src/hooks/runner"
 import { testLayerWithHooks } from "../lib/hooks"
@@ -12,8 +12,8 @@ import { InstanceStore } from "../../src/project/instance-store"
 import { TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { MessageID, SessionID } from "../../src/session/schema"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { AppNodeBuilder } from "@flynncode/core/effect/app-node-builder"
+import { LayerNode } from "@flynncode/core/effect/layer-node"
 
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
 const passthroughHooks = testLayerWithHooks([])

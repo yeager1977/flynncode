@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@opencode-ai/stats-core",
+  "name": "@flynncode/stats-core",
   "version": "1.18.34",
   "private": true,
   "type": "module",

@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test"
 import { Schema } from "effect"
-import { ConfigPermissionV1 } from "@opencode-ai/core/v1/config/permission"
+import { ConfigPermissionV1 } from "@flynncode/core/v1/config/permission"
 
 test("resolveSessionPolicy defaults to workspace-write/manual", () => {
   const policy = ConfigPermissionV1.resolveSessionPolicy({})

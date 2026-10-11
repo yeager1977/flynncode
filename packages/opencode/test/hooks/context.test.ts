@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Exit } from "effect"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { testEffect } from "../lib/effect"
 import { HooksContext } from "../../src/hooks/context"
 

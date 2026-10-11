@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/solid */
-import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
+import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@flynncode/plugin/tui"
 import { readdir } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"

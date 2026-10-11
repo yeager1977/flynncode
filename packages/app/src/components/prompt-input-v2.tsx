@@ -1,14 +1,14 @@
-import { ImagePreview } from "@opencode-ai/ui/image-preview"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
-import { Popover } from "@opencode-ai/ui/popover"
+import { ImagePreview } from "@flynncode/ui/image-preview"
+import { useDialog } from "@flynncode/ui/context/dialog"
+import { ProviderIcon } from "@flynncode/ui/provider-icon"
+import { Popover } from "@flynncode/ui/popover"
 import { useIsFetching } from "@tanstack/solid-query"
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { Icon } from "@opencode-ai/ui/v2/icon"
-import { KeybindV2 } from "@opencode-ai/ui/v2/keybind-v2"
-import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
-import { ProjectAvatar } from "@opencode-ai/ui/v2/project-avatar-v2"
-import type { ReferenceInfo } from "@opencode-ai/sdk/v2/client"
+import { ButtonV2 } from "@flynncode/ui/v2/button-v2"
+import { Icon } from "@flynncode/ui/v2/icon"
+import { KeybindV2 } from "@flynncode/ui/v2/keybind-v2"
+import { TooltipV2 } from "@flynncode/ui/v2/tooltip-v2"
+import { ProjectAvatar } from "@flynncode/ui/v2/project-avatar-v2"
+import type { ReferenceInfo } from "@flynncode/sdk/v2/client"
 import { createEffect, createMemo, createSignal, on, Show } from "solid-js"
 import { ModelSelectorPopoverV2 } from "@/components/dialog-select-model"
 import { DialogSelectModelUnpaidV2 } from "@/components/dialog-select-model-unpaid-v2"
@@ -36,12 +36,12 @@ import { displayName, getProjectAvatarSource } from "@/pages/layout/helpers"
 import { getProjectAvatarVariant, type ProjectAvatarVariant } from "@/context/layout"
 import { pathKey } from "@/utils/path-key"
 import { showToast } from "@/utils/toast"
-import { PromptInputV2, type PromptInputV2Suggestion } from "@opencode-ai/session-ui/v2/prompt-input"
+import { PromptInputV2, type PromptInputV2Suggestion } from "@flynncode/session-ui/v2/prompt-input"
 import {
   createPromptInputV2Controller,
   createPromptInputV2State,
   type PromptInputV2Interaction,
-} from "@opencode-ai/session-ui/v2/prompt-input/interaction"
+} from "@flynncode/session-ui/v2/prompt-input/interaction"
 
 export type PromptInputV2ComposerProps = {
   class?: string

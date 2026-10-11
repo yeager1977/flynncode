@@ -1,5 +1,5 @@
-import { Tag } from "@opencode-ai/ui/v2/badge-v2"
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
+import { Tag } from "@flynncode/ui/v2/badge-v2"
+import { ButtonV2 } from "@flynncode/ui/v2/button-v2"
 import { For, Show, createMemo, createResource, createSignal, type Component } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useServerSDK } from "@/context/server-sdk"

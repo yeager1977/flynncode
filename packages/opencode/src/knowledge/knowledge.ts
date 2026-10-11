@@ -1,7 +1,7 @@
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { filesystem, path } from "@opencode-ai/core/effect/app-node-platform"
-import { serviceUse } from "@opencode-ai/core/effect/service-use"
-import { parseKnowledgeTitle } from "@opencode-ai/core/session/knowledge"
+import { LayerNode } from "@flynncode/core/effect/layer-node"
+import { filesystem, path } from "@flynncode/core/effect/app-node-platform"
+import { serviceUse } from "@flynncode/core/effect/service-use"
+import { parseKnowledgeTitle } from "@flynncode/core/session/knowledge"
 import { Context, Effect, FileSystem, Layer, Option, Path, Schema } from "effect"
 import type { PlatformError } from "effect/PlatformError"
 

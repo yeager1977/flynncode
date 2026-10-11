@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test"
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { Session } from "@flynncode/sdk/v2/client"
 import type { FileDiffInfo } from "@opencode-ai/client/promise"
 import {
   artifactMatchesFilter,

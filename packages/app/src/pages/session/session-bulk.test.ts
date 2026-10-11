@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { Session } from "@flynncode/sdk/v2/client"
 import {
   BULK_PRESETS,
   cleanupCandidates,

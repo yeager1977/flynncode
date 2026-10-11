@@ -2,7 +2,7 @@ import { describe, expect, it, afterAll } from "bun:test"
 import { mkdtemp, mkdir, writeFile, symlink, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { discoverFromHome, resolveSourceFile } from "@opencode-ai/core/session/import-source/discover-node"
+import { discoverFromHome, resolveSourceFile } from "@flynncode/core/session/import-source/discover-node"
 
 const line = (value: unknown) => JSON.stringify(value)
 

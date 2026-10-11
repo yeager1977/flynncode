@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { ProjectV2 } from "@opencode-ai/core/project"
+import { ProjectV2 } from "@flynncode/core/project"
 import { containsPath } from "@/project/instance-context"
 import type { InstanceContext } from "@/project/instance-context"
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+import { PermissionV1 } from "@flynncode/core/v1/permission"
 import { Permission } from "../../src/permission"
 import { deriveSubagentSessionPermission, sandboxRules } from "../../src/agent/subagent-permissions"
 import type { Agent } from "../../src/agent/agent"

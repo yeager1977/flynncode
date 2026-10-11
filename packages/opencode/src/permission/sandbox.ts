@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import path from "path"
-import { ConfigPermissionV1 } from "@opencode-ai/core/v1/config/permission"
+import { ConfigPermissionV1 } from "@flynncode/core/v1/config/permission"
 
 export class SandboxViolationError extends Schema.TaggedErrorClass<SandboxViolationError>()(
   "SandboxViolationError",

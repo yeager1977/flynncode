@@ -1,12 +1,12 @@
 import "@/index.css"
 import * as Sentry from "@sentry/solid"
-import { I18nProvider } from "@opencode-ai/ui/context"
-import { DialogProvider } from "@opencode-ai/ui/context/dialog"
-import { FileComponentProvider } from "@opencode-ai/ui/context/file"
-import { File } from "@opencode-ai/session-ui/file"
-import { Font } from "@opencode-ai/ui/font"
-import { Splash } from "@opencode-ai/ui/logo"
-import { ThemeProvider } from "@opencode-ai/ui/theme/context"
+import { I18nProvider } from "@flynncode/ui/context"
+import { DialogProvider } from "@flynncode/ui/context/dialog"
+import { FileComponentProvider } from "@flynncode/ui/context/file"
+import { File } from "@flynncode/session-ui/file"
+import { Font } from "@flynncode/ui/font"
+import { Splash } from "@flynncode/ui/logo"
+import { ThemeProvider } from "@flynncode/ui/theme/context"
 import { MetaProvider } from "@solidjs/meta"
 import {
   type BaseRouterProps,
@@ -20,7 +20,7 @@ import {
 } from "@solidjs/router"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { Effect } from "effect"
-import { base64Encode } from "@opencode-ai/core/util/encode"
+import { base64Encode } from "@flynncode/core/util/encode"
 import { decode64 } from "@/utils/base64"
 import {
   type Component,

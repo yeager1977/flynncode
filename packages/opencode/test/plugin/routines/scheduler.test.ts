@@ -2,8 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { rm } from "fs/promises"
 import path from "path"
 import { parse } from "jsonc-parser"
-import { Global } from "@opencode-ai/core/global"
-import type { PluginInput } from "@opencode-ai/plugin"
+import { Global } from "@flynncode/core/global"
+import type { PluginInput } from "@flynncode/plugin"
 import { loadRoutines, markRan, readRoutineRuns, runTick } from "../../../src/plugin/routines/index"
 
 const CONFIG = path.join(Global.Path.config, "opencode.jsonc")

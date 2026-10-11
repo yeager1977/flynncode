@@ -1,4 +1,4 @@
-import type { Part } from "@opencode-ai/sdk/v2"
+import type { Part } from "@flynncode/sdk/v2"
 
 export async function parseOutputSchema(raw: string): Promise<Record<string, unknown>> {
   if (raw.trim().length === 0) throw new Error("--output-schema must not be empty")

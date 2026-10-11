@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Hooks } from "@opencode-ai/plugin"
+import type { Hooks } from "@flynncode/plugin"
 import { Effect } from "effect"
 import { testEffect } from "../lib/effect"
 import { HooksRunner } from "../../src/hooks/runner"

@@ -1,4 +1,4 @@
-import type { PermissionV1 } from "@opencode-ai/core/v1/permission"
+import type { PermissionV1 } from "@flynncode/core/v1/permission"
 import { evaluate } from "./evaluate"
 
 // Auto-approve allow-list starts read-only per controller ruling: no

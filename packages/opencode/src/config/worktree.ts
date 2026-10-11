@@ -1,6 +1,6 @@
 export * as ConfigWorktree from "./worktree"
 
-import type { ConfigV1 } from "@opencode-ai/core/v1/config/config"
+import type { ConfigV1 } from "@flynncode/core/v1/config/config"
 
 const DEFAULT_LOCATION = ".opencode/worktrees"
 const DEFAULT_BRANCH_PREFIX = "opencode"

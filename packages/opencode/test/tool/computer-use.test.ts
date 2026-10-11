@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { Cause, Effect, Exit, Layer, Schema } from "effect"
 import { Config } from "@/config/config"
 import { ComputerUse } from "../../src/config/computer-use"

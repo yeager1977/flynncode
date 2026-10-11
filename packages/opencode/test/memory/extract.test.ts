@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { MemoryExtract } from "../../src/memory/extract"
-import type { SessionV1 } from "@opencode-ai/core/v1/session"
+import type { SessionV1 } from "@flynncode/core/v1/session"
 
 function user(text: string) {
   return { info: { role: "user" }, parts: [{ type: "text", text }] } as unknown as SessionV1.WithParts

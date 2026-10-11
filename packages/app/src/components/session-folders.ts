@@ -1,4 +1,4 @@
-import { MaxExtras, normalizeFolders, promoteToPrimary } from "@opencode-ai/core/project/folder-list"
+import { MaxExtras, normalizeFolders, promoteToPrimary } from "@flynncode/core/project/folder-list"
 
 export const MaxSessionExtraFolders = MaxExtras
 

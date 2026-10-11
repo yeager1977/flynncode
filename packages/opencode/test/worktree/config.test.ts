@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { ConfigWorktree } from "../../src/config/worktree"
 import { ConfigParse } from "../../src/config/parse"
-import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
+import { ConfigV1 } from "@flynncode/core/v1/config/config"
 
 const parse = (input: unknown) => ConfigParse.schema(ConfigV1.Info, input, "test:config")
 

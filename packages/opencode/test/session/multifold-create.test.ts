@@ -15,7 +15,7 @@ describe("multifold session validation", () => {
     expect(decoded?.additionalDirectories).toBeUndefined()
   })
   test("extras cap is 8", async () => {
-    const { MaxExtras } = await import("@opencode-ai/core/project/folders")
+    const { MaxExtras } = await import("@flynncode/core/project/folders")
     expect(MaxExtras).toBe(8)
   })
   test("multifold errors are typed", async () => {

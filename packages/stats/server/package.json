@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@opencode-ai/stats-server",
+  "name": "@flynncode/stats-server",
   "version": "1.18.34",
   "private": true,
   "type": "module",
@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@effect/platform-node": "catalog:",
-    "@opencode-ai/stats-core": "workspace:*",
+    "@flynncode/stats-core": "workspace:*",
     "effect": "catalog:",
     "sst": "catalog:"
   },

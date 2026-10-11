@@ -1,16 +1,16 @@
 import fuzzysort from "fuzzysort"
-import { Tag } from "@opencode-ai/ui/v2/badge-v2"
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { DividerV2 } from "@opencode-ai/ui/v2/divider-v2"
+import { Tag } from "@flynncode/ui/v2/badge-v2"
+import { ButtonV2 } from "@flynncode/ui/v2/button-v2"
+import { useDialog } from "@flynncode/ui/context/dialog"
+import { DividerV2 } from "@flynncode/ui/v2/divider-v2"
 import {
   Dialog,
   DialogBody,
   DialogFooter,
   DialogHeader,
   DialogTitleGroup,
-} from "@opencode-ai/ui/v2/dialog-v2"
-import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
+} from "@flynncode/ui/v2/dialog-v2"
+import { TextInputV2 } from "@flynncode/ui/v2/text-input-v2"
 import { type Accessor, type Component, For, Show, createMemo, createResource, createSignal } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"

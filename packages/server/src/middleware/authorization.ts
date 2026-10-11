@@ -1,8 +1,8 @@
 import { ServerAuth } from "../auth"
-import { UnauthorizedError } from "@opencode-ai/protocol/errors"
-import { Authorization } from "@opencode-ai/protocol/middleware/authorization"
-export { Authorization } from "@opencode-ai/protocol/middleware/authorization"
-import { hasPtyConnectTicketURL } from "@opencode-ai/protocol/groups/pty"
+import { UnauthorizedError } from "@flynncode/protocol/errors"
+import { Authorization } from "@flynncode/protocol/middleware/authorization"
+export { Authorization } from "@flynncode/protocol/middleware/authorization"
+import { hasPtyConnectTicketURL } from "@flynncode/protocol/groups/pty"
 import { Effect, Encoding, Layer, Redacted } from "effect"
 import { HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 

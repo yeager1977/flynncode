@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect"
-import type { Hooks } from "@opencode-ai/plugin"
+import type { Hooks } from "@flynncode/plugin"
 import { HooksRunner } from "../../src/hooks/runner"
 
 // In-memory plugin hooks for HooksRunner tests: runs the given hook objects

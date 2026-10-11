@@ -1,4 +1,4 @@
-import { ComputerUseV1 } from "@opencode-ai/schema/computer-use-v1"
+import { ComputerUseV1 } from "@flynncode/schema/computer-use-v1"
 import { Option, Schema } from "effect"
 
 export type ComputerUseAction = ComputerUseV1.Action

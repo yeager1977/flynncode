@@ -1,4 +1,4 @@
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { Context, Effect, Layer, Option } from "effect"
 import type { Plugin } from "@/plugin"
 import { HooksExecutor, type ExecutorInterface } from "@/hooks/executor"

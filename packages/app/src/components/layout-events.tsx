@@ -1,4 +1,4 @@
-import { getFilename } from "@opencode-ai/core/util/path"
+import { getFilename } from "@flynncode/core/util/path"
 import { useNavigate } from "@solidjs/router"
 import { createEffect, onCleanup } from "solid-js"
 import { useLanguage } from "@/context/language"

@@ -1,8 +1,8 @@
 import { createMemo, createSignal, For } from "solid-js"
 import { createStore } from "solid-js/store"
-import { Button } from "@opencode-ai/ui/button"
-import { Switch } from "@opencode-ai/ui/switch"
-import { TextField } from "@opencode-ai/ui/text-field"
+import { Button } from "@flynncode/ui/button"
+import { Switch } from "@flynncode/ui/switch"
+import { TextField } from "@flynncode/ui/text-field"
 import type { FileDiffInfo } from "@opencode-ai/client/promise"
 import { useLanguage } from "@/context/language"
 import {

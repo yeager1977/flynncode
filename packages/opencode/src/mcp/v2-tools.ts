@@ -1,8 +1,8 @@
-import { ToolFailure } from "@opencode-ai/llm"
+import { ToolFailure } from "@flynncode/llm"
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { CallToolResultSchema, type Tool as MCPToolDef } from "@modelcontextprotocol/sdk/types.js"
-import { ToolRegistry } from "@opencode-ai/core/tool/registry"
-import { Tool } from "@opencode-ai/core/tool/tool"
+import { ToolRegistry } from "@flynncode/core/tool/registry"
+import { Tool } from "@flynncode/core/tool/tool"
 import { Effect, Schema } from "effect"
 import { toolName } from "./catalog"
 

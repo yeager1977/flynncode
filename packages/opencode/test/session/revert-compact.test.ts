@@ -1,10 +1,10 @@
 import { describe, expect } from "bun:test"
-import { SessionV1 } from "@opencode-ai/core/v1/session"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { SessionProjector } from "@opencode-ai/core/session/projector"
+import { SessionV1 } from "@flynncode/core/v1/session"
+import { LayerNode } from "@flynncode/core/effect/layer-node"
+import { SessionProjector } from "@flynncode/core/session/projector"
 import fs from "fs/promises"
 import path from "path"
-import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import { CrossSpawnSpawner } from "@flynncode/core/cross-spawn-spawner"
 import { Effect } from "effect"
 import { Session } from "@/session/session"
 
@@ -14,8 +14,8 @@ import { Snapshot } from "../../src/snapshot"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { provideTmpdirInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
-import { ProviderV2 } from "@opencode-ai/core/provider"
-import { ModelV2 } from "@opencode-ai/core/model"
+import { ProviderV2 } from "@flynncode/core/provider"
+import { ModelV2 } from "@flynncode/core/model"
 
 const it = testEffect(
   LayerNode.compile(

@@ -1,5 +1,5 @@
 import { batch, createMemo, startTransition } from "solid-js"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { useDialog } from "@flynncode/ui/context/dialog"
 import { useModels } from "@/context/models"
 import type { ModelKey, ModelSelection } from "@/context/local"
 import { cycleModelVariant, getConfiguredAgentVariant, resolveModelVariant } from "@/context/model-variant"

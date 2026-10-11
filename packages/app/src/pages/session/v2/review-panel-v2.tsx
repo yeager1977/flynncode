@@ -1,23 +1,23 @@
-import { Button } from "@opencode-ai/ui/button"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
-import { Icon } from "@opencode-ai/ui/icon"
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
-import { DialogFooter, DialogHeader, DialogTitleGroup, DialogV2 } from "@opencode-ai/ui/v2/dialog-v2"
-import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
-import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
-import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
+import { Button } from "@flynncode/ui/button"
+import { useDialog } from "@flynncode/ui/context/dialog"
+import { DropdownMenu } from "@flynncode/ui/dropdown-menu"
+import { Icon } from "@flynncode/ui/icon"
+import { ButtonV2 } from "@flynncode/ui/v2/button-v2"
+import { DialogFooter, DialogHeader, DialogTitleGroup, DialogV2 } from "@flynncode/ui/v2/dialog-v2"
+import { Icon as IconV2 } from "@flynncode/ui/v2/icon"
+import { IconButtonV2 } from "@flynncode/ui/v2/icon-button-v2"
+import { TooltipV2 } from "@flynncode/ui/v2/tooltip-v2"
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show, type JSX } from "solid-js"
-import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
+import type { SnapshotFileDiff, VcsFileDiff } from "@flynncode/sdk/v2"
 import type { FileDiffInfo } from "@opencode-ai/client/promise"
 import {
   SESSION_REVIEW_V2_SIDEBAR_WIDTH_MAX,
   SESSION_REVIEW_V2_SIDEBAR_WIDTH_MIN,
   SessionReviewV2,
   SessionReviewV2Sidebar,
-} from "@opencode-ai/session-ui/v2/session-review-v2"
-import { SessionReviewFilePreviewV2 } from "@opencode-ai/session-ui/v2/session-review-file-preview-v2"
-import { DiffChanges } from "@opencode-ai/ui/v2/diff-changes-v2"
+} from "@flynncode/session-ui/v2/session-review-v2"
+import { SessionReviewFilePreviewV2 } from "@flynncode/session-ui/v2/session-review-file-preview-v2"
+import { DiffChanges } from "@flynncode/ui/v2/diff-changes-v2"
 import { ArtifactPreview } from "@/pages/session/artifact-preview-view"
 import { artifactPreviewKind } from "@/pages/session/artifact-preview"
 import { ReviewBrowser } from "@/pages/session/review-browser"
@@ -31,7 +31,7 @@ import type {
   SessionReviewDiffStyle,
   SessionReviewFocus,
   SessionReviewLineComment,
-} from "@opencode-ai/session-ui/session-review"
+} from "@flynncode/session-ui/session-review"
 import FileTreeV2 from "@/components/file-tree-v2"
 import { useLanguage } from "@/context/language"
 import { applyHunkSequence, hunkApply, whenApplied } from "../hunk-apply"

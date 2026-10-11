@@ -1,4 +1,4 @@
-import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
+import { ButtonV2 } from "@flynncode/ui/v2/button-v2"
 import { For, Show, createMemo } from "solid-js"
 import { produce, type SetStoreFunction } from "solid-js/store"
 import { useLanguage } from "@/context/language"

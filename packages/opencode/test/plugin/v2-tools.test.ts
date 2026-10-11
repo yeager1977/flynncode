@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { tool, type ToolDefinition } from "@opencode-ai/plugin"
-import { AgentV2 } from "@opencode-ai/core/agent"
-import { SessionMessage } from "@opencode-ai/core/session/message"
-import { SessionSchema } from "@opencode-ai/core/session/schema"
-import { Tool } from "@opencode-ai/core/tool/tool"
+import { tool, type ToolDefinition } from "@flynncode/plugin"
+import { AgentV2 } from "@flynncode/core/agent"
+import { SessionMessage } from "@flynncode/core/session/message"
+import { SessionSchema } from "@flynncode/core/session/schema"
+import { Tool } from "@flynncode/core/tool/tool"
 import { syncPluginTools, clearPluginTools } from "../../src/plugin/v2-tools"
-import { ToolRegistry } from "@opencode-ai/core/tool/registry"
+import { ToolRegistry } from "@flynncode/core/tool/registry"
 
 describe("configured plugin tools", () => {
   test("publishes v1 plugin tools into the v2 registry group", () => {

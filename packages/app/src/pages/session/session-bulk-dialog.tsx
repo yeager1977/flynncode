@@ -1,5 +1,5 @@
-import { Button } from "@opencode-ai/ui/button"
-import { Dialog } from "@opencode-ai/ui/dialog"
+import { Button } from "@flynncode/ui/button"
+import { Dialog } from "@flynncode/ui/dialog"
 import { Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import type { BulkOp } from "./session-bulk-run"

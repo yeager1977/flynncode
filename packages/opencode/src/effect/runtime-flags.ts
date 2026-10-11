@@ -115,4 +115,4 @@ export function adoptBypassHookTrustEnv() {
 }
 
 export * as RuntimeFlags from "./runtime-flags"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { LayerNode } from "@flynncode/core/effect/layer-node"

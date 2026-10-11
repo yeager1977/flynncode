@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from "bun:test"
 import type { SessionMessageInfo } from "@opencode-ai/client/promise"
 import { normalizeSessionMessages } from "@/utils/session-message"
 
-mock.module("@opencode-ai/session-ui/message-part", () => ({
+mock.module("@flynncode/session-ui/message-part", () => ({
   // Mirrors the real renderable() signature closely enough for the fixtures:
   // tool parts stay listable, text needs content, reasoning follows the flag.
   renderable: (part: { type: string; text?: string }, showReasoningSummaries: boolean | undefined) => {

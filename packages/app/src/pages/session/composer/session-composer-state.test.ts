@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, mock, test } from "bun:test"
-import type { OpencodeClient, PermissionRequest, QuestionRequest, Session, Todo } from "@opencode-ai/sdk/v2/client"
+import type { OpencodeClient, PermissionRequest, QuestionRequest, Session, Todo } from "@flynncode/sdk/v2/client"
 import type { ApprovalMode, SandboxLevel } from "@/context/permission"
 
 // The `solid` test condition resolves solid-js to its SSR build, where

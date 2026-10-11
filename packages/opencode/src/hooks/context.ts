@@ -1,4 +1,4 @@
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { InstanceState } from "@/effect/instance-state"
 import { Context, Effect, Exit, Layer, Option } from "effect"
 import type { HooksRunner } from "@/hooks/runner"

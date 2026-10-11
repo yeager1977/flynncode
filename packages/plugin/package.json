@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@opencode-ai/plugin",
+  "name": "@flynncode/plugin",
   "version": "1.18.34",
   "type": "module",
   "license": "MIT",
@@ -23,7 +23,7 @@
   ],
   "dependencies": {
     "@ai-sdk/provider": "3.0.8",
-    "@opencode-ai/sdk": "workspace:*",
+    "@flynncode/sdk": "workspace:*",
     "effect": "catalog:",
     "zod": "catalog:"
   },

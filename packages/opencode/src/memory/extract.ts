@@ -1,4 +1,4 @@
-import type { SessionV1 } from "@opencode-ai/core/v1/session"
+import type { SessionV1 } from "@flynncode/core/v1/session"
 
 export function shouldExtract(input: { messages: SessionV1.WithParts[]; min_turns: number }) {
   const turns = input.messages.filter(

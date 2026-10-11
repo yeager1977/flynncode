@@ -2,14 +2,14 @@ export * as MachineSyncStore from "./store"
 
 import { asc, eq, isNull, lt, max } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
-import { Database } from "@opencode-ai/core/database/database"
-import { migrations } from "@opencode-ai/core/database/migration.gen"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { EventSequenceTable, EventTable } from "@opencode-ai/core/event/sql"
-import { FSUtil } from "@opencode-ai/core/fs-util"
-import { InstallationVersion } from "@opencode-ai/core/installation/version"
-import { ProjectTable } from "@opencode-ai/core/project/sql"
-import { SessionExecution } from "@opencode-ai/core/session/execution"
+import { Database } from "@flynncode/core/database/database"
+import { migrations } from "@flynncode/core/database/migration.gen"
+import { LayerNode } from "@flynncode/core/effect/layer-node"
+import { EventSequenceTable, EventTable } from "@flynncode/core/event/sql"
+import { FSUtil } from "@flynncode/core/fs-util"
+import { InstallationVersion } from "@flynncode/core/installation/version"
+import { ProjectTable } from "@flynncode/core/project/sql"
+import { SessionExecution } from "@flynncode/core/session/execution"
 import {
   MessageTable,
   PartTable,
@@ -20,7 +20,7 @@ import {
   SessionTable,
   SessionTombstoneTable,
   TodoTable,
-} from "@opencode-ai/core/session/sql"
+} from "@flynncode/core/session/sql"
 import { GlobalBus, type GlobalEvent } from "@/bus/global"
 import { Project } from "@/project/project"
 import { Session } from "@/session/session"

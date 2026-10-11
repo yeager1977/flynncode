@@ -1,5 +1,5 @@
 {
-  "name": "@opencode-ai/desktop",
+  "name": "@flynncode/desktop",
   "private": true,
   "version": "1.18.34-dev-202610031719",
   "type": "module",
@@ -38,8 +38,8 @@
   "devDependencies": {
     "@actions/artifact": "4.0.0",
     "@lydell/node-pty": "catalog:",
-    "@opencode-ai/app": "workspace:*",
-    "@opencode-ai/ui": "workspace:*",
+    "@flynncode/app": "workspace:*",
+    "@flynncode/ui": "workspace:*",
     "@sentry/solid": "catalog:",
     "@sentry/vite-plugin": "catalog:",
     "@solid-primitives/i18n": "2.2.1",

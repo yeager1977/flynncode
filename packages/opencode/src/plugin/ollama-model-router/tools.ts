@@ -1,5 +1,5 @@
-import { tool } from "@opencode-ai/plugin"
-import type { Hooks, PluginInput } from "@opencode-ai/plugin"
+import { tool } from "@flynncode/plugin"
+import type { Hooks, PluginInput } from "@flynncode/plugin"
 import {
   collectCandidates,
   collectMeta,
