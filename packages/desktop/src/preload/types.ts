@@ -175,6 +175,7 @@ export type ElectronAPI = {
   capturePage: (rect?: CaptureRect) => Promise<string | undefined>
   computerUse: ComputerUseAPI
   previewHost: PreviewHostAPI
+  onHostTeardown: (cb: () => void) => () => void
   setForceFocus: (enabled: boolean) => Promise<void>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>
   setNativeTranslations: (bundle: DesktopNativeBundle) => Promise<void>

@@ -14,9 +14,12 @@ const loopbackHost = (hostname: string) => {
   const host = hostname.toLowerCase()
   // WHATWG URL keeps brackets on IPv6 hostnames.
   const bare = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host
-  if (bare === "localhost" || bare === "127.0.0.1" || bare === "::1") return true
-  if (bare.endsWith(".localhost") || bare.endsWith(".local")) return true
-  return false
+  // Strictly loopback: the native view has full network privileges, so mDNS
+  // names like *.local that can resolve to LAN hosts are refused here even
+  // though the sandboxed iframe gate tolerates more.
+  if (bare === "localhost" || bare.endsWith(".localhost")) return true
+  if (bare === "::1") return true
+  return /^127\.\d+\.\d+\.\d+$/.test(bare)
 }
 
 // Only loopback http(s) targets can be hosted natively; mirrors the iframe
@@ -79,10 +82,49 @@ function previewViewFor(win: BrowserWindow): WebContentsView | undefined {
   return children.find((child) => child.webContents?.session === previewSession)
 }
 
+// Stored so detachView can remove it; WeakMap cleans up when the window does.
+const closedHandlers = new WeakMap<BrowserWindow, () => void>()
+
+const ownerHooked = new WeakSet<BrowserWindow>()
+
+// Owner lifecycle: a crashed or reloaded host renderer must never leave a
+// stale guest compositing; the reload path re-attaches fresh.
+function hookOwnerLifecycle(win: BrowserWindow) {
+  if (ownerHooked.has(win)) return
+  ownerHooked.add(win)
+  win.webContents.on("render-process-gone", () => detachView(win))
+  win.webContents.on("did-navigate", () => detachView(win))
+}
+
+// The preview view is trusted with loopback-only main-frame navigation: a
+// guest that redirects or client-navigates elsewhere tears the view down and
+// the renderer falls back to the iframe.
+function guardGuestNavigation(win: BrowserWindow, view: WebContentsView) {
+  view.webContents.on("will-navigate", (event, url) => {
+    if (isHostable(url)) return
+    event.preventDefault()
+    detachView(win)
+    notifyTeardown(win)
+  })
+  // Backstop for server redirects that skip will-navigate: once the guest
+  // landed anywhere non-loopback, the view is already too late to trust.
+  view.webContents.on("did-navigate", (_event, url) => {
+    if (isHostable(url)) return
+    detachView(win)
+    notifyTeardown(win)
+  })
+}
+
+function notifyTeardown(win: BrowserWindow) {
+  if (win.isDestroyed() || win.webContents.isDestroyed()) return
+  win.webContents.send("preview-host-teardown")
+}
+
 export async function attachView(win: BrowserWindow, url: string) {
   if (!isHostable(url)) throw new Error("preview-host: only local http(s) URLs can be hosted")
   const { session, WebContentsView } = await electron()
   detachView(win)
+  hookOwnerLifecycle(win)
   previewSession = session.fromPartition("preview")
   const view = new WebContentsView({
     webPreferences: { sandbox: true, contextIsolation: true, partition: "preview" },
@@ -92,9 +134,12 @@ export async function attachView(win: BrowserWindow, url: string) {
   view.setBounds({ x: 0, y: 0, width: content.width, height: content.height })
   // Closing the window removes the view with its content view, but the guest
   // webContents needs an explicit close so it never outlives the window.
-  win.once("closed", () => {
+  const onClosed = () => {
     if (!view.webContents.isDestroyed()) view.webContents.close()
-  })
+  }
+  win.once("closed", onClosed)
+  closedHandlers.set(win, onClosed)
+  guardGuestNavigation(win, view)
   await view.webContents.loadURL(url)
 }
 
@@ -103,6 +148,11 @@ export function setViewBounds(win: BrowserWindow, rect: PreviewRect) {
 }
 
 export function detachView(win: BrowserWindow) {
+  const onClosed = closedHandlers.get(win)
+  if (onClosed) {
+    win.removeListener("closed", onClosed)
+    closedHandlers.delete(win)
+  }
   const view = previewViewFor(win)
   if (!view) return
   win.contentView.removeChildView(view)
@@ -119,12 +169,11 @@ export async function captureView(win: BrowserWindow): Promise<string | undefine
 
 // Read-only collect script: elementFromPoint + getComputedStyle-free reads of
 // tag/class/text/rect. No mutation, no listeners installed, so the inspected
-// page never changes behavior.
+// page never changes behavior. The point is serialized, not interpolated as
+// bare numbers, so the script cannot be shaped by unexpected inputs.
 const inspectScript = (center?: { x: number; y: number }) =>
   `(() => {
-  const point = ${
-    center ? `({ x: ${center.x}, y: ${center.y} })` : "({ x: window.innerWidth / 2, y: window.innerHeight / 2 })"
-  }
+  const point = ${center ? JSON.stringify(center) : "({ x: window.innerWidth / 2, y: window.innerHeight / 2 })"}
   const el = document.elementFromPoint(point.x, point.y)
   if (!el) return null
   const rect = el.getBoundingClientRect()

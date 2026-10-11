@@ -112,6 +112,15 @@ export function ReviewBrowser(props: {
   // the view down and returns the pane to the sandboxed iframe.
   const nativeApi = () => window.api?.previewHost
   const nativeWanted = () => nativeApi() !== undefined && sync().data.config.preview?.nativeHost === true && local()
+  // Monotonic attach tag: a stale attach settling after a newer one must not
+  // downgrade the newer attach's state or detach the newer view.
+  let attachTag = 0
+  const failHost = () => {
+    setState("native", false)
+    void nativeApi()
+      ?.detach()
+      .catch(() => {})
+  }
   createEffect(() => {
     const host = nativeApi()
     if (!host) return
@@ -119,11 +128,15 @@ export function ReviewBrowser(props: {
       // Reading state.frame tracks reload bumps so the reload button reloads
       // the native view too; attach always performs a fresh loadURL.
       state.frame
+      const tag = ++attachTag
       void host.attach(state.loaded).then(
-        () => setState("native", true),
         () => {
-          setState("native", false)
-          void host.detach().catch(() => {})
+          if (tag !== attachTag) return
+          setState("native", true)
+        },
+        () => {
+          if (tag !== attachTag) return
+          failHost()
         },
       )
       return
@@ -132,19 +145,29 @@ export function ReviewBrowser(props: {
     setState("native", false)
     void host.detach().catch(() => {})
   })
+  // The main process tears the view down underneath us when a guest navigates
+  // away from loopback (or the host renderer reloads); return to the iframe.
+  createEffect(() => {
+    const unsubscribe = window.api?.onHostTeardown?.(() => {
+      if (state.native) setState("native", false)
+    })
+    onCleanup(() => unsubscribe?.())
+  })
   // The native view composites above the renderer window, so it must be told
   // where the pane sits (CSS px → DIP conversion happens main-side) and must
-  // shrink to nothing while the mark overlay needs pointer events.
+  // shrink to nothing while the mark overlay needs pointer events. A bounds
+  // failure means the view no longer matches the pane; the first rejection
+  // falls back to the iframe (fail-fast: no retry loop against a dead view).
   const syncNativeBounds = () => {
     const host = nativeApi()
     if (!host || !state.native) return
     if (state.marking) {
-      void host.setBounds({ x: 0, y: 0, width: 0, height: 0 }).catch(() => {})
+      void host.setBounds({ x: 0, y: 0, width: 0, height: 0 }).catch(failHost)
       return
     }
     const box = paneBox?.getBoundingClientRect()
     if (!box || box.width === 0 || box.height === 0) return
-    void host.setBounds({ x: box.x, y: box.y, width: box.width, height: box.height }).catch(() => {})
+    void host.setBounds({ x: box.x, y: box.y, width: box.width, height: box.height }).catch(failHost)
   }
   createEffect(() => {
     if (!state.native) return

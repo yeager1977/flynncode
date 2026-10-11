@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
 import { isHostable, parsePreviewRect, sanitizeElement } from "./preview-host"
 
 describe("isHostable", () => {
@@ -15,6 +16,17 @@ describe("isHostable", () => {
     expect(isHostable("http://10.0.0.2:3000")).toBe(false)
     expect(isHostable("ftp://localhost:21")).toBe(false)
     expect(isHostable("not a url")).toBe(false)
+  })
+
+  test("128-bit-adjacent hostnames loop back through 127/8 only", () => {
+    expect(isHostable("http://127.9.9.9:3000")).toBe(true)
+    expect(isHostable("http://10.127.0.1:3000")).toBe(false)
+  })
+
+  test("mDNS *.local is refused: it can resolve to LAN hosts", () => {
+    expect(isHostable("http://foo.local:3000")).toBe(false)
+    expect(isHostable("https://printer.local/app")).toBe(false)
+    expect(isHostable("http://localhost.local/app")).toBe(false)
   })
 })
 
@@ -89,5 +101,14 @@ describe("sanitizeElement", () => {
       rect: { x: 1, y: 2, width: 3, height: 4 },
     })!
     expect(el).toEqual({ tag: "BODY", rect: { x: 1, y: 2, width: 3, height: 4 } })
+  })
+})
+
+describe("preview-host ipc surface", () => {
+  const ipcSource = readFileSync(new URL("./ipc.ts", import.meta.url), "utf8")
+
+  test("attach handler re-validates hostability in the main process", () => {
+    expect(ipcSource).toContain('"preview-host:attach"')
+    expect(ipcSource).toContain("isHostable(url)")
   })
 })

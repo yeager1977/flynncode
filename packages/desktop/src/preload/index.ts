@@ -192,6 +192,11 @@ const api: ElectronAPI = {
     capture: () => ipcRenderer.invoke("preview-host:capture"),
     inspect: (rect) => ipcRenderer.invoke("preview-host:inspect", rect),
   },
+  onHostTeardown: (cb) => {
+    const handler = () => cb()
+    ipcRenderer.on("preview-host-teardown", handler)
+    return () => ipcRenderer.removeListener("preview-host-teardown", handler)
+  },
   setForceFocus: (enabled) => ipcRenderer.invoke("set-force-focus", enabled),
   recordFatalRendererError: (error) => ipcRenderer.invoke("record-fatal-renderer-error", error),
   setNativeTranslations: (bundle) => ipcRenderer.invoke("set-native-translations", bundle),

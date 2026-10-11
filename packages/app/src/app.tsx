@@ -293,6 +293,7 @@ declare global {
           rect: { x: number; y: number; width: number; height: number }
         } | null>
       }
+      onHostTeardown?: (cb: () => void) => () => void
     }
   }
 }

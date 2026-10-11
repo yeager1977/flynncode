@@ -107,6 +107,22 @@ describe("point-mode annotation", () => {
   })
 })
 
+describe("native preview host wiring", () => {
+  const paneSource = readFileSync(new URL("./review-browser.tsx", import.meta.url), "utf8")
+
+  test("prefers the native host when the flag and desktop api exist", () => {
+    expect(paneSource).toContain("window.api?.previewHost")
+    expect(paneSource).toContain("nativeWanted")
+    expect(paneSource).toContain("host.attach(state.loaded)")
+  })
+
+  test("any host failure tears the view down and returns to the iframe", () => {
+    expect(paneSource).toContain('setState("native", false)')
+    expect(paneSource).toContain("host.detach()")
+    expect(paneSource).toContain("onHostTeardown")
+  })
+})
+
 describe("auto-open on running preview", () => {
   const panelSource = readFileSync(new URL("./v2/review-panel-v2.tsx", import.meta.url), "utf8")
 
