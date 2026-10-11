@@ -94,10 +94,16 @@ export const Info = Schema.Struct({
     Schema.Struct({
       enabled: Schema.optional(Schema.Boolean),
       allowedApps: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
+      tiers: Schema.optional(
+        Schema.Struct({
+          observe: Schema.optional(Schema.Struct({ enabled: Schema.optional(Schema.Boolean) })),
+          mutate: Schema.optional(Schema.Struct({ enabled: Schema.optional(Schema.Boolean) })),
+        }),
+      ),
     }),
   ).annotate({
     description:
-      "Opt-in local computer use fallback after the browser pane. Disabled by default; requires per-app allowlist plus per-action approval.",
+      "Opt-in local computer use fallback after the browser pane. Disabled by default; requires per-app allowlist plus per-action approval, and never self-approves. The reserved in-app pane surface uses the exact app id 'flynncode:browser-pane'; actions are gated per tier: 'observe' covers screenshot, 'mutate' covers click/type/keypress/scroll, both default to enabled and only tighten.",
   }),
   enabled_providers: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
     description: "When set, ONLY these providers will be enabled. All other providers will be ignored",
