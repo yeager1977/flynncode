@@ -26,6 +26,9 @@ type PhoneApi = {
   rotateMobilePhonePassword?: () => Promise<string>
   getPhoneAccess?: () => Promise<boolean>
   setPhoneAccess?: (enabled: boolean) => Promise<void>
+  // Live relay updates: the desktop main process rebuilds the running relay
+  // publisher after a successful save, so a restart is not needed.
+  setRelayConfig?: (config: { token?: string; remoteToken?: string; url?: string }) => Promise<void>
 }
 
 const STOPPED_STATUS: MobileGatewayStatus = { running: false, port: 4097, lanUrls: [], launcherUrls: [], tailnetUrls: [], tailnetLauncherUrls: [] }
@@ -99,13 +102,14 @@ export const PhoneCard: Component = () => {
     void storeApi()?.storeSet?.("opencode.settings", "relayRemoteToken", value).then(() => {
       setRemoteToken("")
       setTokenSaved(true)
+      void phoneApi?.setRelayConfig?.({ remoteToken: value }).catch(() => undefined)
     }).catch(() => undefined)
   }
 
   // The relay publish URL is the deepthought host's gateway URL that the
   // sidecar posts needs-input notices to. The desktop main process reads this
-  // store key once at sidecar start, so a saved value takes effect after
-  // restarting the app; live update lands in Task 7.
+  // store key at sidecar start and pushes a saved value to the sidecar live,
+  // so the running publisher rebuilds without restarting the app.
   const [publishUrl, setPublishUrl] = createStore({
     stored: undefined as string | undefined,
     input: "",
@@ -120,6 +124,7 @@ export const PhoneCard: Component = () => {
     }
     void storeApi()?.storeSet?.("opencode.settings", "relayPublishUrl", value).then(() => {
       setPublishUrl({ stored: value, input: "", saved: true })
+      void phoneApi?.setRelayConfig?.({ url: value }).catch(() => undefined)
     }).catch(() => undefined)
   }
 

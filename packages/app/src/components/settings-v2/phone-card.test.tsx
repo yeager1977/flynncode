@@ -29,6 +29,11 @@ describe("phone launcher url", () => {
     expect(source).toContain('showToast({ variant: "error", description: language.t("settings.phone.relayUrl.invalid") })')
   })
 
+  test("relay token and url saves push the config to the running sidecar", () => {
+    expect(source).toContain("setRelayConfig?.({ remoteToken: value })")
+    expect(source).toContain("setRelayConfig?.({ url: value })")
+  })
+
   test("relay url validation accepts http(s) gateway hosts and rejects other schemes", () => {
     expect(isHttpUrl("https://deepthought:4097/m")).toBe(true)
     expect(isHttpUrl("https://192.168.4.251")).toBe(true)
