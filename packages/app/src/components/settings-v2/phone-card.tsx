@@ -3,10 +3,12 @@ import { Switch } from "@opencode-ai/ui/v2/switch-v2"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { type Component, For, Show, createEffect, createResource, createSignal, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
+import { showToast } from "@/utils/toast"
 import { useLanguage } from "@/context/language"
 import { normalizeServerUrl, serverName, useServer, type ServerConnection } from "@/context/server"
 import { SettingsListV2 } from "./parts/list"
 import { createPhoneAccessController } from "./phone-access-controller"
+import { isHttpUrl } from "./phone-relay-url"
 import { canEncodeQr, drawQrToCanvas } from "./phone-qr"
 
 type MobileGatewayStatus = {
@@ -86,6 +88,9 @@ export const PhoneCard: Component = () => {
     void storeApi()?.storeGet?.("opencode.settings", "relayRemoteToken").then((value) => {
       if (value) setTokenSaved(true)
     }).catch(() => undefined)
+    void storeApi()?.storeGet?.("opencode.settings", "relayPublishUrl").then((value) => {
+      if (value) setPublishUrl("stored", value)
+    }).catch(() => undefined)
   })
 
   const saveRemoteToken = () => {
@@ -94,6 +99,27 @@ export const PhoneCard: Component = () => {
     void storeApi()?.storeSet?.("opencode.settings", "relayRemoteToken", value).then(() => {
       setRemoteToken("")
       setTokenSaved(true)
+    }).catch(() => undefined)
+  }
+
+  // The relay publish URL is the deepthought host's gateway URL that the
+  // sidecar posts needs-input notices to. The desktop main process reads this
+  // store key once at sidecar start, so a saved value takes effect after
+  // restarting the app; live update lands in Task 7.
+  const [publishUrl, setPublishUrl] = createStore({
+    stored: undefined as string | undefined,
+    input: "",
+    saved: false,
+  })
+
+  const saveRelayUrl = () => {
+    const value = publishUrl.input.trim()
+    if (!isHttpUrl(value)) {
+      showToast({ variant: "error", description: language.t("settings.phone.relayUrl.invalid") })
+      return
+    }
+    void storeApi()?.storeSet?.("opencode.settings", "relayPublishUrl", value).then(() => {
+      setPublishUrl({ stored: value, input: "", saved: true })
     }).catch(() => undefined)
   }
 
@@ -118,6 +144,9 @@ export const PhoneCard: Component = () => {
     const url = relayLauncherUrl()
     return url && canEncodeQr(url) ? url : undefined
   }
+  // Display the stored gateway URL, falling back to the derived-from-servers
+  // address while nothing is persisted.
+  const relayUrlValue = () => publishUrl.stored ?? relayLauncherUrl()
 
   const copyUrl = (url: string) => {
     const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
@@ -400,6 +429,57 @@ export const PhoneCard: Component = () => {
               <div class="settings-v2-servers-lead">
                 <div class="settings-v2-servers-copy">
                   <span class="settings-v2-servers-meta">{language.t("server.phone.relay.token.saved")}</span>
+                </div>
+              </div>
+            </div>
+          </Show>
+          <div class="settings-v2-servers-row">
+            <div class="settings-v2-servers-lead">
+              <div class="settings-v2-servers-copy">
+                <span class="settings-v2-servers-name">{language.t("settings.phone.relayUrl.label")}</span>
+                <span class="settings-v2-servers-meta">{language.t("settings.phone.relayUrl.hint")}</span>
+              </div>
+            </div>
+          </div>
+          <div class="settings-v2-servers-row">
+            <div class="settings-v2-servers-lead">
+              <div class="settings-v2-servers-copy">
+                <Show
+                  when={relayUrlValue()}
+                  fallback={
+                    <span class="settings-v2-servers-meta">{language.t("server.phone.relay.stopped")}</span>
+                  }
+                >
+                  {(url) => <span class="settings-v2-servers-name font-mono select-all">{url()}</span>}
+                </Show>
+              </div>
+            </div>
+          </div>
+          <div class="settings-v2-servers-row">
+            <div class="settings-v2-servers-lead">
+              <TextInputV2
+                appearance="base"
+                value={publishUrl.input}
+                onInput={(event) => setPublishUrl("input", event.currentTarget.value)}
+                placeholder={language.t("settings.phone.relayUrl.placeholder")}
+                spellcheck={false}
+                autocorrect="off"
+                autocomplete="off"
+                autocapitalize="off"
+                aria-label={language.t("settings.phone.relayUrl.label")}
+              />
+            </div>
+            <div class="settings-v2-servers-actions">
+              <ButtonV2 size="small" variant="ghost-muted" onClick={saveRelayUrl}>
+                {language.t("settings.phone.relayUrl.save")}
+              </ButtonV2>
+            </div>
+          </div>
+          <Show when={publishUrl.saved}>
+            <div class="settings-v2-servers-row">
+              <div class="settings-v2-servers-lead">
+                <div class="settings-v2-servers-copy">
+                  <span class="settings-v2-servers-meta">{language.t("settings.phone.relayUrl.saved")}</span>
                 </div>
               </div>
             </div>

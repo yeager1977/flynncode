@@ -510,6 +510,13 @@ export const dict = {
   "server.phone.relay.token.placeholder": "Paste token",
   "server.phone.relay.token.save": "Save",
   "server.phone.relay.token.saved": "Relay token saved. Needs-input notices will publish to your deepthought host.",
+  "settings.phone.relayUrl.label": "Relay URL",
+  "settings.phone.relayUrl.hint":
+    "Gateway URL on your deepthought host that needs-input notices publish to. A new value takes effect after you restart the app.",
+  "settings.phone.relayUrl.placeholder": "https://deepthought:4097/m",
+  "settings.phone.relayUrl.save": "Save",
+  "settings.phone.relayUrl.saved": "Relay URL saved. It takes effect after you restart the app.",
+  "settings.phone.relayUrl.invalid": "Enter an http(s) URL with a host, like https://deepthought:4097/m.",
   "server.sync.title": "Machine sync",
   "server.sync.unpaired": "Not paired. Pair with your other Flynncode computer on this network.",
   "server.sync.online": "{{name}} · online",
