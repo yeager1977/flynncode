@@ -5,13 +5,13 @@ import { DividerV2 } from "@opencode-ai/ui/v2/divider-v2"
 import { Switch } from "@opencode-ai/ui/v2/switch-v2"
 import { TextInputV2 } from "@opencode-ai/ui/v2/text-input-v2"
 import { TextareaV2 } from "@opencode-ai/ui/v2/textarea-v2"
-import { For, Show, createMemo, type Component } from "solid-js"
+import { For, Show, createMemo, onMount, type Component } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
-import { addRoutine, isValidRrule, removeRoutine, routinesFromConfig, routinesToConfig, toggleRoutine, updateRoutine, type StoredRoutine } from "./routines-edit"
+import { addRoutine, isValidRrule, removeRoutine, routinesFromConfig, routinesToConfig, toggleRoutine, updateRoutine, type StoredRoutine, type StoredRoutineRun } from "./routines-edit"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 
@@ -31,6 +31,25 @@ export const SettingsRoutinesV2: Component<{ directory?: string }> = (props) => 
     saving: false,
   })
   const routines = createMemo(() => routinesFromConfig(serverSync().data.config.routines))
+  // Full run history lives in the server's runs file (capped at 200, while
+  // recentRuns keeps only the last 10); prefer it and fall back to the config
+  // snapshot when the server request fails.
+  const [runHistory, setRunHistory] = createStore<Record<string, StoredRoutineRun[]>>({})
+
+  onMount(() => {
+    void serverSDK()
+      .client.global.routinesRuns()
+      .then((response) => {
+        if (!response.data) return
+        setRunHistory(
+          response.data.reduce<Record<string, StoredRoutineRun[]>>((acc, run) => {
+            (acc[run.routineId] ??= []).push(run)
+            return acc
+          }, {}),
+        )
+      })
+      .catch(() => undefined)
+  })
 
   const save = async (next: ReturnType<typeof routinesFromConfig>) => {
     setDraft({ saving: true, error: "" })
@@ -258,10 +277,10 @@ export const SettingsRoutinesV2: Component<{ directory?: string }> = (props) => 
                   {routine.rrule ?? routine.dailyAt ?? routine.interval ?? language.t("settings.routines.manual")}
                   {routine.lastRun ? ` · ${routine.lastRun}` : ""}
                 </div>
-                <Show when={routine.recentRuns && routine.recentRuns.length > 0}>
+                <Show when={(runHistory[routine.id] ?? routine.recentRuns)?.length}>
                   <div class="text-12-regular text-text-weak">{language.t("settings.routines.history")}</div>
                   <ul class="flex flex-col gap-1">
-                    <For each={routine.recentRuns ?? []}>
+                    <For each={runHistory[routine.id] ?? routine.recentRuns ?? []}>
                       {(run) => (
                         <li class="truncate text-12-regular text-text-weak" dir="ltr">
                           {run.startedAt} ·{" "}
