@@ -267,6 +267,7 @@ export default defineConfig({
             "references",
             "custom-tools",
             "hooks-reference",
+            "computer-use",
           ],
         },
 
