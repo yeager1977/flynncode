@@ -89,7 +89,11 @@ describe("session.system", () => {
       new URL("../../src/session/system.ts", import.meta.url).toString().replace("file://", ""),
     ).text()
     expect(source).toContain("Additional workspace folders:")
-    expect(source).toContain("additionalDirectories")
+    // Folder authority is session-scoped (C1): the env extras come from the
+    // SessionFolders list for this session, never from instance config.
+    expect(source).toContain("SessionFolders.Service")
+    expect(source).toContain("folders.list(sessionID)")
+    expect(source).not.toContain("additionalDirectories")
   })
 
   test("selects the Meta prompt for Muse Spark model IDs", () => {
