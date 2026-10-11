@@ -603,7 +603,7 @@ export function ReviewBrowser(props: {
                     src={freeze()}
                     alt=""
                     draggable={false}
-                    class="absolute inset-0 -z-0 size-full select-none"
+                    class="absolute inset-0 size-full select-none"
                   />
                 )}
               </Show>
