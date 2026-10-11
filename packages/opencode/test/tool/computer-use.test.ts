@@ -28,7 +28,7 @@ const baseLayer = LayerNode.compile(LayerNode.group([Config.node, Truncate.node,
 const it = testEffect(Layer.merge(baseLayer, fakeExecutorLayer))
 const itBase = testEffect(baseLayer)
 
-const asked: Array<{ permission: string; patterns: Array<string> }> = []
+const asked: Array<{ permission: string; patterns: ReadonlyArray<string> }> = []
 const ctx = {
   sessionID: SessionID.make("ses_test"),
   messageID: MessageID.make("msg_test"),
@@ -37,7 +37,7 @@ const ctx = {
   abort: AbortSignal.any([]),
   messages: [],
   metadata: () => Effect.void,
-  ask: (request: { permission: string; patterns: Array<string> }) =>
+  ask: (request: { permission: string; patterns: ReadonlyArray<string> }) =>
     Effect.sync(() => {
       asked.push({ permission: request.permission, patterns: [...request.patterns] })
     }),
