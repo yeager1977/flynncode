@@ -27,6 +27,7 @@ import { LSP } from "@/lsp/lsp"
 import { MCP } from "@/mcp"
 import { McpAuth } from "@/mcp/auth"
 import { Permission } from "@/permission"
+import { AutoReviewer } from "@/permission/auto-reviewer"
 import { Plugin } from "@/plugin"
 import { PluginPtyEnvironment } from "@/plugin/pty-environment"
 import { InstanceStore } from "@/project/instance-store"
@@ -233,7 +234,7 @@ type RouteRequirements =
   | HttpRouter.Request<"Requires", unknown>
   | HttpRouter.Request<"GlobalRequires", never>
 
-const app = LayerNode.group([
+export const app = LayerNode.group([
   Npm.node,
   FSUtil.node,
   Database.node,
@@ -256,6 +257,7 @@ const app = LayerNode.group([
   Question.node,
   ComputerUseExecutor.node,
   Permission.node,
+  AutoReviewer.node,
   PermissionSaved.node,
   HooksTrust.node,
   HooksContext.node,

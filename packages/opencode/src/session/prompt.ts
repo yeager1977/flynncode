@@ -1,5 +1,6 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { SessionFolders } from "@opencode-ai/core/session/folders"
+import { AutoReviewer } from "@/permission/auto-reviewer"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import path from "path"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
@@ -164,6 +165,7 @@ const layer = Layer.effect(
     const scope = yield* Scope.Scope
     const instruction = yield* Instruction.Service
     const sessionFolders = yield* SessionFolders.Service
+    const autoReviewer = yield* AutoReviewer.Service
     const state = yield* SessionRunState.Service
     const revert = yield* SessionRevert.Service
     const summary = yield* SessionSummary.Service
@@ -1416,6 +1418,7 @@ const layer = Layer.effect(
               Effect.provideService(Truncate.Service, truncate),
               Effect.provideService(RuntimeFlags.Service, flags),
               Effect.provideService(SessionFolders.Service, sessionFolders),
+              Effect.provideService(AutoReviewer.Service, autoReviewer),
             )
 
             if (lastUser.format?.type === "json_schema") {
@@ -1811,6 +1814,7 @@ export const node = LayerNode.make({
   service: Service,
   layer: layer,
   deps: [
+    AutoReviewer.node,
     SessionFolders.node,
     SessionStatus.node,
     Session.node,

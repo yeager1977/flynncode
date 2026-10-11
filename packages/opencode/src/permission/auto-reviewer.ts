@@ -2,7 +2,7 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { LLMEvent } from "@opencode-ai/llm"
 import { Context, Effect, Layer, Option } from "effect"
-import * as Stream from "effect/Stream"
+import { Stream } from "effect"
 import { Agent } from "@/agent/agent"
 import { LLM } from "@/session/llm"
 import { MessageID, SessionID } from "@/session/schema"
@@ -120,8 +120,12 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Au
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
+    // Capture stable graph services, while the request still supplies its
+    // InstanceRef/location. HTTP handlers do not carry the layer-build context.
+    const services = yield* Effect.context<never>()
     const request = Effect.fn("AutoReviewer.request")(function* (input: RequestInput) {
       return yield* attempt(input).pipe(
+        Effect.provide(services),
         Effect.timeout(REQUEST_TIMEOUT),
         Effect.catchCause(() => Effect.succeed<Verdict>("defer")),
       )
@@ -130,6 +134,6 @@ export const layer = Layer.effect(
   }),
 )
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [] })
+export const node = LayerNode.make({ service: Service, layer: layer, deps: [Agent.node, Provider.node, Session.node, LLM.node] })
 
 export * as AutoReviewer from "./auto-reviewer"
