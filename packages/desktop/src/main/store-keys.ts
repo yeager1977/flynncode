@@ -4,6 +4,7 @@ export const FIRST_LAUNCH_ONBOARDING_COMPLETE_KEY = "firstLaunchOnboardingComple
 export const OLD_LAYOUT_ELIGIBLE_KEY = "oldLayoutEligible"
 export const WSL_SERVERS_KEY = "wslServers"
 export const PINCH_ZOOM_ENABLED_KEY = "pinchZoomEnabled"
+export const QUICK_ENTRY_ENABLED_KEY = "quickEntryEnabled"
 export const WINDOW_IDS_KEY = "windowIds"
 export const MOBILE_PHONE_PASSWORD_KEY = "mobilePhonePassword"
 export const RELAY_TOKEN_KEY = "relayToken"

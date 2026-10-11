@@ -1,9 +1,10 @@
-import { Component, For, Show, createMemo, lazy, onCleanup, onMount } from "solid-js"
+import { Component, For, Show, createMemo, createResource, lazy, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
+import { Switch } from "@opencode-ai/ui/v2/switch-v2"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
@@ -12,9 +13,11 @@ import { showToast } from "@/utils/toast"
 import fuzzysort from "fuzzysort"
 import { DEFAULT_PALETTE_KEYBIND, formatKeybind, parseKeybind, useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
+import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
 import { SettingsList } from "./settings-list"
 import { SettingsListV2 } from "./settings-v2/parts/list"
+import { SettingsRowV2 } from "./settings-v2/parts/row"
 
 const IconV2 = lazy(() => import("@opencode-ai/ui/v2/icon").then((module) => ({ default: module.Icon })))
 
@@ -413,10 +416,27 @@ export function createKeybindSettingsController(
 function SettingsKeybindsV2() {
   const command = useCommand()
   const settings = useSettings()
+  const platform = usePlatform()
   const controller = createKeybindSettingsController({
     command,
     settings,
   })
+
+  // The quick-entry overlay shortcut is a desktop toggle; hide the row in web.
+  const quickEntryAvailable = createMemo(
+    () => platform.platform === "desktop" && typeof platform.getQuickEntryEnabled === "function",
+  )
+  const [quickEntry, { mutate: setQuickEntryState }] = createResource(
+    () => quickEntryAvailable(),
+    () => Promise.resolve(platform.getQuickEntryEnabled?.() ?? true).catch(() => true),
+    { initialValue: true },
+  )
+  const onQuickEntryChange = (checked: boolean) => {
+    setQuickEntryState(checked)
+    const update = platform.setQuickEntryEnabled?.(checked)
+    if (!update) return
+    void update.catch(() => setQuickEntryState(!checked))
+  }
 
   return (
     <SettingsKeybindsV2View
@@ -428,6 +448,9 @@ function SettingsKeybindsV2() {
       onCapture={controller.capture.toggle}
       hasOverrides={controller.settings.hasOverrides}
       onReset={controller.settings.reset}
+      quickEntryEnabled={quickEntry.latest}
+      showQuickEntry={quickEntryAvailable()}
+      onQuickEntryChange={onQuickEntryChange}
     />
   )
 }
@@ -441,6 +464,9 @@ function SettingsKeybindsV2View(props: {
   onCapture: (id: string) => void
   hasOverrides: () => boolean
   onReset: () => void
+  showQuickEntry: boolean
+  quickEntryEnabled: boolean
+  onQuickEntryChange: (checked: boolean) => void
 }) {
   const language = useLanguage()
   const [store, setStore] = createStore({ filter: "" })
@@ -482,6 +508,20 @@ function SettingsKeybindsV2View(props: {
         </div>
       </div>
       <div class="settings-v2-tab-body">
+        <Show when={props.showQuickEntry}>
+          <div class="settings-v2-section">
+            <SettingsListV2>
+              <SettingsRowV2
+                title={language.t("settings.shortcuts.quickEntry.title")}
+                description={language.t("settings.shortcuts.quickEntry.description")}
+              >
+                <div data-action="settings-quick-entry">
+                  <Switch checked={props.quickEntryEnabled} onChange={props.onQuickEntryChange} />
+                </div>
+              </SettingsRowV2>
+            </SettingsListV2>
+          </div>
+        </Show>
         <div class="settings-v2-shortcuts flex flex-col gap-8">
           <For each={props.groups}>
             {(group) => (

@@ -174,6 +174,9 @@ const api: ElectronAPI = {
     ipcRenderer.on("zoom-factor-changed", handler)
     return () => ipcRenderer.removeListener("zoom-factor-changed", handler)
   },
+  getQuickEntryEnabled: () => ipcRenderer.invoke("get-quick-entry-enabled"),
+  setQuickEntryEnabled: (enabled) => ipcRenderer.invoke("set-quick-entry-enabled", enabled),
+  screenshot: () => ipcRenderer.invoke("screenshot"),
   setTitlebar: (theme) => ipcRenderer.invoke("set-titlebar", theme),
   runDesktopMenuAction: (action) => ipcRenderer.invoke("run-desktop-menu-action", action),
   setBackgroundColor: (color: string) => ipcRenderer.invoke("set-background-color", color),

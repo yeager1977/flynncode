@@ -67,6 +67,8 @@ const keys = [
   "knowledge.empty.title",
   "knowledge.folders.hint",
   "prompt.toast.disposableFlagFailed.title",
+  "quickEntry.attach",
+  "quickEntry.attachFailed",
   "quickEntry.empty",
   "quickEntry.placeholder",
   "quickEntry.send",
@@ -200,6 +202,8 @@ const keys = [
   "settings.permissions.sandbox.workspace",
   "settings.providers.vendor.signInChatGPT",
   "settings.providers.vendor.signInClaude",
+  "settings.shortcuts.quickEntry.description",
+  "settings.shortcuts.quickEntry.title",
   "toast.folders.updated",
 ] as const
 

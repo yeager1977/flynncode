@@ -314,6 +314,14 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
 
     setPinchZoomEnabled,
 
+    getQuickEntryEnabled: () => window.api.getQuickEntryEnabled(),
+
+    setQuickEntryEnabled: (enabled) => window.api.setQuickEntryEnabled(enabled),
+
+    screenshot: async () => {
+      return window.api.screenshot().catch(() => null)
+    },
+
     runDesktopMenuAction,
 
     checkAppExists: async (appName: string) => {

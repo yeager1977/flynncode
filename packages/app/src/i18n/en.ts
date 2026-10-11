@@ -1090,6 +1090,8 @@ export const dict = {
   "dispatch.placeholder": "Describe the task to run",
   "dispatch.send": "Send",
   "dispatch.sendFailed": "Could not send the task",
+  "quickEntry.attach": "Attach screenshot",
+  "quickEntry.attachFailed": "Could not attach the screenshot",
   "quickEntry.placeholder": "Type a prompt for the current project…",
   "quickEntry.send": "Send",
   "quickEntry.empty": "Open a project first, then use quick entry to start a session.",
@@ -1628,6 +1630,8 @@ export const dict = {
   "settings.shortcuts.pressKeys": "Press keys",
   "settings.shortcuts.search.placeholder": "Search shortcuts",
   "settings.shortcuts.search.empty": "No shortcuts found",
+  "settings.shortcuts.quickEntry.title": "Quick entry",
+  "settings.shortcuts.quickEntry.description": "Open the quick-entry overlay with the global shortcut",
 
   "settings.shortcuts.group.general": "General",
   "settings.shortcuts.group.session": "Session",

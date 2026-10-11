@@ -6,6 +6,8 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 import { parseDesktopNativeBundle, type DesktopNativeBundle } from "@opencode-ai/app/i18n/desktop-native"
+import { captureScreen } from "./screen-capture"
+import { getQuickEntryEnabled, setQuickEntryEnabled } from "./quick-entry"
 
 import type { FatalRendererError, ServerReadyData, TitlebarTheme } from "../preload/types"
 import { parsePairInput, type MachineSync } from "./machine-sync"
@@ -473,6 +475,11 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("set-pinch-zoom-enabled", (_event: IpcMainInvokeEvent, enabled: boolean) => {
     setPinchZoomEnabled(enabled)
   })
+  ipcMain.handle("get-quick-entry-enabled", () => getQuickEntryEnabled())
+  ipcMain.handle("set-quick-entry-enabled", (_event: IpcMainInvokeEvent, enabled: boolean) => {
+    setQuickEntryEnabled(enabled)
+  })
+  ipcMain.handle("screenshot", () => captureScreen().catch(() => null))
   ipcMain.handle("set-titlebar", (event: IpcMainInvokeEvent, theme: TitlebarTheme) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return
