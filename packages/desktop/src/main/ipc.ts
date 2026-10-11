@@ -11,7 +11,7 @@ import { getQuickEntryEnabled, setQuickEntryEnabled } from "./quick-entry"
 
 import type { FatalRendererError, ServerReadyData, TitlebarTheme } from "../preload/types"
 import { parsePairInput, type MachineSync } from "./machine-sync"
-import { parsePrefs } from "./sidecar-sync"
+import { parsePrefs, parseRelayConfig } from "./sidecar-sync"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { setForceFocus } from "./debug"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
@@ -174,6 +174,12 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("get-phone-access", () => deps.machineSync.phoneAccess())
   ipcMain.handle("set-phone-access", (_event: IpcMainInvokeEvent, enabled: unknown) => {
     if (typeof enabled === "boolean") deps.machineSync.setPhoneAccess(enabled)
+  })
+  // Relay token and publish-URL saves push live to the running sidecar; the
+  // renderer persists the store value first and then sends the change.
+  ipcMain.handle("set-relay-config", (_event: IpcMainInvokeEvent, config: unknown) => {
+    const update = parseRelayConfig(config)
+    if (update) deps.machineSync.updateRelayConfig(update)
   })
   ipcMain.handle("machine-sync-status", () => deps.machineSync.status())
   ipcMain.handle("machine-sync-create-code", () => deps.machineSync.createPairingCode())

@@ -77,6 +77,7 @@ const api: ElectronAPI = {
   rotateMobilePhonePassword: () => ipcRenderer.invoke("rotate-mobile-phone-password"),
   getPhoneAccess: () => ipcRenderer.invoke("get-phone-access"),
   setPhoneAccess: (enabled) => ipcRenderer.invoke("set-phone-access", enabled),
+  setRelayConfig: (config) => ipcRenderer.invoke("set-relay-config", config),
   machineSync: {
     status: () => ipcRenderer.invoke("machine-sync-status"),
     subscribe: (cb) => {

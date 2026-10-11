@@ -3,7 +3,9 @@ import {
   createReconciler,
   gatewayWanted,
   isSyncMessage,
+  overlayRelaySettings,
   parsePrefs,
+  parseRelayConfig,
   parseSyncCommand,
   parseSyncStart,
   shutdown,
@@ -61,6 +63,73 @@ describe("parseSyncCommand", () => {
     })
     expect(parseSyncCommand({ type: "stop" })).toBeUndefined()
     expect(parseSyncCommand({ type: "sync-pairing-code", code: 123456, expiresAt: 5 })).toBeUndefined()
+  })
+})
+
+describe("parseRelayConfig", () => {
+  test("parses a command that carries every field", () => {
+    const url = "https://deepthought:4097/m"
+    expect(parseSyncCommand({ type: "relay-config", token: "t", remoteToken: "r", url })).toEqual({
+      type: "relay-config",
+      token: "t",
+      remoteToken: "r",
+      url,
+    })
+  })
+
+  test("keeps field absence instead of widening it to empty values", () => {
+    expect(parseSyncCommand({ type: "relay-config", url: "https://deepthought:4097/m" })).toEqual({
+      type: "relay-config",
+      url: "https://deepthought:4097/m",
+    })
+    expect(parseRelayConfig({ type: "relay-config", remoteToken: "r" })).toEqual({ remoteToken: "r" })
+  })
+
+  test("ignores non-string and empty fields, and a command with none of them", () => {
+    expect(parseSyncCommand({ type: "relay-config", token: "t", remoteToken: "", url: 1 })).toEqual({
+      type: "relay-config",
+      token: "t",
+    })
+    expect(parseRelayConfig({ type: "relay-config", remoteToken: "" })).toBeUndefined()
+    expect(parseRelayConfig({ type: "relay-config" })).toBeUndefined()
+    expect(parseRelayConfig({ type: "relay-config", url: null })).toBeUndefined()
+  })
+})
+
+describe("overlayRelaySettings", () => {
+  const current = { token: "t0", remoteToken: "r0", url: "https://old:4097/m" }
+
+  test("overlays only the provided fields and keeps the rest", () => {
+    expect(overlayRelaySettings(current, { url: "https://new:4097/m" }, {})).toEqual({
+      token: "t0",
+      remoteToken: "r0",
+      url: "https://new:4097/m",
+    })
+    expect(overlayRelaySettings(current, { token: "t1", remoteToken: "r1", url: "u1" }, {})).toEqual({
+      token: "t1",
+      remoteToken: "r1",
+      url: "u1",
+    })
+  })
+
+  test("preserves everything when nothing usable is provided (no clearing)", () => {
+    expect(overlayRelaySettings(current, {}, {})).toEqual(current)
+    expect(overlayRelaySettings(current, { token: "", remoteToken: "", url: "" }, {})).toEqual(current)
+  })
+
+  test("env-provided values keep the precedence they had at start", () => {
+    expect(overlayRelaySettings(current, { url: "https://new:4097/m" }, { OPENCODE_RELAY_URL: "https://env:4097/m" })).toEqual(current)
+    expect(overlayRelaySettings(current, { remoteToken: "r1" }, { OPENCODE_RELAY_REMOTE_TOKEN: "r0" })).toEqual({
+      token: "t0",
+      remoteToken: "r0",
+      url: "https://old:4097/m",
+    })
+    // Each field is gated by its own env key.
+    expect(overlayRelaySettings(current, { token: "t1", url: "u1" }, { OPENCODE_RELAY_REMOTE_TOKEN: "r0" })).toEqual({
+      token: "t1",
+      remoteToken: "r0",
+      url: "u1",
+    })
   })
 })
 

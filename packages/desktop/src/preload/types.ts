@@ -8,6 +8,7 @@ import type {
   PluginConfigsPayload,
   PluginEntry,
 } from "@opencode-ai/app/components/settings-v2/plugins-types"
+import type { RelayConfigUpdate } from "../main/sidecar-sync"
 export type {
   WslDistroProbe,
   WslInstalledDistro,
@@ -107,6 +108,7 @@ export type ElectronAPI = {
   rotateMobilePhonePassword: () => Promise<string>
   getPhoneAccess: () => Promise<boolean>
   setPhoneAccess: (enabled: boolean) => Promise<void>
+  setRelayConfig: (config: RelayConfigUpdate) => Promise<void>
   machineSync: MachineSyncPlatform
   storeGet: (name: string, key: string) => Promise<string | null>
   storeSet: (name: string, key: string, value: string) => Promise<void>

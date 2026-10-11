@@ -12,9 +12,11 @@ import { startRelayPublisher, relayPublisherConfig } from "./relay-publisher"
 import {
   createReconciler,
   gatewayWanted,
+  overlayRelaySettings,
   parseSyncCommand,
   parseSyncStart,
   shutdown,
+  type RelayConfigUpdate,
   type SidecarSyncCommand,
   type SidecarSyncMessage,
   type SidecarSyncStart,
@@ -230,6 +232,7 @@ async function handleSyncCommand(command: SidecarSyncCommand) {
   // Main waits on a sync-now requestID, so it always gets an answer.
   if (command.type === "sync-now") return replySyncNow(command.requestID)
   if (command.type === "sync-reload") return replyReload(command.requestID, command.force)
+  if (command.type === "relay-config") return applyRelayConfig(command)
   const gate = syncGate
   if (!gate) return
   if (command.type === "sync-config") {
@@ -251,6 +254,19 @@ async function handleSyncCommand(command: SidecarSyncCommand) {
     gate.update({ prefs: command.prefs })
     return
   }
+}
+
+// A saved relay token or publish URL rebuilds the publisher without an app
+// restart: overlay the update onto the stored start settings, stop the running
+// publisher, and let the reconcile start a new one from the overlaid settings
+// (the gateway itself is unaffected). Env-provided values keep the precedence
+// they had at start.
+async function applyRelayConfig(update: RelayConfigUpdate) {
+  const config = gatewayConfig
+  if (!config) return
+  config.command.relay = overlayRelaySettings(config.command.relay, update, process.env)
+  stopRelayPublisher()
+  await reconcileGateway()
 }
 
 async function replySyncNow(requestID: string) {

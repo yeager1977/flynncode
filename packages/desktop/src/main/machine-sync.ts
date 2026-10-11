@@ -12,6 +12,7 @@ import type {
 import {
   parsePeer,
   parsePrefs,
+  type RelayConfigUpdate,
   type SidecarSyncCommand,
   type SidecarSyncMessage,
   type SidecarSyncStart,
@@ -251,6 +252,10 @@ export function createMachineSync(deps: {
       deps.store.set(SYNC_PREFS_KEY, prefs)
       deps.post({ type: "sync-prefs", prefs })
       return undefined
+    },
+    /** Relays a settings-store relay save to the running sidecar. */
+    updateRelayConfig(update: RelayConfigUpdate) {
+      deps.post({ type: "relay-config", ...update })
     },
     handleSidecarMessage(message: SidecarSyncMessage) {
       if (message.type === "sync-paired") {
