@@ -143,6 +143,9 @@ export async function attachView(win: BrowserWindow, url: string) {
   detachView(win)
   hookOwnerLifecycle(win)
   previewSession = session.fromPartition("preview")
+  // A fresh guest must never inherit a stale renderer-hide from a previous
+  // marking session: the flag only has meaning for the live view it hid.
+  hiddenByRenderer.delete(win)
   const view = new WebContentsView({
     webPreferences: { sandbox: true, contextIsolation: true, partition: "preview" },
   })
@@ -187,6 +190,9 @@ export function setViewVisible(win: BrowserWindow, visible: boolean) {
 }
 
 export function detachView(win: BrowserWindow) {
+  // The renderer-hide flag is meaningless without the view it hid; a detached
+  // view must not leak a stale hide into the next attach.
+  hiddenByRenderer.delete(win)
   const onClosed = closedHandlers.get(win)
   if (onClosed) {
     win.removeListener("closed", onClosed)

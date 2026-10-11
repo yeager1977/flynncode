@@ -104,6 +104,32 @@ describe("sanitizeElement", () => {
   })
 })
 
+describe("preview-host renderer-hide lifecycle", () => {
+  const source = readFileSync(new URL("./preview-host.ts", import.meta.url), "utf8")
+
+  const fnSource = (start: string, end: string) => {
+    const from = source.indexOf(start)
+    const to = source.indexOf(end, from + 1)
+    if (from === -1 || to === -1) throw new Error(`marker not found: ${start}`)
+    return source.slice(from, to)
+  }
+
+  test("a fresh attach clears a stale renderer-hide so ownership bounds can reveal it", () => {
+    const attach = fnSource("export async function attachView", "export function setViewBounds")
+    expect(attach).toContain("hiddenByRenderer.delete(win)")
+    expect(attach.indexOf("hiddenByRenderer.delete(win)")).toBeLessThan(attach.indexOf("new WebContentsView"))
+  })
+
+  test("detaching the view clears its renderer-hide flag", () => {
+    const detach = fnSource("export function detachView", "export async function captureView")
+    expect(detach).toContain("hiddenByRenderer.delete(win)")
+  })
+
+  test("bounds refreshes still honor an active renderer-hide", () => {
+    expect(source).toContain("if (hiddenByRenderer.get(win) === true) return")
+  })
+})
+
 describe("preview-host ipc surface", () => {
   const ipcSource = readFileSync(new URL("./ipc.ts", import.meta.url), "utf8")
 
