@@ -17,11 +17,9 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
     const ripgrep = yield* Ripgrep.Service
     const locations = yield* LocationServiceMap.Service
 
-    const filesystem = Effect.fnUntraced(function* <A, E, R>(effect: Effect.Effect<A, E, R>) {
+    const filesystem = Effect.fnUntraced(function* <A, E, R>(root: string, effect: Effect.Effect<A, E, R>) {
       return yield* effect.pipe(
-        Effect.provide(
-          locations.get(Location.Ref.make({ directory: AbsolutePath.make((yield* InstanceState.context).directory) })),
-        ),
+        Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(root) }))),
       )
     })
 
@@ -44,20 +42,31 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
     const findFile = Effect.fn("FileHttpApi.findFile")(function* (ctx: {
       query: { query: string; dirs?: "true" | "false"; type?: "file" | "directory"; limit?: number }
     }) {
-      const directory = (yield* InstanceState.context).directory
+      const instance = yield* InstanceState.context
       const limit = ctx.query.limit ?? 10
       const type = ctx.query.type ?? (ctx.query.dirs === "false" ? "file" : undefined)
       const started = performance.now()
-      const found = yield* filesystem(FileSystem.Service.use((fs) => fs.find({ query: ctx.query.query, limit, type })))
+      const roots = [instance.directory, ...instance.additionalDirectories]
+      const rooted = yield* Effect.forEach(roots, (root) =>
+        filesystem(
+          root,
+          FileSystem.Service.use((fs) => fs.find({ query: ctx.query.query, limit, type })).pipe(
+            Effect.map((items) =>
+              items.map((item) => (root === instance.directory ? item.path : path.resolve(root, item.path))),
+            ),
+          ),
+        ),
+      )
+      const found = rooted.flat()
       yield* Effect.logInfo("find file", {
         query: ctx.query.query,
         type,
-        directory,
+        directory: instance.directory,
         limit,
         results: found.length,
         duration: Math.round(performance.now() - started),
       })
-      return found.map((item) => item.path)
+      return found
     })
 
     const findSymbol = Effect.fn("FileHttpApi.findSymbol")(function* () {
@@ -65,8 +74,25 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
     })
 
     const list = Effect.fn("FileHttpApi.list")(function* (ctx: { query: { path: string } }) {
-      const directory = (yield* InstanceState.context).directory
+      const instance = yield* InstanceState.context
+      // Multifold: the file tree accepts absolute paths into any boundary
+      // root and surfaces attached folders at the primary root, mirroring the
+      // content handler's read-root selection. Paths outside the boundary
+      // union are refused.
+      const target = path.resolve(instance.directory, ctx.query.path)
+      if (!containsPath(target, instance)) return yield* Effect.die(new Error("Path escapes the location"))
+      const root =
+        [instance.directory, ...instance.additionalDirectories, instance.worktree].find((dir) =>
+          FSUtil.contains(dir, target),
+        ) ?? instance.directory
+      // Entry paths under an extra root are absolute so tree navigation
+      // round-trips them back through this handler; the primary root keeps
+      // its legacy relative paths.
+      const extra = root !== instance.directory
+      const atRoot = target === instance.directory
+      const extras = instance.additionalDirectories.filter((dir) => !FSUtil.contains(instance.directory, dir))
       return yield* filesystem(
+        root,
         Effect.gen(function* () {
           const fs = yield* FileSystem.Service
           const raw = yield* FSUtil.Service
@@ -80,16 +106,30 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
             .readFileString(path.join(location.project.directory, ".ignore"))
             .pipe(Effect.catch(() => Effect.succeed("")))
           if (ignorefile) ignored.add(ignorefile)
-          return (yield* fs.list({ path: RelativePath.make(ctx.query.path) })).map((item) => ({
+          const entries = (yield* fs.list({ path: RelativePath.make(path.relative(root, target)) })).map((item) => ({
             name: path.basename(item.path),
-            path: item.path,
-            absolute: path.resolve(location.directory, item.path),
+            path: extra ? path.resolve(root, item.path) : item.path,
+            absolute: path.resolve(root, item.path),
             type: item.type,
             ignored: ignored.ignores(
-              path.relative(location.project.directory, path.resolve(location.directory, item.path)) +
+              path.relative(location.project.directory, path.resolve(root, item.path)) +
                 (item.type === "directory" ? "/" : ""),
             ),
           }))
+          // Attached folders outside the primary tree are not visible through
+          // the primary listing, so expose them as entries at the root.
+          return extra || !atRoot
+            ? entries
+            : [
+                ...entries,
+                ...extras.map((dir) => ({
+                  name: path.basename(dir),
+                  path: dir,
+                  absolute: dir,
+                  type: "directory" as const,
+                  ignored: false,
+                })),
+              ]
         }),
       )
     })

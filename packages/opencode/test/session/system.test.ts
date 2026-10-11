@@ -84,6 +84,14 @@ const it = testEffect(
 )
 
 describe("session.system", () => {
+  test("environment prompt announces attached folders", async () => {
+    const source = await Bun.file(
+      new URL("../../src/session/system.ts", import.meta.url).toString().replace("file://", ""),
+    ).text()
+    expect(source).toContain("Additional workspace folders:")
+    expect(source).toContain("additionalDirectories")
+  })
+
   test("selects the Meta prompt for Muse Spark model IDs", () => {
     for (const id of ["meta/muse-spark-preview", "muse-spark-1.1", "muse-spark-1.2"]) {
       const prompt = SystemPrompt.provider({ api: { id } } as Provider.Model)[0]

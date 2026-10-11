@@ -80,6 +80,9 @@ const layer = Layer.effect(
             `<env>`,
             `  Working directory: ${ctx.directory}`,
             `  Workspace root folder: ${ctx.worktree}`,
+            ...(ctx.additionalDirectories.length > 0
+              ? [`  Additional workspace folders: ${ctx.additionalDirectories.join(", ")}`]
+              : []),
             `  Is directory a git repo: ${ctx.project.vcs === "git" ? "yes" : "no"}`,
             `  Platform: ${process.platform}`,
             `  Today's date: ${new Date().toDateString()}`,
