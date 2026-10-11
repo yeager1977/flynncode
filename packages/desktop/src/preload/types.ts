@@ -120,6 +120,7 @@ export type ElectronAPI = {
   draftSet: (key: string, value: string) => Promise<void>
   draftDelete: (key: string) => Promise<void>
   draftBlobPut: (data: ArrayBuffer) => Promise<string>
+  draftBlobDiscard: (id: string) => Promise<void>
   draftBlobGet: (id: string) => Promise<ArrayBuffer | null>
   plugins: {
     fetchCatalog: () => Promise<CatalogResult>

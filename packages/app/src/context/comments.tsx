@@ -243,6 +243,7 @@ export const { use: useComments, provider: CommentsProvider } = createSimpleCont
 
     return {
       ready: () => session().ready(),
+      capture: () => session(),
       list: (file: string) => session().list(file),
       all: () => session().all(),
       add: (input: Omit<LineComment, "id" | "time">) => session().add(input),

@@ -337,6 +337,7 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("draft-set", (_event, key: string, value: string) => drafts.set(key, value))
   ipcMain.handle("draft-delete", (_event, key: string) => drafts.set(key, null))
   ipcMain.handle("draft-blob-put", (_event, data: ArrayBuffer) => drafts.putBlob(new Uint8Array(data)))
+  ipcMain.handle("draft-blob-discard", (_event, id: string) => drafts.discardBlob(id))
   ipcMain.handle("draft-blob-get", (_event, id: string) => {
     const data = drafts.getBlob(id)
     return data ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : null

@@ -8,16 +8,23 @@ type Driver = {
   remove(key: string): Promise<void>
   putBlob(blob: Blob): Promise<string>
   getBlob(id: string): Promise<Blob | null>
+  discardBlob?(id: string): Promise<void>
 }
 
-export type DraftStore = AsyncStorage & { putBlob(blob: Blob): Promise<BlobReference> }
-const urls = new Map<string, string>()
+export type DraftStore = AsyncStorage & {
+  putBlob(blob: Blob): Promise<BlobReference>
+  discardBlob(reference: BlobReference): Promise<void>
+}
+const urls = new Map<string, { url: string; owners: number }>()
 
 function blobUrl(id: string, blob: Blob) {
   const existing = urls.get(id)
-  if (existing) return existing
+  if (existing) {
+    existing.owners++
+    return existing.url
+  }
   const url = URL.createObjectURL(blob)
-  urls.set(id, url)
+  urls.set(id, { url, owners: 1 })
   return url
 }
 
@@ -91,6 +98,16 @@ export function createDraftStore(driver: Driver): DraftStore {
       await driver.remove(key)
     },
     putBlob,
+    discardBlob: async (reference) => {
+      const entry = urls.get(reference.id)
+      if (!entry || entry.url !== reference.url) return
+      entry.owners--
+      // Content-addressed blobs can belong to another live/persisted prompt.
+      if (entry.owners > 0) return
+      urls.delete(reference.id)
+      URL.revokeObjectURL(entry.url)
+      await driver.discardBlob?.(reference.id)
+    },
   }
 }
 
@@ -150,6 +167,26 @@ export function createBrowserDraftStore(): DraftStore {
       return id
     },
     getBlob: async (id) => ((await get("blobs", id)) as Blob | undefined) ?? null,
+    discardBlob: async (id) => {
+      const database = await db
+      const transaction = database.transaction(["documents", "blobs"], "readwrite")
+      const documents = transaction.objectStore("documents").getAll()
+      documents.addEventListener("success", () => {
+        const referenced = documents.result.some(value => {
+          let used = false
+          JSON.parse(value, (_key, item) => {
+            if (item?.blob?.id === id) used = true
+            return item
+          })
+          return used
+        })
+        if (!referenced) transaction.objectStore("blobs").delete(id)
+      })
+      await new Promise<void>((resolve, reject) => {
+        transaction.addEventListener("complete", () => resolve())
+        transaction.addEventListener("error", () => reject(transaction.error))
+      })
+    },
   })
 }
 

@@ -2,6 +2,13 @@ import { type ContextItem, type Prompt, type usePrompt } from "@/context/prompt"
 
 type PromptTarget = ReturnType<ReturnType<typeof usePrompt>["capture"]>
 
+export async function preparePromptSubmission(target: PromptTarget) {
+  const owner = target.attachmentScope()
+  await target.attachmentsReady()
+  if (!owner.valid()) return
+  return createPromptSubmissionState({ target, prompt: target.current(), context: target.context.items().slice() })
+}
+
 export function createPromptSubmissionState(input: {
   target: PromptTarget
   prompt: Prompt

@@ -56,7 +56,7 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { ModelsProvider } from "@/context/models"
 import { useNotification } from "@/context/notification"
-import { PromptProvider, usePrompt, type ImageAttachmentPart } from "@/context/prompt"
+import { PromptProvider, usePrompt } from "@/context/prompt"
 import { usePlatform } from "@/context/platform"
 import { SDKProvider, useSDK } from "@/context/sdk"
 import { useServerSDK } from "@/context/server-sdk"
@@ -127,6 +127,7 @@ import { useUsageExceededDialogs } from "./session/usage-exceeded-dialogs"
 import { createSessionOwnership } from "./session/session-ownership"
 import { createSessionLineage } from "./session/session-lineage"
 import { screenshotFallbackComment } from "./session/hunk-revert"
+import { attachReviewScreenshot } from "./session/review-screenshot"
 import type { CommentElement } from "@/utils/comment-note"
 
 type FollowupItem = FollowupDraft & { id: string }
@@ -1091,7 +1092,18 @@ export default function Page() {
       preview,
       element: input.element,
     })
-    attachReviewScreenshot({ file: input.file, id: saved.id, comment, screenshot: input.screenshot })
+    if (platform.draftStore && input.screenshot) {
+      const commentOwner = comments.capture()
+      void attachReviewScreenshot({
+        file: input.file,
+        id: saved.id,
+        comment,
+        screenshot: input.screenshot,
+        draftStore: platform.draftStore,
+        prompt: () => prompt.capture(),
+        updateComment: (comment) => commentOwner.update(input.file, saved.id, comment),
+      })
+    }
   }
 
   // Web fallback: with no draft store the capture cannot persist as a blob, so
@@ -1099,49 +1111,6 @@ export default function Page() {
   const inlineScreenshotFallback = (comment: string, screenshot?: string) => {
     if (!screenshot || platform.draftStore) return comment
     return screenshotFallbackComment(comment, screenshot)
-  }
-
-  // Desktop path: persist the capture as a draft-store blob and drop a real
-  // image attachment part into the prompt. Persistence never hard-fails the
-  // annotation; when it fails the comment degrades to the legacy bounded
-  // inline-thumbnail text.
-  // Timing note: the append races the submit — the image part is added to the
-  // prompt asynchronously after the annotation text was already committed, so
-  // a user pressing send quickly still picks it up with the next message.
-  const attachReviewScreenshot = (input: { file: string; id: string; comment: string; screenshot?: string }) => {
-    const draftStore = platform.draftStore
-    if (!draftStore) return
-    const screenshot = input.screenshot
-    if (!screenshot) return
-    const degrade = () => {
-      const comment = screenshotFallbackComment(input.comment, screenshot)
-      comments.update(input.file, input.id, comment)
-      prompt.context.updateComment(input.file, input.id, { comment })
-    }
-    void fetch(screenshot)
-      .then((response) => response.blob())
-      .then(async (blob) => {
-        const reference = await draftStore.putBlob(blob)
-        const attachment: ImageAttachmentPart = {
-          type: "image",
-          id: uuid(),
-          filename: "browser-annotate.png",
-          mime: dataUrlMime(screenshot),
-          blob: reference,
-        }
-        prompt.set([...prompt.current(), attachment], prompt.cursor())
-      })
-      .catch(() => {
-        console.debug("[session] browser annotation screenshot persistence failed")
-        degrade()
-      })
-  }
-
-  const dataUrlMime = (dataUrl: string) => {
-    if (!dataUrl.startsWith("data:")) return "image/png"
-    const end = dataUrl.indexOf(";")
-    if (end === -1) return "image/png"
-    return dataUrl.slice(5, end) || "image/png"
   }
 
   const updateCommentInContext = (input: {

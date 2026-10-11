@@ -113,6 +113,7 @@ const api: ElectronAPI = {
   draftSet: (key, value) => ipcRenderer.invoke("draft-set", key, value),
   draftDelete: (key) => ipcRenderer.invoke("draft-delete", key),
   draftBlobPut: (data) => ipcRenderer.invoke("draft-blob-put", data),
+  draftBlobDiscard: (id) => ipcRenderer.invoke("draft-blob-discard", id),
   draftBlobGet: (id) => ipcRenderer.invoke("draft-blob-get", id),
   plugins: {
     fetchCatalog: () => ipcRenderer.invoke("plugins:fetch-catalog"),

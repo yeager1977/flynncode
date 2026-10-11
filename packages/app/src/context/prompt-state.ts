@@ -1,6 +1,6 @@
 import { checksum } from "@opencode-ai/core/util/encode"
 import type { FilePartSource } from "@opencode-ai/sdk/v2/client"
-import { batch, createMemo, type Accessor } from "solid-js"
+import { batch, createMemo, onCleanup, type Accessor } from "solid-js"
 import { createStore, type SetStoreFunction } from "solid-js/store"
 import type { FileSelection } from "@/context/file"
 import type { CommentElement } from "@/utils/comment-note"
@@ -192,6 +192,12 @@ function promptStore(initial?: InitialPrompt): PromptStore {
 
 function createPromptStateValue(store: PromptStore, setStore: SetStoreFunction<PromptStore>) {
   const actions = createPromptActions(setStore)
+  const [lifecycle, setLifecycle] = createStore({ generation: 0, alive: true })
+  const pending = new Set<Promise<void>>()
+  onCleanup(() => {
+    setLifecycle("alive", false)
+    pending.clear()
+  })
   const value = {
     store: [() => store, setStore] as [Accessor<PromptStore>, SetStoreFunction<PromptStore>],
     current: () => store.prompt,
@@ -233,7 +239,36 @@ function createPromptStateValue(store: PromptStore, setStore: SetStoreFunction<P
       },
     },
     set: actions.set,
-    reset: actions.reset,
+    reset: () => {
+      setLifecycle("generation", generation => generation + 1)
+      pending.clear()
+      actions.reset()
+    },
+    attachmentScope: () => {
+      const generation = lifecycle.generation
+      const valid = () => lifecycle.alive && lifecycle.generation === generation
+      return {
+        valid,
+        append: (part: ImageAttachmentPart) => {
+          if (!valid()) return false
+          actions.set([...store.prompt, part], store.cursor)
+          return true
+        },
+        track: (work: Promise<unknown>) => {
+          if (!valid()) return
+          const settled = work.then(() => undefined, () => undefined).finally(() => pending.delete(settled))
+          pending.add(settled)
+        },
+      }
+    },
+    attachmentsReady: async () => {
+      const generation = lifecycle.generation
+      // Capture can synchronously enqueue blob persistence as it completes.
+      // Keep draining until every attachment for this draft is available.
+      while (lifecycle.alive && lifecycle.generation === generation && pending.size > 0) {
+        await Promise.all([...pending])
+      }
+    },
     capture: () => value,
   }
   return value

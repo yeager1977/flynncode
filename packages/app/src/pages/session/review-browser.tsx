@@ -8,6 +8,8 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
+import { usePrompt } from "@/context/prompt"
+import { captureReviewAnnotation } from "./review-screenshot"
 import { useServerSync } from "@/context/server-sync"
 import { useSessionLayout } from "./session-layout"
 import { storeArtifact } from "@/pages/layout/sidebar-artifacts"
@@ -23,6 +25,7 @@ export function ReviewBrowser(props: {
 }) {
   const language = useLanguage()
   const sdk = useSDK()
+  const prompt = usePrompt()
   const platform = usePlatform()
   const dialog = useDialog()
   const layout = useSessionLayout()
@@ -285,51 +288,50 @@ export function ReviewBrowser(props: {
       commitUrl(state.url)
       return
     }
-    const dataUrl = state.marked ? await capture() : undefined
-    const element = state.marked ? await inspectMarkedElement() : undefined
-    const comment = state.marked
+    const url = state.loaded
+    const file = props.file ?? "preview"
+    const marked = state.marked
+    const rect = { x: state.x, y: state.y, width: state.width, height: state.height }
+    const comment = marked
       ? browserAnnotation({
-          url: state.loaded,
-          path: pagePath(state.loaded),
+          url,
+          path: pagePath(url),
           note: text,
-          x: state.x,
-          y: state.y,
-          width: state.width,
-          height: state.height,
+          ...rect,
         })
-      : `${state.loaded}: ${text}`
-    props.onAnnotate({
-      file: props.file ?? "preview",
-      comment,
-      rect: { x: state.x, y: state.y, width: state.width, height: state.height },
-      screenshot: dataUrl,
-      element,
+      : `${url}: ${text}`
+    const sent = await captureReviewAnnotation({
+      prompt: () => prompt.capture(),
+      capture: async () => ({
+        file, comment, rect,
+        screenshot: marked ? await capture() : undefined,
+        element: marked ? await inspectMarkedElement() : undefined,
+      }),
+      deliver: (payload) => {
+        props.onAnnotate(payload)
+        storeAnnotation({ url, note: text, thumbnail: payload.screenshot })
+      },
     })
-    storeAnnotation({ url: state.loaded, note: text, thumbnail: dataUrl })
+    if (!sent) return
     setState({ note: "", marked: false, width: 0, height: 0, actionError: "" })
     setState("announced", language.t("session.review.browserPane.annotateSent"))
   }
   const recheck = async () => {
     const text = state.note.trim()
     if (!text || !state.marked) return
-    const dataUrl = await capture()
-    const element = await inspectMarkedElement()
-    props.onAnnotate({
-      file: props.file ?? "preview",
-      comment: browserAnnotation({
-        url: state.loaded,
-        path: pagePath(state.loaded),
-        note: text,
-        x: state.x,
-        y: state.y,
-        width: state.width,
-        height: state.height,
-      }),
-      rect: { x: state.x, y: state.y, width: state.width, height: state.height },
-      screenshot: dataUrl,
-      element,
+    const url = state.loaded
+    const file = props.file ?? "preview"
+    const rect = { x: state.x, y: state.y, width: state.width, height: state.height }
+    const comment = browserAnnotation({ url, path: pagePath(url), note: text, ...rect })
+    const sent = await captureReviewAnnotation({
+      prompt: () => prompt.capture(),
+      capture: async () => ({ file, comment, rect, screenshot: await capture(), element: await inspectMarkedElement() }),
+      deliver: (payload) => {
+        props.onAnnotate(payload)
+        storeAnnotation({ url, note: text, thumbnail: payload.screenshot })
+      },
     })
-    storeAnnotation({ url: state.loaded, note: text, thumbnail: dataUrl })
+    if (!sent) return
     setState("announced", language.t("session.review.browserPane.annotateSent"))
   }
   // One-click verify: point the pane back at the running preview server and
