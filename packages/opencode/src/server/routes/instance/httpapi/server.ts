@@ -15,6 +15,7 @@ import { HooksRunner } from "@/hooks/runner"
 import { HooksTrust } from "@/hooks/trust"
 import { Command } from "@/command"
 import { Config } from "@/config/config"
+import { ComputerUseExecutor } from "@/computer-use"
 import { Workspace } from "@/control-plane/workspace"
 import { Env } from "@/env"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -94,6 +95,7 @@ import { EventApi } from "./groups/event"
 import { PtyConnectApi } from "./groups/pty"
 import { eventHandlers } from "./handlers/event"
 import { configHandlers } from "./handlers/config"
+import { computerUseHandlers } from "./handlers/computer-use"
 import { controlHandlers } from "./handlers/control"
 import { controlPlaneHandlers } from "./handlers/control-plane"
 import { experimentalHandlers } from "./handlers/experimental"
@@ -169,6 +171,7 @@ const ptyConnectApiRoutes = HttpApiBuilder.layer(PtyConnectApi).pipe(
 const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
   Layer.provide([
     configHandlers,
+    computerUseHandlers,
     experimentalHandlers,
     fileHandlers,
     instanceHandlers,
@@ -251,6 +254,7 @@ const app = LayerNode.group([
   Skill.node,
   Discovery.node,
   Question.node,
+  ComputerUseExecutor.node,
   Permission.node,
   PermissionSaved.node,
   HooksTrust.node,

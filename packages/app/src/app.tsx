@@ -280,6 +280,12 @@ declare global {
       capturePage?: (rect?: { x: number; y: number; width: number; height: number }) => Promise<string | undefined>
       storeGet?: (name: string, key: string) => Promise<string | null>
       storeSet?: (name: string, key: string, value: string) => Promise<void>
+      computerUse?: {
+        click: (appID: string, x: number, y: number) => Promise<void>
+        typeText: (appID: string, text: string) => Promise<void>
+        keypress: (appID: string, key: string) => Promise<void>
+        scroll: (appID: string, deltaX: number, deltaY: number) => Promise<void>
+      }
       previewHost?: {
         attach: (url: string) => Promise<void>
         setBounds: (rect: { x: number; y: number; width: number; height: number }) => Promise<void>
