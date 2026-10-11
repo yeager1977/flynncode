@@ -31,7 +31,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { isRecord } from "@/util/record"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { InstanceRef } from "@/effect/instance-ref"
+import { SessionWorkspace } from "./workspace"
 
 const MCP_RESOURCE_TOOLS = {
   list: "list_mcp_resources",
@@ -93,10 +93,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     permissionMode: policy.approval,
   }
   // Write containment is session-scoped: project sandboxes plus this session's
-  // own attached additional directories (InstanceRef). Deliberately not the
+  // own attached additional directories. Deliberately not the
   // cross-session SessionFolders union — a session must not inherit another
   // session's extras.
-  const instanceDirs = (yield* InstanceRef)?.additionalDirectories ?? []
+  const instanceDirs = [...(yield* SessionWorkspace.Directories)]
   const sandboxDirs = yield* project
     .sandboxes(input.session.projectID)
     .pipe(
@@ -640,7 +640,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   }
 
   return tools
-})
+}, (effect, input) => effect.pipe(SessionWorkspace.provide(input.session.id)))
 
 function toRecord(value: unknown) {
   if (isRecord(value)) return value

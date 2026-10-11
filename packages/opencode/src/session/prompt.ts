@@ -1,4 +1,5 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { SessionFolders } from "@opencode-ai/core/session/folders"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import path from "path"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
@@ -162,6 +163,7 @@ const layer = Layer.effect(
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
     const scope = yield* Scope.Scope
     const instruction = yield* Instruction.Service
+    const sessionFolders = yield* SessionFolders.Service
     const state = yield* SessionRunState.Service
     const revert = yield* SessionRevert.Service
     const summary = yield* SessionSummary.Service
@@ -1378,6 +1380,7 @@ const layer = Layer.effect(
               Effect.provideService(MCP.Service, mcp),
               Effect.provideService(Truncate.Service, truncate),
               Effect.provideService(RuntimeFlags.Service, flags),
+              Effect.provideService(SessionFolders.Service, sessionFolders),
             )
 
             if (lastUser.format?.type === "json_schema") {
@@ -1396,7 +1399,7 @@ const layer = Layer.effect(
 
             const [skills, env, instructions, mcpInstructions, modelMsgs, hookContext] = yield* Effect.all([
               sys.skills(agent),
-              sys.environment(model),
+              sys.environment(model, sessionID),
               instruction.system().pipe(Effect.orDie),
               sys.mcp(agent, session.permission),
               MessageV2.toModelMessagesEffect(msgs, model),
@@ -1807,6 +1810,7 @@ export const node = LayerNode.make({
   service: Service,
   layer: layer,
   deps: [
+    SessionFolders.node,
     SessionStatus.node,
     Session.node,
     Agent.node,

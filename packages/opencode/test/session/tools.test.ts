@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { ModelV2 } from "@opencode-ai/core/model"
+import { SessionFolders } from "@opencode-ai/core/session/folders"
+import { AbsolutePath } from "@opencode-ai/core/schema"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
@@ -81,6 +83,7 @@ const fakeProject = Project.Service.of({
 } as Partial<Project.Interface> as Project.Interface)
 
 const layer = Layer.mergeAll(
+  Layer.mock(SessionFolders.Service, { list: () => Effect.succeed([]) }),
   Layer.succeed(Plugin.Service, fakePlugin),
   testLayerWithHooks([]),
   Layer.succeed(Permission.Service, fakePermission),
@@ -352,7 +355,10 @@ it.effect("workspace-write allows edits inside a session's attached additional d
       bypassAgentCheck: false,
       messages: [],
       promptOps: {} as never,
-    }).pipe(Effect.provideService(InstanceRef, instanceCtx))
+    }).pipe(
+      Effect.provideService(InstanceRef, instanceCtx),
+      Effect.provide(Layer.mock(SessionFolders.Service, { list: () => Effect.succeed([AbsolutePath.make("/extra")]) })),
+    )
     const call = (name: string) => {
       const execute = tools[name]?.execute
       if (!execute) throw new Error(`${name} tool is missing execute`)
@@ -404,6 +410,7 @@ function autoLayer(verdict: "allow" | "deny" | "defer" | undefined) {
     asks,
     it: testEffect(
       Layer.mergeAll(
+        Layer.mock(SessionFolders.Service, { list: () => Effect.succeed([]) }),
         Layer.succeed(Plugin.Service, fakePlugin),
         testLayerWithHooks([]),
         Layer.succeed(
@@ -580,6 +587,7 @@ function sandboxEnv(config: Partial<ConfigV1.Info>, metadata?: Record<string, un
     session,
     it: testEffect(
       Layer.mergeAll(
+        Layer.mock(SessionFolders.Service, { list: () => Effect.succeed([]) }),
         Layer.succeed(Plugin.Service, fakePlugin),
         testLayerWithHooks([]),
         Layer.succeed(Permission.Service, fakePermission),

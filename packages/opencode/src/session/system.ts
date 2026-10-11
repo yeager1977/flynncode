@@ -25,6 +25,8 @@ import { LocationServiceMap, locationServiceMapLayer } from "@opencode-ai/core/l
 import { Reference } from "@opencode-ai/core/reference"
 import { MCP } from "@/mcp"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+import { SessionFolders } from "@opencode-ai/core/session/folders"
+import type { SessionID } from "./schema"
 
 export function provider(model: Provider.Model) {
   if (model.api.id.includes("muse")) {
@@ -53,7 +55,7 @@ export function provider(model: Provider.Model) {
 }
 
 export interface Interface {
-  readonly environment: (model: Provider.Model) => Effect.Effect<string[]>
+  readonly environment: (model: Provider.Model, sessionID?: SessionID) => Effect.Effect<string[]>
   readonly skills: (agent: Agent.Info) => Effect.Effect<string | undefined>
   readonly mcp: (agent: Agent.Info, permission?: PermissionV1.Ruleset) => Effect.Effect<string | undefined>
 }
@@ -66,12 +68,15 @@ const layer = Layer.effect(
     const skill = yield* Skill.Service
     const mcp = yield* MCP.Service
     const locations = yield* LocationServiceMap.Service
+    const folders = yield* SessionFolders.Service
 
     return Service.of({
-      environment: Effect.fn("SystemPrompt.environment")(function* (model: Provider.Model) {
+      environment: Effect.fn("SystemPrompt.environment")(function* (model: Provider.Model, sessionID?: SessionID) {
         const ctx = yield* InstanceState.context
+        const extras = sessionID ? yield* folders.list(sessionID) : []
         const references = yield* Effect.gen(function* () {
-          return (yield* (yield* Reference.Service).list()).filter((reference) => reference.description !== undefined)
+          const reference = yield* Reference.Service
+          return (yield* reference.list()).filter((reference) => reference.description !== undefined)
         }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(ctx.directory) }))))
         return [
           [
@@ -80,8 +85,8 @@ const layer = Layer.effect(
             `<env>`,
             `  Working directory: ${ctx.directory}`,
             `  Workspace root folder: ${ctx.worktree}`,
-            ...(ctx.additionalDirectories.length > 0
-              ? [`  Additional workspace folders: ${ctx.additionalDirectories.join(", ")}`]
+            ...(extras.length > 0
+              ? [`  Additional workspace folders: ${extras.join(", ")}`]
               : []),
             `  Is directory a git repo: ${ctx.project.vcs === "git" ? "yes" : "no"}`,
             `  Platform: ${process.platform}`,
@@ -153,7 +158,7 @@ const locationServiceMapNode = LayerNode.make({
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [Skill.node, MCP.node, locationServiceMapNode],
+  deps: [Skill.node, MCP.node, locationServiceMapNode, SessionFolders.node],
 })
 
 export * as SystemPrompt from "./system"
