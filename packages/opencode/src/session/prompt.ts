@@ -1215,10 +1215,6 @@ const layer = Layer.effect(
       const ctx = yield* InstanceState.context
       let structured: unknown
       let step = 0
-      // Remaining structured-output re-prompts for the user message being
-      // finished. Keyed by user ID because a steer can move the drain onto a
-      // different prompt mid-finish, which restarts the budget.
-      let structuredRetries: { user: string; remaining: number } | undefined
       const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
       // The newer-user message this drain last observed, carried across loop
       // iterations so the post-loop re-check can compare against the right turn.
@@ -1247,10 +1243,36 @@ const layer = Layer.effect(
               (part) => part.type === "tool" && !part.metadata?.providerExecuted && !isOrphanedInterruptedTool(part),
             ) ?? false
 
+          // Reservations live on assistant state under the original user, so
+          // cancellation/resume cannot recreate a consumed retry allowance.
+          const structuredAttempt = Math.max(
+            0,
+            ...msgs.flatMap((message) =>
+              message.info.role === "assistant" && message.info.parentID === lastUser.id
+                ? message.parts.flatMap((part) =>
+                    part.type === "text" && typeof part.metadata?.structuredOutputAttempt === "number"
+                      ? [part.metadata.structuredOutputAttempt]
+                      : [],
+                  )
+                : [],
+            ),
+          )
+          const retryStructured =
+            lastUser.format?.type === "json_schema" &&
+            lastAssistant?.parentID === lastUser.id &&
+            lastAssistant.structured === undefined &&
+            !hasToolCalls &&
+            ((!lastAssistant.error &&
+              !!lastAssistant.finish &&
+              !["tool-calls", "unknown", "content-filter"].includes(lastAssistant.finish)) ||
+              lastAssistant.error?.name === "MessageAbortedError")
+          if (retryStructured && lastUser.format?.type === "json_schema" && structuredAttempt >= (lastUser.format.retryCount ?? 2)) break
+
           if (
             lastAssistant?.finish &&
             !["tool-calls", "unknown"].includes(lastAssistant.finish) &&
             !hasToolCalls &&
+            !retryStructured &&
             lastAssistant.parentID === lastUser.id
           ) {
             const orphan = lastAssistantMsg?.parts.find(
@@ -1338,6 +1360,19 @@ const layer = Layer.effect(
             sessionID,
           }
           yield* sessions.updateMessage(msg)
+          const attempt = structuredAttempt + (retryStructured ? 1 : 0)
+          if (lastUser.format?.type === "json_schema") {
+            yield* sessions.updatePart({
+              id: PartID.ascending(),
+              sessionID,
+              messageID: msg.id,
+              type: "text",
+              text: "",
+              ignored: true,
+              synthetic: true,
+              metadata: { structuredOutputAttempt: attempt },
+            })
+          }
 
           const finalizeInterruptedAssistant = Effect.gen(function* () {
             if (msg.time.completed) return
@@ -1416,6 +1451,7 @@ const layer = Layer.effect(
             )
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
+            if (format.type === "json_schema" && attempt > 0) system.push(STRUCTURED_OUTPUT_RETRY_PROMPT)
             const result = yield* handle.process({
               user: lastUser,
               agent,
@@ -1454,46 +1490,11 @@ const layer = Layer.effect(
                 return "break" as const
               }
               if (format.type === "json_schema") {
-                const remaining =
-                  structuredRetries && structuredRetries.user === lastUser.id
-                    ? structuredRetries.remaining
-                    : (format.retryCount ?? 2)
-                // Message republish encodes Format as a schema class, but a DB
-                // roundtrip returns plain objects: re-decode before forwarding
-                // the format on the retry prompt.
-                const retryFormat = Option.getOrUndefined(
-                  Schema.decodeUnknownOption(SessionV1.Format)(lastUser.format),
-                )
-                if (remaining > 0 && retryFormat) {
-                  // Persist a synthetic continuation user message carrying the
-                  // original prompt's format metadata so the next provider turn
-                  // re-prompts for the StructuredOutput tool. The remaining
-                  // budget follows the continuation message, so each miss in
-                  // this chain consumes one retry; a different user message
-                  // (steer, compaction) starts a fresh budget bounded by
-                  // OutputFormatJsonSchema.retryCount (schema default: 2).
-                  const retry = yield* sessions.updateMessage({
-                    id: MessageID.ascending(),
-                    role: "user",
-                    sessionID,
-                    time: { created: Date.now() },
-                    agent: lastUser.agent,
-                    model: lastUser.model,
-                    format: retryFormat,
-                    tools: lastUser.tools,
-                    system: lastUser.system,
-                  })
-                  structuredRetries = { user: retry.id, remaining: remaining - 1 }
-                  yield* sessions.updatePart({
-                    id: PartID.ascending(),
-                    messageID: retry.id,
-                    sessionID,
-                    type: "text",
-                    synthetic: true,
-                    text: STRUCTURED_OUTPUT_RETRY_PROMPT,
-                  })
-                  return "continue" as const
-                }
+                // Re-read the boundary before retrying. An admitted user owns
+                // its format/system; retry continuation never competes as a user.
+                if (yield* hasNewerUser(sessionID, lastUser)) return "continue" as const
+                const remaining = Math.max(0, (format.retryCount ?? 2) - attempt)
+                if (remaining > 0) return "continue" as const
                 handle.message.error = new SessionV1.StructuredOutputError({
                   message: "Model did not produce structured output",
                   retries: remaining,
