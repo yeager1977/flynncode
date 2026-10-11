@@ -119,8 +119,9 @@ function guardGuestNavigation(win: BrowserWindow, view: WebContentsView) {
     notifyTeardown(win)
   })
   view.webContents.on("did-frame-navigate", (event, url, _httpResponseCode, isMainFrame) => {
+    // Informational event (not preventable): a non-loopback subframe commit is
+    // treated like a main-frame escape — the view is already too late to trust.
     if (isMainFrame || isHostable(url)) return
-    event.preventDefault()
     detachView(win)
     notifyTeardown(win)
   })
