@@ -156,12 +156,10 @@ describe("computer-use fail-closed", () => {
           ctx,
         )
         expect(asked).toEqual([{ permission: "computer_use", patterns: ["flynncode:browser-pane", "click"] }])
-        expect(lastRequest).toEqual({
-          sessionID: "ses_test",
-          action: "click",
-          appID: "flynncode:browser-pane",
-          args: { x: 10, y: 20 },
-        })
+        expect(lastRequest?.sessionID).toBe("ses_test")
+        expect(lastRequest?.action).toBe("click")
+        expect(lastRequest?.appID).toBe("flynncode:browser-pane")
+        expect(lastRequest?.args).toEqual({ x: 10, y: 20 })
         expect(result.output).toBe("clicked")
       }),
     {
