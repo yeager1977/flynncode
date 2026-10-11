@@ -3,6 +3,7 @@ import type { FilePartSource } from "@opencode-ai/sdk/v2/client"
 import { batch, createMemo, type Accessor } from "solid-js"
 import { createStore, type SetStoreFunction } from "solid-js/store"
 import type { FileSelection } from "@/context/file"
+import type { CommentElement } from "@/utils/comment-note"
 import { Persist, persisted } from "@/utils/persist"
 import type { ServerScope } from "@/utils/server-scope"
 import type { BlobReference } from "@/utils/draft-store"
@@ -59,6 +60,7 @@ export type FileContextItem = {
   commentID?: string
   commentOrigin?: "review" | "file"
   preview?: string
+  element?: CommentElement
 }
 
 export type ContextItem = FileContextItem

@@ -1,3 +1,5 @@
+import type { CommentElement } from "@/utils/comment-note"
+
 export function reversePatch(patch: string) {
   const lines = patch.split("\n")
   const out: string[] = []
@@ -29,7 +31,7 @@ export function reversePatch(patch: string) {
 
 // A browser annotation dispatched as a structured payload: the percent rect
 // and capture screenshot travel as fields instead of a base64 string inside
-// the comment text.
+ // the comment text.
 export type BrowserScreenshotRect = { x: number; y: number; width: number; height: number }
 
 export type BrowserAnnotationPayload = {
@@ -37,6 +39,8 @@ export type BrowserAnnotationPayload = {
   comment: string
   rect: BrowserScreenshotRect
   screenshot?: string
+  // Element under the marked region when the native preview host inspected it.
+  element?: CommentElement
 }
 
 // When a capture cannot persist as a draft-store blob, the legacy inline-

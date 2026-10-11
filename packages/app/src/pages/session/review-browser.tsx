@@ -12,6 +12,7 @@ import { useServerSync } from "@/context/server-sync"
 import { useSessionLayout } from "./session-layout"
 import { storeArtifact } from "@/pages/layout/sidebar-artifacts"
 import { browserAnnotation, type BrowserAnnotationPayload } from "./hunk-revert"
+import type { CommentElement } from "@/utils/comment-note"
 import { browserPaneUrlFor, isLocalPreviewUrl, normalizePreviewUrl, setBrowserPaneUrl } from "./browser-pane"
 import { previewDotClass, previewErrorDetail, previewManaged, type PreviewServerState } from "./preview-server"
 
@@ -245,6 +246,25 @@ export function ReviewBrowser(props: {
       thumbnail: input.thumbnail,
     })
   }
+  // The marked percent rect maps to pane pixels: the native view covers the
+  // pane, so the guest page's own CSS pixels share the pane's coordinate space
+  // and the inspect center lands on the marked element. Failure or a missing
+  // host just skips the element metadata; the annotation still goes through.
+  const inspectMarkedElement = async (): Promise<CommentElement | undefined> => {
+    if (!state.marked || !state.native) return undefined
+    const host = nativeApi()
+    const box = paneBox?.getBoundingClientRect()
+    if (!host || !box || box.width === 0 || box.height === 0) return undefined
+    const found = await host
+      .inspect({
+        x: (state.x / 100) * box.width,
+        y: (state.y / 100) * box.height,
+        width: (state.width / 100) * box.width,
+        height: (state.height / 100) * box.height,
+      })
+      .catch(() => null)
+    return found ?? undefined
+  }
   const annotate = async () => {
     const text = state.note.trim()
     // An empty submit with an unchanged URL is an annotation attempt without
@@ -259,6 +279,7 @@ export function ReviewBrowser(props: {
       return
     }
     const dataUrl = state.marked ? await capture() : undefined
+    const element = state.marked ? await inspectMarkedElement() : undefined
     const comment = state.marked
       ? browserAnnotation({
           url: state.loaded,
@@ -275,6 +296,7 @@ export function ReviewBrowser(props: {
       comment,
       rect: { x: state.x, y: state.y, width: state.width, height: state.height },
       screenshot: dataUrl,
+      element,
     })
     storeAnnotation({ url: state.loaded, note: text, thumbnail: dataUrl })
     setState({ note: "", marked: false, width: 0, height: 0, actionError: "" })
@@ -284,6 +306,7 @@ export function ReviewBrowser(props: {
     const text = state.note.trim()
     if (!text || !state.marked) return
     const dataUrl = await capture()
+    const element = await inspectMarkedElement()
     props.onAnnotate({
       file: props.file ?? "preview",
       comment: browserAnnotation({
@@ -297,6 +320,7 @@ export function ReviewBrowser(props: {
       }),
       rect: { x: state.x, y: state.y, width: state.width, height: state.height },
       screenshot: dataUrl,
+      element,
     })
     storeAnnotation({ url: state.loaded, note: text, thumbnail: dataUrl })
     setState("announced", language.t("session.review.browserPane.annotateSent"))

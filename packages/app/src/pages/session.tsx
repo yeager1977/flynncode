@@ -127,6 +127,7 @@ import { useUsageExceededDialogs } from "./session/usage-exceeded-dialogs"
 import { createSessionOwnership } from "./session/session-ownership"
 import { createSessionLineage } from "./session/session-lineage"
 import { screenshotFallbackComment } from "./session/hunk-revert"
+import type { CommentElement } from "@/utils/comment-note"
 
 type FollowupItem = FollowupDraft & { id: string }
 type FollowupEdit = Pick<FollowupItem, "id" | "prompt" | "context">
@@ -1069,6 +1070,7 @@ export default function Page() {
     preview?: string
     rect?: { x: number; y: number; width: number; height: number }
     screenshot?: string
+    element?: CommentElement
     origin?: "review" | "file"
   }) => {
     const selection = selectionFromLines(input.selection)
@@ -1087,6 +1089,7 @@ export default function Page() {
       commentID: saved.id,
       commentOrigin: input.origin,
       preview,
+      element: input.element,
     })
     attachReviewScreenshot({ file: input.file, id: saved.id, comment, screenshot: input.screenshot })
   }

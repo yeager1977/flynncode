@@ -438,6 +438,7 @@ export function ReviewPanelV2(props: ReviewPanelV2Props) {
                 comment: payload.comment,
                 rect: payload.rect,
                 screenshot: payload.screenshot,
+                element: payload.element,
               })
             }
           />

@@ -48,6 +48,14 @@ export type SessionReviewLineComment = {
   // becomes a persisted image attachment instead of base64 in the text.
   rect?: { x: number; y: number; width: number; height: number }
   screenshot?: string
+  // Element under the marked region when the native preview host inspected one.
+  element?: {
+    tag: string
+    id?: string
+    classes?: string
+    text?: string
+    rect: { x: number; y: number; width: number; height: number }
+  }
 }
 
 export type SessionReviewCommentUpdate = SessionReviewLineComment & {

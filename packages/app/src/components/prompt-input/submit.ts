@@ -300,6 +300,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         commentID: item.commentID,
         commentOrigin: item.commentOrigin,
         preview: item.preview,
+        element: item.element,
       })
     }
   }
