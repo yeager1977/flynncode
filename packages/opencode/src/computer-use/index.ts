@@ -126,6 +126,12 @@ const layer = Layer.effect(
       // deadline-bounded region: publication blocks on every listener, and
       // cancelling a fiber parked on a blocked publish must still remove the
       // pending entry (the review's own probe showed it leaking otherwise).
+      //
+      // Cancellation is best-effort only: the request is a broadcast, so an
+      // executor that already received it may have started actuating; nothing
+      // can retract input it already delivered. A late reply after
+      // cancellation finds no pending entry and is dropped. The caller sees an
+      // interruption and must re-verify on screen before retrying.
       const requestLifetime = Effect.gen(function* () {
         const pending = (yield* InstanceState.get(state)).pending
         pending.set(requestID, { request: info, deferred })
