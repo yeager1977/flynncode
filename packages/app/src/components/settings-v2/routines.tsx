@@ -27,6 +27,9 @@ export const SettingsRoutinesV2: Component<{ directory?: string }> = (props) => 
     dailyAt: "",
     interval: "",
     rrule: "",
+    targetUrl: "",
+    targetUser: "",
+    targetPass: "",
     error: "",
     saving: false,
   })
@@ -61,7 +64,8 @@ export const SettingsRoutinesV2: Component<{ directory?: string }> = (props) => 
     return ok
   }
 
-  const resetDraft = () => setDraft({ editingId: "", name: "", prompt: "", dailyAt: "", interval: "", rrule: "", error: "" })
+  const resetDraft = () =>
+    setDraft({ editingId: "", name: "", prompt: "", dailyAt: "", interval: "", rrule: "", targetUrl: "", targetUser: "", targetPass: "", error: "" })
 
   const draftScheduleError = () => {
     if (draft.rrule && !isValidRrule(draft.rrule)) return "settings.routines.rruleInvalid"
@@ -85,6 +89,9 @@ export const SettingsRoutinesV2: Component<{ directory?: string }> = (props) => 
         dailyAt: draft.rrule ? undefined : draft.dailyAt || undefined,
         interval: draft.rrule || draft.dailyAt ? undefined : draft.interval || undefined,
         rrule: draft.rrule || undefined,
+        targetUrl: draft.targetUrl || undefined,
+        targetUser: draft.targetUser || undefined,
+        targetPass: draft.targetPass || undefined,
       }),
     )
     // Keep the draft on failure so the user can retry without retyping.
@@ -99,6 +106,11 @@ export const SettingsRoutinesV2: Component<{ directory?: string }> = (props) => 
       dailyAt: routine.dailyAt ?? "",
       interval: routine.interval ?? "",
       rrule: routine.rrule ?? "",
+      // The stored password is never echoed into the form; a save that leaves
+      // the password row blank keeps it.
+      targetUrl: routine.target?.url ?? "",
+      targetUser: routine.target?.username ?? "",
+      targetPass: "",
       error: "",
     })
 
@@ -118,6 +130,9 @@ export const SettingsRoutinesV2: Component<{ directory?: string }> = (props) => 
         dailyAt: draft.dailyAt || undefined,
         interval: draft.interval || undefined,
         rrule: draft.rrule || undefined,
+        targetUrl: draft.targetUrl,
+        targetUser: draft.targetUser,
+        targetPass: draft.targetPass,
       }),
     )
     if (ok) resetDraft()
@@ -234,6 +249,41 @@ export const SettingsRoutinesV2: Component<{ directory?: string }> = (props) => 
             aria-label={language.t("settings.routines.rrule")}
             value={draft.rrule}
             onInput={(event) => setDraft("rrule", event.currentTarget.value)}
+          />
+        </SettingsRowV2>
+        <SettingsRowV2
+          title={language.t("settings.routines.targetUrl")}
+          description={language.t("settings.routines.targetUrlDescription")}
+        >
+          <TextInputV2
+            type="text"
+            dir="ltr"
+            aria-label={language.t("settings.routines.targetUrl")}
+            placeholder="http://"
+            value={draft.targetUrl}
+            onInput={(event) => setDraft("targetUrl", event.currentTarget.value)}
+          />
+        </SettingsRowV2>
+        <SettingsRowV2
+          title={language.t("settings.routines.targetUsername")}
+          description={language.t("settings.routines.targetUsernameDescription")}
+        >
+          <TextInputV2
+            type="text"
+            aria-label={language.t("settings.routines.targetUsername")}
+            value={draft.targetUser}
+            onInput={(event) => setDraft("targetUser", event.currentTarget.value)}
+          />
+        </SettingsRowV2>
+        <SettingsRowV2
+          title={language.t("settings.routines.targetPassword")}
+          description={language.t("settings.routines.targetPasswordDescription")}
+        >
+          <TextInputV2
+            type="password"
+            aria-label={language.t("settings.routines.targetPassword")}
+            value={draft.targetPass}
+            onInput={(event) => setDraft("targetPass", event.currentTarget.value)}
           />
         </SettingsRowV2>
       </SettingsListV2>

@@ -21,9 +21,47 @@ describe("routines editor", () => {
       prompt: "Review changes",
       createdAt: "2026-10-01T00:00:00.000Z",
       directory: "/repo",
+      target: { url: "http://deepthought:4096", username: "opencode", password: "secret" },
       trigger: { files: ["src/**/*.ts"] },
     }
     expect(routinesToConfig(routinesFromConfig({ routines: [stored] })).routines[0]).toMatchObject(stored)
+  })
+
+  test("updateRoutine sets, keeps, and clears a target", () => {
+    const before = routinesFromConfig({
+      routines: [{ id: "r1", name: "mornings", prompt: "Check CI", schedule: { dailyAt: "09:00" } }],
+    })
+    // url + credentials.
+    const withTarget = updateRoutine(before, "r1", { targetUrl: "http://deepthought:4096", targetUser: "opencode", targetPass: "secret" })
+    expect(withTarget[0]?.target).toEqual({ url: "http://deepthought:4096", username: "opencode", password: "secret" })
+    // A password-less save keeps the stored password; a blank url clears all.
+    const kept = updateRoutine(withTarget, "r1", { targetUrl: "http://deepthought:5090", targetUser: "", targetPass: "" })
+    expect(kept[0]?.target).toEqual({ url: "http://deepthought:5090", password: "secret" })
+    expect(updateRoutine(kept, "r1", { targetUrl: "", targetUser: "", targetPass: "" })[0]?.target).toBeUndefined()
+  })
+
+  test("updateRoutine leaves the target untouched when no target field is in the patch", () => {
+    const before = routinesFromConfig({
+      routines: [
+        {
+          id: "r1",
+          name: "mornings",
+          prompt: "Check CI",
+          schedule: { dailyAt: "09:00" },
+          target: { url: "http://deepthought:4096", password: "secret" },
+        },
+      ],
+    })
+    // An edit that only touches the name (target fields absent in the JS sense)
+    // must keep the stored target, password included.
+    const after = updateRoutine(before, "r1", { name: "renamed" })
+    expect(after[0]?.target).toEqual({ url: "http://deepthought:4096", password: "secret" })
+  })
+
+  test("addRoutine stores a target from raw host fields", () => {
+    const added = addRoutine([], { name: "Triage", prompt: "Check CI", targetUrl: "http://deepthought:4096", targetPass: "secret" })
+    expect(added[0]?.target).toEqual({ url: "http://deepthought:4096", password: "secret" })
+    expect(addRoutine([], { name: "B", prompt: "go" })[0]?.target).toBeUndefined()
   })
 
   test("adds, toggles, and removes", () => {
