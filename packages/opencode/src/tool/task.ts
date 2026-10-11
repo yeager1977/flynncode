@@ -226,7 +226,17 @@ export const TaskTool = Tool.define(
       // since there is no new session table), then append the sandbox profile
       // resolved against that directory.
       const worktreeInfo = isolated
-        ? yield* worktreeSvc.createDisposable({ sessionID: nextSession.id })
+        ? yield* worktreeSvc.createDisposable({ sessionID: nextSession.id }).pipe(
+            // The tool boundary dies the error channel, so translate the typed
+            // worktree failures into plain Error messages the model can act on.
+            Effect.catch((error) =>
+              error instanceof Worktree.NotGitError
+                ? Effect.fail(new Error("isolation: worktree requires a git project"))
+                : error instanceof Worktree.CreateFailedError
+                  ? Effect.fail(new Error(`isolation: worktree could not be created: ${error.message}`))
+                  : Effect.fail(error),
+            ),
+          )
         : undefined
       if (worktreeInfo) {
         yield* sessions.setDirectory({ sessionID: nextSession.id, directory: worktreeInfo.directory })
