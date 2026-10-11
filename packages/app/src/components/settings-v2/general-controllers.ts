@@ -1,4 +1,5 @@
 import { createMemo, createResource, onMount, type Accessor } from "solid-js"
+import { createStore } from "solid-js/store"
 import type { ColorScheme } from "@opencode-ai/ui/theme/context"
 import { useTheme } from "@opencode-ai/ui/theme/context"
 import { usePermission } from "@/context/permission"
@@ -17,6 +18,7 @@ import {
   useSettings,
 } from "@/context/settings"
 import { playSoundPreview, SOUND_OPTIONS } from "@/utils/sound"
+import { memoryFromConfig, memoryToConfig, type MemoryPatch } from "./memory-payload"
 import { createSoundPreviewController, type ShellOption } from "./general-controller-behavior"
 
 export { createShellOptions, createSoundPreviewController } from "./general-controller-behavior"
@@ -159,7 +161,44 @@ export function createSoundSettingsController() {
   }
 }
 
+export function createMemorySettingsController() {
+  const serverSync = useServerSync()
+  const [pending, setPending] = createStore<{ enabled?: boolean }>({})
+  const memory = createMemo(() => memoryFromConfig(serverSync().data.config))
+  const enabled = createMemo(() => pending.enabled ?? memory().enabled)
+
+  const save = async (patch: MemoryPatch) =>
+    serverSync()
+      .updateConfig({ memory: memoryToConfig(serverSync().data.config.memory, patch) })
+      .then(() => true)
+      .catch(() => false)
+
+  return {
+    saving: () => pending.enabled !== undefined,
+    enabled,
+    minTurns: () => memory().minTurns,
+    setEnabled: (checked: boolean) => {
+      const previous = enabled()
+      if (previous === checked) return Promise.resolve(true)
+      // Optimistic toggle with rollback: the flipped value stays until the
+      // config write outcome is known, mirroring the quick-entry settings
+      // toggle.
+      setPending("enabled", checked)
+      return save({ enabled: checked }).then((ok) => {
+        if (ok) return ok
+        setPending("enabled", undefined)
+        return ok
+      })
+    },
+    setMinTurns: (value: number) => {
+      if (value === memory().minTurns) return Promise.resolve(true)
+      return save({ min_turns: value })
+    },
+  }
+}
+
 export type PermissionScopeController = ReturnType<typeof createPermissionScopeController>
 export type ShellSettingsController = ReturnType<typeof createShellSettingsController>
 export type AppearanceSettingsController = ReturnType<typeof createAppearanceSettingsController>
 export type SoundSettingsController = ReturnType<typeof createSoundSettingsController>
+export type MemorySettingsController = ReturnType<typeof createMemorySettingsController>

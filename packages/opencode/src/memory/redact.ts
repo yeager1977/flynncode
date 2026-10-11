@@ -1,5 +1,9 @@
 const patterns: Array<{ kind: string; pattern: RegExp }> = [
   { kind: "github", pattern: /\b(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{8,}\b/g },
+  // Anthropic and (live) Stripe tokens start with "sk", so they sit before the
+  // broader openai pattern to get an accurate kind label.
+  { kind: "anthropic", pattern: /\bsk-ant-[A-Za-z0-9_-]{2,}\b/g },
+  { kind: "stripe", pattern: /\b(?:sk|rk)_(?:live)_[A-Za-z0-9]{5,}\b/g },
   { kind: "openai", pattern: /\bsk-(?:proj-|test-|live-)?[A-Za-z0-9_-]{8,}\b/g },
   { kind: "aws-key", pattern: /\bAKIA[0-9A-Z]{16}\b/g },
   { kind: "slack", pattern: /\bxox[baprs]-[A-Za-z0-9-]{8,}\b/g },
@@ -11,6 +15,8 @@ const patterns: Array<{ kind: string; pattern: RegExp }> = [
     pattern:
       /((?:api[_-]?key|api[_-]?secret|secret|token|password|passwd|private[_-]?key)\s*[:=]\s*["']?)([^"'\s;,}]{8,})/gi,
   },
+  { kind: "jwt", pattern: /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g },
+  { kind: "gcp", pattern: /\bAIza[0-9A-Za-z_-]{4,}\b/g },
 ]
 
 export const REDACTED = "[redacted]"

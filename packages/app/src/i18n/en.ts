@@ -1666,6 +1666,15 @@ export const dict = {
   "settings.permissions.section.tools": "Tools",
   "settings.permissions.toast.updateFailed.title": "Failed to update permissions",
 
+  "settings.memory.section.title": "Memory",
+  "settings.memory.enable.title": "Agent memories",
+  "settings.memory.enable.description": "Let the agent save and load on-disk memory files",
+  "settings.memory.minTurns.title": "Minimum turns",
+  "settings.memory.minTurns.description": "Skip memory extraction for sessions with fewer user turns",
+  "settings.memory.hint":
+    "Global memories are stored in Global.data/memories and are never synced. Project memories live in .opencode/memories/ and can be committed with your repository.",
+  "settings.memory.toast.updateFailed.title": "Failed to update memory settings",
+
   "settings.permissions.action.allow": "Allow",
   "settings.permissions.action.ask": "Ask",
   "settings.permissions.action.deny": "Deny",
