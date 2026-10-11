@@ -1,7 +1,7 @@
 import DESCRIPTION from "./memory.txt"
 import { Memory } from "@/memory/memory"
 import { Effect, Schema } from "effect"
-import * as Tool from "./tool"
+import { Tool } from "./tool"
 
 // All action branches share one metadata shape so the union of return objects
 // type-checks as a single ExecuteResult.
@@ -50,6 +50,7 @@ export const MemoryTool = Tool.define(
       if (!scope) return yield* Effect.fail(new Error(`action "${params.action}" requires scope`))
       const slug = params.slug?.trim()
       if (!slug) return yield* Effect.fail(new Error(`action "${params.action}" requires a non-empty slug`))
+      const filepath = yield* memory.target({ scope, slug })
 
       if (params.action === "remove") {
         // Writes always reach the permission check; an "always" reply approves
@@ -58,7 +59,7 @@ export const MemoryTool = Tool.define(
           permission: "memory",
           patterns: [scope],
           always: [scope],
-          metadata: { action: "remove", scope, slug },
+          metadata: { action: "remove", scope, slug, filepath },
         })
         const removed = yield* memory.remove({ scope, slug })
         return {
@@ -76,14 +77,14 @@ export const MemoryTool = Tool.define(
         permission: "memory",
         patterns: [scope],
         always: [scope],
-        metadata: { action: "save", scope, slug },
+        metadata: { action: "save", scope, slug, filepath },
       })
-      const filepath = yield* memory.update({ scope, slug, text })
-      if (!filepath) return yield* Effect.fail(new Error("Memory is disabled in config; nothing was saved"))
+      const saved = yield* memory.update({ scope, slug, text })
+      if (!saved) return yield* Effect.fail(new Error("Memory is disabled in config; nothing was saved"))
       return {
         title: "Saved",
         metadata: { scope, slug },
-        output: `Saved ${scope} memory "${slug}" to ${filepath} (secrets are redacted automatically).`,
+        output: `Saved ${scope} memory "${slug}" to ${saved} (secrets are redacted automatically).`,
       }
     })
 

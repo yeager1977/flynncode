@@ -140,9 +140,15 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         // Truncate output) may cross the workspace boundary through the normal
         // external_directory prompt.
         if (Sandbox.containsWrite({ permission: req.permission, toolID })) {
-          const blocked = req.patterns.find(
+          // Memory consent is scope-keyed, while containment must check its
+          // actual sanitized destination. Consent never confers path authority.
+          const targets = req.permission === "memory"
+            ? [typeof req.metadata.filepath === "string" ? req.metadata.filepath : ""]
+            : req.patterns
+          const blocked = targets.find(
             (target) =>
-              target !== "" && !Sandbox.isPathAllowed(target, input.session.directory, sandboxDirs, policy.sandbox),
+              (req.permission === "memory" && target === "") ||
+              (target !== "" && !Sandbox.isPathAllowed(target, input.session.directory, sandboxDirs, policy.sandbox)),
           )
           if (blocked !== undefined) {
             return yield* Effect.orDie(

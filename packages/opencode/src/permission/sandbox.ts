@@ -20,7 +20,7 @@ const WRITE_TOOLS = ["edit", "write", "apply_patch"]
 // tool; `external_directory` is raised by readers too (read/glob/grep/list/lsp/
 // skill, Truncate output), so it is contained only when a write tool asks.
 export function containsWrite(input: { permission: string; toolID: string }) {
-  if (input.permission === "edit") return true
+  if (input.permission === "edit" || input.permission === "memory") return true
   return input.permission === "external_directory" && WRITE_TOOLS.includes(input.toolID)
 }
 
