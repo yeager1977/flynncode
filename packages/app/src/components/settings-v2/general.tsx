@@ -304,6 +304,9 @@ const MemorySection: Component<{ controller: MemorySettingsController }> = (prop
           description={language.t("settings.memory.minTurns.description")}
         >
           <div class="w-full sm:w-[220px]">
+            {/* Write on commit, not per keystroke: the number input's change
+                event fires on blur, Enter, or spinner clicks, so one full
+                `memory`-block config write goes out per committed value. */}
             <TextInputV2
               data-action="settings-memory-min-turns"
               type="number"
@@ -311,7 +314,7 @@ const MemorySection: Component<{ controller: MemorySettingsController }> = (prop
               min="0"
               step="1"
               value={String(props.controller.minTurns())}
-              onInput={(event) => {
+              onChange={(event) => {
                 const parsed = minTurnsFromInput(event.currentTarget.value)
                 if (parsed === undefined || parsed === props.controller.minTurns()) return
                 apply(props.controller.setMinTurns(parsed))

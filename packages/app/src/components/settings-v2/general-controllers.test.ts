@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "bun:test"
 import { createRoot } from "solid-js"
-import { createShellOptions, createSoundPreviewController } from "./general-controller-behavior"
+import { createOptimisticToggle, createShellOptions, createSoundPreviewController } from "./general-controller-behavior"
 
 describe("settings v2 controllers", () => {
   test("normalizes shell names and preserves an unavailable configured shell", () => {
@@ -49,5 +49,66 @@ describe("settings v2 controllers", () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  describe("optimistic toggle", () => {
+    const setup = (source: { value: boolean }, resolveWith: boolean) =>
+      createRoot((dispose) => {
+        const updates: boolean[] = []
+        const toggle = createOptimisticToggle(
+          () => source.value,
+          (checked) => {
+            updates.push(checked)
+            return Promise.resolve(resolveWith)
+          },
+        )
+        return { dispose, updates, toggle }
+      })
+
+    test("clears the pending state on a successful write so the switch re-enables", async () => {
+      const source = { value: false }
+      const wired = setup(source, true)
+      expect(wired.toggle.saving()).toBe(false)
+
+      const turnOn = wired.toggle.toggle(true)
+      expect(wired.toggle.value()).toBe(true)
+      expect(wired.toggle.saving()).toBe(true)
+
+      const settled = await turnOn
+      expect(settled).toBe(true)
+      expect(wired.updates).toEqual([true])
+      expect(wired.toggle.saving()).toBe(false)
+      expect(wired.toggle.value()).toBe(source.value)
+
+      wired.dispose()
+    })
+
+    test("rolls back and clears the pending state on a failed write", async () => {
+      const source = { value: false }
+      const wired = setup(source, false)
+      expect(wired.toggle.saving()).toBe(false)
+
+      const turnOn = wired.toggle.toggle(true)
+      expect(wired.toggle.value()).toBe(true)
+      expect(wired.toggle.saving()).toBe(true)
+
+      const settled = await turnOn
+      expect(settled).toBe(false)
+      expect(wired.updates).toEqual([true])
+      expect(wired.toggle.saving()).toBe(false)
+      expect(wired.toggle.value()).toBe(source.value)
+
+      wired.dispose()
+    })
+
+    test("skips the write when the requested value already matches", async () => {
+      const wired = setup({ value: true }, true)
+
+      await wired.toggle.toggle(true)
+      expect(wired.updates).toEqual([])
+      expect(wired.toggle.saving()).toBe(false)
+
+      wired.dispose()
+    })
   })
 })

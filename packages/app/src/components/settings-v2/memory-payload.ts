@@ -23,6 +23,9 @@ export function memoryToConfig(current: Config["memory"], patch: MemoryPatch): C
 }
 
 export function minTurnsFromInput(text: string) {
+  // No UI upper bound: the server schema (ConfigMemoryV1.min_turns is
+  // NonNegativeInt) stays the authority, and a very large value only means
+  // memory extraction rarely triggers — a harmless user choice.
   const trimmed = text.trim()
   if (!/^\d+$/.test(trimmed)) return undefined
   return Number(trimmed)

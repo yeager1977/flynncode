@@ -1,5 +1,4 @@
 import { createMemo, createResource, onMount, type Accessor } from "solid-js"
-import { createStore } from "solid-js/store"
 import type { ColorScheme } from "@opencode-ai/ui/theme/context"
 import { useTheme } from "@opencode-ai/ui/theme/context"
 import { usePermission } from "@/context/permission"
@@ -19,7 +18,7 @@ import {
 } from "@/context/settings"
 import { playSoundPreview, SOUND_OPTIONS } from "@/utils/sound"
 import { memoryFromConfig, memoryToConfig, type MemoryPatch } from "./memory-payload"
-import { createSoundPreviewController, type ShellOption } from "./general-controller-behavior"
+import { createOptimisticToggle, createSoundPreviewController, type ShellOption } from "./general-controller-behavior"
 
 export { createShellOptions, createSoundPreviewController } from "./general-controller-behavior"
 export type { ShellOption, ShellSelectOption } from "./general-controller-behavior"
@@ -163,33 +162,18 @@ export function createSoundSettingsController() {
 
 export function createMemorySettingsController() {
   const serverSync = useServerSync()
-  const [pending, setPending] = createStore<{ enabled?: boolean }>({})
   const memory = createMemo(() => memoryFromConfig(serverSync().data.config))
-  const enabled = createMemo(() => pending.enabled ?? memory().enabled)
-
   const save = async (patch: MemoryPatch) =>
     serverSync()
       .updateConfig({ memory: memoryToConfig(serverSync().data.config.memory, patch) })
       .then(() => true)
       .catch(() => false)
-
+  const toggle = createOptimisticToggle(() => memory().enabled, (checked) => save({ enabled: checked }))
   return {
-    saving: () => pending.enabled !== undefined,
-    enabled,
+    saving: toggle.saving,
+    enabled: toggle.value,
     minTurns: () => memory().minTurns,
-    setEnabled: (checked: boolean) => {
-      const previous = enabled()
-      if (previous === checked) return Promise.resolve(true)
-      // Optimistic toggle with rollback: the flipped value stays until the
-      // config write outcome is known, mirroring the quick-entry settings
-      // toggle.
-      setPending("enabled", checked)
-      return save({ enabled: checked }).then((ok) => {
-        if (ok) return ok
-        setPending("enabled", undefined)
-        return ok
-      })
-    },
+    setEnabled: toggle.toggle,
     setMinTurns: (value: number) => {
       if (value === memory().minTurns) return Promise.resolve(true)
       return save({ min_turns: value })

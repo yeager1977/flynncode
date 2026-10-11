@@ -3,7 +3,7 @@ const patterns: Array<{ kind: string; pattern: RegExp }> = [
   // Anthropic and (live) Stripe tokens start with "sk", so they sit before the
   // broader openai pattern to get an accurate kind label.
   { kind: "anthropic", pattern: /\bsk-ant-[A-Za-z0-9_-]{2,}\b/g },
-  { kind: "stripe", pattern: /\b(?:sk|rk)_(?:live)_[A-Za-z0-9]{5,}\b/g },
+  { kind: "stripe", pattern: /\b(?:sk|rk)_live_[A-Za-z0-9]{5,}\b/g },
   { kind: "openai", pattern: /\bsk-(?:proj-|test-|live-)?[A-Za-z0-9_-]{8,}\b/g },
   { kind: "aws-key", pattern: /\bAKIA[0-9A-Z]{16}\b/g },
   { kind: "slack", pattern: /\bxox[baprs]-[A-Za-z0-9-]{8,}\b/g },
