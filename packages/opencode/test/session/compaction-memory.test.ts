@@ -288,11 +288,12 @@ describe("session memory triggers", () => {
       yield* status.set(session.id, { type: "idle" })
       yield* Effect.sleep("300 millis")
 
-      // Identical extracted content must not rewrite the topic file.
-      const loaded = yield* (yield* Memory.Service).load()
+      // The identical snapshot is coalesced before inference, not just at write.
+      const memory = yield* Memory.Service
+      const loaded = yield* memory.load()
       expect(loaded).toHaveLength(1)
       expect(loaded[0]?.content).toContain("always use bun")
-      expect(capture.calls.length).toBeGreaterThanOrEqual(2)
+      expect(capture.calls.length).toBe(1)
     }),
   )
 })
