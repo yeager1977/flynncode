@@ -52,6 +52,16 @@ describe("review browser artifact wiring", () => {
     expect(source).toContain("capturePage?.({")
   })
 
+  test("native mode captures through the preview host before the iframe fallback", () => {
+    const source = readFileSync(new URL("./review-browser.tsx", import.meta.url), "utf8")
+    expect(source).toContain("if (state.native)")
+    expect(source).toContain("nativeApi()?.capture()")
+    const nativeCapture = source.indexOf("nativeApi()?.capture()")
+    const fallbackCapture = source.indexOf("capturePage?.({")
+    expect(nativeCapture).toBeGreaterThan(-1)
+    expect(nativeCapture).toBeLessThan(fallbackCapture)
+  })
+
   test("artifact version bumps signal reactive sidebar refresh", () => {
     const module = readFileSync(new URL("../layout/sidebar-artifacts.ts", import.meta.url), "utf8")
     expect(module).toContain("createSignal")

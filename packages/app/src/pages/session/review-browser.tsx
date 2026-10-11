@@ -217,7 +217,14 @@ export function ReviewBrowser(props: {
   let frame: HTMLIFrameElement | undefined
   let paneBox: HTMLDivElement | undefined
   // Capture only the browser pane, never the whole window (chat, sidebar).
+  // In native mode the host view is what the user actually sees, so capture
+  // through the preview host first and fall back to the iframe capture when
+  // it is unavailable or returns nothing.
   const capture = async () => {
+    if (state.native) {
+      const native = await nativeApi()?.capture().catch(() => undefined)
+      if (typeof native === "string" && native.startsWith("data:")) return native
+    }
     const box = frame?.getBoundingClientRect()
     if (!box || box.width === 0 || box.height === 0) return undefined
     const result = await window.api?.capturePage?.({
