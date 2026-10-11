@@ -24,6 +24,20 @@ import { Account } from "../../src/account/account"
 import { AccountTest } from "../fake/account"
 import { Npm } from "@opencode-ai/core/npm"
 import { NpmTest } from "../fake/npm"
+import { Session } from "@/session/session"
+import { SessionProjector } from "@opencode-ai/core/session/projector"
+import { SessionFolders } from "@opencode-ai/core/session/folders"
+import { SessionTools } from "@/session/tools"
+import { Agent } from "@/agent/agent"
+import { Project } from "@/project/project"
+import { Config } from "@/config/config"
+import { ToolRegistry } from "@/tool/registry"
+import { MCP } from "@/mcp"
+import { Truncate } from "@/tool/truncate"
+import { Provider } from "@/provider/provider"
+import { ProviderV2 } from "@opencode-ai/core/provider"
+import { ModelV2 } from "@opencode-ai/core/model"
+import { MessageID } from "@/session/schema"
 
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
 
@@ -103,13 +117,16 @@ const throwIt = testEffect(throwEnv)
 // hook payload built by Plugin.triggerPermissionAsk are exercised end to end
 // through HooksRunner, exactly as Permission.ask consumes it in production.
 const prodEnv = AppNodeBuilder.build(
-  LayerNode.group([Plugin.node, Permission.node, EventV2Bridge.node, CrossSpawnSpawner.node, InstanceStore.node]),
+  LayerNode.group([Plugin.node, Permission.node, EventV2Bridge.node, CrossSpawnSpawner.node, InstanceStore.node,
+    Session.node, SessionProjector.node, SessionFolders.node, Agent.node, Project.node, Config.node,
+    ToolRegistry.node, MCP.node, Truncate.node, Provider.node, HooksRunner.node, RuntimeFlags.node]),
   [
     [InstanceStore.bootstrapNode, noopBootstrap],
-    [Auth.node, AuthTest.empty],
+    [Auth.node, Layer.mock(Auth.Service, { all: () => Effect.succeed({}), get: () => Effect.succeed(undefined) })],
     [Account.node, AccountTest.empty],
     [Npm.node, NpmTest.noop],
     [RuntimeFlags.node, RuntimeFlags.layer({ disableDefaultPlugins: true })],
+    [MCP.node, Layer.mock(MCP.Service, { clients: () => Effect.succeed({}), tools: () => Effect.succeed({}), instructions: () => Effect.succeed([]) })],
   ],
 )
 const prodIt = testEffect(prodEnv)
@@ -341,6 +358,51 @@ const prodRecorderSource = (mark: string) =>
     "})",
     "",
   ].join("\n")
+
+for (const approval of ["manual", "auto", "accept-edits"] as const) {
+  prodIt.instance(`production: ${approval} static read shortcuts cannot bypass plugin deny`, () =>
+    withPlugin(dir => prodRecorderSource(path.join(dir, "marks.jsonl")), dir => Effect.gen(function* () {
+      const file = path.join(dir, "safe.txt")
+      yield* Effect.promise(() => Bun.write(file, "safe"))
+      const plugin = pathToFileURL(path.join(dir, "plugin.ts")).href
+      yield* Effect.promise(() => Bun.write(path.join(dir, "opencode.json"), JSON.stringify({
+        plugin: [plugin], permission: { approval }, lsp: false, formatter: false,
+        provider: { test: { npm: "@ai-sdk/openai-compatible", models: { "test-model": { name: "Test", limit: { context: 100000, output: 10000 } } } } },
+      })))
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ permission: [{ permission: "*", pattern: "*", action: "ask" }] })
+      const agents = yield* Agent.Service
+      const agent = yield* agents.get("build")
+      if (!agent) throw new Error("missing build")
+      const providers = yield* Provider.Service
+      const model = yield* providers.getModel(ProviderV2.ID.make("test"), ModelV2.ID.make("test-model"))
+      const tools = yield* SessionTools.resolve({ agent, model, session, messages: [], bypassAgentCheck: false, promptOps: {} as never,
+        processor: { message: { id: MessageID.ascending(), sessionID: session.id } as never, updateToolCall: () => Effect.void as never, completeToolCall: () => Effect.void } })
+      for (const [name, args] of [["read", { filePath: file }], ["glob", { pattern: "*.txt", path: dir }], ["grep", { pattern: "safe", path: dir }]] as const) {
+        const execute = tools[name].execute
+        if (!execute) throw new Error(`missing ${name}`)
+        const error = yield* failOf(Effect.promise(() => execute(args, { toolCallId: `call-${name}`, messages: [], abortSignal: new AbortController().signal })))
+        expect(error).toBeInstanceOf(PermissionV1.DeniedError)
+      }
+      const permission = yield* Permission.Service
+      expect(yield* failOf(permission.ask({ ...request([{ permission: "list", pattern: "*", action: "allow" }]), permission: "list", approval }))).toBeInstanceOf(PermissionV1.DeniedError)
+      expect(yield* permission.list()).toEqual([])
+    })),
+  )
+}
+
+denyIt.instance("explicit config allow still visits the plugin deny gate", () => Effect.gen(function* () {
+  const permission = yield* Permission.Service
+  expect(yield* failOf(permission.ask(request([{ permission: "bash", pattern: "*", action: "allow" }])))).toBeInstanceOf(PermissionV1.DeniedError)
+}))
+
+prodIt.instance("production: static read approval remains cheap without a plugin deny", () =>
+  withPlugin(() => "export const noop = async () => ({})", () => Effect.gen(function* () {
+    const permission = yield* Permission.Service
+    yield* permission.ask({ ...request([{ permission: "read", pattern: "*", action: "ask" }]), permission: "read", staticApproval: "allow" })
+    expect(yield* permission.list()).toEqual([])
+  })),
+)
 
 prodIt.instance(
   "production: plugin deny short-circuits the prompt and wins over an earlier plugin allow",

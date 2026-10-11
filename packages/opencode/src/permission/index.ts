@@ -16,6 +16,7 @@ export const Event = PermissionV1.Event
 export type AskInput = PermissionV1.AskInput & {
   approval?: ConfigPermissionV1.ApprovalMode
   hook?: { tool: string; args: Record<string, unknown> }
+  staticApproval?: "allow"
 }
 
 export interface Interface {
@@ -79,12 +80,13 @@ const layer = Layer.effect(
 
     const ask = Effect.fn("Permission.ask")(function* (input: AskInput) {
       const { approved, pending } = yield* InstanceState.get(state)
-      const { ruleset, approval: approvalRaw, hook, ...request } = input
+      const { ruleset, approval: approvalRaw, hook, staticApproval, ...request } = input
       const approval = approvalRaw ?? "manual"
       let needsAsk = false
 
       for (const pattern of request.patterns) {
-        const rule = evaluate(request.permission, pattern, ruleset, approved)
+        const configured = evaluate(request.permission, pattern, ruleset)
+        const rule = configured.action === "deny" ? configured : evaluate(request.permission, pattern, ruleset, approved)
         yield* Effect.logInfo("evaluated", { permission: request.permission, pattern, action: rule })
         if (rule.action === "deny") {
           return yield* new PermissionV1.DeniedError({
@@ -94,8 +96,6 @@ const layer = Layer.effect(
         if (rule.action === "allow") continue
         needsAsk = true
       }
-
-      if (!needsAsk) return
 
       // Plugin permission.ask hooks run before any approval-mode shortcut, so
       // a plugin deny (or fail-closed verdict) wins in every mode; allow/ask
@@ -118,9 +118,12 @@ const layer = Layer.effect(
         })
       }
 
+      if (!needsAsk) return
+
       const AUTO_EDIT_PERMISSIONS = ["edit", "read", "glob", "grep", "list"]
       // computer_use and archive always reach the user, whatever the approval mode.
       if (!ALWAYS_ASK.includes(request.permission)) {
+        if (staticApproval === "allow") return
         // approval "auto" approves only on an explicit LLM auto-reviewer allow
         // verdict; the session tools gate (session/tools.ts) consults the
         // reviewer and carries the verdict in `reviewer`. Direct callers

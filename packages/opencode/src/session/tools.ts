@@ -150,19 +150,14 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             )
           }
         }
-        if (
-          Reviewer.review({ permission: req.permission, patterns: req.patterns, ruleset, tool: toolID, args }) ===
-          "allow"
-        ) {
-          return
-        }
+        const staticApproval = Reviewer.review({ permission: req.permission, patterns: req.patterns, ruleset, tool: toolID, args })
         // approval "auto": the LLM auto-reviewer vets the request before the
         // human prompt. allow approves without prompting, deny fails closed,
         // defer or an absent reviewer service falls through to the normal
         // prompt path. The verdict rides on the ask input so the
         // permission.asked event can surface it to the dock.
         const reviewer =
-          policy.approval === "auto" && !Permission.ALWAYS_ASK.includes(req.permission)
+          staticApproval !== "allow" && policy.approval === "auto" && !Permission.ALWAYS_ASK.includes(req.permission)
             ? Option.isSome(autoReviewer)
               ? yield* autoReviewer.value.request({
                   sessionID: input.session.id,
@@ -189,6 +184,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             tool: { messageID: input.processor.message.id, callID: options.toolCallId },
             ruleset,
             approval: policy.approval,
+            ...(staticApproval === "allow" ? { staticApproval } : {}),
             ...(reviewer !== undefined ? { reviewer } : {}),
             hook: { tool: toolID, args },
           })
