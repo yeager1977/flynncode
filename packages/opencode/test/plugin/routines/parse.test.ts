@@ -197,6 +197,15 @@ describe("target", () => {
     expect(result.value.routines[0].target).toEqual({ url: "https://deepthought.lan" })
   })
 
+  test("treats explicitly empty credentials as omitted", () => {
+    const result = parseRoutines({
+      routines: [{ id: "a", name: "A", prompt: "go", schedule: { interval: "1h" }, target: { url: "http://deepthought:4096", username: "", password: "" } }],
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.routines[0].target).toEqual({ url: "http://deepthought:4096" })
+  })
+
   test("rejects a non-http url", () => {
     const result = parseRoutines({
       routines: [{ id: "a", name: "A", prompt: "go", schedule: { interval: "1h" }, target: { url: "ftp://deepthought" } }],

@@ -178,11 +178,12 @@ describe("runTick", () => {
       expect(create?.authorization).toBe(`Basic ${btoa("opencode:secret")}`)
       // The next tick's busy check polls the TARGET's /session/status, so a
       // targeted run in flight is not mistaken for a finished local one (which
-      // would double-fire it).
+      // would double-fire it). The local client is still never touched.
       await runTick(fake.client)
       expect(target.requests.some((request) => request.pathname === "/session/status")).toBe(true)
       expect(target.sessions).toEqual(["ses_1"])
-      expect(config.routines.routines[0]?.recentRuns).toHaveLength(1)
+      expect(fake.statusCalls).toEqual([])
+      expect(((await readConfig()).routines.routines[0]?.recentRuns ?? [])).toHaveLength(1)
     } finally {
       target.stop()
     }

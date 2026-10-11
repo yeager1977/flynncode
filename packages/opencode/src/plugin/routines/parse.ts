@@ -218,9 +218,10 @@ function readTargetUrl(url: unknown, index: number, errors: string[]) {
 }
 
 function readTargetValue(value: unknown, index: number, field: string, errors: string[]) {
-  if (value === undefined) return undefined
-  if (typeof value !== "string" || value.trim() === "") {
-    errors.push(`routines.${index}.target.${field} must be a string`)
+  // An explicitly empty string omits the credential rather than failing.
+  if (value === undefined || value === "") return undefined
+  if (typeof value !== "string") {
+    errors.push(`routines.${index}.target.${field} must be a string, or left empty`)
     return undefined
   }
   return value

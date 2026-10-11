@@ -215,7 +215,7 @@ async function scheduledTick() {
 export async function runTick(client: Client, now = new Date()) {
   await using _ = await Flock.acquire(SCHEDULER_LOCK, { staleMs: 60_000, timeoutMs: 20_000 })
   const loaded = await loadRoutines()
-  const busy = await busyRoutines(client)
+  const busy = await busyRoutines()
   const due = dueRoutines(loaded.routines, now)
   const dueIDs = new Set(due.map((routine) => routine.id))
   const filed = await fileTriggersDue(
@@ -261,10 +261,14 @@ function routineTargetClient(local: Client, routine: Routine, cache: Map<string,
   return built
 }
 
-async function busyRoutines(client: Client) {
+async function busyRoutines() {
   const ids = await Promise.all(
     [...scheduler.active].map(async ([id, run]) => {
-      const status = await (run.client ?? client).session
+      // Every active entry stores the client it was created with, including
+      // targeted (remote-host) runs, so the poll below always goes to the
+      // server that owns the session and the scheduler never mistakes the
+      // local status map's "unknown session" for a finished targeted run.
+      const status = await run.client.session
         .status({ query: { directory: run.directory } })
         .then((response) => response.data?.[run.sessionID], () => undefined)
       // Still count the tick that first sees the session idle, so edits made at
