@@ -4,6 +4,8 @@ import { Flock } from "@opencode-ai/core/util/flock"
 import { Effect } from "effect"
 import { applyEdits, modify, parse } from "jsonc-parser"
 import type { Hooks, PluginInput } from "@opencode-ai/plugin"
+import { createOpencodeClient } from "@opencode-ai/sdk"
+import { ServerAuth } from "@/server/auth"
 import { dueRoutines } from "./due"
 import { parseRoutines, type Routine, type RoutineRunSummary } from "./parse"
 import { fileTriggersDue, githubDue, resolveDirectory } from "./trigger"
@@ -26,6 +28,7 @@ function stored(routine: Routine) {
     directory: routine.directory,
     recentRuns: routine.recentRuns,
     trigger: routine.trigger,
+    target: routine.target,
     schedule: routine.dailyAt
       ? { dailyAt: routine.dailyAt }
       : routine.interval
@@ -175,8 +178,10 @@ const scheduler = {
   running: false,
   // Routine sessions still working, keyed by routine ID, so file triggers can
   // ignore the routine's own edits. Process-local: a run started by another
-  // process is not tracked here.
-  active: new Map<string, { sessionID: string; directory: string }>(),
+  // process is not tracked here. Each entry keeps the client it was created
+  // with, so status polls for targeted (remote-host) runs go to that host —
+  // polling them on the local server would always read "idle" and re-fire them.
+  active: new Map<string, { sessionID: string; directory: string; client: Client }>(),
 }
 
 export function startScheduler(client: Client) {
@@ -228,15 +233,38 @@ export async function runTick(client: Client, now = new Date()) {
       .map((routine) => githubDue(routine, token).then((fired) => (fired ? [routine] : []), () => [])),
   )
   const fired = [...due, ...filed, ...polled.flat()]
-  const runs = await Promise.all(fired.map((routine) => runRoutine(client, routine)))
+  // One client per distinct target within a tick; keyed by the full target so
+  // changed credentials never reuse a stale client. The key stays in memory
+  // only and is never logged.
+  const targeted = new Map<string, Client>()
+  const runs = await Promise.all(
+    fired.map((routine) => runRoutine(routineTargetClient(client, routine, targeted), routine)),
+  )
   await markRan(runs, new Date())
   return runs
+}
+
+function routineTargetClient(local: Client, routine: Routine, cache: Map<string, Client>) {
+  if (!routine.target || routine.target === "local") return local
+  const target = routine.target
+  const key = `${target.url}|${target.username ?? ""}|${target.password ?? ""}`
+  const cached = cache.get(key)
+  if (cached) return cached
+  const built: Client = createOpencodeClient({
+    baseUrl: target.url,
+    // An empty password pins header() away from the OPENCODE_SERVER_PASSWORD
+    // env fallback, so the local server's password is never sent to a remote
+    // host that has none.
+    headers: ServerAuth.headers({ username: target.username, password: target.password ?? "" }),
+  })
+  cache.set(key, built)
+  return built
 }
 
 async function busyRoutines(client: Client) {
   const ids = await Promise.all(
     [...scheduler.active].map(async ([id, run]) => {
-      const status = await client.session
+      const status = await (run.client ?? client).session
         .status({ query: { directory: run.directory } })
         .then((response) => response.data?.[run.sessionID], () => undefined)
       // Still count the tick that first sees the session idle, so edits made at
@@ -256,7 +284,7 @@ async function runRoutine(client: Client, routine: Routine) {
     (error) => ({ sessionID: undefined, error: error instanceof Error ? error.message : String(error) }),
   )
   const endedAt = new Date().toISOString()
-  if (result.sessionID) scheduler.active.set(routine.id, { sessionID: result.sessionID, directory })
+  if (result.sessionID) scheduler.active.set(routine.id, { sessionID: result.sessionID, directory, client })
   if (result.error) console.warn(`${PREFIX} scheduled routine ${routine.id} failed: ${result.error}`)
   const state = result.error ? ("error" as const) : ("ok" as const)
   await recordRoutineRun({
