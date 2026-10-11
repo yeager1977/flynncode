@@ -75,9 +75,11 @@ describe("review browser artifact wiring", () => {
 describe("annotate-to-chat prefill", () => {
   test("annotation payload is structured, not a base64 comment", () => {
     const source = readFileSync(new URL("./review-browser.tsx", import.meta.url), "utf8")
-    expect(source).toContain("onAnnotate({") // structured payload call
-    expect(source).toContain("screenshot: dataUrl") // capture flows through the payload
-    expect(source).toContain("rect: {") // percent rect rides with the payload
+    // The annotation flows through captureReviewAnnotation's payload into the
+    // session wiring instead of a base64-encoded comment string.
+    expect(source).toContain("props.onAnnotate(payload)")
+    expect(source).toContain("screenshot: marked ? await capture() : undefined")
+    expect(source).toContain("rect = { x: state.x, y: state.y, width: state.width, height: state.height }")
   })
 
   test("review comments forward the structured annotation to the session wiring", () => {
