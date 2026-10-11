@@ -168,3 +168,64 @@ describe("recentRuns", () => {
     expect(result.value.routines[0].recentRuns).toBeUndefined()
   })
 })
+
+describe("target", () => {
+  test("accepts an object with url and optional credentials", () => {
+    const result = parseRoutines({
+      routines: [{ id: "a", name: "A", prompt: "go", schedule: { interval: "1h" }, target: { url: "http://deepthought:4096", username: "u", password: "p" } }],
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.routines[0].target).toEqual({ url: "http://deepthought:4096", username: "u", password: "p" })
+  })
+
+  test("accepts the literal \"local\"", () => {
+    const result = parseRoutines({
+      routines: [{ id: "a", name: "A", prompt: "go", schedule: { interval: "1h" }, target: "local" }],
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.routines[0].target).toBe("local")
+  })
+
+  test("accepts a bare url with no credentials", () => {
+    const result = parseRoutines({
+      routines: [{ id: "a", name: "A", prompt: "go", schedule: { interval: "1h" }, target: { url: "https://deepthought.lan" } }],
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.routines[0].target).toEqual({ url: "https://deepthought.lan" })
+  })
+
+  test("treats explicitly empty credentials as omitted", () => {
+    const result = parseRoutines({
+      routines: [{ id: "a", name: "A", prompt: "go", schedule: { interval: "1h" }, target: { url: "http://deepthought:4096", username: "", password: "" } }],
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.routines[0].target).toEqual({ url: "http://deepthought:4096" })
+  })
+
+  test("rejects a non-http url", () => {
+    const result = parseRoutines({
+      routines: [{ id: "a", name: "A", prompt: "go", schedule: { interval: "1h" }, target: { url: "ftp://deepthought" } }],
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  test("rejects a missing or malformed url", () => {
+    for (const target of [{}, { url: 42 }, "self"]) {
+      const result = parseRoutines({
+        routines: [{ id: "a", name: "A", prompt: "go", schedule: { interval: "1h" }, target }],
+      })
+      expect(result.ok).toBe(false)
+    }
+  })
+
+  test("rejects non-string credentials", () => {
+    const result = parseRoutines({
+      routines: [{ id: "a", name: "A", prompt: "go", schedule: { interval: "1h" }, target: { url: "http://deepthought:4096", password: 12345 } }],
+    })
+    expect(result.ok).toBe(false)
+  })
+})

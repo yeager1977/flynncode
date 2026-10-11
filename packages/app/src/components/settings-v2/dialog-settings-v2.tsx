@@ -16,6 +16,7 @@ import { SettingsModelRouterV2 } from "./model-router"
 import { SettingsRoutinesV2 } from "./routines"
 import { SettingsPreviewV2 } from "./preview"
 import { SettingsWorktreeV2 } from "./worktree"
+import { SettingsPermissionsV2 } from "./permissions"
 import "./settings-v2.css"
 import { SettingsServersV2 } from "./servers"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -105,6 +106,10 @@ export const DialogSettings: Component<{
                       <Icon name="folder" />
                       {language.t("settings.tab.worktree")}
                     </TabsV2.Trigger>
+                    <TabsV2.Trigger value="permissions">
+                      <Icon name="shield" />
+                      {language.t("settings.permissions.title")}
+                    </TabsV2.Trigger>
                     <TabsV2.Trigger value="preview">
                       <Icon name="eye" />
                       {language.t("settings.tab.preview")}
@@ -176,6 +181,9 @@ export const DialogSettings: Component<{
         </TabsV2.Content>
         <TabsV2.Content value="worktree" class="settings-v2-panel">
           <SettingsWorktreeV2 directory={directory()} />
+        </TabsV2.Content>
+        <TabsV2.Content value="permissions" class="settings-v2-panel">
+          <SettingsPermissionsV2 />
         </TabsV2.Content>
         <TabsV2.Content value="preview" class="settings-v2-panel">
           <SettingsPreviewV2 directory={directory()} />

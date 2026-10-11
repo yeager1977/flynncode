@@ -4,7 +4,7 @@ import { createSimpleContext } from "@opencode-ai/ui/context"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { type Accessor, batch, createMemo, createResource, onCleanup, onMount } from "solid-js"
-import { createApiForServer, createSdkForServer, type ServerApi } from "@/utils/server"
+import { createApiForServer, createSdkForServer, type ServerApi, authTokenFromCredentials } from "@/utils/server"
 import { useLanguage } from "./language"
 import { usePlatform } from "./platform"
 import { ServerConnection, useServer } from "./server"
@@ -13,6 +13,7 @@ import { useGlobal } from "./global"
 import { ServerScope } from "@/utils/server-scope"
 import { detectServerProtocol, type ServerProtocol } from "@/utils/server-protocol"
 import { createCompatibleApi, type CompatibleApi } from "@/utils/server-compat"
+import { createComputerUseExecutor } from "@/computer-use/executor"
 
 const isAbortError = (error: unknown) =>
   error !== null && typeof error === "object" && "name" in error && error.name === "AbortError"
@@ -332,6 +333,45 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
     abort.abort()
     flush()
   })
+
+  // This window is the pane actuator for local servers: every published
+  // This window is one candidate pane actuator for local servers: every
+  // published computer-use request is decoded here, offered to the desktop
+  // main's exactly-once claim alongside every other desktop window, executed
+  // against the pane surface when claimed, and its result posted back to the
+  // executor bridge. Web shells and remote servers never gain actuation; the
+  // desktop main process re-checks its allowlist for every action, and windows
+  // that lose the claim or have no preview pane stay silent instead of
+  // answering the bridge.
+  if (platform.platform === "desktop" && ServerConnection.local(server) && window.api?.computerUse && window.api?.previewHost) {
+    const executor = createComputerUseExecutor({
+      surface: {
+        computerUse: window.api.computerUse,
+      },
+      postReply: async (payload) => {
+        const url = new URL("/computer-use/execute/reply", server.http.url)
+        if (payload.directory) url.searchParams.set("directory", payload.directory)
+        const headers = new Headers({ "content-type": "application/json" })
+        if (server.http.password)
+          headers.set(
+            "Authorization",
+            `Basic ${authTokenFromCredentials({ username: server.http.username, password: server.http.password })}`,
+          )
+        const response = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ requestID: payload.requestID, result: payload.result }),
+        })
+        if (!response.ok) throw new Error(`computer-use reply was refused: ${response.status}`)
+      },
+    })
+    const off = emitter.listen((bus) => {
+      const payload = bus.details.current
+      if (!payload) return
+      void executor.handle(payload, payload.location?.directory ?? bus.name)
+    })
+    onCleanup(() => off())
+  }
 
   const sdk = createSdkForServer({
     server: server.http,

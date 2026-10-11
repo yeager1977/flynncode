@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test"
-import { Effect, Fiber, Layer } from "effect"
+import { DeniedError } from "@opencode-ai/core/v1/permission"
+import { Cause, Effect, Exit, Fiber, Layer } from "effect"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Permission } from "../../src/permission"
@@ -17,9 +18,11 @@ const env = AppNodeBuilder.build(
 )
 const it = testEffect(env)
 
-it.instance("auto approval resolves without prompting", () =>
+it.instance("auto approval resolves without prompting on a reviewer allow", () =>
   Effect.gen(function* () {
     const permission = yield* Permission.Service
+    // The approval shortcut now requires the LLM auto-reviewer verdict; this
+    // fixture supplies an allow verdict the way the session tools gate does.
     yield* permission.ask({
       sessionID: SessionID.make("session_test"),
       permission: "bash",
@@ -28,9 +31,55 @@ it.instance("auto approval resolves without prompting", () =>
       always: [],
       ruleset: [],
       approval: "auto",
+      reviewer: "allow",
     })
     const pending = yield* permission.list()
     expect(pending.length).toBe(0)
+  }),
+)
+
+it.instance("auto approval prompts when no reviewer verdict is supplied", () =>
+  Effect.gen(function* () {
+    const permission = yield* Permission.Service
+    const fiber = yield* permission
+      .ask({
+        sessionID: SessionID.make("session_test"),
+        permission: "bash",
+        patterns: ["npm run build"],
+        metadata: {},
+        always: [],
+        ruleset: [],
+        approval: "auto",
+      })
+      .pipe(Effect.forkScoped)
+    yield* pollWithTimeout(
+      permission.list().pipe(Effect.map((pending) => (pending.length === 1 ? true : undefined))),
+      "auto approval without a reviewer verdict never prompted",
+    )
+    yield* Fiber.interrupt(fiber)
+  }),
+)
+
+it.instance("auto approval fails closed on a reviewer deny", () =>
+  Effect.gen(function* () {
+    const permission = yield* Permission.Service
+    const exit = yield* permission
+      .ask({
+        sessionID: SessionID.make("session_test"),
+        permission: "bash",
+        patterns: ["npm run build"],
+        metadata: {},
+        always: [],
+        ruleset: [],
+        approval: "auto",
+        reviewer: "deny",
+      })
+      .pipe(Effect.exit)
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      expect(Cause.squash(exit.cause)).toBeInstanceOf(DeniedError)
+    }
+    expect((yield* permission.list()).length).toBe(0)
   }),
 )
 

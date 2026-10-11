@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs"
 import { browserAnnotation } from "./hunk-revert"
 
 describe("browserAnnotation capture", () => {
-  test("includes the thumbnail when provided", () => {
+  test("annotation text omits the data url thumbnail", () => {
     const annotation = browserAnnotation({
       url: "http://127.0.0.1:3000/app",
       path: "/app",
@@ -14,8 +14,8 @@ describe("browserAnnotation capture", () => {
       height: 15,
       thumbnail: "data:image/png;base64,AAA",
     })
-    expect(annotation).toContain("data:image/png;base64,AAA")
-    expect(annotation).toContain("/app - hero off-center - 10%,20%-40%,35%")
+    expect(annotation).toBe("/app - hero off-center - 10%,20%-40%,35%")
+    expect(annotation).not.toContain("data:")
   })
 
   test("falls back to rect-only when capture is unavailable", () => {
@@ -52,6 +52,16 @@ describe("review browser artifact wiring", () => {
     expect(source).toContain("capturePage?.({")
   })
 
+  test("native mode captures through the preview host before the iframe fallback", () => {
+    const source = readFileSync(new URL("./review-browser.tsx", import.meta.url), "utf8")
+    expect(source).toContain("if (state.native)")
+    expect(source).toContain("nativeApi()?.capture()")
+    const nativeCapture = source.indexOf("nativeApi()?.capture()")
+    const fallbackCapture = source.indexOf("capturePage?.({")
+    expect(nativeCapture).toBeGreaterThan(-1)
+    expect(nativeCapture).toBeLessThan(fallbackCapture)
+  })
+
   test("artifact version bumps signal reactive sidebar refresh", () => {
     const module = readFileSync(new URL("../layout/sidebar-artifacts.ts", import.meta.url), "utf8")
     expect(module).toContain("createSignal")
@@ -63,6 +73,23 @@ describe("review browser artifact wiring", () => {
 })
 
 describe("annotate-to-chat prefill", () => {
+  test("annotation payload is structured, not a base64 comment", () => {
+    const source = readFileSync(new URL("./review-browser.tsx", import.meta.url), "utf8")
+    // The annotation flows through captureReviewAnnotation's payload into the
+    // session wiring instead of a base64-encoded comment string.
+    expect(source).toContain("props.onAnnotate(payload)")
+    expect(source).toContain("screenshot: marked ? await capture() : undefined")
+    expect(source).toContain("rect = { x: state.x, y: state.y, width: state.width, height: state.height }")
+  })
+
+  test("review comments forward the structured annotation to the session wiring", () => {
+    // Both onLineComment call sites must forward the whole comment object;
+    // a destructured field list would silently drop rect/screenshot.
+    const source = readFileSync(new URL("../session.tsx", import.meta.url), "utf8")
+    expect(source).toContain('addCommentToContext({ ...comment, origin: "review" })')
+    expect(source).toContain("screenshotFallbackComment")
+  })
+
   test("annotation text carries page path, rect mark, and note", async () => {
     const { browserAnnotation } = await import("./hunk-revert")
     const text = browserAnnotation({

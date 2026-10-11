@@ -32,18 +32,21 @@ export function deriveSubagentSessionPermission(input: {
  * match wins, so appending these confines the child even where inherited
  * rules allow more.
  *
- * Only `restricted` confines: deny file access outside the worktree, then
- * re-allow the worktree itself and the agent's own external_directory
- * allow-list (Truncate output, skill/reference dirs), which the trailing deny
- * would otherwise shadow. Unknown profiles degrade to no extra rules instead
- * of failing, matching tolerant config behavior elsewhere.
+ * Only `restricted` and `readonly` confine: deny file access outside the
+ * worktree, then re-allow the worktree itself and the agent's own
+ * external_directory allow-list (Truncate output, skill/reference dirs),
+ * which the trailing deny would otherwise shadow. The sandbox *level* for
+ * `readonly` rides on the session policy in tools.ts; this ruleset confines
+ * its external reads the same way `restricted` does. Unknown profiles degrade
+ * to no extra rules instead of failing, matching tolerant config behavior
+ * elsewhere.
  */
 export function sandboxRules(input: {
   sandbox: string
   directory: string
   agentPermission?: PermissionV1.Ruleset
 }): PermissionV1.Ruleset {
-  if (input.sandbox !== "restricted") return []
+  if (input.sandbox !== "restricted" && input.sandbox !== "readonly") return []
   const allowList = (input.agentPermission ?? []).filter(
     (rule) => rule.permission === "external_directory" && rule.action === "allow" && rule.pattern !== "*",
   )

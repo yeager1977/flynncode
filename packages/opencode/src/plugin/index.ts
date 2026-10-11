@@ -1,6 +1,7 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import type {
   Hooks,
+  PermissionAskInput,
   PluginInput,
   Plugin as PluginInstance,
   PluginModule,
@@ -62,6 +63,20 @@ export interface Interface {
     input: { tool: string; sessionID: string; callID: string; args: Record<string, unknown> },
     output: { decision: "allow" | "deny" | "undecided"; message?: string; updatedInput?: Record<string, unknown> },
   ) => Effect.Effect<{ decision: "allow" | "deny" | "undecided"; message?: string; updatedInput?: Record<string, unknown> }>
+  readonly triggerPermissionAsk: (
+    input: {
+      permission: string
+      patterns: ReadonlyArray<string>
+      sessionID: string
+      metadata: Record<string, unknown>
+      tool?: string
+      args?: Record<string, unknown>
+      id?: string
+      callID?: string
+      messageID?: string
+    },
+    output: { status: "ask" | "deny" | "allow" },
+  ) => Effect.Effect<{ status: "ask" | "deny" | "allow" }>
   readonly list: () => Effect.Effect<Hooks[]>
   readonly init: () => Effect.Effect<void>
 }
@@ -353,11 +368,78 @@ const layer = Layer.effect(
       return output
     })
 
+    const triggerPermissionAsk = Effect.fn("Plugin.triggerPermissionAsk")(function* (
+      input: {
+        permission: string
+        patterns: ReadonlyArray<string>
+        sessionID: string
+        metadata: Record<string, unknown>
+        tool?: string
+        args?: Record<string, unknown>
+        id?: string
+        callID?: string
+        messageID?: string
+      },
+      output: { status: "ask" | "deny" | "allow" },
+    ) {
+      const s = yield* InstanceState.get(state)
+      // The hook payload reuses the response-shaped Permission object for the
+      // fields the ask path can fill honestly: the tool name stands in for the
+      // title and time.created is the current wall clock. Everything the ask
+      // cannot fill is an omitted key, never a sentinel placeholder.
+      const payload: PermissionAskInput = {
+        type: input.permission,
+        pattern: input.patterns.length === 1 ? input.patterns[0] : [...input.patterns],
+        sessionID: input.sessionID,
+        title: input.tool ?? input.permission,
+        metadata: input.metadata,
+        time: { created: Date.now() },
+        permission: input.permission,
+        patterns: [...input.patterns],
+      }
+      if (input.id !== undefined) payload.id = input.id
+      if (input.messageID !== undefined) payload.messageID = input.messageID
+      if (input.callID !== undefined) payload.callID = input.callID
+      if (input.tool !== undefined) payload.tool = input.tool
+      if (input.args !== undefined) payload.args = input.args
+      // Intentional parity with tool.permission aggregation: isolated
+      // per-hook outputs, any deny short-circuits, allow is sticky, and
+      // ask/no-op changes nothing.
+      for (const hook of s.hooks) {
+        const fn = hook["permission.ask"]
+        if (!fn) continue
+        const perHook: { status: "ask" | "deny" | "allow" } = { status: "ask" }
+        const ran = yield* Effect.tryPromise({
+          // The async wrapper is load-bearing: hooks may return undefined
+          // while mutating the isolated output synchronously, which a bare
+          // tryPromise would treat as a fault (non-thenable .then).
+          try: async () => fn(payload, perHook),
+          catch: errorMessage,
+        }).pipe(
+          Effect.tapError((error) =>
+            Effect.logWarning("plugin permission.ask hook failed; falling through to the prompt", { error }),
+          ),
+          Effect.option,
+        )
+        // Fail open: a throwing plugin hook cannot deny by crashing — its
+        // isolated decision is discarded and the ask continues to the next
+        // hook or the normal prompt.
+        if (ran._tag === "None") continue
+        if (perHook.status === "deny") {
+          output.status = "deny"
+          return output
+        }
+        if (perHook.status !== "allow") continue
+        output.status = "allow"
+      }
+      return output
+    })
+
     const init = Effect.fn("Plugin.init")(function* () {
       yield* InstanceState.get(state)
     })
 
-    return Service.of({ trigger, triggerDecision, list, init })
+    return Service.of({ trigger, triggerDecision, triggerPermissionAsk, list, init })
   }),
 )
 

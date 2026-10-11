@@ -219,6 +219,27 @@ export type ProviderHook = {
 /** @deprecated Use AuthOAuthResult instead. */
 export type AuthOuathResult = AuthOAuthResult
 
+/**
+ * The `permission.ask` hook input carries the fields the ask path knows: the
+ * permission name, all patterns, the requesting tool name, its arguments, and
+ * the session. It reuses the response-shaped {@link Permission} payload where
+ * the ask path can fill it honestly: `type`, `pattern`, `sessionID`,
+ * `metadata`, `title` (the tool or permission name), and `time.created` (now)
+ * are always present, while `id`, `messageID`, `callID`, `tool`, and `args`
+ * are omitted entirely (missing keys, not sentinels) when the ask carries no
+ * value for them.
+ */
+export type PermissionAskInput = Omit<Permission, "id" | "messageID" | "title" | "time"> & {
+  id?: Permission["id"]
+  messageID?: Permission["messageID"]
+  title?: Permission["title"]
+  time?: Permission["time"]
+  permission?: string
+  patterns?: Array<string>
+  tool?: string
+  args?: Record<string, unknown>
+}
+
 export interface Hooks {
   dispose?: () => Promise<void>
   event?: (input: { event: Event }) => Promise<void>
@@ -258,7 +279,19 @@ export interface Hooks {
     input: { sessionID: string; agent: string; model: Model; provider: ProviderContext; message: UserMessage },
     output: { headers: Record<string, string> },
   ) => Promise<void>
-  "permission.ask"?: (input: Permission, output: { status: "ask" | "deny" | "allow" }) => Promise<void>
+  /**
+   * Runs before any approval-mode shortcut auto-approves a request that needs
+   * asking: a `deny` verdict wins in every mode (including "auto",
+   * "accept-edits", and the always-ask tools), while `allow` and `ask` fall
+   * through to the mode shortcuts and the normal prompt flow.
+   */
+  // Declared as a method (not a property) on purpose: parameter assignability
+  // for method signatures stays bivariant under strictFunctionTypes, so hooks
+  // explicitly annotated with the response-shaped Permission input keep
+  // compiling against the narrower PermissionAskInput payload. Verified with
+  // tsc --strict: a property-style slot (or a `Permission | PermissionAskInput`
+  // union parameter) fails TS2322 for those legacy hooks.
+  "permission.ask"?(input: PermissionAskInput, output: { status: "ask" | "deny" | "allow" }): Promise<void>
   "command.execute.before"?: (
     input: { command: string; sessionID: string; arguments: string },
     output: { parts: Part[] },

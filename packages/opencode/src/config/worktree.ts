@@ -10,6 +10,7 @@ export type Settings = {
   location: string
   branchPrefix: string
   keep: number
+  allowPrimaryRebind: boolean
 }
 
 // config.worktree is tolerant like model_family: the schema keeps plain
@@ -24,6 +25,8 @@ export function settings(config: ConfigV1.Info | undefined): Settings {
         ? raw.branch_prefix.trim().replace(/\/+$/, "")
         : DEFAULT_BRANCH_PREFIX,
     keep: typeof raw.keep === "number" && Number.isInteger(raw.keep) && raw.keep >= 0 ? raw.keep : DEFAULT_KEEP,
+    // Strict boolean: only the literal true enables rebind-on-handoff.
+    allowPrimaryRebind: raw.allow_primary_rebind === true,
   }
 }
 
@@ -31,6 +34,7 @@ export const defaults = {
   location: DEFAULT_LOCATION,
   branchPrefix: DEFAULT_BRANCH_PREFIX,
   keep: DEFAULT_KEEP,
+  allowPrimaryRebind: false,
 } as const
 
 function isRecord(value: unknown): value is Record<string, unknown> {

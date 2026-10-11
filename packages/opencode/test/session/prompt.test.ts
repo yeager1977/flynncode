@@ -6,7 +6,7 @@ import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { eq } from "drizzle-orm"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { expect } from "bun:test"
-import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
+import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer, Schema } from "effect"
 import path from "path"
 import { fileURLToPath } from "url"
 import { NamedError } from "@opencode-ai/core/util/error"
@@ -2560,4 +2560,144 @@ noLLMServer.instance(
       }
     }),
   30_000,
+)
+
+// Structured output retries
+
+const isTitleHit = (hit: { body: Record<string, unknown> }) =>
+  JSON.stringify(hit.body).includes("Generate a title for this conversation")
+
+const structuredFormat = (retryCount?: number) => ({
+  type: "json_schema" as const,
+  schema: { type: "object", properties: { answer: { type: "number" } }, required: ["answer"] },
+  ...(retryCount === undefined ? {} : { retryCount }),
+})
+
+// Message publishes encode the durable event, which rejects raw format
+// objects; decoding first mirrors what the HTTP payload decode does.
+const resolvedFormat = (retryCount?: number) => Schema.decodeUnknownSync(SessionV1.Format)(structuredFormat(retryCount))
+
+const bootedStructuredSession = Effect.fn("test.bootedStructuredSession")(
+  function* (format: SessionPrompt.PromptInput["format"]) {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({
+      title: "Pinned",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "hello" }],
+      format,
+    })
+    return { llm, prompt, sessions, session }
+  },
+)
+
+const structuredError = (retries: number) =>
+  ({
+    name: "StructuredOutputError",
+    data: { message: "Model did not produce structured output", retries },
+  }) as const
+
+it.instance("structured output retries a tool-less finish and succeeds on the next turn", () =>
+  Effect.gen(function* () {
+    const { llm, prompt, session } = yield* bootedStructuredSession(resolvedFormat())
+    yield* llm.text("plain answer")
+    yield* llm.tool("StructuredOutput", { answer: 4 })
+
+    const result = yield* prompt.loop({ sessionID: session.id })
+    const mains = (yield* llm.hits).filter((hit) => !isTitleHit(hit))
+    expect(mains).toHaveLength(2)
+    expect(JSON.stringify(mains[1]?.body)).toContain("finished without calling the StructuredOutput tool")
+
+    expect(result.info.role).toBe("assistant")
+    if (result.info.role === "assistant") {
+      expect(result.info.structured).toEqual({ answer: 4 })
+      expect(result.info.error).toBeUndefined()
+    }
+  }),
+)
+
+it.instance("structured output exhausts the default retry budget", () =>
+  Effect.gen(function* () {
+    // No queued replies: the test server auto-replies with a tool-less stop.
+    const { llm, prompt, sessions, session } = yield* bootedStructuredSession(resolvedFormat())
+
+    const result = yield* prompt.loop({ sessionID: session.id })
+    const mains = (yield* llm.hits).filter((hit) => !isTitleHit(hit))
+    expect(mains).toHaveLength(3)
+
+    expect(result.info.role).toBe("assistant")
+    if (result.info.role === "assistant") {
+      expect(result.info.error).toEqual(structuredError(0))
+      expect(result.info.structured).toBeUndefined()
+    }
+
+    const history = yield* sessions.messages({ sessionID: session.id })
+    const users = history.filter(message => message.info.role === "user")
+    expect(users).toHaveLength(1)
+    expect(history.filter(message => message.info.role === "assistant").every(message => message.info.role === "assistant" && message.info.parentID === users[0].info.id)).toBe(true)
+  }),
+)
+
+it.instance("structured output honors zero retries and cannot replenish an exhausted budget on resume", () =>
+  Effect.gen(function* () {
+    const { llm, prompt, session } = yield* bootedStructuredSession(resolvedFormat(0))
+    const result = yield* prompt.loop({ sessionID: session.id })
+    expect(result.info.role === "assistant" && result.info.error).toEqual(structuredError(0))
+    yield* prompt.loop({ sessionID: session.id })
+    expect((yield* llm.hits).filter(hit => !isTitleHit(hit))).toHaveLength(1)
+  }),
+)
+
+it.instance("structured output cancellation cannot recreate the last reserved retry", () =>
+  Effect.gen(function* () {
+    const { llm, prompt, session } = yield* bootedStructuredSession(resolvedFormat(1))
+    yield* llm.text("miss")
+    yield* llm.hang
+    const fiber = yield* prompt.loop({ sessionID: session.id }).pipe(Effect.forkChild)
+    yield* llm.wait(2)
+    yield* prompt.cancel(session.id)
+    yield* Fiber.await(fiber)
+    yield* prompt.loop({ sessionID: session.id })
+    expect((yield* llm.hits).filter(hit => !isTitleHit(hit))).toHaveLength(2)
+  }),
+)
+
+for (const delivery of ["steer", "queue"] as const) {
+  it.instance(`structured output does not overtake an intervening ${delivery}`, () =>
+    Effect.gen(function* () {
+      const { llm, prompt, sessions, session } = yield* bootedStructuredSession(resolvedFormat())
+      const release = Promise.withResolvers<void>()
+      yield* llm.hold("miss", release.promise)
+      const fiber = yield* prompt.loop({ sessionID: session.id }).pipe(Effect.forkChild)
+      yield* llm.wait(1)
+      const steer = yield* prompt.prompt({ sessionID: session.id, noReply: true, delivery, system: "NEW SYSTEM", format: Schema.decodeUnknownSync(SessionV1.Format)({ type: "text" }), parts: [{ type: "text", text: "NEW USER" }] })
+      release.resolve()
+      const result = yield* Fiber.join(fiber)
+      expect(result.info.role === "assistant" && result.info.parentID).toBe(steer.info.id)
+      const mains = (yield* llm.hits).filter(hit => !isTitleHit(hit))
+      expect(mains).toHaveLength(2)
+      expect(JSON.stringify(mains[1].body)).toContain("NEW SYSTEM")
+      expect(JSON.stringify(mains[1].body)).not.toContain("finished without calling")
+      expect((yield* sessions.messages({ sessionID: session.id })).filter(message => message.info.role === "user")).toHaveLength(2)
+    }),
+  )
+}
+
+it.instance("structured output honors an explicit retryCount of one", () =>
+  Effect.gen(function* () {
+    const { llm, prompt, session } = yield* bootedStructuredSession(resolvedFormat(1))
+
+    const result = yield* prompt.loop({ sessionID: session.id })
+    const mains = (yield* llm.hits).filter((hit) => !isTitleHit(hit))
+    expect(mains).toHaveLength(2)
+
+    expect(result.info.role).toBe("assistant")
+    if (result.info.role === "assistant") expect(result.info.error).toEqual(structuredError(0))
+  }),
 )

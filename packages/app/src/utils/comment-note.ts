@@ -6,7 +6,23 @@ export type PromptComment = {
   comment: string
   preview?: string
   origin?: "review" | "file"
+  element?: CommentElement
 }
+
+// Element under the annotated region, captured from the native preview host.
+// Known limitation of the legacy degrade path (parseCommentNote): descriptor
+// text containing `": "` splits the note at the wrong colon, and a trailing
+// ` (…)` descriptor is only stripped when the closing paren is the last char
+// before the comment separator.
+export type CommentElement = {
+  tag: string
+  id?: string
+  classes?: string
+  text?: string
+  rect: { x: number; y: number; width: number; height: number }
+}
+
+export type CommentRect = { x: number; y: number; width: number; height: number }
 
 function selection(selection: unknown) {
   if (!selection || typeof selection !== "object") return undefined
@@ -23,6 +39,35 @@ function selection(selection: unknown) {
   } satisfies FileSelection
 }
 
+function rect(value: unknown) {
+  if (!value || typeof value !== "object") return undefined
+  const raw = value as Record<string, unknown>
+  // Strict numeric bounds: coercion would accept string coordinates the
+  // main-side sanitizer would already have refused.
+  const bounds = [raw.x, raw.y, raw.width, raw.height]
+  if (!bounds.every((bound): bound is number => typeof bound === "number" && Number.isFinite(bound))) return undefined
+  const [x, y, width, height] = bounds
+  return { x, y, width, height } satisfies CommentRect
+}
+
+function element(value: unknown) {
+  if (!value || typeof value !== "object") return undefined
+  const raw = value as Record<string, unknown>
+  const bounds = rect(raw.rect)
+  const tag = typeof raw.tag === "string" ? raw.tag : ""
+  if (!tag || !bounds) return undefined
+  const id = typeof raw.id === "string" ? raw.id : undefined
+  const classes = typeof raw.classes === "string" ? raw.classes : undefined
+  const text = typeof raw.text === "string" ? raw.text : undefined
+  return {
+    tag,
+    rect: bounds,
+    ...(id ? { id } : {}),
+    ...(classes ? { classes } : {}),
+    ...(text ? { text } : {}),
+  } satisfies CommentElement
+}
+
 export function createCommentMetadata(input: PromptComment) {
   return {
     opencodeComment: {
@@ -31,6 +76,7 @@ export function createCommentMetadata(input: PromptComment) {
       comment: input.comment,
       preview: input.preview,
       origin: input.origin,
+      ...(input.element ? { element: input.element } : {}),
     },
   }
 }
@@ -50,10 +96,20 @@ export function readCommentMetadata(value: unknown) {
     comment,
     preview: typeof preview === "string" ? preview : undefined,
     origin: origin === "review" || origin === "file" ? origin : undefined,
+    element: element((meta as { element?: unknown }).element),
   } satisfies PromptComment
 }
 
-export function formatCommentNote(input: { path: string; selection?: FileSelection; comment: string }) {
+// Model-facing descriptor appended after the path: compact identity of the
+// element the annotation landed on (tag, optional id, optional quoted text).
+function elementDescriptor(value?: CommentElement) {
+  if (!value) return undefined
+  return [value.tag.toLowerCase(), value.id ? `#${value.id}` : undefined, value.text ? `"${value.text}"` : undefined]
+    .filter((part): part is string => part !== undefined)
+    .join(" ")
+}
+
+export function formatCommentNote(input: { path: string; selection?: FileSelection; comment: string; element?: CommentElement }) {
   const start = input.selection ? Math.min(input.selection.startLine, input.selection.endLine) : undefined
   const end = input.selection ? Math.max(input.selection.startLine, input.selection.endLine) : undefined
   const range =
@@ -62,7 +118,8 @@ export function formatCommentNote(input: { path: string; selection?: FileSelecti
       : start === end
         ? `line ${start}`
         : `lines ${start} through ${end}`
-  return `The user made the following comment regarding ${range} of ${input.path}: ${input.comment}`
+  const descriptor = elementDescriptor(input.element)
+  return `The user made the following comment regarding ${range} of ${input.path}${descriptor ? ` (${descriptor})` : ""}: ${input.comment}`
 }
 
 export function parseCommentNote(text: string) {
@@ -73,7 +130,7 @@ export function parseCommentNote(text: string) {
   const start = match[2] ? Number(match[2]) : match[3] ? Number(match[3]) : undefined
   const end = match[2] ? Number(match[2]) : match[4] ? Number(match[4]) : undefined
   return {
-    path: match[5],
+    path: stripElementDescriptor(match[5]),
     selection:
       start !== undefined && end !== undefined
         ? {
@@ -85,4 +142,12 @@ export function parseCommentNote(text: string) {
         : undefined,
     comment: match[6],
   } satisfies PromptComment
+}
+
+// When metadata is missing the note round-trips through the model-facing
+// text, which may carry a trailing element descriptor after the path
+// (`preview (button "Save file")`). Strip that segment so the fallback
+// recovers the bare path.
+function stripElementDescriptor(path: string) {
+  return path.replace(/\s\(.+\)$/, "")
 }

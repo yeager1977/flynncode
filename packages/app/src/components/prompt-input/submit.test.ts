@@ -68,6 +68,8 @@ const prompt = {
     items: () => [],
   },
   capture: () => prompt,
+  attachmentScope: () => ({ valid: () => true, append: () => true, track: (_work: Promise<unknown>) => undefined }),
+  attachmentsReady: async () => {},
 }
 
 const clientFor = (directory: string) => {

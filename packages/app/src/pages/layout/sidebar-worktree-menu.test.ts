@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { worktreeMenuActions } from "./sidebar-workspace"
+import { localHandoffAction } from "@/components/session/session-worktree-actions"
 
 describe("sidebar worktree menu", () => {
   test("menu model exposes remove, reset, and handoff for sandbox entries", () => {
@@ -35,5 +36,35 @@ describe("sidebar worktree menu", () => {
     const actions = worktreeMenuActions({ local: true, busy: false, occupied: false })
     expect(actions.map((action) => action.key)).toEqual(["session.worktree.handoff"])
     expect(actions[0]?.disabled).toBe(false)
+  })
+})
+
+describe("local handoff entry", () => {
+  const usable = { allow: true, busy: false, occupied: false, routed: true } as const
+
+  test("exists only when the rebind flag resolves true", () => {
+    expect(localHandoffAction({ ...usable, allow: false })).toBeUndefined()
+    expect(localHandoffAction({ ...usable, allow: true })).toEqual({
+      key: "session.worktree.handoffLocal",
+      disabled: false,
+    })
+  })
+
+  test("explains the disabled entry with the guard reasons", () => {
+    const busy = localHandoffAction({ ...usable, busy: true })
+    expect(busy?.disabled).toBe(true)
+
+    const occupied = localHandoffAction({ ...usable, occupied: true })
+    expect(occupied?.disabled).toBe(true)
+    expect(occupied?.disabledReason).toBe("session.worktree.handoffOccupied")
+
+    const noRoute = localHandoffAction({ ...usable, routed: false })
+    expect(noRoute?.disabled).toBe(true)
+    expect(noRoute?.disabledReason).toBe("session.worktree.handoffNoTab")
+
+    // A routed session already on the Local checkout is a self-handoff.
+    const localRouted = localHandoffAction({ ...usable, localRouted: true })
+    expect(localRouted?.disabled).toBe(true)
+    expect(localRouted?.disabledReason).toBeUndefined()
   })
 })

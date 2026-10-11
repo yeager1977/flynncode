@@ -9,22 +9,26 @@ import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useUpdaterAction } from "../updater-action"
 import { useSettings } from "@/context/settings"
+import { showToast } from "@/utils/toast"
 import { ExternalLink } from "../external-link"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import { LayoutRetirementNotice, LayoutTransitionToggle } from "./interface-transition"
 import {
   createAppearanceSettingsController,
+  createMemorySettingsController,
   createPermissionScopeController,
   createShellOptions,
   createShellSettingsController,
   createSoundSettingsController,
   soundOptions,
   type AppearanceSettingsController,
+  type MemorySettingsController,
   type PermissionScopeController,
   type ShellSettingsController,
   type SoundSettingsController,
 } from "./general-controllers"
+import { minTurnsFromInput } from "./memory-payload"
 import "./settings-v2.css"
 
 const schemeOptions: ("system" | "light" | "dark")[] = ["system", "light", "dark"]
@@ -271,6 +275,64 @@ const LanguageSetting = () => {
   )
 }
 
+const MemorySection: Component<{ controller: MemorySettingsController }> = (props) => {
+  const language = useLanguage()
+  const apply = (result: Promise<boolean>) => {
+    void result.then((ok) => {
+      if (ok) return
+      showToast({ variant: "error", title: language.t("settings.memory.toast.updateFailed.title") })
+    })
+  }
+  return (
+    <div class="settings-v2-section">
+      <h3 class="settings-v2-section-title">{language.t("settings.memory.section.title")}</h3>
+      <SettingsListV2>
+        <SettingsRowV2
+          title={language.t("settings.memory.enable.title")}
+          description={language.t("settings.memory.enable.description")}
+        >
+          <div data-action="settings-memory-enable">
+            <Switch
+              checked={props.controller.enabled()}
+              disabled={props.controller.saving()}
+              onChange={(checked) => apply(props.controller.setEnabled(checked))}
+            />
+          </div>
+        </SettingsRowV2>
+        <SettingsRowV2
+          title={language.t("settings.memory.minTurns.title")}
+          description={language.t("settings.memory.minTurns.description")}
+        >
+          <div class="w-full sm:w-[220px]">
+            {/* Write on commit, not per keystroke: the number input's change
+                event fires on blur, Enter, or spinner clicks, so one full
+                `memory`-block config write goes out per committed value. */}
+            <TextInputV2
+              data-action="settings-memory-min-turns"
+              type="number"
+              appearance="base"
+              min="0"
+              step="1"
+              value={String(props.controller.minTurns())}
+              onChange={(event) => {
+                const parsed = minTurnsFromInput(event.currentTarget.value)
+                if (parsed === undefined || parsed === props.controller.minTurns()) return
+                apply(props.controller.setMinTurns(parsed))
+              }}
+              spellcheck={false}
+              autocorrect="off"
+              autocomplete="off"
+              autocapitalize="off"
+              aria-label={language.t("settings.memory.minTurns.title")}
+            />
+          </div>
+        </SettingsRowV2>
+      </SettingsListV2>
+      <p class="text-text-weak">{language.t("settings.memory.hint")}</p>
+    </div>
+  )
+}
+
 export const SettingsGeneralV2: Component<{
   sessionID?: string
   directory?: string
@@ -285,6 +347,7 @@ export const SettingsGeneralV2: Component<{
   const shell = createShellSettingsController()
   const appearance = createAppearanceSettingsController()
   const sounds = createSoundSettingsController()
+  const memory = createMemorySettingsController()
   const desktop = createMemo(() => platform.platform === "desktop")
 
   const [pinchZoom, { mutate: setPinchZoom }] = createResource(
@@ -566,6 +629,8 @@ export const SettingsGeneralV2: Component<{
         <DisplaySection />
 
         <AdvancedSection />
+
+        <MemorySection controller={memory} />
       </div>
     </>
   )

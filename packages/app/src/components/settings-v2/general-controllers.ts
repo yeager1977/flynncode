@@ -17,7 +17,8 @@ import {
   useSettings,
 } from "@/context/settings"
 import { playSoundPreview, SOUND_OPTIONS } from "@/utils/sound"
-import { createSoundPreviewController, type ShellOption } from "./general-controller-behavior"
+import { memoryFromConfig, memoryToConfig, type MemoryPatch } from "./memory-payload"
+import { createOptimisticToggle, createSoundPreviewController, type ShellOption } from "./general-controller-behavior"
 
 export { createShellOptions, createSoundPreviewController } from "./general-controller-behavior"
 export type { ShellOption, ShellSelectOption } from "./general-controller-behavior"
@@ -159,7 +160,29 @@ export function createSoundSettingsController() {
   }
 }
 
+export function createMemorySettingsController() {
+  const serverSync = useServerSync()
+  const memory = createMemo(() => memoryFromConfig(serverSync().data.config))
+  const save = async (patch: MemoryPatch) =>
+    serverSync()
+      .updateConfig({ memory: memoryToConfig(serverSync().data.config.memory, patch) })
+      .then(() => true)
+      .catch(() => false)
+  const toggle = createOptimisticToggle(() => memory().enabled, (checked) => save({ enabled: checked }))
+  return {
+    saving: toggle.saving,
+    enabled: toggle.value,
+    minTurns: () => memory().minTurns,
+    setEnabled: toggle.toggle,
+    setMinTurns: (value: number) => {
+      if (value === memory().minTurns) return Promise.resolve(true)
+      return save({ min_turns: value })
+    },
+  }
+}
+
 export type PermissionScopeController = ReturnType<typeof createPermissionScopeController>
 export type ShellSettingsController = ReturnType<typeof createShellSettingsController>
 export type AppearanceSettingsController = ReturnType<typeof createAppearanceSettingsController>
 export type SoundSettingsController = ReturnType<typeof createSoundSettingsController>
+export type MemorySettingsController = ReturnType<typeof createMemorySettingsController>

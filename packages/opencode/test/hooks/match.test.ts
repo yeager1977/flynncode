@@ -26,3 +26,14 @@ test("whole-value placeholder preserves JSON type", () => {
   const out = HooksConfig.expandMcpInput({ count: "${tool_input.count}" }, { tool_input: { count: 3 } })
   expect(out).toEqual({ count: 3 })
 })
+
+test("decodes the disableAllHooks kill switch", () => {
+  const decoded = Schema.decodeUnknownSync(ConfigHooksV1.Info)({ disableAllHooks: true })
+  expect(decoded.disableAllHooks).toBe(true)
+  expect(HooksConfig.matchHooks("PreToolUse", "Bash", decoded.PreToolUse ?? []).length).toBe(0)
+})
+
+test("disableAllHooks fails safe across layer merges", () => {
+  expect(HooksConfig.mergeHooksConfigs({}, { disableAllHooks: true }).disableAllHooks).toBe(true)
+  expect(HooksConfig.mergeHooksConfigs({ disableAllHooks: true }, {}).disableAllHooks).toBe(true)
+})

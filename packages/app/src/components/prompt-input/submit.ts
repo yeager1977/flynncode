@@ -23,7 +23,7 @@ import { buildRequestParts } from "./build-request-parts"
 import { setCursorPosition } from "./editor-dom"
 import { formatServerError } from "@/utils/server-errors"
 import { ScopedKey } from "@/utils/server-scope"
-import { createPromptSubmissionState } from "./submission-state"
+import { preparePromptSubmission } from "./submission-state"
 import { normalizeSessionInfo } from "@/utils/session"
 import { toLegacySummary } from "@/context/global-sync/home-session-index"
 import { Event } from "@opencode-ai/schema/event"
@@ -300,6 +300,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         commentID: item.commentID,
         commentOrigin: item.commentOrigin,
         preview: item.preview,
+        element: item.element,
       })
     }
   }
@@ -371,15 +372,15 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     event.preventDefault()
 
     const target = prompt.capture()
-    const submission = createPromptSubmissionState({
-      target,
-      prompt: target.current(),
-      context: target.context.items().slice(),
-    })
+    const permissionState = permission.currentServerState()
+    const owner = { scope: sdk().scope, directory: sdk().directory, sessionID: params.id, draftID: search.draftId }
+    const submission = await preparePromptSubmission(target)
+    if (!submission || prompt.capture() !== target || owner.scope !== sdk().scope ||
+      owner.directory !== sdk().directory || owner.sessionID !== params.id || owner.draftID !== search.draftId) return
     const currentPrompt = submission.prompt
     const context = submission.context
     const text = currentPrompt.map((part) => ("content" in part ? part.content : "")).join("")
-    const images = input.imageAttachments().slice()
+    const images = draftImages(currentPrompt)
     const mode = input.mode()
 
     if (text.trim().length === 0 && images.length === 0 && input.commentCount() === 0) {
@@ -423,7 +424,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     input.resetHistoryNavigation()
 
     const projectDirectory = sdk().directory
-    const permissionState = permission.currentServerState()
     const isNewSession = !params.id
     const shouldAutoAccept = isNewSession && input.autoAccept()
     const worktreeSelection = input.newSessionWorktree?.() || "main"

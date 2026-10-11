@@ -18,4 +18,8 @@ describe("reviewPresetArgs", () => {
     expect(reviewPresetArgs("base-branch")).toBe("")
     expect(reviewPresetArgs("commit")).toBe("")
   })
+
+  test("whitespace target is treated as empty", () => {
+    expect(reviewPresetArgs("base-branch", "  ")).toBe("")
+  })
 })

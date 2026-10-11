@@ -31,8 +31,10 @@ function collectDefs(info: ConfigHooksV1.Info | undefined): Array<HooksTrust.Hoo
   if (!info) return []
   return Object.entries(info).flatMap((entry) => {
     const event = entry[0]
+    // disableAllHooks is the kill-switch flag, not an event: skip non-array
+    // values when walking the event table.
     const groups = entry[1] as Array<ConfigHooksV1.HookGroup> | undefined
-    if (!groups) return []
+    if (!Array.isArray(groups)) return []
     return groups.flatMap((group) =>
       group.hooks.map((handler) => HooksTrust.fromHandler(event, group.matcher, handler)),
     )

@@ -15,6 +15,7 @@ import { HooksRunner } from "@/hooks/runner"
 import { HooksTrust } from "@/hooks/trust"
 import { Command } from "@/command"
 import { Config } from "@/config/config"
+import { ComputerUseExecutor } from "@/computer-use"
 import { Workspace } from "@/control-plane/workspace"
 import { Env } from "@/env"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -26,6 +27,7 @@ import { LSP } from "@/lsp/lsp"
 import { MCP } from "@/mcp"
 import { McpAuth } from "@/mcp/auth"
 import { Permission } from "@/permission"
+import { AutoReviewer } from "@/permission/auto-reviewer"
 import { Plugin } from "@/plugin"
 import { PluginPtyEnvironment } from "@/plugin/pty-environment"
 import { InstanceStore } from "@/project/instance-store"
@@ -94,6 +96,7 @@ import { EventApi } from "./groups/event"
 import { PtyConnectApi } from "./groups/pty"
 import { eventHandlers } from "./handlers/event"
 import { configHandlers } from "./handlers/config"
+import { computerUseHandlers } from "./handlers/computer-use"
 import { controlHandlers } from "./handlers/control"
 import { controlPlaneHandlers } from "./handlers/control-plane"
 import { experimentalHandlers } from "./handlers/experimental"
@@ -169,6 +172,7 @@ const ptyConnectApiRoutes = HttpApiBuilder.layer(PtyConnectApi).pipe(
 const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
   Layer.provide([
     configHandlers,
+    computerUseHandlers,
     experimentalHandlers,
     fileHandlers,
     instanceHandlers,
@@ -230,7 +234,7 @@ type RouteRequirements =
   | HttpRouter.Request<"Requires", unknown>
   | HttpRouter.Request<"GlobalRequires", never>
 
-const app = LayerNode.group([
+export const app = LayerNode.group([
   Npm.node,
   FSUtil.node,
   Database.node,
@@ -251,7 +255,9 @@ const app = LayerNode.group([
   Skill.node,
   Discovery.node,
   Question.node,
+  ComputerUseExecutor.node,
   Permission.node,
+  AutoReviewer.node,
   PermissionSaved.node,
   HooksTrust.node,
   HooksContext.node,

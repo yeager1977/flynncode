@@ -1,4 +1,5 @@
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+import { ComputerUseV1 } from "@opencode-ai/schema/computer-use-v1"
 import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { describe, expect } from "bun:test"
@@ -260,6 +261,38 @@ describe("instance HttpApi", () => {
       expect(yield* diff.json).toContainEqual(
         expect.objectContaining({ file: "changed.txt", additions: 1, status: "added" }),
       )
+    }),
+  )
+
+  it.live("accepts a computer-use reply over the executor endpoint and lists requests", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+      const request = (path: string, init?: RequestInit) =>
+        Effect.promise(() =>
+          HttpApiApp.webHandler().handler(
+            new Request(`http://localhost${path}`, {
+              ...init,
+              headers: { "x-opencode-directory": dir, "content-type": "application/json", ...init?.headers },
+            }),
+            handlerContext,
+          ),
+        )
+
+      const pending = yield* request("/computer-use/requests")
+      expect(pending.status).toBe(200)
+      expect(yield* Effect.promise(() => pending.json())).toEqual([])
+
+      const reply = yield* request("/computer-use/execute/reply", {
+        method: "POST",
+        body: JSON.stringify({
+          requestID: ComputerUseV1.ID.ascending(),
+          result: { ok: true, screenshot: "data:image/png;base64,AAAA" },
+        }),
+      })
+      // A reply for a request this instance never issued is a recorded no-op;
+      // the executor owns honesty semantics.
+      expect(reply.status).toBe(200)
+      expect(yield* Effect.promise(() => reply.json())).toBe(true)
     }),
   )
 })

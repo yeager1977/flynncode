@@ -112,6 +112,15 @@ type PlatformBase = {
   /** Allow native pinch/Ctrl-scroll zoom gestures (desktop only) */
   setPinchZoomEnabled?(enabled: boolean): Promise<void> | void
 
+  /** Get whether the quick-entry overlay global shortcut is enabled (desktop only) */
+  getQuickEntryEnabled?(): Promise<boolean> | boolean
+
+  /** Enable/disable the quick-entry overlay global shortcut (desktop only) */
+  setQuickEntryEnabled?(enabled: boolean): Promise<void> | void
+
+  /** Capture the OS screen as a PNG data URL; null when capture is unavailable (desktop only) */
+  screenshot?(): Promise<{ dataUrl: string } | null>
+
   /** Run a desktop-only menu action from the app chrome */
   runDesktopMenuAction?(action: DesktopMenuAction): Promise<void> | void
 

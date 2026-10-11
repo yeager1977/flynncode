@@ -1,4 +1,6 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { SessionFolders } from "@opencode-ai/core/session/folders"
+import { AutoReviewer } from "@/permission/auto-reviewer"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import path from "path"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
@@ -61,9 +63,7 @@ import { HooksRunner } from "@/hooks/runner"
 import { HooksContext } from "@/hooks/context"
 import { LLMEvent } from "@opencode-ai/llm"
 import { Memory } from "@/memory/memory"
-import { MemoryExtract } from "@/memory/extract"
-import { MemoryRedact } from "@/memory/redact"
-import { ConfigMemoryV1 } from "@opencode-ai/core/v1/config/memory"
+import { SessionMemoryCurate } from "./memory-curate"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -88,6 +88,11 @@ IMPORTANT:
 - This tool provides your final answer - no further actions are taken after calling it`
 
 const STRUCTURED_OUTPUT_SYSTEM_PROMPT = `IMPORTANT: The user has requested structured output. You MUST use the StructuredOutput tool to provide your final response. Do NOT respond with plain text - you MUST call the StructuredOutput tool with your answer formatted according to the schema.`
+
+// Continuation persisted between structured-output retries: the previous turn
+// finished without calling the StructuredOutput tool, so the drain re-prompts
+// once per granted retry instead of failing immediately.
+const STRUCTURED_OUTPUT_RETRY_PROMPT = `Your previous response finished without calling the StructuredOutput tool, so the required structured output is missing. ${STRUCTURED_OUTPUT_SYSTEM_PROMPT}`
 
 function mcpResourceBase64Size(value: string) {
   const trimmed = value.replace(/\s/g, "")
@@ -159,10 +164,12 @@ const layer = Layer.effect(
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
     const scope = yield* Scope.Scope
     const instruction = yield* Instruction.Service
+    const sessionFolders = yield* SessionFolders.Service
+    const autoReviewer = yield* AutoReviewer.Service
     const state = yield* SessionRunState.Service
     const revert = yield* SessionRevert.Service
     const summary = yield* SessionSummary.Service
-    const memory = yield* Memory.Service
+    const curate = yield* SessionMemoryCurate.Service
     const sys = yield* SystemPrompt.Service
     const llm = yield* LLM.Service
     const events = yield* EventV2Bridge.Service
@@ -1204,57 +1211,6 @@ const layer = Layer.effect(
       )
     })
 
-    const extractMemory = Effect.fn("SessionPrompt.extractMemory")(function* (sessionID: SessionID) {
-      const settings = ConfigMemoryV1.resolved((yield* config.get()).memory ?? {})
-      if (!settings.enabled) return
-      const all = yield* sessions.messages({ sessionID }).pipe(Effect.catch(() => Effect.succeed([])))
-      if (!MemoryExtract.shouldExtract({ messages: all, min_turns: settings.min_turns })) return
-      const lastUser = [...all].reverse().find((item) => item.info.role === "user")
-      if (!lastUser || lastUser.info.role !== "user") return
-      const conversation = all
-        .flatMap((msg) =>
-          msg.info.role === "user"
-            ? msg.parts.flatMap((part) => (part.type === "text" && part.text.trim() ? [part.text.trim()] : []))
-            : [],
-        )
-        .join("\n")
-        .slice(0, 6000)
-      if (!conversation.trim()) return
-      const ag = yield* agents.get("summary").pipe(Effect.catch(() => Effect.succeed(undefined)))
-      if (!ag) return
-      const mdl = ((yield* provider.getSmallModel(lastUser.info.model.providerID).pipe(
-        Effect.catch(() => Effect.succeed(undefined)),
-      )) ??
-        (yield* provider
-          .getModel(lastUser.info.model.providerID, lastUser.info.model.modelID)
-          .pipe(Effect.catch(() => Effect.succeed(undefined)))))
-      if (!mdl) return
-      const text = yield* llm
-        .stream({
-          agent: ag,
-          user: lastUser.info,
-          system: [],
-          small: true,
-          tools: {},
-          model: mdl,
-          sessionID,
-          retries: 2,
-          messages: [{ role: "user", content: MemoryExtract.buildExtractionPrompt({ conversation }) }],
-        })
-        .pipe(
-          Stream.filter(LLMEvent.is.textDelta),
-          Stream.map((e) => e.text),
-          Stream.mkString,
-          Effect.catch(() => Effect.succeed("")),
-        )
-      const cleaned = text.trim()
-      if (!cleaned || cleaned === "NOTHING TO REMEMBER") return
-      const body = MemoryRedact.redactSecrets(cleaned)
-      if (!body.trim()) return
-      const filename = `${new Date().toISOString().slice(0, 10)}-session.md`
-      yield* memory.append({ scope: "project", filename, text: body }).pipe(Effect.catch(() => Effect.succeed("")))
-    })
-
     const runLoopOnce: (sessionID: SessionID) => Effect.Effect<[SessionV1.WithParts, SessionV1.User]> = Effect.fn(
       "SessionPrompt.runLoopOnce",
     )(function* (sessionID) {
@@ -1289,10 +1245,36 @@ const layer = Layer.effect(
               (part) => part.type === "tool" && !part.metadata?.providerExecuted && !isOrphanedInterruptedTool(part),
             ) ?? false
 
+          // Reservations live on assistant state under the original user, so
+          // cancellation/resume cannot recreate a consumed retry allowance.
+          const structuredAttempt = Math.max(
+            0,
+            ...msgs.flatMap((message) =>
+              message.info.role === "assistant" && message.info.parentID === lastUser.id
+                ? message.parts.flatMap((part) =>
+                    part.type === "text" && typeof part.metadata?.structuredOutputAttempt === "number"
+                      ? [part.metadata.structuredOutputAttempt]
+                      : [],
+                  )
+                : [],
+            ),
+          )
+          const retryStructured =
+            lastUser.format?.type === "json_schema" &&
+            lastAssistant?.parentID === lastUser.id &&
+            lastAssistant.structured === undefined &&
+            !hasToolCalls &&
+            ((!lastAssistant.error &&
+              !!lastAssistant.finish &&
+              !["tool-calls", "unknown", "content-filter"].includes(lastAssistant.finish)) ||
+              lastAssistant.error?.name === "MessageAbortedError")
+          if (retryStructured && lastUser.format?.type === "json_schema" && structuredAttempt >= (lastUser.format.retryCount ?? 2)) break
+
           if (
             lastAssistant?.finish &&
             !["tool-calls", "unknown"].includes(lastAssistant.finish) &&
             !hasToolCalls &&
+            !retryStructured &&
             lastAssistant.parentID === lastUser.id
           ) {
             const orphan = lastAssistantMsg?.parts.find(
@@ -1380,6 +1362,19 @@ const layer = Layer.effect(
             sessionID,
           }
           yield* sessions.updateMessage(msg)
+          const attempt = structuredAttempt + (retryStructured ? 1 : 0)
+          if (lastUser.format?.type === "json_schema") {
+            yield* sessions.updatePart({
+              id: PartID.ascending(),
+              sessionID,
+              messageID: msg.id,
+              type: "text",
+              text: "",
+              ignored: true,
+              synthetic: true,
+              metadata: { structuredOutputAttempt: attempt },
+            })
+          }
 
           const finalizeInterruptedAssistant = Effect.gen(function* () {
             if (msg.time.completed) return
@@ -1422,6 +1417,8 @@ const layer = Layer.effect(
               Effect.provideService(MCP.Service, mcp),
               Effect.provideService(Truncate.Service, truncate),
               Effect.provideService(RuntimeFlags.Service, flags),
+              Effect.provideService(SessionFolders.Service, sessionFolders),
+              Effect.provideService(AutoReviewer.Service, autoReviewer),
             )
 
             if (lastUser.format?.type === "json_schema") {
@@ -1440,7 +1437,7 @@ const layer = Layer.effect(
 
             const [skills, env, instructions, mcpInstructions, modelMsgs, hookContext] = yield* Effect.all([
               sys.skills(agent),
-              sys.environment(model),
+              sys.environment(model, sessionID),
               instruction.system().pipe(Effect.orDie),
               sys.mcp(agent, session.permission),
               MessageV2.toModelMessagesEffect(msgs, model),
@@ -1457,6 +1454,7 @@ const layer = Layer.effect(
             )
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
+            if (format.type === "json_schema" && attempt > 0) system.push(STRUCTURED_OUTPUT_RETRY_PROMPT)
             const result = yield* handle.process({
               user: lastUser,
               agent,
@@ -1495,9 +1493,14 @@ const layer = Layer.effect(
                 return "break" as const
               }
               if (format.type === "json_schema") {
+                // Re-read the boundary before retrying. An admitted user owns
+                // its format/system; retry continuation never competes as a user.
+                if (yield* hasNewerUser(sessionID, lastUser)) return "continue" as const
+                const remaining = Math.max(0, (format.retryCount ?? 2) - attempt)
+                if (remaining > 0) return "continue" as const
                 handle.message.error = new SessionV1.StructuredOutputError({
                   message: "Model did not produce structured output",
-                  retries: 0,
+                  retries: remaining,
                 }).toObject()
                 yield* sessions.updateMessage(handle.message)
                 return "break" as const
@@ -1531,7 +1534,9 @@ const layer = Layer.effect(
         }
 
         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
-        yield* extractMemory(sessionID).pipe(Effect.ignore, Effect.forkIn(scope))
+        // Best-effort idle-boundary memory curation: forked and ignored so the
+        // drain never blocks or fails on memory errors.
+        yield* curate.extract(sessionID).pipe(Effect.ignore, Effect.forkIn(scope))
         return [yield* lastAssistant(sessionID), drainedMessages!] as const
       },
     )
@@ -1809,6 +1814,8 @@ export const node = LayerNode.make({
   service: Service,
   layer: layer,
   deps: [
+    AutoReviewer.node,
+    SessionFolders.node,
     SessionStatus.node,
     Session.node,
     Agent.node,
@@ -1832,6 +1839,7 @@ export const node = LayerNode.make({
     SessionRevert.node,
     SessionSummary.node,
     Memory.node,
+    SessionMemoryCurate.node,
     SystemPrompt.node,
     LLM.node,
     EventV2Bridge.node,

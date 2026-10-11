@@ -841,6 +841,8 @@ export const RunCommand = effectCmd({
               const permission = event.properties
               if (!sessions.has(permission.sessionID)) continue
 
+              emit("permission", { permission })
+
               if (auto) {
                 await client.permission.reply({
                   requestID: permission.id,

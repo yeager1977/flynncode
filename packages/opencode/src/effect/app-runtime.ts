@@ -20,6 +20,7 @@ import { Skill } from "@/skill"
 import { Discovery } from "@/skill/discovery"
 import { Question } from "@/question"
 import { Permission } from "@/permission"
+import { AutoReviewer } from "@/permission/auto-reviewer"
 import { Todo } from "@/session/todo"
 import { Session } from "@/session/session"
 import { SessionStatus } from "@/session/status"
@@ -29,6 +30,7 @@ import { SessionCompaction } from "@/session/compaction"
 import { SessionRevert } from "@/session/revert"
 import { SessionSummary } from "@/session/summary"
 import { SessionPrompt } from "@/session/prompt"
+import { SessionMemoryCurate } from "@/session/memory-curate"
 import { Instruction } from "@/session/instruction"
 import { LLM } from "@/session/llm"
 import { LSP } from "@/lsp/lsp"
@@ -84,6 +86,7 @@ export const AppLayer = AppNodeBuilderV1.build(
     Discovery.node,
     Question.node,
     Permission.node,
+    AutoReviewer.node,
     Todo.node,
     HooksTrust.node,
     HooksContext.node,
@@ -102,6 +105,7 @@ export const AppLayer = AppNodeBuilderV1.build(
     SessionRevert.node,
     SessionSummary.node,
     SessionPrompt.node,
+    SessionMemoryCurate.node,
     Instruction.node,
     LLM.node,
     LSP.node,

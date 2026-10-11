@@ -73,6 +73,20 @@ export function createDesktopDraftStore(filename: string) {
       return id
     },
     getBlob: (id: string) => db.select({ data: blobs.data }).from(blobs).where(eq(blobs.id, id)).get()?.data ?? null,
+    discardBlob(id: string) {
+      // Flush buffered documents before checking references. An identical
+      // screenshot may already belong to another prompt, so never delete it.
+      flush()
+      const referenced = db.select({ value: documents.value }).from(documents).all().some(row => {
+        const refs = new Set<string>()
+        JSON.parse(row.value, (_key, item) => {
+          if (item?.blob && typeof item.blob.id === "string") refs.add(item.blob.id)
+          return item
+        })
+        return refs.has(id)
+      })
+      if (!referenced) db.delete(blobs).where(eq(blobs.id, id)).run()
+    },
     flush,
     close() {
       flush()

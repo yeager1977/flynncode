@@ -14,4 +14,12 @@ describe("SettingsRoutinesV2", () => {
     expect(source).not.toContain("useSDK")
     expect(source).toContain("useServerSDK")
   })
+
+  // Run history prefers the server's runs-file endpoint (200 records) and only
+  // falls back to the config snapshot's recentRuns (10 records).
+  test("reads run history from the server and falls back to recentRuns", () => {
+    const source = readFileSync(new URL("./routines.tsx", import.meta.url), "utf8")
+    expect(source).toContain("client.global.routinesRuns")
+    expect(source).toContain("runHistory[routine.id] ?? routine.recentRuns")
+  })
 })

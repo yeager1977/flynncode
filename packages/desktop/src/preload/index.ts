@@ -77,6 +77,7 @@ const api: ElectronAPI = {
   rotateMobilePhonePassword: () => ipcRenderer.invoke("rotate-mobile-phone-password"),
   getPhoneAccess: () => ipcRenderer.invoke("get-phone-access"),
   setPhoneAccess: (enabled) => ipcRenderer.invoke("set-phone-access", enabled),
+  setRelayConfig: (config) => ipcRenderer.invoke("set-relay-config", config),
   machineSync: {
     status: () => ipcRenderer.invoke("machine-sync-status"),
     subscribe: (cb) => {
@@ -112,6 +113,7 @@ const api: ElectronAPI = {
   draftSet: (key, value) => ipcRenderer.invoke("draft-set", key, value),
   draftDelete: (key) => ipcRenderer.invoke("draft-delete", key),
   draftBlobPut: (data) => ipcRenderer.invoke("draft-blob-put", data),
+  draftBlobDiscard: (id) => ipcRenderer.invoke("draft-blob-discard", id),
   draftBlobGet: (id) => ipcRenderer.invoke("draft-blob-get", id),
   plugins: {
     fetchCatalog: () => ipcRenderer.invoke("plugins:fetch-catalog"),
@@ -174,16 +176,33 @@ const api: ElectronAPI = {
     ipcRenderer.on("zoom-factor-changed", handler)
     return () => ipcRenderer.removeListener("zoom-factor-changed", handler)
   },
+  getQuickEntryEnabled: () => ipcRenderer.invoke("get-quick-entry-enabled"),
+  setQuickEntryEnabled: (enabled) => ipcRenderer.invoke("set-quick-entry-enabled", enabled),
+  screenshot: () => ipcRenderer.invoke("screenshot"),
   setTitlebar: (theme) => ipcRenderer.invoke("set-titlebar", theme),
   runDesktopMenuAction: (action) => ipcRenderer.invoke("run-desktop-menu-action", action),
   setBackgroundColor: (color: string) => ipcRenderer.invoke("set-background-color", color),
   exportDebugLogs: () => ipcRenderer.invoke("export-debug-logs"),
   capturePage: (rect) => ipcRenderer.invoke("app:capturePage", rect),
   computerUse: {
-    click: (appID, x, y) => ipcRenderer.invoke("computer-use-click", appID, x, y),
-    typeText: (appID, text) => ipcRenderer.invoke("computer-use-type", appID, text),
-    keypress: (appID, key) => ipcRenderer.invoke("computer-use-keypress", appID, key),
-    scroll: (appID, deltaX, deltaY) => ipcRenderer.invoke("computer-use-scroll", appID, deltaX, deltaY),
+    screenshot: (requestID, appID) => ipcRenderer.invoke("computer-use-screenshot", requestID, appID),
+    click: (appID, x, y, requestID) => ipcRenderer.invoke("computer-use-click", appID, x, y, requestID),
+    typeText: (appID, text, requestID) => ipcRenderer.invoke("computer-use-type", appID, text, requestID),
+    keypress: (appID, key, requestID) => ipcRenderer.invoke("computer-use-keypress", appID, key, requestID),
+    scroll: (appID, deltaX, deltaY, requestID) => ipcRenderer.invoke("computer-use-scroll", appID, deltaX, deltaY, requestID),
+  },
+  previewHost: {
+    attach: (url) => ipcRenderer.invoke("preview-host:attach", url),
+    setBounds: (rect) => ipcRenderer.invoke("preview-host:set-bounds", rect),
+    setVisible: (visible) => ipcRenderer.invoke("preview-host:set-visible", visible),
+    detach: () => ipcRenderer.invoke("preview-host:detach"),
+    capture: () => ipcRenderer.invoke("preview-host:capture"),
+    inspect: (rect) => ipcRenderer.invoke("preview-host:inspect", rect),
+  },
+  onHostTeardown: (cb) => {
+    const handler = () => cb()
+    ipcRenderer.on("preview-host-teardown", handler)
+    return () => ipcRenderer.removeListener("preview-host-teardown", handler)
   },
   setForceFocus: (enabled) => ipcRenderer.invoke("set-force-focus", enabled),
   recordFatalRendererError: (error) => ipcRenderer.invoke("record-fatal-renderer-error", error),

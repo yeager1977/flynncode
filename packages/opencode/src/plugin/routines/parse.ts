@@ -38,6 +38,15 @@ export type Routine = {
   directory?: string
   recentRuns?: RoutineRunSummary[]
   trigger?: RoutineTrigger
+  // Where the routine's sessions run: the local server ("local", omitted) or a
+  // remote OpenCode host reached over HTTP.
+  target?: "local" | RoutineTarget
+}
+
+export type RoutineTarget = {
+  url: string
+  username?: string
+  password?: string
 }
 
 export type RoutinesFile = {
@@ -96,6 +105,7 @@ function parseRoutine(item: unknown, index: number, errors: string[]) {
   const schedule = readSchedule(row.schedule, index, errors)
   const recentRuns = readRecentRuns(row.recentRuns)
   const trigger = readTrigger(row.trigger, index, errors)
+  const target = readTarget(row.target, index, errors)
   const directory = readDirectory(row.directory, index, errors)
   if (errors.some((error) => error.startsWith(`routines.${index}`))) return
   if (!schedule) return
@@ -112,6 +122,7 @@ function parseRoutine(item: unknown, index: number, errors: string[]) {
     directory,
     recentRuns,
     trigger,
+    target,
   }
 }
 
@@ -168,6 +179,52 @@ function readRrule(rrule: unknown, index: number, errors: string[]) {
     return undefined
   }
   return rrule
+}
+
+function readTarget(target: unknown, index: number, errors: string[]) {
+  if (target === undefined) return undefined
+  if (target === "local") return "local" as const
+  if (!target || typeof target !== "object" || Array.isArray(target)) {
+    errors.push(`routines.${index}.target must be "local" or an object with a url`)
+    return undefined
+  }
+  const row = target as Record<string, unknown>
+  const url = readTargetUrl(row.url, index, errors)
+  // Credentials are user-authored in the local routine config and are only ever
+  // sent to the target server as a basic auth header; never log or echo them.
+  const username = readTargetValue(row.username, index, "username", errors)
+  const password = readTargetValue(row.password, index, "password", errors)
+  if (errors.some((error) => error.startsWith(`routines.${index}.target`))) return undefined
+  if (!url) return undefined
+  const out: RoutineTarget = { url }
+  if (username) out.username = username
+  if (password) out.password = password
+  return out
+}
+
+function readTargetUrl(url: unknown, index: number, errors: string[]) {
+  if (typeof url !== "string" || url.trim() === "") {
+    errors.push(`routines.${index}.target.url must be an http(s) URL like http://host:4096`)
+    return undefined
+  }
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("not http(s)")
+  } catch {
+    errors.push(`routines.${index}.target.url must be an http(s) URL like http://host:4096`)
+    return undefined
+  }
+  return url
+}
+
+function readTargetValue(value: unknown, index: number, field: string, errors: string[]) {
+  // An explicitly empty string omits the credential rather than failing.
+  if (value === undefined || value === "") return undefined
+  if (typeof value !== "string") {
+    errors.push(`routines.${index}.target.${field} must be a string, or left empty`)
+    return undefined
+  }
+  return value
 }
 
 function readDirectory(directory: unknown, index: number, errors: string[]) {

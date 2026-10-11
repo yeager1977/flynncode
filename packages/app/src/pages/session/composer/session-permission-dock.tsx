@@ -147,7 +147,7 @@ export function SessionPermissionDock(props: {
       <Show when={props.reviewerApproved === true}>
         <div data-slot="permission-row">
           <span data-slot="permission-spacer" aria-hidden="true" />
-          <div data-slot="permission-hint">{language.t("approval.reviewerApproved.note")}</div>
+          <div data-slot="permission-hint">{language.t("approval.reviewerDeferred.note")}</div>
         </div>
       </Show>
 

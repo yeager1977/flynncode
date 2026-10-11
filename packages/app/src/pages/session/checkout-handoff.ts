@@ -1,3 +1,5 @@
+import { pathKey } from "@/utils/path-key"
+
 export type CheckoutRef = {
   directory: string
   branch?: string
@@ -115,4 +117,20 @@ export function handoffErrorMessage(error: unknown): string | undefined {
   const data = typeof row.data === "object" && row.data !== null ? (row.data as Record<string, unknown>) : undefined
   const message = data?.message
   return typeof message === "string" && message.trim() ? message.trim() : undefined
+}
+
+// Where to follow a successful handoff: navigate the routed session to the
+// target only when its session row now lives there. The row is checked
+// exactly (directory-scoped session.get), so a refused rebind — the row still
+// sits on its checkout — never navigates. A host without sessionHref offers
+// no follow.
+export function handoffFollowHref(input: {
+  sessionID: string | undefined
+  rowDirectory: string | undefined
+  target: string
+  href: ((session: { directory: string; id: string }) => string) | undefined
+}): string | undefined {
+  if (!input.sessionID || !input.rowDirectory) return undefined
+  if (pathKey(input.rowDirectory) !== pathKey(input.target)) return undefined
+  return input.href?.({ directory: input.target, id: input.sessionID })
 }

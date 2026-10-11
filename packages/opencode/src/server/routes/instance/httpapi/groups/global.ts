@@ -54,6 +54,22 @@ export const GlobalUpgradeInput = Schema.Struct({
   ),
 })
 
+const RoutinesRunsQuery = Schema.Struct({
+  routineId: Schema.optional(Schema.String),
+})
+
+const RoutineRunHistory = Schema.Array(
+  Schema.Struct({
+    routineId: Schema.String,
+    sessionID: Schema.optional(Schema.String),
+    agent: Schema.String,
+    startedAt: Schema.String,
+    endedAt: Schema.String,
+    state: Schema.Literals(["ok", "error"]),
+    error: Schema.optional(Schema.String),
+  }).annotate({ identifier: "RoutineRun" }),
+).annotate({ identifier: "RoutineRunHistory" })
+
 const GlobalUpgradeResult = Schema.Union([
   Schema.Struct({
     success: Schema.Literal(true),
@@ -71,6 +87,7 @@ export const GlobalPaths = {
   config: "/global/config",
   dispose: "/global/dispose",
   upgrade: "/global/upgrade",
+  routinesRuns: "/global/routines/runs",
 } as const
 
 export const GlobalApi = HttpApi.make("global").add(
@@ -112,6 +129,16 @@ export const GlobalApi = HttpApi.make("global").add(
           identifier: "global.config.update",
           summary: "Update global configuration",
           description: "Update global OpenCode configuration settings and preferences.",
+        }),
+      ),
+      HttpApiEndpoint.get("routinesRuns", GlobalPaths.routinesRuns, {
+        query: RoutinesRunsQuery,
+        success: described(RoutineRunHistory, "Routine run history"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "global.routinesRuns",
+          summary: "Get routine run history",
+          description: "Retrieve the recent run history for routines, optionally filtered by routine ID.",
         }),
       ),
       HttpApiEndpoint.post("dispose", GlobalPaths.dispose, {

@@ -1,4 +1,5 @@
 import { onCleanup } from "solid-js"
+import { createStore } from "solid-js/store"
 
 export type ShellOption = {
   path: string
@@ -67,4 +68,25 @@ export function createSoundPreviewController(player: (id: string | undefined) =>
 
   onCleanup(stop)
   return { play, stop }
+}
+
+// Optimistic toggle: flips the displayed value immediately and clears the
+// optimistic state whichever way the write resolves — the server truth takes
+// over on success, the change rolls back on failure — so the switch can never
+// stay disabled after a completed write.
+export function createOptimisticToggle(current: () => boolean, update: (checked: boolean) => Promise<boolean>) {
+  const [pending, setPending] = createStore<{ checked?: boolean }>({})
+  const value = () => (pending.checked === undefined ? current() : pending.checked)
+  return {
+    value,
+    saving: () => pending.checked !== undefined,
+    toggle: (checked: boolean) => {
+      if (value() === checked) return Promise.resolve(true)
+      setPending("checked", checked)
+      return update(checked).then((ok) => {
+        setPending("checked", undefined)
+        return ok
+      })
+    },
+  }
 }

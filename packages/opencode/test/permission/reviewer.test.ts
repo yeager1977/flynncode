@@ -37,3 +37,14 @@ test("reviewer defers denied reads to the permission service", () => {
   const ruleset = Permission.fromConfig({ read: { "*": "allow", "secrets/*": "deny" } })
   expect(Reviewer.review({ permission: "read", patterns: ["secrets/key"], ruleset })).toBe("defer")
 })
+
+// tool/args ride along so the gate site can pass full context for richer
+// static rules later; they must not change the AUTO_ALLOW behavior.
+test("review receives tool and args for AUTO_ALLOW decisions", () => {
+  expect(Reviewer.review({ permission: "read", patterns: ["*"], ruleset: catchAll, tool: "read", args: {} })).toBe(
+    "allow",
+  )
+  expect(Reviewer.review({ permission: "edit", patterns: ["src/a.ts"], ruleset: [], tool: "edit", args: {} })).toBe(
+    "defer",
+  )
+})

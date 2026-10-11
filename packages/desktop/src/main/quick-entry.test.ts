@@ -20,6 +20,11 @@ describe("quick-entry shortcut module", () => {
     expect(source).toContain("if (!registered)")
   })
 
+  test("consults the settings toggle before registering", () => {
+    expect(source).toContain("getQuickEntryEnabled")
+    expect(source.indexOf("getQuickEntryEnabled")).toBeLessThan(source.indexOf("globalShortcut.register"))
+  })
+
   test("unregisters on demand", () => {
     expect(source).toContain("globalShortcut.unregister")
   })

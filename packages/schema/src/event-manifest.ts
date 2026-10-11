@@ -1,6 +1,7 @@
 export * as EventManifest from "./event-manifest"
 
 import { Catalog } from "./catalog"
+import { ComputerUseV1 } from "./computer-use-v1"
 import { Durable } from "./durable-event-manifest"
 import { Event } from "./event"
 import { FileSystem } from "./filesystem"
@@ -52,6 +53,7 @@ const featureDefinitions = Event.inventory(
   ...FileSystemWatcher.Event.Definitions,
   ...Pty.Event.Definitions,
   ...Question.Event.Definitions,
+  ...ComputerUseV1.Event.Definitions,
 )
 
 export const ServerDefinitions = Event.inventory(

@@ -81,10 +81,11 @@ export const Info = Schema.Struct({
     Schema.Struct({
       servers: Schema.optional(Schema.mutable(Schema.Array(Schema.Unknown))),
       autoVerify: Schema.optional(Schema.Boolean),
+      nativeHost: Schema.optional(Schema.Boolean),
     }),
   ).annotate({
     description:
-      "Preview servers for the review browser. Entries are { name, command?, args?, cwd?, port?, url?, autoPort?, autoVerify? }; a managed server declares command, an attach-only server declares url.",
+      "Preview servers for the review browser. Entries are { name, command?, args?, cwd?, port?, url?, autoPort?, autoVerify? }; a managed server declares command, an attach-only server declares url. nativeHost opts the review browser into a desktop-native view with element inspection (desktop app only, default false).",
   }),
   routines: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)).annotate({
     description: "Repeatable agent jobs. Shape is { routines: [{ id, name, prompt, enabled, schedule }] }.",
@@ -93,10 +94,16 @@ export const Info = Schema.Struct({
     Schema.Struct({
       enabled: Schema.optional(Schema.Boolean),
       allowedApps: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
+      tiers: Schema.optional(
+        Schema.Struct({
+          observe: Schema.optional(Schema.Struct({ enabled: Schema.optional(Schema.Boolean) })),
+          mutate: Schema.optional(Schema.Struct({ enabled: Schema.optional(Schema.Boolean) })),
+        }),
+      ),
     }),
   ).annotate({
     description:
-      "Opt-in local computer use fallback after the browser pane. Disabled by default; requires per-app allowlist plus per-action approval.",
+      "Opt-in local computer use fallback after the browser pane. Disabled by default; requires per-app allowlist plus per-action approval, and never self-approves. The reserved in-app pane surface uses the exact app id 'flynncode:browser-pane'; actions are gated per tier: 'observe' covers screenshot, 'mutate' covers click/type/keypress/scroll, both default to enabled and only tighten.",
   }),
   enabled_providers: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
     description: "When set, ONLY these providers will be enabled. All other providers will be ignored",
@@ -112,6 +119,10 @@ export const Info = Schema.Struct({
       }),
       keep: Schema.optional(NonNegativeInt).annotate({
         description: "Maximum number of idle worktrees to retain before pruning the oldest (default: 15)",
+      }),
+      allow_primary_rebind: Schema.optional(Schema.Boolean).annotate({
+        description:
+          "Opt-in: allow checkout handoff to rebind sessions away from the primary (local) checkout into a worktree (default: false)",
       }),
     }),
   ).annotate({ description: "Git worktree creation and retention settings" }),

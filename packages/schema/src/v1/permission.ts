@@ -4,7 +4,7 @@ import { Schema } from "effect"
 import { define, inventory } from "../event"
 import { ascending } from "../identifier"
 import { Project } from "../project"
-import { statics } from "../schema"
+import { optional, statics } from "../schema"
 import { SessionID } from "../session-id"
 
 export const ID = Schema.String.check(Schema.isStartsWith("per")).pipe(
@@ -15,6 +15,14 @@ export type ID = typeof ID.Type
 
 export const Action = Schema.Literals(["allow", "deny", "ask"]).annotate({ identifier: "PermissionAction" })
 export type Action = typeof Action.Type
+
+// Verdict of the LLM auto-reviewer consulted before approval "auto" mode
+// short-circuits a permission request. Absent for manual asks and direct
+// callers that skip the reviewer.
+export const ReviewerVerdict = Schema.Literals(["allow", "deny", "defer"]).annotate({
+  identifier: "PermissionReviewerVerdict",
+})
+export type ReviewerVerdict = typeof ReviewerVerdict.Type
 
 export const Rule = Schema.Struct({ permission: Schema.String, pattern: Schema.String, action: Action }).annotate({
   identifier: "PermissionRule",
@@ -32,6 +40,7 @@ export const Request = Schema.Struct({
   metadata: Schema.Record(Schema.String, Schema.Unknown),
   always: Schema.Array(Schema.String),
   tool: Schema.optional(Schema.Struct({ messageID: Schema.String, callID: Schema.String })),
+  reviewer: optional(ReviewerVerdict),
 }).annotate({ identifier: "PermissionRequest" })
 export type Request = typeof Request.Type
 

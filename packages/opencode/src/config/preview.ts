@@ -18,12 +18,14 @@ export type ServerSettings = {
 export type Settings = {
   servers: ServerSettings[]
   autoVerify: boolean
+  nativeHost: boolean
 }
 
 const URL_LOCAL = /^(localhost|127\.0\.0\.1|\[::1\]|::1)$/
 
 const DEFAULTS = {
   autoVerify: true,
+  nativeHost: false,
 } as const
 
 // config.preview is tolerant like model_router: the schema tunnel keeps
@@ -34,12 +36,13 @@ export function settings(config: ConfigV1.Info | undefined): { value: Settings; 
   const raw = isRecord(config?.preview) ? config?.preview : {}
   const autoVerify =
     typeof raw.autoVerify === "boolean" ? raw.autoVerify : DEFAULTS.autoVerify
+  const nativeHost = typeof raw.nativeHost === "boolean" ? raw.nativeHost : DEFAULTS.nativeHost
 
   const servers: ServerSettings[] = []
   const seen = new Set<string>()
   if (!Array.isArray(raw.servers)) {
     if (raw.servers !== undefined) warnings.push("preview.servers must be an array; preview servers ignored")
-    return { value: { servers, autoVerify }, warnings }
+    return { value: { servers, autoVerify, nativeHost }, warnings }
   }
 
   for (const [index, entry] of raw.servers.entries()) {
@@ -92,7 +95,7 @@ export function settings(config: ConfigV1.Info | undefined): { value: Settings; 
     })
   }
 
-  return { value: { servers, autoVerify }, warnings }
+  return { value: { servers, autoVerify, nativeHost }, warnings }
 }
 
 // Attach URLs: http/https only, no userinfo; a localhost URL must be

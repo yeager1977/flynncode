@@ -1,0 +1,358 @@
+---
+title: Hooks
+description: Run your own commands at lifecycle points - tool use, permissions, session events, and compaction.
+---
+
+Hooks let you run your own commands at fixed points in a session's lifecycle: before and after tool calls, when a permission would normally prompt, when a session starts or ends, and around compaction. Hooks are declared in JSON configuration, execute shell commands or MCP tools, and can deny actions, rewrite tool input, or inject context.
+
+In-process extensions live in [plugins](/docs/plugins). Hooks are the file-based complement: they work in any language that can read JSON from stdin and print a response.
+
+---
+
+## Configuration
+
+Hooks live under the `"hooks"` key of the config file. Each event maps to an array of groups; each group has an optional `matcher` and a list of handlers:
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": ".opencode/hooks/gate-push.sh", "timeout": 10 }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": ".opencode/hooks/project-context.sh" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Hook groups merge across config layers (global, project, and managed policy): hooks from every enabled layer run in order. Setting `"hooks": { "disableAllHooks": true }` is a global kill switch covered in [Trust and the kill switch](#trust-and-the-kill-switch).
+
+---
+
+## Events
+
+Twelve events are available. They fall into three kinds:
+
+- **Decision** hooks can deny a tool call or rewrite its input. They block execution until they return.
+- **Post** hooks run after a tool executed. They can block or replace the tool result the model sees.
+- **Observe** hooks inject context or report; they cannot block execution (with one documented exception below).
+
+| Event | Kind | Matcher matches on | Fires when |
+|---|---|---|---|
+| `PreToolUse` | Decision | Tool name | Before a tool call executes |
+| `PermissionRequest` | Decision | Tool name | Instead of showing a permission prompt |
+| `PostToolUse` | Post | Tool name | After a tool executed |
+| `SessionStart` | Observe | Session source (`startup`, `resume`, `clear`, `compact`) | A session is created |
+| `SessionEnd` | Observe | (empty - matches all) | A session is removed |
+| `PreCompact` | Observe | Trigger (`manual`, `auto`) | Before a compaction runs |
+| `PostCompact` | Observe | Trigger (`manual`, `auto`) | After a compaction succeeded |
+| `UserPromptSubmit` | Observe | (empty - matches all) | A user prompt is admitted, before the turn runs |
+| `SubagentStart` | Observe | Agent type | A subagent session starts |
+| `SubagentStop` | Observe | Agent type | A subagent session stops |
+| `Stop` | Observe | Reason (`idle`, `interrupt`) | The session goes idle |
+| `Interrupt` | Observe | (always `interrupt`) | The user interrupts the session |
+
+---
+
+## Handler shapes
+
+Two handler types are supported.
+
+### command
+
+A shell command, run via `sh -c` in the hook's working directory (the current project directory). The event payload is written to the hook's **stdin** as a single JSON object. The command inherits Flynncode's environment; no additional environment variables are injected. Fields from the payload cannot be templated into the command string - use `jq` or your language of choice to read stdin.
+
+```json title="opencode.json"
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".opencode/hooks/guard.sh",
+            "timeout": 10,
+            "additionalContextLimit": 2000,
+            "statusMessage": "Checking branch policy"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Command options:
+
+- `timeout` - in **seconds**. Default 600 (1 second for `SessionEnd`). See [Timings](#timings).
+- `async` - set `true` to run detached from the turn; the hook's output is then ignored. At most 8 async hooks run concurrently per session.
+- `additionalContextLimit` - truncate this hook's `additionalContext` output to that many characters.
+- `statusMessage` - reserved for status display; it is part of the hook's trusted identity.
+
+### mcp_tool
+
+Calls a tool on a connected [MCP server](/docs/mcp-servers). The `input` object is a template: string values may contain `${field}` placeholders that are expanded from the event payload, including nested paths such as `${args.command}`. A template string that is exactly one placeholder, like `"${args}"`, keeps the referenced value's type (object, not stringified). The payload also gains two convenience keys: `tool_input` (the tool call arguments) and `tool_output` (the tool result, for `PostToolUse`).
+
+```json title="opencode.json"
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "policy",
+            "tool": "check_command",
+            "input": { "command": "${args.command}", "mode": "${permission_mode}" }
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+---
+
+## Input payload
+
+Every hook receives one JSON object on stdin (for `mcp_tool` handlers, the same payload is used as the template source):
+
+| Field | Present on | Description |
+|---|---|---|
+| `event` | all | The event name, e.g. `"PreToolUse"` |
+| `sessionID` | all | The session the hook fired for |
+| `cwd` | all | The directory the hook runs in |
+| `tool`, `callID`, `args` | decision and PostToolUse events | The tool call: name, ID, and arguments object |
+| `output` | `PostToolUse` | The tool's output |
+| `model` | `PreToolUse` and `PostToolUse` | The model driving the turn, when known |
+| `permission_mode` | decision and PostToolUse events | The active permission approval mode, when known |
+| `source` | `SessionStart` | One of `startup`, `resume`, `clear`, `compact` |
+| `reason` | `SessionEnd`, `Stop`, `Interrupt` | Why the session went idle or was interrupted (`idle` or `interrupt`; on `SessionEnd` currently always `other`) |
+| `prompt` | `UserPromptSubmit` | The text of the admitted prompt |
+| `trigger`, `phase` | `PreCompact` / `PostCompact` | One of `manual` / `auto`, and `pre` / `post` |
+| `agentID`, `agentType` | `SubagentStart` / `SubagentStop` | The subagent session ID and agent name |
+
+Observe events are session-scoped: `model` is only sent on `PreToolUse` and `PostToolUse`, and `permission_mode` only on decision and PostToolUse events. `PermissionRequest` payloads carry `permission_mode` but never `model`.
+
+---
+
+## Output contract
+
+A hook communicates through its exit code and, on success, its stdout.
+
+### Decision hooks (PreToolUse, PermissionRequest)
+
+Exit code 0 with JSON on stdout:
+
+```json
+{ "behavior": "deny", "message": "Direct pushes to main are not allowed" }
+```
+
+- `{"behavior": "deny", "message": "..."}` - the call fails with `message` (default "Denied by hook"). In a deny, every other hook's context and rewrites are discarded.
+- `{"behavior": "allow", "updatedInput": { ... }}` - the call proceeds with replaced arguments.
+- `{"behavior": "allow", "additionalContext": "..."}` - the call proceeds; the text is added as context for the turn.
+- `{"behavior": "undecided", "additionalContext": "..."}` - no opinion; context is still carried.
+
+On `PermissionRequest`, `updatedInput` is ignored: the hook may only deny or skip the prompt.
+
+Other outcomes of a decision hook:
+
+- **Empty stdout, exit 0** - no opinion (equivalent to `undecided`).
+- **Exit code 2** - deny. The message prefers trimmed non-empty stderr, then stdout, then a generic fallback. This is the simplest way to block: print the reason to stderr and exit 2.
+- **Any other non-zero exit, a timeout, a spawn failure, or non-empty stdout that is not valid decision JSON** (including valid JSON without a recognized `behavior`) - **fails closed**: the call is denied with a generic message.
+- **MCP tool errors** for an `mcp_tool` decision hook also fail closed (deny).
+
+When several decision hooks match, **deny wins** regardless of order; otherwise the first `updatedInput` rewrite wins and remaining contexts are joined with a blank line.
+
+For `PermissionRequest`, hooks run after config permission rules - a config-level deny has already applied, and the hook only stands in for a prompt the user would otherwise see. A deny still wins over any allow, in every approval mode.
+
+### PostToolUse
+
+Exit code 0. The hook may:
+
+- Return `{"blockedOutput": "..."}` to **replace the model-visible tool result** with that text. An exit code 2 behaves the same, with the reason taken from stderr first.
+- Return `{"additionalContext": "..."}` to append context to the turn.
+- Return anything else (or plain text, or nothing): no effect.
+
+Non-zero exits other than 2 and timeouts are warn-and-ignore: a post hook failing closed would only degrade the result, so it does not block.
+
+### Observe hooks
+
+Exit code 0, JSON:
+
+```json
+{ "additionalContext": "Team conventions: tabs everywhere", "systemMessage": "Warn the user in the UI" }
+```
+
+- `additionalContext` - injected as model context, with placement per event (see below).
+- `systemMessage` - surfaced to the user as a warning log; never enters the model context.
+- `continue` - `false` is honored by `PreCompact` (it skips the post-compaction auto-continue turn). On other events it is parsed but has no effect (`SubagentStart` ignores it by design).
+- `stopReason` - recorded in logs alongside `continue`.
+
+Plain-text stdout is developer context: **on observe events, non-empty non-JSON stdout is promoted wholesale to `additionalContext`** (bounded by `additionalContextLimit` when set). Any valid JSON keeps its parsed behavior, and empty stdout stays a no-op.
+
+Observe hooks never block: exit 2, other non-zero exits, and timeouts are logged and ignored.
+
+**UserPromptSubmit exception:** the runner treats a failing `UserPromptSubmit` hook as blocking the whole prompt (the turn aborts with a hook error rather than continuing silently). Exit 2 and structured block shapes from a file hook are not honored on this event - treat that as a documented deviation.
+
+---
+
+## Where context goes
+
+Observed `additionalContext` is placed differently per event:
+
+- **Sticky (whole session):** `SessionStart`, `SubagentStart` (stored on the child subagent session), and `PostCompact`. These are stored per session, deduplicated, capped at 100 entries, injected into every assembled system prompt after the built-in sections, and cleared when the session is removed.
+- **Per-turn:** `UserPromptSubmit` context rides on the admitted user message for that prompt only. `PreCompact` context is appended to that compaction's prompt only.
+- **Report-only:** `SessionEnd`, `SubagentStop`, `Stop`, and `Interrupt` - their output is logged and discarded; nothing is stored.
+
+`additionalContextLimit` (command handlers only) truncates context at every one of these surfaces, including promoted plain-stdout text.
+
+---
+
+## Matchers
+
+Each group's optional `matcher` is a regular expression tested (unanchored, `RegExp.test`) against the match name for the event: the tool name for `PreToolUse`, `PermissionRequest`, and `PostToolUse`; the session source for `SessionStart`; the trigger for `PreCompact`/`PostCompact`; the agent type for `SubagentStart`/`SubagentStop`; and the idle/interrupt reason for `Stop`/`Interrupt`. `"Bash"` also matches `AnyBash`-like names because the pattern is unanchored.
+
+- Omitted, empty, or `"*"` match everything.
+- Invalid patterns never match (and never crash the call).
+
+---
+
+## Trust and the kill switch
+
+A hook is executable code. Flynncode reviews it before running it.
+
+**Hook identity.** Every hook's behavior fields (`matcher`, `command` or `server`/`tool`/`input`, `timeout`, `async`, `additionalContextLimit`, `statusMessage`) are canonicalized into a JSON hash (keys sorted, `undefined` dropped). For `command` hooks, any command token that resolves to a readable file inside the project root contributes that file's SHA-256 content hash to the identity. Editing the hook config, or editing a project script it runs, changes the hash: trust must be re-granted.
+
+**Trust storage.** Granted hashes live in `~/.local/share/flynncode/hooks-trust.json` (override with `FLYNNCODE_HOOKS_TRUST_FILE`). Trust is granted through the settings UI or the server's hook trust endpoints, and listing/revoke endpoints expose hook summaries in the config API. Trust is per project: the same hook definition in another repository is a different hook. Trust checks happen before every spawn; untrusted hooks are skipped with a warning, never executed, and lookup failures read as untrusted (fail closed).
+
+**Managed (MDM) hooks.** Hooks declared in managed/MDM configuration are trusted by policy: they run without per-definition review and cannot be revoked (revoke refuses managed hashes). Missing or unreadable managed config fails closed.
+
+**Bypass flag.** The CLI flag `--dangerously-bypass-hook-trust` (environment equivalent `FLYNNCODE_BYPASS_HOOK_TRUST`) treats every hook as trusted for that one invocation, without writing trust state. It exists for automation; the review flow is preferred for interactive use. The flag is process-memory only and is never inherited by the commands, shells, or nested CLI processes a hook or session spawns.
+
+**Kill switch.** `"hooks": { "disableAllHooks": true }` disables every hook from file configuration - including managed (MDM) policy hooks - and cannot be re-enabled by the bypass flag. In-process plugin hooks are unaffected by this switch.
+
+---
+
+## Timings
+
+- Every hook has a **timeout in seconds**; the default is 600 seconds. `SessionEnd` hooks are advisory with a 1 second default and a hard 3 second cap.
+- On timeout the hook's whole process group receives `SIGTERM`; after 3 more seconds it is sent `SIGKILL`, so orphaned grandchildren cannot hold pipes open.
+- `timeoutMs` caps may also be applied programmatically; a per-hook `timeout` larger than the event's cap is clamped down.
+- Handlers marked `"async": true` run detached. Their output is discarded (context, decisions, and blocking do not apply). At most 8 async hooks run concurrently per session; synchronous hooks are never queued behind them. Asynchronous hooks are cancelled when their session is removed.
+
+---
+
+## Examples
+
+### PreToolUse: deny pushes to a main branch
+
+```json title="opencode.json"
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".opencode/hooks/guard-main.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+```bash title=".opencode/hooks/guard-main.sh"
+#!/bin/sh
+# The hook runs with cwd set to the project directory, so git works here.
+branch=$(git rev-parse --abbrev-ref HEAD)
+command=$(printf '%s' "$(cat)" | jq -r '.args.command')
+case "$command $branch" in
+  "git push "*|"git push"*" main")
+    cat <<'EOF'
+{"behavior":"deny","message":"Direct pushes to main are not allowed. Use a pull request instead."}
+EOF
+    ;;
+esac
+```
+
+A bare `git push` on the main branch denies the Bash call with the hook's message. Every other case prints nothing on stdout and exits 0, which is a no-op.
+
+### PostToolUse: format what the model just wrote
+
+```json title="opencode.json"
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "^(Edit|Write)$",
+        "hooks": [
+          { "type": "command", "command": ".opencode/hooks/fmt.sh", "timeout": 30 }
+        ]
+      }
+    ]
+  }
+}
+```
+
+```bash title=".opencode/hooks/fmt.sh"
+#!/bin/sh
+# The changed file is in the payload's args; formatter runs in the repo root.
+jq -r '.args.filePath' | xargs oxfmt 2>/dev/null || jq -r '.args.filePath' | xargs prettier --check
+if [ $? -ne 0 ]; then
+  printf 'formatter rejected the edit: check formatting manually' >&2
+  exit 2
+fi
+```
+
+An exit code 2 replaces the model-visible tool result with the stderr reason, so the model knows the edit is not formatted.
+
+### UserPromptSubmit: inject project context per turn
+
+```json title="opencode.json"
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": ".opencode/hooks/context.sh", "additionalContextLimit": 4000 }
+        ]
+      }
+    ]
+  }
+}
+```
+
+```bash title=".opencode/hooks/context.sh"
+#!/bin/sh
+echo "Current deployment target: staging (see deploy/README.md)."
+```
+
+Plain stdout is promoted to context and rides on this prompt only.
+
+---
+
+## Relationship to plugins
+
+Plugin hooks (in-process `tool.execute.before`/`tool.execute.after` handlers and the `permission.ask` hook) run alongside file hooks. Two interactions are worth knowing:
+
+- On `PreToolUse`/`PermissionRequest`, a plugin-declared decision runs first, and a plugin **deny** short-circuits before file hooks and rewrites.
+- The plugin `permission.ask` hook is consulted **before any approval-mode shortcut**: a plugin deny (or fail-closed verdict) wins in every mode, while allow/ask fall through to mode shortcuts, the `PermissionRequest` hook, and the pending prompt. This is Phase-1 landed behavior.

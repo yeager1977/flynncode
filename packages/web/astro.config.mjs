@@ -266,6 +266,8 @@ export default defineConfig({
             "skills",
             "references",
             "custom-tools",
+            "hooks-reference",
+            "computer-use",
           ],
         },
 

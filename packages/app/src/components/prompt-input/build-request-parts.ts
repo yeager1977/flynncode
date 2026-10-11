@@ -4,7 +4,7 @@ import type { FileSelection } from "@/context/file"
 import { encodeFilePath } from "@/context/file/path"
 import type { AgentPart, FileAttachmentPart, ImageAttachmentPart, Prompt } from "@/context/prompt"
 import { Identifier } from "@/utils/id"
-import { createCommentMetadata, formatCommentNote } from "@/utils/comment-note"
+import { createCommentMetadata, formatCommentNote, type CommentElement } from "@/utils/comment-note"
 
 type PromptRequestPart = (TextPartInput | FilePartInput | AgentPartInput) & { id: string }
 
@@ -17,6 +17,7 @@ type ContextFile = {
   commentID?: string
   commentOrigin?: "review" | "file"
   preview?: string
+  element?: CommentElement
 }
 
 type BuildRequestPartsInput = {
@@ -179,7 +180,7 @@ export function buildRequestParts(input: BuildRequestPartsInput) {
       {
         id: Identifier.ascending("part"),
         type: "text",
-        text: formatCommentNote({ path: item.path, selection: item.selection, comment }),
+        text: formatCommentNote({ path: item.path, selection: item.selection, comment, element: item.element }),
         synthetic: true,
         metadata: createCommentMetadata({
           path: item.path,
@@ -187,6 +188,7 @@ export function buildRequestParts(input: BuildRequestPartsInput) {
           comment,
           preview: item.preview,
           origin: item.commentOrigin,
+          element: item.element,
         }),
       } satisfies PromptRequestPart,
       filePart,

@@ -16,6 +16,7 @@ import { Effect, Exit, Layer, Context, Option } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { HooksRunner } from "@/hooks/runner"
 import { HooksContext } from "@/hooks/context"
+import { SessionMemoryCurate } from "./memory-curate"
 import { isOverflow as overflow, usable } from "./overflow"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -371,6 +372,12 @@ const layer = Layer.effect(
         cfg,
         model,
       })
+      // Best-effort pre-compaction memory extraction: forked, ignored and
+      // optional so compaction never blocks or fails on memory errors.
+      const maybeCurate = yield* Effect.serviceOption(SessionMemoryCurate.Service)
+      if (Option.isSome(maybeCurate)) {
+        yield* maybeCurate.value.extract(input.sessionID).pipe(Effect.ignore, Effect.forkDetach)
+      }
       // Allow plugins to inject context or replace compaction prompt.
       // A pre-hook continue:false skips the auto-continue turn below.
       const maybeCompactHooks = yield* Effect.serviceOption(HooksRunner.Service)

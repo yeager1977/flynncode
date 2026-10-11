@@ -22,10 +22,10 @@ import { FilePaths } from "../../src/server/routes/instance/httpapi/groups/file"
 import { ProjectDirectories } from "@opencode-ai/core/project/directories"
 import { AbsolutePath } from "@opencode-ai/core/schema"
 import { Database } from "@opencode-ai/core/database/database"
-import { disposeAllInstances, tmpdirScoped } from "../fixture/fixture"
 import { resetDatabase } from "../fixture/db"
+import { disposeAllInstances, tmpdirScoped } from "../fixture/fixture"
 import { TestInstance } from "../fixture/fixture"
-import { testEffect } from "../lib/effect"
+import { pollWithTimeout, testEffect } from "../lib/effect"
 
 const originalWorkspaces = Flag.OPENCODE_EXPERIMENTAL_WORKSPACES
 const noopBootstrapLayer = Layer.succeed(
@@ -341,6 +341,60 @@ describe("session folders HttpApi", () => {
           { headers: { "x-opencode-directory": test.directory } },
         )
         expect(result).toMatchObject({ type: "text", content: "attached" })
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "file list lists attached extras and stays inside the boundary union",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const extra = yield* tmpdirScoped()
+        yield* Effect.promise(() => fs.writeFile(path.join(extra, "notes.txt"), "attached"))
+        const session = yield* Session.use.create({ title: "list-extras" })
+        expect((yield* postFolders(session.id, test.directory, { extras: [extra] })).status).toBe(200)
+        const headers = { "x-opencode-directory": test.directory }
+
+        const root = yield* requestJson<{ name: string; path: string; absolute: string; type: string; ignored: boolean }[]>(
+          `${FilePaths.list}?path=.`,
+          { headers },
+        )
+        expect(root).toContainEqual({
+          name: path.basename(extra),
+          path: extra,
+          absolute: extra,
+          type: "directory",
+          ignored: false,
+        })
+
+        const inside = yield* requestJson<{ name: string; path: string; absolute: string; type: string; ignored: boolean }[]>(
+          `${FilePaths.list}?path=${encodeURIComponent(extra)}`,
+          { headers },
+        )
+        expect(inside).toContainEqual({
+          name: "notes.txt",
+          path: path.join(extra, "notes.txt"),
+          absolute: path.join(extra, "notes.txt"),
+          type: "file",
+          ignored: expect.anything(),
+        })
+
+        const stray = yield* tmpdirScoped()
+        yield* Effect.promise(() => fs.writeFile(path.join(stray, "hidden.txt"), "hidden"))
+        const outside = yield* request(`${FilePaths.list}?path=${encodeURIComponent(stray)}`, { headers })
+        expect(outside.status).toBe(500)
+
+        const search = yield* pollWithTimeout(
+          Effect.gen(function* () {
+            const response = yield* requestJson<string[]>(`${FilePaths.findFile}?query=notes&type=file`, {
+              headers,
+            })
+            return response.some((item) => item === path.join(extra, "notes.txt")) ? response : undefined
+          }),
+          "extra folder search never returned notes.txt",
+        )
+        expect(search).toContain(path.join(extra, "notes.txt"))
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )

@@ -4,6 +4,7 @@ import { createWriteStream } from "node:fs"
 import * as Tool from "./tool"
 import path from "path"
 import { containsPath, type InstanceContext } from "../project/instance-context"
+import { SessionWorkspace } from "@/session/workspace"
 import { InstanceState } from "@/effect/instance-state"
 import { lazy } from "@/util/lazy"
 import { Language, type Node } from "web-tree-sitter"
@@ -691,7 +692,7 @@ export const ShellTool = Tool.define(
           parameters: prompt.parameters,
           execute: (params: Parameters, ctx: Tool.Context) =>
             Effect.gen(function* () {
-              const instanceCtx = yield* InstanceState.context
+              const instanceCtx = yield* SessionWorkspace.context
               const cwd = params.workdir
                 ? yield* resolvePath(params.workdir, instanceCtx.directory, shell)
                 : instanceCtx.directory

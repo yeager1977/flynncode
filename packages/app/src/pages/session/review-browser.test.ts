@@ -85,3 +85,107 @@ describe("auto-verify affordance", () => {
     expect(paneSource).toContain('language.t("session.review.browserPane.verify")')
   })
 })
+
+describe("point-mode annotation", () => {
+  const paneSource = readFileSync(new URL("./review-browser.tsx", import.meta.url), "utf8")
+
+  test("mark control offers a point mode", () => {
+    expect(paneSource).toContain('data-action="mark-point"')
+    expect(paneSource).toContain('language.t("session.review.markPoint")')
+  })
+
+  test("point mode skips the drag pass and records a zero-size percent rect", () => {
+    expect(paneSource).toContain("if (state.point) return")
+    expect(paneSource).toMatch(/width: 0, height: 0, marked: true/)
+  })
+
+  test("point mode label is registered in the i18n dictionaries", () => {
+    expect(readFileSync(new URL("../../i18n/en.ts", import.meta.url), "utf8")).toContain('"session.review.markPoint"')
+    expect(readFileSync(new URL("../../i18n/flynncode-fallback.ts", import.meta.url), "utf8")).toContain(
+      '"session.review.markPoint"',
+    )
+  })
+})
+
+describe("native preview host wiring", () => {
+  const paneSource = readFileSync(new URL("./review-browser.tsx", import.meta.url), "utf8")
+
+  test("prefers the native host when the flag and desktop api exist", () => {
+    expect(paneSource).toContain("window.api?.previewHost")
+    expect(paneSource).toContain("nativeWanted")
+    expect(paneSource).toContain("host.attach(state.loaded)")
+  })
+
+  test("any host failure tears the view down and returns to the iframe", () => {
+    expect(paneSource).toContain('setState("native", false)')
+    expect(paneSource).toContain("host.detach()")
+    expect(paneSource).toContain("onHostTeardown")
+  })
+
+  test("native marking freezes the live view instead of collapsing the viewport", () => {
+    // The old behavior shrank the native view to 0x0 while marking, which
+    // exposed the always-mounted sandboxed iframe underneath it.
+    expect(paneSource).not.toContain("host.setBounds({ x: 0, y: 0, width: 0, height: 0 })")
+    // The pane shows a frozen capture of the actual native page for selection.
+    expect(paneSource).toContain("state.frozen")
+    expect(paneSource).toContain("setVisible?.(false)")
+    expect(paneSource).toContain("setVisible?.(true)")
+  })
+})
+
+describe("marking honesty across host teardown and page change", () => {
+  const paneSource = readFileSync(new URL("./review-browser.tsx", import.meta.url), "utf8")
+
+  const fnSource = (start: string, end: string) => {
+    const from = paneSource.indexOf(start)
+    const to = paneSource.indexOf(end, from + 1)
+    if (from === -1 || to === -1) throw new Error(`marker not found: ${start}`)
+    return paneSource.slice(from, to)
+  }
+
+  test("host teardown ends marking so the frozen capture cannot annotate the stale page", () => {
+    const teardown = fnSource("window.api?.onHostTeardown?.(", "onCleanup(() => unsubscribe?.())")
+    expect(teardown).toContain("abortMarking")
+  })
+
+  test("a host failure aborts marking alongside the native flag", () => {
+    const fail = fnSource("const failHost", "createEffect(")
+    expect(fail).toContain("abortMarking")
+  })
+
+  test("a url commit or reload ends marking under the frozen capture", () => {
+    expect(paneSource).toMatch(/createEffect\(\(\) => \{\s*state\.loaded\s*state\.frame\s*[\s\S]*?abortMarking\(\)/)
+  })
+
+  test("an unexpected marking exit drops the frozen rect state entirely", () => {
+    expect(paneSource).toMatch(/const abortMarking[\s\S]*?marked: false[\s\S]*?(width: 0, height: 0|height: 0)/)
+    expect(paneSource).toMatch(/abortMarking = \(\) => \{\s*endMarking\(\)/)
+  })
+
+  test("ending marking reissues the reveal even after the native flag dropped", () => {
+    const end = fnSource("const endMarking", "const mark = (")
+    expect(end).toContain("setVisible?.(true)")
+    expect(end).not.toContain("wasNative")
+  })
+
+  test("a capture racing the page change never freezes a different page", () => {
+    const begin = fnSource("const beginMarking", "const endMarking")
+    expect(begin).toContain("urlAtStart")
+    expect(begin).toContain("state.loaded !== urlAtStart")
+  })
+})
+
+describe("auto-open on running preview", () => {
+  const panelSource = readFileSync(new URL("./v2/review-panel-v2.tsx", import.meta.url), "utf8")
+
+  test("browser pane auto-opens on a running preview server", () => {
+    expect(panelSource).toContain("preview.servers.list")
+    expect(panelSource).toContain('state === "running"')
+    expect(panelSource).toContain("setBrowserOpen(true)")
+  })
+
+  test("auto-open respects a user-closed pane for the same session and URL", () => {
+    expect(panelSource).toContain("dismissed")
+    expect(panelSource).toContain("dismissedKey")
+  })
+})

@@ -1,5 +1,6 @@
 import { expect, test, describe } from "bun:test"
 import { ConfigMarkdown } from "@/config/markdown"
+import * as ConfigAgent from "@/config/agent"
 
 describe("ConfigMarkdown: normal template", () => {
   const template = `This is a @valid/path/to/a/file and it should also match at
@@ -224,5 +225,24 @@ describe("ConfigMarkdown: frontmatter has weird model id", async () => {
     expect(result.data["stuff"]).toBe("This is some stuff\n")
 
     expect(result.content.trim()).toBe("Strictly follow da rules")
+  })
+})
+
+describe("ConfigAgent: agent markdown frontmatter isolation keys", () => {
+  test("agent markdown frontmatter decodes isolation, sandbox and model", async () => {
+    const cfg = await ConfigAgent.load(import.meta.dir + "/fixtures")
+    const info = cfg["pinned-isolation"]
+
+    expect(info?.isolation).toBe("worktree")
+    expect(info?.sandbox).toBe("readonly")
+    expect(info?.model).toBe("provider/x")
+  })
+
+  test("decodes prompt and mode alongside the isolation keys", async () => {
+    const cfg = await ConfigAgent.load(import.meta.dir + "/fixtures")
+    const info = cfg["pinned-isolation"]
+
+    expect(info?.mode).toBe("subagent")
+    expect(info?.prompt).toBe("Run the task in an isolated worktree.")
   })
 })

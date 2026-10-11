@@ -51,6 +51,7 @@ describe("routineRows", () => {
         },
       ],
       () => "daily 09:00",
+      () => false,
     )
     expect(rows.length).toBe(1)
     const row = rows[0] as InboxRow
@@ -62,7 +63,11 @@ describe("routineRows", () => {
   })
 
   test("maps a routine with no runs onto done and read", () => {
-    const rows = routineRows([{ id: "morning", name: "Morning", prompt: "run", enabled: true }], () => "manual")
+    const rows = routineRows(
+      [{ id: "morning", name: "Morning", prompt: "run", enabled: true }],
+      () => "manual",
+      () => false,
+    )
     expect((rows[0] as InboxRow).status).toBe("done")
     expect((rows[0] as InboxRow).unread).toBe(false)
   })
@@ -79,6 +84,46 @@ describe("routineRows", () => {
         },
       ],
       () => "every hour",
+      () => false,
+    )
+    expect((rows[0] as InboxRow).status).toBe("done")
+    expect((rows[0] as InboxRow).unread).toBe(false)
+  })
+
+  test("routine row is running when its latest run's session is live", () => {
+    const rows = routineRows(
+      [
+        {
+          id: "nightly-live",
+          name: "Nightly",
+          prompt: "run",
+          enabled: true,
+          recentRuns: [
+            { sessionID: "sess_9", startedAt: "2026-10-07T01:00:00Z", endedAt: "2026-10-07T01:05:00Z", state: "ok" },
+          ],
+        },
+      ],
+      () => "daily 09:00",
+      (id) => id === "sess_9",
+    )
+    expect((rows[0] as InboxRow).status).toBe("running")
+  })
+
+  test("routine row stays done when the latest run's session is idle", () => {
+    const rows = routineRows(
+      [
+        {
+          id: "nightly-idle",
+          name: "Nightly",
+          prompt: "run",
+          enabled: true,
+          recentRuns: [
+            { sessionID: "sess_9", startedAt: "2026-10-07T01:00:00Z", endedAt: "2026-10-07T01:05:00Z", state: "ok" },
+          ],
+        },
+      ],
+      () => "daily 09:00",
+      () => false,
     )
     expect((rows[0] as InboxRow).status).toBe("done")
     expect((rows[0] as InboxRow).unread).toBe(false)

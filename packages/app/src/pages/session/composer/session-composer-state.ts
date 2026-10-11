@@ -22,6 +22,15 @@ export const todoState = (input: {
   return "close"
 }
 
+// Prospective badge: under readonly the server hard-denies bash and edit
+// tools, so a pending ask of those kinds cannot be granted without a sandbox
+// change. Level and permission kinds only — the whole-tool denial happens
+// upstream, so pending ask patterns do not need inspection here.
+export const permissionSandboxBlocked = (level: SandboxLevel, permission: string) => {
+  if (level !== "readonly") return false
+  return permission === "bash" || permission === "edit"
+}
+
 export const todoDockAtBoundary = (state: ReturnType<typeof todoState>) => state === "open"
 
 const idle = { type: "idle" as const }

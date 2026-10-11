@@ -61,7 +61,9 @@ it.instance("the PermissionRequest hook is skipped when no prompt would be shown
     calls.length = 0
     const permission = yield* Permission.Service
     yield* permission.ask(request([{ permission: "bash", pattern: "*", action: "allow" }]))
-    yield* permission.ask({ ...request([]), approval: "auto" })
+    // Auto approval only short-circuits on an LLM reviewer allow verdict;
+    // without one the request reaches the hooks and the user.
+    yield* permission.ask({ ...request([]), approval: "auto", reviewer: "allow" })
     expect(calls).toHaveLength(0)
   }),
 )

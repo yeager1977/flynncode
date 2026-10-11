@@ -43,6 +43,19 @@ export type SessionReviewLineComment = {
   selection: SelectedLineRange
   comment: string
   preview?: string
+  // Browser-annotation extras consumed by the session wiring, not the panel:
+  // the percent rect marked on the preview pane and the capture data URL that
+  // becomes a persisted image attachment instead of base64 in the text.
+  rect?: { x: number; y: number; width: number; height: number }
+  screenshot?: string
+  // Element under the marked region when the native preview host inspected one.
+  element?: {
+    tag: string
+    id?: string
+    classes?: string
+    text?: string
+    rect: { x: number; y: number; width: number; height: number }
+  }
 }
 
 export type SessionReviewCommentUpdate = SessionReviewLineComment & {

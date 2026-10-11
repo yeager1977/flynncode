@@ -43,6 +43,7 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { showToast } from "@/utils/toast"
+import { uuid } from "@/utils/uuid"
 import { base64Encode, checksum } from "@opencode-ai/core/util/encode"
 import { useLocation, useNavigate, useParams, useSearchParams } from "@solidjs/router"
 import { NewSessionView, SessionHeader } from "@/components/session"
@@ -89,7 +90,7 @@ import { createTimelineModel } from "@/pages/session/timeline/model"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { citationFromTarget, scrollCitationLine } from "@/pages/session/citation"
 import { reviewFollowUp } from "@/pages/session/review-follow-up"
-import { buildDetachedReviewText, sessionPrefillKey } from "@/pages/session/review-detached"
+import { presetArgs, buildDetachedReviewText, sessionPrefillKey } from "@/pages/session/review-detached"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { restorePromptModel, syncPromptModel, syncSessionModel } from "@/pages/session/session-model-helpers"
 import {
@@ -125,6 +126,9 @@ import { legacySessionHref, requireServerKey, sessionHref } from "@/utils/sessio
 import { useUsageExceededDialogs } from "./session/usage-exceeded-dialogs"
 import { createSessionOwnership } from "./session/session-ownership"
 import { createSessionLineage } from "./session/session-lineage"
+import { screenshotFallbackComment } from "./session/hunk-revert"
+import { attachReviewScreenshot } from "./session/review-screenshot"
+import type { CommentElement } from "@/utils/comment-note"
 
 type FollowupItem = FollowupDraft & { id: string }
 type FollowupEdit = Pick<FollowupItem, "id" | "prompt" | "context">
@@ -1065,24 +1069,48 @@ export default function Page() {
     selection: SelectedLineRange
     comment: string
     preview?: string
+    rect?: { x: number; y: number; width: number; height: number }
+    screenshot?: string
+    element?: CommentElement
     origin?: "review" | "file"
   }) => {
     const selection = selectionFromLines(input.selection)
     const preview = input.preview ?? selectionPreview(input.file, selection)
+    const comment = inlineScreenshotFallback(input.comment, input.screenshot)
     const saved = comments.add({
       file: input.file,
       selection: input.selection,
-      comment: input.comment,
+      comment,
     })
     prompt.context.add({
       type: "file",
       path: input.file,
       selection,
-      comment: input.comment,
+      comment,
       commentID: saved.id,
       commentOrigin: input.origin,
       preview,
+      element: input.element,
     })
+    if (platform.draftStore && input.screenshot) {
+      const commentOwner = comments.capture()
+      void attachReviewScreenshot({
+        file: input.file,
+        id: saved.id,
+        comment,
+        screenshot: input.screenshot,
+        draftStore: platform.draftStore,
+        prompt: () => prompt.capture(),
+        updateComment: (comment) => commentOwner.update(input.file, saved.id, comment),
+      })
+    }
+  }
+
+  // Web fallback: with no draft store the capture cannot persist as a blob, so
+  // the legacy inlined-thumbnail comment stays in the text, bounded.
+  const inlineScreenshotFallback = (comment: string, screenshot?: string) => {
+    if (!screenshot || platform.draftStore) return comment
+    return screenshotFallbackComment(comment, screenshot)
   }
 
   const updateCommentInContext = (input: {
@@ -1248,7 +1276,21 @@ export default function Page() {
     return language.t("ui.sessionReview.title.lastTurn")
   }
 
-  const addressComments = () => {
+  // One-click review handoff: the session's line comments become a follow-up
+  // turn. Comment lines render through the context items via buildRequestParts'
+  // formatCommentNote, so the prompt text only carries the review header.
+  const addressComments = (sessionID: string) => {
+    const all = comments.all()
+    if (all.length === 0) return
+    const model = local.model.current()
+    const agent = local.agent.current()
+    if (!model || !agent) {
+      showToast({
+        title: language.t("prompt.toast.modelAgentRequired.title"),
+        description: language.t("prompt.toast.modelAgentRequired.description"),
+      })
+      return
+    }
     const mode = reviewMode()
     const header =
       mode === "branch"
@@ -1256,16 +1298,40 @@ export default function Page() {
         : mode === "git"
           ? language.t("session.review.followUp.git")
           : language.t("session.review.followUp.turn")
-    const text = reviewFollowUp({
-      header,
-      comments: comments.all().map((item) => ({
-        file: item.file,
-        startLine: item.selection.start,
-        endLine: item.selection.end,
+    const text = reviewFollowUp({ header, comments: [] })
+    const context = all.map((item) => {
+      const selection = selectionFromLines(item.selection)
+      return {
+        key: `comment-${item.id}`,
+        type: "file" as const,
+        path: item.file,
+        selection,
         comment: item.comment,
-      })),
+        commentID: item.id,
+        commentOrigin: "review" as const,
+        preview: selectionPreview(item.file, selection),
+      }
     })
-    prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
+    const draft: FollowupDraft = {
+      sessionID,
+      sessionDirectory: sdk().directory,
+      prompt: [{ type: "text", content: text, start: 0, end: text.length }],
+      context,
+      agent: agent.name,
+      model: { providerID: model.provider.id, modelID: model.id },
+      variant: local.model.variant.current(),
+    }
+    if (busy(sessionID)) {
+      queueFollowup(draft)
+      return
+    }
+    void sendFollowupDraft({
+      api: sdk().api.session,
+      sync: sync(),
+      serverSync: serverSync(),
+      draft,
+      optimisticBusy: true,
+    }).catch(fail)
   }
 
   const hasComments = () => comments.all().length > 0
@@ -1284,8 +1350,9 @@ export default function Page() {
     return language.t("session.review.preset.uncommitted")
   }
   const reviewPresetArgsText = (preset: ReviewPresetOption) => {
-    if (preset === "base-branch") return (sync().data.vcs?.default_branch ?? "").trim()
-    return ""
+    // The detached menu has no commit-picker input, so only base-branch carries a target.
+    if (preset === "base-branch") return presetArgs("base-branch", sync().data.vcs?.default_branch)
+    return presetArgs(preset)
   }
   const fillReviewPrompt = (preset: ReviewPresetOption) => {
     const text = buildDetachedReviewText(reviewPresetArgsText(preset))
@@ -1334,7 +1401,13 @@ export default function Page() {
       </Tooltip>
       <DropdownMenu.Portal>
         <DropdownMenu.Content>
-          <DropdownMenu.Item disabled={!hasComments()} onSelect={addressComments}>
+          <DropdownMenu.Item
+            disabled={!hasComments()}
+            onSelect={() => {
+              const id = params.id
+              if (id) addressComments(id)
+            }}
+          >
             <DropdownMenu.ItemLabel>{language.t("session.review.addressComments")}</DropdownMenu.ItemLabel>
           </DropdownMenu.Item>
           <DropdownMenu.Separator />

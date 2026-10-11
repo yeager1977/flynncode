@@ -8,6 +8,7 @@ import type {
   PluginConfigsPayload,
   PluginEntry,
 } from "@opencode-ai/app/components/settings-v2/plugins-types"
+import type { RelayConfigUpdate } from "../main/sidecar-sync"
 export type {
   WslDistroProbe,
   WslInstalledDistro,
@@ -59,11 +60,43 @@ export type MobileGatewayStatus = {
 
 export type CaptureRect = { x: number; y: number; width: number; height: number }
 
+// Every pane call reports an explicit outcome instead of resolving void, so a
+// refused or unclaimed request can never be mistaken for a performed one.
+// "unavailable" marks a window that cannot serve the request (claim lost or no
+// preview pane); the caller stays silent and the claimed executor answers.
+export type ComputerUseActuation =
+  | { status: "performed" }
+  | { status: "refused"; reason: string }
+  | { status: "unavailable" }
+
+export type ComputerUseScreenshot =
+  | { status: "performed"; screenshot: string }
+  | { status: "refused"; reason: string }
+  | { status: "unavailable" }
+
 export type ComputerUseAPI = {
-  click: (appID: string, x: number, y: number) => Promise<void>
-  typeText: (appID: string, text: string) => Promise<void>
-  keypress: (appID: string, key: string) => Promise<void>
-  scroll: (appID: string, deltaX: number, deltaY: number) => Promise<void>
+  screenshot: (requestID: string, appID: string) => Promise<ComputerUseScreenshot>
+  click: (appID: string, x: number, y: number, requestID: string) => Promise<ComputerUseActuation>
+  typeText: (appID: string, text: string, requestID: string) => Promise<ComputerUseActuation>
+  keypress: (appID: string, key: string, requestID: string) => Promise<ComputerUseActuation>
+  scroll: (appID: string, deltaX: number, deltaY: number, requestID: string) => Promise<ComputerUseActuation>
+}
+
+export type PreviewHostElement = {
+  tag: string
+  id?: string
+  classes?: string
+  text?: string
+  rect: CaptureRect
+}
+
+export type PreviewHostAPI = {
+  attach: (url: string) => Promise<void>
+  setBounds: (rect: CaptureRect) => Promise<void>
+  setVisible: (visible: boolean) => Promise<void>
+  detach: () => Promise<void>
+  capture: () => Promise<string | undefined>
+  inspect: (rect?: CaptureRect) => Promise<PreviewHostElement | null>
 }
 
 export type ElectronAPI = {
@@ -91,6 +124,7 @@ export type ElectronAPI = {
   rotateMobilePhonePassword: () => Promise<string>
   getPhoneAccess: () => Promise<boolean>
   setPhoneAccess: (enabled: boolean) => Promise<void>
+  setRelayConfig: (config: RelayConfigUpdate) => Promise<void>
   machineSync: MachineSyncPlatform
   storeGet: (name: string, key: string) => Promise<string | null>
   storeSet: (name: string, key: string, value: string) => Promise<void>
@@ -102,6 +136,7 @@ export type ElectronAPI = {
   draftSet: (key: string, value: string) => Promise<void>
   draftDelete: (key: string) => Promise<void>
   draftBlobPut: (data: ArrayBuffer) => Promise<string>
+  draftBlobDiscard: (id: string) => Promise<void>
   draftBlobGet: (id: string) => Promise<ArrayBuffer | null>
   plugins: {
     fetchCatalog: () => Promise<CatalogResult>
@@ -150,6 +185,9 @@ export type ElectronAPI = {
   setZoomFactor: (factor: number) => Promise<void>
   getPinchZoomEnabled: () => Promise<boolean>
   setPinchZoomEnabled: (enabled: boolean) => Promise<void>
+  getQuickEntryEnabled: () => Promise<boolean>
+  setQuickEntryEnabled: (enabled: boolean) => Promise<void>
+  screenshot: () => Promise<{ dataUrl: string } | null>
   onPinchZoomEnabledChanged: (cb: (enabled: boolean) => void) => () => void
   onZoomFactorChanged: (cb: (factor: number) => void) => () => void
   setTitlebar: (theme: TitlebarTheme) => Promise<void>
@@ -158,6 +196,8 @@ export type ElectronAPI = {
   exportDebugLogs: () => Promise<string>
   capturePage: (rect?: CaptureRect) => Promise<string | undefined>
   computerUse: ComputerUseAPI
+  previewHost: PreviewHostAPI
+  onHostTeardown: (cb: () => void) => () => void
   setForceFocus: (enabled: boolean) => Promise<void>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>
   setNativeTranslations: (bundle: DesktopNativeBundle) => Promise<void>

@@ -12,11 +12,16 @@ import { ProviderTransform } from "@/provider/transform"
 import PROMPT_GENERATE from "./generate.txt"
 import PROMPT_COMPACTION from "./prompt/compaction.txt"
 import PROMPT_EXPLORE from "./prompt/explore.txt"
+import PROMPT_REVIEW from "./prompt/review.txt"
 // Single-sourced from core: the V2 knowledge agent uses the same prompt.
 // A .txt here would need manual sync (core's export map cannot serve .txt).
 import { PROMPT_KNOWLEDGE } from "@opencode-ai/core/plugin/agent"
 import PROMPT_SUMMARY from "./prompt/summary.txt"
 import PROMPT_TITLE from "./prompt/title.txt"
+
+// Auto-reviewer for approval "auto" mode. The LLM must answer with exactly one
+// anchored VERDICT line so the reviewer's parser can fail-open on anything else.
+const PROMPT_AUTO_REVIEW = `You authorise tool use for an autonomous coding agent. You receive one permission request as JSON with the fields tool, args, permission and patterns. Approve only clearly safe, reversible, read-only operations the user would expect: reading, searching, listing files, harmless informational commands. Deny anything that writes or deletes files, installs or executes code, runs arbitrary shell, touches credentials or secrets, reaches outside the workspace, or anything you are unsure about. Respond with exactly one line starting with either "VERDICT: allow" or "VERDICT: deny", followed by one short line of reason.`
 import { Permission } from "@/permission"
 import { mergeDeep, pipe, sortBy, values } from "remeda"
 import { Global } from "@opencode-ai/core/global"
@@ -262,6 +267,28 @@ const layer = Layer.effect(
             mode: "subagent",
             native: true,
           },
+          review: {
+            name: "review",
+            description: "Dedicated read-only code reviewer. Reviews changes and reports findings as a severity-tagged list without modifying files.",
+            options: {},
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "deny",
+                read: "allow",
+                glob: "allow",
+                grep: "allow",
+                list: "allow",
+                bash: "allow",
+                external_directory: readonlyExternalDirectory,
+              }),
+              user,
+            ),
+            // Review stays read-only like explore, but without web tools — diffs only.
+            prompt: PROMPT_REVIEW,
+            mode: "subagent",
+            native: true,
+          },
           compaction: {
             name: "compaction",
             mode: "primary",
@@ -307,6 +334,22 @@ const layer = Layer.effect(
               user,
             ),
             prompt: PROMPT_SUMMARY,
+          },
+          "auto-review": {
+            name: "auto-review",
+            mode: "primary",
+            options: {},
+            native: true,
+            hidden: true,
+            temperature: 0,
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "deny",
+              }),
+              user,
+            ),
+            prompt: PROMPT_AUTO_REVIEW,
           },
         }
 

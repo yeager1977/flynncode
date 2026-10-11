@@ -6,6 +6,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { SessionStatusEvent } from "@opencode-ai/schema/session-status-event"
 import { HooksRunner } from "@/hooks/runner"
 import { HooksContext } from "@/hooks/context"
+import { SessionMemoryCurate } from "./memory-curate"
 
 export const Info = SessionStatusEvent.Info
 export type Info = SessionStatusEvent.Info
@@ -54,6 +55,12 @@ const layer = Layer.effect(
         yield* HooksContext.observe("hooks.session.idle", maybeHooks.value.runIdle({ sessionID })).pipe(
           Effect.forkDetach,
         )
+      }
+      // Best-effort idle memory extraction, next to the Stop hook: forked,
+      // ignored and optional so the idle transition never blocks on memory.
+      const maybeCurate = yield* Effect.serviceOption(SessionMemoryCurate.Service)
+      if (Option.isSome(maybeCurate)) {
+        yield* maybeCurate.value.extract(sessionID).pipe(Effect.ignore, Effect.forkDetach)
       }
     })
 

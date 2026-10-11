@@ -3,11 +3,14 @@ import { Config } from "@/config/config"
 import { Project } from "@/project/project"
 import { ConfigPermissionV1 } from "@opencode-ai/core/v1/config/permission"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
+import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+import { Wildcard } from "@opencode-ai/core/util/wildcard"
 import { Provider } from "@/provider/provider"
 import { ProviderTransform } from "@/provider/transform"
 import { MCP } from "@/mcp"
 import { McpCatalog } from "@/mcp/catalog"
 import { Permission } from "@/permission"
+import { AutoReviewer } from "@/permission/auto-reviewer"
 import { Sandbox } from "@/permission/sandbox"
 import { Reviewer } from "@/permission/reviewer"
 import { Tool } from "@/tool/tool"
@@ -18,7 +21,7 @@ import { Truncate } from "@/tool/truncate"
 import { HooksRunner } from "@/hooks/runner"
 import type { TaskPromptOps } from "@/tool/task"
 import { type Tool as AITool, tool, jsonSchema, type ToolExecutionOptions, asSchema } from "ai"
-import { Effect } from "effect"
+import { Effect, Option } from "effect"
 import { MessageV2 } from "./message-v2"
 import { Session } from "./session"
 import { SessionProcessor } from "./processor"
@@ -28,6 +31,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { isRecord } from "@/util/record"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { SessionWorkspace } from "./workspace"
 
 const MCP_RESOURCE_TOOLS = {
   list: "list_mcp_resources",
@@ -62,12 +66,43 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const mcp = yield* MCP.Service
   const truncate = yield* Truncate.Service
   const flags = yield* RuntimeFlags.Service
+  // Optional so minimal environments fail open: no reviewer service defers to
+  // the human prompt under approval "auto".
+  const autoReviewer = yield* Effect.serviceOption(AutoReviewer.Service)
 
   const cfg = yield* config.get()
-  const policy = ConfigPermissionV1.resolveSessionPolicy(cfg.permission ?? {})
+  const global = ConfigPermissionV1.resolveSessionPolicy(cfg.permission ?? {})
+  // Sandbox precedence: session metadata (task-dispatched children) beats the
+  // agent config, which beats the global policy. Only literal SandboxMode
+  // values compete here — named profiles like "restricted" confine through
+  // the permission ruleset instead, and unknown values degrade to global.
+  const agentSandbox = cfg.agent?.[input.agent.name]?.sandbox
+  const metadataSandbox = input.session.metadata?.sandbox
+  const policy = {
+    ...global,
+    sandbox: ConfigPermissionV1.isSandboxMode(metadataSandbox)
+      ? metadataSandbox
+      : ConfigPermissionV1.isSandboxMode(agentSandbox)
+        ? agentSandbox
+        : global.sandbox,
+  }
+  // Additive hook payload context: the model id and policy approval value
+  // this turn runs under.
+  const hookContext = {
+    model: `${input.model.providerID}/${input.model.id}`,
+    permissionMode: policy.approval,
+  }
+  // Write containment is session-scoped: project sandboxes plus this session's
+  // own attached additional directories. Deliberately not the
+  // cross-session SessionFolders union — a session must not inherit another
+  // session's extras.
+  const instanceDirs = [...(yield* SessionWorkspace.Directories)]
   const sandboxDirs = yield* project
     .sandboxes(input.session.projectID)
-    .pipe(Effect.catch(() => Effect.succeed([] as string[])))
+    .pipe(
+      Effect.map((dirs) => [...dirs, ...instanceDirs]),
+      Effect.catch(() => Effect.succeed(instanceDirs)),
+    )
 
   const context = (args: Record<string, unknown>, options: ToolExecutionOptions, toolID: string): Tool.Context => ({
     sessionID: input.session.id,
@@ -91,41 +126,76 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           },
         }
       }),
-    ask: (req) => {
-      const ruleset = Permission.merge(input.agent.permission, input.session.permission ?? [])
-      // Bash patterns are command globs, not paths; the shell tool raises external_directory
-      // for paths it touches, so bash itself is only gated by readonly.
-      if (req.permission === "bash" && policy.sandbox === "readonly") {
-        return Effect.orDie(
-          Effect.fail(new Sandbox.SandboxViolationError({ path: input.session.directory, level: policy.sandbox })),
-        )
-      }
-      // The sandbox contains writes only: reads (read/glob/grep/list/lsp/skill,
-      // Truncate output) may cross the workspace boundary through the normal
-      // external_directory prompt.
-      if (Sandbox.containsWrite({ permission: req.permission, toolID })) {
-        const blocked = req.patterns.find(
-          (target) =>
-            target !== "" && !Sandbox.isPathAllowed(target, input.session.directory, sandboxDirs, policy.sandbox),
-        )
-        if (blocked !== undefined) {
-          return Effect.orDie(Effect.fail(new Sandbox.SandboxViolationError({ path: blocked, level: policy.sandbox })))
+    ask: (req) =>
+      Effect.gen(function* () {
+        const ruleset = Permission.merge(input.agent.permission, input.session.permission ?? [])
+        // Bash patterns are command globs, not paths; the shell tool raises external_directory
+        // for paths it touches, so bash itself is only gated by readonly.
+        if (req.permission === "bash" && policy.sandbox === "readonly") {
+          return yield* Effect.orDie(
+            Effect.fail(new Sandbox.SandboxViolationError({ path: input.session.directory, level: policy.sandbox })),
+          )
         }
-      }
-      if (Reviewer.review({ permission: req.permission, patterns: req.patterns, ruleset }) === "allow") {
-        return Effect.void
-      }
-      return permission
-        .ask({
-          ...req,
-          sessionID: input.session.id,
-          tool: { messageID: input.processor.message.id, callID: options.toolCallId },
-          ruleset,
-          approval: policy.approval,
-          hook: { tool: toolID, args },
-        })
-        .pipe(Effect.orDie)
-    },
+        // The sandbox contains writes only: reads (read/glob/grep/list/lsp/skill,
+        // Truncate output) may cross the workspace boundary through the normal
+        // external_directory prompt.
+        if (Sandbox.containsWrite({ permission: req.permission, toolID })) {
+          // Memory consent is scope-keyed, while containment must check its
+          // actual sanitized destination. Consent never confers path authority.
+          const targets = req.permission === "memory"
+            ? [typeof req.metadata.filepath === "string" ? req.metadata.filepath : ""]
+            : req.patterns
+          const blocked = targets.find(
+            (target) =>
+              (req.permission === "memory" && target === "") ||
+              (target !== "" && !Sandbox.isPathAllowed(target, input.session.directory, sandboxDirs, policy.sandbox)),
+          )
+          if (blocked !== undefined) {
+            return yield* Effect.orDie(
+              Effect.fail(new Sandbox.SandboxViolationError({ path: blocked, level: policy.sandbox })),
+            )
+          }
+        }
+        const staticApproval = Reviewer.review({ permission: req.permission, patterns: req.patterns, ruleset, tool: toolID, args })
+        // approval "auto": the LLM auto-reviewer vets the request before the
+        // human prompt. allow approves without prompting, deny fails closed,
+        // defer or an absent reviewer service falls through to the normal
+        // prompt path. The verdict rides on the ask input so the
+        // permission.asked event can surface it to the dock.
+        const reviewer =
+          staticApproval !== "allow" && policy.approval === "auto" && !Permission.ALWAYS_ASK.includes(req.permission)
+            ? Option.isSome(autoReviewer)
+              ? yield* autoReviewer.value.request({
+                  sessionID: input.session.id,
+                  tool: toolID,
+                  args,
+                  permission: req.permission,
+                  patterns: req.patterns,
+                })
+              : "defer"
+            : undefined
+        if (reviewer === "deny") {
+          return yield* Effect.orDie(
+            Effect.fail(
+              new PermissionV1.DeniedError({
+                ruleset: ruleset.filter((rule) => Wildcard.match(req.permission, rule.permission)),
+              }),
+            ),
+          )
+        }
+        return yield* permission
+          .ask({
+            ...req,
+            sessionID: input.session.id,
+            tool: { messageID: input.processor.message.id, callID: options.toolCallId },
+            ruleset,
+            approval: policy.approval,
+            ...(staticApproval === "allow" ? { staticApproval } : {}),
+            ...(reviewer !== undefined ? { reviewer } : {}),
+            hook: { tool: toolID, args },
+          })
+          .pipe(Effect.orDie)
+      }),
   })
 
   for (const item of yield* registry.tools({
@@ -143,6 +213,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           Effect.gen(function* () {
             const ctx = context(args, options, item.id)
             const decision = yield* hooksRunner.runPreToolUse({
+              ...hookContext,
               sessionID: ctx.sessionID,
               tool: item.id,
               callID: options.toolCallId ?? ctx.callID ?? "unknown",
@@ -163,6 +234,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               })),
             }
             const post = yield* hooksRunner.runPostToolUse({
+              ...hookContext,
               sessionID: ctx.sessionID,
               tool: item.id,
               callID: options.toolCallId ?? ctx.callID ?? "unknown",
@@ -220,6 +292,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               ? [`mcp:${parsed.server}:*`]
               : resourceServers.map((server) => `mcp:${server}:*`)
             const preList = yield* hooksRunner.runPreToolUse({
+              ...hookContext,
               sessionID: ctx.sessionID,
               tool: MCP_RESOURCE_TOOLS.list,
               callID: opts.toolCallId,
@@ -255,6 +328,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               output: truncated.content,
             }
             const postList = yield* hooksRunner.runPostToolUse({
+              ...hookContext,
               sessionID: ctx.sessionID,
               tool: MCP_RESOURCE_TOOLS.list,
               callID: opts.toolCallId,
@@ -308,6 +382,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               ? [`mcp:${parsed.server}:*`]
               : resourceServers.map((server) => `mcp:${server}:*`)
             const preTemplates = yield* hooksRunner.runPreToolUse({
+              ...hookContext,
               sessionID: ctx.sessionID,
               tool: MCP_RESOURCE_TOOLS.listTemplates,
               callID: opts.toolCallId,
@@ -343,6 +418,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               output: truncated.content,
             }
             const postTemplates = yield* hooksRunner.runPostToolUse({
+              ...hookContext,
               sessionID: ctx.sessionID,
               tool: MCP_RESOURCE_TOOLS.listTemplates,
               callID: opts.toolCallId,
@@ -393,6 +469,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               throw new Error(`MCP server "${parsed.server}" does not support resources`)
             }
             const preRead = yield* hooksRunner.runPreToolUse({
+              ...hookContext,
               sessionID: ctx.sessionID,
               tool: MCP_RESOURCE_TOOLS.read,
               callID: opts.toolCallId,
@@ -430,6 +507,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               })),
             }
             const postRead = yield* hooksRunner.runPostToolUse({
+              ...hookContext,
               sessionID: ctx.sessionID,
               tool: MCP_RESOURCE_TOOLS.read,
               callID: opts.toolCallId,
@@ -462,6 +540,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         Effect.gen(function* () {
           const ctx = context(args, opts, key)
           const preMcp = yield* hooksRunner.runPreToolUse({
+            ...hookContext,
             sessionID: ctx.sessionID,
             tool: key,
             callID: opts.toolCallId,
@@ -545,6 +624,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             content: result.content,
           }
           const postMcp = yield* hooksRunner.runPostToolUse({
+            ...hookContext,
             sessionID: ctx.sessionID,
             tool: key,
             callID: opts.toolCallId,
@@ -562,7 +642,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   }
 
   return tools
-})
+}, (effect, input) => effect.pipe(SessionWorkspace.provide(input.session.id)))
 
 function toRecord(value: unknown) {
   if (isRecord(value)) return value

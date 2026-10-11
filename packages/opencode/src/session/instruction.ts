@@ -13,7 +13,9 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { withTransientReadRetry } from "@/util/effect-http-client"
 import { Global } from "@opencode-ai/core/global"
 import type { MessageV2 } from "./message-v2"
-import type { MessageID } from "./schema"
+import type { MessageID, SessionID } from "./schema"
+import { SessionFolders } from "@opencode-ai/core/session/folders"
+import { SessionWorkspace } from "./workspace"
 
 function extract(messages: SessionV1.WithParts[]) {
   const paths = new Set<string>()
@@ -41,6 +43,7 @@ export interface Interface {
     messages: SessionV1.WithParts[],
     filepath: string,
     messageID: MessageID,
+    sessionID?: SessionID,
   ) => Effect.Effect<{ filepath: string; content: string }[], FSUtil.Error>
 }
 
@@ -49,7 +52,13 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/In
 const layer: Layer.Layer<
   Service,
   never,
-  FSUtil.Service | Config.Service | Global.Service | Memory.Service | HttpClient.HttpClient | RuntimeFlags.Service
+  | FSUtil.Service
+  | Config.Service
+  | Global.Service
+  | Memory.Service
+  | HttpClient.HttpClient
+  | RuntimeFlags.Service
+  | SessionFolders.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -57,6 +66,7 @@ const layer: Layer.Layer<
     const fs = yield* FSUtil.Service
     const global = yield* Global.Service
     const memory = yield* Memory.Service
+    const folders = yield* SessionFolders.Service
     const flags = yield* RuntimeFlags.Service
     const http = HttpClient.filterStatusOk(withTransientReadRetry(yield* HttpClient.HttpClient))
     const globalFiles = [
@@ -203,38 +213,46 @@ const layer: Layer.Layer<
       messages: SessionV1.WithParts[],
       filepath: string,
       messageID: MessageID,
+      sessionID?: SessionID,
     ) {
       const sys = yield* systemPaths()
       const already = extract(messages)
       const results: { filepath: string; content: string }[] = []
       const s = yield* InstanceState.get(state)
-      const root = path.resolve(yield* InstanceState.directory)
 
+      const ctx = yield* SessionWorkspace.context
+      const extras = sessionID ? yield* folders.list(sessionID) : ctx.additionalDirectories
+      const primary = path.resolve(ctx.directory)
       const target = path.resolve(filepath)
+
+      // Multifold: the walk stops at the boundary of whichever root contains
+      // the file — the primary folder or any attached extra — so nested
+      // instruction files never attach across folder boundaries. Primary
+      // walks stop before the primary root because base discovery owns that
+      // level; extra roots do not, so their own AGENTS.md still attaches.
+      const primaryOwned = FSUtil.contains(primary, target)
+      const root = primaryOwned
+        ? primary
+        : extras.map((dir) => path.resolve(dir)).find((dir) => FSUtil.contains(dir, target))
       let current = path.dirname(target)
 
       // Walk upward from the file being read and attach nearby instruction files once per message.
-      while (current.startsWith(root) && current !== root) {
+      while (root && current.startsWith(root)) {
+        if (primaryOwned && current === root) break
         const found = yield* find(current)
-        if (!found || found === target || sys.has(found) || already.has(found)) {
-          current = path.dirname(current)
-          continue
-        }
-
-        let set = s.claims.get(messageID)
-        if (!set) {
-          set = new Set()
-          s.claims.set(messageID, set)
-        }
-        if (set.has(found)) {
-          current = path.dirname(current)
-          continue
-        }
-
-        set.add(found)
-        const content = yield* read(found)
-        if (content) {
-          results.push({ filepath: found, content: `Instructions from: ${found}\n${content}` })
+        if (found && found !== target && !sys.has(found) && !already.has(found)) {
+          let set = s.claims.get(messageID)
+          if (!set) {
+            set = new Set()
+            s.claims.set(messageID, set)
+          }
+          if (!set.has(found)) {
+            set.add(found)
+            const content = yield* read(found)
+            if (content) {
+              results.push({ filepath: found, content: `Instructions from: ${found}\n${content}` })
+            }
+          }
         }
 
         current = path.dirname(current)
@@ -254,7 +272,7 @@ export function loaded(messages: SessionV1.WithParts[]) {
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [Config.node, FSUtil.node, Global.node, Memory.node, RuntimeFlags.node, httpClient],
+  deps: [Config.node, FSUtil.node, Global.node, Memory.node, RuntimeFlags.node, SessionFolders.node, httpClient],
 })
 
 export * as Instruction from "./instruction"

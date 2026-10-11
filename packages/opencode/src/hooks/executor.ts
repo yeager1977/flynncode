@@ -15,9 +15,14 @@ import { HooksManaged } from "@/hooks/managed"
 // File-hook execution protocol (stdin JSON in, stdout JSON out):
 // - exit 0 + JSON decision: PreToolUse/PermissionRequest honor
 //   {"behavior":"deny","message"?} | {"behavior":"allow","updatedInput"?,"additionalContext"?} | {"behavior":"undecided","additionalContext"?}.
-// - exit 2: deny (decision hooks) or blocked output (PostToolUse), stdout is the message.
+// - exit 2: deny (decision hooks) or blocked output (PostToolUse); the message
+//   prefers a trimmed non-empty stderr, then stdout, else a generic fallback.
 // - PostToolUse JSON may carry {"blockedOutput": string} to replace the model-visible result.
 // - Observe hooks honor {"additionalContext"?,"systemMessage"?,"continue"?,"stopReason"?}.
+//   Non-JSON non-empty stdout on observe events is promoted wholesale to
+//   additionalContext (Codex parity: plain stdout is developer context),
+//   bounded by `additionalContextLimit`; valid-JSON output keeps the parsed
+//   behavior and empty stdout stays a no-op.
 // - Non-zero exit (other than 2), timeout, or unparseable output fails closed:
 //   deny for decision hooks, warn-and-ignore for observe/post hooks.
 // - Hook `timeout` is in seconds. Defaults: 600s everywhere except SessionEnd
@@ -49,6 +54,8 @@ export interface ExecutorInterface {
     sessionID: string
     callID: string
     args: Record<string, unknown>
+    model?: string
+    permissionMode?: string
     timeoutMaxMs?: number
   }) => Effect.Effect<HooksRunner.PreToolUseDecision, never, never>
   readonly runPostTool: (input: {
@@ -58,6 +65,8 @@ export interface ExecutorInterface {
     callID: string
     args: Record<string, unknown>
     output: string
+    model?: string
+    permissionMode?: string
     timeoutMaxMs?: number
   }) => Effect.Effect<HooksRunner.PostToolUseOutcome, never, never>
   readonly runObserve: (input: {
@@ -83,6 +92,17 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined
 }
 
+// Additive Codex-parity context for every hook JSON payload: model and
+// permission_mode ride along only when the caller has them — unknown values
+// are omitted entirely, never set to null or undefined (cwd is added at the
+// payload build sites, which always have it).
+function contextFields(input: { model?: string; permissionMode?: string }): Record<string, unknown> {
+  return {
+    ...(input.model !== undefined && { model: input.model }),
+    ...(input.permissionMode !== undefined && { permission_mode: input.permissionMode }),
+  }
+}
+
 export function resolveTimeoutMs(entryTimeoutSec: number | undefined, defaultMs: number, maxMs?: number) {
   const ms = entryTimeoutSec === undefined ? defaultMs : Math.max(0, entryTimeoutSec * 1000)
   if (maxMs === undefined) return ms
@@ -90,7 +110,10 @@ export function resolveTimeoutMs(entryTimeoutSec: number | undefined, defaultMs:
 }
 
 function matchedHandlers(hooks: ConfigHooksV1.Info | undefined, event: string, matchName: string) {
-  const groups = HooksConfig.matchHooks(event, matchName, hooks?.[event as keyof ConfigHooksV1.Info] ?? [])
+  // disableAllHooks is the kill-switch flag, not an event: only array values
+  // on real event keys match.
+  const value = hooks?.[event as keyof ConfigHooksV1.Info]
+  const groups = HooksConfig.matchHooks(event, matchName, Array.isArray(value) ? value : [])
   return groups.flatMap((group) =>
     group.hooks.map((handler) => ({ def: HooksTrust.fromHandler(event, group.matcher, handler), handler })),
   )
@@ -102,7 +125,9 @@ export function enumerateHooks(hooks: ConfigHooksV1.Info | undefined) {
   return Object.entries(hooks ?? {}).flatMap((entry) => {
     const event = entry[0]
     const groups = entry[1] as Array<ConfigHooksV1.HookGroup> | undefined
-    if (!groups) return []
+    // disableAllHooks is the kill-switch flag, not an event: skip non-array
+    // values when walking the event table.
+    if (!Array.isArray(groups)) return []
     return groups.flatMap((group) =>
       group.hooks.map((handler) => {
         const def = HooksTrust.fromHandler(event, group.matcher, handler)
@@ -117,6 +142,10 @@ type Collected =
   | { kind: "decision"; decision: HooksRunner.PreToolUseDecision }
   | { kind: "post"; blocked: boolean; reason?: string; additionalContext?: string }
   | { kind: "observe"; observe: HooksRunner.SessionObserve }
+
+// "trusted" spawns; "killed" and "untrusted" are skipped, each with its own
+// log wording.
+type TrustVerdict = "trusted" | "untrusted" | "killed"
 
 function decided(decision: HooksRunner.PreToolUseDecision): Collected {
   return { kind: "decision", decision }
@@ -194,13 +223,22 @@ export const node = LayerNode.make({
       })
 
       const trusted = Effect.fn("HooksExecutor.trusted")(function* (def: HooksTrust.HookDef) {
+        // Kill switch first: hooks.disableAllHooks stops every file-config
+        // hook unconditionally — managed (pre-trusted) hooks included — and
+        // is intentionally orthogonal to the trust bypass flag, which can
+        // never re-enable hooks while the kill switch is on. In-process
+        // plugin hooks (the runner's plugin trigger edges) are unaffected;
+        // gating them is a separate follow-up.
+        const cfg = yield* config.get()
+        if (cfg.hooks?.disableAllHooks === true) return "killed"
         const managed = yield* Effect.serviceOption(HooksManaged.ManagedHooks)
-        if (Option.isSome(managed) && managed.value.isManaged(def)) return true
-        if (flags.bypassHookTrust) return true
+        if (Option.isSome(managed) && managed.value.isManaged(def)) return "trusted"
+        if (flags.bypassHookTrust) return "trusted"
         // Trust is per project and covers referenced project scripts.
         const bound = yield* HooksTrust.bindToInstance(def)
         // Fail closed: trust lookup failures read as untrusted.
-        return yield* trust.isTrusted(bound).pipe(Effect.orElseSucceed(() => false))
+        const trusted = yield* trust.isTrusted(bound).pipe(Effect.orElseSucceed(() => false))
+        return trusted ? "trusted" : "untrusted"
       })
 
       type Spawned = { code: number; stdout: string; stderr: string; timedOut: boolean }
@@ -364,7 +402,8 @@ export const node = LayerNode.make({
           return observed({})
         }
         if (spawned.code === 2) {
-          const message = spawned.stdout.trim() || `Hook blocked: ${input.command}`
+          const message =
+            spawned.stderr.trim() || spawned.stdout.trim() || `Hook blocked: ${input.command}`
           if (input.kind === "decision") return decided({ behavior: "deny", message })
           if (input.kind === "post") return posted(true, message)
           yield* Effect.logWarning("hook exited blocking", { command: input.command })
@@ -386,9 +425,18 @@ export const node = LayerNode.make({
           return posted(false, undefined, limitContext(context, input.limit))
         }
         if (input.kind === "observe") {
-          const observe = readObserveJson(spawned.stdout) ?? {}
-          if (observe.additionalContext) observe.additionalContext = limitContext(observe.additionalContext, input.limit)
-          return observed(observe)
+          const observe = readObserveJson(spawned.stdout)
+          if (observe) {
+            if (observe.additionalContext) observe.additionalContext = limitContext(observe.additionalContext, input.limit)
+            return observed(observe)
+          }
+          // Plain-text stdout on observe events is developer context (Codex
+          // parity): only non-JSON output is promoted, so any valid-JSON
+          // output keeps its previous parsed-or-empty behavior, and empty
+          // output stays a no-op.
+          const text = spawned.stdout.trim()
+          const parsed = Option.getOrElse(decodeJson(text), () => undefined)
+          return observed(parsed === undefined && text ? { additionalContext: limitContext(text, input.limit) } : {})
         }
         const decision = readDecisionJson(spawned.stdout)
         if (!decision) {
@@ -478,9 +526,9 @@ export const node = LayerNode.make({
         for (const entry of entries) {
           const def = entry.def
           const handler = entry.handler
-          const ok = yield* trusted(def)
-          if (!ok) {
-            yield* Effect.logWarning("skipping untrusted hook", {
+          const verdict = yield* trusted(def)
+          if (verdict !== "trusted") {
+            yield* Effect.logWarning(verdict === "killed" ? "hook skipped by hooks.disableAllHooks" : "skipping untrusted hook", {
               event: def.event,
               matcher: def.matcher,
               command: def.command ?? `${def.server}/${def.tool}`,
@@ -555,8 +603,11 @@ export const node = LayerNode.make({
         sessionID: string
         callID: string
         args: Record<string, unknown>
+        model?: string
+        permissionMode?: string
         timeoutMaxMs?: number
       }) {
+        const cwd = yield* workdir
         const collected = yield* runHandlers({
           kind: "decision",
           event: input.event,
@@ -568,6 +619,8 @@ export const node = LayerNode.make({
             tool: input.tool,
             callID: input.callID,
             args: input.args,
+            cwd,
+            ...contextFields(input),
           },
           timeoutMaxMs: input.timeoutMaxMs,
         })
@@ -581,8 +634,11 @@ export const node = LayerNode.make({
         callID: string
         args: Record<string, unknown>
         output: string
+        model?: string
+        permissionMode?: string
         timeoutMaxMs?: number
       }) {
+        const cwd = yield* workdir
         const collected = yield* runHandlers({
           kind: "post",
           event: "PostToolUse",
@@ -595,6 +651,8 @@ export const node = LayerNode.make({
             callID: input.callID,
             args: input.args,
             output: input.output,
+            cwd,
+            ...contextFields(input),
           },
           timeoutMaxMs: input.timeoutMaxMs,
         })
@@ -615,12 +673,15 @@ export const node = LayerNode.make({
         timeoutMaxMs?: number
         defaultTimeoutMs?: number
       }) {
+        // Observe events are session-scoped: only the instance directory is
+        // available here, so model/permission_mode stay omitted.
+        const cwd = yield* workdir
         const collected = yield* runHandlers({
           kind: "observe",
           event: input.event,
           matchName: input.matchName,
           sessionID: input.sessionID,
-          payload: { event: input.event, sessionID: input.sessionID, ...input.payload },
+          payload: { event: input.event, sessionID: input.sessionID, cwd, ...input.payload },
           timeoutMaxMs: input.timeoutMaxMs,
           defaultTimeoutMs: input.defaultTimeoutMs,
         })

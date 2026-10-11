@@ -423,6 +423,14 @@ describe("createMachineSync", () => {
     sync.handleSidecarMessage({ type: "sync-gateway", error: null })
     expect(sync.status().gatewayError).toBeNull()
   })
+
+  test("forwards relay settings saves to the sidecar with only the provided fields", () => {
+    const { posted, sync } = controller()
+    sync.updateRelayConfig({ url: "https://deepthought:4097/m" })
+    expect(posted.at(-1)).toEqual({ type: "relay-config", url: "https://deepthought:4097/m" })
+    sync.updateRelayConfig({ remoteToken: "r".repeat(64) })
+    expect(posted.at(-1)).toEqual({ type: "relay-config", remoteToken: "r".repeat(64) })
+  })
 })
 
 describe("parsePairInput", () => {

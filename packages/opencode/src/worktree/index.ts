@@ -4,6 +4,7 @@ import { InstanceStore } from "@/project/instance-store"
 import { Project } from "@/project/project"
 import { Config } from "@/config/config"
 import { ConfigWorktree } from "@/config/worktree"
+import { Session } from "@/session/session"
 import { Database } from "@opencode-ai/core/database/database"
 import { eq } from "drizzle-orm"
 import { ProjectTable } from "@opencode-ai/core/project/sql"
@@ -20,6 +21,7 @@ import { AppProcess } from "@opencode-ai/core/process"
 import { InstanceState } from "@/effect/instance-state"
 import { WorktreeEvent } from "@opencode-ai/schema/worktree-event"
 import { worktreesToRemove } from "./retention"
+import { boundSessions } from "./bound-sessions"
 
 export const Event = WorktreeEvent
 
@@ -159,6 +161,9 @@ export interface Interface {
   readonly createDisposable: (input: { sessionID: string; name?: string }) => Effect.Effect<Info, Error>
   readonly disposeIfIdle: (input: { directory: string }) => Effect.Effect<boolean, Error>
   readonly list: () => Effect.Effect<(Omit<Info, "branch"> & { branch?: string })[], Error>
+  // Retention sweep: enumerates owned worktrees as enriched entries and
+  // removes the keep-N losers through the non-destructive retire path.
+  readonly retire: Effect.Effect<void, Error>
   readonly remove: (input: RemoveInput) => Effect.Effect<boolean, Error>
   readonly reset: (input: ResetInput) => Effect.Effect<boolean, Error>
   readonly handoff: (input: HandoffInput) => Effect.Effect<boolean, Error>
@@ -180,6 +185,7 @@ const layer: Layer.Layer<
   | InstanceStore.Service
   | Database.Service
   | Config.Service
+  | Session.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -193,6 +199,7 @@ const layer: Layer.Layer<
     const project = yield* Project.Service
     const store = yield* InstanceStore.Service
     const configSvc = yield* Config.Service
+    const sessionSvc = yield* Session.Service
 
     const git = Effect.fnUntraced(
       function* (args: string[], opts?: { cwd?: string }) {
@@ -755,16 +762,79 @@ const layer: Layer.Layer<
       return true
     })
 
-    const createAndRetain = Effect.fn("Worktree.createAndRetain")(function* (input?: CreateInput) {
+    const loadedDirectoryKeys = Effect.fnUntraced(function* () {
+      const loaded = yield* store
+        .loadedDirectories()
+        .pipe(Effect.catch(() => Effect.succeed(new Set<string>() as ReadonlySet<string>)))
+      return new Set(
+        yield* Effect.forEach([...loaded], (directory) => canonical(directory), { concurrency: "unbounded" }),
+      )
+    })
+
+    // Retention removal never forces: a worktree with uncommitted or untracked
+    // changes, or whose branch holds commits that no other branch,
+    // remote-tracking ref or tag reaches (so its upstream/base has not merged
+    // them), is kept so automatic cleanup cannot lose work.
+    const retireDirectory = Effect.fnUntraced(function* (directory: string, branch: string) {
+      const ctx = yield* InstanceState.context
+      if (!branch) return false
+      const status = yield* git(["-c", "core.fsmonitor=false", "status", "--porcelain=v1"], { cwd: directory })
+      if (status.code !== 0 || status.text.trim()) return false
+      const unique = yield* git(
+        ["rev-list", "--count", `refs/heads/${branch}`, "--not", `--exclude=${branch}`, "--branches", "--remotes", "--tags"],
+        { cwd: ctx.worktree },
+      )
+      if (unique.code !== 0 || unique.text.trim() !== "0") return false
+      yield* store.disposeDirectory(directory)
+      yield* stopFsmonitor(directory)
+      // No --force: git itself refuses a worktree that became dirty since the check.
+      const removed = yield* git(["worktree", "remove", directory], { cwd: ctx.worktree })
+      if (removed.code !== 0) return false
+      // Every commit on the branch is reachable from another ref (checked
+      // above), so dropping the branch name cannot lose history.
+      yield* git(["branch", "-D", branch], { cwd: ctx.worktree })
+      return true
+    })
+
+    // Enrich a retention entry with session binding: a worktree marked
+    // `disposable` in any bound session's metadata gets the newest bound
+    // session's update time as recency instead of the directory mtime, so a
+    // freshly created worktree backing a stale session no longer looks
+    // recently used.
+    const retentionEntry = Effect.fnUntraced(function* (input: {
+      entry: Info
+      updated: number
+      open: boolean
+      running: boolean
+    }) {
+      const peers = yield* boundSessions(sessionSvc, input.entry.directory).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("worktree retention session scan failed", {
+            directory: input.entry.directory,
+            cause,
+          }).pipe(Effect.as([] as Session.GlobalInfo[])),
+        ),
+      )
+      const disposable = peers.some((peer) => peer.metadata?.["disposable"] === true)
+      const lastUsedAt = peers.length > 0 ? Math.max(...peers.map((peer) => peer.time.updated)) : undefined
+      return {
+        directory: input.entry.directory,
+        updated: input.updated,
+        open: input.open,
+        running: input.running,
+        ...(disposable ? { disposable: true } : {}),
+        ...(lastUsedAt !== undefined ? { lastUsedAt } : {}),
+      }
+    })
+
+    const retire = Effect.fn("Worktree.retire")(function* (input?: { opened?: string }) {
       const ctx = yield* InstanceState.context
       const wt = ConfigWorktree.settings(yield* configSvc.get())
-      const info = yield* create(input)
       // Canonicalize once: canonical() lowercases on Windows while
       // InstanceStore keys keep original casing, so a raw string comparison
       // could miss a running worktree there. list() already returns
       // canonical directories.
       const self = yield* canonical(ctx.worktree)
-      const opened = yield* canonical(info.directory)
       const root = yield* canonical(
         pathSvc.isAbsolute(wt.location) ? wt.location : pathSvc.join(ctx.worktree, wt.location),
       )
@@ -787,12 +857,17 @@ const layer: Layer.Layer<
       )
       const drop = new Set(
         worktreesToRemove(
-          owned.map((entry, index) => ({
-            directory: entry.directory,
-            updated: updated[index] ?? 0,
-            open: entry.directory === opened,
-            running: loadedKeys.has(entry.directory),
-          })),
+          yield* Effect.forEach(
+            owned,
+            (entry, index) =>
+              retentionEntry({
+                entry,
+                updated: updated[index] ?? 0,
+                open: entry.directory === self || entry.directory === input?.opened,
+                running: loadedKeys.has(entry.directory),
+              }),
+            { concurrency: "unbounded" },
+          ),
           wt.keep,
         ),
       )
@@ -802,47 +877,19 @@ const layer: Layer.Layer<
         // newly-running worktree.
         if (entry.directory === self) continue
         if ((yield* loadedDirectoryKeys()).has(entry.directory)) continue
-        yield* retire(entry.directory, entry.branch ?? "").pipe(
+        yield* retireDirectory(entry.directory, entry.branch ?? "").pipe(
           Effect.catchCause((cause) =>
             Effect.logWarning("worktree retention skipped", { directory: entry.directory, cause }),
           ),
         )
       }
+    })
+
+    const createAndRetain = Effect.fn("Worktree.createAndRetain")(function* (input?: CreateInput) {
+      const info = yield* create(input)
+      const opened = yield* canonical(info.directory)
+      yield* retire({ opened })
       return info
-    })
-
-    const loadedDirectoryKeys = Effect.fnUntraced(function* () {
-      const loaded = yield* store
-        .loadedDirectories()
-        .pipe(Effect.catch(() => Effect.succeed(new Set<string>() as ReadonlySet<string>)))
-      return new Set(
-        yield* Effect.forEach([...loaded], (directory) => canonical(directory), { concurrency: "unbounded" }),
-      )
-    })
-
-    // Retention removal never forces: a worktree with uncommitted or untracked
-    // changes, or whose branch holds commits that no other branch,
-    // remote-tracking ref or tag reaches (so its upstream/base has not merged
-    // them), is kept so automatic cleanup cannot lose work.
-    const retire = Effect.fnUntraced(function* (directory: string, branch: string) {
-      const ctx = yield* InstanceState.context
-      if (!branch) return false
-      const status = yield* git(["-c", "core.fsmonitor=false", "status", "--porcelain=v1"], { cwd: directory })
-      if (status.code !== 0 || status.text.trim()) return false
-      const unique = yield* git(
-        ["rev-list", "--count", `refs/heads/${branch}`, "--not", `--exclude=${branch}`, "--branches", "--remotes", "--tags"],
-        { cwd: ctx.worktree },
-      )
-      if (unique.code !== 0 || unique.text.trim() !== "0") return false
-      yield* store.disposeDirectory(directory)
-      yield* stopFsmonitor(directory)
-      // No --force: git itself refuses a worktree that became dirty since the check.
-      const removed = yield* git(["worktree", "remove", directory], { cwd: ctx.worktree })
-      if (removed.code !== 0) return false
-      // Every commit on the branch is reachable from another ref (checked
-      // above), so dropping the branch name cannot lose history.
-      yield* git(["branch", "-D", branch], { cwd: ctx.worktree })
-      return true
     })
 
     // Disposable worktrees back a single session (chat or isolated subagent).
@@ -940,7 +987,20 @@ const layer: Layer.Layer<
       return true
     })
 
-    return Service.of({ makeWorktreeInfo, createFromInfo, create: createAndRetain, createDisposable, disposeIfIdle, list, remove, reset, handoff })
+    return Service.of({
+      makeWorktreeInfo,
+      createFromInfo,
+      create: createAndRetain,
+      createDisposable,
+      disposeIfIdle,
+      list,
+      remove,
+      reset,
+      handoff,
+      // Service-level sweep: no just-created worktree to protect, so the
+      // instance's own worktree is the only open entry.
+      retire: retire(),
+    })
   }),
 )
 
@@ -957,6 +1017,7 @@ export const node = LayerNode.make({
     InstanceStore.node,
     Database.node,
     Config.node,
+    Session.node,
   ],
 })
 

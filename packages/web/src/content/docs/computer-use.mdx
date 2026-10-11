@@ -1,0 +1,148 @@
+---
+title: Computer use
+description: Let the agent drive the in-app preview pane - pane-scoped actuation, per-tier gating, and per-action human approval.
+---
+
+Computer use is an opt-in actuation surface for agents: after the browser pane, the agent can request screenshots and input on an in-app pane. It is deliberately narrow. It drives **only the desktop app's native preview pane** - never other applications, never the operating system. Every action passes three gates: a config policy, a per-action tier check, and a human approval prompt that can never be auto-approved or saved as "always allow".
+
+---
+
+## Scope: the reserved pane app id
+
+Tier (a) of computer use is pane-scoped actuation of the **in-app native preview pane** - the desktop-native review browser view hosted inside the Flynncode desktop window. The agent addresses that pane through one reserved app id:
+
+```json
+{ "appID": "flynncode:browser-pane" }
+```
+
+- The id is reserved and matched **exactly**: it allowlists the same way a user-supplied app id does, but no other string can target the pane, and the reserved id cannot target anything else.
+- Coordinates are CSS pixels relative to the pane; the desktop clamps points to the pane's bounds.
+- Each call performs exactly one pane-scoped GUI action.
+
+| Action | Arguments | Tier |
+|---|---|---|
+| `screenshot` | none | observe |
+| `click` | `x`, `y` | mutate |
+| `type` | `text` | mutate |
+| `keypress` | `key` | mutate |
+| `scroll` | `deltaX`, `deltaY` | mutate |
+
+**OS-level actuation is explicitly out of scope.** No tier of this feature moves the real cursor or keyboard outside the app. The reason is the trust model: the desktop can honestly arbitrate input aimed at its own preview pane - it owns the pane's identity, coordinates, and receipts. Synthetic OS-level input would actuate whatever currently has focus on the user's desktop, with no allowlist vocabulary, no exactly-once arbitration, and no honest per-action receipt. There is no way to add that without a new trust design, so it is documented as a non-goal.
+
+---
+
+## Enabling computer use
+
+Computer use is **disabled by default** and needs three things switched on:
+
+```json title="opencode.json"
+{
+  "computer_use": {
+    "enabled": true,
+    "allowedApps": ["flynncode:browser-pane"],
+    "tiers": {
+      "observe": { "enabled": true },
+      "mutate": { "enabled": true }
+    }
+  }
+}
+```
+
+- `enabled` - the master switch. `false` (or unset) fails every call before any approval is requested.
+- `allowedApps` - the app-id allowlist. An empty list means nothing is allowed, even with `enabled: true`. The reserved pane id must be listed explicitly.
+- `tiers` - per-action gating, covered in [Action tiers](#action-tiers).
+
+### The desktop mirror
+
+The desktop main process keeps its own copy of the allowlist. When you change the config, the app writes the accepted allowlist into the desktop settings store (key `computerUseAllowedApps`) **only after the server accepted it**, so the two never disagree. The desktop re-checks the mirror for every single action and refuses any app id it does not contain - an extra defense layer beyond the server-side check.
+
+### The native preview host
+
+Computer use drives the preview pane that exists only when the review browser runs in a desktop-native view. Enable it with:
+
+```json title="opencode.json"
+{
+  "preview": {
+    "nativeHost": true
+  }
+}
+```
+
+It is a desktop-app-only setting (default `false`). Without it there is no native pane to actuate: the executor surface is absent, every computer-use request reports honestly that nothing was performed, and the agent is told to continue another way. Web shells and remote servers never gain actuation at all, even with the config enabled.
+
+### The allowlist menu
+
+In the desktop app, the window-cursor button in the titlebar (or the session header, on the v2 layout) opens a menu that mirrors the config: a master enable switch, observe/mutate tier toggles, a dedicated switch for the reserved `flynncode:browser-pane` pane, and a field to add arbitrary app ids (with a remove button per entry). Saving goes through the config first; the desktop mirror is updated only once the server accepted the change. Tier toggles always save a complete tiers payload so an allowlist edit cannot drop tier settings.
+
+---
+
+## Action tiers
+
+Actions split into two tiers:
+
+- **observe** - covers `screenshot`
+- **mutate** - covers `click`, `type`, `keypress`, `scroll`
+
+Tier semantics are **tighten-only**: both tiers default to enabled, and config can only switch them *off*. A tier can never be force-enabled by config alone - it just returns to its default (enabled) state.
+
+A disabled tier fails closed **before the permission prompt**, so the user is never asked to approve an action that cannot run. The failure says so explicitly: computer use is enabled and the app is allowlisted, but the relevant tier is disabled in config.
+
+Malformed tier values fail closed: a `tiers` entry that is not an object, or an `enabled` value that is not a boolean, disables that tier rather than leaving it enabled. Unknown tier keys are tolerated and gate nothing.
+
+---
+
+## Consent model
+
+Every action that passes the config gates still requires a **per-action human approval**, and the approval model is deliberately rigid:
+
+- `computer_use` is always asked, in every approval mode. Accept-edits and auto-approval modes never shortcut it; there is no reviewer verdict that can stand in for the user.
+- Approval is scoped to the exact pattern - `[appID, action]` - so "allow once" covers that one action on that one pane, nothing more.
+- There is **no "allow always"**. The prompt offers only allow-once and deny, and the tool explicitly opts out of the always-allow mechanism. Nothing can ever self-approve a computer-use action, and approval never accumulates across actions or sessions.
+
+---
+
+## Execution contract
+
+The tool runs its gates in a strict order, designed so the user is never prompted for something that cannot run:
+
+1. Policy: `computer_use` enabled, app allowlisted, action's tier enabled - any failure here happens before an approval is requested.
+2. Availability probe: the desktop executor bridge is checked *before* the ask. In a build or process with no bridge installed (headless run, web shell), the call fails honestly with "not performed" and no prompt ever appears.
+3. Human approval (see above).
+4. Dispatch to the desktop executor.
+
+Receipts are honest in both directions:
+
+- **Refused** - the desktop declined the action (allowlist miss at the main process, malformed arguments such as a `click` without `x`/`y`, or a dead pane). The action was definitely not performed.
+- **Performed** - the desktop confirmed the action. Screenshots additionally return the image as a PNG attachment.
+- **Unconfirmed** - the request reached the desktop but no confirmed receipt came back (the short 10-second gate expired, or the reply itself was lost *after* the action went out). The desktop may still be actuating at that moment, so the tool never claims either direction; it reports "may or may not have been performed" and recovers by re-verifying on screen - for example requesting a screenshot - or asking the user.
+
+When a reply is lost after the action was performed, the desktop retries the receipt once as an explicit "unconfirmed" result rather than rewriting a performed action into "not performed".
+
+### Exactly-once actuation
+
+Every desktop window hears every computer-use request (it is a broadcast), so the desktop main process adjudicates a **single winner per request**: the first window to claim the request id may actuate; every other window answers "unavailable" and must stay silent - it neither actuates nor replies. Claims are fail-closed: without a well-formed request id the desktop refuses the call outright instead of performing it. A late reply from a window that lost the claim or from a cancelled request finds no pending entry and is dropped.
+
+Caveat that follows from the broadcast design: cancellation is best-effort. Once a request is published, an executor that already received it may have started actuating; nothing can retract input it already delivered. An interrupted call therefore falls back to the honest "unconfirmed" outcome - the caller must re-verify on screen before retrying.
+
+---
+
+## Screenshots
+
+Screenshots are captured from the **preview pane view itself** (the native guest's own capture), not from a capture of the app's renderer window. That distinction matters: the native pane is a composited child view, so a window-level capture would not include it. The result is the pane's actual pixels, returned to the agent as a PNG attachment.
+
+---
+
+## Trust boundary and known limitations
+
+The native preview host is a security trade-off, and computer use inherits it. When the native host flag is on, the pane is a real browser view with **full network privileges** - unlike the sandboxed iframe it replaces - so the native host trusts the loopback page more than the iframe path ever does. The guard rails:
+
+- **Loopback-only hosting.** Only loopback http(s) URLs can be hosted natively (`localhost`, `127.0.0.0/8`, `::1`). The check is stricter than the iframe gate: mDNS names like `*.local`, which can resolve to LAN hosts, are refused here. The gate is re-validated in the desktop main process on every attach, not just in the renderer.
+- **Popups are denied outright.** `window.open` and `target=_blank` from the guest are always denied - the least-privilege choice for a pane tier with no use for popups, since the app's external-URL policy does not apply to this untrusted guest.
+- **Navigation escapes tear the pane down.** A guest main-frame navigation or redirect to anything non-loopback detaches the view and falls back to the iframe. Subframe commits are checked too: a non-loopback subframe document is also treated as too late to trust, and the view is torn down.
+
+Known limitations that remain open:
+
+- **In-guest fetches are unguarded.** The navigation guards cover navigations and frame commits, but a loopback page that fetches remote URLs from inside the guest still renders that remote content into the native view. The page stays nominally loopback-hosted even when its data is not.
+- **The native view grants more than the iframe.** Real page storage, full network privileges, and inspectable elements are the *point* of the native host - which is exactly why the hosting gate is loopback-only and why the extra privileges stop there. Hosting a hostile loopback page exposes those privileges to it.
+
+Because computer use screenshots and actuates that same view, treat `flynncode:browser-pane` in the allowlist as a conscious decision about the page you are previewing, not a routine toggle.

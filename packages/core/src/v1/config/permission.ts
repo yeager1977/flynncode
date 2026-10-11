@@ -16,6 +16,10 @@ export const SandboxMode = Schema.Literals(["readonly", "workspace-write", "full
 })
 export type SandboxMode = Schema.Schema.Type<typeof SandboxMode>
 
+// Cheap guard separating literal sandbox modes from named profiles such as
+// "restricted" and from unknown tolerant values, which consumers ignore here.
+export const isSandboxMode = Schema.is(SandboxMode)
+
 export const ApprovalMode = Schema.Literals(["manual", "accept-edits", "auto"]).annotate({
   identifier: "ApprovalMode",
 })
@@ -43,6 +47,7 @@ const InputObject = Schema.StructWithRest(
     lsp: Schema.optional(Rule),
     doom_loop: Schema.optional(Action),
     skill: Schema.optional(Rule),
+    memory: Schema.optional(Rule),
     // Session policy keys, not tool rules: stripPolicyKeys removes them before building rulesets.
     sandbox: Schema.optional(SandboxMode),
     approval: Schema.optional(ApprovalMode),

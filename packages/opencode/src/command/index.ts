@@ -80,9 +80,9 @@ const layer = Layer.effect(
         name: Default.REVIEW,
         description: "review changes [commit|branch|pr], defaults to uncommitted",
         source: "command",
-        // Read-only by construction: the reviewer runs with the explore agent
-        // so detached or inline reviews cannot mutate the working tree.
-        agent: "explore",
+        // Read-only by construction: the reviewer runs with the dedicated
+        // review agent so detached or inline reviews cannot mutate the tree.
+        agent: "review",
         get template() {
           return PROMPT_REVIEW.replace("${path}", ctx.worktree)
         },

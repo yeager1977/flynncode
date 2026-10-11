@@ -2,6 +2,7 @@ import { Show, type JSX } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { SessionPermissionDock } from "@/pages/session/composer/session-permission-dock"
+import { permissionSandboxBlocked } from "./session-composer-state"
 import { SessionQuestionDock } from "@/pages/session/composer/session-question-dock"
 import { SessionFollowupDock } from "@/pages/session/composer/session-followup-dock"
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
@@ -79,6 +80,10 @@ export function SessionComposerRegion(props: {
                 }}
                 sandbox={controller.state.permissionSandbox()}
                 approvalMode={controller.state.permissionApprovalMode()}
+                blockedBySandbox={permissionSandboxBlocked(controller.state.permissionSandbox(), request.permission)}
+                // The dock note speaks for the auto reviewer deferring to the
+                // human; the verdict rides on the pending request itself.
+                reviewerApproved={request.reviewer === "defer"}
                 onModeChange={controller.state.setPermissionApprovalMode}
               />
             </div>

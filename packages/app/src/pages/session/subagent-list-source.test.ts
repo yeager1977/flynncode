@@ -68,6 +68,20 @@ describe("subagent list stop + steer wiring", () => {
     expect(viewSource).not.toContain("dispatch.placeholder")
   })
 
+  test("abort and steer route to the child's instance directory", () => {
+    // Run state lives in the target's instance, so both calls must pass the
+    // child session's directory.
+    expect(viewSource).toContain("session.abort({ sessionID: props.child.id, directory: props.child.directory })")
+    const prompt = viewSource.slice(
+      viewSource.indexOf("client.session.prompt"),
+      viewSource.indexOf("client.session.prompt") + 300,
+    )
+    expect(prompt).toContain('delivery: "steer"')
+    expect(prompt).toContain("directory: props.child.directory")
+    // Rows carry the child's directory from its session entry.
+    expect(viewSource).toContain("directory: session.directory")
+  })
+
   test("stop and steer copy is i18n keys, no hardcoded English", () => {
     expect(viewSource).not.toMatch(/>\s*Stop\s*</)
     expect(viewSource).not.toMatch(/>\s*Steer\s*</)

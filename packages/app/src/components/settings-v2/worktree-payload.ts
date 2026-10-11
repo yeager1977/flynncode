@@ -9,16 +9,22 @@ export type WorktreeForm = {
 const emptyForm = (): WorktreeForm => ({ location: "", branchPrefix: "", keep: "" })
 
 export function worktreeFromConfig(config: Config | undefined): WorktreeForm {
-  const raw = config?.worktree as { location?: unknown; branch_prefix?: unknown; keep?: unknown } | undefined
+  const raw = config?.worktree
   return {
-    location: typeof raw?.location === "string" ? raw.location : "",
-    branchPrefix: typeof raw?.branch_prefix === "string" ? raw.branch_prefix : "",
-    keep: typeof raw?.keep === "number" ? String(raw.keep) : "",
+    location: raw?.location ?? "",
+    branchPrefix: raw?.branch_prefix ?? "",
+    keep: raw?.keep !== undefined ? String(raw.keep) : "",
   }
 }
 
 export function worktreeHasConfig(config: Config | undefined): boolean {
-  return Boolean((config?.worktree as unknown) !== undefined)
+  return config?.worktree !== undefined
+}
+
+// Read-side only: allow_primary_rebind is a server behavior flag, not a form
+// field, so it stays out of WorktreeForm and the save payload.
+export function worktreeAllowPrimaryRebind(config: Config | undefined): boolean {
+  return config?.worktree?.allow_primary_rebind === true
 }
 
 // Empty fields stay absent so a save only writes what the user set. The server

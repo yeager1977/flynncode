@@ -41,5 +41,13 @@ export const Info = Schema.Struct({
   SubagentStop: Schema.optional(Schema.mutable(Schema.Array(HookGroup))),
   Stop: Schema.optional(Schema.mutable(Schema.Array(HookGroup))),
   Interrupt: Schema.optional(Schema.mutable(Schema.Array(HookGroup))),
+  // Kill switch, not an event: everywhere the event table is iterated this
+  // key must be guarded against as a non-array value. When true, no hook
+  // from configuration runs — managed (MDM) policy hooks included; in-process
+  // plugin hooks are unaffected.
+  disableAllHooks: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Global hook kill switch for file-configured hooks: when true, no hook from configuration runs, including managed (MDM) policy hooks; in-process plugin hooks are unaffected. Default false.",
+  }),
 })
 export type Info = Schema.Schema.Type<typeof Info>

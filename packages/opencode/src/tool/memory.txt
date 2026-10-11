@@ -1,0 +1,25 @@
+Remember durable working conventions across sessions.
+
+Actions:
+1. save — Store a durable convention or fact under a short slug (for example
+   slug "test-runner" with text "always run bun test from the package
+   directory"). Requires scope, slug, and non-empty text. Saving an existing
+   slug again replaces its content.
+2. remove — Delete a saved memory by slug and scope.
+3. list — Show all saved memories with their scope and file path.
+
+Scopes:
+- global — stored outside the repository, in the user's data directory. Use
+  for conventions that apply to every project.
+- project — stored in `.opencode/memories/` inside the repo, committable. Use
+  for conventions specific to this project.
+
+Rules:
+- Use this tool for durable working conventions the user states or approves,
+  not for transient details of the current session.
+- Secrets in saved text are redacted automatically before anything is written.
+- Saving and removing always require user approval first. After the user
+  approves a write with "always", further writes in that scope are approved
+  for the rest of the session; if they decline, do not retry and continue the
+  main task.
+- Reading with list is safe anytime and never prompts.

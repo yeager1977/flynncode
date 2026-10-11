@@ -9,6 +9,11 @@ export function review(input: {
   permission: string
   patterns: readonly string[]
   ruleset: PermissionV1.Ruleset
+  // The triggering tool call, so a richer static rule (and the LLM
+  // auto-reviewer) can see the full request. Unused by the AUTO_ALLOW
+  // allow-list itself.
+  tool?: string
+  args?: Record<string, unknown>
 }): "allow" | "defer" {
   if (!AUTO_ALLOW.includes(input.permission)) return "defer"
   // Defer to the permission service whenever the merged ruleset has an

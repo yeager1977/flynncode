@@ -428,21 +428,51 @@ describe("opencode run (non-interactive subprocess)", () => {
       Effect.gen(function* () {
         yield* llm.tool("bash", { command: "rm -f denied-file", description: "Remove a test file" })
         yield* llm.text("continued after rejection")
-        const denied = yield* opencode.run("request permission", { permission: { bash: "ask" } })
+        const denied = yield* opencode.run("request permission", { permission: { bash: "ask" }, format: "json" })
         opencode.expectExit(denied, 0)
         expect(denied.stderr).toContain("permission requested: bash")
-        expect(denied.stdout).toBe("")
+        const deniedEvents = opencode.parseJsonEvents(denied.stdout)
+        const deniedEnd = deniedEvents.findIndex((event) => event.type === "session_end")
+        expect(deniedEnd).toBeGreaterThanOrEqual(0)
+        const deniedPermission = deniedEvents.findIndex((event) => event.type === "permission")
+        expect(deniedPermission).toBeGreaterThanOrEqual(0)
+        expect(deniedPermission).toBeLessThan(deniedEnd)
+        expect(deniedEvents[deniedPermission]).toEqual(
+          expect.objectContaining({
+            type: "permission",
+            timestamp: expect.any(Number),
+            sessionID: expect.any(String),
+            permission: expect.objectContaining({
+              id: expect.any(String),
+              permission: "bash",
+              patterns: expect.any(Array),
+            }),
+          }),
+        )
 
         yield* llm.reset
         yield* llm.tool("bash", { command: "rm -f allowed-file", description: "Remove a test file" })
         yield* llm.text("continued after approval")
         const allowed = yield* opencode.run("request permission", {
           permission: { bash: "ask" },
+          format: "json",
           extraArgs: ["--dangerously-skip-permissions"],
         })
         opencode.expectExit(allowed, 0)
         expect(allowed.stderr).not.toContain("permission requested: bash")
-        expect(allowed.stdout).toContain("continued after approval")
+        const allowedEvents = opencode.parseJsonEvents(allowed.stdout)
+        const allowedEnd = allowedEvents.findIndex((event) => event.type === "session_end")
+        expect(allowedEnd).toBeGreaterThanOrEqual(0)
+        const allowedPermission = allowedEvents.findIndex((event) => event.type === "permission")
+        expect(allowedPermission).toBeGreaterThanOrEqual(0)
+        expect(allowedPermission).toBeLessThan(allowedEnd)
+        expect(
+          allowedEvents.some((event) => {
+            if (event.type !== "text") return false
+            const part = event.part as Record<string, unknown> | undefined
+            return String(part?.text).includes("continued after approval")
+          }),
+        ).toBe(true)
 
         yield* llm.reset
         yield* llm.tool("bash", { command: "touch explicitly-denied", description: "Create a denied marker" })

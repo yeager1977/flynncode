@@ -1,4 +1,4 @@
-import { createEffect, createResource, For, Show } from "solid-js"
+import { createEffect, createResource, For, onCleanup, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
@@ -8,18 +8,28 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
+import { usePrompt } from "@/context/prompt"
+import { captureReviewAnnotation } from "./review-screenshot"
+import { useServerSync } from "@/context/server-sync"
 import { useSessionLayout } from "./session-layout"
 import { storeArtifact } from "@/pages/layout/sidebar-artifacts"
-import { browserAnnotation } from "./hunk-revert"
+import { browserAnnotation, type BrowserAnnotationPayload } from "./hunk-revert"
+import type { CommentElement } from "@/utils/comment-note"
 import { browserPaneUrlFor, isLocalPreviewUrl, normalizePreviewUrl, setBrowserPaneUrl } from "./browser-pane"
 import { previewDotClass, previewErrorDetail, previewManaged, type PreviewServerState } from "./preview-server"
 
-export function ReviewBrowser(props: { onAnnotate: (comment: string) => void; onClose: () => void }) {
+export function ReviewBrowser(props: {
+  file?: string
+  onAnnotate: (input: BrowserAnnotationPayload) => void
+  onClose: () => void
+}) {
   const language = useLanguage()
   const sdk = useSDK()
+  const prompt = usePrompt()
   const platform = usePlatform()
   const dialog = useDialog()
   const layout = useSessionLayout()
+  const sync = useServerSync()
   // The pane URL persists per session: switching sessions restores each
   // session's URL from the module record instead of resetting to default.
   const paneKey = () => layout.params.id ?? sdk().directory ?? "default"
@@ -28,6 +38,9 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void; on
     loaded: browserPaneUrlFor(paneKey(), "http://127.0.0.1:3000"),
     note: "",
     marking: false,
+    // Point mode places a zero-size percent rect on a single pointerdown and
+    // completes the mark there; drag mode keeps the old press-move behavior.
+    point: false,
     x: 0,
     y: 0,
     width: 0,
@@ -38,6 +51,10 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void; on
     busy: "",
     actionError: "",
     announced: "",
+    native: false,
+    // While marking, the native view is shown as this frozen capture instead
+    // of live compositing; the native viewport never shrinks during marking.
+    frozen: "",
   })
   // Normalizes raw URL-bar input against the currently loaded URL and
   // remembers the result for this session.
@@ -93,10 +110,137 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void; on
     const module = await import("@/components/settings-v2")
     void dialog.show(() => <module.DialogSettings defaultValue="preview" />)
   }
-  // The sandboxed iframe keeps an opaque origin, so only loopback http(s)
-  // targets can load; anything needing cookies/localStorage waits for a
-  // future native host.
+  // The sandboxed iframe keeps an opaque origin, so cookies/localStorage do
+  // not persist across reloads; the native host (flag on, desktop only)
+  // hosts the same page in a real view instead.
   const local = () => isLocalPreviewUrl(state.loaded)
+  // Native preview host (desktop only): the pane prefers the native view when
+  // the config flag is on and the desktop API exists. Any host failure tears
+  // the view down and returns the pane to the sandboxed iframe.
+  const nativeApi = () => window.api?.previewHost
+  const nativeWanted = () => nativeApi() !== undefined && sync().data.config.preview?.nativeHost === true && local()
+  // Monotonic attach tag: a stale attach settling after a newer one must not
+  // downgrade the newer attach's state or detach the newer view.
+  let attachTag = 0
+  const failHost = () => {
+    if (state.marking) abortMarking()
+    setState("native", false)
+    void nativeApi()
+      ?.detach()
+      .catch(() => {})
+  }
+  createEffect(() => {
+    const host = nativeApi()
+    if (!host) return
+    if (nativeWanted()) {
+      // Reading state.frame tracks reload bumps so the reload button reloads
+      // the native view too; attach always performs a fresh loadURL.
+      state.frame
+      const tag = ++attachTag
+      void host.attach(state.loaded).then(
+        () => {
+          if (tag !== attachTag) return
+          setState("native", true)
+        },
+        () => {
+          if (tag !== attachTag) return
+          failHost()
+        },
+      )
+      return
+    }
+    if (!state.native) return
+    setState("native", false)
+    void host.detach().catch(() => {})
+  })
+  // The main process tears the view down underneath us when a guest navigates
+  // away from loopback (or the host renderer reloads); return to the iframe.
+  // While marking, that teardown invalidates the frozen capture, so the
+  // marking is aborted too: an annotation must never bind the current URL to
+  // a screenshot of a page that is no longer hosted.
+  createEffect(() => {
+    const unsubscribe = window.api?.onHostTeardown?.(() => {
+      if (state.marking) abortMarking()
+      if (state.native) setState("native", false)
+    })
+    onCleanup(() => unsubscribe?.())
+  })
+  // A commit or reload replaces the guest page while the frozen capture still
+  // shows the previous one; abort the marking so the selection never applies
+  // to a page that is no longer the one being annotated.
+  createEffect(() => {
+    state.loaded
+    state.frame
+    if (state.marking) abortMarking()
+  })
+  // The native view composites above the renderer window, so it must be told
+  // where the pane sits (CSS px → DIP conversion happens main-side). A bounds
+  // failure means the view no longer matches the pane; the first rejection
+  // falls back to the iframe (fail-fast: no retry loop against a dead view).
+  // A renderer-hidden view keeps its bounds during marking, so resize tracking
+  // stays live and the coordinate space never collapses under the selection.
+  const syncNativeBounds = () => {
+    const host = nativeApi()
+    if (!host || !state.native) return
+    const box = paneBox?.getBoundingClientRect()
+    if (!box || box.width === 0 || box.height === 0) return
+    void host.setBounds({ x: box.x, y: box.y, width: box.width, height: box.height }).catch(failHost)
+  }
+  createEffect(() => {
+    if (!state.native) return
+    syncNativeBounds()
+    const observer = new ResizeObserver(syncNativeBounds)
+    if (paneBox) observer.observe(paneBox)
+    document.addEventListener("scroll", syncNativeBounds, true)
+    window.addEventListener("resize", syncNativeBounds)
+    onCleanup(() => {
+      observer.disconnect()
+      document.removeEventListener("scroll", syncNativeBounds, true)
+      window.removeEventListener("resize", syncNativeBounds)
+    })
+  })
+  onCleanup(() => {
+    const host = nativeApi()
+    if (!host) return
+    void host.detach().catch(() => {})
+  })
+  // Marking on the native pane must never mark a different page: the live
+  // native view is frozen into the overlay and its compositing/input is turned
+  // off main-side while the coordinate space stays untouched. A capture
+  // failure keeps the pane live (and blocks the marking) instead of silently
+  // annotating the wrong page through the sandboxed iframe.
+  const beginMarking = async (point: boolean) => {
+    if (!state.native) {
+      setState({ marking: true, point })
+      return
+    }
+    const urlAtStart = state.loaded
+    const shot = await capture()
+    if (typeof shot !== "string" || !shot.startsWith("data:")) {
+      setState("actionError", language.t("session.review.browserPane.markCaptureFailed"))
+      return
+    }
+    // The capture awaited the host: a teardown or page change during it would
+    // freeze a stale picture, so the marking never starts on one.
+    if (!state.native || state.loaded !== urlAtStart) return
+    setState({ frozen: shot, marking: true, point, marked: false, width: 0, height: 0 })
+    void nativeApi()?.setVisible?.(false)
+  }
+  const endMarking = () => {
+    const frozen = state.frozen
+    setState({ marking: false, point: false, frozen: "" })
+    // The reveal is reissued whenever the view was actually hidden, even after
+    // state.native dropped (a host teardown may have raced the manual exit);
+    // main-side it is a no-op once the view detached.
+    if (frozen) void nativeApi()?.setVisible?.(true)
+  }
+  // A host teardown or page change invalidates the frozen capture: the whole
+  // selection is dropped, not just the overlay, so no annotation can bind the
+  // current URL to a rect or screenshot of a different page.
+  const abortMarking = () => {
+    endMarking()
+    setState({ marked: false, x: 0, y: 0, width: 0, height: 0 })
+  }
   const mark = (event: PointerEvent, el: HTMLElement, drag: boolean) => {
     const box = el.getBoundingClientRect()
     if (box.width === 0 || box.height === 0) return
@@ -124,8 +268,19 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void; on
     }
   }
   let frame: HTMLIFrameElement | undefined
+  let paneBox: HTMLDivElement | undefined
   // Capture only the browser pane, never the whole window (chat, sidebar).
+  // In native mode the host view is what the user actually sees, so capture
+  // through the preview host first and fall back to the iframe capture when
+  // it is unavailable or returns nothing. While marking, the frozen overlay
+  // capture is the picture the user is selecting on; the hidden native view
+  // may not re-capture faithfully.
   const capture = async () => {
+    if (state.native) {
+      if (state.frozen) return state.frozen
+      const native = await nativeApi()?.capture().catch(() => undefined)
+      if (typeof native === "string" && native.startsWith("data:")) return native
+    }
     const box = frame?.getBoundingClientRect()
     if (!box || box.width === 0 || box.height === 0) return undefined
     const result = await window.api?.capturePage?.({
@@ -154,6 +309,25 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void; on
       thumbnail: input.thumbnail,
     })
   }
+  // The marked percent rect maps to pane pixels: the native view covers the
+  // pane, so the guest page's own CSS pixels share the pane's coordinate space
+  // and the inspect center lands on the marked element. Failure or a missing
+  // host just skips the element metadata; the annotation still goes through.
+  const inspectMarkedElement = async (): Promise<CommentElement | undefined> => {
+    if (!state.marked || !state.native) return undefined
+    const host = nativeApi()
+    const box = paneBox?.getBoundingClientRect()
+    if (!host || !box || box.width === 0 || box.height === 0) return undefined
+    const found = await host
+      .inspect({
+        x: (state.x / 100) * box.width,
+        y: (state.y / 100) * box.height,
+        width: (state.width / 100) * box.width,
+        height: (state.height / 100) * box.height,
+      })
+      .catch(() => null)
+    return found ?? undefined
+  }
   const annotate = async () => {
     const text = state.note.trim()
     // An empty submit with an unchanged URL is an annotation attempt without
@@ -167,41 +341,50 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void; on
       commitUrl(state.url)
       return
     }
-    const thumbnail = state.marked ? await capture() : undefined
-    const comment = state.marked
+    const url = state.loaded
+    const file = props.file ?? "preview"
+    const marked = state.marked
+    const rect = { x: state.x, y: state.y, width: state.width, height: state.height }
+    const comment = marked
       ? browserAnnotation({
-          url: state.loaded,
-          path: pagePath(state.loaded),
+          url,
+          path: pagePath(url),
           note: text,
-          x: state.x,
-          y: state.y,
-          width: state.width,
-          height: state.height,
-          thumbnail,
+          ...rect,
         })
-      : `${state.loaded}: ${text}`
-    props.onAnnotate(comment)
-    storeAnnotation({ url: state.loaded, note: text, thumbnail: state.marked ? thumbnail : undefined })
+      : `${url}: ${text}`
+    const sent = await captureReviewAnnotation({
+      prompt: () => prompt.capture(),
+      capture: async () => ({
+        file, comment, rect,
+        screenshot: marked ? await capture() : undefined,
+        element: marked ? await inspectMarkedElement() : undefined,
+      }),
+      deliver: (payload) => {
+        props.onAnnotate(payload)
+        storeAnnotation({ url, note: text, thumbnail: payload.screenshot })
+      },
+    })
+    if (!sent) return
     setState({ note: "", marked: false, width: 0, height: 0, actionError: "" })
     setState("announced", language.t("session.review.browserPane.annotateSent"))
   }
   const recheck = async () => {
     const text = state.note.trim()
     if (!text || !state.marked) return
-    const thumbnail = await capture()
-    props.onAnnotate(
-      browserAnnotation({
-        url: state.loaded,
-        path: pagePath(state.loaded),
-        note: text,
-        x: state.x,
-        y: state.y,
-        width: state.width,
-        height: state.height,
-        thumbnail,
-      }),
-    )
-    storeAnnotation({ url: state.loaded, note: text, thumbnail })
+    const url = state.loaded
+    const file = props.file ?? "preview"
+    const rect = { x: state.x, y: state.y, width: state.width, height: state.height }
+    const comment = browserAnnotation({ url, path: pagePath(url), note: text, ...rect })
+    const sent = await captureReviewAnnotation({
+      prompt: () => prompt.capture(),
+      capture: async () => ({ file, comment, rect, screenshot: await capture(), element: await inspectMarkedElement() }),
+      deliver: (payload) => {
+        props.onAnnotate(payload)
+        storeAnnotation({ url, note: text, thumbnail: payload.screenshot })
+      },
+    })
+    if (!sent) return
     setState("announced", language.t("session.review.browserPane.annotateSent"))
   }
   // One-click verify: point the pane back at the running preview server and
@@ -364,12 +547,29 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void; on
         <Button
           type="button"
           size="small"
-          variant={state.marking ? "primary" : "ghost"}
-          aria-pressed={state.marking}
+          variant={state.marking && !state.point ? "primary" : "ghost"}
+          aria-pressed={state.marking && !state.point}
           aria-label={language.t("session.review.markPreview")}
-          onClick={() => setState("marking", !state.marking)}
+          onClick={() => (state.marking ? endMarking() : void beginMarking(false))}
         >
           {language.t("session.review.markPreview")}
+        </Button>
+        <Button
+          type="button"
+          size="small"
+          variant={state.marking && state.point ? "primary" : "ghost"}
+          aria-pressed={state.marking && state.point}
+          data-action="mark-point"
+          aria-label={language.t("session.review.markPoint")}
+          onClick={() => {
+            if (state.marking && state.point) {
+              endMarking()
+              return
+            }
+            void beginMarking(true)
+          }}
+        >
+          {language.t("session.review.markPoint")}
         </Button>
         <Button type="submit" size="small" disabled={state.note.trim().length === 0}>
           {language.t("session.review.annotate.add")}
@@ -382,7 +582,12 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void; on
         when={local()}
         fallback={<div class="p-3 text-12-regular text-text-weak">{language.t("session.review.browserLocalOnly")}</div>}
       >
-        <div class="relative min-h-0 flex-1">
+        <div
+          ref={(element) => {
+            paneBox = element
+          }}
+          class="relative min-h-0 flex-1"
+        >
           <iframe
             ref={(element) => {
               frame = element
@@ -399,10 +604,15 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void; on
               class="absolute inset-0 cursor-crosshair touch-none"
               data-action="review-browser-mark"
               onPointerDown={(event) => {
+                if (state.point) {
+                  mark(event, event.currentTarget, false)
+                  return
+                }
                 event.currentTarget.setPointerCapture(event.pointerId)
                 mark(event, event.currentTarget, false)
               }}
               onPointerMove={(event) => {
+                if (state.point) return
                 if (event.buttons !== 1) return
                 mark(event, event.currentTarget, true)
               }}
@@ -411,6 +621,19 @@ export function ReviewBrowser(props: { onAnnotate: (comment: string) => void; on
                   event.currentTarget.releasePointerCapture(event.pointerId)
               }}
             >
+              <Show when={state.frozen}>
+                {(freeze) => (
+                  // This is the native page itself, frozen at marking start;
+                  // the sandboxed iframe underneath stays untouched and unused
+                  // for the selection.
+                  <img
+                    src={freeze()}
+                    alt=""
+                    draggable={false}
+                    class="absolute inset-0 size-full select-none"
+                  />
+                )}
+              </Show>
               <Show when={state.marked}>
                 <div
                   class="absolute border border-border-strong-base bg-surface-warning-base/30"

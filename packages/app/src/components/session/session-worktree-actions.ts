@@ -1,4 +1,8 @@
-export type WorktreeMenuActionKey = "session.worktree.remove" | "session.worktree.reset" | "session.worktree.handoff"
+export type WorktreeMenuActionKey =
+  | "session.worktree.remove"
+  | "session.worktree.reset"
+  | "session.worktree.handoff"
+  | "session.worktree.handoffLocal"
 
 export type WorktreeMenuAction = {
   key: WorktreeMenuActionKey
@@ -35,4 +39,30 @@ export function worktreeMenuActions(input: {
     { key: "session.worktree.reset", disabled: input.busy },
     handoff,
   ]
+}
+
+// The Local checkout as a handoff target, opt-in through
+// worktree.allow_primary_rebind. Guarded like the worktree handoff entry: no
+// open session or draft to move from, the Local checkout already backing an
+// active session, or the routed session already sitting on the Local checkout
+// (self-handoff) all disable it.
+export function localHandoffAction(input: {
+  allow: boolean
+  busy: boolean
+  occupied: boolean
+  routed?: boolean
+  localRouted?: boolean
+}): WorktreeMenuAction | undefined {
+  if (!input.allow) return undefined
+  const reason =
+    input.routed === false
+      ? ("session.worktree.handoffNoTab" as const)
+      : input.occupied
+        ? ("session.worktree.handoffOccupied" as const)
+        : undefined
+  return {
+    key: "session.worktree.handoffLocal",
+    disabled: input.busy || input.occupied || input.routed === false || input.localRouted === true,
+    ...(reason ? { disabledReason: reason } : {}),
+  }
 }

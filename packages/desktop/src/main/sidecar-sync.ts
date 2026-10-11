@@ -15,6 +15,12 @@ export type SidecarSyncCommand =
   | { type: "sync-now"; requestID: string }
   | { type: "sync-reload"; requestID: string; force: boolean }
   | { type: "sync-prefs"; prefs: SyncPrefs }
+  | { type: "relay-config"; token?: string; remoteToken?: string; url?: string }
+
+// Relay settings changed in the settings store. Only the fields a saved value
+// changes are set; absent fields fall back to the current settings, and
+// nothing here clears one.
+export type RelayConfigUpdate = { token?: string; remoteToken?: string; url?: string }
 
 export type SidecarSyncMessage =
   | { type: "sync-paired"; peer: SyncPeer }
@@ -72,7 +78,43 @@ export function parseSyncCommand(value: unknown): SidecarSyncCommand | undefined
     if (!prefs) return
     return { type: "sync-prefs", prefs }
   }
+  if (value.type === "relay-config") {
+    const update = parseRelayConfig(value)
+    if (!update) return
+    return { type: "relay-config", ...update }
+  }
   return
+}
+
+// A relay-config field must be a non-empty string; anything else counts as
+// absent and the sidecar keeps its current value for that field.
+export function parseRelayConfig(value: unknown): RelayConfigUpdate | undefined {
+  if (!isRecord(value)) return
+  const token = relayConfigField(value.token)
+  const remoteToken = relayConfigField(value.remoteToken)
+  const url = relayConfigField(value.url)
+  if (!token && !remoteToken && !url) return
+  return { ...(token && { token }), ...(remoteToken && { remoteToken }), ...(url && { url }) }
+}
+
+function relayConfigField(value: unknown): string | undefined {
+  return typeof value === "string" && value ? value : undefined
+}
+
+// Live relay updates replace only the fields the update carries. Values that
+// came from the environment keep the precedence they had at sidecar start, so
+// a stored-settings save never overrides them and empty values never clear.
+export function overlayRelaySettings(
+  current: { token: string; remoteToken: string; url: string },
+  update: RelayConfigUpdate,
+  env: Record<string, string | undefined>,
+): { token: string; remoteToken: string; url: string } {
+  const overlay = (value: string, next: string | undefined, envKey: string) => (env[envKey] ? value : next || value)
+  return {
+    token: overlay(current.token, update.token, "OPENCODE_RELAY_TOKEN"),
+    remoteToken: overlay(current.remoteToken, update.remoteToken, "OPENCODE_RELAY_REMOTE_TOKEN"),
+    url: overlay(current.url, update.url, "OPENCODE_RELAY_URL"),
+  }
 }
 
 export function isSyncMessage(value: unknown): value is SidecarSyncMessage {

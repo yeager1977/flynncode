@@ -235,6 +235,7 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
       remove: window.api.draftDelete,
       putBlob: (blob) => blob.arrayBuffer().then(window.api.draftBlobPut),
       getBlob: (id) => window.api.draftBlobGet(id).then((data) => data && new Blob([data])),
+      discardBlob: window.api.draftBlobDiscard,
     }),
 
     updater: {
@@ -313,6 +314,14 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
     getPinchZoomEnabled: () => window.api.getPinchZoomEnabled(),
 
     setPinchZoomEnabled,
+
+    getQuickEntryEnabled: () => window.api.getQuickEntryEnabled(),
+
+    setQuickEntryEnabled: (enabled) => window.api.setQuickEntryEnabled(enabled),
+
+    screenshot: async () => {
+      return window.api.screenshot().catch(() => null)
+    },
 
     runDesktopMenuAction,
 

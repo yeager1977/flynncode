@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import path from "path"
-import { parseRunRecords, recordRoutineRun, type RoutineRun } from "../../../src/plugin/routines/index"
+import { parseRunRecords, readRoutineRuns, recordRoutineRun, type RoutineRun } from "../../../src/plugin/routines/index"
 import { tmpdir } from "../../fixture/fixture"
 
 function run(patch: Partial<RoutineRun> = {}): RoutineRun {
@@ -36,6 +36,32 @@ describe("parseRunRecords", () => {
       JSON.stringify(run({ startedAt: new Date(2026, 8, 22, 9, 0, n).toISOString() })),
     ).join("\n")
     expect(parseRunRecords(text).length).toBe(200)
+  })
+})
+
+describe("readRoutineRuns", () => {
+  test("reads the jsonl tail in run order", async () => {
+    await using tmp = await tmpdir()
+    const file = path.join(tmp.path, "routines-runs.jsonl")
+    await Bun.write(file, [record(1), record(2), record(3)].map((row) => JSON.stringify(row)).join("\n") + "\n")
+    const records = await readRoutineRuns(file)
+    expect(records.map((row) => row.routineId)).toEqual(["routine-1", "routine-2", "routine-3"])
+  })
+
+  test("returns [] for a missing or empty file instead of failing", async () => {
+    await using tmp = await tmpdir()
+    const file = path.join(tmp.path, "routines-runs.jsonl")
+    expect(await readRoutineRuns(file)).toEqual([])
+    await Bun.write(file, "")
+    expect(await readRoutineRuns(file)).toEqual([])
+  })
+
+  test("skips corrupt lines and caps at the newest 200", async () => {
+    await using tmp = await tmpdir()
+    const file = path.join(tmp.path, "routines-runs.jsonl")
+    await Bun.write(file, `not-json\n${JSON.stringify(record(1))}\n`)
+    const records = await readRoutineRuns(file)
+    expect(records.map((row) => row.routineId)).toEqual(["routine-1"])
   })
 })
 

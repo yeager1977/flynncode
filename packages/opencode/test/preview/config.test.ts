@@ -10,7 +10,7 @@ const withPreview = (servers: unknown, autoVerify?: boolean) => ({
 
 describe("ConfigPreview.settings", () => {
   test("absent preview yields no servers and default autoVerify", () => {
-    expect(parse({})).toEqual({ value: { servers: [], autoVerify: true }, warnings: [] })
+    expect(parse({})).toEqual({ value: { servers: [], autoVerify: true, nativeHost: false }, warnings: [] })
   })
 
   test("managed server with command and args passes through", () => {
@@ -103,6 +103,15 @@ describe("ConfigPreview.settings", () => {
     expect(parse({ preview: {} }).value.autoVerify).toBe(true)
     expect(parse(withPreview([], false)).value.autoVerify).toBe(false)
     expect(parse(withPreview([], true)).value.autoVerify).toBe(true)
+  })
+
+  test("nativeHost defaults to false and only accepts booleans", () => {
+    expect(parse({}).value.nativeHost).toBe(false)
+    expect(parse({ preview: {} }).value.nativeHost).toBe(false)
+    expect(parse({ preview: { nativeHost: true } }).value.nativeHost).toBe(true)
+    expect(parse({ preview: { nativeHost: false } }).value.nativeHost).toBe(false)
+    expect(parse({ preview: { nativeHost: "yes" } }).value.nativeHost).toBe(false)
+    expect(parse({ preview: { nativeHost: 1 } }).value.nativeHost).toBe(false)
   })
 
   test("per-server autoVerify passes through", () => {

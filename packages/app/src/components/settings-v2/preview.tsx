@@ -79,6 +79,8 @@ export const SettingsPreviewV2: Component<{ directory?: string }> = (props) => {
 
   const setAutoVerify = (value: boolean) => draft((current) => ({ ...current, autoVerify: value }))
 
+  const setNativeHost = (value: boolean) => draft((current) => ({ ...current, nativeHost: value }))
+
   const save = async () => {
     if (store.saving || !dirty()) return
     setStore({ saving: true, error: "", saved: false })
@@ -123,6 +125,12 @@ export const SettingsPreviewV2: Component<{ directory?: string }> = (props) => {
         <SettingsListV2>
           <SettingsRowV2 title={language.t("preview.settings.autoVerify")} description={language.t("preview.settings.autoVerifyDescription")}>
             <Switch checked={form().autoVerify} onChange={(checked) => setAutoVerify(checked)} />
+          </SettingsRowV2>
+          <SettingsRowV2
+            title={language.t("preview.settings.nativeHost")}
+            description={language.t("preview.settings.nativeHostDescription")}
+          >
+            <Switch checked={form().nativeHost} onChange={(checked) => setNativeHost(checked)} />
           </SettingsRowV2>
           <For each={form().servers}>
             {(server, index) => (

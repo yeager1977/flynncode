@@ -42,19 +42,35 @@ export interface RunnerInterface {
     tool: string
     callID: string
     args: Record<string, unknown>
+    model?: string
+    permissionMode?: string
   }) => Effect.Effect<PreToolUseDecision>
   readonly runPermissionRequest: (input: {
     sessionID: string
     tool: string
     callID: string
     args: Record<string, unknown>
+    permissionMode?: string
   }) => Effect.Effect<PreToolUseDecision>
+  readonly runPermissionAsk: (input: {
+    permission: string
+    patterns: ReadonlyArray<string>
+    sessionID: string
+    metadata: Record<string, unknown>
+    tool?: string
+    args?: Record<string, unknown>
+    id?: string
+    callID?: string
+    messageID?: string
+  }) => Effect.Effect<"ask" | "deny" | "allow">
   readonly runPostToolUse: (input: {
     sessionID: string
     tool: string
     callID: string
     args: Record<string, unknown>
     result: ToolResultView
+    model?: string
+    permissionMode?: string
   }) => Effect.Effect<ToolResultView>
   readonly runSessionStart: (input: {
     sessionID: string
@@ -96,6 +112,7 @@ export function denyWins(decisions: Array<PreToolUseDecision>): PreToolUseDecisi
 export type TriggerLike = {
   trigger: Plugin.Interface["trigger"]
   triggerDecision: Plugin.Interface["triggerDecision"]
+  triggerPermissionAsk: Plugin.Interface["triggerPermissionAsk"]
 }
 
 export type ExecutorLike = Pick<ExecutorInterface, "runDecision" | "runPostTool" | "runObserve">
@@ -133,6 +150,8 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
     tool: string
     callID: string
     args: Record<string, unknown>
+    model?: string
+    permissionMode?: string
   }) {
     // Fail closed: permission deny short-circuits before any rewrite or execution.
     const verdict = yield* plugin.triggerDecision(
@@ -148,6 +167,8 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
           sessionID: input.sessionID,
           callID: input.callID,
           args: input.args,
+          model: input.model,
+          permissionMode: input.permissionMode,
         })
       : undefined
     if (fileVerdict?.behavior === "deny") return fileVerdict
@@ -170,11 +191,29 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
     return withContext({ behavior: "undecided" } as const, fileVerdict)
   })
 
+  // The plugin permission.ask hook runs before the pending prompt: any deny
+  // fails the ask like a config rule, allow/ask fall through to the normal
+  // PermissionRequest hook and prompt flow.
+  const runPermissionAsk = Effect.fn("HooksRunner.runPermissionAsk")(function* (input: {
+    permission: string
+    patterns: ReadonlyArray<string>
+    sessionID: string
+    metadata: Record<string, unknown>
+    tool?: string
+    args?: Record<string, unknown>
+    id?: string
+    callID?: string
+    messageID?: string
+  }) {
+    return (yield* plugin.triggerPermissionAsk(input, { status: "ask" as const })).status
+  })
+
   const runPermissionRequest = Effect.fn("HooksRunner.runPermissionRequest")(function* (input: {
     sessionID: string
     tool: string
     callID: string
     args: Record<string, unknown>
+    permissionMode?: string
   }) {
     const output: {
       decision: "allow" | "deny" | "undecided"
@@ -197,6 +236,7 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
           sessionID: input.sessionID,
           callID: input.callID,
           args: input.args,
+          permissionMode: input.permissionMode,
         })
       : undefined
     // Fail closed on malformed hook output: unknown decision shapes fall through
@@ -219,6 +259,8 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
     callID: string
     args: Record<string, unknown>
     result: ToolResultView
+    model?: string
+    permissionMode?: string
   }) {
     // Plugins mutate this view in place; their title/output/metadata edits are
     // the tool result the model sees. Only a file hook's block replaces it.
@@ -240,6 +282,8 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
       callID: input.callID,
       args: input.args,
       output: view.output,
+      model: input.model,
+      permissionMode: input.permissionMode,
     })
     if (filePost.blocked) return { ...view, output: filePost.reason }
     return view
@@ -421,6 +465,7 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
   return Service.of({
     runPreToolUse,
     runPermissionRequest,
+    runPermissionAsk,
     runPostToolUse,
     runSessionStart,
     runSessionEnd,
@@ -465,6 +510,7 @@ export const node = LayerNode.make({
 const noopPlugin: TriggerLike = {
   trigger: (_name, _input, output) => Effect.succeed(output as never),
   triggerDecision: (_input, output) => Effect.succeed(output),
+  triggerPermissionAsk: (_input, output) => Effect.succeed(output),
 }
 
 export * as HooksRunner from "./runner"

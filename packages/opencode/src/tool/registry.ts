@@ -13,6 +13,8 @@ import { ReadTool } from "./read"
 import { TaskTool } from "./task"
 import { MessageTool } from "./message"
 import { SessionManageTool } from "./session-manage"
+import { MemoryTool } from "./memory"
+import { Memory } from "@/memory/memory"
 import { Database } from "@opencode-ai/core/database/database"
 import { LocationServiceMap, locationServiceMapLayer } from "@opencode-ai/core/location-services"
 import { TodoWriteTool } from "./todo"
@@ -110,6 +112,8 @@ const layer = Layer.effect(
     const task = yield* TaskTool
     const message = yield* MessageTool
     const sessionManage = yield* SessionManageTool
+    const memory = yield* Memory.Service
+    const memoryTool = yield* MemoryTool
     const read = yield* ReadTool
     const question = yield* QuestionTool
     const todo = yield* TodoWriteTool
@@ -217,6 +221,7 @@ const layer = Layer.effect(
         const cfg = yield* config.get()
         const questionEnabled = ["app", "cli", "desktop"].includes(flags.client) || flags.enableQuestionTool
         const computerUseEnabled = ComputerUse.resolveComputerUse(cfg.computer_use ?? {}).enabled === true
+        const memoryEnabled = yield* memory.isEnabled()
 
         const tool = yield* Effect.all({
           invalid: Tool.init(invalid),
@@ -229,6 +234,7 @@ const layer = Layer.effect(
           task: Tool.init(task),
           message: Tool.init(message),
           session_manage: Tool.init(sessionManage),
+          ...(memoryEnabled ? { memory: Tool.init(memoryTool) } : {}),
           fetch: Tool.init(webfetch),
           todo: Tool.init(todo),
           search: Tool.init(websearch),
@@ -255,6 +261,7 @@ const layer = Layer.effect(
             tool.task,
             tool.message,
             tool.session_manage,
+            ...(tool.memory ? [tool.memory] : []),
             tool.fetch,
             tool.todo,
             tool.search,
@@ -460,6 +467,7 @@ export const node = LayerNode.make({
     Agent.node,
     Skill.node,
     Session.node,
+    Memory.node,
     BackgroundJob.node,
     SessionRunState.node,
     Provider.node,

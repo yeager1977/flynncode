@@ -7,8 +7,13 @@ import { Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
+import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
-import { useTabs } from "@/context/tabs"
+import type { ImageAttachmentPart, PromptSession } from "@/context/prompt"
+import { useTabs, type Tab } from "@/context/tabs"
+import { createBlobReference } from "@/utils/draft-store"
+import { showToast } from "@/utils/toast"
+import { uuid } from "@/utils/uuid"
 
 export const quickEntryEvent = "opencode:quick-entry"
 
@@ -19,11 +24,12 @@ export const quickEntryEvent = "opencode:quick-entry"
 export function QuickEntryOverlay() {
   const language = useLanguage()
   const layout = useLayout()
+  const platform = usePlatform()
   const server = useServer()
   const tabs = useTabs()
-  const [state, setState] = createStore({ open: false, text: "" })
+  const [state, setState] = createStore({ open: false, text: "", screenshot: null as { dataUrl: string } | null })
   const directory = () => layout.projects.list()[0]?.worktree
-  const close = () => setState({ open: false, text: "" })
+  const close = () => setState({ open: false, text: "", screenshot: null })
 
   makeEventListener(window, quickEntryEvent, () => setState("open", true))
   makeEventListener(window, "keydown", (event) => {
@@ -37,8 +43,49 @@ export function QuickEntryOverlay() {
     const target = directory()
     const prompt = state.text.trim()
     if (!target || !prompt) return
-    void tabs.newDraft({ server: server.key, directory: target }, prompt)
+    // Read before close(): the store resets immediately, the attach runs after
+    // the new draft's prompt session exists.
+    const captured = state.screenshot
+    void tabs.newDraft({ server: server.key, directory: target }, prompt).then(async (tab) => {
+      if (!captured) return
+      await attachScreenshotToDraft(tab, captured.dataUrl)
+    })
     close()
+  }
+
+  const attachScreenshot = async () => {
+    const captured = await platform.screenshot?.()
+    if (!captured) {
+      showToast({ title: language.t("quickEntry.attachFailed") })
+      return
+    }
+    setState("screenshot", captured)
+  }
+
+  // Insert the capture as an image part into the new draft's prompt, the same
+  // shape the clipboard-image and review-screenshot flows produce.
+  const attachScreenshotToDraft = async (tab: Tab, dataUrl: string) => {
+    const session = tabs.stateValue<PromptSession>(tab, "prompt")
+    if (!session) {
+      showToast({ title: language.t("quickEntry.attachFailed") })
+      return
+    }
+    await fetch(dataUrl)
+      .then((response) => response.blob())
+      .then(async (blob) => {
+        const filename = "screenshot.png"
+        const attachment: ImageAttachmentPart = {
+          type: "image",
+          id: uuid(),
+          filename,
+          mime: dataUrlMime(dataUrl),
+          blob: platform.draftStore
+            ? await platform.draftStore.putBlob(blob)
+            : await createBlobReference(new File([blob], filename, { type: dataUrlMime(dataUrl) })),
+        }
+        session.set([...session.current(), attachment], session.cursor())
+      })
+      .catch(() => showToast({ title: language.t("quickEntry.attachFailed") }))
   }
 
   return (
@@ -63,6 +110,13 @@ export function QuickEntryOverlay() {
               </p>
             }
           >
+            <Show when={state.screenshot}>
+              <img
+                src={state.screenshot?.dataUrl}
+                alt=""
+                class="h-9 w-12 shrink-0 rounded-[6px] border border-v2-border-border-base object-cover"
+              />
+            </Show>
             <TextInputV2
               class="min-w-0 flex-1"
               appearance="large"
@@ -72,6 +126,17 @@ export function QuickEntryOverlay() {
               placeholder={language.t("quickEntry.placeholder")}
               onInput={(event) => setState("text", event.currentTarget.value)}
             />
+            <Show when={typeof platform.screenshot === "function"}>
+              <IconButtonV2
+                type="button"
+                data-action="quick-entry-attach"
+                variant="ghost-muted"
+                size="normal"
+                icon={<IconV2 name="monitor" />}
+                aria-label={language.t("quickEntry.attach")}
+                onClick={() => void attachScreenshot()}
+              />
+            </Show>
             <ButtonV2 type="submit" variant="neutral" size="normal" disabled={state.text.trim() === ""}>
               {language.t("quickEntry.send")}
             </ButtonV2>
@@ -89,4 +154,11 @@ export function QuickEntryOverlay() {
       </div>
     </Show>
   )
+}
+
+function dataUrlMime(dataUrl: string) {
+  if (!dataUrl.startsWith("data:")) return "image/png"
+  const end = dataUrl.indexOf(";")
+  if (end === -1) return "image/png"
+  return dataUrl.slice(5, end) || "image/png"
 }

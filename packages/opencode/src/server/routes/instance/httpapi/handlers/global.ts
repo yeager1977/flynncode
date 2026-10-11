@@ -3,6 +3,7 @@ import { GlobalBus, type GlobalEvent as GlobalBusEvent } from "@/bus/global"
 import { EffectBridge } from "@/effect/bridge"
 import { EventV2 } from "@opencode-ai/core/event"
 import { Installation } from "@/installation"
+import { readRoutineRuns } from "@/plugin/routines"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
 import { InstallationVersion } from "@opencode-ai/core/installation/version"
 import { Effect, Queue } from "effect"
@@ -115,11 +116,20 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       return HttpServerResponse.jsonUnsafe(result)
     })
 
+    const routinesRuns = Effect.fn("GlobalHttpApi.routinesRuns")(function* (ctx: {
+      query: { routineId?: string }
+    }) {
+      const records = yield* Effect.promise(() => readRoutineRuns())
+      if (!ctx.query.routineId) return records
+      return records.filter((record) => record.routineId === ctx.query.routineId)
+    })
+
     return handlers
       .handle("health", health)
       .handleRaw("event", event)
       .handle("configGet", configGet)
       .handle("configUpdate", configUpdate)
+      .handle("routinesRuns", routinesRuns)
       .handle("dispose", dispose)
       .handle("upgrade", upgrade)
   }),
