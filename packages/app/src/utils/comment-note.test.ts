@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createCommentMetadata, formatCommentNote, readCommentMetadata, type CommentElement } from "./comment-note"
+import { createCommentMetadata, formatCommentNote, parseCommentNote, readCommentMetadata, type CommentElement } from "./comment-note"
 
 const element: CommentElement = {
   tag: "BUTTON",
@@ -60,5 +60,25 @@ describe("readCommentMetadata", () => {
     })
     expect(parsed?.element).toBeUndefined()
     expect(parsed?.comment).toBe("too cramped")
+  })
+})
+
+describe("parseCommentNote", () => {
+  test("strips the trailing element descriptor from the path when metadata is missing", () => {
+    const note = formatCommentNote({ ...base, element })
+    const parsed = parseCommentNote(note)
+    expect(parsed?.path).toBe("preview")
+    expect(parsed?.comment).toBe("too cramped")
+    expect(parsed?.selection).toEqual(base.selection)
+  })
+
+  // Documented limitation (see CommentElement): descriptor text containing
+  // `": "` splits the note at the wrong colon, so the parse degrades. This
+  // test pins the current behavior.
+  test("degrades when element text contains a colon-space", () => {
+    const note = formatCommentNote({ ...base, element: { ...element, text: 'Save: file' } })
+    const parsed = parseCommentNote(note)
+    expect(parsed?.path).toBe('preview (button "Save')
+    expect(parsed?.comment).toBe('file"): too cramped')
   })
 })

@@ -10,6 +10,10 @@ export type PromptComment = {
 }
 
 // Element under the annotated region, captured from the native preview host.
+// Known limitation of the legacy degrade path (parseCommentNote): descriptor
+// text containing `": "` splits the note at the wrong colon, and a trailing
+// ` (…)` descriptor is only stripped when the closing paren is the last char
+// before the comment separator.
 export type CommentElement = {
   tag: string
   id?: string
@@ -126,7 +130,7 @@ export function parseCommentNote(text: string) {
   const start = match[2] ? Number(match[2]) : match[3] ? Number(match[3]) : undefined
   const end = match[2] ? Number(match[2]) : match[4] ? Number(match[4]) : undefined
   return {
-    path: match[5],
+    path: stripElementDescriptor(match[5]),
     selection:
       start !== undefined && end !== undefined
         ? {
@@ -138,4 +142,12 @@ export function parseCommentNote(text: string) {
         : undefined,
     comment: match[6],
   } satisfies PromptComment
+}
+
+// When metadata is missing the note round-trips through the model-facing
+// text, which may carry a trailing element descriptor after the path
+// (`preview (button "Save file")`). Strip that segment so the fallback
+// recovers the bare path.
+function stripElementDescriptor(path: string) {
+  return path.replace(/\s\(.+\)$/, "")
 }
