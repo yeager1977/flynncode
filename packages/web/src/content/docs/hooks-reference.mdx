@@ -138,7 +138,7 @@ Every hook receives one JSON object on stdin (for `mcp_tool` handlers, the same 
 | `cwd` | all | The directory the hook runs in |
 | `tool`, `callID`, `args` | decision and PostToolUse events | The tool call: name, ID, and arguments object |
 | `output` | `PostToolUse` | The tool's output |
-| `model` | decision and PostToolUse events | The model driving the turn, when known |
+| `model` | `PreToolUse` and `PostToolUse` | The model driving the turn, when known |
 | `permission_mode` | decision and PostToolUse events | The active permission approval mode, when known |
 | `source` | `SessionStart` | One of `startup`, `resume`, `clear`, `compact` |
 | `reason` | `SessionEnd`, `Stop`, `Interrupt` | Why the session went idle or was interrupted (`idle` or `interrupt`; on `SessionEnd` currently always `other`) |
@@ -146,7 +146,7 @@ Every hook receives one JSON object on stdin (for `mcp_tool` handlers, the same 
 | `trigger`, `phase` | `PreCompact` / `PostCompact` | One of `manual` / `auto`, and `pre` / `post` |
 | `agentID`, `agentType` | `SubagentStart` / `SubagentStop` | The subagent session ID and agent name |
 
-Observe events are session-scoped: `model` and `permission_mode` are only sent on decision and PostToolUse events.
+Observe events are session-scoped: `model` is only sent on `PreToolUse` and `PostToolUse`, and `permission_mode` only on decision and PostToolUse events. `PermissionRequest` payloads carry `permission_mode` but never `model`.
 
 ---
 
