@@ -1,6 +1,6 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import path from "path"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Option } from "effect"
 import { Global } from "@opencode-ai/core/global"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Config } from "@/config/config"
@@ -134,6 +134,13 @@ const layer = Layer.effect(
       if (!body.trim()) return ""
       const dir = input.scope === "global" ? yield* globalDir() : yield* projectDir()
       const target = path.join(dir, sanitizeSlug(input.slug))
+      // Identical-content skip: boundary triggers (compact/idle/drain) can
+      // re-extract the same topic near one boundary; don't rewrite the file.
+      const existing = yield* fs.readFileString(target).pipe(
+        Effect.catch(() => Effect.succeed("")),
+        Effect.map((content) => (content === body ? Option.some(target) : Option.none())),
+      )
+      if (Option.isSome(existing)) return existing.value
       yield* fs.writeWithDirs(target, body).pipe(Effect.orDie)
       return target
     })

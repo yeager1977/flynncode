@@ -61,9 +61,7 @@ import { HooksRunner } from "@/hooks/runner"
 import { HooksContext } from "@/hooks/context"
 import { LLMEvent } from "@opencode-ai/llm"
 import { Memory } from "@/memory/memory"
-import { MemoryExtract } from "@/memory/extract"
-import { MemoryRedact } from "@/memory/redact"
-import { ConfigMemoryV1 } from "@opencode-ai/core/v1/config/memory"
+import { SessionMemoryCurate } from "./memory-curate"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -162,7 +160,7 @@ const layer = Layer.effect(
     const state = yield* SessionRunState.Service
     const revert = yield* SessionRevert.Service
     const summary = yield* SessionSummary.Service
-    const memory = yield* Memory.Service
+    const curate = yield* SessionMemoryCurate.Service
     const sys = yield* SystemPrompt.Service
     const llm = yield* LLM.Service
     const events = yield* EventV2Bridge.Service
@@ -1204,62 +1202,6 @@ const layer = Layer.effect(
       )
     })
 
-    const extractMemory = Effect.fn("SessionPrompt.extractMemory")(function* (sessionID: SessionID) {
-      const settings = ConfigMemoryV1.resolved((yield* config.get()).memory ?? {})
-      if (!settings.enabled) return
-      const all = yield* sessions.messages({ sessionID }).pipe(Effect.catch(() => Effect.succeed([])))
-      if (!MemoryExtract.shouldExtract({ messages: all, min_turns: settings.min_turns })) return
-      const lastUser = [...all].reverse().find((item) => item.info.role === "user")
-      if (!lastUser || lastUser.info.role !== "user") return
-      const conversation = all
-        .flatMap((msg) =>
-          msg.info.role === "user"
-            ? msg.parts.flatMap((part) => (part.type === "text" && part.text.trim() ? [part.text.trim()] : []))
-            : [],
-        )
-        .join("\n")
-        .slice(0, 6000)
-      if (!conversation.trim()) return
-      const ag = yield* agents.get("summary").pipe(Effect.catch(() => Effect.succeed(undefined)))
-      if (!ag) return
-      const mdl = ((yield* provider.getSmallModel(lastUser.info.model.providerID).pipe(
-        Effect.catch(() => Effect.succeed(undefined)),
-      )) ??
-        (yield* provider
-          .getModel(lastUser.info.model.providerID, lastUser.info.model.modelID)
-          .pipe(Effect.catch(() => Effect.succeed(undefined)))))
-      if (!mdl) return
-      const text = yield* llm
-        .stream({
-          agent: ag,
-          user: lastUser.info,
-          system: [],
-          small: true,
-          tools: {},
-          model: mdl,
-          sessionID,
-          retries: 2,
-          messages: [{ role: "user", content: MemoryExtract.buildExtractionPrompt({ conversation }) }],
-        })
-        .pipe(
-          Stream.filter(LLMEvent.is.textDelta),
-          Stream.map((e) => e.text),
-          Stream.mkString,
-          Effect.catch(() => Effect.succeed("")),
-        )
-      const cleaned = text.trim()
-      if (!cleaned || cleaned === "NOTHING TO REMEMBER") return
-      for (const topic of MemoryExtract.parseExtractionTopics(cleaned)) {
-        // Belt and suspenders: re-redact at write even though the prompt forbids secrets.
-        const body = MemoryRedact.redactSecrets(topic.text)
-        if (!body.trim()) {
-          yield* memory.remove({ scope: "project", slug: topic.slug }).pipe(Effect.catch(() => Effect.succeed(false)))
-          continue
-        }
-        yield* memory.update({ scope: "project", slug: topic.slug, text: body }).pipe(Effect.catch(() => Effect.succeed("")))
-      }
-    })
-
     const runLoopOnce: (sessionID: SessionID) => Effect.Effect<[SessionV1.WithParts, SessionV1.User]> = Effect.fn(
       "SessionPrompt.runLoopOnce",
     )(function* (sessionID) {
@@ -1536,7 +1478,9 @@ const layer = Layer.effect(
         }
 
         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
-        yield* extractMemory(sessionID).pipe(Effect.ignore, Effect.forkIn(scope))
+        // Best-effort idle-boundary memory curation: forked and ignored so the
+        // drain never blocks or fails on memory errors.
+        yield* curate.extract(sessionID).pipe(Effect.ignore, Effect.forkIn(scope))
         return [yield* lastAssistant(sessionID), drainedMessages!] as const
       },
     )
@@ -1837,6 +1781,7 @@ export const node = LayerNode.make({
     SessionRevert.node,
     SessionSummary.node,
     Memory.node,
+    SessionMemoryCurate.node,
     SystemPrompt.node,
     LLM.node,
     EventV2Bridge.node,

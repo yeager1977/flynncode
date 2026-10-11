@@ -1,6 +1,7 @@
 import { describe, expect } from "bun:test"
 import path from "path"
 import { Effect, FileSystem, Layer } from "effect"
+import { badArgument } from "effect/PlatformError"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Memory } from "../../src/memory/memory"
 import { Config } from "@/config/config"
@@ -35,6 +36,48 @@ function memoryLayer(memory: unknown, global: Partial<Global.Interface>) {
     [Global.node, Global.layerWith(global)],
   ])
 }
+
+// In-memory platform FileSystem double for observing writes: records every
+// writeFileString call so the identical-content no-op skip in Memory.update
+// can be asserted. Served from the outer test env — an inner Effect.provide
+// cannot override the outer runtime's filesystem.
+const noopWrites: string[] = []
+const noopFiles = new Map<string, string>()
+const noopFs = FileSystem.makeNoop({
+  makeDirectory: () => Effect.void,
+  writeFileString: (filepath, data) =>
+    Effect.sync(() => {
+      const content = typeof data === "string" ? data : new TextDecoder().decode(data)
+      noopWrites.push(filepath)
+      noopFiles.set(filepath, content)
+    }),
+  readFileString: (filepath) => {
+    const content = noopFiles.get(filepath)
+    return content === undefined
+      ? Effect.fail(badArgument({ module: "memory-test", method: "readFileString", description: "not found" }))
+      : Effect.succeed(content)
+  },
+  remove: (filepath) =>
+    Effect.sync(() => {
+      noopFiles.delete(filepath)
+    }),
+})
+
+// Environment for filesystem-observation tests; project scope only, so the
+// static Global overrides never matter.
+const itFs = testEffect(
+  AppNodeBuilder.build(LayerNode.group([CrossSpawnSpawner.node, Memory.node]), [
+    [LayerNodePlatform.filesystem, Layer.succeed(FileSystem.FileSystem, noopFs)],
+    [
+      Config.node,
+      Layer.succeed(
+        Config.Service,
+        TestConfig.make({ get: () => Effect.succeed({ memory: { enabled: true } }) as Effect.Effect<never> as never }),
+      ),
+    ],
+    [Global.node, Global.layerWith({ home: "memory-test", config: "memory-test", data: "memory-test" })],
+  ]),
+)
 
 const write = (filepath: string, content: string) =>
   Effect.gen(function* () {
@@ -105,6 +148,31 @@ describe("Memory", () => {
         expect(yield* svc.remove({ scope: "project", slug: "test-runner" })).toBe(true)
         expect(yield* svc.load()).toEqual([])
       }).pipe(Effect.provide(memoryLayer({ enabled: true }, { home: dir, config: dir, data: dir }))),
+    ),
+  )
+
+  itFs.live("update skips no-op rewrite when content is unchanged", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        noopWrites.length = 0
+        noopFiles.clear()
+        const svc = yield* Memory.Service
+        const target = yield* svc.update({ scope: "project", slug: "runner", text: "always use bun" })
+        expect(noopWrites.length).toBe(1)
+        expect(noopFiles.get(target)).toBe("always use bun")
+        // Same redacted content must not rewrite the topic file.
+        yield* svc.update({ scope: "project", slug: "runner", text: "always use bun" })
+        yield* svc.update({ scope: "project", slug: "runner", text: "always use bun" })
+        expect(noopWrites.length).toBe(1)
+        // Changed content replaces in one more write.
+        yield* svc.update({ scope: "project", slug: "runner", text: "vitest only" })
+        expect(noopWrites.length).toBe(2)
+        expect(noopFiles.get(target)).toBe("vitest only")
+        // Content that redacts differently from the stored entry still writes.
+        yield* svc.update({ scope: "project", slug: "runner", text: "token ghp_abcdefghij1234567890" })
+        expect(noopWrites.length).toBe(3)
+        expect(noopFiles.get(target) ?? "").not.toContain("ghp_")
+      }),
     ),
   )
 
