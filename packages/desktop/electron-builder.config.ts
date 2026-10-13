@@ -133,7 +133,7 @@ function getConfig() {
         appId,
         productName: "Flynncode Beta",
         protocols: { name: "Flynncode Beta", schemes: ["opencode"] },
-        publish: { provider: "github", owner: "anomalyco", repo: "opencode-beta", channel: "latest" },
+        publish: { provider: "github", owner: "yeager1977", repo: "flynncode-beta", channel: "latest" },
         deb: { packageName: "flynncode-beta", fpm: [metainfoFpm(appId)] },
         rpm: { packageName: "flynncode-beta", fpm: [metainfoFpm(appId)] },
       }
@@ -144,7 +144,7 @@ function getConfig() {
         appId,
         productName: "Flynncode",
         protocols: { name: "Flynncode", schemes: ["opencode"] },
-        publish: { provider: "github", owner: "anomalyco", repo: "opencode", channel: "latest" },
+        publish: { provider: "github", owner: "yeager1977", repo: "flynncode", channel: "latest" },
         deb: { packageName: "flynncode", fpm: [metainfoFpm(appId)] },
         rpm: { packageName: "flynncode", fpm: [metainfoFpm(appId)] },
       }
