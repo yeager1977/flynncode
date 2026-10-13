@@ -1,12 +1,14 @@
 # sync-hub — private Flynncode sync hub on Kubernetes
 
-One-replica StatefulSet running the existing server image with
-`SYNC_HUB_MODE=1`: it serves `/flynncode-sync/*` to paired spokes and never
-pulls. Reachable only over the tailnet (Tailscale sidecar, ClusterIP, no
+One-replica StatefulSet with two containers: `server` (the existing server
+image with `SYNC_HUB_MODE=1`, loopback-only `:4096`, owns the SQLite DB on
+the PVC) and `gateway` (the mobile-gateway hub runner, `:4097`, verifies
+HMAC-signed spoke tokens and forwards to the server). The hub never pulls.
+Reachable over the LAN via NodePort (`<node-ip>:34097` → gateway 4097; no
 LoadBalancer/Ingress). Nightly SQLite snapshots go to object storage.
 
-Files: `statefulset.yaml` (hub + Tailscale sidecar), `service.yaml`
-(ClusterIP 4097), `pvc.yaml` (10Gi RWO), `secret.example.yaml` (placeholders
+Files: `statefulset.yaml` (server + gateway), `service.yaml`
+(NodePort 34097 → 4097), `pvc.yaml` (10Gi RWO), `secret.example.yaml` (placeholders
 only), `backup-cronjob.yaml` (nightly snapshot, 7-day retention).
 
 ## Deploy
@@ -18,19 +20,13 @@ kubectl -n 4mgrowing apply -f secret.yaml
 kubectl -n 4mgrowing apply -f pvc.yaml,service.yaml,statefulset.yaml,backup-cronjob.yaml
 ```
 
-Pin the image to a digest before trusting it (`ghcr.io/flynncode/flynncode:latest`
-is a placeholder). The Tailscale auth key should be reusable and tagged so pod
-restarts re-auth on their own; sidecar state is ephemeral by design.
-
 Verify:
 
 ```bash
 kubectl -n 4mgrowing rollout status statefulset/sync-hub
-kubectl -n 4mgrowing exec sync-hub-0 -c tailscale -- tailscale status
-kubectl -n 4mgrowing exec sync-hub-0 -c tailscale -- tailscale ip -4
-# From a tailnet machine: curl the sync surface (unsigned -> 401 proves the
+# From any LAN machine: curl the sync surface (unsigned -> 401 proves the
 # handler is up; only HMAC-signed spoke requests get answers).
-curl -s -o /dev/null -w '%{http_code}\n' http://<hub-tailnet-ip>:4097/flynncode-sync/manifest
+curl -s -o /dev/null -w '%{http_code}\n' http://192.168.4.251:34097/flynncode-sync/manifest
 # expect: 401
 ```
 
@@ -45,8 +41,12 @@ worker status.
 
 Each spoke keeps exactly one peer: the hub.
 
-1. On the hub tailnet address, start pairing from the spoke (desktop Sync card
-   or CLI): point the spoke at `http://<hub-tailnet-ip>:4097`.
+1. Read the current pairing code from the hub logs (the initial code is the
+   `hub-pairing-code` secret value; every successful pairing logs the next
+   code — pairing codes are single-use):
+   `kubectl -n 4mgrowing logs sync-hub-0 -c gateway | grep "pairing code"`
+2. Start pairing from the spoke (desktop Sync card
+   or CLI): point the spoke at `http://192.168.4.251:34097` and enter the code.
 2. Approve the pairing code on the hub side. The spoke stores the pairing
    token locally; the token itself never travels again — requests are HMAC
    signed, responses are signed back.

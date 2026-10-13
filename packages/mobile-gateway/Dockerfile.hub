@@ -1,0 +1,9 @@
+# Sync-hub gateway image: runs src/hub.ts (SyncGate hubMode + signed
+# /flynncode-sync/* front door) on bun. Sources are dependency-free at
+# runtime (node builtins only; the one @flynncode/plugin import is
+# type-only and erased). No node_modules needed.
+FROM oven/bun:slim
+WORKDIR /app/gateway
+COPY src/ ./src/
+EXPOSE 4097
+CMD ["bun", "run", "./src/hub.ts"]

@@ -7,13 +7,15 @@ metadata:
     app.kubernetes.io/name: sync-hub
     app.kubernetes.io/part-of: flynncode-sync
 spec:
-  # Private by design: only the tailnet reaches the hub (Tailscale sidecar
-  # in the StatefulSet). No LoadBalancer, no Ingress.
-  type: ClusterIP
+  # LAN-reachable by design: spokes on the LAN reach the hub at
+  # <node-ip>:34097. Sync traffic is Bearer + HMAC signed, so no
+  # additional auth layer. No LoadBalancer, no Ingress.
+  type: NodePort
   selector:
     app.kubernetes.io/name: sync-hub
   ports:
     - name: sync
       port: 4097
       targetPort: 4097
+      nodePort: 34097
       protocol: TCP

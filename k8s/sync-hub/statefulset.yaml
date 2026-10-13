@@ -19,11 +19,13 @@ spec:
         app.kubernetes.io/part-of: flynncode-sync
     spec:
       containers:
-        - name: hub
+        # The hub database owner. Loopback-only inside the pod; the gateway
+        # container is the only front door (the Service targets 4097).
+        - name: server
           # Built from packages/flynncode/Dockerfile.hub, pushed to the
           # deepthought local registry. Pin to digest for production.
           image: 192.168.4.251:32000/flynncode-sync-hub:1.18.34-dev-202610131923
-          command: ["opencode", "serve", "--hostname", "0.0.0.0", "--port", "4097"]
+          command: ["opencode", "serve", "--hostname", "127.0.0.1", "--port", "4096"]
           env:
             # Marks this server as the sync hub: serves /flynncode-sync/*,
             # never pulls.
@@ -38,8 +40,8 @@ spec:
                   name: sync-hub-secrets
                   key: server-password
           ports:
-            - name: sync
-              containerPort: 4097
+            - name: server
+              containerPort: 4096
               protocol: TCP
           volumeMounts:
             - name: data
@@ -51,11 +53,62 @@ spec:
             limits:
               cpu: "2"
               memory: 4Gi
+          startupProbe:
+            tcpSocket:
+              port: 4096
+            periodSeconds: 10
+            failureThreshold: 30
+          livenessProbe:
+            tcpSocket:
+              port: 4096
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: 4096
+            periodSeconds: 10
+            failureThreshold: 3
+        # The spoke-facing front door: verifies HMAC-signed pairing tokens
+        # (SyncGate hubMode) and forwards to the server as upstream.
+        - name: gateway
+          # Built from packages/mobile-gateway/Dockerfile.hub.
+          image: 192.168.4.251:32000/flynncode-sync-gateway:1.18.34-dev-202610131923
+          env:
+            - name: OPENCODE_SERVER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: sync-hub-secrets
+                  key: server-password
+            - name: OPENCODE_MOBILE_UPSTREAM
+              value: http://127.0.0.1:4096
+            - name: HUB_MACHINE_NAME
+              value: deepthought-hub
+            - name: HUB_SYNC_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sync-hub-secrets
+                  key: hub-sync-token
+            - name: HUB_PAIRING_CODE
+              valueFrom:
+                secretKeyRef:
+                  name: sync-hub-secrets
+                  key: hub-pairing-code
+          ports:
+            - name: sync
+              containerPort: 4097
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           # NOTE: probes are tcpSocket, not httpGet, on purpose.
           # /flynncode-sync/* only answers HMAC-signed requests (the pairing
           # token itself never travels), so a kubelet httpGet with a static
           # Bearer header always gets an unsigned 401 and the pod would never
-          # become ready. The socket proves the server is up and listening;
+          # become ready. The socket proves the gateway is up and listening;
           # sync health is observed via the spoke worker status, not probes.
           startupProbe:
             tcpSocket:
@@ -72,29 +125,6 @@ spec:
               port: 4097
             periodSeconds: 10
             failureThreshold: 3
-        - name: tailscale
-          # containerboot reads TS_* env and runs tailscaled + up automatically.
-          image: tailscale/tailscale:stable
-          env:
-            - name: TS_AUTHKEY
-              valueFrom:
-                secretKeyRef:
-                  name: sync-hub-secrets
-                  key: tailscale-authkey
-            - name: TS_HOSTNAME
-              value: flynncode-sync-hub
-            - name: TS_EXTRA_ARGS
-              value: --accept-dns=false
-          securityContext:
-            capabilities:
-              add: ["NET_ADMIN", "NET_RAW"]
-          resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              cpu: 500m
-              memory: 512Mi
       volumes:
         - name: data
           persistentVolumeClaim:
