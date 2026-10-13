@@ -6,6 +6,9 @@ import { upstreamUrl } from "./upstream.ts"
 // Only these read-only routes reach the local server for a paired peer.
 // apply/delete/archive/missing stay loopback-only for the local sync worker.
 const FORWARDED = /^\/flynncode-sync\/(manifest|settings|session\/ses[A-Za-z0-9_-]+)$/
+// Bundle writes from the hub's workers; spokes answer these 404.
+const HUB_WRITES = /^\/flynncode-sync\/(apply|delete\/ses[A-Za-z0-9_-]+|archive\/ses[A-Za-z0-9_-]+|settings\/apply)$/
+const HUB_MAX_BODY_BYTES = 20 * 1024 * 1024
 const PAIR_MAX_BODY_BYTES = 4096
 // Signed sync requests carry no meaningful body (unpair is an empty POST).
 const SIGNED_MAX_BODY_BYTES = 4096
@@ -24,13 +27,39 @@ export async function handleSync(input: {
   if (!gate) return json({ error: "not found" }, 404)
   const url = new URL(input.request.url, "http://localhost")
   if (url.pathname === "/flynncode-sync/pair") return pair(input.request, input.remoteAddress, gate)
-  // A request signed with the pairing token is the only credential here; the
-  // token itself never travels, and the phone password never opens sync routes.
   const method = input.request.method
+  // A hub forwards signed bundle writes from its workers to the local
+  // server; any other gateway answers them 404 so only the paired hub
+  // accepts them. The bundle dwarfs signed control bodies, so it reads under
+  // its own cap before verification.
+  if (method === "POST" && HUB_WRITES.test(url.pathname)) {
+    const raw = input.request.body ? await readCapped(input.request.body.getReader(), HUB_MAX_BODY_BYTES) : new Uint8Array()
+    if (!raw) return json({ error: "payload too large" }, 413)
+    const hub = gate.verify({ method, target: url.pathname + url.search, headers: input.request.headers, body: raw })
+    if (!hub) return json({ error: "unauthorized" }, 401)
+    if (!hub.ok) return signed(hub.sign, json({ error: hub.reason, now: Date.now() }, 401))
+    hub.seen(input.remoteAddress)
+    if (!gate.hubMode()) return signed(hub.sign, json({ error: "not found" }, 404))
+    const upstream = await fetch(upstreamUrl(input.options.upstream, input.request.url), {
+      method: "POST",
+      headers: { authorization: envAuthHeader(input.options), "content-type": "application/json" },
+      body: Buffer.from(raw),
+      redirect: "error",
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    }).catch(() => undefined)
+    if (!upstream) return signed(hub.sign, json({ error: "upstream unavailable" }, 502))
+    if (upstream.status === 401) {
+      await upstream.body?.cancel().catch(() => undefined)
+      return signed(hub.sign, json({ error: "upstream refused the gateway" }, 502))
+    }
+    return signed(hub.sign, upstream)
+  }
   const body =
     method === "GET" || method === "HEAD" || !input.request.body
       ? new Uint8Array()
       : await readCapped(input.request.body.getReader(), SIGNED_MAX_BODY_BYTES)
+  // A request signed with the pairing token is the only credential here; the
+  // token itself never travels, and the phone password never opens sync routes.
   const verified =
     body && gate.verify({ method, target: url.pathname + url.search, headers: input.request.headers, body })
   // Unsigned: the peer treats it as no answer, since anyone on the path could send it.

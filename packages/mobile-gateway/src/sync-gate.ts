@@ -25,6 +25,7 @@ export function createSyncGate(input: {
   gatewayPort: number
   phoneAccess: boolean
   paused: boolean
+  hubMode?: boolean
   peer: SyncPeer | undefined
   prefs: SyncPrefs | undefined
   now?: () => number
@@ -39,6 +40,7 @@ export function createSyncGate(input: {
   const state = {
     phoneAccess: input.phoneAccess,
     paused: input.paused,
+    hubMode: input.hubMode ?? false,
     peer: input.peer,
     prefs: input.prefs,
     pairing: undefined as PairingCode | undefined,
@@ -71,6 +73,7 @@ export function createSyncGate(input: {
   return {
     phoneAccess: () => state.phoneAccess,
     paused: () => state.paused,
+    hubMode: () => state.hubMode,
     peer: () => state.peer,
     prefs: () => state.prefs,
     pairingActive: () => state.pairing !== undefined && state.pairing.expiresAt > now(),

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import type { GatewayOptions } from "../src/config.ts"
 import { createGateway } from "../src/gateway.ts"
 import { createSyncGate, type SyncPeer } from "../src/sync-gate.ts"
+import { handleSync } from "../src/sync-routes.ts"
 import { pairWithPeer, peerBaseUrl, unpairPeer } from "../src/sync-pair.ts"
 import {
   SYNC_RESPONSE_SIGNATURE_HEADER,
@@ -61,13 +62,14 @@ function fromPeer(
   return new Request(url, { method, headers: signed.headers, body: init.body })
 }
 
-function gate(input: { phoneAccess?: boolean; peer?: SyncPeer; paused?: boolean } = {}) {
+function gate(input: { phoneAccess?: boolean; peer?: SyncPeer; paused?: boolean; hubMode?: boolean } = {}) {
   const events: string[] = []
   const value = createSyncGate({
     machineName: "challenger",
     gatewayPort: 4097,
     phoneAccess: input.phoneAccess ?? false,
     paused: input.paused ?? false,
+    hubMode: input.hubMode ?? false,
     peer: input.peer,
     prefs: { sections: { appearance: { fontSize: 15 } }, updatedAt: 7 },
     token: () => "b".repeat(64),
@@ -287,7 +289,7 @@ describe("token-gated sync routes", () => {
     expect((await handle(fromPeer("http://gateway/flynncode-sync/missing"), undefined)).status).toBe(404)
     expect(
       (await handle(fromPeer("http://gateway/flynncode-sync/apply", { method: "POST", body: "{}" }), undefined)).status,
-    ).toBe(405)
+    ).toBe(404)
     expect(sync.value.takeSent()).toBe(1)
     expect(sync.value.takeSent()).toBe(0)
   })
@@ -510,5 +512,30 @@ describe("pairing client", () => {
     expect(sync.value.peer()).toBeUndefined()
     server.stop(true)
     expect(await pairWithPeer({ host: "127.0.0.1:9", code: "135790", name: "starship" })).toEqual({ ok: false, reason: "unreachable" })
+  })
+})
+
+describe("hub write forwarding", () => {
+  test("non-hub rejects remote apply, hub forwards to upstream", async () => {
+    const plain = gate({ peer })
+    const blocked = await handleSync({
+      request: fromPeer("/flynncode-sync/apply", { method: "POST", body: JSON.stringify({ bundle: {} }) }),
+      remoteAddress: "192.168.1.20",
+      options,
+      gate: plain.value,
+    })
+    expect(blocked.status).toBe(404)
+    await blocked.body?.cancel().catch(() => undefined)
+
+    const hub = gate({ peer, hubMode: true })
+    const forwarded = await handleSync({
+      request: fromPeer("/flynncode-sync/apply", { method: "POST", body: JSON.stringify({ bundle: {} }) }),
+      remoteAddress: "192.168.1.20",
+      options,
+      gate: hub.value,
+    })
+    expect(forwarded.status).toBe(200)
+    expect(await forwarded.json()).toEqual({ path: "/flynncode-sync/apply" })
+    expect(upstreamPaths.at(-1)).toBe("/flynncode-sync/apply")
   })
 })
