@@ -633,5 +633,331 @@ New file content (exact):
 import { resolveChannel } from "./utils"
 
 const arg = process.argv[2]
-const chan
-...[truncated 9117 chars]
+const channel = arg === "dev" || arg === "beta" || arg === "prod" ? arg : resolveChannel()
+
+const appId = channel === "prod" ? "ai.flynncode.desktop" : `ai.flynncode.desktop.${channel}`
+const productName = channel === "prod" ? "Flynncode" : `Flynncode ${channel.charAt(0).toUpperCase() + channel.slice(1)}`
+const summary = `AI coding agent${channel !== "prod" ? ` (${channel})` : ""}`
+
+const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>${appId}</id>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>${productName}</name>
+  <summary>${summary}</summary>
+
+  <description>
+    <p>
+      Flynncode is a fork of opencode that helps you write and run code with any AI model.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">${appId}.desktop</launchable>
+
+  <content_rating type="oars-1.1" />
+
+  <url type="bugtracker">https://github.com/yeager1977/flynncode/issues</url>
+  <url type="homepage">https://github.com/yeager1977/flynncode</url>
+  <url type="vcs-browser">https://github.com/yeager1977/flynncode</url>
+</component>
+`
+
+await Bun.write(`resources/${appId}.metainfo.xml`, xml)
+console.log(`Generated metainfo for ${channel} at resources/${appId}.metainfo.xml`)
+```
+
+Rationale for the removals, stated for the reviewer: the screenshot block pointed at an
+upstream-hosted asset with no fork equivalent, and the developer block named the upstream
+vendor — neither may ship in fork artifacts. Icons (`copy-icons.ts`, `./icons/<channel>`)
+are unchanged artwork and need no edit.
+
+- [ ] **Step 6: Update `packages/desktop/package.json` metadata**
+
+```json
+// Old:
+  "homepage": "https://opencode.ai",
+  "author": {
+    "name": "OpenCode",
+    "email": "hello@opencode.ai"
+  },
+// New:
+  "description": "Flynncode desktop app",
+  "homepage": "https://github.com/yeager1977/flynncode",
+  "author": {
+    "name": "Flynncode"
+  },
+```
+
+The upstream contact email is dropped, not replaced — no invented addresses.
+
+- [ ] **Step 7: Confirm `copy-icons.ts` needs no change**
+
+Run: `ls packages/desktop/icons/dev packages/desktop/icons/beta packages/desktop/icons/prod`
+Expected: all three directories exist. No edit — artwork is explicitly out of scope.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add packages/desktop/electron-builder.config.ts packages/desktop/scripts/copy-metainfo.ts packages/desktop/package.json
+git rm packages/desktop/resources/linux/opencode-desktop.desktop
+git commit -m "refactor(desktop): swap app identity to flynncode"
+```
+
+### Task 8: Update electron-builder config tests
+
+**Files:**
+- Modify: `packages/desktop/electron-builder.config.test.ts` (lines 4, 6-10, 42-58, 68-73, 85-90)
+
+**Interfaces:**
+- Consumes: Task 7's channel configs.
+- Produces: passing identity tests that lock the new naming in.
+
+- [ ] **Step 1: Write the failing test updates first**
+
+```ts
+// Old (lines 4, 6-10):
+const legacyDesktopEntry = "resources/linux/opencode-desktop.desktop"
+
+const channels = [
+  { channel: "dev", appId: "ai.opencode.desktop.dev" },
+  { channel: "beta", appId: "ai.opencode.desktop.beta" },
+  { channel: "prod", appId: "ai.opencode.desktop" },
+] as const
+// New:
+const channels = [
+  { channel: "dev", appId: "ai.flynncode.desktop.dev" },
+  { channel: "beta", appId: "ai.flynncode.desktop.beta" },
+  { channel: "prod", appId: "ai.flynncode.desktop" },
+] as const
+```
+
+Run: `bun test electron-builder.config.test.ts`
+Workdir: `packages/desktop`
+Expected: FAIL — the implementation still reports the old app ids.
+
+- [ ] **Step 2: Replace the legacy-launcher test with a no-legacy assertion**
+
+Delete the `legacyDesktopEntry` const and the whole `"keeps a hidden prod launcher for old
+Linux pins"` test (lines 32-58). In its place add (exact):
+
+```ts
+test("ships no legacy upstream launcher in prod", async () => {
+  const previous = process.env.OPENCODE_CHANNEL
+  process.env.OPENCODE_CHANNEL = "prod"
+
+  const module = await import("./electron-builder.config.ts?no-legacy=prod")
+  const config = module.default as Configuration
+
+  if (previous === undefined) delete process.env.OPENCODE_CHANNEL
+  else process.env.OPENCODE_CHANNEL = previous
+
+  for (const target of [config.deb?.fpm, config.rpm?.fpm]) {
+    expect(target?.some((entry) => entry.includes("opencode-desktop.desktop"))).toBe(false)
+  }
+
+  const missing = await Bun.file("resources/linux/opencode-desktop.desktop")
+    .exists()
+    .catch(() => false)
+  expect(missing).toBe(false)
+})
+```
+
+- [ ] **Step 3: Update the CLI-resource assertions**
+
+```ts
+// Old (lines 68-73):
+  expect(config.files).toContain("!resources/opencode-cli*")
+  expect(config.extraResources).toContainEqual({
+    from: "resources/",
+    to: "",
+    filter: ["opencode-cli*"],
+  })
+// New:
+  expect(config.files).toContain("!resources/flynncode-cli*")
+  expect(config.extraResources).toContainEqual({
+    from: "resources/",
+    to: "",
+    filter: ["flynncode-cli*"],
+  })
+```
+
+```ts
+// Old (lines 85-90, inside the beta/prod loop):
+    expect(config.extraResources).not.toContainEqual({
+      from: "resources/",
+      to: "",
+      filter: ["opencode-cli*"],
+    })
+// New: same shape with filter: ["flynncode-cli*"].
+```
+
+- [ ] **Step 4: Run the tests and confirm they pass**
+
+Run: `bun test electron-builder.config.test.ts`
+Workdir: `packages/desktop`
+Expected: all tests PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add packages/desktop/electron-builder.config.test.ts
+git commit -m "test(desktop): lock flynncode app identity in config tests"
+```
+
+### Task 9: Desktop verification (typecheck + tests)
+
+**Files:**
+- Test: whole `packages/desktop` suite as affected by Tasks 5-8.
+
+**Interfaces:**
+- Consumes: Tasks 5, 6, 7, 8.
+- Produces: green verification gate for the rollout task.
+
+- [ ] **Step 1: Typecheck**
+
+Run: `bun typecheck`
+Workdir: `packages/desktop`
+Expected: clean (`tsgo -b`, no errors).
+
+- [ ] **Step 2: Run the desktop test suite**
+
+Run: `bun test`
+Workdir: `packages/desktop`
+Expected: all tests pass. If the full suite is slow or has pre-existing environment-dependent
+failures, record the exact failing test names and whether they fail on the base commit too
+(`git stash` + rerun the single file, then `git stash pop`) — do not fix unrelated failures,
+report them.
+
+- [ ] **Step 3: Report (no commit — verification only)**
+
+Report the typecheck result, the test result (counts), and any pre-existing failures with
+evidence they exist on base. No code changes in this task.
+
+### Task 10: Document the upstream rule in AGENTS.md
+
+**Files:**
+- Modify: `AGENTS.md` (repo root, insert after the "Repo Conventions" section)
+
+**Interfaces:**
+- Consumes: nothing (docs only).
+- Produces: the standing rule future work must follow.
+
+- [ ] **Step 1: Insert the section**
+
+Anchor (exact existing text at the end of the Repo Conventions section):
+
+```
+- Local `main` ref may not exist; use `dev` or `origin/dev` for diffs.
+```
+
+Insert immediately after that line (exact):
+
+```
+
+## Upstream relationship
+
+- All builds and packaging are fork-only. Never vendor upstream binaries or releases into any artifact (no `@opencode-ai/cli` downloads, no upstream release URLs in build or publish scripts).
+- The only supported way to take upstream work is `git fetch upstream` plus targeted merges from `anomalyco/opencode`.
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add AGENTS.md
+git commit -m "docs: record fork-only builds and upstream pull policy"
+```
+
+### Task 11: Package, verify, install, remove old debs
+
+**Files:**
+- Test: `packages/desktop/dist/flynncode-desktop-linux-amd64.deb` (build output, gitignored)
+- System: `/opt/Flynncode Dev`, dpkg state.
+
+**Interfaces:**
+- Consumes: Tasks 2 (fork CLI dist), 5-9 (desktop sources green).
+- Produces: the installed app this whole plan exists for.
+
+- [ ] **Step 1: Full desktop build (runs prebuild: icons, metainfo, build-node, fork CLI `--single` build, staging, electron-vite)**
+
+Run: `bun run build`
+Workdir: `packages/desktop`
+Expected: completes; `packages/desktop/out/main/index.js` is newer than
+`packages/desktop/src/main/background-cli.ts`; `packages/desktop/resources/flynncode-cli`
+exists with mode 755. This step takes several minutes (Bun compile + web UI embed) — do
+not cancel it.
+
+- [ ] **Step 2: Package the dev-channel deb**
+
+Run: `bunx electron-builder --config electron-builder.config.ts --linux deb`
+Workdir: `packages/desktop`
+Expected: `packages/desktop/dist/flynncode-desktop-linux-amd64.deb` exists.
+
+- [ ] **Step 3: Verify package identity**
+
+```bash
+dpkg-deb -f packages/desktop/dist/flynncode-desktop-linux-amd64.deb Package Version
+```
+
+Expected: `Package: flynncode-dev`, `Version: 1.18.34-dev-<stamp>` (today's stamp, not
+`202610031719`). If the package name differs, stop and report — do not install.
+
+- [ ] **Step 4: Verify the bundled server is the fork build**
+
+```bash
+rm -rf /tmp/opencode/flynn-verify && mkdir -p /tmp/opencode/flynn-verify
+dpkg-deb -x packages/desktop/dist/flynncode-desktop-linux-amd64.deb /tmp/opencode/flynn-verify
+CLI=$(find /tmp/opencode/flynn-verify -name "flynncode-cli" | head -1)
+echo "$CLI"
+sha256sum "$CLI" packages/flynncode/dist/flynncode-linux-x64/bin/flynncode
+grep -c "full-access" "$CLI"
+grep -c "0.0.0-next-16350" "$CLI" || true
+```
+
+Expected: the two SHA-256 hashes are identical; `full-access` count is greater than 0;
+the `0.0.0-next-16350` count is 0 (no pinned-upstream binary inside).
+
+- [ ] **Step 5: Confirm the original bug is fixed with the staged binary**
+
+```bash
+cp "$CLI" /tmp/opencode/flynncode-staged-test 2>/dev/null || cp $(find /tmp/opencode/flynn-verify -name "flynncode-cli" | head -1) /tmp/opencode/flynncode-staged-test
+chmod +x /tmp/opencode/flynncode-staged-test
+```
+
+Then decode the real user config with the staged binary's schema. The binary has no
+schema-dump flag, so verify by starting the server against the real config: run
+`nohup /tmp/opencode/flynncode-staged-test serve --hostname 127.0.0.1 --port 4579 > /tmp/opencode/staged-serve.log 2>&1 &`,
+wait 5 seconds, confirm the log contains `listening`, then stop the server process.
+Expected: server starts (config load, including `permission.sandbox: "full-access"` from
+`~/.config/flynncode/opencode.jsonc`, succeeds). Clean up `/tmp/opencode/flynncode-staged-test`
+and `/tmp/opencode/flynn-verify` afterwards.
+
+- [ ] **Step 6: Report ready-for-install (do NOT run dpkg)**
+
+Report: deb path, `Package:`/`Version:` lines, SHA match result, `full-access` and
+`0.0.0-next-16350` counts, serve smoke-test result. Stop here — the controller performs
+the interactive install (Steps 7-8) with the user present.
+
+- [ ] **Step 7 (controller, interactive): Install the new deb**
+
+```bash
+sudo dpkg -i packages/desktop/dist/flynncode-desktop-linux-amd64.deb
+```
+
+Requires the user's sudo password. The currently running app keeps serving from its
+already-loaded files until restarted; installing over it is safe on Linux.
+
+- [ ] **Step 8 (controller, interactive): Remove the legacy packages and verify**
+
+```bash
+sudo dpkg -r opencode opencode-dev
+ls -la "/opt/Flynncode Dev/resources/flynncode-cli"
+grep -c "full-access" "/opt/Flynncode Dev/resources/flynncode-cli"
+```
+
+Expected: legacy packages removed; the installed `flynncode-cli` contains the
+`SandboxMode` schema strings. Then the user quits and relaunches the app — the new
+`ai.flynncode.desktop.dev` profile starts fresh, and the original `ConfigInvalidError`
+is gone because the bundled server accepts `permission.sandbox: "full-access"`.
