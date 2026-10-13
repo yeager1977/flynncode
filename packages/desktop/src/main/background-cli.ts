@@ -9,7 +9,7 @@ import { app } from "electron"
 const execFileAsync = promisify(execFile)
 const root = dirname(fileURLToPath(import.meta.url))
 const stateHome = process.env.XDG_STATE_HOME
-const desktopStateNames = ["ai.opencode.desktop.dev", "ai.opencode.desktop.beta", "ai.opencode.desktop"]
+const desktopStateNames = ["ai.flynncode.desktop.dev", "ai.flynncode.desktop.beta", "ai.flynncode.desktop"]
 
 type Logger = {
   log(message: string, meta?: Record<string, unknown>): void
@@ -47,11 +47,15 @@ export async function startBackgroundCli(logger: Logger, shellStateHome?: string
   })
   logger.log("v2 CLI background service ready", {
     existing: Boolean(found),
+    // Service auth username: protocol constant matching packages/server/src/auth.ts.
+    // Do not rebrand — the server rejects any other value.
     username: "opencode",
     ...endpoint(url),
   })
   return {
     url,
+    // Service auth username: protocol constant matching packages/server/src/auth.ts.
+    // Do not rebrand — the server rejects any other value.
     username: "opencode",
     password,
   }
@@ -121,5 +125,5 @@ function endpoint(url: string | undefined) {
 }
 
 function executableName() {
-  return process.platform === "win32" ? "opencode-cli.exe" : "opencode-cli"
+  return process.platform === "win32" ? "flynncode-cli.exe" : "flynncode-cli"
 }
