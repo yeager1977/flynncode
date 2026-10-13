@@ -25,7 +25,9 @@ spec:
           # Built from packages/flynncode/Dockerfile.hub, pushed to the
           # deepthought local registry. Pin to digest for production.
           image: 192.168.4.251:32000/flynncode-sync-hub:1.18.34-dev-202610131923
-          command: ["opencode", "serve", "--hostname", "127.0.0.1", "--port", "4096"]
+          # 0.0.0.0 (not loopback): kubelet probes hit the pod IP, which
+          # loopback does not serve. Only the gateway is Service-exposed.
+          command: ["opencode", "serve", "--hostname", "0.0.0.0", "--port", "4096"]
           env:
             # Marks this server as the sync hub: serves /flynncode-sync/*,
             # never pulls.
