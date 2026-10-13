@@ -15,7 +15,7 @@ export function resolveChannel(): Channel {
 export const RUST_TARGET = Bun.env.RUST_TARGET
 
 const desktopDir = dirname(dirname(fileURLToPath(import.meta.url)))
-const repoRoot = dirname(desktopDir)
+const repoRoot = dirname(dirname(desktopDir))
 
 function hostArtifactName() {
   const os = process.platform === "win32" ? "windows" : process.platform
