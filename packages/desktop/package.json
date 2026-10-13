@@ -4,10 +4,10 @@
   "version": "1.18.34-dev-202610031719",
   "type": "module",
   "license": "MIT",
-  "homepage": "https://opencode.ai",
+  "description": "Flynncode desktop app",
+  "homepage": "https://github.com/yeager1977/flynncode",
   "author": {
-    "name": "OpenCode",
-    "email": "hello@opencode.ai"
+    "name": "Flynncode"
   },
   "scripts": {
     "typecheck": "tsgo -b",
