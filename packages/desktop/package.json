@@ -1,13 +1,14 @@
 {
   "name": "@flynncode/desktop",
   "private": true,
-  "version": "1.18.34-dev-202610031719",
+  "version": "1.18.34-dev-202610132309",
   "type": "module",
   "license": "MIT",
   "description": "Flynncode desktop app",
   "homepage": "https://github.com/yeager1977/flynncode",
   "author": {
-    "name": "Flynncode"
+    "name": "Flynncode",
+    "email": "chrisflynn1977@gmail.com"
   },
   "scripts": {
     "typecheck": "tsgo -b",
