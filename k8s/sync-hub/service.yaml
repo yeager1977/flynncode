@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: sync-hub
-  namespace: flynncode-sync
+  namespace: 4mgrowing
   labels:
     app.kubernetes.io/name: sync-hub
     app.kubernetes.io/part-of: flynncode-sync

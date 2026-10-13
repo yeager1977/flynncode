@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: sync-hub-backup
-  namespace: flynncode-sync
+  namespace: 4mgrowing
   labels:
     app.kubernetes.io/name: sync-hub
     app.kubernetes.io/part-of: flynncode-sync

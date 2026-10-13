@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: sync-hub
-  namespace: flynncode-sync
+  namespace: 4mgrowing
   labels:
     app.kubernetes.io/name: sync-hub
     app.kubernetes.io/part-of: flynncode-sync
@@ -20,8 +20,9 @@ spec:
     spec:
       containers:
         - name: hub
-          # Pin to a digest in production; :latest is a placeholder.
-          image: ghcr.io/flynncode/flynncode:latest
+          # Built from packages/flynncode/Dockerfile.hub, pushed to the
+          # deepthought local registry. Pin to digest for production.
+          image: 192.168.4.251:32000/flynncode-sync-hub:1.18.34-dev-202610131923
           command: ["opencode", "serve", "--hostname", "0.0.0.0", "--port", "4097"]
           env:
             # Marks this server as the sync hub: serves /flynncode-sync/*,

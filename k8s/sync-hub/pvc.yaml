@@ -2,12 +2,13 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: sync-hub-data
-  namespace: flynncode-sync
+  namespace: 4mgrowing
   labels:
     app.kubernetes.io/name: sync-hub
     app.kubernetes.io/part-of: flynncode-sync
 spec:
-  # Cluster default StorageClass applies when storageClassName is unset.
+  # NFS-backed RWO on deepthought; survives pod reschedule.
+  storageClassName: standard-rwo
   accessModes:
     - ReadWriteOnce
   resources:

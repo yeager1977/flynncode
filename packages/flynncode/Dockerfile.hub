@@ -1,0 +1,10 @@
+# Sync-hub image: runs the --single glibc binary on debian-slim.
+# (The default Dockerfile targets alpine and needs the musl baseline
+# binary; the hub build uses the native glibc binary instead.)
+FROM debian:bookworm-slim
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends libgcc-s1 libstdc++6 ripgrep ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+COPY dist/opencode-linux-x64/bin/opencode /usr/local/bin/opencode
+RUN opencode --version
+ENTRYPOINT ["opencode"]

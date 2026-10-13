@@ -12,10 +12,10 @@ only), `backup-cronjob.yaml` (nightly snapshot, 7-day retention).
 ## Deploy
 
 ```bash
-kubectl create namespace flynncode-sync
+kubectl create namespace 4mgrowing
 cp secret.example.yaml secret.yaml  # fill in real values; NEVER commit secret.yaml
-kubectl -n flynncode-sync apply -f secret.yaml
-kubectl -n flynncode-sync apply -f pvc.yaml,service.yaml,statefulset.yaml,backup-cronjob.yaml
+kubectl -n 4mgrowing apply -f secret.yaml
+kubectl -n 4mgrowing apply -f pvc.yaml,service.yaml,statefulset.yaml,backup-cronjob.yaml
 ```
 
 Pin the image to a digest before trusting it (`ghcr.io/flynncode/flynncode:latest`
@@ -25,9 +25,9 @@ restarts re-auth on their own; sidecar state is ephemeral by design.
 Verify:
 
 ```bash
-kubectl -n flynncode-sync rollout status statefulset/sync-hub
-kubectl -n flynncode-sync exec sync-hub-0 -c tailscale -- tailscale status
-kubectl -n flynncode-sync exec sync-hub-0 -c tailscale -- tailscale ip -4
+kubectl -n 4mgrowing rollout status statefulset/sync-hub
+kubectl -n 4mgrowing exec sync-hub-0 -c tailscale -- tailscale status
+kubectl -n 4mgrowing exec sync-hub-0 -c tailscale -- tailscale ip -4
 # From a tailnet machine: curl the sync surface (unsigned -> 401 proves the
 # handler is up; only HMAC-signed spoke requests get answers).
 curl -s -o /dev/null -w '%{http_code}\n' http://<hub-tailnet-ip>:4097/flynncode-sync/manifest
@@ -65,21 +65,21 @@ long-term retention control.)
 
 ```bash
 # 1. Stop the hub so nothing writes during restore.
-kubectl -n flynncode-sync scale statefulset/sync-hub --replicas=0
+kubectl -n 4mgrowing scale statefulset/sync-hub --replicas=0
 # 2. Copy a snapshot into the PVC via a temp pod and restore over the live path.
 aws --endpoint-url <s3-endpoint> s3 cp s3://<bucket>/sync-hub/<STAMP>.db /tmp/restore.db
-kubectl -n flynncode-sync run restore --image=alpine:3.21 --command -- sleep 600 \
+kubectl -n 4mgrowing run restore --image=alpine:3.21 --command -- sleep 600 \
   --overrides='{"spec":{"containers":[{"name":"restore","image":"alpine:3.21","command":["sleep","600"],"volumeMounts":[{"name":"data","mountPath":"/data"}]}],"volumes":[{"name":"data","persistentVolumeClaim":{"claimName":"sync-hub-data"}}]}}'
-kubectl -n flynncode-sync cp /tmp/restore.db restore:/tmp/restore.db
-kubectl -n flynncode-sync exec restore -- \
+kubectl -n 4mgrowing cp /tmp/restore.db restore:/tmp/restore.db
+kubectl -n 4mgrowing exec restore -- \
   sh -c 'apk add --no-cache sqlite >/dev/null && sqlite3 /data/opencode/opencode.db ".restore '"'"'/tmp/restore.db'"'"'"'
-kubectl -n flynncode-sync delete pod restore
+kubectl -n 4mgrowing delete pod restore
 ```
 
 ```bash
 # 3. Start the hub again and confirm spokes reconverge.
-kubectl -n flynncode-sync scale statefulset/sync-hub --replicas=1
-kubectl -n flynncode-sync rollout status statefulset/sync-hub
+kubectl -n 4mgrowing scale statefulset/sync-hub --replicas=1
+kubectl -n 4mgrowing rollout status statefulset/sync-hub
 ```
 
 Spokes treat the restored hub as hub-newer/hub-older per chat (`time_updated`
