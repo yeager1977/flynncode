@@ -459,6 +459,34 @@ describe("machine sync routes", () => {
       expect((yield* request(MachineSyncPaths.settingsApply, { method: "POST", body: "nope" })).status).toBe(400)
     }),
   )
+
+  it.live("hub apply accepts newer bundle and rejects stale expected", () =>
+    Effect.gen(function* () {
+      yield* seed("ses_hubpush1")
+      const exported = yield* exportBundle("ses_hubpush1")
+      const ok = yield* request(
+        MachineSyncPaths.apply,
+        post({
+          bundle: { ...exported, session: { ...exported.session, title: "from hub", time_updated: 50 } },
+          expected: seeded,
+        }),
+      )
+      expect(ok.status).toBe(200)
+      const stale = yield* request(
+        MachineSyncPaths.apply,
+        post({
+          bundle: { ...exported, session: { ...exported.session, title: "stale", time_updated: 60 } },
+          expected: { timeUpdated: 1, timeArchived: null },
+        }),
+      )
+      expect(stale.status).toBe(409)
+      // Idle hub: the manifest marks the session not busy.
+      const manifest = (yield* (yield* request(MachineSyncPaths.manifest)).json) as {
+        sessions: Array<{ id: string; busy: boolean }>
+      }
+      expect(manifest.sessions).toContainEqual(expect.objectContaining({ id: "ses_hubpush1", busy: false }))
+    }),
+  )
 })
 
 describe("machine sync routes behind the server password", () => {
