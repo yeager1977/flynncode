@@ -37,7 +37,7 @@ const VERSION = await (async () => {
     const pkg = await Bun.file(path.resolve(import.meta.dir, "../../flynncode/package.json")).json()
     return `${pkg.version}-${CHANNEL}-${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "")}`
   }
-  const version = await fetch("https://registry.npmjs.org/opencode-ai/latest")
+  const version = await fetch("https://registry.npmjs.org/flynncode-ai/latest")
     .then((res) => {
       if (!res.ok) throw new Error(res.statusText)
       return res.json()
@@ -77,4 +77,4 @@ export const Script = {
     return team
   },
 }
-console.log(`opencode script`, JSON.stringify(Script, null, 2))
+console.log(`flynncode script`, JSON.stringify(Script, null, 2))
