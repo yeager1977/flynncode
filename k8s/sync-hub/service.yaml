@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/part-of: flynncode-sync
 spec:
   # LAN-reachable by design: spokes on the LAN reach the hub at
-  # <node-ip>:34097. Sync traffic is Bearer + HMAC signed, so no
+  # <node-ip>:32097. Sync traffic is Bearer + HMAC signed, so no
   # additional auth layer. No LoadBalancer, no Ingress.
   type: NodePort
   selector:
@@ -17,5 +17,5 @@ spec:
     - name: sync
       port: 4097
       targetPort: 4097
-      nodePort: 34097
+      nodePort: 32097
       protocol: TCP
