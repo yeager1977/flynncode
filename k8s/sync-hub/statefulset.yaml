@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: sync-hub
+  namespace: flynncode-sync
+  labels:
+    app.kubernetes.io/name: sync-hub
+    app.kubernetes.io/part-of: flynncode-sync
+spec:
+  serviceName: sync-hub
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sync-hub
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sync-hub
+        app.kubernetes.io/part-of: flynncode-sync
+    spec:
+      containers:
+        - name: hub
+          # Pin to a digest in production; :latest is a placeholder.
+          image: ghcr.io/flynncode/flynncode:latest
+          command: ["opencode", "serve", "--hostname", "0.0.0.0", "--port", "4097"]
+          env:
+            # Marks this server as the sync hub: serves /flynncode-sync/*,
+            # never pulls.
+            - name: SYNC_HUB_MODE
+              value: "1"
+            # App data (SQLite, repos, logs) lives on the PVC via XDG.
+            - name: XDG_DATA_HOME
+              value: /data
+            - name: OPENCODE_SERVER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: sync-hub-secrets
+                  key: server-password
+          ports:
+            - name: sync
+              containerPort: 4097
+              protocol: TCP
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          # NOTE: probes are tcpSocket, not httpGet, on purpose.
+          # /flynncode-sync/* only answers HMAC-signed requests (the pairing
+          # token itself never travels), so a kubelet httpGet with a static
+          # Bearer header always gets an unsigned 401 and the pod would never
+          # become ready. The socket proves the server is up and listening;
+          # sync health is observed via the spoke worker status, not probes.
+          startupProbe:
+            tcpSocket:
+              port: 4097
+            periodSeconds: 10
+            failureThreshold: 30
+          livenessProbe:
+            tcpSocket:
+              port: 4097
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: 4097
+            periodSeconds: 10
+            failureThreshold: 3
+        - name: tailscale
+          # containerboot reads TS_* env and runs tailscaled + up automatically.
+          image: tailscale/tailscale:stable
+          env:
+            - name: TS_AUTHKEY
+              valueFrom:
+                secretKeyRef:
+                  name: sync-hub-secrets
+                  key: tailscale-authkey
+            - name: TS_HOSTNAME
+              value: flynncode-sync-hub
+            - name: TS_EXTRA_ARGS
+              value: --accept-dns=false
+          securityContext:
+            capabilities:
+              add: ["NET_ADMIN", "NET_RAW"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: sync-hub-data

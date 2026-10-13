@@ -1,0 +1,68 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sync-hub-backup
+  namespace: flynncode-sync
+  labels:
+    app.kubernetes.io/name: sync-hub
+    app.kubernetes.io/part-of: flynncode-sync
+spec:
+  # Nightly snapshot of the hub database.
+  schedule: "0 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 900
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: sync-hub-backup
+            app.kubernetes.io/part-of: flynncode-sync
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: alpine:3.21
+              env:
+                - name: S3_ENDPOINT
+                  valueFrom:
+                    secretKeyRef:
+                      name: sync-hub-secrets
+                      key: s3-endpoint
+                - name: S3_BUCKET
+                  valueFrom:
+                    secretKeyRef:
+                      name: sync-hub-secrets
+                      key: s3-bucket
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: sync-hub-secrets
+                      key: s3-access-key
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: sync-hub-secrets
+                      key: s3-secret-key
+                - name: AWS_EC2_METADATA_DISABLED
+                  value: "true"
+              volumeMounts:
+                # Read-only: sqlite3 .backup is an online backup, safe against
+                # the live hub. Never write to the PVC from this job.
+                - name: data
+                  mountPath: /data
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+              command: ["sh", "-e", "-c", "apk add --no-cache sqlite aws-cli >/dev/null && STAMP=$(date -u +%Y%m%dT%H%M%SZ) && SNAP=/tmp/sync-hub-${STAMP}.db && sqlite3 /data/opencode/opencode.db \".backup '${SNAP}'\" && aws --endpoint-url ${S3_ENDPOINT} s3 cp \"${SNAP}\" \"s3://${S3_BUCKET}/sync-hub/${STAMP}.db\" && echo \"uploaded s3://${S3_BUCKET}/sync-hub/${STAMP}.db\" && CUTOFF=$(date -u -d '-7 days' +%Y%m%dT%H%M%SZ) && aws --endpoint-url ${S3_ENDPOINT} s3 ls \"s3://${S3_BUCKET}/sync-hub/\" | awk '{print $4}' | while read -r OBJ; do if [ \"${OBJ}\" \\< \"${CUTOFF}.db\" ]; then aws --endpoint-url ${S3_ENDPOINT} s3 rm \"s3://${S3_BUCKET}/sync-hub/${OBJ}\"; fi; done"]
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: sync-hub-data

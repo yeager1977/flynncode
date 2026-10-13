@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: sync-hub
+  namespace: flynncode-sync
+  labels:
+    app.kubernetes.io/name: sync-hub
+    app.kubernetes.io/part-of: flynncode-sync
+spec:
+  # Private by design: only the tailnet reaches the hub (Tailscale sidecar
+  # in the StatefulSet). No LoadBalancer, no Ingress.
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: sync-hub
+  ports:
+    - name: sync
+      port: 4097
+      targetPort: 4097
+      protocol: TCP
