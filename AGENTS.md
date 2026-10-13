@@ -13,6 +13,11 @@ plugins must be verified against it before adoption.
 - The default branch in this repo is `dev`.
 - Local `main` ref may not exist; use `dev` or `origin/dev` for diffs.
 
+## Upstream relationship
+
+- All builds and packaging are fork-only. Never vendor upstream binaries or releases into any artifact (no `@opencode-ai/cli` downloads, no upstream release URLs in build or publish scripts).
+- The only supported way to take upstream work is `git fetch upstream` plus targeted merges from `anomalyco/opencode`.
+
 ## Branch Names
 
 Use a short branch name of at most three words, separated by hyphens. Do not use slashes or type prefixes such as `feat/` or `fix/`.
