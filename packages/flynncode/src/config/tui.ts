@@ -16,7 +16,7 @@ import { FSUtil } from "@flynncode/core/fs-util"
 import { CurrentWorkingDirectory } from "./tui-cwd"
 import { ConfigPlugin } from "@/config/plugin"
 import { TuiKeybind } from "@flynncode/tui/config/keybind"
-import { InstallationLocal, InstallationVersion } from "@flynncode/core/installation/version"
+import { ConfigDependencies } from "./dependencies"
 import { makeRuntime } from "@flynncode/core/effect/runtime"
 import { Filesystem } from "@/util/filesystem"
 import { ConfigVariable } from "@/config/variable"
@@ -229,25 +229,11 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const directory = yield* CurrentWorkingDirectory
-    const npm = yield* Npm.Service
+    const installDependencies = yield* ConfigDependencies.make
     const data = yield* loadState({ directory })
-    const deps = yield* Effect.forEach(
-      data.dirs,
-      (dir) =>
-        npm
-          .install(dir, {
-            add: [
-              {
-                name: "@flynncode/plugin",
-                version: InstallationLocal ? undefined : InstallationVersion,
-              },
-            ],
-          })
-          .pipe(Effect.forkScoped),
-      {
-        concurrency: "unbounded",
-      },
-    )
+    const deps = yield* Effect.forEach(data.dirs, (dir) => installDependencies(dir).pipe(Effect.forkScoped), {
+      concurrency: "unbounded",
+    })
 
     const get = Effect.fn("TuiConfig.get")(() => Effect.succeed(data.config))
     const pluginOrigins = Effect.fn("TuiConfig.pluginOrigins")(() => Effect.succeed(data.pluginOrigins))

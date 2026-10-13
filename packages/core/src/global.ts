@@ -6,11 +6,12 @@ import { Context, Effect, Layer } from "effect"
 import { Flock } from "./util/flock"
 import { Flag } from "./flag/flag"
 import { makeGlobalNode } from "./effect/app-node"
+import { importConfig } from "./config-import"
 
 const app = "opencode"
 const data = path.join(xdgData!, app)
 const cache = path.join(xdgCache!, app)
-const config = path.join(xdgConfig!, app)
+const config = path.join(xdgConfig!, "flynncode")
 const state = path.join(xdgState!, app)
 const tmp = path.join(os.tmpdir(), app)
 
@@ -31,6 +32,25 @@ const paths = {
 export const Path = paths
 
 Flock.setGlobal({ state })
+
+// Explicit config inputs and test homes without an isolated XDG root must not
+// trigger a one-time import from the machine's default configuration.
+if (
+  !Flag.OPENCODE_CONFIG_DIR &&
+  !Flag.OPENCODE_CONFIG &&
+  !Flag.OPENCODE_CONFIG_CONTENT &&
+  !Flag.OPENCODE_TUI_CONFIG &&
+  (!process.env.OPENCODE_TEST_HOME || process.env.XDG_CONFIG_HOME)
+) {
+  const imported = await importConfig(path.join(xdgConfig!, app), config)
+  Path.config = imported ?? (await fs.mkdtemp(path.join(os.tmpdir(), "flynncode-config-unavailable-")))
+  if (imported !== config)
+    console.warn(
+      imported
+        ? "Flynncode config import failed; using a private config snapshot. Will retry on next startup."
+        : "Flynncode config import failed; legacy config is unavailable. Will retry on next startup.",
+    )
+}
 
 await Promise.all([
   fs.mkdir(Path.data, { recursive: true }),

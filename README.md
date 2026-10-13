@@ -116,6 +116,25 @@ Learn more about [agents](https://opencode.ai/docs/agents).
 
 For more info on how to configure OpenCode, [**head over to our docs**](https://opencode.ai/docs).
 
+### Flynncode configuration compatibility
+
+On first startup, Flynncode copies the OpenCode global config directory from
+`$XDG_CONFIG_HOME/opencode` to `$XDG_CONFIG_HOME/flynncode` (normally
+`~/.config/opencode` to `~/.config/flynncode`). The original is preserved, existing
+destination files are never overwritten, and a successful import runs only once.
+Config filenames such as `opencode.json`, `opencode.jsonc`, `config.json`, and
+`tui.json` remain compatible; supporting files and installed plugin dependencies
+are copied too. Explicit `OPENCODE_CONFIG_DIR`, `OPENCODE_CONFIG`,
+`OPENCODE_CONFIG_CONTENT`, or `OPENCODE_TUI_CONFIG` inputs suppress automatic import.
+Failed publication uses a private, independent config snapshot and retries on the
+next startup. If a complete snapshot cannot be made, Flynncode warns and uses an
+empty private config directory; the original is never given to writable loaders.
+Fallback snapshots are retained for the running process, and edits to them are
+temporary. Their scratch directories can be removed after Flynncode has stopped.
+
+This is a staged, **config-only** migration. Authentication, sessions, databases,
+data, cache, and state continue using the existing OpenCode storage locations.
+
 ### Contributing
 
 If you're interested in contributing to OpenCode, please read our [contributing docs](./CONTRIBUTING.md) before submitting a pull request.
