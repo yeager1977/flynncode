@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { decide, isManifest, type Manifest, type ManifestSession } from "../src/sync-decide.ts"
+import { decide, decidePush, isManifest, type Manifest, type ManifestSession } from "../src/sync-decide.ts"
 
 const manifest = (sessions: ManifestSession[], tombstones: Manifest["tombstones"] = []): Manifest => ({
   schema: "20261008_session_tombstone",
@@ -155,6 +155,16 @@ describe("decide", () => {
       peer: manifest([session("ses_parent", 5), session("ses_child", 6, { parentID: "ses_parent" })]),
     })
     expect(actions).toEqual([{ type: "pull", id: "ses_child" }])
+  })
+})
+
+const base = (sessions: Manifest["sessions"], tombstones: Manifest["tombstones"] = []): Manifest => ({ schema: "s1", app: "a1", sessions, tombstones })
+
+describe("decidePush", () => {
+  test("pushes local-newer chat, ignores hub-newer and equal", () => {
+    const local = base([{ id: "c1", parentID: null, timeUpdated: 200, timeArchived: null, busy: false }])
+    const hub = base([{ id: "c1", parentID: null, timeUpdated: 100, timeArchived: null, busy: false }])
+    expect(decidePush({ local, hub })).toEqual([{ type: "push", id: "c1" }])
   })
 })
 

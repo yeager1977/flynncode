@@ -117,3 +117,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value)
 }
+
+export type PushAction =
+  | { type: "push"; id: string }
+  | { type: "delete"; id: string; timeDeleted: number }
+  | { type: "archive"; id: string; timeArchived: number }
+  | { type: "skip"; id: string; reason: "local-busy" | "peer-busy" }
+
+export function decidePush(input: { local: Manifest; hub: Manifest }): PushAction[] {
+  const hub = new Map(input.hub.sessions.map((session) => [session.id, session]))
+  const hubDeleted = new Map(input.hub.tombstones.map((tombstone) => [tombstone.id, tombstone.timeDeleted]))
+  const out: PushAction[] = []
+  for (const current of input.local.sessions) {
+    const remote = hub.get(current.id)
+    if (remote && remote.busy) { out.push({ type: "skip", id: current.id, reason: "peer-busy" }); continue }
+    if (current.busy) { out.push({ type: "skip", id: current.id, reason: "local-busy" }); continue }
+    if (!remote) {
+      if (current.timeArchived !== null) continue
+      out.push({ type: "push", id: current.id })
+      continue
+    }
+    if (current.timeUpdated > remote.timeUpdated) out.push({ type: "push", id: current.id })
+  }
+  for (const tombstone of input.local.tombstones) {
+    const remote = hub.get(tombstone.id)
+    if (remote && tombstone.timeDeleted > remote.timeUpdated) out.push({ type: "delete", id: tombstone.id, timeDeleted: tombstone.timeDeleted })
+    void hubDeleted
+  }
+  return out
+}
