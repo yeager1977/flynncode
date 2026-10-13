@@ -173,8 +173,16 @@ export const TaskTool = Tool.define(
       // child (unique per spawn, so siblings never collide). Resumed sessions
       // keep their existing directory.
       const isolated = isolation === "worktree" && !session
+      // Plan Mode and other agent-level restrictions live on the agent
+      // ruleset, not the session: resolve the parent agent so its deny rules
+      // travel into the subagent session (unknown agents degrade to no
+      // inherited agent denies instead of failing the spawn).
+      const parentAgent = parent.agent
+        ? yield* agent.get(parent.agent).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
+        : undefined
       const childPermission = deriveSubagentSessionPermission({
         parentSessionPermission: parent.permission ?? [],
+        parentAgent,
         subagent: next,
       })
       const childToolDenies = [

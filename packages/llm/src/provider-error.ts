@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Option, Schema, SchemaGetter } from "effect"
 import { LLMError, ProviderErrorEvent } from "./schema"
 
 const patterns = [
@@ -50,6 +50,41 @@ export const classifyInvalidRequest = (message: string) => {
 export const isContextOverflow = (message: string) =>
   !exclusions.some((pattern) => pattern.test(message)) &&
   (patterns.some((pattern) => pattern.test(message)) || /^4(00|13)\s*(status code)?\s*\(no body\)/i.test(message))
+
+const Message = Schema.String.check(Schema.isPattern(/\S/))
+
+const messageAt = <Fields extends Schema.Struct.Fields>(
+  fields: Fields,
+  message: (body: Schema.Struct<Fields>["Type"]) => string,
+) =>
+  Schema.Struct(fields).pipe(
+    Schema.decodeTo(Schema.String, {
+      decode: SchemaGetter.transform(message),
+      encode: SchemaGetter.forbidden(() => "Provider error messages are decode-only"),
+    }),
+  )
+
+// Common error body layouts that carry a human-readable message, in priority order.
+// Provider-specific layouts belong in their protocol.
+const decodeMessage = Schema.decodeUnknownOption(
+  Schema.fromJsonString(
+    Schema.Union([
+      messageAt({ error: Schema.Struct({ message: Message }) }, (body) => body.error.message),
+      messageAt({ error: Message }, (body) => body.error),
+      messageAt({ message: Message }, (body) => body.message),
+      // AWS services
+      messageAt({ Message: Message }, (body) => body.Message),
+      // RFC 9457 problem details
+      messageAt({ detail: Message }, (body) => body.detail),
+      messageAt(
+        { errors: Schema.NonEmptyArray(Schema.Struct({ message: Message })) },
+        (body) => body.errors[0].message,
+      ),
+    ]),
+  ),
+)
+
+export const providerErrorMessage = (body: string) => Option.getOrUndefined(decodeMessage(body))
 
 // Failures recoverable by compacting the session: either a genuine context
 // overflow, or accumulated-transcript schema failures (oversized tool-call

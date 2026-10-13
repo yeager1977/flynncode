@@ -22,7 +22,7 @@ import {
   TransportReason,
   UnknownProviderReason,
 } from "../schema"
-import { classifyInvalidRequest } from "../provider-error"
+import { classifyInvalidRequest, providerErrorMessage } from "../provider-error"
 
 export interface Interface {
   readonly execute: (
@@ -202,6 +202,9 @@ const responseBody = (body: string | void, request: HttpClientRequest.HttpClient
 }
 
 const providerMessage = (status: number, body: { readonly body?: string }) => {
+  // Without a recognized message, show the raw body so the provider's explanation is never dropped.
+  const message = providerErrorMessage(body.body?.trim() ?? "")
+  if (message) return message
   if (body.body && body.body.length <= 500) return `Provider request failed with HTTP ${status}: ${body.body}`
   return `Provider request failed with HTTP ${status}`
 }

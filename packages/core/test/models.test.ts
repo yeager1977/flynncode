@@ -113,11 +113,11 @@ const provided = <A, E>(state: Ref.Ref<MockState>, eff: Effect.Effect<A, E, Mode
   eff.pipe(Effect.provide(buildLayer(state)))
 
 beforeEach(async () => {
-  await rm(cacheFile, { force: true })
+  await rm(cacheFile, { force: true, recursive: true })
 })
 
 afterAll(async () => {
-  await rm(cacheFile, { force: true })
+  await rm(cacheFile, { force: true, recursive: true })
 })
 
 const initialState: MockState = {
@@ -171,6 +171,29 @@ describe("ModelsDev Service", () => {
       )
       expect(result).toEqual(fixture2)
       expect(yield* Effect.promise(() => readFile(cacheFile, "utf8"))).toBe(JSON.stringify(fixture2))
+      const final = yield* Ref.get(state)
+      expect(final.calls.length).toBe(1)
+    }),
+  )
+
+  it.live("get() still populates the catalog when the cache file cannot be written", () =>
+    Effect.gen(function* () {
+      // A directory at the cache path makes the atomic rename fail while the
+      // fetch itself succeeds: a cache-write defect must not kill catalog load.
+      yield* Effect.promise(() => mkdir(cacheFile, { recursive: true }))
+      const state = yield* Ref.make({ ...initialState, body: JSON.stringify(fixture2) })
+      const context = yield* Layer.build(buildLayer(state))
+      const result = yield* Effect.acquireUseRelease(
+        Effect.sync(() => {
+          Flag.OPENCODE_DISABLE_MODELS_FETCH = false
+        }),
+        () => ModelsDev.Service.use((s) => s.get()).pipe(Effect.provide(context)),
+        () =>
+          Effect.sync(() => {
+            Flag.OPENCODE_DISABLE_MODELS_FETCH = true
+          }),
+      )
+      expect(result).toEqual(fixture2)
       const final = yield* Ref.get(state)
       expect(final.calls.length).toBe(1)
     }),

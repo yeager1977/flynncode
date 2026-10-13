@@ -1485,7 +1485,7 @@ describe("OpenAI Responses route", () => {
 
       expect(error).toBeInstanceOf(LLMError)
       expect(error.reason).toMatchObject({ _tag: "InvalidRequest" })
-      expect(error.message).toContain("HTTP 400")
+      expect(error.message).toBe("RequestExecutor.execute: Bad request")
     }),
   )
 })

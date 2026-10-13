@@ -265,6 +265,16 @@ describe("RequestExecutor", () => {
     ),
   )
 
+  it.effect("shows messages from common provider error layouts", () =>
+    Effect.gen(function* () {
+      const executor = yield* RequestExecutor.Service
+      const error = yield* executor.execute(request).pipe(Effect.flip)
+
+      expectLLMError(error)
+      expect(error.message).toBe("RequestExecutor.execute: Invalid API Key")
+    }).pipe(Effect.provide(responsesLayer([new Response('{"detail":"Invalid API Key"}', { status: 401 })]))),
+  )
+
   it.effect("marks 504 and 529 status responses retryable", () =>
     Effect.gen(function* () {
       const failWith = (status: number) =>

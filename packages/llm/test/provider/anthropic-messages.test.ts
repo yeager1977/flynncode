@@ -395,6 +395,7 @@ describe("Anthropic Messages route", () => {
       expect(response.events.find((event) => event.type === "reasoning-end")).toMatchObject({
         providerMetadata: { anthropic: { signature: "sig_1" } },
       })
+      expect(response.events.filter((event) => event.type === "reasoning-end")).toHaveLength(1)
       expect(response.message.content).toEqual([
         { type: "text", text: "Hello!" },
         { type: "reasoning", text: "thinking", providerMetadata: { anthropic: { signature: "sig_1" } } },
@@ -404,6 +405,44 @@ describe("Anthropic Messages route", () => {
         reason: "stop",
         providerMetadata: { anthropic: { stopSequence: "\n\nHuman:" } },
       })
+    }),
+  )
+
+  it.effect("preserves a reasoning signature when the thinking block closes without content_block_stop", () =>
+    Effect.gen(function* () {
+      const body = sseEvents(
+        { type: "message_start", message: { usage: { input_tokens: 5 } } },
+        {
+          type: "content_block_start",
+          index: 0,
+          content_block: { type: "thinking", thinking: "", signature: "" },
+        },
+        { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "Reasoning." } },
+        { type: "content_block_delta", index: 0, delta: { type: "signature_delta", signature: "sig_1" } },
+        { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 2 } },
+        { type: "message_stop" },
+      )
+      const response = yield* LLMClient.generate(request).pipe(Effect.provide(fixedResponse(body)))
+
+      const reasoningEnds = response.events.filter((event) => event.type === "reasoning-end")
+      expect(reasoningEnds).toHaveLength(1)
+      expect(reasoningEnds[0]).toMatchObject({
+        providerMetadata: { anthropic: { signature: "sig_1" } },
+      })
+      expect(response.message.content).toEqual([
+        {
+          type: "reasoning",
+          text: "Reasoning.",
+          providerMetadata: { anthropic: { signature: "sig_1" } },
+        },
+      ])
+
+      const prepared = yield* LLMClient.prepare<AnthropicMessages.AnthropicMessagesBody>(
+        LLM.request({ model, messages: [response.message], cache: "none" }),
+      )
+      expect(prepared.body.messages).toEqual([
+        { role: "assistant", content: [{ type: "thinking", thinking: "Reasoning.", signature: "sig_1" }] },
+      ])
     }),
   )
 
@@ -538,7 +577,7 @@ describe("Anthropic Messages route", () => {
 
       expect(error).toBeInstanceOf(LLMError)
       expect(error.reason).toMatchObject({ _tag: "InvalidRequest" })
-      expect(error.message).toContain("HTTP 400")
+      expect(error.message).toBe("RequestExecutor.execute: Bad request")
     }),
   )
 

@@ -45,7 +45,7 @@ describe("sandboxRules", () => {
   })
 
   test("restricted denies paths outside the worktree while allowing inside", () => {
-    const child = deriveSubagentSessionPermission({ parentSessionPermission: [], subagent })
+    const child = deriveSubagentSessionPermission({ parentSessionPermission: [], parentAgent: undefined, subagent })
     const effective = Permission.merge(child, sandboxRules({ sandbox: "restricted", directory: "/w/a" }))
     expect(Permission.evaluate("external_directory", "/w/a/file.ts", effective).action).toBe("allow")
     expect(Permission.evaluate("external_directory", "/w/other/file.ts", effective).action).toBe("deny")
