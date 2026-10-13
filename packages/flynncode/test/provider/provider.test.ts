@@ -5,6 +5,7 @@ import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { AppNodeBuilder } from "@flynncode/core/effect/app-node-builder"
 import { Effect, Layer } from "effect"
 import { ModelsDev } from "@flynncode/core/models-dev"
+import { EventV2 } from "@flynncode/core/event"
 import { FSUtil } from "@flynncode/core/fs-util"
 import { CrossSpawnSpawner } from "@flynncode/core/cross-spawn-spawner"
 import { Global } from "@flynncode/core/global"
@@ -18,12 +19,14 @@ import { Env } from "../../src/env"
 import { Plugin } from "../../src/plugin/index"
 import { Provider } from "@/provider/provider"
 import { asModelFamily } from "@/plugin/ollama-model-router/provider-family"
+import { collectCandidates } from "@/plugin/ollama-model-router/candidates"
+import { parseOptions } from "@/plugin/ollama-model-router/scorecard"
 
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Filesystem } from "@/util/filesystem"
 import { InstanceBootstrap } from "@/project/bootstrap"
 import { InstanceStore } from "@/project/instance-store"
-import { testEffect } from "../lib/effect"
+import { pollWithTimeout, testEffect } from "../lib/effect"
 import { ProviderV2 } from "@flynncode/core/provider"
 import { ModelV2 } from "@flynncode/core/model"
 
@@ -88,6 +91,9 @@ const paid = (providers: Record<string, { models: Record<string, { cost: { input
 const languageBaseURL = (language: unknown) => (language as { config: { baseURL: string } }).config.baseURL
 
 const it = testEffect(LayerNode.compile(LayerNode.group([Provider.node, Env.node, Plugin.node])))
+const refreshedModels = testEffect(
+  LayerNode.compile(LayerNode.group([Provider.node, Env.node, Plugin.node, EventV2.node])),
+)
 const experimentalModels = testEffect(providerLayer({ enableExperimentalModels: true }))
 
 const alphaProviderConfig = {
@@ -2310,12 +2316,36 @@ const discoveryModelsServer = {
   server: null as ReturnType<typeof Bun.serve> | null,
   url: "",
   authorization: undefined as string | undefined,
+  metaRequests: 0,
   start() {
     if (this.server) return
     this.server = Bun.serve({
       port: 0,
       async fetch(req) {
         const url = new URL(req.url)
+        if (url.pathname.startsWith("/meta") && url.pathname.endsWith("/models")) {
+          discoveryModelsServer.metaRequests++
+          discoveryModelsServer.authorization = req.headers.get("authorization") ?? undefined
+          if (url.pathname.startsWith("/meta-error/")) return new Response("denied", { status: 403 })
+          if (url.pathname.startsWith("/meta-malformed/")) return Response.json({ data: {} })
+          if (url.pathname.startsWith("/meta-empty/")) return Response.json({ data: [] })
+          return Response.json({
+            object: "list",
+            data: [
+              { id: "muse-wonder-1.0", object: "model", owned_by: "meta", created: 0 },
+              { id: "muse-wonder-full-1.0", object: "model", owned_by: "meta", created: 0 },
+              { id: "muse-wonder-full-1.0-contributor", object: "model", owned_by: "meta", created: 0 },
+              { id: "muse-spark-1.4", object: "model", context_length: 256000, max_output_tokens: 8192 },
+              { id: "muse-image-1.0", object: "model" },
+              { id: "muse-voice-transcribe-1.0", object: "model" },
+              { id: "sam-3.1", object: "model" },
+            ],
+          })
+        }
+        if (url.pathname === "/meta/v1/responses") {
+          discoveryModelsServer.authorization = req.headers.get("authorization") ?? undefined
+          return new Response("data: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } })
+        }
         if (url.pathname === "/v1/models") {
           discoveryModelsServer.authorization = req.headers.get("authorization") ?? undefined
           return Response.json({
@@ -2341,6 +2371,223 @@ const discoveryAuthorization = (): string | undefined => discoveryModelsServer.a
 
 beforeAll(() => discoveryModelsServer.start())
 afterAll(() => discoveryModelsServer.server?.stop(true))
+
+const metaDiscoveryModels = {
+  "muse-wonder-1.0": {
+    name: "Muse Wonder",
+    reasoning: true,
+    attachment: true,
+    tool_call: true,
+    variants: { xhigh: { disabled: true } },
+    limit: { context: 1048576, output: 131072 },
+    modalities: { input: ["text", "image"], output: ["text"] },
+  },
+  "custom-wonder": { id: "muse-wonder-1.0", name: "My Wonder" },
+} satisfies NonNullable<ConfigV1.Info["provider"]>[string]["models"]
+
+it.instance(
+  "Meta discovery adds Full and future Muse chat models to the router catalog",
+  Effect.gen(function* () {
+    const provider = (yield* list)[ProviderV2.ID.make("meta")]
+    const full = provider.models["muse-wonder-full-1.0"]
+    expect(full).toBeDefined()
+    expect(full.name).toBe("Muse Wonder Full")
+    expect(full.api.id).toBe("muse-wonder-full-1.0")
+    expect(full.api.npm).toBe("@ai-sdk/openai")
+    expect(full.api.url).toBe(discoveryModelsServer.url.replace("/v1", "/meta/v1"))
+    expect(full.capabilities.reasoning).toBe(true)
+    expect(full.capabilities.input.image).toBe(true)
+    expect(full.limit).toEqual({ context: 1048576, output: 131072 })
+    expect(full.variants?.high.reasoningEffort).toBe("high")
+    expect(full.variants?.xhigh).toBeUndefined()
+    expect(provider.models["muse-wonder-full-1.0-contributor"].name).toBe("Muse Wonder Full Contributor")
+    expect(provider.models["muse-spark-1.4"].limit.context).toBe(256000)
+    expect(provider.models["muse-spark-1.4"].limit.output).toBe(8192)
+    expect(provider.models["muse-image-1.0"]).toBeUndefined()
+    expect(provider.models["muse-voice-transcribe-1.0"]).toBeUndefined()
+    expect(provider.models["sam-3.1"]).toBeUndefined()
+    expect(provider.models["custom-wonder"].name).toBe("My Wonder")
+    expect(provider.models["muse-wonder-1.0"].limit.context).toBe(1048576)
+    const options = parseOptions({ providers: ["meta"] })
+    if (!options.ok) throw new Error(options.errors.join(", "))
+    expect(collectCandidates({}, options.options, { meta: provider }).map((item) => item.key)).toContain(
+      "meta/muse-wonder-full-1.0",
+    )
+  }),
+  {
+    config: () => ({
+      provider: {
+        meta: {
+          options: { apiKey: "meta-config-key", baseURL: discoveryModelsServer.url.replace("/v1", "/meta/v1") },
+          models: metaDiscoveryModels,
+        },
+      },
+    }),
+  },
+)
+
+it.instance(
+  "Meta discovery uses the same saved key and Responses endpoint as inference",
+  Effect.gen(function* () {
+    yield* setProcessEnv("OPENCODE_AUTH_CONTENT", JSON.stringify({ meta: { type: "api", key: "meta-saved-key" } }))
+    yield* set("META_DISCOVERY_URL", discoveryModelsServer.url.replace("/v1", "/meta/v1"))
+    const provider = (yield* list)[ProviderV2.ID.make("meta")]
+    expect(discoveryAuthorization()).toBe("Bearer meta-saved-key")
+    expect(provider.models["muse-wonder-full-1.0"]).toBeDefined()
+    const service = yield* Provider.Service
+    const model = yield* service.getModel(ProviderV2.ID.make("meta"), ModelV2.ID.make("muse-wonder-full-1.0"))
+    const language = yield* service.getLanguage(model)
+    discoveryModelsServer.authorization = undefined
+    const response = yield* Effect.promise(() =>
+      language.doStream({ prompt: [{ role: "user", content: [{ type: "text", text: "hello" }] }] }),
+    )
+    yield* Effect.promise(() => response.stream.cancel())
+    expect(discoveryAuthorization()).toBe("Bearer meta-saved-key")
+  }),
+  {
+    config: {
+      provider: {
+        meta: { options: { apiKey: "stale-config-key", baseURL: "${META_DISCOVERY_URL}" }, models: metaDiscoveryModels },
+      },
+    },
+  },
+)
+
+it.instance(
+  "Meta discovery uses environment credentials and preserves explicit Full metadata",
+  Effect.gen(function* () {
+    yield* setProcessEnv("META_MODEL_API_KEY", "meta-environment-key")
+    const provider = (yield* list)[ProviderV2.ID.make("meta")]
+    expect(discoveryAuthorization()).toBe("Bearer meta-environment-key")
+    const full = provider.models["muse-wonder-full-1.0"]
+    expect(full.name).toBe("My Full Model")
+    expect(full.limit.context).toBe(64000)
+    expect(full.variants?.high.reasoningEffort).toBe("medium")
+    expect(provider.models["muse-spark-1.4"]).toBeDefined()
+  }),
+  {
+    config: () => ({
+      provider: {
+        meta: {
+          options: { baseURL: discoveryModelsServer.url.replace("/v1", "/meta/v1") },
+          models: {
+            ...metaDiscoveryModels,
+            "muse-wonder-full-1.0": {
+              name: "My Full Model",
+              reasoning: true,
+              limit: { context: 64000, output: 4096 },
+              variants: { high: { reasoningEffort: "medium" } },
+            },
+          },
+        },
+      },
+    }),
+  },
+)
+
+for (const mode of ["error", "malformed", "empty"]) {
+  it.instance(
+    `Meta discovery ${mode} keeps catalog and configured models`,
+    Effect.gen(function* () {
+      const before = discoveryModelsServer.metaRequests
+      const provider = (yield* list)[ProviderV2.ID.make("meta")]
+      expect(discoveryModelsServer.metaRequests).toBe(before + 1)
+      expect(provider.models["muse-wonder-1.0"]).toBeDefined()
+      expect(provider.models["custom-wonder"].name).toBe("My Wonder")
+      expect(provider.models["muse-spark-1.1"]).toBeDefined()
+    }),
+    {
+      config: () => ({
+        provider: {
+          meta: {
+            options: { apiKey: "meta-key", baseURL: discoveryModelsServer.url.replace("/v1", `/meta-${mode}/v1`) },
+            models: metaDiscoveryModels,
+          },
+        },
+      }),
+    },
+  )
+}
+
+it.instance(
+  "Meta discovery respects model filters",
+  Effect.gen(function* () {
+    const provider = (yield* list)[ProviderV2.ID.make("meta")]
+    expect(provider).toBeDefined()
+    expect(Object.keys(provider.models)).toEqual(["muse-wonder-full-1.0"])
+  }),
+  {
+    config: () => ({
+      provider: {
+        meta: {
+          options: { apiKey: "meta-key", baseURL: discoveryModelsServer.url.replace("/v1", "/meta/v1") },
+          models: metaDiscoveryModels,
+          whitelist: ["muse-wonder-full-1.0", "muse-spark-1.4"],
+          blacklist: ["muse-spark-1.4"],
+        },
+      },
+    }),
+  },
+)
+
+refreshedModels.instance(
+  "Meta discovery repeats after catalog refresh instead of caching the initial list forever",
+  Effect.gen(function* () {
+    const provider = (yield* list)[ProviderV2.ID.make("meta")]
+    expect(provider.models["muse-wonder-full-1.0"]).toBeDefined()
+    const before = discoveryModelsServer.metaRequests
+    yield* list
+    expect(discoveryModelsServer.metaRequests).toBe(before)
+    const events = yield* EventV2.Service
+    yield* events.publish(ModelsDev.Event.Refreshed, {})
+    yield* pollWithTimeout(
+      list.pipe(Effect.map(() => (discoveryModelsServer.metaRequests > before ? true : undefined))),
+      "Meta model discovery did not rerun after catalog refresh",
+    )
+    expect(discoveryModelsServer.metaRequests).toBe(before + 1)
+  }),
+  {
+    config: () => ({
+      provider: {
+        meta: {
+          options: { apiKey: "meta-key", baseURL: discoveryModelsServer.url.replace("/v1", "/meta/v1") },
+          models: metaDiscoveryModels,
+        },
+      },
+    }),
+  },
+)
+
+it.instance(
+  "Meta discovery skips a provider without credentials",
+  Effect.gen(function* () {
+    const before = discoveryModelsServer.metaRequests
+    yield* list
+    expect(discoveryModelsServer.metaRequests).toBe(before)
+  }),
+  {
+    config: () => ({
+      provider: { meta: { options: { baseURL: discoveryModelsServer.url.replace("/v1", "/meta/v1") } } },
+    }),
+  },
+)
+
+it.instance(
+  "Meta discovery skips disabled providers",
+  Effect.gen(function* () {
+    const before = discoveryModelsServer.metaRequests
+    expect((yield* list)[ProviderV2.ID.make("meta")]).toBeUndefined()
+    expect(discoveryModelsServer.metaRequests).toBe(before)
+  }),
+  {
+    config: () => ({
+      disabled_providers: ["meta"],
+      provider: {
+        meta: { options: { apiKey: "meta-key", baseURL: discoveryModelsServer.url.replace("/v1", "/meta/v1") } },
+      },
+    }),
+  },
+)
 
 it.instance(
   "openai-compatible provider discovers models from baseURL",

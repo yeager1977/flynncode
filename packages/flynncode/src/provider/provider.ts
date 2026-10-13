@@ -29,6 +29,7 @@ import { isRecord } from "@/util/record"
 import { optional } from "@flynncode/core/schema"
 import { ProviderTransform } from "./transform"
 import { ProviderDiscover } from "./discover"
+import { ProviderMeta } from "./meta"
 import { ProviderV2 } from "@flynncode/core/provider"
 import { ModelV2 } from "@flynncode/core/model"
 import { ModelStatus } from "./model-status"
@@ -1789,6 +1790,26 @@ const layer = Layer.effect(
           if (provider.name) partial.name = provider.name
           if (provider.options) partial.options = provider.options
           mergeProvider(providerID, partial)
+        }
+
+        const metaID = ProviderV2.ID.make("meta")
+        const meta = providers[metaID]
+        if (meta && isProviderAllowed(metaID)) {
+          const rawURL =
+            (typeof meta.options.baseURL === "string" && meta.options.baseURL) ||
+            cfg.provider?.[metaID]?.api ||
+            modelsDev[metaID]?.api ||
+            Object.values(meta.models).find((model) => model.api.url)?.api.url
+          const key = effectiveApiKey({ source: meta.source, key: meta.key, configured: meta.options.apiKey })
+          if (rawURL && key) {
+            const baseURL = rawURL.replace(/\$\{([^}]+)\}/g, (item, name) => envs[String(name)] ?? item)
+            if (/^https?:\/\//.test(baseURL)) {
+              const discovered = yield* Effect.tryPromise(() => ProviderDiscover.discover(baseURL, key)).pipe(
+                Effect.catch(() => Effect.succeed([])),
+              )
+              meta.models = ProviderMeta.models(meta.models, discovered, baseURL)
+            }
+          }
         }
 
         const gitlab = ProviderV2.ID.make("gitlab")

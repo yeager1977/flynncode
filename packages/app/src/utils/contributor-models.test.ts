@@ -7,11 +7,20 @@ describe("isContributorModel", () => {
     expect(isContributorModel("meta", "muse-spark-1.2-contributor")).toBe(true)
   })
 
+  test("recognizes discovered Wonder and future Muse contributor models", () => {
+    expect(isContributorModel("meta", "muse-wonder-1.0-contributor")).toBe(true)
+    expect(isContributorModel("meta", "muse-wonder-full-1.0-contributor")).toBe(true)
+    expect(isContributorModel("meta", "muse-spark-1.4-contributor")).toBe(true)
+  })
+
   test("rejects lookalikes", () => {
     expect(isContributorModel("meta", "muse-spark-1.3")).toBe(false)
     expect(isContributorModel("meta", "muse-spark-1.3-contributor-free")).toBe(false)
     expect(isContributorModel("opencode", "muse-spark-1.3-contributor-free")).toBe(false)
     expect(isContributorModel("anthropic", "claude-sonnet-5")).toBe(false)
+    expect(isContributorModel("meta", "muse-wonder-full-1.0")).toBe(false)
+    expect(isContributorModel("meta", "muse-wonder-full-1.0-contributor-free")).toBe(false)
+    expect(isContributorModel("opencode", "muse-wonder-full-1.0-contributor")).toBe(false)
   })
 
   test("memory ack round-trips", () => {

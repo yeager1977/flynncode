@@ -13,6 +13,7 @@ type RawModel = {
   owned_by?: unknown
   context_length?: unknown
   max_model_len?: unknown
+  max_output_tokens?: unknown
 }
 
 function asString(value: unknown): string | undefined {
@@ -51,6 +52,7 @@ export function parseModels(data: unknown): Discovered[] {
       name: asString((record as Record<string, unknown>).name),
       created: asNumber(record.created),
       context: asNumber(record.context_length) ?? asNumber(record.max_model_len),
+      output: asNumber(record.max_output_tokens),
     })
   }
   return out
