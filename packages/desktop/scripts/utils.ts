@@ -1,9 +1,8 @@
 import { $ } from "bun"
-import { chmod, copyFile, mkdtemp, rm } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
-
-const CLI_VERSION = "0.0.0-next-16350"
+import { existsSync } from "node:fs"
+import { chmod, copyFile } from "node:fs/promises"
+import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 
 export type Channel = "dev" | "beta" | "prod"
 
@@ -13,83 +12,41 @@ export function resolveChannel(): Channel {
   return "dev"
 }
 
-// This pinned CLI is downloaded from upstream; its external packages retain the @opencode-ai scope.
-export const CLI_BINARIES: Array<{ rustTarget: string; package: string; os: string; cpu: string }> = [
-  {
-    rustTarget: "aarch64-apple-darwin",
-    package: "@opencode-ai/cli-darwin-arm64",
-    os: "darwin",
-    cpu: "arm64",
-  },
-  {
-    rustTarget: "x86_64-apple-darwin",
-    package: "@opencode-ai/cli-darwin-x64-baseline",
-    os: "darwin",
-    cpu: "x64",
-  },
-  {
-    rustTarget: "aarch64-pc-windows-msvc",
-    package: "@opencode-ai/cli-windows-arm64",
-    os: "win32",
-    cpu: "arm64",
-  },
-  {
-    rustTarget: "x86_64-pc-windows-msvc",
-    package: "@opencode-ai/cli-windows-x64-baseline",
-    os: "win32",
-    cpu: "x64",
-  },
-  {
-    rustTarget: "x86_64-unknown-linux-gnu",
-    package: "@opencode-ai/cli-linux-x64-baseline",
-    os: "linux",
-    cpu: "x64",
-  },
-  {
-    rustTarget: "aarch64-unknown-linux-gnu",
-    package: "@opencode-ai/cli-linux-arm64",
-    os: "linux",
-    cpu: "arm64",
-  },
-]
-
 export const RUST_TARGET = Bun.env.RUST_TARGET
 
-function nativeTarget() {
-  const { platform, arch } = process
-  if (platform === "darwin") return arch === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin"
-  if (platform === "win32") return arch === "arm64" ? "aarch64-pc-windows-msvc" : "x86_64-pc-windows-msvc"
-  if (platform === "linux") return arch === "arm64" ? "aarch64-unknown-linux-gnu" : "x86_64-unknown-linux-gnu"
-  throw new Error(`Unsupported platform: ${platform}/${arch}`)
+const desktopDir = dirname(dirname(fileURLToPath(import.meta.url)))
+const repoRoot = dirname(desktopDir)
+
+function hostArtifactName() {
+  const os = process.platform === "win32" ? "windows" : process.platform
+  return `flynncode-${os}-${process.arch}`
 }
 
-export function getCurrentCli(target = RUST_TARGET ?? nativeTarget()) {
-  const binaryConfig = CLI_BINARIES.find((item) => item.rustTarget === target)
-  if (!binaryConfig) throw new Error(`CLI configuration not available for target '${target}'`)
-
-  return binaryConfig
+function forkCliSource() {
+  const binary = process.platform === "win32" ? "flynncode.exe" : "flynncode"
+  return join(repoRoot, "packages", "flynncode", "dist", hostArtifactName(), "bin", binary)
 }
 
-export async function downloadCliToResources() {
-  const cli = getCurrentCli()
-  const directory = await mkdtemp(join(tmpdir(), "opencode-cli-"))
-  const dest = windowsify("resources/opencode-cli")
-  try {
-    await $`bun install --no-save --cwd ${directory} ${`${cli.package}@${CLI_VERSION}`} ${`--os=${cli.os}`} ${`--cpu=${cli.cpu}`}`
-    await copyFile(
-      join(directory, "node_modules", cli.package, "bin", cli.os === "win32" ? "opencode2.exe" : "opencode2"),
-      dest,
-    )
-  } finally {
-    await rm(directory, { recursive: true, force: true })
+export async function stageForkCliToResources(options: { buildIfMissing?: boolean } = {}) {
+  let source = forkCliSource()
+  if (!existsSync(source) && options.buildIfMissing) {
+    await $`bun script/build.ts --single`.cwd(join(repoRoot, "packages", "flynncode"))
+    source = forkCliSource()
   }
+  if (!existsSync(source)) {
+    throw new Error(
+      `Fork CLI missing at ${source}. Build it with \`bun script/build.ts --single\` in packages/flynncode. Upstream CLI downloads are not supported.`,
+    )
+  }
+  const dest = windowsify(join(desktopDir, "resources", "flynncode-cli"))
+  await copyFile(source, dest)
   if (process.platform !== "win32") await chmod(dest, 0o755)
   if (process.platform === "win32" && process.env.GITHUB_ACTIONS === "true") {
     await $`pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File ../../script/sign-windows.ps1 ${dest}`
   }
   if (process.platform === "darwin") await $`codesign --force --sign - ${dest}`
 
-  console.log(`Copied ${cli.package} to ${dest}`)
+  console.log(`Staged fork CLI to ${dest}`)
 }
 
 export function windowsify(path: string) {
