@@ -36,3 +36,4 @@ tsconfig.tsbuildinfo
 # superpowers scratch
 .superpowers/
 /.playwright-mcp
+k8s/sync-hub/secret.yaml

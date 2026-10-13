@@ -34,7 +34,8 @@ curl -s -o /dev/null -w '%{http_code}\n' http://<hub-tailnet-ip>:4097/flynncode-
 # expect: 401
 ```
 
-Probes are intentionally `tcpSocket`, not `httpGet`: sync routes only answer
+Probes are intentionally `tcpSocket`, not `httpGet` (waiver granted by
+controller — keep tcpSocket): sync routes only answer
 HMAC-signed requests (the pairing token never travels), so a kubelet httpGet
 with a static Bearer header would 401 forever and the pod would never become
 ready. The socket proves the server listens; sync health is observed via spoke
@@ -73,6 +74,7 @@ kubectl -n flynncode-sync cp /tmp/restore.db restore:/tmp/restore.db
 kubectl -n flynncode-sync exec restore -- \
   sh -c 'apk add --no-cache sqlite >/dev/null && sqlite3 /data/opencode/opencode.db ".restore '"'"'/tmp/restore.db'"'"'"'
 kubectl -n flynncode-sync delete pod restore
+```
 
 ```bash
 # 3. Start the hub again and confirm spokes reconverge.
