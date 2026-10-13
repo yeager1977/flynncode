@@ -95,7 +95,7 @@ function serve(state: Fake, auth: { basic: string } | { token: string }) {
         method: request.method,
         target: url.pathname + url.search,
         headers: request.headers,
-        body: new Uint8Array(await request.arrayBuffer()),
+        body: new Uint8Array(await request.clone().arrayBuffer()),
         now: Date.now(),
       })
       // Like the gateway: a request not signed with the token gets an unsigned 401.

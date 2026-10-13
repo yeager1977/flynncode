@@ -103,14 +103,20 @@ export async function signedRequest(input: {
   peer: { url: string; token: string }
   path: string
   method?: string
+  body?: string | Uint8Array
   timeoutMs: number
   fetchImpl?: typeof fetch
 }): Promise<SignedReply | undefined> {
   const method = input.method ?? "GET"
-  const signed = signRequest({ token: input.peer.token, method, target: input.path })
+  const signed = signRequest({ token: input.peer.token, method, target: input.path, body: input.body })
+  const headers =
+    input.body === undefined
+      ? signed.headers
+      : { ...signed.headers, "content-type": "application/json" }
   const response = await (input.fetchImpl ?? fetch)(`${input.peer.url}${input.path}`, {
     method,
-    headers: signed.headers,
+    headers,
+    body: input.body as BodyInit | undefined,
     redirect: "error",
     signal: AbortSignal.timeout(input.timeoutMs),
   }).catch(() => undefined)

@@ -1,4 +1,4 @@
-import { decide, isManifest, type Manifest, type ManifestSession, type SyncAction } from "./sync-decide.ts"
+import { decide, decidePush, isManifest, type Manifest, type ManifestSession, type SyncAction } from "./sync-decide.ts"
 import type { SyncPeer, SyncPrefs } from "./sync-gate.ts"
 import { signedRequest } from "./sync-sign.ts"
 
@@ -150,6 +150,21 @@ export function createSyncWorker(options: {
     return reply.status === 401 ? undefined : ("unverified" as const)
   }
 
+  const signedPost = async (peer: SyncPeer, path: string, body: unknown) => {
+    const reply = await signedRequest({
+      peer,
+      path,
+      method: "POST",
+      body: JSON.stringify(body),
+      timeoutMs: REQUEST_TIMEOUT_MS,
+      fetchImpl,
+    })
+    if (!reply) return undefined
+    if (reply.verified) return new Response(reply.body, { status: reply.status })
+    console.warn(`[machine-sync] ignored an unsigned or altered reply (HTTP ${reply.status}) for ${path}`)
+    return reply.status === 401 ? undefined : ("unverified" as const)
+  }
+
   async function runCycle(): Promise<SyncStatus> {
     const previous = state.status
     const peer = options.peer()
@@ -227,12 +242,57 @@ export function createSyncWorker(options: {
     }
 
     const received = pulled.filter((result) => result.outcome === "applied").length
-    const failures = [...results, ...pulled]
+    const pushActions = decidePush({ local: localManifest.value, hub: peerManifest.value })
+    const hubSeen = new Map(peerManifest.value.sessions.map((item) => [item.id, item]))
+    const hubExpected = (id: string) => version(hubSeen.get(id))
+    const pushed: Array<{ id: string; outcome: string }> = []
+    const pushSkips: SyncStatus["skipped"] = []
+    let pushAbort: { abort: "unreachable" | "unauthorized" | "paused" | "clock" } | undefined = undefined
+    for (const action of pushActions.slice(0, BATCH_SIZE)) {
+      if (pushAbort) break
+      if (action.type === "skip") {
+        pushSkips.push({ id: action.id, reason: action.reason })
+        continue
+      }
+      if (action.type === "push") {
+        const localBundle = await read(local(`/flynncode-sync/session/${encodeURIComponent(action.id)}`), isRecord)
+        if (localBundle.kind !== "ok") continue
+        const result = await pushOne(peer, "/flynncode-sync/apply", {
+          bundle: localBundle.value,
+          expected: hubExpected(action.id),
+        })
+        if ("abort" in result) pushAbort = result
+        else pushed.push({ id: action.id, outcome: result.outcome })
+        continue
+      }
+      const result =
+        action.type === "delete"
+          ? await pushOne(peer, `/flynncode-sync/delete/${encodeURIComponent(action.id)}`, {
+              timeDeleted: action.timeDeleted,
+              expected: hubExpected(action.id),
+            })
+          : await pushOne(peer, `/flynncode-sync/archive/${encodeURIComponent(action.id)}`, {
+              timeArchived: action.timeArchived,
+              expected: hubExpected(action.id),
+            })
+      if ("abort" in result) pushAbort = result
+      else pushed.push({ id: action.id, outcome: result.outcome })
+    }
+    if (pushAbort) {
+      if (pushAbort.abort === "unauthorized")
+        return { ...previous, phase: "unauthorized", online: true, backlog: null, received, consecutiveFailures: 0 }
+      if (pushAbort.abort === "clock") return clockSkew(previous, received)
+      if (pushAbort.abort === "paused") return peerPaused(previous, received)
+      return unreachable(previous, received)
+    }
+
+    const failures = [...results, ...pulled, ...pushed]
       .filter((result) => result.outcome !== "applied" && !SKIPS.has(result.outcome))
       .map((result) => ({ id: result.id, error: result.outcome }))
     const skipped: SyncStatus["skipped"] = [
       ...actions.flatMap((action) => (action.type === "skip" ? [{ id: action.id, reason: action.reason }] : [])),
-      ...[...results, ...pulled].flatMap((result) => {
+      ...pushSkips,
+      ...[...results, ...pulled, ...pushed].flatMap((result) => {
         const reason = SKIPS.get(result.outcome)
         return reason ? [{ id: result.id, reason }] : []
       }),
@@ -297,6 +357,32 @@ export function createSyncWorker(options: {
     if (bundle.kind === "unverified") return { outcome: `fetch failed (${UNVERIFIED})` }
     if (bundle.kind !== "ok") return { outcome: `fetch failed (${bundle.kind})` }
     return { outcome: await write("/flynncode-sync/apply", { bundle: bundle.value, expected }) }
+  }
+
+  async function pushOne(
+    peer: SyncPeer,
+    path: string,
+    body: unknown,
+  ): Promise<{ outcome: string } | { abort: "unreachable" | "unauthorized" | "paused" | "clock" }> {
+    const response = await signedPost(peer, path, body)
+    if (!response) return { abort: "unreachable" }
+    if (response === "unverified") return { outcome: `push failed (${UNVERIFIED})` }
+    if (response.status === 401) {
+      const reply: unknown = await response.json().catch(() => undefined)
+      if (isRecord(reply) && reply.error === "clock") return { abort: "clock" }
+      return isRecord(reply) && reply.error === "revoked" ? { abort: "unauthorized" } : { abort: "unreachable" }
+    }
+    if (response.status === 503) {
+      const reply: unknown = await response.json().catch(() => undefined)
+      return isRecord(reply) && reply.error === "paused" ? { abort: "paused" } : { abort: "unreachable" }
+    }
+    if ([502, 504].includes(response.status)) return { abort: "unreachable" }
+    if (response.status === 409) {
+      const reply: unknown = await response.json().catch(() => undefined)
+      return isRecord(reply) && reply.error === "stale" ? { outcome: "stale" } : { outcome: "peer-busy" }
+    }
+    if (!response.ok) return { outcome: `push failed (HTTP ${response.status})` }
+    return { outcome: "applied" }
   }
 
   async function syncSettings(peer: SyncPeer): Promise<string | null> {
