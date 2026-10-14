@@ -7,6 +7,7 @@ import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { showToast } from "@/utils/toast"
+import { endedOnUsageLimit } from "@/utils/usage-limit"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import {
   expandSubagent,
@@ -14,6 +15,7 @@ import {
   mergeSubagents,
   subagentListState,
   subagentPreview,
+  subagentState,
   tasksFromParts,
   type SubagentChild,
 } from "./subagent-list"
@@ -35,6 +37,7 @@ export function SubagentList(props: { sessionID: () => string }) {
         directory: session.directory,
         status: sync().data.session_status[session.id]?.type,
         text: latestText(sync().data.message[session.id] ?? [], sync().data.part),
+        limited: endedOnUsageLimit(sync().data.message[session.id]),
       }))
     const parts = (sync().data.message[id] ?? []).flatMap((message) => sync().data.part[message.id] ?? [])
     const live = (childID: string) => {
@@ -105,10 +108,12 @@ function Row(props: {
   const [steering, setSteering] = createSignal(false)
   const [rename, setRename] = createSignal<string | undefined>()
   const [archiving, setArchiving] = createSignal(false)
-  const status = () =>
-    props.child.status === "busy" || props.child.status === "retry"
-      ? language.t("session.subagents.running")
-      : language.t("session.subagents.idle")
+  const status = () => {
+    const state = subagentState(props.child)
+    if (state === "running") return language.t("session.subagents.running")
+    if (state === "usage-limit") return language.t("session.usageLimit.label")
+    return language.t("session.subagents.idle")
+  }
   const text = createMemo(() => {
     if (!expanded()) return []
     return (sync().data.message[props.child.id] ?? []).flatMap((message) =>

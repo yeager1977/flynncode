@@ -5,6 +5,7 @@ import { groupParts, renderable, type PartGroup } from "@flynncode/session-ui/me
 import { TimelineRow, type SummaryDiff } from "./timeline-row"
 import { uniqueSummaryDiffs } from "./summary-diffs"
 import { compareMessages } from "@/utils/session-message"
+import { usageLimit } from "@flynncode/core/session/usage-limit"
 
 export { TimelineRow, type SummaryDiff } from "./timeline-row"
 
@@ -89,7 +90,7 @@ export type TimelineRowMap = {
   Thinking: { userMessageID: string; reasoningHeading?: string }
   Retry: { userMessageID: string }
   DiffSummary: { userMessageID: string; diffs: SummaryDiff[] }
-  Error: { userMessageID: string; text: string }
+  Error: { userMessageID: string; text: string; usageLimit?: TimelineRow.UsageLimit }
   TaskSuggestion: { userMessageID: string; title: string; prompt: string; note?: string }
 }
 
@@ -187,7 +188,8 @@ export namespace Timeline {
     const compaction = userParts.some((p) => p.type === "compaction")
     const interruptedMessageIndex = assistantMessages.findIndex((m) => m.error?.name === "MessageAbortedError")
     const interrupted = interruptedMessageIndex !== -1
-    const latestError = assistantMessages.at(-1)?.error
+    const latestAssistant = assistantMessages.at(-1)
+    const latestError = latestAssistant?.error
     const error = latestError?.name === "MessageAbortedError" ? undefined : latestError
 
     const assistantPartRefs = assistantMessages.flatMap((message, messageIndex) =>
@@ -318,7 +320,23 @@ export namespace Timeline {
       )
     }
 
-    if (error) {
+    // Anchor relative retry-after headers to when the turn failed, not to render time.
+    const limit = latestAssistant && usageLimit(error, latestAssistant.time.completed ?? latestAssistant.time.created)
+    if (latestAssistant && limit) {
+      rows.push(
+        new TimelineRow.Error({
+          userMessageID: userMessage.id,
+          text: unwrapErrorMessage(limit.message),
+          usageLimit: {
+            providerID: latestAssistant.providerID,
+            modelID: latestAssistant.modelID,
+            ...(limit.resetAt === undefined ? {} : { resetAt: limit.resetAt }),
+          },
+        }),
+      )
+    }
+
+    if (error && !limit) {
       const data = error.data?.message
       rows.push(
         new TimelineRow.Error({

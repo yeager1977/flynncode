@@ -82,6 +82,7 @@ const rank: Record<ActivityStatus, number> = {
   running: 2,
   done: 3,
   failed: 3,
+  "usage-limit": 3,
 }
 
 function compareInbox(a: InboxRow, b: InboxRow) {
@@ -91,13 +92,14 @@ function compareInbox(a: InboxRow, b: InboxRow) {
   return 0
 }
 
+// A usage limit is a stopped-with-error state, so it lists under Failed.
 export function filterInbox(rows: readonly InboxRow[], filter: InboxFilter): InboxRow[] {
   const kept =
     filter === "all"
       ? [...rows]
       : filter === "unread"
         ? rows.filter((row) => row.unread)
-        : rows.filter((row) => row.status === filter)
+        : rows.filter((row) => row.status === filter || (filter === "failed" && row.status === "usage-limit"))
   return kept.sort(compareInbox)
 }
 

@@ -50,3 +50,18 @@ describe("inboxRowStatus", () => {
     expect(inboxRowStatus("routine", "failed")).toBe("failed")
   })
 })
+
+describe("inboxRowStatus usage limits", () => {
+  test("reads an idle limited session as usage-limit", () => {
+    expect(inboxRowStatus("dispatch", "running", { type: "idle" }, false, true)).toBe("usage-limit")
+    expect(inboxRowStatus("session", "done", { type: "idle" }, false, true)).toBe("usage-limit")
+  })
+
+  test("a session waiting on the user still needs input", () => {
+    expect(inboxRowStatus("dispatch", "running", { type: "idle" }, true, true)).toBe("needs-input")
+  })
+
+  test("a limited session that is working again reads as running", () => {
+    expect(inboxRowStatus("session", "done", { type: "busy" }, false, true)).toBe("running")
+  })
+})

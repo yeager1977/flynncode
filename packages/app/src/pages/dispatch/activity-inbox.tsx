@@ -17,6 +17,7 @@ import { useServerSync } from "@/context/server-sync"
 import { useProviders } from "@/hooks/use-providers"
 import { resolveDefaultModel } from "@/hooks/provider-catalog"
 import { pathKey } from "@/utils/path-key"
+import { endedOnUsageLimit } from "@/utils/usage-limit"
 import { inboxRowStatus, type ActivityStatus, type InboxKind } from "./activity-status"
 import {
   dispatchRows,
@@ -154,11 +155,13 @@ export function ActivityInboxPanel() {
     (serverSync().session.data.question[sessionID]?.length ?? 0) > 0 ||
     (serverSync().session.data.permission[sessionID]?.length ?? 0) > 0
 
+  const limitedFor = (sessionID: string) => endedOnUsageLimit(serverSync().session.data.message[sessionID])
+
   const liveDispatchStatus = (sessionID: string, stored: ActivityStatus): ActivityStatus => {
     const live = serverSync().session.data.session_status[sessionID]
     if (!live) return stored
     const waiting = waitingFor(sessionID)
-    return inboxRowStatus("dispatch", stored, { type: live.type, blocked: waiting }, waiting)
+    return inboxRowStatus("dispatch", stored, { type: live.type, blocked: waiting }, waiting, limitedFor(sessionID))
   }
 
   // Plain sessions have no stored dispatch status; without live work they
@@ -167,7 +170,7 @@ export function ActivityInboxPanel() {
     const live = serverSync().session.data.session_status[sessionID]
     const waiting = waitingFor(sessionID)
     if (!live) return waiting ? "needs-input" : "done"
-    return inboxRowStatus("session", "done", { type: live.type, blocked: waiting }, waiting)
+    return inboxRowStatus("session", "done", { type: live.type, blocked: waiting }, waiting, limitedFor(sessionID))
   }
 
   const scheduleOf = (routine: StoredRoutine) =>
@@ -421,5 +424,7 @@ function statusKey(status: ActivityStatus) {
       return "dispatch.needsInput" as const
     case "blocked":
       return "dispatch.blocked" as const
+    case "usage-limit":
+      return "session.usageLimit.label" as const
   }
 }

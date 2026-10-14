@@ -801,6 +801,10 @@ export const dict = {
   "session.subagents.steer.sending": "Steering...",
   "session.subagents.steer.failed": "Could not steer this subagent.",
   "session.subagents.stop.failed": "Could not stop this subagent.",
+  "session.usageLimit.label": "Usage limit",
+  "session.usageLimit.title": "Usage limit reached on {{model}}",
+  "session.usageLimit.resets": "Resets around {{time}}",
+  "session.usageLimit.switchModel": "Switch model",
   "session.tab.unknown": "Unknown Session",
   "session.panel.reviewAndFiles": "Review and files",
   "session.error.notFound": "This session cannot be found",
@@ -1692,6 +1696,15 @@ export const dict = {
   "settings.memory.hint":
     "Global memories are stored in Global.data/memories and are never synced. Project memories live in .opencode/memories/ and can be committed with your repository.",
   "settings.memory.toast.updateFailed.title": "Failed to update memory settings",
+
+  "settings.rateLimit.section.title": "Rate limits",
+  "settings.rateLimit.onLimit.title": "When a model hits a usage limit",
+  "settings.rateLimit.onLimit.description": "Stop the session and report the limit, or wait and retry until it resets",
+  "settings.rateLimit.onLimit.stop": "Stop and report",
+  "settings.rateLimit.onLimit.retry": "Keep retrying",
+  "settings.rateLimit.retryUnder.title": "Still retry limits shorter than",
+  "settings.rateLimit.retryUnder.description": "Seconds. Limits that reset within this time are still retried",
+  "settings.rateLimit.toast.updateFailed.title": "Failed to update rate limit settings",
 
   "settings.permissions.action.allow": "Allow",
   "settings.permissions.action.ask": "Ask",

@@ -9,6 +9,8 @@ export type SubagentChild = {
   directory?: string
   status: SubagentStatus | undefined
   text: string
+  // The child's newest assistant turn ended on a provider usage limit.
+  limited?: boolean
 }
 
 export type SubagentGroups = {
@@ -21,6 +23,14 @@ export function groupSubagents(children: readonly SubagentChild[]): SubagentGrou
   const active = children.filter((child) => child.status === "busy" || child.status === "retry").toSorted(byUpdated)
   const finished = children.filter((child) => child.status !== "busy" && child.status !== "retry").toSorted(byUpdated)
   return { active, finished }
+}
+
+// A usage-limited child has stopped (idle), so it only reads as limited while
+// it is not working again, e.g. after a resume with another model.
+export function subagentState(child: Pick<SubagentChild, "status" | "limited">) {
+  if (child.status === "busy" || child.status === "retry") return "running" as const
+  if (child.limited) return "usage-limit" as const
+  return "idle" as const
 }
 
 export function subagentListState(children: readonly SubagentChild[]) {

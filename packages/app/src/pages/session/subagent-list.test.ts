@@ -6,6 +6,7 @@ import {
   mergeSubagents,
   subagentListState,
   subagentPreview,
+  subagentState,
   tasksFromParts,
 } from "./subagent-list"
 
@@ -202,5 +203,30 @@ describe("expandSubagent", () => {
       expandedID: undefined,
       finishedOpen: true,
     })
+  })
+})
+
+describe("subagentState", () => {
+  test("reads a working child as running even after a usage limit", () => {
+    expect(subagentState({ status: "busy", limited: true })).toBe("running")
+    expect(subagentState({ status: "retry" })).toBe("running")
+  })
+
+  test("reads a stopped usage-limited child as usage-limit", () => {
+    expect(subagentState({ status: "idle", limited: true })).toBe("usage-limit")
+    expect(subagentState({ status: undefined, limited: true })).toBe("usage-limit")
+  })
+
+  test("reads other stopped children as idle", () => {
+    expect(subagentState({ status: "idle" })).toBe("idle")
+    expect(subagentState({ status: undefined, limited: false })).toBe("idle")
+  })
+
+  test("keeps the limited flag when a task row merges into its session row", () => {
+    const merged = mergeSubagents(
+      [{ id: "c1", title: "Child", updated: 1, status: "idle", text: "", limited: true }],
+      [{ id: "c1", title: "Task", updated: 1, status: "busy", text: "out" }],
+    )
+    expect(merged[0]?.limited).toBe(true)
   })
 })
