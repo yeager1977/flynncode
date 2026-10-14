@@ -184,3 +184,8 @@ export function sidebarCommands(input: SidebarCommandInput): CommandOption[] {
     },
   ]
 }
+
+// Mod+1-9 order: what the sidebar shows, top to bottom.
+export function visibleSessionOrder<T>(groups: readonly { expanded: boolean; sessions: readonly T[] }[]): T[] {
+  return groups.flatMap((group) => (group.expanded ? [...group.sessions] : []))
+}
