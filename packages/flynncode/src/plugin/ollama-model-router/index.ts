@@ -56,6 +56,12 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
     if (catalog && !catalogDirty && !catalogStale(catalogLoadedAt, Date.now())) return
     // One fetch serves concurrent resolutions (prompt-time routing and tools).
     if (refetching) return refetching
+    // Consumed now, before the fetch starts — not on success. An invalidation
+    // event landing while this fetch is in flight re-dirties the flag
+    // independently of this read, so the snapshot this fetch returns (which
+    // may already be stale by the time it lands) gets refetched on the next
+    // call instead of being trusted.
+    catalogDirty = false
     refetching = (async () => {
       try {
         const result = await input.client.provider.list()
@@ -67,12 +73,16 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
             .map((provider: any) => [provider.id, { name: provider.name, models: provider.models ?? {} }]),
         ) as CatalogLike
         catalogLoadedAt = Date.now()
-        catalogDirty = false
       } catch (error) {
         // A failed refetch keeps the last working snapshot (stale beats
-        // nothing) and stays due for retry; a failed first load falls back to
-        // config providers until one succeeds.
-        console.warn(`${PREFIX} connected catalog unavailable; using config providers`, error)
+        // nothing) but must stay due for retry — restore the dirty flag this
+        // attempt consumed. A failed first load falls back to config
+        // providers until one succeeds.
+        catalogDirty = true
+        console.warn(
+          `${PREFIX} connected catalog unavailable; ${catalog ? "keeping last catalog" : "falling back to config providers"}`,
+          error,
+        )
       } finally {
         refetching = undefined
       }

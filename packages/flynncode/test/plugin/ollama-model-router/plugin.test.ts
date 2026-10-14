@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, setSystemTime, test } from "bun:test"
 import plugin from "../../../src/plugin/ollama-model-router"
+import { CATALOG_TTL_MS } from "../../../src/plugin/ollama-model-router/candidates"
 
 const fakeInput = {
   client: {} as any,
@@ -617,6 +618,62 @@ describe("plugin", () => {
         providerID: "anthropic",
         modelID: "claude-fable-5-1",
       })
+    })
+
+    test("an invalidation during an in-flight fetch is not clobbered by that fetch's success", async () => {
+      // Fetch #1 (index 0) establishes the baseline catalog. Fetch #2
+      // (index 1) is gated on `release` so the test can fire a second
+      // invalidation while it is still in flight. Fetch #3 (index 2) proves
+      // the mid-flight dirty survived fetch #2's success.
+      const lists = [connectedList(["ollama-cloud"]), connectedList(["ollama-cloud", "anthropic"])]
+      let calls = 0
+      let release: (() => void) | undefined
+      const hooks = await setup({
+        provider: {
+          list: async () => {
+            const index = calls++
+            if (index === 1) await new Promise<void>((resolve) => (release = resolve))
+            return { data: lists[index] ?? lists[lists.length - 1] }
+          },
+        },
+      })
+      expect(await routeSentinel(hooks, { provider: {} } as any)).toEqual({ providerID: "ollama-cloud", modelID: "a" })
+      await hooks.event?.({ event: { id: "e1", type: "integration.connection.updated", properties: {} } } as any)
+      // Fetch #2 starts (consuming the dirty flag set by e1) and gates.
+      const inFlight = routeSentinel(hooks, { provider: {} } as any)
+      // A second invalidation lands while fetch #2 is still in flight.
+      await hooks.event?.({ event: { id: "e2", type: "integration.connection.updated", properties: {} } } as any)
+      release?.()
+      expect(await inFlight).toEqual({ providerID: "anthropic", modelID: "claude-fable-5-1" })
+      // The mid-flight dirty must survive fetch #2's success: the next
+      // resolution refetches (fetch #3) instead of trusting a snapshot that
+      // was already stale the moment the second invalidation fired.
+      expect(await routeSentinel(hooks, { provider: {} } as any)).toEqual({
+        providerID: "anthropic",
+        modelID: "claude-fable-5-1",
+      })
+      expect(calls).toBe(3)
+    })
+
+    test("revalidates after the TTL window even without an invalidation event", async () => {
+      let calls = 0
+      const hooks = await setup({
+        provider: {
+          list: async () => {
+            calls++
+            return { data: connectedList(["ollama-cloud"]) }
+          },
+        },
+      })
+      try {
+        await routeSentinel(hooks, { provider: {} } as any)
+        expect(calls).toBe(1)
+        setSystemTime(new Date(Date.now() + CATALOG_TTL_MS + 1000))
+        await routeSentinel(hooks, { provider: {} } as any)
+        expect(calls).toBe(2)
+      } finally {
+        setSystemTime()
+      }
     })
 
     test("concurrent resolutions share one refetch", async () => {

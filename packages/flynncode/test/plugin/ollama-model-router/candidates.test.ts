@@ -252,7 +252,7 @@ describe("catalog staleness", () => {
     expect(catalogStale(0, CATALOG_TTL_MS + 1)).toBe(true)
   })
 
-  test("never fresh at epoch origin without a load", () => {
+  test("a load at the same instant is fresh", () => {
     expect(catalogStale(0, 0)).toBe(false)
   })
 })
