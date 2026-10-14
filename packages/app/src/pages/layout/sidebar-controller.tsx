@@ -360,6 +360,9 @@ export function createSidebarController(host: SidebarHost) {
   })
 
   createEffect(() => {
+    // The tabbed layout's sidebar lists worktrees regardless of the classic
+    // per-project workspaces toggle, so their expansion must not be reset.
+    if (host.tabs) return
     if (!pageReady()) return
     if (!layoutReady()) return
     const projects = layout.projects.list()
