@@ -35,8 +35,11 @@ export function visibilityExcludeKeys(
 
 // Set-level comparison: user rows and the config list can differ in order;
 // non-string config entries count as different (a corrupt list must be
-// rewritten, not adopted).
+// rewritten, not adopted). An absent list (no `model_router.excludeModels`,
+// e.g. the router has never been configured) counts as an empty one, so a
+// store with nothing hidden is unchanged against it.
 export function visibilityUnchanged(current: unknown, hidden: string[]): boolean {
+  if (current === undefined) return hidden.length === 0
   if (!Array.isArray(current) || current.length !== hidden.length) return false
   const left = current.filter((key): key is string => typeof key === "string")
   // A non-string entry means the stored list is not the mirror this helper
@@ -44,6 +47,21 @@ export function visibilityUnchanged(current: unknown, hidden: string[]): boolean
   if (left.length !== hidden.length) return false
   const right = [...hidden].sort()
   return left.sort().every((key, index) => key === right[index])
+}
+
+// The write decision itself, pulled out so the no-create rule can be unit
+// tested without the debounce/server-sync plumbing around it. Returns
+// undefined when nothing should be written: no `model_router` block to mirror
+// into (never create the subtree for a user who has never configured the
+// router — absent is a valid, inert state, not a gap to fill), or the
+// existing excludeModels already matches.
+export function visibilityWrite(
+  router: { excludeModels?: unknown } | undefined,
+  hidden: string[],
+): Record<string, unknown> | undefined {
+  if (router === undefined) return undefined
+  if (visibilityUnchanged(router.excludeModels, hidden)) return undefined
+  return { model_router: { ...router, excludeModels: hidden } }
 }
 
 export const { use: useModels, provider: ModelsProvider } = createSimpleContext({
@@ -64,9 +82,13 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
     // Manage Models hides sync to the server as `model_router.excludeModels`
     // (the merge swaps `model_router` whole, so the patch carries the current
     // router object with excludeModels replaced). Debounced trailing: a
-    // quick pass toggling several models writes once. A no-op (the config
-    // already matches) never writes, so selecting an already-visible model
-    // does not rebuild instances.
+    // quick pass toggling several models writes once. Absent `model_router`
+    // is never created here (see visibilityWrite) — the mirror only matters
+    // once the router is configured, and the plugin stays inert without a
+    // `model_router` key; creating the subtree for users who never touched it
+    // would turn the router on for them. A no-op (the config already
+    // matches, treating absent as an empty list) never writes either, so
+    // selecting an already-visible model does not rebuild instances.
     const serverSync = useServerSync()
     const language = useLanguage()
     let visibilitySync: ReturnType<typeof setTimeout> | undefined
@@ -80,9 +102,8 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
         const config = serverSync().data.config as
           | { model_router?: { excludeModels?: unknown } }
           | undefined
-        const router = config?.model_router
-        if (visibilityUnchanged(router?.excludeModels, hidden)) return
-        const patch: Record<string, unknown> = { model_router: { ...(router ?? {}), excludeModels: hidden } }
+        const patch = visibilityWrite(config?.model_router, hidden)
+        if (!patch) return
         void serverSync()
           .updateConfig(patch)
           .catch(() => showToast({ variant: "error", title: language.t("settings.models.visibilitySyncFailed.title") }))

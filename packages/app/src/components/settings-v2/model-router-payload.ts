@@ -218,7 +218,11 @@ function agentTasksFrom(raw: unknown): AgentTaskRow[] {
     .map(([agent, task]) => ({ agent, task }))
 }
 
-function modelKeysFrom(raw: unknown): string[] {
+// Exported so the router editor can filter the server's live excludeModels
+// (model-router.tsx's serverExcludeModels) through the same rule: a
+// hand-edited malformed entry gets dropped instead of failing validateForm
+// on every subsequent Save.
+export function modelKeysFrom(raw: unknown): string[] {
   if (!Array.isArray(raw)) return []
   return raw.filter((key): key is string => typeof key === "string" && parseModelKey(key) !== undefined)
 }

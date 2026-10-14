@@ -9,6 +9,7 @@ import {
   formFromConfig,
   isRouterModel,
   modelAfterDisable,
+  modelKeysFrom,
   serializeForm,
   validateForm,
 } from "./model-router-payload"
@@ -99,6 +100,15 @@ describe("formFromConfig", () => {
   test("excludeModels keeps valid keys and drops malformed ones", () => {
     const form = formFromConfig({ excludeModels: ["ollama/glm", "no-slash", 42] })
     expect(form.excludeModels).toEqual(["ollama/glm"])
+  })
+
+  // Direct call-site expectation for the router editor's serverExcludeModels:
+  // a hand-edited malformed entry on the server's excludeModels must not be
+  // able to brick every subsequent Save (model-router.tsx reads the server's
+  // list through this same function).
+  test("modelKeysFrom (exported) drops malformed entries so a corrupt server list cannot brick Save", () => {
+    expect(modelKeysFrom(["ollama/glm", "no-slash", 42])).toEqual(["ollama/glm"])
+    expect(modelKeysFrom(undefined)).toEqual([])
   })
 
   test("overrideExplicit preserves true", () => {

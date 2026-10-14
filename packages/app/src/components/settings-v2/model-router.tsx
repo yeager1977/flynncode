@@ -16,6 +16,7 @@ import {
   TASK_NAMES,
   formFromConfig,
   modelAfterDisable,
+  modelKeysFrom,
   serializeForm,
   validateForm,
   type TaskName,
@@ -131,11 +132,10 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
 
   // excludeModels is owned by Manage Models visibility, mirrored into config
   // live. Pass the server's current list through so a Save cannot clobber
-  // live changes with a stale load-time snapshot.
-  const serverExcludeModels = () => {
-    const raw = (routerConfig()?.excludeModels as unknown) ?? []
-    return Array.isArray(raw) ? raw.filter((key): key is string => typeof key === "string") : []
-  }
+  // live changes with a stale load-time snapshot. modelKeysFrom also drops
+  // malformed entries, so a hand-edited invalid key on the server cannot
+  // brick validateForm for every subsequent Save.
+  const serverExcludeModels = () => modelKeysFrom(routerConfig()?.excludeModels)
 
   const save = async () => {
     if (state.saving || invalid()) return
