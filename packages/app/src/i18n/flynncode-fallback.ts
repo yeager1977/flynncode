@@ -204,6 +204,7 @@ const keys = [
   "settings.memory.minTurns.title",
   "settings.memory.section.title",
   "settings.memory.toast.updateFailed.title",
+  "settings.models.visibilitySyncFailed.title",
   "settings.permissions.approval.acceptEdits",
   "settings.permissions.approval.auto",
   "settings.permissions.approval.auto.description",

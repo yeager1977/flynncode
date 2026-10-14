@@ -1,9 +1,12 @@
-import { type Accessor, createMemo, createResource } from "solid-js"
+import { type Accessor, createMemo, createResource, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { DateTime } from "luxon"
 import { filter, firstBy, flat, groupBy, mapValues, pipe, uniqueBy, values } from "remeda"
 import { createSimpleContext } from "@flynncode/ui/context"
 import { useProviders } from "@/hooks/use-providers"
+import { useServerSync } from "@/context/server-sync"
+import { useLanguage } from "@/context/language"
+import { showToast } from "@/utils/toast"
 import { Persist, persisted } from "@/utils/persist"
 
 export type ModelKey = { providerID: string; modelID: string }
@@ -22,6 +25,24 @@ function modelKey(model: ModelKey) {
   return `${model.providerID}:${model.modelID}`
 }
 
+// The router (server plugin) cannot read this client-side visibility store,
+// so the mirror it consumes is explicit hides as `model_router.excludeModels`.
+export function visibilityExcludeKeys(
+  rows: Array<{ providerID: string; modelID: string; visibility: Visibility }>,
+): string[] {
+  return rows.filter((row) => row.visibility === "hide").map((row) => `${row.providerID}/${row.modelID}`)
+}
+
+// Set-level comparison: user rows and the config list can differ in order;
+// non-string config entries count as different (a corrupt list must be
+// rewritten, not adopted).
+export function visibilityUnchanged(current: unknown, hidden: string[]): boolean {
+  if (!Array.isArray(current) || current.length !== hidden.length) return false
+  const left = current.filter((key): key is string => typeof key === "string").sort()
+  const right = [...hidden].sort()
+  return left.every((key, index) => key === right[index])
+}
+
 export const { use: useModels, provider: ModelsProvider } = createSimpleContext({
   name: "Models",
   gate: false,
@@ -36,6 +57,34 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
         variant: {},
       }),
     )
+
+    // Manage Models hides sync to the server as `model_router.excludeModels`
+    // (the merge swaps `model_router` whole, so the patch carries the current
+    // router object with excludeModels replaced). Debounced trailing: a
+    // quick pass toggling several models writes once. A no-op (the config
+    // already matches) never writes, so selecting an already-visible model
+    // does not rebuild instances.
+    const serverSync = useServerSync()
+    const language = useLanguage()
+    let visibilitySync: ReturnType<typeof setTimeout> | undefined
+    onCleanup(() => clearTimeout(visibilitySync))
+    const syncVisibility = () => {
+      clearTimeout(visibilitySync)
+      visibilitySync = setTimeout(() => {
+        const hidden = visibilityExcludeKeys(store.user)
+        // Same cast the router settings editor uses for the config's
+        // model_router block (packages/app/src/components/settings-v2/model-router.tsx).
+        const config = serverSync().data.config as
+          | { model_router?: { excludeModels?: unknown } }
+          | undefined
+        const router = config?.model_router
+        if (visibilityUnchanged(router?.excludeModels, hidden)) return
+        const patch: Record<string, unknown> = { model_router: { ...(router ?? {}), excludeModels: hidden } }
+        void serverSync()
+          .updateConfig(patch)
+          .catch(() => showToast({ variant: "error", title: language.t("settings.models.visibilitySyncFailed.title") }))
+      }, 300)
+    }
 
     const available = createMemo(() =>
       providers.connected().flatMap((p) =>
@@ -125,6 +174,7 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
 
     const setVisibility = (model: ModelKey, state: boolean) => {
       update(model, state ? "show" : "hide")
+      syncVisibility()
     }
 
     const push = (model: ModelKey) => {

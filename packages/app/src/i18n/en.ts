@@ -1679,6 +1679,7 @@ export const dict = {
   "settings.providers.vendor.signInChatGPT": "Sign in with ChatGPT",
   "settings.models.title": "Models",
   "settings.models.description": "Model settings will be configurable here.",
+  "settings.models.visibilitySyncFailed.title": "Could not sync model visibility",
   "settings.agents.title": "Agents",
   "settings.agents.description": "Agent settings will be configurable here.",
   "settings.commands.title": "Commands",
