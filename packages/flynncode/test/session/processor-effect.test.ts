@@ -557,7 +557,67 @@ it.live("session.processor effect tests do not retry unknown json errors", () =>
   ),
 )
 
-it.live("session.processor effect tests retry recognized structured json errors", () =>
+it.live("session.processor effect tests stop on usage limits by default", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+        const events = yield* EventV2Bridge.Service
+
+        yield* llm.error(429, { type: "error", error: { type: "too_many_requests" } })
+        yield* llm.text("after")
+
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "usage limit")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const types: string[] = []
+        const errors: string[] = []
+        const off = yield* events.listen((evt) => {
+          if (evt.type === SessionStatus.Event.Status.type) {
+            const data = evt.data as typeof SessionStatus.Event.Status.data.Type
+            if (data.sessionID === chat.id) types.push(data.status.type)
+          }
+          if (evt.type === Session.Event.Error.type) errors.push(evt.type)
+          return Effect.void
+        })
+        const handle = yield* processors.create({
+          assistantMessage: msg,
+          sessionID: chat.id,
+          model: mdl,
+        })
+
+        const value = yield* handle.process({
+          user: {
+            id: parent.id,
+            sessionID: chat.id,
+            role: "user",
+            time: parent.time,
+            agent: parent.agent,
+            model: { providerID: ref.providerID, modelID: ref.modelID },
+          } satisfies SessionV1.User,
+          sessionID: chat.id,
+          model: mdl,
+          agent: agent(),
+          system: [],
+          messages: [{ role: "user", content: "usage limit" }],
+          tools: {},
+        })
+
+        yield* off
+
+        expect(value).toBe("stop")
+        expect(yield* llm.calls).toBe(1)
+        expect(handle.message.error?.name).toBe("APIError")
+        expect(errors).toHaveLength(1)
+        expect(types).not.toContain("retry")
+        expect(types.at(-1)).toBe("idle")
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)
+
+it.live("session.processor effect tests retry usage limits when on_limit is retry", () =>
   provideTmpdirServer(
     ({ dir, llm }) =>
       Effect.gen(function* () {
@@ -600,7 +660,7 @@ it.live("session.processor effect tests retry recognized structured json errors"
         expect(parts.some((part) => part.type === "text" && part.text === "after")).toBe(true)
         expect(handle.message.error).toBeUndefined()
       }),
-    { config: (url) => providerCfg(url) },
+    { config: (url) => ({ ...providerCfg(url), rate_limit: { on_limit: "retry" as const } }) },
   ),
 )
 

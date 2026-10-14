@@ -644,7 +644,8 @@ const layer = Layer.effect(
           messageID: input.assistantMessage.id,
         })
         ctx.needsCompaction = false
-        ctx.shouldBreak = (yield* config.get()).experimental?.continue_loop_on_deny !== true
+        const cfg = yield* config.get()
+        ctx.shouldBreak = cfg.experimental?.continue_loop_on_deny !== true
 
         return yield* Effect.gen(function* () {
           yield* Effect.gen(function* () {
@@ -675,6 +676,8 @@ const layer = Layer.effect(
               SessionRetry.policy({
                 provider: input.model.providerID,
                 parse,
+                onLimit: cfg.rate_limit?.on_limit ?? "stop",
+                retryUnder: cfg.rate_limit?.retry_under ?? 0,
                 set: (info) => {
                   return status.set(ctx.sessionID, {
                     type: "retry",
