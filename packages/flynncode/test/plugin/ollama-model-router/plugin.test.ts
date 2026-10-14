@@ -547,4 +547,97 @@ describe("plugin", () => {
     // No openai credential, so the fallback walks past openai to anthropic.
     expect(model).toEqual({ providerID: "anthropic", modelID: "claude-sonnet-5" })
   })
+
+  describe("catalog freshness", () => {
+    const connectedList = (connected: string[]) => ({
+      all: [
+        { id: "ollama-cloud", models: { a: {} } as Record<string, unknown> },
+        { id: "anthropic", models: { "claude-fable-5-1": {} } as Record<string, unknown> },
+      ],
+      connected,
+    })
+
+    const catalogueOptions = {
+      autoRoute: false,
+      agentTasks: { build: "coding" },
+      providers: ["anthropic", "ollama-cloud"],
+      models: {},
+    }
+
+    const setup = async (client: any) => {
+      const hooks = await plugin.server({ ...fakeInput, client }, catalogueOptions as any)
+      await hooks.config?.({ provider: { "ollama-cloud": { models: { a: {} } }, "anthropic": { models: {} } } } as any)
+      return hooks
+    }
+
+    test("chat.message refetches the catalog after integration.connection.updated", async () => {
+      const lists = [connectedList(["ollama-cloud"]), connectedList(["ollama-cloud", "anthropic"])]
+      let call = 0
+      const hooks = await setup({
+        provider: { list: async () => ({ data: lists[call++] ?? lists[lists.length - 1] }), },
+      })
+      expect(await routeSentinel(hooks, { provider: {} } as any)).toEqual({ providerID: "ollama-cloud", modelID: "a" })
+      await hooks.event?.({ event: { id: "e", type: "integration.connection.updated", properties: {} } } as any)
+      expect(await routeSentinel(hooks, { provider: {} } as any)).toEqual({
+        providerID: "anthropic",
+        modelID: "claude-fable-5-1",
+      })
+    })
+
+    test("models-dev.refreshed still invalidates the catalog", async () => {
+      let calls = 0
+      const hooks = await setup({
+        provider: { list: async () => { calls++; return { data: connectedList(["ollama-cloud", "anthropic"]) } } },
+      })
+      await routeSentinel(hooks, { provider: {} } as any)
+      expect(calls).toBe(1)
+      await hooks.event?.({ event: { id: "e", type: "models-dev.refreshed", properties: {} } } as any)
+      await routeSentinel(hooks, { provider: {} } as any)
+      expect(calls).toBe(2)
+    })
+
+    test("a failed refetch keeps the last working catalog and recovers on the next trigger", async () => {
+      const lists: Array<unknown> = [connectedList(["ollama-cloud"]), new Error("boom"), connectedList(["ollama-cloud", "anthropic"])]
+      let call = 0
+      const hooks = await setup({
+        provider: {
+          list: async () => {
+            const value = lists[call++]
+            if (value instanceof Error) throw value
+            return { data: value }
+          },
+        },
+      })
+      expect(await routeSentinel(hooks, { provider: {} } as any)).toEqual({ providerID: "ollama-cloud", modelID: "a" })
+      await hooks.event?.({ event: { id: "e", type: "integration.connection.updated", properties: {} } } as any)
+      // Refetch fails; routing still resolves against the retained catalog.
+      expect(await routeSentinel(hooks, { provider: {} } as any)).toEqual({ providerID: "ollama-cloud", modelID: "a" })
+      // Still dirty: the next routing refetches and picks up anthropic.
+      expect(await routeSentinel(hooks, { provider: {} } as any)).toEqual({
+        providerID: "anthropic",
+        modelID: "claude-fable-5-1",
+      })
+    })
+
+    test("concurrent resolutions share one refetch", async () => {
+      let calls = 0
+      const hooks = await setup({
+        provider: {
+          list: async () => {
+            calls++
+            await Bun.sleep(2)
+            return { data: connectedList(["ollama-cloud", "anthropic"]) }
+          },
+        },
+      })
+      const [one, two] = await Promise.all([
+        routeSentinel(hooks, { provider: {} } as any),
+        routeSentinel(hooks, { provider: {} } as any),
+      ])
+      expect(calls).toBe(1)
+      expect(one).toEqual(two)
+      await routeSentinel(hooks, { provider: {} } as any)
+      expect(calls).toBe(1)
+    })
+  })
 })

@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { collectCandidates, collectMeta, findUnmatchedScorecardKeys } from "../../../src/plugin/ollama-model-router/candidates"
+import {
+  CATALOG_TTL_MS,
+  catalogStale,
+  collectCandidates,
+  collectMeta,
+  findUnmatchedScorecardKeys,
+} from "../../../src/plugin/ollama-model-router/candidates"
 import { rankModels } from "../../../src/plugin/ollama-model-router/rank"
 import { DEFAULT_TASK_WEIGHTS, parseOptions } from "../../../src/plugin/ollama-model-router/scorecard"
 
@@ -234,5 +240,19 @@ describe("collectCandidates", () => {
     expect(hit?.toolCall).toBe(true)
     expect(hit?.reasoning).toBe(false)
     expect(hit?.providerDisabled).toBe(false)
+  })
+})
+
+describe("catalog staleness", () => {
+  test("fresh inside the TTL window", () => {
+    expect(catalogStale(0, CATALOG_TTL_MS)).toBe(false)
+  })
+
+  test("stale past the TTL window", () => {
+    expect(catalogStale(0, CATALOG_TTL_MS + 1)).toBe(true)
+  })
+
+  test("never fresh at epoch origin without a load", () => {
+    expect(catalogStale(0, 0)).toBe(false)
   })
 })

@@ -171,6 +171,15 @@ export function collectCandidates(
   }))
 }
 
+// The plugin's catalog snapshot ages out after this long so silent external
+// changes (auth set from a CLI, pulled models) revalidate within a bound;
+// invalidation events cover the moment they happen.
+export const CATALOG_TTL_MS = 5 * 60_000
+
+export function catalogStale(loadedAt: number, now: number): boolean {
+  return now - loadedAt > CATALOG_TTL_MS
+}
+
 /**
  * Injected by the plugin config hook so "Model Router" is selectable in the
  * normal model picker. It is never a routing candidate and never reaches a

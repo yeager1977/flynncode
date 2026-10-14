@@ -1,6 +1,11 @@
 import type { Hooks, PluginInput, PluginOptions } from "@flynncode/plugin"
 import { assignAgents, resolveTaskModel } from "./assign"
-import { ROUTER_MODEL_ID, ROUTER_PROVIDER_ID, type CatalogLike } from "./candidates"
+import {
+  catalogStale,
+  ROUTER_MODEL_ID,
+  ROUTER_PROVIDER_ID,
+  type CatalogLike,
+} from "./candidates"
 import { MODEL_FAMILIES, type ModelFamily } from "./provider-family"
 import { parseOptions, parseTaskVariant, ROUTER_VARIANTS, VALUE_TASK_WEIGHTS } from "./scorecard"
 import { createTools } from "./tools"
@@ -38,30 +43,41 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
   // and unit-test callers keep working. Only `connected` providers count for
   // family resolution — the full models.dev `all` list includes providers the
   // user has no credentials for, which would make every family look available.
+  // The snapshot is versioned: invalidation events mark it dirty and it ages
+  // out after CATALOG_TTL_MS, so routing and tools see vendor connect/disconnect
+  // and pulled models within a bounded window instead of a process-lifetime
+  // snapshot.
   let catalog: CatalogLike | undefined
+  let catalogLoadedAt = 0
+  let catalogDirty = true
+  let refetching: Promise<void> | undefined
   const getCatalog = (): CatalogLike | undefined => catalog
-  // A transient provider.list() failure must not permanently disable the
-  // catalog; retry on the next call until one succeeds.
   const loadCatalog = async () => {
-    if (catalog) return
-    try {
-      const result = await input.client.provider.list()
-      const all = result.data?.all ?? []
-      const connected = new Set(result.data?.connected ?? [])
-      catalog = Object.fromEntries(
-        all
-          .filter((provider: any) => connected.has(provider.id))
-          .map((provider: any) => [provider.id, { name: provider.name, models: provider.models ?? {} }]),
-      ) as CatalogLike
-    } catch (error) {
-      console.warn(`${PREFIX} connected catalog unavailable; using config providers`, error)
-    }
-  }
-
-  // ModelsDev refreshes rebuild the server catalog hourly; drop the plugin's
-  // snapshot so the next resolution reloads it.
-  const clearCatalog = () => {
-    catalog = undefined
+    if (catalog && !catalogDirty && !catalogStale(catalogLoadedAt, Date.now())) return
+    // One fetch serves concurrent resolutions (prompt-time routing and tools).
+    if (refetching) return refetching
+    refetching = (async () => {
+      try {
+        const result = await input.client.provider.list()
+        const all = result.data?.all ?? []
+        const connected = new Set(result.data?.connected ?? [])
+        catalog = Object.fromEntries(
+          all
+            .filter((provider: any) => connected.has(provider.id))
+            .map((provider: any) => [provider.id, { name: provider.name, models: provider.models ?? {} }]),
+        ) as CatalogLike
+        catalogLoadedAt = Date.now()
+        catalogDirty = false
+      } catch (error) {
+        // A failed refetch keeps the last working snapshot (stale beats
+        // nothing) and stays due for retry; a failed first load falls back to
+        // config providers until one succeeds.
+        console.warn(`${PREFIX} connected catalog unavailable; using config providers`, error)
+      } finally {
+        refetching = undefined
+      }
+    })()
+    return refetching
   }
 
   // cfg.model_family is a top-level config key, not part of the model_router
@@ -206,9 +222,11 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
       }
     },
     event: async ({ event }) => {
-      // The v1 Event union cannot express models-dev.refreshed (a v2 event
-      // delivered over the shared bus), so narrow at runtime.
-      if ((event as { type?: string }).type === "models-dev.refreshed") clearCatalog()
+      // The v1 Event union cannot express models-dev.refreshed or
+      // integration.connection.updated (v2 events delivered over the shared
+      // bus), so narrow at runtime. Both are location-less (global).
+      const type = (event as { type?: string }).type
+      if (type === "models-dev.refreshed" || type === "integration.connection.updated") catalogDirty = true
     },
     tool: createTools({
       client: input.client,
