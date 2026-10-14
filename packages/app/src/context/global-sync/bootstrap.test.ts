@@ -333,6 +333,57 @@ describe("query keys", () => {
     expect(result).toEqual([])
   })
 
+  test("rejects the provider catalog when a request never answers", async () => {
+    const hang = () => new Promise<never>(() => {})
+    const api = {
+      provider: { list: hang },
+      model: { list: hang, default: hang },
+    } as unknown as CatalogApi
+
+    await expect(
+      new QueryClient({ defaultOptions: { queries: { retry: false } } }).fetchQuery(
+        loadProvidersQuery(ServerScope.local, "/repo", api, undefined, undefined, 10),
+      ),
+    ).rejects.toBeDefined()
+  })
+
+  test("rejects the provider catalog when protocol detection never settles", async () => {
+    const api = {} as CatalogApi
+
+    await expect(
+      new QueryClient({ defaultOptions: { queries: { retry: false } } }).fetchQuery(
+        loadProvidersQuery(ServerScope.local, "/repo", api, {} as OpencodeClient, new Promise(() => {}), 10),
+      ),
+    ).rejects.toBeDefined()
+  })
+
+  test("passes an abort signal to every catalog request", async () => {
+    const signals: unknown[] = []
+    const record = async (_input: unknown, options?: { signal?: AbortSignal }) => {
+      signals.push(options?.signal)
+      return { location: {}, data: [] }
+    }
+    const api = {
+      provider: { list: record },
+      model: { list: record, default: record },
+    } as unknown as CatalogApi
+
+    await new QueryClient().fetchQuery(loadProvidersQuery(ServerScope.local, "/repo", api))
+
+    expect(signals).toHaveLength(3)
+    expect(signals.every((signal) => signal instanceof AbortSignal)).toBe(true)
+  })
+
+  test("rejects the agent catalog when the request never answers", async () => {
+    const api = { list: () => new Promise<never>(() => {}) } as unknown as AgentApi
+
+    await expect(
+      new QueryClient({ defaultOptions: { queries: { retry: false } } }).fetchQuery(
+        loadAgentsQuery(ServerScope.local, "/repo", api, undefined, undefined, 10),
+      ),
+    ).rejects.toBeDefined()
+  })
+
   test("loads commands from the current location-scoped endpoint", async () => {
     const calls: unknown[] = []
     const api = {
