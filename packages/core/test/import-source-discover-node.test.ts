@@ -221,3 +221,30 @@ describe("resolveSourceFile", () => {
     expect(resolved).toBeUndefined()
   })
 })
+describe("discoverFromHome codex thread names", () => {
+  it("titles codex sessions from session_index.jsonl, falling back to the first prompt", async () => {
+    const root = await mkdtemp(join(tmpdir(), "import-names-"))
+    const dir = join(root, ".codex", "sessions", "2026", "10", "13")
+    await mkdir(dir, { recursive: true })
+    const rollout = (id: string, prompt: string) =>
+      [
+        line({ type: "session_meta", payload: { id, cwd: "/repo" } }),
+        line({ type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: prompt }] } }),
+      ].join("\n")
+    await writeFile(join(dir, "rollout-a.jsonl"), rollout("01named", "Long first prompt about adapters"))
+    await writeFile(join(dir, "rollout-b.jsonl"), rollout("01unnamed", "Unnamed prompt"))
+    await writeFile(
+      join(root, ".codex", "session_index.jsonl"),
+      [
+        line({ id: "01named", thread_name: "Old name" }),
+        line({ id: "01named", thread_name: "Add standalone EIDO adapter package" }),
+      ].join("\n"),
+    )
+    const found = await discoverFromHome({ source: "codex", home: root })
+    expect(Object.fromEntries(found.map((item) => [item.sourceSessionID, item.title]))).toEqual({
+      "01named": "Add standalone EIDO adapter package",
+      "01unnamed": "Unnamed prompt",
+    })
+    await rm(root, { recursive: true, force: true })
+  })
+})

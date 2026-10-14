@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { parseClaudeCode } from "@flynncode/core/session/import-source/claude-code"
-import { parseCodex } from "@flynncode/core/session/import-source/codex"
+import { codexThreadNames, parseCodex } from "@flynncode/core/session/import-source/codex"
 
 const line = (value: unknown) => JSON.stringify(value)
 
@@ -156,5 +156,102 @@ describe("claude code import noise", () => {
     expect(parsed.title).toBe("Fix the flaky test")
     expect(parsed.messages.map((m) => m.text)).toEqual(["Fix the flaky test"])
     expect(parsed.messageCount).toBe(1)
+  })
+})
+describe("codex desktop transcripts", () => {
+  const meta = (payload: Record<string, unknown>) =>
+    line({ timestamp: "2026-10-13T18:36:53.000Z", type: "session_meta", payload: { id: "01main", cwd: "/repo", ...payload } })
+  const userItem = (text: string) =>
+    line({ type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text }] } })
+  const assistantItem = (text: string) =>
+    line({ type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text }] } })
+
+  it("imports user prompts sent as input_text and skips injected context", () => {
+    const text = [
+      meta({}),
+      line({
+        type: "response_item",
+        payload: { type: "message", role: "developer", content: [{ type: "input_text", text: "<app-context>..." }] },
+      }),
+      userItem("# AGENTS.md instructions for /repo\n\n<INSTRUCTIONS>rules</INSTRUCTIONS>"),
+      userItem('<external_codex_apps_open_page>{"page_id":null}</external_codex_apps_open_page>'),
+      userItem("<environment_context>\n  <cwd>/repo</cwd>\n</environment_context>"),
+      userItem("The adapters may not be built into the gateway."),
+      assistantItem("I'll review the gateway."),
+      userItem("No, they must talk to IDX."),
+    ].join("\n")
+    const parsed = parseCodex({ path: "/tmp/rollout-2026-10-13T14-36-53-01main.jsonl", text })
+    expect(parsed.messages.map((m) => [m.role, m.text])).toEqual([
+      ["user", "The adapters may not be built into the gateway."],
+      ["assistant", "I'll review the gateway."],
+      ["user", "No, they must talk to IDX."],
+    ])
+    expect(parsed.title).toBe("The adapters may not be built into the gateway.")
+  })
+
+  it("does not duplicate a prompt recorded both as event_msg and response_item", () => {
+    const text = [
+      meta({}),
+      line({ type: "event_msg", payload: { type: "user_message", message: "Do it" } }),
+      userItem("Do it"),
+      assistantItem("Done."),
+    ].join("\n")
+    const parsed = parseCodex({ path: "/tmp/rollout-dup.jsonl", text })
+    expect(parsed.messages.map((m) => m.role)).toEqual(["user", "assistant"])
+  })
+
+  it("drops subagent threads", () => {
+    const text = [
+      meta({ thread_source: "subagent", source: { subagent: { thread_spawn: { parent_thread_id: "01parent" } } } }),
+      userItem("Review the extraction."),
+      assistantItem("No findings."),
+    ].join("\n")
+    const parsed = parseCodex({ path: "/tmp/rollout-sub.jsonl", text })
+    expect(parsed.messageCount).toBe(0)
+    expect(parsed.messages).toEqual([])
+  })
+
+  it("reads the latest thread name per id from session_index.jsonl", () => {
+    const names = codexThreadNames([
+      line({ id: "01main", thread_name: "First name", updated_at: "2026-10-13T18:00:00Z" }),
+      "{not json",
+      line({ id: "01other", thread_name: "Other" }),
+      line({ id: "01main", thread_name: "Add standalone EIDO adapter package", updated_at: "2026-10-13T18:38:43Z" }),
+      line({ id: "01blank", thread_name: "   " }),
+    ])
+    expect(names.get("01main")).toBe("Add standalone EIDO adapter package")
+    expect(names.get("01other")).toBe("Other")
+    expect(names.has("01blank")).toBe(false)
+  })
+})
+
+describe("claude code custom titles", () => {
+  it("uses the latest custom-title record as the title", () => {
+    const text = [
+      line({
+        type: "user",
+        sessionId: "s1",
+        cwd: "/work",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        message: { role: "user", content: "getting this error on the new build" },
+      }),
+      line({ type: "custom-title", customTitle: "path.resolve TypeError", sessionId: "s1" }),
+      line({ type: "custom-title", customTitle: "path.resolve TypeError in build", sessionId: "s1" }),
+    ].join("\n")
+    expect(parseClaudeCode({ path: "/tmp/s1.jsonl", text }).title).toBe("path.resolve TypeError in build")
+  })
+})
+
+describe("claude code custom-title prefilter", () => {
+  it("keeps a user message that merely mentions a custom-title record", () => {
+    const text = line({
+      type: "user",
+      sessionId: "s1",
+      cwd: "/work",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      message: { role: "user", content: 'why does {"type":"custom-title"} show up here?' },
+    })
+    const parsed = parseClaudeCode({ path: "/tmp/s1.jsonl", text })
+    expect(parsed.messages.map((m) => m.role)).toEqual(["user"])
   })
 })

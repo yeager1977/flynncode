@@ -47,6 +47,8 @@ const LEADING_REMINDERS = /^\s*(<system-reminder>[\s\S]*?<\/system-reminder>\s*)
 // message, so other lines (tool results, snapshots, summaries) skip
 // JSON.parse. These lines dominate large stores.
 const MESSAGE_TYPE = /"type"\s*:\s*"(user|assistant)"/
+// A rename in Claude Code appends a custom-title record; the latest one is the session's name.
+const CUSTOM_TITLE = /"type"\s*:\s*"custom-title"/
 const HAS_TEXT = /"content"\s*:\s*"|"type"\s*:\s*"text"/
 
 const titleText = (text: string) => {
@@ -79,10 +81,19 @@ export function claudeCodeReader(path: string, options: { readonly keepMessages:
     realUserText: false,
     firstUser: undefined as string | undefined,
     firstRealUser: undefined as string | undefined,
+    customTitle: undefined as string | undefined,
   }
   const messages: ImportedMessage[] = []
 
   const push = (raw: string) => {
+    if (CUSTOM_TITLE.test(raw)) {
+      const record = asRecord(parseLine(raw))
+      if (record?.type === "custom-title") {
+        const title = asString(record.customTitle)?.trim()
+        if (title) state.customTitle = title
+        return
+      }
+    }
     if (!MESSAGE_TYPE.test(raw) || !HAS_TEXT.test(raw)) return
     const record = asRecord(parseLine(raw))
     if (!record) return
@@ -124,7 +135,7 @@ export function claudeCodeReader(path: string, options: { readonly keepMessages:
       sourceSessionID,
       sourcePath: path,
       cwd: state.cwd,
-      title: (firstUser ? titleText(firstUser) : fallback).slice(0, TITLE_LIMIT),
+      title: (state.customTitle ?? (firstUser ? titleText(firstUser) : fallback)).slice(0, TITLE_LIMIT),
       messages,
       messageCount: state.count,
       time: state.firstTime ?? 0,
