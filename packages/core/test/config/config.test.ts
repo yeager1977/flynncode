@@ -87,6 +87,17 @@ describe("Config", () => {
     }),
   )
 
+  it.effect("rejects non-finite v1 compaction thresholds that v2 cannot represent", () =>
+    Effect.sync(() => {
+      const decode = Schema.decodeUnknownExit(ConfigV1.Info)
+      expect(decode({ compaction: { threshold: Infinity } })._tag).toBe("Failure")
+      expect(decode({ compaction: { threshold: -Infinity } })._tag).toBe("Failure")
+      expect(decode({ compaction: { threshold: NaN } })._tag).toBe("Failure")
+      const info = Schema.decodeUnknownSync(ConfigV1.Info)({ compaction: { threshold: 0.8 } })
+      expect(Schema.decodeUnknownSync(Config.Info)(ConfigMigrateV1.migrate(info)).compaction?.threshold).toBe(0.8)
+    }),
+  )
+
   it.effect("migrates v1 provider setup options into AISDK settings", () =>
     Effect.sync(() => {
       const migrated = ConfigMigrateV1.migrate({
