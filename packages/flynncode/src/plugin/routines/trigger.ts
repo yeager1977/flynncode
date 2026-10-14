@@ -2,8 +2,10 @@ import { readdir, readFile, stat } from "node:fs/promises"
 import path from "path"
 import { Global } from "@flynncode/core/global"
 import { Flock } from "@flynncode/core/util/flock"
+import { Glob } from "@flynncode/core/util/glob"
 import { Octokit } from "@octokit/rest"
 import { Effect } from "effect"
+import { Filesystem } from "@/util/filesystem"
 import type { Routine, TriggerGithub } from "./parse"
 
 const PREFIX = "[routines]"
@@ -32,11 +34,11 @@ export async function fileTriggersDue(
   const mtimes = new Map<string, Promise<number>>()
   const newest = await Promise.all(
     located.map(async (entry) => {
-      const globs = (entry.routine.trigger?.files ?? []).map((pattern) => new Bun.Glob(pattern))
+      const patterns = entry.routine.trigger?.files ?? []
       const files = (await scans.get(entry.directory)) ?? []
       const times = await Promise.all(
         files
-          .filter((file) => globs.some((glob) => glob.match(file)))
+          .filter((file) => patterns.some((pattern) => Glob.match(pattern, file)))
           .map((file) => {
             const full = path.join(entry.directory, file)
             const cached = mtimes.get(full) ?? stat(full).then((info) => info.mtimeMs, () => 0)
@@ -93,7 +95,7 @@ function updateTriggerState<T>(stateFile: string, update: (state: TriggerState) 
       yield* Flock.effect(`routines-trigger-state:${stateFile}`, { staleMs: 10_000, timeoutMs: 30_000 })
       const state = yield* Effect.promise(() => readTriggerState(stateFile))
       const result = update(state)
-      yield* Effect.promise(() => Bun.write(stateFile, JSON.stringify(state)))
+      yield* Effect.promise(() => Filesystem.write(stateFile, JSON.stringify(state)))
       return result
     }).pipe(Effect.scoped),
   )

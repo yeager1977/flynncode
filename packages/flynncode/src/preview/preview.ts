@@ -5,6 +5,7 @@ import { httpClient, path } from "@flynncode/core/effect/app-node-platform"
 import type { ChildProcessHandle } from "effect/unstable/process/ChildProcessSpawner"
 import { ChildProcess } from "effect/unstable/process"
 import { Context, Effect, Layer, Path, Schema, Scope } from "effect"
+import { createServer } from "node:net"
 import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { Config } from "@/config/config"
 import { ConfigPreview, type ServerSettings } from "@/config/preview"
@@ -143,27 +144,22 @@ const layer: Layer.Layer<
     })
 
     const freePort = Effect.fnUntraced(function* () {
-      // Bind port 0, read the assigned port, then release inside an inner
-      // scope. Between release and the child's bind another process could
-      // take the port; the readiness poll then fails as a start error.
-      return yield* Effect.scoped(
-        Effect.acquireRelease(
-          Effect.sync(() => {
-            const server = Bun.serve({ port: 0, fetch: () => new Response("ok") })
-            return { server, port: server.port }
-          }),
-          (allocated) =>
-            Effect.sync(() => {
-              allocated.server.stop(true)
-            }),
-        ).pipe(
-          Effect.flatMap((allocated) =>
-            allocated.port === undefined
-              ? new StartFailedError({ message: "failed to allocate a free port" })
-              : Effect.succeed(allocated.port),
-          ),
-        ),
-      )
+      // Bind port 0, read the assigned port, then close the listener. Uses
+      // node:net, not Bun.serve, because the desktop app runs this under Node.
+      // Between close and the child's bind another process could take the
+      // port; the readiness poll then fails as a start error.
+      return yield* Effect.callback<number, StartFailedError>((resume) => {
+        const failed = () => resume(Effect.fail(new StartFailedError({ message: "failed to allocate a free port" })))
+        const server = createServer()
+        server.once("error", failed)
+        server.listen(0, () => {
+          const address = server.address()
+          server.close(() => {
+            if (address === null || typeof address === "string") return failed()
+            resume(Effect.succeed(address.port))
+          })
+        })
+      })
     })
 
     const resolvePort = Effect.fn("Preview.resolvePort")(function* (entry: Entry) {

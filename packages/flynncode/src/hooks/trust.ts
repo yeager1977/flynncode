@@ -5,6 +5,7 @@ import os from "os"
 import path from "path"
 import { ConfigHooksV1 } from "@flynncode/core/v1/config/hooks"
 import { InstanceState } from "@/effect/instance-state"
+import { Filesystem } from "@/util/filesystem"
 
 // Full normative hook model: every field that changes hook behavior is part
 // of the trusted identity, so any edit re-triggers review (fail closed).
@@ -48,7 +49,7 @@ export const bind = Effect.fn("HooksTrust.bind")(function* (
   const hashed = yield* Effect.forEach(
     candidates,
     (file) =>
-      Effect.tryPromise(() => Bun.file(file).bytes()).pipe(
+      Effect.tryPromise(() => Filesystem.readBytes(file)).pipe(
         Effect.map(
           (bytes) => [path.relative(project.root, file), createHash("sha256").update(bytes).digest("hex")] as const,
         ),
@@ -141,44 +142,27 @@ export function trustFile() {
 
 const TrustFileSchema = Schema.Array(Schema.Struct({ hash: Schema.String, trustedAt: Schema.Number }))
 
-function readHashes(): Promise<Set<string>> {
-  return Effect.runPromise(
-    Effect.gen(function* () {
-      const file = Bun.file(trustFile())
-      const exists = yield* Effect.promise(() => file.exists())
-      if (!exists) return new Set<string>()
-      const raw = yield* Effect.promise(() => file.json()).pipe(
-        Effect.catch(() => Effect.succeed(undefined)),
-      )
-      if (raw === undefined) return new Set<string>()
-      const decoded = Option.getOrElse(Schema.decodeUnknownOption(TrustFileSchema)(raw), () => [])
-      return new Set(decoded.map((entry) => entry.hash))
-    }).pipe(
-      // Fail closed: any unexpected defect means untrusted.
-      Effect.catch(() => Effect.succeed(new Set<string>())),
-    ),
+const decodeTrustFile = Schema.decodeUnknownOption(Schema.fromJsonString(TrustFileSchema))
+
+function readHashes() {
+  return readEntries().then((entries) => new Set(entries.map((entry) => entry.hash)))
+}
+
+function writeHashes(hashes: Set<string>) {
+  return Filesystem.writeJson(
+    trustFile(),
+    Array.from(hashes).map((hash) => ({ hash, trustedAt: Date.now() })),
   )
 }
 
-function writeHashes(hashes: Set<string>): Promise<void> {
-  const payload = Array.from(hashes).map((hash) => ({ hash, trustedAt: Date.now() }))
-  return Bun.write(trustFile(), JSON.stringify(payload, null, 2)).then(() => undefined)
-}
-
-function readEntries(): Promise<Array<{ hash: string; trustedAt: number }>> {
-  return Effect.runPromise(
-    Effect.gen(function* () {
-      const file = Bun.file(trustFile())
-      const exists = yield* Effect.promise(() => file.exists())
-      if (!exists) return []
-      const raw = yield* Effect.promise(() => file.json()).pipe(
-        Effect.catch(() => Effect.succeed(undefined)),
-      )
-      if (raw === undefined) return []
-      const decoded = Option.getOrElse(Schema.decodeUnknownOption(TrustFileSchema)(raw), () => [])
-      return decoded.map((entry) => ({ hash: entry.hash, trustedAt: entry.trustedAt }))
-    }).pipe(Effect.catch(() => Effect.succeed([] as Array<{ hash: string; trustedAt: number }>))),
-  )
+// Fail closed: a missing, unreadable, or malformed trust file means untrusted.
+async function readEntries() {
+  const text = await Filesystem.readText(trustFile()).catch(() => undefined)
+  if (text === undefined) return []
+  return Option.getOrElse(decodeTrustFile(text), () => []).map((entry) => ({
+    hash: entry.hash,
+    trustedAt: entry.trustedAt,
+  }))
 }
 
 export const node = LayerNode.make({
