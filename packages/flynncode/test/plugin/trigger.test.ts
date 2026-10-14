@@ -141,13 +141,13 @@ describe("plugin event delivery", () => {
   // lazy per directory — force it with a harmless trigger before publishing.
   const loadHooks = Effect.gen(function* () {
     const pluginSvc = yield* Plugin.Service
-    yield* pluginSvc.trigger("experimental.chat.system.transform", {}, { system: [] as string[] })
+    yield* pluginSvc.trigger(systemHook, {}, { system: [] as string[] })
   })
 
   it.instance("location-less v2 events reach plugin event hooks", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const { read, file } = recorded(test, "events-global.txt")
+      const capture = recorded(test, "events-global.txt")
       // Use the raw EventV2.Service (not EventV2Bridge) so the publish has no
       // ambient InstanceRef location attached — EventV2Bridge.publish fills in
       // the current instance's directory when one is in scope, which this
@@ -156,14 +156,14 @@ describe("plugin event delivery", () => {
       // through the raw EventV2.Service for exactly this reason.
       const events = yield* EventV2.Service
       yield* withProject(
-        source(file),
+        source(capture.file),
         Effect.gen(function* () {
           yield* loadHooks
           yield* events.publish(ModelsDev.Event.Refreshed, {})
         }),
       )
       yield* pollWithTimeout(
-        Effect.flatMap(read, (text) =>
+        Effect.flatMap(capture.read, (text) =>
           text.includes("models-dev.refreshed") ? Effect.succeed(true) : Effect.succeed(undefined),
         ),
         "plugin event hook never saw the location-less refresh event",
@@ -174,10 +174,10 @@ describe("plugin event delivery", () => {
   it.instance("events scoped to another directory stay filtered", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
-      const { read, file } = recorded(test, "events-other.txt")
+      const capture = recorded(test, "events-other.txt")
       const events = yield* EventV2.Service
       yield* withProject(
-        source(file),
+        source(capture.file),
         Effect.gen(function* () {
           yield* loadHooks
           yield* events.publish(
@@ -193,7 +193,7 @@ describe("plugin event delivery", () => {
         }),
       )
       yield* Effect.sleep("300 millis")
-      const text = yield* read
+      const text = yield* capture.read
       expect(text).not.toContain("models-dev.refreshed")
     }),
   )
