@@ -1,6 +1,7 @@
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { SessionV1 } from "@flynncode/core/v1/session"
 import { ConfigMemoryV1 } from "@flynncode/core/v1/config/memory"
+import { Hash } from "@flynncode/core/util/hash"
 import { LLMEvent } from "@flynncode/llm"
 import { Context, Effect, Fiber, Layer, Scope, ScopedCache, Semaphore, Stream } from "effect"
 import { InstanceState } from "@/effect/instance-state"
@@ -113,7 +114,7 @@ const layer = Layer.effect(
     const extractFor = Effect.fn("SessionMemoryCurate.extractFor")(function* (sessionID: SessionID, all: SessionV1.WithParts[]) {
       const cache = yield* InstanceState.get(state)
       const entry = yield* ScopedCache.get(cache, sessionID)
-      const signature = new Bun.CryptoHasher("sha256").update(JSON.stringify(all)).digest("hex")
+      const signature = Hash.sha256(JSON.stringify(all))
       const latest = all.reduce((latest, message) =>
         message.info.time.created > latest.time || (message.info.time.created === latest.time && message.info.id > latest.id)
           ? { time: message.info.time.created, id: message.info.id }

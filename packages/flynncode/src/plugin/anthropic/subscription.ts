@@ -2,6 +2,7 @@ import type { Hooks, PluginInput } from "@flynncode/plugin"
 import { OauthCallbackPage } from "@flynncode/core/oauth/page"
 import { OAUTH_DUMMY_KEY } from "../../auth"
 import { parseClaudeCredentials } from "../../auth/vendor-import"
+import { Filesystem } from "../../util/filesystem"
 import os from "os"
 import path from "path"
 import { createServer } from "http"
@@ -327,9 +328,9 @@ export async function AnthropicSubscriptionPlugin(
           label: "Import from Claude Code",
           type: "oauth",
           authorize: async () => {
-            const raw = await Bun.file(path.join(os.homedir(), ".claude", ".credentials.json"))
-              .json()
-              .catch(() => undefined)
+            const raw = await Filesystem.readJson(path.join(os.homedir(), ".claude", ".credentials.json")).catch(
+              () => undefined,
+            )
             const imported = parseClaudeCredentials(raw)
             if (!imported || imported.kind !== "oauth") throw new Error("No Claude Code credentials found")
             return {

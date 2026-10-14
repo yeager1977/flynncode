@@ -6,6 +6,7 @@ import { ConfigManaged } from "@/config/managed"
 import { ConfigHooksV1 } from "@flynncode/core/v1/config/hooks"
 import { HooksTrust } from "@/hooks/trust"
 import { isRecord } from "@/util/record"
+import { Filesystem } from "@/util/filesystem"
 
 // Managed hooks policy: hook definitions declared in managed (MDM/system)
 // configuration are trusted by policy. They execute without per-definition
@@ -48,9 +49,9 @@ const loadManagedHashes = Effect.fn("HooksManaged.load")(function* () {
   }
   const readText = (filepath: string, jsonc: boolean) =>
     Effect.gen(function* () {
-      const exists = yield* Effect.promise(() => Bun.file(filepath).exists())
+      const exists = yield* Effect.promise(() => Filesystem.exists(filepath))
       if (!exists) return undefined
-      const text = yield* Effect.promise(() => Bun.file(filepath).text())
+      const text = yield* Effect.promise(() => Filesystem.readText(filepath))
       try {
         return hooksFromText(text, jsonc)
       } catch {
