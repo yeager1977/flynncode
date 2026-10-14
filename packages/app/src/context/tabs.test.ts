@@ -4,7 +4,7 @@ import { createTabMemory } from "./tab-memory"
 import { nextTabAfterClose, pushClosedTab, removeClosedTabs, takeClosedTab, type ClosedTab } from "./closed-tabs"
 import type { DraftTab, SessionTab, Tab } from "./tabs"
 import { migrateTabs } from "./tab-migration"
-import { draftRouteChange, promoteDraft } from "./draft-tabs"
+import { draftRouteChange, promoteDraft, unusedDraftPrompt } from "./draft-tabs"
 import { sessionHref } from "@/utils/session-route"
 import type { ServerConnection } from "./server"
 
@@ -187,5 +187,24 @@ describe("draft route changes", () => {
         unused: unused(["shown", "back"]),
       }).prune,
     ).toEqual(["shown"])
+  })
+})
+
+describe("unused draft prompts", () => {
+  const prompt = (input: { ready?: boolean; dirty?: boolean; items?: number }) => ({
+    ready: () => input.ready ?? true,
+    dirty: () => input.dirty ?? false,
+    context: { items: () => Array.from({ length: input.items ?? 0 }) },
+  })
+
+  test("counts a loaded, empty prompt without context as unused", () => {
+    expect(unusedDraftPrompt(prompt({}))).toBe(true)
+  })
+
+  test("keeps drafts with text, attached context, an unloaded prompt or none in memory", () => {
+    expect(unusedDraftPrompt(prompt({ dirty: true }))).toBe(false)
+    expect(unusedDraftPrompt(prompt({ items: 1 }))).toBe(false)
+    expect(unusedDraftPrompt(prompt({ ready: false }))).toBe(false)
+    expect(unusedDraftPrompt(undefined)).toBe(false)
   })
 })

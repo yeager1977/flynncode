@@ -32,6 +32,15 @@ export function draftRouteChange(input: {
   }
 }
 
+// A draft counts as never used only once its persisted prompt has loaded and
+// holds neither text nor attached context; one without prompt state in memory
+// (not visited this run) is kept.
+export function unusedDraftPrompt(
+  prompt: { ready: () => boolean; dirty: () => boolean; context: { items: () => readonly unknown[] } } | undefined,
+) {
+  return !!prompt && prompt.ready() && !prompt.dirty() && prompt.context.items().length === 0
+}
+
 function routeDraftID(path: string | undefined) {
   if (!path) return
   const url = new URL(path, "http://route")

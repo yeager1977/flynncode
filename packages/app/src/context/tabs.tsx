@@ -13,7 +13,7 @@ import { createTabMemory } from "./tab-memory"
 import { nextTabAfterClose, pushClosedTab, removeClosedTabs, takeClosedTab, type ClosedTab } from "./closed-tabs"
 import { createDraftPromptSession, type PromptModel, type PromptSession } from "./prompt-state"
 import { migrateTabs } from "./tab-migration"
-import { draftRouteChange, promoteDraft } from "./draft-tabs"
+import { draftRouteChange, promoteDraft, unusedDraftPrompt } from "./draft-tabs"
 
 export type SessionTab = {
   type: "session"
@@ -158,10 +158,7 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
             path,
             back: back(),
             tabs: store,
-            unused: (draft) => {
-              const prompt = memory.get<PromptSession>(tabKey(draft), "prompt")
-              return !!prompt && prompt.ready() && !prompt.dirty()
-            },
+            unused: (draft) => unusedDraftPrompt(memory.get<PromptSession>(tabKey(draft), "prompt")),
           })
           setBack(change.back)
           if (!ready() || change.prune.length === 0) return
