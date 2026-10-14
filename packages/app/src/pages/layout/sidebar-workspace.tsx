@@ -1260,6 +1260,8 @@ export const LocalWorkspace = (props: {
   project: LocalProject
   sortNow: Accessor<number>
   mobile?: boolean
+  // Rendered inside a parent that scrolls, so this list neither scrolls nor registers the scroll ref.
+  inline?: boolean
 }): JSX.Element => {
   const serverSync = useServerSync()
   const queryOptions = useQueryOptions()
@@ -1288,8 +1290,11 @@ export const LocalWorkspace = (props: {
 
   return (
     <div
-      ref={(el) => props.ctx.setScrollContainerRef(el, props.mobile)}
-      class="size-full flex flex-col py-2 overflow-y-auto no-scrollbar [overflow-anchor:none]"
+      ref={(el) => {
+        if (!props.inline) props.ctx.setScrollContainerRef(el, props.mobile)
+      }}
+      class="flex flex-col"
+      classList={{ "size-full py-2 overflow-y-auto no-scrollbar [overflow-anchor:none]": !props.inline }}
     >
       <WorkspaceFolders directory={props.project.worktree} />
       <SessionBulkBar

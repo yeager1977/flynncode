@@ -16,7 +16,7 @@ import { useServerSync } from "@/context/server-sync"
 import { tabKey, useTabs } from "@/context/tabs"
 import { sessionHref } from "@/utils/session-route"
 import { createSidebarController } from "./layout/sidebar-controller"
-import { SidebarContent } from "./layout/sidebar-shell"
+import { SessionSidebar } from "./layout/session-sidebar"
 import {
   directoryTabs,
   openProjectDirectory,
@@ -71,9 +71,9 @@ export function SidebarToggle() {
   )
 }
 
-// The classic project sidebar hosted in the new layout: sessions open as tabs
-// and selecting a project opens a draft for it. Collapsed, it is the project
-// rail; hovering a project there peeks at its sessions.
+// The session sidebar hosted in the new layout: every open project is a
+// collapsible header with its sessions underneath, and selecting a session
+// only routes. Collapsed, the column hides entirely.
 export function ProjectSidebar() {
   const layout = useLayout()
   const tabs = useTabs()
@@ -205,33 +205,12 @@ export function ProjectSidebar() {
   })
 
   const side = createMemo(() => Math.max(layout.sidebar.width(), MIN_WIDTH))
-  const panel = createMemo(() => side() - RAIL_WIDTH)
-  const peeking = () => sidebar.state.peeked && !layout.sidebar.opened()
 
   const content = (mobile?: boolean) => (
-    <SidebarContent
-      variant="v2"
+    <SessionSidebar
+      sidebar={sidebar}
       mobile={mobile}
-      opened={() => layout.sidebar.opened()}
-      aimMove={sidebar.aim.move}
-      projects={sidebar.projects}
-      renderProject={(project) => sidebar.renderProject(project, mobile)}
-      handleDragStart={sidebar.handleDragStart}
-      handleDragEnd={sidebar.handleDragEnd}
-      handleDragOver={sidebar.handleDragOver}
-      openProjectLabel={language.t("command.project.open")}
-      openProjectKeybind={() => command.keybind("project.open")}
-      onOpenProject={sidebar.chooseProject}
-      renderProjectOverlay={sidebar.projectOverlay}
-      renderPanel={() => (
-        <sidebar.SidebarPanel
-          project={sidebar.currentProject}
-          variant="v2"
-          mobile={mobile}
-          merged={mobile ? undefined : true}
-          width={panel()}
-        />
-      )}
+      onNewSession={(directory) => void tabs.newDraft({ server: server.key, directory })}
     />
   )
 
@@ -246,14 +225,8 @@ export function ProjectSidebar() {
           "transition-[width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none":
             !state.sizing,
         }}
-        style={{ width: `${layout.sidebar.opened() ? side() : RAIL_WIDTH}px` }}
+        style={{ width: `${layout.sidebar.opened() ? side() : 0}px` }}
         ref={(el) => sidebar.setNav(el)}
-        onMouseEnter={() => sidebar.disarm()}
-        onMouseLeave={() => {
-          sidebar.aim.reset()
-          if (!sidebar.sidebarHovering()) return
-          sidebar.arm()
-        }}
       >
         <div class="@container h-full contain-strict" style={{ width: `${side()}px` }}>
           {content()}
@@ -279,30 +252,6 @@ export function ProjectSidebar() {
           />
         </div>
       </Show>
-
-      <div
-        data-component="sidebar-v2"
-        class="absolute top-2 bottom-2 z-30 hidden md:flex"
-        classList={{
-          "opacity-100 translate-x-0 pointer-events-auto": peeking(),
-          "opacity-0 ltr:-translate-x-2 rtl:translate-x-2 pointer-events-none": !peeking(),
-          "transition-[opacity,transform] motion-reduce:transition-none": true,
-          "duration-180 ease-out": peeking(),
-          "duration-120 ease-in": !peeking(),
-        }}
-        style={{ "inset-inline-start": `${RAIL_WIDTH}px` }}
-        onMouseMove={() => sidebar.disarm()}
-        onMouseEnter={() => {
-          sidebar.disarm()
-          sidebar.aim.reset()
-        }}
-        onPointerDown={() => sidebar.disarm()}
-        onMouseLeave={() => sidebar.arm()}
-      >
-        <Show when={sidebar.peekProject()}>
-          <sidebar.SidebarPanel project={sidebar.peekProject} variant="v2" merged={false} width={panel()} />
-        </Show>
-      </div>
 
       <div class="md:hidden">
         <div

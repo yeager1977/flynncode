@@ -1729,6 +1729,8 @@ export function createSidebarController(host: SidebarHost) {
     projects,
     projectOverlay,
     renderProject,
+    workspaceSidebarCtx,
+    sortNow,
     SidebarPanel,
     setBusy,
     openProject,
@@ -1747,3 +1749,5 @@ export function createSidebarController(host: SidebarHost) {
     handleDragEnd,
   }
 }
+
+export type SidebarController = ReturnType<typeof createSidebarController>
