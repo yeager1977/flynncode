@@ -18,4 +18,4 @@ Usage notes:
 6. Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.), since it is not aware of the user's intent. Tell it how to verify its work if possible (e.g., relevant test commands).
 7. If the agent description mentions that it should be used proactively, then you should try your best to use it without the user having to ask for it first. Use your judgement.
 8. Pass `model` ("provider/model") to run the task on a specific model; combine it with `task_id` to continue a task on a different model.
-9. A result starting with "Subagent stopped: usage limit" means the work is NOT complete. Resume it with the same `task_id` and a different `model`, or tell the user the limit was hit; do not treat it as a finished result.
+9. A result containing "Subagent stopped: usage limit" means the work is NOT complete. Resume it with the same `task_id` and a different `model`, or tell the user the limit was hit; do not treat it as a finished result.

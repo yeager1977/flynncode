@@ -135,6 +135,8 @@ function stubOps(opts?: {
   text?: string
   error?: NonNullable<SessionV1.Assistant["error"]>
   toolError?: string
+  // The model the reply reports having run on (e.g. a router's resolved pick).
+  ranOn?: { providerID: ProviderV2.ID; modelID: ModelV2.ID }
 }): TaskPromptOps {
   return {
     cancel: () => Effect.void,
@@ -142,7 +144,12 @@ function stubOps(opts?: {
     prompt: (input) =>
       Effect.sync(() => {
         opts?.onPrompt?.(input)
-        return reply(input, opts?.text ?? "done", opts?.error, opts?.toolError)
+        const result = reply(input, opts?.text ?? "done", opts?.error, opts?.toolError)
+        if (opts?.ranOn && result.info.role === "assistant") {
+          result.info.providerID = opts.ranOn.providerID
+          result.info.modelID = opts.ranOn.modelID
+        }
+        return result
       }),
   }
 }
@@ -358,6 +365,41 @@ describe("tool.task", () => {
       expect(failure).toBeInstanceOf(Error)
       if (!(failure instanceof Error)) throw new Error("expected Error defect")
       expect(failure.message).toBe(`Subagent failed (task_id: ${child?.id}): Network connection lost`)
+    }),
+  )
+
+  it.instance("usage-limit report names the model the child actually ran on", () =>
+    Effect.gen(function* () {
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+
+      const result = yield* def.execute(
+        { description: "inspect bug", prompt: "look into it", subagent_type: "general" },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: {
+            promptOps: stubOps({
+              ranOn: { providerID: ProviderV2.ID.make("anthropic"), modelID: ModelV2.ID.make("resolved-pick") },
+              error: new SessionV1.APIError({
+                message: "Rate limit exceeded",
+                statusCode: 429,
+                isRetryable: true,
+                responseHeaders: { "retry-after": "120" },
+              }).toObject(),
+            }),
+          },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      expect(result.output).toContain("reached on anthropic/resolved-pick")
+      expect(result.output).not.toContain("test/test-model")
     }),
   )
 

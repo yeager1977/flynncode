@@ -414,7 +414,9 @@ export const TaskTool = Tool.define(
             const childTodos = yield* todos.get(nextSession.id)
             return renderUsageLimit({
               taskID: nextSession.id,
-              model: `${model.providerID}/${model.modelID}`,
+              // Report the model the child ran on, not the requested one: a
+              // router sentinel such as model-router/auto is not resumable.
+              model: `${result.info.providerID}/${result.info.modelID}`,
               limit,
               todos: childTodos,
               lastText: result.parts.findLast((item) => item.type === "text")?.text,
