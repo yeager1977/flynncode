@@ -811,6 +811,37 @@ it.instance(
 )
 
 it.instance(
+  "wouldAsk honours always-approved rules like ask does",
+  () =>
+    Effect.gen(function* () {
+      const permission = yield* Permission.Service
+      const check = { permission: "bash", patterns: ["ls"], ruleset: [] }
+      expect(yield* permission.wouldAsk(check)).toBe(true)
+
+      const fiber = yield* ask({
+        id: PermissionV1.ID.make("per_would_ask"),
+        sessionID: SessionID.make("session_test"),
+        permission: "bash",
+        patterns: ["ls"],
+        metadata: {},
+        always: ["ls"],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+      yield* waitForPending(1)
+      yield* reply({ requestID: PermissionV1.ID.make("per_would_ask"), reply: "always" })
+      yield* Fiber.join(fiber)
+
+      expect(yield* permission.wouldAsk(check)).toBe(false)
+      // A configured deny still wins over the approval, and a denied call never asks.
+      expect(
+        yield* permission.wouldAsk({ ...check, ruleset: [{ permission: "bash", pattern: "*", action: "deny" }] }),
+      ).toBe(false)
+      expect(yield* permission.wouldAsk({ ...check, patterns: ["ls", "rm -rf /"] })).toBe(true)
+    }),
+  { git: true },
+)
+
+it.instance(
   "reply - reject cancels all pending for same session",
   () =>
     Effect.gen(function* () {

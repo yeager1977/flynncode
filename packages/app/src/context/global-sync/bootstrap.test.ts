@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createStore } from "solid-js/store"
-import { QueryClient } from "@tanstack/solid-query"
+import { QueryClient, QueryObserver } from "@tanstack/solid-query"
 import type { Config, OpencodeClient, Project } from "@flynncode/sdk/v2/client"
 import type { AgentApi, CatalogApi, CommandApi, ReferenceApi } from "@opencode-ai/client/promise"
 import type { NormalizedProviderListResponse } from "@flynncode/session-ui/context"
@@ -331,6 +331,83 @@ describe("query keys", () => {
 
     expect(calls).toEqual([{ location: { directory: "/repo" } }])
     expect(result).toEqual([])
+  })
+
+  test("rejects the provider catalog when a request never answers", async () => {
+    const hang = () => new Promise<never>(() => {})
+    const api = {
+      provider: { list: hang },
+      model: { list: hang, default: hang },
+    } as unknown as CatalogApi
+
+    await expect(
+      new QueryClient().fetchQuery(loadProvidersQuery(ServerScope.local, "/repo", api, undefined, undefined, 10)),
+    ).rejects.toMatchObject({ name: "TimeoutError" })
+  })
+
+  test("stops loading without query retries when a catalog request never answers", async () => {
+    const hang = () => new Promise<never>(() => {})
+    const api = {
+      provider: { list: hang },
+      model: { list: hang, default: hang },
+    } as unknown as CatalogApi
+    // Unlike fetchQuery, an observer applies the default retry policy (3 retries with backoff).
+    const observer = new QueryObserver(
+      new QueryClient(),
+      loadProvidersQuery(ServerScope.local, "/repo", api, undefined, undefined, 10),
+    )
+
+    const result = await new Promise<ReturnType<typeof observer.getCurrentResult>>((resolve) => {
+      const fallback = setTimeout(() => {
+        unsubscribe()
+        resolve(observer.getCurrentResult())
+      }, 500)
+      const unsubscribe = observer.subscribe((next) => {
+        if (next.status === "pending") return
+        clearTimeout(fallback)
+        unsubscribe()
+        resolve(next)
+      })
+    })
+
+    expect(result.status).toBe("error")
+    expect(result.isLoading).toBe(false)
+  })
+
+  test("rejects the provider catalog when protocol detection never settles", async () => {
+    const api = {} as CatalogApi
+
+    // Detection must be the only thing pending: a stray TypeError from the stubs would not be a TimeoutError.
+    await expect(
+      new QueryClient().fetchQuery(
+        loadProvidersQuery(ServerScope.local, "/repo", api, {} as OpencodeClient, new Promise(() => {}), 10),
+      ),
+    ).rejects.toMatchObject({ name: "TimeoutError" })
+  })
+
+  test("passes an abort signal to every catalog request", async () => {
+    const signals: unknown[] = []
+    const record = async (_input: unknown, options?: { signal?: AbortSignal }) => {
+      signals.push(options?.signal)
+      return { location: {}, data: [] }
+    }
+    const api = {
+      provider: { list: record },
+      model: { list: record, default: record },
+    } as unknown as CatalogApi
+
+    await new QueryClient().fetchQuery(loadProvidersQuery(ServerScope.local, "/repo", api))
+
+    expect(signals).toHaveLength(3)
+    expect(signals.every((signal) => signal instanceof AbortSignal)).toBe(true)
+  })
+
+  test("rejects the agent catalog when the request never answers", async () => {
+    const api = { list: () => new Promise<never>(() => {}) } as unknown as AgentApi
+
+    await expect(
+      new QueryClient().fetchQuery(loadAgentsQuery(ServerScope.local, "/repo", api, undefined, undefined, 10)),
+    ).rejects.toMatchObject({ name: "TimeoutError" })
   })
 
   test("loads commands from the current location-scoped endpoint", async () => {

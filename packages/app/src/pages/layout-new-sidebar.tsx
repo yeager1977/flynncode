@@ -1,4 +1,4 @@
-import { createEffect, createMemo, on, onCleanup, onMount, Show, startTransition } from "solid-js"
+import { createEffect, createMemo, on, onCleanup, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useNavigate } from "@solidjs/router"
 import { makeEventListener } from "@solid-primitives/event-listener"
@@ -12,22 +12,28 @@ import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useServer } from "@/context/server"
+import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
-import { tabKey, useTabs } from "@/context/tabs"
+import { useTabs } from "@/context/tabs"
+import { pathKey } from "@/utils/path-key"
 import { sessionHref } from "@/utils/session-route"
+import { showToast } from "@/utils/toast"
+import type { Session } from "@flynncode/sdk/v2/client"
+import { sortedRootSessions } from "./layout/helpers"
 import { createSidebarController } from "./layout/sidebar-controller"
-import { SidebarContent } from "./layout/sidebar-shell"
+import { SessionSidebar, SIDEBAR_SESSION_PREVIEW } from "./layout/session-sidebar"
+import { createSidebarSessions, type SidebarGroup } from "./layout/sidebar-sessions"
 import {
-  directoryTabs,
+  listedWorktree,
   openProjectDirectory,
   openSidebarByDefault,
   projectDraft,
-  sessionTabStep,
   sidebarCommands,
   sidebarDirectory,
+  visibleSessionOrder,
+  worktreeClosing,
 } from "./layout/new-layout-sidebar"
 
-const RAIL_WIDTH = 64
 const MIN_WIDTH = 244
 const MOBILE = "(max-width: 767px)"
 
@@ -72,24 +78,27 @@ export function SidebarToggle() {
   )
 }
 
-// The classic project sidebar hosted in the new layout: sessions open as tabs
-// and selecting a project opens a draft for it. Collapsed, it is the project
-// rail; hovering a project there peeks at its sessions.
+// The session sidebar hosted in the new layout: every open project is a
+// collapsible header with its sessions underneath, and selecting a session
+// only routes. Collapsed, the column hides entirely.
 export function ProjectSidebar() {
   const layout = useLayout()
   const tabs = useTabs()
   const server = useServer()
   const serverSync = useServerSync()
+  const serverSDK = useServerSDK()
   const navigate = useNavigate()
   const command = useCommand()
   const language = useLanguage()
   const toggle = useSidebarToggle()
-  const [state, setState] = createStore({ remembered: undefined as string | undefined, sizing: false })
+  const [state, setState] = createStore({
+    remembered: undefined as string | undefined,
+    sizing: false,
+    showAll: {} as Record<string, boolean>,
+  })
   let sizet: number | undefined
 
-  const sessionDirectory = (id: string) =>
-    serverSync().session.get(id)?.directory ??
-    tabs.info[tabKey({ type: "session", server: server.key, sessionId: id })]?.directory
+  const sessionDirectory = (id: string) => serverSync().session.get(id)?.directory
   const routed = createMemo(() =>
     sidebarDirectory({ route: layout.route(), server: server.key, tabs: tabs.store, sessionDirectory }),
   )
@@ -117,69 +126,64 @@ export function ProjectSidebar() {
       ) ?? "",
   )
 
+  // New session reuses the directory's open draft rather than stacking another.
+  const openDraft = (directory: string) => {
+    const draft = projectDraft(tabs.store, server.key, directory)
+    if (draft) {
+      tabs.select(draft)
+      return
+    }
+    void tabs.newDraft({ server: server.key, directory })
+  }
+
   const sidebar = createSidebarController({
     currentDir,
     routedDir: routed,
     sessionID,
     tabs: true,
-    openSession: (_, id) => {
-      const step = sessionTabStep(tabs.store, server.key, sessionID(), id)
-      if (step.type === "select") {
-        tabs.select(step.tab)
-        return
-      }
-      if (step.type === "replace") {
-        tabs.replaceTab(step.index, { type: "session", server: server.key, sessionId: id })
-        return
-      }
-      void startTransition(() => {
-        tabs.select(tabs.addSessionTab({ server: server.key, sessionId: id }))
-      })
-    },
+    openSession: (_, id) => navigate(sessionHref(server.key, id)),
     closeTabs: async (input) => {
-      const found = directoryTabs(tabs.store, server.key, input.directory, sessionDirectory)
-      const drafts = input.drafts ? found.drafts : []
-      const route = layout.route()
-      const showing =
-        (route.type === "session" && found.sessions.includes(route.sessionId)) ||
-        (route.type === "draft" && drafts.includes(route.draftID))
+      const closing = worktreeClosing({
+        tabs: tabs.store,
+        server: server.key,
+        directory: input.directory,
+        drafts: input.drafts,
+        route: layout.route(),
+        sessionDirectory,
+      })
       // Like the session header's worktree menu: land on a draft in the main
-      // checkout before the removed worktree's tabs go away.
+      // checkout before the removed worktree's drafts go away.
       // A reset keeps the worktree, so its replacement draft stays there.
-      if (showing) await tabs.newDraft({ server: server.key, directory: input.drafts ? input.root : input.directory })
-      if (found.sessions.length > 0)
-        tabs.removeSessions({ server: server.key, directory: input.directory, sessionIDs: found.sessions })
-      for (const draftID of drafts) {
+      if (closing.showing)
+        await tabs.newDraft({ server: server.key, directory: input.drafts ? input.root : input.directory })
+      for (const draftID of closing.drafts) {
         const index = tabs.store.findIndex((tab) => tab.type === "draft" && tab.draftID === draftID)
         if (index !== -1) tabs.removeTab(index)
       }
     },
-    newSession: (directory) => void tabs.newDraft({ server: server.key, directory }),
-    openProject: (root) => {
-      const draft = projectDraft(tabs.store, server.key, root)
-      if (draft) {
-        tabs.select(draft)
-        return
-      }
-      void tabs.newDraft({ server: server.key, directory: root })
-    },
+    newSession: openDraft,
+    openProject: openDraft,
     sessionHref: (session) => sessionHref(server.key, session.id),
     home: () => navigate("/"),
   })
 
-  // Follow tab switches: reveal the routed session in the list and remember
-  // its project, as the classic layout does on route changes.
+  // Remember the routed session's project so New session and Home target it.
   createEffect(
-    on([routed, sessionID, sidebar.ready] as const, ([directory, id, ready]) => {
+    on([routed, sidebar.ready] as const, ([directory, ready]) => {
       if (!ready || !directory) return
       const root = sidebar.projectRoot(directory)
       if (server.projects.last() !== root) server.projects.touch(root)
-      if (id) sidebar.revealSession(directory, id)
     }),
   )
 
   // Opening a session, draft or artifact from the phone drawer closes it.
-  createEffect(on(() => layout.route(), () => layout.mobileSidebar.hide(), { defer: true }))
+  createEffect(
+    on(
+      () => layout.route(),
+      () => layout.mobileSidebar.hide(),
+      { defer: true },
+    ),
+  )
 
   openSidebarByDefault({
     ready: layout.ready,
@@ -204,6 +208,46 @@ export function ProjectSidebar() {
     }),
   )
 
+  const listing = createSidebarSessions()
+  const archive = async (session: Session) => {
+    const ok = await serverSDK()
+      .client.session.update({ sessionID: session.id, directory: session.directory, time: { archived: Date.now() } })
+      .then(() => true)
+      .catch(() => false)
+    if (!ok) {
+      showToast({ title: language.t("common.requestFailed") })
+      return
+    }
+    serverSync().homeSessions.remove(session.id)
+    // Archiving the open session leaves it; "/" starts a new one in this project.
+    if (sessionID() === session.id) navigate("/")
+  }
+  // A project shows its newest sessions; the routed one stays listed even past the preview.
+  const shown = (group: SidebarGroup) => {
+    if (state.showAll[group.project.worktree]) return group.sessions
+    const preview = group.sessions.slice(0, SIDEBAR_SESSION_PREVIEW)
+    const active = group.sessions.find((session) => session.id === sessionID())
+    if (!active || preview.includes(active)) return preview
+    return [...preview, active]
+  }
+  // Mod+1-9 open the Nth session as listed; nothing is bound while the sidebar is closed.
+  const visible = createMemo(() => {
+    if (!toggle.opened()) return []
+    return visibleSessionOrder(listing.groups().map((group) => ({ expanded: true, sessions: shown(group) })))
+  })
+  command.register("sidebar-session-index", () =>
+    visible()
+      .slice(0, 9)
+      .map((session, index) => ({
+        id: `session.index.${index + 1}`,
+        category: language.t("command.category.session"),
+        title: session.title,
+        keybind: `mod+${index + 1}`,
+        hidden: true,
+        onSelect: () => navigate(sessionHref(server.key, session.id)),
+      })),
+  )
+
   onMount(() => {
     const stop = () => setState("sizing", false)
     makeEventListener(window, "pointerup", stop)
@@ -219,33 +263,19 @@ export function ProjectSidebar() {
   })
 
   const side = createMemo(() => Math.max(layout.sidebar.width(), MIN_WIDTH))
-  const panel = createMemo(() => side() - RAIL_WIDTH)
-  const peeking = () => sidebar.state.peeked && !layout.sidebar.opened()
 
-  const content = (mobile?: boolean) => (
-    <SidebarContent
-      variant="v2"
-      mobile={mobile}
-      opened={() => layout.sidebar.opened()}
-      aimMove={sidebar.aim.move}
-      projects={sidebar.projects}
-      renderProject={(project) => sidebar.renderProject(project, mobile)}
-      handleDragStart={sidebar.handleDragStart}
-      handleDragEnd={sidebar.handleDragEnd}
-      handleDragOver={sidebar.handleDragOver}
-      openProjectLabel={language.t("command.project.open")}
-      openProjectKeybind={() => command.keybind("project.open")}
-      onOpenProject={sidebar.chooseProject}
-      renderProjectOverlay={sidebar.projectOverlay}
-      renderPanel={() => (
-        <sidebar.SidebarPanel
-          project={sidebar.currentProject}
-          variant="v2"
-          mobile={mobile}
-          merged={mobile ? undefined : true}
-          width={panel()}
-        />
-      )}
+  const content = () => (
+    <SessionSidebar
+      groups={listing.groups}
+      activeSessionID={sessionID}
+      currentDirectory={() => currentDir() || undefined}
+      sessionHref={(session) => sessionHref(server.key, session.id)}
+      onNewSession={openDraft}
+      onOpenProject={() => sidebar.chooseProject()}
+      onArchive={(session) => void archive(session)}
+      shown={shown}
+      showingAll={(worktree) => !!state.showAll[worktree]}
+      showAll={(worktree, value) => setState("showAll", worktree, value)}
     />
   )
 
@@ -260,14 +290,11 @@ export function ProjectSidebar() {
           "transition-[width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none":
             !state.sizing,
         }}
-        style={{ width: `${layout.sidebar.opened() ? side() : RAIL_WIDTH}px` }}
+        style={{ width: `${layout.sidebar.opened() ? side() : 0}px` }}
+        // Collapsed it is 0 wide but still mounted: keep it out of focus and the accessibility tree.
+        inert={!layout.sidebar.opened()}
+        aria-hidden={layout.sidebar.opened() ? undefined : "true"}
         ref={(el) => sidebar.setNav(el)}
-        onMouseEnter={() => sidebar.disarm()}
-        onMouseLeave={() => {
-          sidebar.aim.reset()
-          if (!sidebar.sidebarHovering()) return
-          sidebar.arm()
-        }}
       >
         <div class="@container h-full contain-strict" style={{ width: `${side()}px` }}>
           {content()}
@@ -275,15 +302,12 @@ export function ProjectSidebar() {
       </nav>
 
       <Show when={layout.sidebar.opened()}>
-        <div
-          class="relative hidden md:block w-0 shrink-0 z-30"
-          onPointerDown={() => setState("sizing", true)}
-        >
+        <div class="relative hidden md:block w-0 shrink-0 z-30" onPointerDown={() => setState("sizing", true)}>
           <ResizeHandle
             direction="horizontal"
             size={layout.sidebar.width()}
             min={MIN_WIDTH}
-            max={typeof window === "undefined" ? 1000 : window.innerWidth * 0.3 + RAIL_WIDTH}
+            max={typeof window === "undefined" ? 1000 : window.innerWidth * 0.3}
             onResize={(width) => {
               setState("sizing", true)
               if (sizet !== undefined) clearTimeout(sizet)
@@ -293,30 +317,6 @@ export function ProjectSidebar() {
           />
         </div>
       </Show>
-
-      <div
-        data-component="sidebar-v2"
-        class="absolute top-2 bottom-2 z-30 hidden md:flex"
-        classList={{
-          "opacity-100 translate-x-0 pointer-events-auto": peeking(),
-          "opacity-0 ltr:-translate-x-2 rtl:translate-x-2 pointer-events-none": !peeking(),
-          "transition-[opacity,transform] motion-reduce:transition-none": true,
-          "duration-180 ease-out": peeking(),
-          "duration-120 ease-in": !peeking(),
-        }}
-        style={{ "inset-inline-start": `${RAIL_WIDTH}px` }}
-        onMouseMove={() => sidebar.disarm()}
-        onMouseEnter={() => {
-          sidebar.disarm()
-          sidebar.aim.reset()
-        }}
-        onPointerDown={() => sidebar.disarm()}
-        onMouseLeave={() => sidebar.arm()}
-      >
-        <Show when={sidebar.peekProject()}>
-          <sidebar.SidebarPanel project={sidebar.peekProject} variant="v2" merged={false} width={panel()} />
-        </Show>
-      </div>
 
       <div class="md:hidden">
         <div
@@ -340,7 +340,7 @@ export function ProjectSidebar() {
             "padding-bottom": "env(safe-area-inset-bottom, 0px)",
           }}
         >
-          {content(true)}
+          {content()}
         </nav>
       </div>
     </>

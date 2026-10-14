@@ -186,7 +186,9 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
   const serverSync = useServerSync()
   const unseenCount = createMemo(() => notification.session.unseenCount(props.session.id))
   const hasError = createMemo(() => notification.session.unseenHasError(props.session.id))
-  const [sessionStore] = serverSync().child(props.session.directory)
+  // Reads only the loaded session list; a row must not bootstrap its
+  // directory (the list owner decides that).
+  const [sessionStore] = serverSync().child(props.session.directory, { bootstrap: false })
   const hasPermissions = createMemo(() => {
     return !!sessionPermissionRequest(
       sessionStore.session,

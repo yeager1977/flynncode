@@ -2,7 +2,7 @@ import { createEffect, type Accessor } from "solid-js"
 import type { CommandOption } from "@/context/command"
 import type { LayoutRoute } from "@/context/layout"
 import type { ServerConnection } from "@/context/server"
-import type { DraftTab, SessionTab, Tab } from "@/context/tabs"
+import type { DraftTab, Tab } from "@/context/tabs"
 import { pathKey } from "@/utils/path-key"
 
 // Logic behind the new layout's project sidebar, kept out of JSX so it runs
@@ -81,38 +81,30 @@ export function legacyDraftTarget(input: {
   return { type: "new" as const, directory }
 }
 
-// Stepping to another session from the sidebar's keyboard navigation: switch
-// to its tab when open, else swap it into the current session's tab so
-// cycling does not stack a tab per step.
-export function sessionTabStep(tabs: Tab[], server: ServerConnection.Key, current: string | undefined, next: string) {
-  const open = tabs.find(
-    (tab): tab is SessionTab => tab.type === "session" && tab.server === server && tab.sessionId === next,
-  )
-  if (open) return { type: "select" as const, tab: open }
-  const index = current
-    ? tabs.findIndex((tab) => tab.type === "session" && tab.server === server && tab.sessionId === current)
-    : -1
-  if (index !== -1) return { type: "replace" as const, index }
-  return { type: "add" as const }
-}
-
-// Tabs left pointing into a removed (or reset) worktree.
-export function directoryTabs(
-  tabs: Tab[],
-  server: ServerConnection.Key,
-  directory: string,
-  sessionDirectory: (sessionID: string) => string | undefined,
-) {
-  const key = pathKey(directory)
+// Closing a removed (or reset) worktree: its drafts go only when the worktree
+// does, and a routed session or draft inside it needs a draft elsewhere first.
+export function worktreeClosing(input: {
+  tabs: Tab[]
+  server: ServerConnection.Key
+  directory: string
+  drafts: boolean
+  route: LayoutRoute
+  sessionDirectory: (sessionID: string) => string | undefined
+}) {
+  const key = pathKey(input.directory)
   const inside = (value: string | undefined) => value !== undefined && pathKey(value) === key
-  return {
-    sessions: tabs.flatMap((tab) =>
-      tab.type === "session" && tab.server === server && inside(sessionDirectory(tab.sessionId)) ? [tab.sessionId] : [],
-    ),
-    drafts: tabs.flatMap((tab) =>
-      tab.type === "draft" && tab.server === server && inside(tab.directory) ? [tab.draftID] : [],
-    ),
-  }
+  const drafts = input.drafts
+    ? input.tabs.flatMap((tab) =>
+        tab.type === "draft" && tab.server === input.server && inside(tab.directory) ? [tab.draftID] : [],
+      )
+    : []
+  const route = input.route
+  const ours = route.type !== "home" && (route.server === undefined || route.server === input.server)
+  const showing =
+    ours &&
+    ((route.type === "session" && inside(input.sessionDirectory(route.sessionId))) ||
+      (route.type === "draft" && drafts.includes(route.draftID)))
+  return { drafts, showing }
 }
 
 export type SidebarCommandInput = {
@@ -137,8 +129,9 @@ type SidebarCommandKey =
   | "command.session.next.unseen"
 
 // The classic layout's sidebar commands with keybinds that fit the new
-// layout: mod+1-9 already switch tabs there, so project.1-9 have no default
-// keybind and stay in the palette and keybind settings instead.
+// layout: mod+1-9 jump to the Nth sidebar session, so project.1-9 have no
+// default keybind (to avoid colliding) and stay in the palette and keybind
+// settings instead.
 export function sidebarCommands(input: SidebarCommandInput): CommandOption[] {
   return [
     {
@@ -198,4 +191,28 @@ export function sidebarCommands(input: SidebarCommandInput): CommandOption[] {
       onSelect: () => input.unseen(1),
     },
   ]
+}
+
+// The routed directory as the sidebar lists it among a project's worktrees
+// (workspaceIds spelling, which keys workspaceExpanded); undefined for the main
+// folder or a directory the project does not list.
+export function listedWorktree(ids: readonly string[], root: string, directory: string) {
+  const key = pathKey(directory)
+  if (key === pathKey(root)) return
+  return ids.find((item) => pathKey(item) === key)
+}
+
+type SessionGroup<T> = { expanded: boolean; sessions: readonly T[] }
+
+// Mod+1-9 order: what the sidebar shows, top to bottom. Under an expanded
+// project come its main-folder sessions, then each expanded worktree's.
+export function visibleSessionOrder<T>(groups: readonly (SessionGroup<T> & { worktrees?: SessionGroup<T>[] })[]): T[] {
+  return groups.flatMap((group) =>
+    group.expanded
+      ? [
+          ...group.sessions,
+          ...(group.worktrees ?? []).flatMap((worktree) => (worktree.expanded ? worktree.sessions : [])),
+        ]
+      : [],
+  )
 }

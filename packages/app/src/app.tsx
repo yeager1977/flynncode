@@ -69,7 +69,7 @@ import { legacySessionHref, legacySessionServer, requireServerKey, sessionHref }
 import { createSessionLineage } from "@/pages/session/session-lineage"
 
 import { SessionPage, SessionRouteErrorBoundary, TargetSessionRouteContent } from "@/pages/session"
-import { NewHome } from "@/pages/home"
+import { StartRoute } from "@/pages/start"
 import { LegacyHome } from "@/pages/home/legacy-home"
 
 const NewSession = lazy(() => import("@/pages/new-session"))
@@ -687,7 +687,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
         </Route>
       </Show>
       <Show when={settings.general.newLayoutDesigns()}>
-        <Route path="/" component={NewHome} />
+        <Route path="/" component={StartRoute} />
         <Route path="/:dir" component={() => <Navigate href="session" />} />
         <Route path="/:dir/session" component={NewLayoutLegacyDraftRedirect} />
         <Route path="/:dir/session/:id" component={NewLayoutLegacySessionRedirect} />

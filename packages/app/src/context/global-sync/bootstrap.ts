@@ -218,34 +218,56 @@ function warmSessions(input: {
   ).then(() => undefined)
 }
 
+// A request that never answers must not hide the composer's model control forever.
+const CATALOG_TIMEOUT_MS = 15_000
+
 export const loadProvidersQuery = (
   scope: ServerScope,
   directory: string | null,
   sdk: CatalogApi,
   legacy?: OpencodeClient,
   protocol?: Promise<ServerProtocol>,
+  timeoutMs = CATALOG_TIMEOUT_MS,
 ) =>
   queryOptions({
     queryKey: [scope, directory, "providers"],
     refetchInterval: 5 * 60 * 1000,
-    queryFn: () =>
-      retry(async () => {
-        if ((await protocol) === "v1" && legacy) {
-          const result = await legacy.provider.list()
-          return normalizeProviderList(result.data!)
-        }
-        const location = directory ? { location: { directory } } : undefined
-        const [providers, models, defaultModel] = await Promise.all([
-          sdk.provider.list(location),
-          sdk.model.list(location),
-          sdk.model.default(location),
-        ])
-        return normalizeProviderList(providers.data, models.data, defaultModel.data)
-      }),
+    // isLoading stays true across query retries; the inner retry() already covers transient failures.
+    retry: false,
+    queryFn: (context) => {
+      const signal = AbortSignal.any([context.signal, AbortSignal.timeout(timeoutMs)])
+      return untilAborted(
+        signal,
+        retry(async () => {
+          if ((await protocol) === "v1" && legacy) {
+            const result = await legacy.provider.list(undefined, { signal })
+            return normalizeProviderList(result.data!)
+          }
+          const location = directory ? { location: { directory } } : undefined
+          const [providers, models, defaultModel] = await Promise.all([
+            sdk.provider.list(location, { signal }),
+            sdk.model.list(location, { signal }),
+            sdk.model.default(location, { signal }),
+          ])
+          return normalizeProviderList(providers.data, models.data, defaultModel.data)
+        }),
+      )
+    },
   })
 
+// Protocol detection takes no signal, so racing it keeps a stuck detection from outliving the timeout.
+function untilAborted<T>(signal: AbortSignal, promise: Promise<T>) {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      if (signal.aborted) return reject(signal.reason)
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true })
+    }),
+  ])
+}
+
 type AgentListApi = {
-  readonly list: (input?: AgentListInput) => Promise<AgentListOutput>
+  readonly list: (input?: AgentListInput, options?: { signal?: AbortSignal }) => Promise<AgentListOutput>
 }
 
 type CommandListApi = {
@@ -262,14 +284,22 @@ export const loadAgentsQuery = (
   sdk: AgentListApi,
   legacy?: OpencodeClient,
   protocol?: Promise<ServerProtocol>,
+  timeoutMs = CATALOG_TIMEOUT_MS,
 ) =>
   queryOptions({
     queryKey: [scope, directory, "agents"],
-    queryFn: () =>
-      retry(async () => {
-        if ((await protocol) === "v1" && legacy) return normalizeAgentList((await legacy.app.agents()).data ?? [])
-        return sdk.list({ location: { directory } }).then((result) => normalizeAgentList(result.data))
-      }),
+    retry: false,
+    queryFn: (context) => {
+      const signal = AbortSignal.any([context.signal, AbortSignal.timeout(timeoutMs)])
+      return untilAborted(
+        signal,
+        retry(async () => {
+          if ((await protocol) === "v1" && legacy)
+            return normalizeAgentList((await legacy.app.agents(undefined, { signal })).data ?? [])
+          return sdk.list({ location: { directory } }, { signal }).then((result) => normalizeAgentList(result.data))
+        }),
+      )
+    },
   })
 
 export const loadCommands = (

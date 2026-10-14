@@ -17,10 +17,7 @@ import { IconButton } from "@flynncode/ui/icon-button"
 import { Icon } from "@flynncode/ui/icon"
 import { Button } from "@flynncode/ui/button"
 import { Tooltip, TooltipKeybind } from "@flynncode/ui/tooltip"
-import { IconButtonV2 } from "@flynncode/ui/v2/icon-button-v2"
 import { Icon as IconV2 } from "@flynncode/ui/v2/icon"
-import { KeybindV2 } from "@flynncode/ui/v2/keybind-v2"
-import { TooltipV2 } from "@flynncode/ui/v2/tooltip-v2"
 
 import { LayoutRoute, useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
@@ -29,16 +26,15 @@ import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { WindowsAppMenu } from "./windows-app-menu"
 import { applyPath, backPath, forwardPath } from "./titlebar-history"
-import { TitlebarTabStrip } from "@/components/titlebar-tab-strip"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createMediaQuery } from "@solid-primitives/media"
 import { readSessionTabsRemovedDetail, SESSION_TABS_REMOVED_EVENT } from "@/components/titlebar-session-events"
 import { useGlobal } from "@/context/global"
 import { ServerConnection, useServer } from "@/context/server"
-import { tabKey, useTabs } from "@/context/tabs"
-import type { PromptSession } from "@/context/prompt"
+import { useTabs } from "@/context/tabs"
+import type { PromptModel, PromptSession } from "@/context/prompt"
+import { projectDraft } from "@/pages/layout/new-layout-sidebar"
 import "./titlebar.css"
-import { newTabTooltipKeybind } from "./command-tooltip-keybind"
 import { normalizeSessionInfo } from "@/utils/session"
 
 const legacyTitlebarHeight = 40
@@ -246,21 +242,10 @@ export function Titlebar(props: {
             const currentTab = () => matchRoute(layout.route())
 
             createEffect(() => {
-              const route = layout.route()
+              layout.route()
               if (!tabs.ready()) return
               const tab = currentTab()
-              if (tab) {
-                tabs.remember(tab)
-                return
-              }
-
-              if (route.type === "session") {
-                const s = session()
-                if (!s) return
-                const sessionId = s.parentID ?? s.id
-                const next = { server: route.server ?? server.key, sessionId }
-                tabsStoreActions.addSessionTab(next)
-              }
+              if (tab) tabs.remember(tab)
             })
 
             makeEventListener(window, SESSION_TABS_REMOVED_EVENT, (event) => {
@@ -268,6 +253,16 @@ export function Titlebar(props: {
               if (!detail) return
               tabsStoreActions.removeSessions(detail)
             })
+
+            // Reuse the directory's open draft rather than stacking another hidden one.
+            const openDraft = (draft: { server: ServerConnection.Key; directory: string }, model?: PromptModel) => {
+              const existing = projectDraft(tabs.store, draft.server, draft.directory)
+              if (existing) {
+                tabs.select(existing)
+                return
+              }
+              void tabs.newDraft(draft, "", model)
+            }
 
             const openNewTab = () => {
               const route = layout.route()
@@ -279,14 +274,14 @@ export function Titlebar(props: {
                   sessionId: activeSession.id,
                 }
                 const model = tabs.stateValue<PromptSession>(sessionTab, "prompt")?.model.current()
-                tabs.newDraft({ server: sessionTab.server, directory: activeSession.directory }, "", model)
+                openDraft({ server: sessionTab.server, directory: activeSession.directory }, model)
                 return
               }
 
               const activeTab = currentTab()
               if (activeTab?.type === "draft") {
                 const model = tabs.stateValue<PromptSession>(activeTab, "prompt")?.model.current()
-                tabs.newDraft({ server: activeTab.server, directory: activeTab.directory }, "", model)
+                openDraft({ server: activeTab.server, directory: activeTab.directory }, model)
                 return
               }
 
@@ -300,14 +295,14 @@ export function Titlebar(props: {
                       .find((item) => item.worktree === selection.directory)
                   : undefined
                 if (conn && project) {
-                  tabs.newDraft({ server: ServerConnection.key(conn), directory: project.worktree }, "")
+                  openDraft({ server: ServerConnection.key(conn), directory: project.worktree })
                   return
                 }
               }
 
               const current = layout.projects.list()[0]
               if (current) {
-                tabs.newDraft({ server: server.key, directory: current.worktree }, "")
+                openDraft({ server: server.key, directory: current.worktree })
                 return
               }
 
@@ -317,9 +312,9 @@ export function Titlebar(props: {
               })[0]
               if (!fallback) return
 
-              tabs.newDraft({ server: fallback.server, directory: fallback.project.worktree }, "")
+              openDraft({ server: fallback.server, directory: fallback.project.worktree })
             }
-            const toggleHome = () => tabs.toggleHome({ home: layout.route().type === "home", current: currentTab() })
+            const toggleHome = () => tabs.toggleHome(layout.route().type === "home")
 
             command.register("titlebar-home", () => [
               {
@@ -333,39 +328,28 @@ export function Titlebar(props: {
               },
             ])
 
-            command.register("tabs", () => {
-              const current = currentTab()
-
-              return [
-                {
-                  id: "tab.new",
-                  category: "tab",
-                  title: language.t("command.session.new"),
-                  keybind: "mod+t,mod+n",
-                  hidden: true,
-                  onSelect: openNewTab,
-                },
-                current && {
-                  id: "tab.close",
-                  category: "tab",
-                  title: language.t("command.tab.close"),
-                  keybind: "mod+w",
-                  hidden: true,
-                  onSelect: () => {
-                    tabsStoreActions.closeTab(tabsStore.findIndex((tab) => current === tab))
-                  },
-                },
-                {
-                  id: "tab.reopenClosed",
-                  category: language.t("command.category.file"),
-                  title: language.t("command.tab.reopenClosed"),
-                  keybind: "mod+shift+t",
-                  onSelect: () => tabsStoreActions.reopenClosedTab(),
-                },
-              ].filter((v) => v !== undefined)
-            })
-
-            const [tabsAreOverflowing, setTabsAreOverflowing] = createSignal(false)
+            // Sessions have no tabs, so there is nothing for mod+w or
+            // mod+shift+t to close or reopen. mod+w still has to be consumed:
+            // otherwise the desktop menu's Close Window accelerator closes the
+            // window. Session commands (file tabs, terminal) take it first.
+            command.register("tabs", () => [
+              {
+                id: "tab.new",
+                category: "tab",
+                title: language.t("command.session.new"),
+                keybind: "mod+t,mod+n",
+                hidden: true,
+                onSelect: openNewTab,
+              },
+              {
+                id: "window.keepOpen",
+                // Untitled, so it stays out of the command catalog and keybind settings.
+                title: "",
+                keybind: "mod+w",
+                hidden: true,
+                onSelect: () => {},
+              },
+            ])
 
             return (
               <div
@@ -382,63 +366,7 @@ export function Titlebar(props: {
                   <WindowsAppMenu command={command} platform={platform} variant="v2" />
                 </Show>
                 {props.leading}
-                <TooltipV2
-                  placement="bottom"
-                  value={
-                    <>
-                      {language.t("home.title")}
-                      <KeybindV2 keys={command.keybindParts("home.toggle")} variant="neutral" />
-                    </>
-                  }
-                  class="shrink-0"
-                >
-                  <IconButtonV2
-                    type="button"
-                    variant="ghost-muted"
-                    size="large"
-                    class="!w-9 shrink-0"
-                    icon={<IconV2 name="grid-plus" />}
-                    state={layout.route().type === "home" ? "pressed" : undefined}
-                    onClick={toggleHome}
-                    aria-label={language.t("home.title")}
-                    aria-pressed={layout.route().type === "home"}
-                  />
-                </TooltipV2>
-
-                <TitlebarTabStrip
-                  tabs={tabsStore}
-                  currentTab={currentTab}
-                  forceTruncate={tabsAreOverflowing()}
-                  onOverflowChange={setTabsAreOverflowing}
-                  onNavigate={(tab, el) => {
-                    tabs.select(tab)
-                    el?.scrollIntoView({ behavior: "instant" })
-                  }}
-                  onClose={(tab) => {
-                    const index = tabsStore.findIndex((item) => tabKey(item) === tabKey(tab))
-                    if (index !== -1) tabsStoreActions.closeTab(index)
-                  }}
-                  onReorder={(keys) => tabsStoreActions.reorder(keys)}
-                />
-                <TooltipV2
-                  placement="bottom"
-                  value={
-                    <>
-                      {language.t("command.session.new")}
-                      <KeybindV2 keys={newTabTooltipKeybind(command)} variant="neutral" />
-                    </>
-                  }
-                >
-                  <IconButtonV2
-                    type="button"
-                    variant="ghost-muted"
-                    size="large"
-                    class="shrink-0"
-                    icon={<IconV2 name="plus" />}
-                    onClick={openNewTab}
-                    aria-label={language.t("command.session.new")}
-                  />
-                </TooltipV2>
+                {/* The sidebar owns New session and the session list; "/" opens a new session. */}
                 <div class="flex-1" />
                 {props.actions}
                 <TitlebarV2Right state={v2RightState()} />

@@ -10,8 +10,8 @@ import { createEffect, createMemo, createResource, createSignal, For, Match, onC
 import { commandPaletteOptions, formatKeybindParts, useCommand } from "@/context/command"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
-import { ServerConnection } from "@/context/server"
-import { useTabs } from "@/context/tabs"
+import { ServerConnection, useServer } from "@/context/server"
+import { useLayout } from "@/context/layout"
 import { SessionTabAvatar } from "@/pages/layout/session-tab-avatar"
 import { getRelativeTime } from "@/utils/time"
 import {
@@ -131,7 +131,8 @@ function CommandPaletteView(props: {
   close: () => void
 }) {
   const language = useLanguage()
-  const tabs = useTabs()
+  const layout = useLayout()
+  const server = useServer()
   const [query, setQuery] = createSignal("")
   const [active, setActive] = createSignal(0)
 
@@ -140,9 +141,11 @@ function CommandPaletteView(props: {
   const visibleEntries = createMemo(() => uniqueCommandPaletteEntries(entries.latest ?? []))
   const groupedEntries = createMemo(() => groups(visibleEntries()))
   const activeEntry = createMemo(() => visibleEntries()[active()])
-  const openSessions = createMemo(
-    () => new Set(tabs.store.flatMap((tab) => (tab.type === "session" ? [`${tab.server}\0${tab.sessionId}`] : []))),
-  )
+  // Sessions have no tabs; the routed one is the open one.
+  const routedSession = createMemo(() => {
+    const route = layout.route()
+    return route.type === "session" ? `${route.server ?? server.key}\0${route.sessionId}` : undefined
+  })
 
   createEffect(() => {
     query()
@@ -227,7 +230,7 @@ function CommandPaletteView(props: {
                           language={language}
                           sessionOpen={
                             item.server && item.sessionID
-                              ? openSessions().has(`${item.server}\0${item.sessionID}`)
+                              ? routedSession() === `${item.server}\0${item.sessionID}`
                               : false
                           }
                           onActive={() => setActive(visibleEntries().findIndex((entry) => entry.id === item.id))}

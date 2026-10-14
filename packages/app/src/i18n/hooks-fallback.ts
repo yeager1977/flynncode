@@ -3,7 +3,10 @@ import { desktopNativePluralCategories, type DesktopNativeLocale } from "./deskt
 
 // Hooks translations are pending. Locale entries override this explicit
 // English fallback as verified translations become available. Plural
-// categories beyond one/other reuse the English "other" form until then.
+// categories beyond one/other reuse the English "other" form until then,
+// for every Flynncode plural family awaiting translation.
+const pendingPlurals = ["settings.hooks.pending", "sidebar.sessions.showMore"] as const
+
 export function hooksFallback(locale: DesktopNativeLocale) {
   return {
     ...Object.fromEntries(
@@ -12,7 +15,7 @@ export function hooksFallback(locale: DesktopNativeLocale) {
     ...Object.fromEntries(
       desktopNativePluralCategories(locale)
         .filter((category) => category !== "one" && category !== "other")
-        .map((category) => [`settings.hooks.pending.${category}`, dict["settings.hooks.pending.other"]]),
+        .flatMap((category) => pendingPlurals.map((key) => [`${key}.${category}`, dict[`${key}.other`]])),
     ),
   }
 }

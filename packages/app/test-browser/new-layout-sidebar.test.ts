@@ -2,15 +2,14 @@ import { describe, expect, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import {
-  directoryTabs,
   legacyDraftTarget,
   openProjectDirectory,
   openSidebarByDefault,
   projectDraft,
-  sessionTabStep,
   sidebarCommands,
   sidebarDirectory,
   type SidebarCommandInput,
+  worktreeClosing,
 } from "@/pages/layout/new-layout-sidebar"
 import type { ServerConnection } from "@/context/server"
 import type { Tab } from "@/context/tabs"
@@ -157,51 +156,37 @@ describe("legacyDraftTarget", () => {
   })
 })
 
-describe("sessionTabStep", () => {
+describe("worktreeClosing", () => {
   const tabs: Tab[] = [
-    { type: "session", server: local, sessionId: "a" },
-    { type: "draft", draftID: "d", server: local, directory: "/repo" },
-    { type: "session", server: local, sessionId: "b" },
-    { type: "session", server: remote, sessionId: "c" },
-  ]
-
-  test("switches to an open tab for the next session", () => {
-    expect(sessionTabStep(tabs, local, "a", "b")).toEqual({
-      type: "select",
-      tab: { type: "session", server: local, sessionId: "b" },
-    })
-  })
-
-  test("swaps the next session into the current tab instead of adding one", () => {
-    expect(sessionTabStep(tabs, local, "b", "z")).toEqual({ type: "replace", index: 2 })
-  })
-
-  test("adds a tab when no session tab is routed on this server", () => {
-    expect(sessionTabStep(tabs, local, undefined, "z")).toEqual({ type: "add" })
-    expect(sessionTabStep(tabs, local, "c", "z")).toEqual({ type: "add" })
-    expect(sessionTabStep(tabs, remote, "a", "c")).toEqual({ type: "select", tab: tabs[3] })
-  })
-})
-
-describe("directoryTabs", () => {
-  const tabs: Tab[] = [
-    { type: "session", server: local, sessionId: "in" },
-    { type: "session", server: local, sessionId: "out" },
-    { type: "session", server: remote, sessionId: "in" },
     { type: "draft", draftID: "d-in", server: local, directory: "/repo/wt/" },
     { type: "draft", draftID: "d-out", server: local, directory: "/repo" },
+    { type: "draft", draftID: "d-remote", server: remote, directory: "/repo/wt" },
   ]
   const directories: Record<string, string> = { in: "/repo/wt", out: "/repo" }
-
-  test("finds this server's session tabs and drafts in the worktree", () => {
-    expect(directoryTabs(tabs, local, "/repo/wt", (id) => directories[id])).toEqual({
-      sessions: ["in"],
-      drafts: ["d-in"],
+  const closing = (route: Parameters<typeof worktreeClosing>[0]["route"], drafts = true) =>
+    worktreeClosing({
+      tabs,
+      server: local,
+      directory: "/repo/wt",
+      drafts,
+      route,
+      sessionDirectory: (id) => directories[id],
     })
+
+  test("finds this server's drafts in the worktree", () => {
+    expect(closing({ type: "home" })).toEqual({ drafts: ["d-in"], showing: false })
   })
 
-  test("ignores sessions whose directory is unknown", () => {
-    expect(directoryTabs(tabs, local, "/repo/wt", () => undefined)).toEqual({ sessions: [], drafts: ["d-in"] })
+  test("keeps the drafts when a reset keeps the worktree", () => {
+    expect(closing({ type: "draft", draftID: "d-in", server: local }, false)).toEqual({ drafts: [], showing: false })
+  })
+
+  test("flags the routed session or draft inside the worktree", () => {
+    expect(closing({ type: "session", sessionId: "in", server: local }).showing).toBe(true)
+    expect(closing({ type: "draft", draftID: "d-in", server: local }).showing).toBe(true)
+    expect(closing({ type: "session", sessionId: "out", server: local }).showing).toBe(false)
+    expect(closing({ type: "session", sessionId: "in", server: remote }).showing).toBe(false)
+    expect(closing({ type: "session", sessionId: "unknown", server: local }).showing).toBe(false)
   })
 })
 

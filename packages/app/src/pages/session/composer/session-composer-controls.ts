@@ -47,10 +47,8 @@ export function createPromptInputController(input: {
       model: {
         selection: input.model ?? local.model,
         paid: providers.paid().length > 0,
-        loading:
-          (local.agent.visible() && agentsQuery.isLoading) ||
-          providersQuery.isLoading ||
-          globalProvidersQuery.isLoading,
+        // The model button only needs one provider catalog; agents never gate it.
+        loading: providersQuery.isLoading && globalProvidersQuery.isLoading,
       },
       session: {
         id: input.sessionID(),

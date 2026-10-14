@@ -41,6 +41,7 @@ type PluralKey =
   | "session.bulk.failed"
   | "session.project.sessions"
   | "settings.hooks.pending"
+  | "sidebar.sessions.showMore"
 type Source = { dict: Record<string, string> }
 
 function cookie(locale: Locale) {

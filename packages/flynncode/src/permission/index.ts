@@ -19,8 +19,17 @@ export type AskInput = PermissionV1.AskInput & {
   staticApproval?: "allow"
 }
 
+export type WouldAskInput = {
+  permission: string
+  patterns: readonly string[]
+  ruleset: PermissionV1.Ruleset
+}
+
 export interface Interface {
   readonly ask: (input: AskInput) => Effect.Effect<void, PermissionV1.Error>
+  // Whether `ask` would reach its prompt path for this request, counting the
+  // rules approved with "always" exactly as `ask` does.
+  readonly wouldAsk: (input: WouldAskInput) => Effect.Effect<boolean>
   readonly reply: (input: PermissionV1.ReplyInput) => Effect.Effect<void, PermissionV1.NotFoundError>
   readonly list: () => Effect.Effect<ReadonlyArray<PermissionV1.Request>>
 }
@@ -45,6 +54,23 @@ export function evaluate(permission: string, pattern: string, ...rulesets: Permi
       pattern: "*",
     }
   )
+}
+
+// A configured deny beats any "always" approval; otherwise approvals extend the ruleset.
+function effective(permission: string, pattern: string, ruleset: PermissionV1.Ruleset, approved: PermissionV1.Ruleset) {
+  const configured = evaluate(permission, pattern, ruleset)
+  return configured.action === "deny" ? configured : evaluate(permission, pattern, ruleset, approved)
+}
+
+// No pattern is denied and at least one is not allowed.
+export function wouldAsk(
+  permission: string,
+  patterns: readonly string[],
+  ruleset: PermissionV1.Ruleset,
+  approved: PermissionV1.Ruleset = [],
+) {
+  const actions = patterns.map((pattern) => effective(permission, pattern, ruleset, approved).action)
+  return !actions.includes("deny") && actions.some((action) => action !== "allow")
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Permission") {}
@@ -85,8 +111,7 @@ const layer = Layer.effect(
       let needsAsk = false
 
       for (const pattern of request.patterns) {
-        const configured = evaluate(request.permission, pattern, ruleset)
-        const rule = configured.action === "deny" ? configured : evaluate(request.permission, pattern, ruleset, approved)
+        const rule = effective(request.permission, pattern, ruleset, approved)
         yield* Effect.logInfo("evaluated", { permission: request.permission, pattern, action: rule })
         if (rule.action === "deny") {
           return yield* new PermissionV1.DeniedError({
@@ -97,10 +122,12 @@ const layer = Layer.effect(
         needsAsk = true
       }
 
-      // Plugin permission.ask hooks run before any approval-mode shortcut, so
-      // a plugin deny (or fail-closed verdict) wins in every mode; allow/ask
-      // fall through to the mode shortcuts, the PermissionRequest hook, and
-      // the pending prompt flow.
+      if (!needsAsk) return
+
+      // Plugin permission.ask hooks run only for requests that would ask, and
+      // before every approval-mode shortcut, so a plugin deny (or fail-closed
+      // verdict) wins in every mode; allow/ask fall through to the mode
+      // shortcuts, the PermissionRequest hook, and the pending prompt flow.
       const askVerdict = yield* hooksRunner.runPermissionAsk({
         permission: request.permission,
         patterns: request.patterns,
@@ -117,8 +144,6 @@ const layer = Layer.effect(
           ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),
         })
       }
-
-      if (!needsAsk) return
 
       const AUTO_EDIT_PERMISSIONS = ["edit", "read", "glob", "grep", "list"]
       // computer_use and archive always reach the user, whatever the approval mode.
@@ -180,6 +205,11 @@ const layer = Layer.effect(
           pending.delete(id)
         }),
       )
+    })
+
+    const wouldAskFor = Effect.fn("Permission.wouldAsk")(function* (input: WouldAskInput) {
+      const { approved } = yield* InstanceState.get(state)
+      return wouldAsk(input.permission, input.patterns, input.ruleset, approved)
     })
 
     const reply = Effect.fn("Permission.reply")(function* (input: PermissionV1.ReplyInput) {
@@ -247,7 +277,7 @@ const layer = Layer.effect(
       return Array.from(pending.values(), (item) => item.info)
     })
 
-    return Service.of({ ask, reply, list })
+    return Service.of({ ask, wouldAsk: wouldAskFor, reply, list })
   }),
 )
 

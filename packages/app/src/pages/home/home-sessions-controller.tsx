@@ -3,17 +3,8 @@ import { preloadMarkdown } from "@flynncode/session-ui/markdown-cache"
 import { useDialog } from "@flynncode/ui/context/dialog"
 import { useQuery } from "@tanstack/solid-query"
 import { DateTime } from "luxon"
-import { useParams } from "@solidjs/router"
-import {
-  type Accessor,
-  createEffect,
-  createMemo,
-  createRoot,
-  type JSX,
-  onCleanup,
-  Show,
-  startTransition,
-} from "solid-js"
+import { useNavigate, useParams } from "@solidjs/router"
+import { type Accessor, createEffect, createMemo, createRoot, type JSX, onCleanup, Show } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { useCommand } from "@/context/command"
 import {
@@ -25,11 +16,11 @@ import type { LocalProject } from "@/context/layout"
 import { useLanguage } from "@/context/language"
 import { ServerConnection } from "@/context/server"
 import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
-import { sessionHasOpenTab, useTabs } from "@/context/tabs"
 import { compareSessionTime, displayName, errorMessage, projectForSession } from "@/pages/layout/helpers"
 import { filterSessionsByKind, type SessionKindFilter } from "./home-kind-filter"
 import { useSessionTabAvatarState } from "@/pages/layout/project-avatar-state"
 import { pathKey } from "@/utils/path-key"
+import { sessionHref } from "@/utils/session-route"
 import { showToast } from "@/utils/toast"
 import { Binary } from "@flynncode/core/util/binary"
 import { archiveHomeSession } from "../home-session-archive"
@@ -66,7 +57,7 @@ export type OpenSessionOptions = { background?: boolean }
 
 export function createHomeSessionsController(home: HomeController) {
   const params = useParams()
-  const tabs = useTabs()
+  const navigate = useNavigate()
   const command = useCommand()
   const dialog = useDialog()
   const language = useLanguage()
@@ -129,6 +120,32 @@ export function createHomeSessionsController(home: HomeController) {
   )
   const groups = createMemo(() => groupSessions(records(), language))
   const prefetched = new Set<string>()
+  // Loads a session's messages and warms their markdown once per server.
+  const prefetch = (ctx: NonNullable<ReturnType<typeof home.server.focusedContext>>, server: string, id: string) => {
+    const key = `${server}\0${id}`
+    if (prefetched.has(key)) return
+    prefetched.add(key)
+    createRoot((dispose) => {
+      try {
+        void ctx.sync.session
+          .sync(id)
+          .then(() =>
+            Promise.all(
+              (ctx.sync.session.data.message[id] ?? []).flatMap((message) =>
+                (ctx.sync.session.data.part[message.id] ?? []).flatMap((part) => {
+                  if (part.type !== "text" || !part.text) return []
+                  return preloadMarkdown(part.text, part.id)
+                }),
+              ),
+            ),
+          )
+          .catch(() => {})
+          .finally(dispose)
+      } catch {
+        dispose()
+      }
+    })
+  }
 
   createEffect(() => {
     const ctx = home.server.focusedContext()
@@ -136,31 +153,7 @@ export function createHomeSessionsController(home: HomeController) {
     if (!ctx || !conn) return
     records()
       .slice(0, 2)
-      .forEach((record) => {
-        const key = `${ServerConnection.key(conn)}\0${record.session.id}`
-        if (prefetched.has(key)) return
-        prefetched.add(key)
-        createRoot((dispose) => {
-          try {
-            void ctx.sync.session
-              .sync(record.session.id)
-              .then(() =>
-                Promise.all(
-                  (ctx.sync.session.data.message[record.session.id] ?? []).flatMap((message) =>
-                    (ctx.sync.session.data.part[message.id] ?? []).flatMap((part) => {
-                      if (part.type !== "text" || !part.text) return []
-                      return preloadMarkdown(part.text, part.id)
-                    }),
-                  ),
-                ),
-              )
-              .catch(() => {})
-              .finally(dispose)
-          } catch {
-            dispose()
-          }
-        })
-      })
+      .forEach((record) => prefetch(ctx, ServerConnection.key(conn), record.session.id))
   })
 
   command.register("home.palette", () => [
@@ -184,10 +177,7 @@ export function createHomeSessionsController(home: HomeController) {
               const directory = entry.project?.worktree ?? entry.directory
               ctx.projects.open(directory)
               ctx.projects.touch(directory)
-              void startTransition(() => {
-                const tab = tabs.addSessionTab({ server, sessionId: sessionID })
-                tabs.select(tab)
-              })
+              navigate(sessionHref(server, sessionID))
             }}
           />
         ))
@@ -256,21 +246,10 @@ export function createHomeSessionsController(home: HomeController) {
     const data = home.server.focusedSync().session.data
     return (data.permission[id]?.length ?? 0) > 0 || (data.question[id]?.length ?? 0) > 0
   }
-  const openTabIDs = (list: readonly Session[]) => {
-    const key = serverKey()
-    const ids = new Set<string>()
-    for (const tab of tabs.store) {
-      if (tab.type === "session" && tab.server === key) ids.add(tab.sessionId)
-    }
-    for (const session of list) {
-      if (sessionHasOpenTab(tabs.store, key, session)) ids.add(session.id)
-    }
-    return ids
-  }
   const parentLinkMap = () => {
     const sync = home.server.focusedSync()
     const data = sync.session.data
-    const ids = openTabIDs([])
+    const ids = new Set<string>()
     if (params.id) ids.add(params.id)
     for (const id of Object.keys(data.session_status)) {
       if (data.session_working(id)) ids.add(id)
@@ -286,19 +265,21 @@ export function createHomeSessionsController(home: HomeController) {
   const blockedFor = (list: readonly Session[]) =>
     protectedRootIDs(list, {
       openRouteID: params.id,
-      openTabIDs: openTabIDs(list),
       working: (id) => home.server.focusedSync().session.data.session_working(id),
       pending,
       parentID: parentLinkMap(),
     })
   const allowed = createMemo(() => {
     const blocked = blockedFor(indexSessions())
-    return new Set(records().map((record) => record.session.id).filter((id) => !blocked.has(id)))
+    return new Set(
+      records()
+        .map((record) => record.session.id)
+        .filter((id) => !blocked.has(id)),
+    )
   })
   const protectedNow = (id: string, extra: readonly Session[]) => {
     const list = mergeSessions(indexSessions(), extra)
     if (params.id === id) return true
-    if (openTabIDs(list).has(id)) return true
     if (home.server.focusedSync().session.data.session_working(id)) return true
     if (pending(id)) return true
     return blockedFor(list).has(id)
@@ -547,15 +528,14 @@ export function createHomeSessionsController(home: HomeController) {
         const ctx = home.server.focusedContext()
         if (!ctx) return
         ctx.projects.open(directory)
+        // Sessions have no tabs, so a background open only lists the project
+        // in the sidebar and warms the session for the click that follows.
         if (options?.background) {
-          tabs.addSessionTab({ server: ServerConnection.key(conn), sessionId: session.id })
+          prefetch(ctx, ServerConnection.key(conn), session.id)
           return
         }
         ctx.projects.touch(directory)
-        void startTransition(() => {
-          const tab = tabs.addSessionTab({ server: ServerConnection.key(conn), sessionId: session.id })
-          tabs.select(tab)
-        })
+        navigate(sessionHref(ServerConnection.key(conn), session.id))
       },
       archive: async (session: Session) => {
         const conn = home.server.focused()
@@ -590,8 +570,8 @@ export function createHomeSessionsController(home: HomeController) {
       },
     },
     tab: {
-      isOpen: (record: HomeSessionRecord) =>
-        sessionHasOpenTab(tabs.store, home.selection.value().server, record.session),
+      // Only the routed session counts as open; Home routes none.
+      isOpen: (record: HomeSessionRecord) => params.id === record.session.id,
     },
     filter: {
       value: () => kindState.kindFilter,

@@ -360,7 +360,7 @@ const prodRecorderSource = (mark: string) =>
   ].join("\n")
 
 for (const approval of ["manual", "auto", "accept-edits"] as const) {
-  prodIt.instance(`production: ${approval} static read shortcuts cannot bypass plugin deny`, () =>
+  prodIt.instance(`production: ${approval} static read shortcuts cannot bypass plugin deny for would-ask calls`, () =>
     withPlugin(dir => prodRecorderSource(path.join(dir, "marks.jsonl")), dir => Effect.gen(function* () {
       const file = path.join(dir, "safe.txt")
       yield* Effect.promise(() => Bun.write(file, "safe"))
@@ -385,16 +385,46 @@ for (const approval of ["manual", "auto", "accept-edits"] as const) {
         expect(error).toBeInstanceOf(PermissionV1.DeniedError)
       }
       const permission = yield* Permission.Service
-      expect(yield* failOf(permission.ask({ ...request([{ permission: "list", pattern: "*", action: "allow" }]), permission: "list", approval }))).toBeInstanceOf(PermissionV1.DeniedError)
+      // A config-allowed list never asks, so the plugin deny hook is skipped and it succeeds.
+      yield* permission.ask({ ...request([{ permission: "list", pattern: "*", action: "allow" }]), permission: "list", approval })
       expect(yield* permission.list()).toEqual([])
+      const marks = yield* Effect.promise(() => Bun.file(path.join(dir, "marks.jsonl")).text())
+      const asked = marks.trim().split("\n").map((line) => JSON.parse(line).input.permission)
+      expect(asked).not.toContain("list")
+      expect(asked).toHaveLength(3)
     })),
   )
 }
 
-denyIt.instance("explicit config allow still visits the plugin deny gate", () => Effect.gen(function* () {
+denyIt.instance("explicit config allow skips plugin permission.ask hooks", () => Effect.gen(function* () {
+  askCalls.length = 0
   const permission = yield* Permission.Service
-  expect(yield* failOf(permission.ask(request([{ permission: "bash", pattern: "*", action: "allow" }])))).toBeInstanceOf(PermissionV1.DeniedError)
+  yield* permission.ask(request([{ permission: "bash", pattern: "*", action: "allow" }]))
+  expect(askCalls).toHaveLength(0)
 }))
+
+denyIt.instance("a rule-allowed request never invokes plugin permission.ask hooks", () =>
+  Effect.gen(function* () {
+    askCalls.length = 0
+    const permission = yield* Permission.Service
+    for (const approval of ["manual", "accept-edits", "auto"] as const)
+      yield* permission.ask({ ...request([{ permission: "*", pattern: "*", action: "allow" }]), approval })
+    expect(askCalls).toHaveLength(0)
+    expect(yield* permission.list()).toHaveLength(0)
+  }),
+)
+
+denyIt.instance("a plugin deny beats staticApproval for a call that would ask", () =>
+  Effect.gen(function* () {
+    askCalls.length = 0
+    const permission = yield* Permission.Service
+    const error = yield* failOf(
+      permission.ask({ ...request([{ permission: "bash", pattern: "*", action: "ask" }]), staticApproval: "allow" }),
+    )
+    expect(error).toBeInstanceOf(PermissionV1.DeniedError)
+    expect(askCalls).toHaveLength(1)
+  }),
+)
 
 prodIt.instance("production: static read approval remains cheap without a plugin deny", () =>
   withPlugin(() => "export const noop = async () => ({})", () => Effect.gen(function* () {

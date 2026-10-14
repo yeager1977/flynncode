@@ -5,6 +5,9 @@ import { dict } from "./en"
 // before their own entries, so a real translation always wins and English shows
 // otherwise. Remove a key here once every locale translates it.
 const keys = [
+  "sidebar.sessions.showLess",
+  "sidebar.sessions.showMore.one",
+  "sidebar.sessions.showMore.other",
   "approval.mode.acceptEdits",
   "approval.mode.auto",
   "approval.mode.manual",
