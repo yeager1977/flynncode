@@ -97,10 +97,12 @@ const layer = Layer.effect(
         needsAsk = true
       }
 
-      // Plugin permission.ask hooks run before any approval-mode shortcut, so
-      // a plugin deny (or fail-closed verdict) wins in every mode; allow/ask
-      // fall through to the mode shortcuts, the PermissionRequest hook, and
-      // the pending prompt flow.
+      if (!needsAsk) return
+
+      // Plugin permission.ask hooks run only for requests that would ask, and
+      // before every approval-mode shortcut, so a plugin deny (or fail-closed
+      // verdict) wins in every mode; allow/ask fall through to the mode
+      // shortcuts, the PermissionRequest hook, and the pending prompt flow.
       const askVerdict = yield* hooksRunner.runPermissionAsk({
         permission: request.permission,
         patterns: request.patterns,
@@ -117,8 +119,6 @@ const layer = Layer.effect(
           ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),
         })
       }
-
-      if (!needsAsk) return
 
       const AUTO_EDIT_PERMISSIONS = ["edit", "read", "glob", "grep", "list"]
       // computer_use and archive always reach the user, whatever the approval mode.

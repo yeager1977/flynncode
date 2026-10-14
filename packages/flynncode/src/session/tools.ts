@@ -156,6 +156,11 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             )
           }
         }
+        // Rule-allowed calls never reach the prompt, so the reviewer only vets
+        // requests the configured ruleset does not already allow.
+        const allowed = req.patterns.every(
+          (pattern) => Permission.evaluate(req.permission, pattern, ruleset).action === "allow",
+        )
         const staticApproval = Reviewer.review({ permission: req.permission, patterns: req.patterns, ruleset, tool: toolID, args })
         // approval "auto": the LLM auto-reviewer vets the request before the
         // human prompt. allow approves without prompting, deny fails closed,
@@ -163,7 +168,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         // prompt path. The verdict rides on the ask input so the
         // permission.asked event can surface it to the dock.
         const reviewer =
-          staticApproval !== "allow" && policy.approval === "auto" && !Permission.ALWAYS_ASK.includes(req.permission)
+          !allowed && staticApproval !== "allow" && policy.approval === "auto" && !Permission.ALWAYS_ASK.includes(req.permission)
             ? Option.isSome(autoReviewer)
               ? yield* autoReviewer.value.request({
                   sessionID: input.session.id,

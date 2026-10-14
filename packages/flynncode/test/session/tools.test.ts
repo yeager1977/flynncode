@@ -404,7 +404,7 @@ describe("resolveEffectiveArgs", () => {
 // Auto-approval ("auto") environments: a recording permission service, the
 // auto approval policy, and an optional AutoReviewer stub with a fixed
 // verdict. When `verdict` is undefined no reviewer layer is provided at all.
-function autoLayer(verdict: "allow" | "deny" | "defer" | undefined) {
+function autoLayer(verdict: "allow" | "deny" | "defer" | undefined, reviewed: string[] = []) {
   const asks: PermissionV1.AskInput[] = []
   return {
     asks,
@@ -436,7 +436,12 @@ function autoLayer(verdict: "allow" | "deny" | "defer" | undefined) {
         RuntimeFlags.layer(),
         ...(verdict === undefined
           ? []
-          : [Layer.succeed(AutoReviewer.Service, AutoReviewer.Service.of({ request: () => Effect.succeed(verdict) }))]),
+          : [Layer.succeed(AutoReviewer.Service, AutoReviewer.Service.of({
+                request: (input) => {
+                  reviewed.push(input.permission)
+                  return Effect.succeed(verdict)
+                },
+              }))]),
         Layer.succeed(
           ToolRegistry.Service,
           ToolRegistry.Service.of({
@@ -469,7 +474,11 @@ function autoLayer(verdict: "allow" | "deny" | "defer" | undefined) {
   }
 }
 
-const resolveAsker = () =>
+// The test agent allows everything; the reviewer only runs for calls that would
+// ask, so the default session ruleset makes bash ask.
+const askBash: PermissionV1.Ruleset = [{ permission: "bash", pattern: "*", action: "ask" }]
+
+const resolveAsker = (permission: PermissionV1.Ruleset = askBash) =>
   Effect.gen(function* () {
     const processor = {
       message: { id: messageID, sessionID } as SessionV1.Assistant,
@@ -479,7 +488,7 @@ const resolveAsker = () =>
     return yield* SessionTools.resolve({
       agent,
       model,
-      session: { id: sessionID, permission: [] } as unknown as Session.Info,
+      session: { id: sessionID, permission } as unknown as Session.Info,
       processor,
       bypassAgentCheck: false,
       messages: [],
@@ -487,9 +496,9 @@ const resolveAsker = () =>
     })
   })
 
-const runAsker = () =>
+const runAsker = (permission: PermissionV1.Ruleset = askBash) =>
   Effect.gen(function* () {
-    const tools = yield* resolveAsker()
+    const tools = yield* resolveAsker(permission)
     const execute = tools.asker?.execute
     if (!execute) throw new Error("asker tool is missing execute")
     return yield* Effect.exit(
@@ -516,6 +525,19 @@ denyEnv.it.effect("auto approval fails closed when the LLM reviewer denies", () 
       expect(Cause.squash(exit.cause)).toBeInstanceOf(PermissionV1.DeniedError)
     }
     expect(denyEnv.asks.length).toBe(0)
+  }),
+)
+
+// Rule-allowed calls never reach the prompt, so the reviewer is not consulted.
+const reviewCalls: string[] = []
+const allowedEnv = autoLayer("deny", reviewCalls)
+allowedEnv.it.effect("auto approval skips the LLM reviewer for a rule-allowed call", () =>
+  Effect.gen(function* () {
+    const exit = yield* runAsker([{ permission: "bash", pattern: "*", action: "allow" }])
+    expect(Exit.isSuccess(exit)).toBe(true)
+    expect(reviewCalls).toEqual([])
+    expect(allowedEnv.asks.length).toBe(1)
+    expect(allowedEnv.asks[0]?.reviewer).toBeUndefined()
   }),
 )
 
