@@ -332,37 +332,28 @@ export function Titlebar(props: {
               },
             ])
 
-            command.register("tabs", () => {
-              const current = currentTab()
-
-              return [
-                {
-                  id: "tab.new",
-                  category: "tab",
-                  title: language.t("command.session.new"),
-                  keybind: "mod+t,mod+n",
-                  hidden: true,
-                  onSelect: openNewTab,
-                },
-                current && {
-                  id: "tab.close",
-                  category: "tab",
-                  title: language.t("command.tab.close"),
-                  keybind: "mod+w",
-                  hidden: true,
-                  onSelect: () => {
-                    tabsStoreActions.closeTab(tabsStore.findIndex((tab) => current === tab))
-                  },
-                },
-                {
-                  id: "tab.reopenClosed",
-                  category: language.t("command.category.file"),
-                  title: language.t("command.tab.reopenClosed"),
-                  keybind: "mod+shift+t",
-                  onSelect: () => tabsStoreActions.reopenClosedTab(),
-                },
-              ].filter((v) => v !== undefined)
-            })
+            // Sessions have no tabs, so there is nothing for mod+w or
+            // mod+shift+t to close or reopen. mod+w still has to be consumed:
+            // otherwise the desktop menu's Close Window accelerator closes the
+            // window. Session commands (file tabs, terminal) take it first.
+            command.register("tabs", () => [
+              {
+                id: "tab.new",
+                category: "tab",
+                title: language.t("command.session.new"),
+                keybind: "mod+t,mod+n",
+                hidden: true,
+                onSelect: openNewTab,
+              },
+              {
+                id: "window.keepOpen",
+                // Untitled, so it stays out of the command catalog and keybind settings.
+                title: "",
+                keybind: "mod+w",
+                hidden: true,
+                onSelect: () => {},
+              },
+            ])
 
             return (
               <div
