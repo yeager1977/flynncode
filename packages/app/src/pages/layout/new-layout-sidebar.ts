@@ -122,8 +122,9 @@ type SidebarCommandKey =
   | "command.session.next.unseen"
 
 // The classic layout's sidebar commands with keybinds that fit the new
-// layout: mod+1-9 already switch tabs there, so project.1-9 have no default
-// keybind and stay in the palette and keybind settings instead.
+// layout: mod+1-9 jump to the Nth sidebar session, so project.1-9 have no
+// default keybind (to avoid colliding) and stay in the palette and keybind
+// settings instead.
 export function sidebarCommands(input: SidebarCommandInput): CommandOption[] {
   return [
     {

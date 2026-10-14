@@ -202,7 +202,11 @@ export function ProjectSidebar() {
     visibleSessionOrder(
       layout.projects.list().map((project) => ({
         expanded: project.expanded,
-        sessions: sortedRootSessions(serverSync().child(project.worktree)[0], sidebar.sortNow()),
+        // Like the controller: only expanded projects bootstrap (LocalWorkspace does that).
+        sessions: sortedRootSessions(
+          serverSync().child(project.worktree, { bootstrap: false })[0],
+          sidebar.sortNow(),
+        ),
       })),
     ),
   )
