@@ -232,6 +232,8 @@ export const loadProvidersQuery = (
   queryOptions({
     queryKey: [scope, directory, "providers"],
     refetchInterval: 5 * 60 * 1000,
+    // isLoading stays true across query retries; the inner retry() already covers transient failures.
+    retry: false,
     queryFn: (context) => {
       const signal = AbortSignal.any([context.signal, AbortSignal.timeout(timeoutMs)])
       return untilAborted(
@@ -286,6 +288,7 @@ export const loadAgentsQuery = (
 ) =>
   queryOptions({
     queryKey: [scope, directory, "agents"],
+    retry: false,
     queryFn: (context) => {
       const signal = AbortSignal.any([context.signal, AbortSignal.timeout(timeoutMs)])
       return untilAborted(
