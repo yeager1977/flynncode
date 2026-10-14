@@ -119,6 +119,28 @@ export function tasksFromParts(
     : []
 }
 
+// Children whose parent task output reports a usage-limit stop. The report text
+// survives reload, unlike the child's own (often unloaded) messages. Parts are
+// in chronological order, so a later result for a resumed task overrides it.
+export function limitedTaskIDs(parts: readonly TaskToolPart[]) {
+  const limited = new Set<string>()
+  for (const part of parts) {
+    const output = part.state?.output ?? (typeof part.text === "string" ? part.text : "")
+    const stopped = output.includes("Subagent stopped: usage limit")
+    const sessionId = part.type === "tool" && part.tool === "task" ? part.state?.metadata?.sessionId : undefined
+    const ids = [
+      ...output.matchAll(/<task id="([^"]+)" state="(?:running|completed|error)"/g).map((match) => match[1]),
+      ...(typeof sessionId === "string" ? [sessionId] : []),
+    ]
+    for (const id of ids) {
+      if (!id) continue
+      if (stopped) limited.add(id)
+      else if (output.includes("<task id=")) limited.delete(id)
+    }
+  }
+  return limited
+}
+
 export function mergeSubagents(sessions: readonly SubagentChild[], tasks: readonly SubagentChild[]) {
   const byID = new Map(sessions.map((child) => [child.id, child]))
   for (const task of tasks) {

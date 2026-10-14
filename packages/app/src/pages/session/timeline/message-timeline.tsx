@@ -1361,7 +1361,7 @@ export function MessageTimeline(props: {
                   </Card>
                 }
               >
-                {(limit) => <UsageLimitCard limit={limit()} message={errorRow().text} />}
+                {(limit) => <UsageLimitCard limit={limit()} message={errorRow().text} child={!!parentID()} />}
               </Show>
             </div>
           </TimelineRowFrame>

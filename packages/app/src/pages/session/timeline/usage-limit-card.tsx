@@ -8,7 +8,7 @@ import { useProviders } from "@/hooks/use-providers"
 import { usageLimitResetTime } from "@/utils/usage-limit"
 import type { TimelineRow } from "./timeline-row"
 
-export function UsageLimitCard(props: { limit: TimelineRow.UsageLimit; message: string }) {
+export function UsageLimitCard(props: { limit: TimelineRow.UsageLimit; message: string; child?: boolean }) {
   const language = useLanguage()
   const command = useCommand()
   const sdk = useSDK()
@@ -32,17 +32,21 @@ export function UsageLimitCard(props: { limit: TimelineRow.UsageLimit; message: 
       <Show when={props.message}>
         <CardDescription>{props.message}</CardDescription>
       </Show>
-      <CardActions>
-        <Button
-          type="button"
-          size="small"
-          variant="secondary"
-          data-action="usage-limit-switch-model"
-          onClick={() => command.trigger("model.choose")}
-        >
-          {language.t("session.usageLimit.switchModel")}
-        </Button>
-      </CardActions>
+      {/* The composer model does not affect a subagent, so only the parent
+          offers a switch. */}
+      <Show when={!props.child}>
+        <CardActions>
+          <Button
+            type="button"
+            size="small"
+            variant="secondary"
+            data-action="usage-limit-switch-model"
+            onClick={() => command.trigger("model.choose")}
+          >
+            {language.t("session.usageLimit.switchModel")}
+          </Button>
+        </CardActions>
+      </Show>
     </Card>
   )
 }

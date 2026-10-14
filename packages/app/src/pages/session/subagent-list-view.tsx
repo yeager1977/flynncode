@@ -12,6 +12,7 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import {
   expandSubagent,
   groupSubagents,
+  limitedTaskIDs,
   mergeSubagents,
   subagentListState,
   subagentPreview,
@@ -28,6 +29,8 @@ export function SubagentList(props: { sessionID: () => string }) {
   const rows = createMemo(() => {
     const id = props.sessionID()
     if (!id) return []
+    const parts = (sync().data.message[id] ?? []).flatMap((message) => sync().data.part[message.id] ?? [])
+    const stopped = limitedTaskIDs(parts)
     const sessions = Object.values(sync().data.session ?? {})
       .filter((session) => session.parentID === id)
       .map((session) => ({
@@ -37,9 +40,12 @@ export function SubagentList(props: { sessionID: () => string }) {
         directory: session.directory,
         status: sync().data.session_status[session.id]?.type,
         text: latestText(sync().data.message[session.id] ?? [], sync().data.part),
-        limited: endedOnUsageLimit(sync().data.message[session.id]),
+        // Loaded child messages are authoritative; otherwise fall back to the
+        // parent's task output, which survives reload.
+        limited: sync().data.message[session.id]?.length
+          ? endedOnUsageLimit(sync().data.message[session.id])
+          : stopped.has(session.id),
       }))
-    const parts = (sync().data.message[id] ?? []).flatMap((message) => sync().data.part[message.id] ?? [])
     const live = (childID: string) => {
       const type = sync().data.session_status[childID]?.type
       return type === "busy" || type === "retry"

@@ -200,17 +200,19 @@ const RateLimitSection: Component = () => {
 
   const value = createMemo(() => rateLimitFromConfig(serverSync().data.config))
 
+  // Resolves false only when the save was attempted and failed.
   const save = async (target: { onLimit: OnLimit; retryUnder: number }) => {
-    if (state.saving) return
-    if (target.onLimit === value().onLimit && target.retryUnder === value().retryUnder) return
+    if (state.saving) return true
+    if (target.onLimit === value().onLimit && target.retryUnder === value().retryUnder) return true
     setState("saving", true)
     const ok = await serverSync()
       .updateConfig({ rate_limit: rateLimitToConfig(target) })
       .then(() => true)
       .catch(() => false)
     setState("saving", false)
-    if (ok) return
+    if (ok) return true
     showToast({ variant: "error", title: language.t("settings.rateLimit.toast.updateFailed.title") })
+    return false
   }
 
   const onLimitLabel = (choice: OnLimit) =>
@@ -252,12 +254,17 @@ const RateLimitSection: Component = () => {
               disabled={state.saving || value().onLimit === "retry"}
               value={String(value().retryUnder)}
               onChange={(event) => {
-                const parsed = retryUnderFromInput(event.currentTarget.value)
+                const input = event.currentTarget
+                const parsed = retryUnderFromInput(input.value)
                 if (parsed === undefined) {
-                  event.currentTarget.value = String(value().retryUnder)
+                  input.value = String(value().retryUnder)
                   return
                 }
-                void save({ onLimit: value().onLimit, retryUnder: parsed })
+                // A failed save leaves the saved value in place, so show it
+                // again instead of the rejected edit.
+                void save({ onLimit: value().onLimit, retryUnder: parsed }).then((saved) => {
+                  if (!saved) input.value = String(value().retryUnder)
+                })
               }}
               spellcheck={false}
               autocorrect="off"
