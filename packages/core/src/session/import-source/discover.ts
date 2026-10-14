@@ -2,7 +2,7 @@ export * as Discover from "./discover"
 
 import path from "node:path"
 import { claudeCodeReader } from "./claude-code.js"
-import { codexReader } from "./codex.js"
+import { codexReader, codexThreadNames } from "./codex.js"
 import type { ImportSource, ParsedSession } from "./types.js"
 
 export type SourceCandidate = {
@@ -49,9 +49,10 @@ export async function discover(input: DiscoverInput): Promise<ReadonlyArray<Sour
   const filter = input.cwd === undefined ? undefined : path.resolve(input.cwd)
   const files = await collectFiles(input, root, filter)
   const summaries = await summarizeFiles(input, files, filter)
+  const names = await threadNames(input)
   return summaries
     .filter((item) => item.messageCount > 0 && (filter === undefined || within(item.cwd, filter)))
-    .map((item) => candidate(input.source, item))
+    .map((item) => candidate(input.source, item, names.get(item.sourceSessionID)))
     .sort((a, b) => b.time - a.time)
 }
 
@@ -117,11 +118,18 @@ function within(cwd: string, filter: string) {
   return cwd === filter || cwd.startsWith(filter.endsWith(path.sep) ? filter : filter + path.sep)
 }
 
-const candidate = (source: ImportSource, parsed: ParsedSession): SourceCandidate => ({
+// Codex names threads outside the transcripts. Applied per listing, not cached
+// with the file summary, so a rename shows up even when the rollout is unchanged.
+async function threadNames(input: DiscoverInput): Promise<ReadonlyMap<string, string>> {
+  if (input.source !== "codex") return new Map()
+  return codexThreadNames(await Array.fromAsync(input.lines(path.join(input.home, ".codex", "session_index.jsonl"))))
+}
+
+const candidate = (source: ImportSource, parsed: ParsedSession, name: string | undefined): SourceCandidate => ({
   path: parsed.sourcePath,
   source,
   sourceSessionID: parsed.sourceSessionID,
-  title: parsed.title,
+  title: name ?? parsed.title,
   cwd: parsed.cwd,
   time: parsed.time,
   messageCount: parsed.messageCount,
