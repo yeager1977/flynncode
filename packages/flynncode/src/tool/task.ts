@@ -97,6 +97,13 @@ function renderOutput(input: {
 }
 
 const LAST_OUTPUT_LIMIT = 2000
+const USAGE_LIMIT_REPORT = "Subagent stopped: usage limit"
+
+// The report travels through the job registry as plain output text, so the
+// callers recognise a limit stop by its fixed prefix.
+function isUsageLimitReport(text: string) {
+  return text.startsWith(USAGE_LIMIT_REPORT)
+}
 
 // Model-facing report returned (not thrown) when a subagent stops on a usage limit.
 function renderUsageLimit(input: {
@@ -110,7 +117,7 @@ function renderUsageLimit(input: {
   const pending = input.todos.filter((todo) => todo.status === "pending" || todo.status === "in_progress")
   const lastText = input.lastText?.trim()
   return [
-    `Subagent stopped: usage limit reached on ${input.model}${
+    `${USAGE_LIMIT_REPORT} reached on ${input.model}${
       input.limit.resetAt === undefined ? "" : `, resets around ${new Date(input.limit.resetAt).toISOString()}`
     }.`,
     `Provider message: ${input.limit.message}`,
@@ -360,9 +367,9 @@ export const TaskTool = Tool.define(
 
       const model = requestedModel ??
         next.model ?? {
-        modelID: msg.info.modelID,
-        providerID: msg.info.providerID,
-      }
+          modelID: msg.info.modelID,
+          providerID: msg.info.providerID,
+        }
       const metadata = {
         parentSessionId: ctx.sessionID,
         sessionId: nextSession.id,
@@ -427,9 +434,11 @@ export const TaskTool = Tool.define(
       })
 
       const inject = Effect.fn("TaskTool.injectBackgroundResult")(function* (
-        state: "completed" | "error",
+        outcome: "completed" | "error",
         text: string,
       ) {
+        const limited = outcome === "completed" && isUsageLimitReport(text)
+        const state = limited ? "error" : outcome
         const currentParent = yield* sessions.get(ctx.sessionID)
         yield* ops
           .prompt({
@@ -443,8 +452,9 @@ export const TaskTool = Tool.define(
                 text: renderOutput({
                   sessionID: nextSession.id,
                   state,
-                  summary:
-                    state === "completed"
+                  summary: limited
+                    ? `Background task stopped (usage limit): ${params.description}`
+                    : state === "completed"
                       ? `Background task completed: ${params.description}`
                       : `Background task failed: ${params.description}`,
                   text,
@@ -555,7 +565,14 @@ export const TaskTool = Tool.define(
             return {
               title: params.description,
               metadata,
-              output: renderOutput({ sessionID: nextSession.id, state: "completed", text: result?.output ?? "" }),
+              output: isUsageLimitReport(result?.output ?? "")
+                ? renderOutput({
+                    sessionID: nextSession.id,
+                    state: "error",
+                    summary: `Task stopped (usage limit): ${params.description}`,
+                    text: result?.output ?? "",
+                  })
+                : renderOutput({ sessionID: nextSession.id, state: "completed", text: result?.output ?? "" }),
             }
           }),
         (_, exit) =>

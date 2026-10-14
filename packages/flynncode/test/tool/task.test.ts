@@ -407,6 +407,9 @@ describe("tool.task", () => {
         },
       )
 
+      expect(result.output).toContain('state="error"')
+      expect(result.output).toContain("Task stopped (usage limit): inspect bug")
+      expect(result.output).not.toContain('state="completed"')
       expect(result.output).toContain("usage limit")
       expect(result.output).toContain("test/test-model")
       expect(result.output).toMatch(/resets around \d{4}-\d{2}-\d{2}T/)
@@ -1105,6 +1108,94 @@ describe("tool.task", () => {
       expect(waited.timedOut).toBe(false)
       expect(waited.info?.status).toBe("completed")
     }),
+  )
+
+  background.instance("background usage-limit stops are injected as stopped, not completed", () =>
+    Effect.gen(function* () {
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const injected = yield* Deferred.make<SessionPrompt.PromptInput>()
+      const limit = new SessionV1.APIError({ message: "Rate limit exceeded", statusCode: 429, isRetryable: true })
+
+      yield* def.execute(
+        {
+          description: "inspect bug",
+          prompt: "look into the cache key path",
+          subagent_type: "general",
+          background: true,
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: {
+            promptOps: {
+              ...stubOps(),
+              prompt: (input) =>
+                input.sessionID === chat.id
+                  ? Deferred.succeed(injected, input).pipe(Effect.as(reply(input, "ack")))
+                  : Effect.succeed(reply(input, "half done", limit.toObject())),
+            } satisfies TaskPromptOps,
+          },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      const input = yield* Deferred.await(injected).pipe(Effect.timeout("5 seconds"))
+      const text = input.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
+      expect(text).toContain("Background task stopped (usage limit): inspect bug")
+      expect(text).toContain('state="error"')
+      expect(text).toContain("Subagent stopped: usage limit")
+      expect(text).not.toContain("Background task completed")
+    }),
+  )
+
+  it.instance(
+    "execute resumes a usage-limited task_id on a different model",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const { chat, assistant } = yield* seed()
+        const child = yield* sessions.create({ parentID: chat.id, title: "Existing child" })
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        let seen: SessionPrompt.PromptInput | undefined
+
+        const result = yield* def.execute(
+          {
+            description: "inspect bug",
+            prompt: "continue",
+            subagent_type: "general",
+            task_id: child.id,
+            model: "other/other-model",
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps({ text: "finished", onPrompt: (input) => (seen = input) }) },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+        expect(seen?.sessionID).toBe(child.id)
+        expect(seen?.model).toEqual({
+          providerID: ProviderV2.ID.make("other"),
+          modelID: ModelV2.ID.make("other-model"),
+        })
+        expect(seen?.variant).toBeUndefined()
+        expect(result.metadata.sessionId).toBe(child.id)
+        expect(result.output).toContain(`<task id="${child.id}" state="completed">`)
+        expect(yield* sessions.children(chat.id)).toHaveLength(1)
+      }),
+    { config: { provider: { other: otherProvider } } },
   )
 
   background.instance("removing the parent session cancels running background tasks", () =>
