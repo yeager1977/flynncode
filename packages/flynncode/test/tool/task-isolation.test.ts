@@ -11,6 +11,8 @@ import { Config } from "@/config/config"
 import { CrossSpawnSpawner } from "@flynncode/core/cross-spawn-spawner"
 import { Ripgrep } from "@flynncode/core/ripgrep"
 import { Session } from "@/session/session"
+import { Provider } from "@/provider/provider"
+import { Todo } from "@/session/todo"
 import { MessageID } from "../../src/session/schema"
 import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
@@ -52,6 +54,8 @@ const layer = LayerNode.compile(
     RuntimeFlags.node,
     Ripgrep.node,
     Worktree.node,
+    Provider.node,
+    Todo.node,
   ]),
   [[InstanceStore.bootstrapNode, InstanceBootstrap.node]],
 )

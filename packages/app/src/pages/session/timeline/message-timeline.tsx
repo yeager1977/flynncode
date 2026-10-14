@@ -82,6 +82,7 @@ import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
 import { sessionTitle } from "@/utils/session-title"
 import { scheduleConnectedMeasure } from "./measure"
 import { observeElementOffsetReconnectAware } from "./observe-element-offset"
+import { UsageLimitCard } from "./usage-limit-card"
 import { createTimelineProjection } from "./projection"
 import { MessageComment, SummaryDiff, TimelineRow, TimelineRowMap } from "./rows"
 import { filterVirtualIndexes } from "./virtual-items"
@@ -1352,9 +1353,16 @@ export function MessageTimeline(props: {
         return (
           <TimelineRowFrame row={errorRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-              <Card variant="error" class="error-card">
-                {errorRow().text}
-              </Card>
+              <Show
+                when={errorRow().usageLimit}
+                fallback={
+                  <Card variant="error" class="error-card">
+                    {errorRow().text}
+                  </Card>
+                }
+              >
+                {(limit) => <UsageLimitCard limit={limit()} message={errorRow().text} child={!!parentID()} />}
+              </Show>
             </div>
           </TimelineRowFrame>
         )

@@ -2,10 +2,12 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import {
   expandSubagent,
+  limitedTaskIDs,
   groupSubagents,
   mergeSubagents,
   subagentListState,
   subagentPreview,
+  subagentState,
   tasksFromParts,
 } from "./subagent-list"
 
@@ -202,5 +204,69 @@ describe("expandSubagent", () => {
       expandedID: undefined,
       finishedOpen: true,
     })
+  })
+})
+
+describe("subagentState", () => {
+  test("reads a working child as running even after a usage limit", () => {
+    expect(subagentState({ status: "busy", limited: true })).toBe("running")
+    expect(subagentState({ status: "retry" })).toBe("running")
+  })
+
+  test("reads a stopped usage-limited child as usage-limit", () => {
+    expect(subagentState({ status: "idle", limited: true })).toBe("usage-limit")
+    expect(subagentState({ status: undefined, limited: true })).toBe("usage-limit")
+  })
+
+  test("reads other stopped children as idle", () => {
+    expect(subagentState({ status: "idle" })).toBe("idle")
+    expect(subagentState({ status: undefined, limited: false })).toBe("idle")
+  })
+
+  test("keeps the limited flag when a task row merges into its session row", () => {
+    const merged = mergeSubagents(
+      [{ id: "c1", title: "Child", updated: 1, status: "idle", text: "", limited: true }],
+      [{ id: "c1", title: "Task", updated: 1, status: "busy", text: "out" }],
+    )
+    expect(merged[0]?.limited).toBe(true)
+  })
+})
+
+describe("limitedTaskIDs", () => {
+  const foreground = (id: string, state: "completed" | "error", text: string) => ({
+    type: "tool",
+    tool: "task",
+    state: {
+      status: "completed",
+      output: `<task id="${id}" state="${state}">\n<task_${state === "error" ? "error" : "result"}>\n${text}\n</task_${
+        state === "error" ? "error" : "result"
+      }>\n</task>`,
+      metadata: { sessionId: id },
+    },
+  })
+
+  test("finds children whose task output reports a usage-limit stop", () => {
+    const limited = limitedTaskIDs([
+      foreground("c1", "error", "Subagent stopped: usage limit reached on anthropic/sonnet."),
+      foreground("c2", "completed", "all done"),
+    ])
+    expect([...limited]).toEqual(["c1"])
+  })
+
+  test("finds background stops injected as synthetic text parts", () => {
+    const limited = limitedTaskIDs([
+      {
+        text: '<task id="c3" state="error">\n<summary>Background task stopped (usage limit): x</summary>\n<task_error>\nSubagent stopped: usage limit reached\n</task_error>\n</task>',
+      },
+    ])
+    expect(limited.has("c3")).toBe(true)
+  })
+
+  test("a later completed result for the same task clears the limit", () => {
+    const limited = limitedTaskIDs([
+      foreground("c1", "error", "Subagent stopped: usage limit reached"),
+      foreground("c1", "completed", "finished on another model"),
+    ])
+    expect(limited.has("c1")).toBe(false)
   })
 })

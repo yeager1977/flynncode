@@ -50,3 +50,44 @@ describe("inboxRowStatus", () => {
     expect(inboxRowStatus("routine", "failed")).toBe("failed")
   })
 })
+
+describe("inboxRowStatus usage limits", () => {
+  test("reads an idle limited session as usage-limit", () => {
+    expect(inboxRowStatus("dispatch", "running", { type: "idle" }, false, true)).toBe("usage-limit")
+    expect(inboxRowStatus("session", "done", { type: "idle" }, false, true)).toBe("usage-limit")
+  })
+
+  test("a session waiting on the user still needs input", () => {
+    expect(inboxRowStatus("dispatch", "running", { type: "idle" }, true, true)).toBe("needs-input")
+  })
+
+  test("a limited session that is working again reads as running", () => {
+    expect(inboxRowStatus("session", "done", { type: "busy" }, false, true)).toBe("running")
+  })
+})
+
+describe("usage limits without a live entry", () => {
+  test("inbox rows read a limited session with no live status as usage-limit", () => {
+    expect(inboxRowStatus("dispatch", "running", undefined, false, true)).toBe("usage-limit")
+    expect(inboxRowStatus("dispatch", "done", undefined, false, true)).toBe("usage-limit")
+    expect(inboxRowStatus("dispatch", "done", undefined, true, true)).toBe("done")
+    expect(inboxRowStatus("dispatch", "done", undefined, false, false)).toBe("done")
+  })
+})
+
+describe("inboxStatus usage limits", () => {
+  test("a limited idle task is failed, not done", () => {
+    expect(inboxStatus("running", { type: "idle" }, true)).toBe("failed")
+    expect(inboxStatus("done", { type: "idle" }, true)).toBe("failed")
+  })
+
+  test("a limited task with no live entry is failed", () => {
+    expect(inboxStatus("running", undefined, true)).toBe("failed")
+    expect(inboxStatus("running", undefined, false)).toBe("running")
+  })
+
+  test("a limited task still waiting on the user needs input, and a working one is running", () => {
+    expect(inboxStatus("running", { type: "idle", blocked: true }, true)).toBe("needs-input")
+    expect(inboxStatus("done", { type: "busy" }, true)).toBe("running")
+  })
+})

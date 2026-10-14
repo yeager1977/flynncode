@@ -28,6 +28,17 @@ function apiError(headers?: Record<string, string>): SessionV1.APIError {
   )
 }
 
+function statusError(statusCode: number, headers?: Record<string, string>): SessionV1.APIError {
+  return Schema.decodeUnknownSync(SessionV1.APIError.Schema)(
+    new SessionV1.APIError({
+      message: statusCode === 429 ? "Rate limit exceeded" : "Overloaded",
+      statusCode,
+      isRetryable: true,
+      responseHeaders: headers,
+    }).toObject(),
+  )
+}
+
 function wrap(message: unknown): ReturnType<NamedError["toObject"]> {
   return { name: "", data: { message } }
 }
@@ -104,6 +115,8 @@ describe("session.retry.delay", () => {
         SessionRetry.policy({
           provider: "test",
           parse: Schema.decodeUnknownSync(SessionV1.APIError.Schema),
+          onLimit: "retry",
+          retryUnder: 0,
           set: (info) =>
             status.set(sessionID, {
               type: "retry",
@@ -132,6 +145,8 @@ describe("session.retry.delay", () => {
         SessionRetry.policy({
           provider: "test",
           parse: Schema.decodeUnknownSync(SessionV1.APIError.Schema),
+          onLimit: "retry",
+          retryUnder: 0,
           set: (info) =>
             Effect.sync(() => {
               attempts.push(info.attempt)
@@ -144,6 +159,75 @@ describe("session.retry.delay", () => {
       )
 
       expect(attempts).toStrictEqual([1, 2, 3, 4, 5])
+    }),
+  )
+})
+
+describe("session.retry.policy usage limits", () => {
+  const run = (
+    onLimit: "stop" | "retry",
+    retryUnder: number,
+    error: SessionV1.APIError,
+    sets: number[] = [],
+  ) =>
+    Effect.gen(function* () {
+      const step = yield* Schedule.toStepWithMetadata(
+        SessionRetry.policy({
+          provider: "test",
+          parse: Schema.decodeUnknownSync(SessionV1.APIError.Schema),
+          onLimit,
+          retryUnder,
+          set: (info) =>
+            Effect.sync(() => {
+              sets.push(info.attempt)
+            }),
+        }),
+      )
+      return yield* Effect.exit(step(error))
+    })
+
+  it.instance("stop mode ends the schedule on a 429 without setting retry status", () =>
+    Effect.gen(function* () {
+      const sets: number[] = []
+      const exit = yield* run("stop", 0, statusError(429), sets)
+      expect(exit._tag).toBe("Failure")
+      expect(sets).toStrictEqual([])
+    }),
+  )
+
+  it.instance("stop mode retries a short wait under retry_under", () =>
+    Effect.gen(function* () {
+      const sets: number[] = []
+      const exit = yield* run("stop", 1, statusError(429, { "retry-after-ms": "20" }), sets)
+      expect(exit._tag).toBe("Success")
+      expect(sets).toStrictEqual([1])
+    }),
+  )
+
+  it.instance("stop mode stops a long wait over retry_under", () =>
+    Effect.gen(function* () {
+      const sets: number[] = []
+      const exit = yield* run("stop", 1, statusError(429, { "retry-after-ms": "5000" }), sets)
+      expect(exit._tag).toBe("Failure")
+      expect(sets).toStrictEqual([])
+    }),
+  )
+
+  it.instance("retry mode keeps today's behaviour for usage limits", () =>
+    Effect.gen(function* () {
+      const sets: number[] = []
+      const exit = yield* run("retry", 0, statusError(429, { "retry-after-ms": "20" }), sets)
+      expect(exit._tag).toBe("Success")
+      expect(sets).toStrictEqual([1])
+    }),
+  )
+
+  it.instance("overload 503 retries in every mode", () =>
+    Effect.gen(function* () {
+      const sets: number[] = []
+      expect((yield* run("stop", 0, statusError(503, { "retry-after-ms": "20" }), sets))._tag).toBe("Success")
+      expect((yield* run("retry", 0, statusError(503, { "retry-after-ms": "20" }), sets))._tag).toBe("Success")
+      expect(sets).toStrictEqual([1, 1])
     }),
   )
 })

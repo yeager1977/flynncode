@@ -1,5 +1,6 @@
 import type { NamedError } from "@flynncode/core/util/error"
 import { SessionV1 } from "@flynncode/core/v1/session"
+import { usageLimit } from "@flynncode/core/session/usage-limit"
 import { Cause, Clock, Duration, Effect, Schedule } from "effect"
 import { MessageV2 } from "./message-v2"
 import { iife } from "@/util/iife"
@@ -183,6 +184,10 @@ function parseJSON(value: unknown) {
 export function policy(opts: {
   provider: string
   parse: (error: unknown) => Err
+  /** "stop" ends the schedule on usage limits whose wait exceeds `retryUnder`; "retry" waits as before. */
+  onLimit: "stop" | "retry"
+  /** Seconds. Usage limits that clear sooner than this are still retried in "stop" mode. */
+  retryUnder: number
   set: (input: { attempt: number; message: string; action?: Retryable["action"]; next: number }) => Effect.Effect<void>
 }) {
   return Schedule.fromStepWithMetadata(
@@ -193,6 +198,8 @@ export function policy(opts: {
       if (meta.attempt > RETRY_MAX_RETRIES) return Cause.done(meta.attempt)
       return Effect.gen(function* () {
         const wait = delay(meta.attempt, SessionV1.APIError.isInstance(error) ? error : undefined)
+        if (opts.onLimit === "stop" && usageLimit(error) && wait > opts.retryUnder * 1000)
+          return yield* Cause.done(meta.attempt)
         const now = yield* Clock.currentTimeMillis
         yield* opts.set({
           attempt: meta.attempt,

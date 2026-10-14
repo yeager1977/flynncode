@@ -333,4 +333,73 @@ describe("current session timeline rows", () => {
 
     expect(result.rows.map((row) => row._tag)).toEqual(["UserMessage", "AssistantPart"])
   })
+
+  test("turns a usage-limit error into a limit row anchored to the failed turn", () => {
+    const source = [
+      { id: "msg_user", type: "user", text: "go", time: { created: 1 } },
+      {
+        id: "msg_limited",
+        type: "assistant",
+        agent: "build",
+        model: { id: "claude-x", providerID: "anthropic" },
+        content: [],
+        time: { created: 2, completed: 10_000 },
+      },
+    ] satisfies SessionMessageInfo[]
+    const normalized = normalizeSessionMessages("ses_1", source)
+    const user = normalized.messages.find((message) => message.role === "user")
+    const assistant = normalized.messages.find((message) => message.role === "assistant")
+    if (user?.role !== "user" || assistant?.role !== "assistant") throw new Error("fixture")
+    const limited = {
+      ...assistant,
+      error: {
+        name: "APIError" as const,
+        data: {
+          message: "Rate limit exceeded",
+          statusCode: 429,
+          isRetryable: true,
+          responseHeaders: { "retry-after": "120" },
+        },
+      },
+    }
+
+    const rows = Timeline.constructMessageRows(user, () => [], [limited], 0, true, "idle", true, true)
+    const error = rows.find((row) => row._tag === "Error")
+
+    expect(error).toMatchObject({
+      text: "Rate limit exceeded",
+      usageLimit: { providerID: "anthropic", modelID: "claude-x", resetAt: 10_000 + 120_000 },
+    })
+  })
+
+  test("keeps the plain error row for errors that are not usage limits", () => {
+    const source = [
+      { id: "msg_user", type: "user", text: "go", time: { created: 1 } },
+      {
+        id: "msg_failed",
+        type: "assistant",
+        agent: "build",
+        model: { id: "model", providerID: "provider" },
+        content: [],
+        time: { created: 2, completed: 3 },
+      },
+    ] satisfies SessionMessageInfo[]
+    const normalized = normalizeSessionMessages("ses_1", source)
+    const user = normalized.messages.find((message) => message.role === "user")
+    const assistant = normalized.messages.find((message) => message.role === "assistant")
+    if (user?.role !== "user" || assistant?.role !== "assistant") throw new Error("fixture")
+    const failed = {
+      ...assistant,
+      error: {
+        name: "APIError" as const,
+        data: { message: "Overloaded", statusCode: 503, isRetryable: true },
+      },
+    }
+
+    const rows = Timeline.constructMessageRows(user, () => [], [failed], 0, true, "idle", true, true)
+    const error = rows.find((row) => row._tag === "Error")
+
+    expect(error).toMatchObject({ text: "Overloaded" })
+    expect(error && "usageLimit" in error ? error.usageLimit : undefined).toBeUndefined()
+  })
 })

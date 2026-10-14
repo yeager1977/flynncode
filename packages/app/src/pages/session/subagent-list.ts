@@ -9,6 +9,8 @@ export type SubagentChild = {
   directory?: string
   status: SubagentStatus | undefined
   text: string
+  // The child's newest assistant turn ended on a provider usage limit.
+  limited?: boolean
 }
 
 export type SubagentGroups = {
@@ -21,6 +23,14 @@ export function groupSubagents(children: readonly SubagentChild[]): SubagentGrou
   const active = children.filter((child) => child.status === "busy" || child.status === "retry").toSorted(byUpdated)
   const finished = children.filter((child) => child.status !== "busy" && child.status !== "retry").toSorted(byUpdated)
   return { active, finished }
+}
+
+// A usage-limited child has stopped (idle), so it only reads as limited while
+// it is not working again, e.g. after a resume with another model.
+export function subagentState(child: Pick<SubagentChild, "status" | "limited">) {
+  if (child.status === "busy" || child.status === "retry") return "running" as const
+  if (child.limited) return "usage-limit" as const
+  return "idle" as const
 }
 
 export function subagentListState(children: readonly SubagentChild[]) {
@@ -107,6 +117,28 @@ export function tasksFromParts(
           text: item.text,
         }))
     : []
+}
+
+// Children whose parent task output reports a usage-limit stop. The report text
+// survives reload, unlike the child's own (often unloaded) messages. Parts are
+// in chronological order, so a later result for a resumed task overrides it.
+export function limitedTaskIDs(parts: readonly TaskToolPart[]) {
+  const limited = new Set<string>()
+  for (const part of parts) {
+    const output = part.state?.output ?? (typeof part.text === "string" ? part.text : "")
+    const stopped = output.includes("Subagent stopped: usage limit")
+    const sessionId = part.type === "tool" && part.tool === "task" ? part.state?.metadata?.sessionId : undefined
+    const ids = [
+      ...Array.from(output.matchAll(/<task id="([^"]+)" state="(?:running|completed|error)"/g), (match) => match[1]),
+      ...(typeof sessionId === "string" ? [sessionId] : []),
+    ]
+    for (const id of ids) {
+      if (!id) continue
+      if (stopped) limited.add(id)
+      else if (output.includes("<task id=")) limited.delete(id)
+    }
+  }
+  return limited
 }
 
 export function mergeSubagents(sessions: readonly SubagentChild[], tasks: readonly SubagentChild[]) {

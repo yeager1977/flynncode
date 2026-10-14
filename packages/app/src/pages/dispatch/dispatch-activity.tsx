@@ -7,11 +7,13 @@ import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useServerSync } from "@/context/server-sync"
 import { Persist, persisted } from "@/utils/persist"
+import { endedOnUsageLimit } from "@/utils/usage-limit"
 import { inboxStatus } from "./activity-status"
 import {
   markDispatchRead,
   migrateDispatch,
   resolvedTransition,
+  resumeDispatch,
   type DispatchStatus,
   type DispatchTask,
 } from "./dispatch-store"
@@ -36,11 +38,12 @@ export const { use: useDispatchActivity, provider: DispatchActivityProvider } = 
 
     const liveStatus = (task: DispatchTask): DispatchStatus => {
       const status = serverSync().session.data.session_status[task.sessionID]
-      if (!status) return task.status
+      const limited = endedOnUsageLimit(serverSync().session.data.message[task.sessionID])
+      if (!status) return inboxStatus(task.status, undefined, limited)
       const waiting =
         (serverSync().session.data.question[task.sessionID]?.length ?? 0) > 0 ||
         (serverSync().session.data.permission[task.sessionID]?.length ?? 0) > 0
-      return inboxStatus(task.status, { type: status.type, blocked: waiting })
+      return inboxStatus(task.status, { type: status.type, blocked: waiting }, limited)
     }
 
     const statusKey = (status: DispatchStatus) => {
@@ -89,6 +92,8 @@ export const { use: useDispatchActivity, provider: DispatchActivityProvider } = 
           }),
         )
       }
+      const resumed = resumeDispatch(desk.tasks, current)
+      if (resumed !== desk.tasks) setDesk("tasks", resumed)
       previous.clear()
       current.forEach((status, id) => previous.set(id, status))
       primed = true

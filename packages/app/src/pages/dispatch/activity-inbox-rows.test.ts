@@ -225,3 +225,15 @@ describe("capped dispatch list", () => {
     expect(inboxUnread(combined)).toBe(1)
   })
 })
+
+describe("filterInbox usage limits", () => {
+  test("lists usage-limited rows under failed", () => {
+    const rows: InboxRow[] = [
+      { key: "a", kind: "session", title: "A", subtitle: "", status: "usage-limit", unread: false },
+      { key: "b", kind: "dispatch", title: "B", subtitle: "", status: "failed", unread: false },
+      { key: "c", kind: "dispatch", title: "C", subtitle: "", status: "done", unread: false },
+    ]
+    expect(filterInbox(rows, "failed").map((row) => row.key)).toEqual(["a", "b"])
+    expect(filterInbox(rows, "done").map((row) => row.key)).toEqual(["c"])
+  })
+})

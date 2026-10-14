@@ -98,6 +98,28 @@ describe("Config", () => {
     }),
   )
 
+  it.effect("decodes rate_limit with on_limit and retry_under", () =>
+    Effect.sync(() => {
+      const decode = Schema.decodeUnknownSync(ConfigV1.Info)
+      expect(decode({ rate_limit: { on_limit: "retry", retry_under: 30 } }).rate_limit).toEqual({
+        on_limit: "retry",
+        retry_under: 30,
+      })
+      expect(decode({ rate_limit: { on_limit: "stop" } }).rate_limit).toEqual({ on_limit: "stop" })
+      expect(decode({ rate_limit: {} }).rate_limit).toEqual({})
+      expect(decode({}).rate_limit).toBeUndefined()
+    }),
+  )
+
+  it.effect("rejects invalid rate_limit values", () =>
+    Effect.sync(() => {
+      const decode = Schema.decodeUnknownSync(ConfigV1.Info)
+      expect(() => decode({ rate_limit: { on_limit: "wait" } })).toThrow()
+      expect(() => decode({ rate_limit: { retry_under: -1 } })).toThrow()
+      expect(() => decode({ rate_limit: { retry_under: 1.5 } })).toThrow()
+    }),
+  )
+
   it.effect("migrates v1 provider setup options into AISDK settings", () =>
     Effect.sync(() => {
       const migrated = ConfigMigrateV1.migrate({

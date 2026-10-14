@@ -4,13 +4,17 @@ import { Switch } from "@flynncode/ui/v2/switch-v2"
 import { Icon as IconV2 } from "@flynncode/ui/v2/icon"
 import { IconButtonV2 } from "@flynncode/ui/v2/icon-button-v2"
 import { TextInputV2 } from "@flynncode/ui/v2/text-input-v2"
-import { type Component, For, Show } from "solid-js"
+import { SelectV2 } from "@flynncode/ui/v2/select-v2"
+import { type Component, For, Show, createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { useModels } from "@/context/models"
 import { useServerSDK } from "@/context/server-sdk"
+import { useServerSync } from "@/context/server-sync"
 import { popularProviders } from "@/hooks/use-providers"
 import { Persist, persisted } from "@/utils/persist"
+import { showToast } from "@/utils/toast"
+import { rateLimitFromConfig, rateLimitToConfig, retryUnderFromInput, type OnLimit } from "./rate-limit-payload"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import "./settings-v2.css"
@@ -81,6 +85,7 @@ export const SettingsModelsV2: Component = () => {
       </div>
 
       <div class="settings-v2-tab-body settings-v2-models">
+        <RateLimitSection />
         <Show
           when={!list.grouped.loading}
           fallback={
@@ -183,5 +188,93 @@ export const SettingsModelsV2: Component = () => {
         </Show>
       </div>
     </>
+  )
+}
+
+const onLimitOptions: OnLimit[] = ["stop", "retry"]
+
+const RateLimitSection: Component = () => {
+  const language = useLanguage()
+  const serverSync = useServerSync()
+  const [state, setState] = createStore({ saving: false })
+
+  const value = createMemo(() => rateLimitFromConfig(serverSync().data.config))
+
+  // Resolves false only when the save was attempted and failed.
+  const save = async (target: { onLimit: OnLimit; retryUnder: number }) => {
+    if (state.saving) return true
+    if (target.onLimit === value().onLimit && target.retryUnder === value().retryUnder) return true
+    setState("saving", true)
+    const ok = await serverSync()
+      .updateConfig({ rate_limit: rateLimitToConfig(target) })
+      .then(() => true)
+      .catch(() => false)
+    setState("saving", false)
+    if (ok) return true
+    showToast({ variant: "error", title: language.t("settings.rateLimit.toast.updateFailed.title") })
+    return false
+  }
+
+  const onLimitLabel = (choice: OnLimit) =>
+    choice === "stop" ? language.t("settings.rateLimit.onLimit.stop") : language.t("settings.rateLimit.onLimit.retry")
+
+  return (
+    <div class="settings-v2-section">
+      <h3 class="settings-v2-section-title">{language.t("settings.rateLimit.section.title")}</h3>
+      <SettingsListV2>
+        <SettingsRowV2
+          title={language.t("settings.rateLimit.onLimit.title")}
+          description={language.t("settings.rateLimit.onLimit.description")}
+        >
+          <SelectV2
+            appearance="inline"
+            data-action="settings-rate-limit-on-limit"
+            disabled={state.saving}
+            options={onLimitOptions}
+            current={value().onLimit}
+            placement="bottom-end"
+            gutter={6}
+            label={onLimitLabel}
+            onSelect={(choice) => choice !== null && void save({ onLimit: choice, retryUnder: value().retryUnder })}
+          />
+        </SettingsRowV2>
+        <SettingsRowV2
+          title={language.t("settings.rateLimit.retryUnder.title")}
+          description={language.t("settings.rateLimit.retryUnder.description")}
+        >
+          <div class="w-full sm:w-[220px]">
+            {/* Write on commit (blur, Enter, spinner), not per keystroke. "Keep
+                retrying" already retries every limit, so the threshold is moot. */}
+            <TextInputV2
+              data-action="settings-rate-limit-retry-under"
+              type="number"
+              appearance="base"
+              min="0"
+              step="1"
+              disabled={state.saving || value().onLimit === "retry"}
+              value={String(value().retryUnder)}
+              onChange={(event) => {
+                const input = event.currentTarget
+                const parsed = retryUnderFromInput(input.value)
+                if (parsed === undefined) {
+                  input.value = String(value().retryUnder)
+                  return
+                }
+                // A failed save leaves the saved value in place, so show it
+                // again instead of the rejected edit.
+                void save({ onLimit: value().onLimit, retryUnder: parsed }).then((saved) => {
+                  if (!saved) input.value = String(value().retryUnder)
+                })
+              }}
+              spellcheck={false}
+              autocorrect="off"
+              autocomplete="off"
+              autocapitalize="off"
+              aria-label={language.t("settings.rateLimit.retryUnder.title")}
+            />
+          </div>
+        </SettingsRowV2>
+      </SettingsListV2>
+    </div>
   )
 }

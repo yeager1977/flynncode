@@ -34,9 +34,13 @@ export namespace TimelineRow {
     userMessageID: string
     diffs: SummaryDiff[]
   }> {}
+  // Set when the error is a provider usage limit; the row then renders the
+  // limit card (model, reset time, switch model) instead of the plain error.
+  export type UsageLimit = { providerID: string; modelID: string; resetAt?: number }
   export class Error extends Data.TaggedClass("Error")<{
     userMessageID: string
     text: string
+    usageLimit?: UsageLimit
   }> {}
   export class Retry extends Data.TaggedClass("Retry")<{
     userMessageID: string
