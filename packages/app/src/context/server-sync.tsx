@@ -689,6 +689,8 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     project: projectApi,
     session,
     homeSessions,
+    // The client that owns the home session index; readers must use it to see live updates.
+    queryClient,
     mcp: {
       toggle: async (directory: string, name: string) => {
         const key = directoryKey(directory)

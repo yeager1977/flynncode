@@ -12,10 +12,13 @@ import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useServer } from "@/context/server"
+import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useTabs } from "@/context/tabs"
 import { pathKey } from "@/utils/path-key"
 import { sessionHref } from "@/utils/session-route"
+import { showToast } from "@/utils/toast"
+import type { Session } from "@flynncode/sdk/v2/client"
 import { sortedRootSessions } from "./layout/helpers"
 import { createSidebarController } from "./layout/sidebar-controller"
 import { SessionSidebar, SIDEBAR_SESSION_PREVIEW } from "./layout/session-sidebar"
@@ -83,6 +86,7 @@ export function ProjectSidebar() {
   const tabs = useTabs()
   const server = useServer()
   const serverSync = useServerSync()
+  const serverSDK = useServerSDK()
   const navigate = useNavigate()
   const command = useCommand()
   const language = useLanguage()
@@ -205,6 +209,19 @@ export function ProjectSidebar() {
   )
 
   const listing = createSidebarSessions()
+  const archive = async (session: Session) => {
+    const ok = await serverSDK()
+      .client.session.update({ sessionID: session.id, directory: session.directory, time: { archived: Date.now() } })
+      .then(() => true)
+      .catch(() => false)
+    if (!ok) {
+      showToast({ title: language.t("common.requestFailed") })
+      return
+    }
+    serverSync().homeSessions.remove(session.id)
+    // Archiving the open session leaves it; "/" starts a new one in this project.
+    if (sessionID() === session.id) navigate("/")
+  }
   // A project shows its newest sessions; the routed one stays listed even past the preview.
   const shown = (group: SidebarGroup) => {
     if (state.showAll[group.project.worktree]) return group.sessions
@@ -255,6 +272,7 @@ export function ProjectSidebar() {
       sessionHref={(session) => sessionHref(server.key, session.id)}
       onNewSession={openDraft}
       onOpenProject={() => sidebar.chooseProject()}
+      onArchive={(session) => void archive(session)}
       shown={shown}
       showingAll={(worktree) => !!state.showAll[worktree]}
       showAll={(worktree, value) => setState("showAll", worktree, value)}

@@ -1,13 +1,16 @@
-import { For, Show, type Accessor } from "solid-js"
+import { createEffect, For, Show, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { A } from "@solidjs/router"
+import { MenuV2 } from "@flynncode/ui/v2/menu-v2"
 import type { Session } from "@flynncode/sdk/v2/client"
 import { Icon } from "@flynncode/ui/v2/icon"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useNotification } from "@/context/notification"
+import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useSettingsDialog } from "@/components/settings-dialog"
+import { showToast } from "@/utils/toast"
 import { displayName } from "./helpers"
 import type { SidebarGroup } from "./sidebar-sessions"
 
@@ -23,6 +26,7 @@ export function SessionSidebar(props: {
   sessionHref: (session: Session) => string
   onNewSession: (directory: string) => void
   onOpenProject: () => void
+  onArchive: (session: Session) => void
   shown: (group: SidebarGroup) => Session[]
   showAll: (worktree: string, value: boolean) => void
   showingAll: (worktree: string) => boolean
@@ -85,6 +89,7 @@ export function SessionSidebar(props: {
                       session={session}
                       href={props.sessionHref(session)}
                       active={props.activeSessionID() === session.id}
+                      onArchive={props.onArchive}
                     />
                   )}
                 </For>
@@ -148,33 +153,107 @@ function SidebarRow(props: {
   )
 }
 
-function SessionLink(props: { session: Session; href: string; active: boolean }) {
+function SessionLink(props: { session: Session; href: string; active: boolean; onArchive: (session: Session) => void }) {
   const serverSync = useServerSync()
+  const serverSDK = useServerSDK()
   const notification = useNotification()
+  const language = useLanguage()
+  // `title` shows a rename optimistically until the session index reports it.
+  const [state, setState] = createStore({
+    renaming: false,
+    pendingRename: false,
+    draft: "",
+    title: undefined as string | undefined,
+  })
   const working = () => serverSync().session.data.session_working(props.session.id)
   const unseen = () => notification.session.unseenCount(props.session.id) > 0
+  const title = () => state.title ?? props.session.title
+  // Drop the optimistic title once the index catches up.
+  createEffect(() => {
+    if (state.title !== undefined && props.session.title === state.title) setState("title", undefined)
+  })
+
+  const commit = () => {
+    if (!state.renaming) return
+    const next = state.draft.trim()
+    setState("renaming", false)
+    if (!next || next === title()) return
+    setState("title", next)
+    void serverSDK()
+      .api.session.rename({ sessionID: props.session.id, title: next, directory: props.session.directory })
+      .catch((err: unknown) => {
+        setState("title", undefined)
+        showToast({
+          title: language.t("common.requestFailed"),
+          description: err instanceof Error ? err.message : undefined,
+        })
+      })
+  }
 
   return (
-    <A
-      href={props.href}
-      data-session-id={props.session.id}
-      class="flex items-center gap-2.5 h-7 pl-2.5 pr-2 rounded-md min-w-0"
-      classList={{
-        "bg-v2-background-bg-layer-02 text-v2-text-text-base": props.active,
-        "text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base": !props.active,
-      }}
-    >
-      <span class="shrink-0 size-3 flex items-center justify-center">
-        <span
-          class="block rounded-full"
-          classList={{
-            "size-2 bg-v2-icon-icon-accent animate-pulse": working(),
-            "size-2 bg-v2-icon-icon-accent": !working() && unseen(),
-            "size-1.5 border border-v2-icon-icon-muted": !working() && !unseen(),
+    <MenuV2.Context>
+      <MenuV2.Context.Trigger
+        as="div"
+        data-session-id={props.session.id}
+        class="flex items-center gap-2.5 h-7 pl-2.5 pr-2 rounded-md min-w-0"
+        classList={{
+          "bg-v2-background-bg-layer-02 text-v2-text-text-base": props.active || state.renaming,
+          "text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base":
+            !props.active && !state.renaming,
+        }}
+      >
+        <span class="shrink-0 size-3 flex items-center justify-center">
+          <span
+            class="block rounded-full"
+            classList={{
+              "size-2 bg-v2-icon-icon-accent animate-pulse": working(),
+              "size-2 bg-v2-icon-icon-accent": !working() && unseen(),
+              "size-1.5 border border-v2-icon-icon-muted": !working() && !unseen(),
+            }}
+          />
+        </span>
+        <Show
+          when={state.renaming}
+          fallback={
+            <A href={props.href} class="flex-1 min-w-0 truncate leading-7">
+              {title()}
+            </A>
+          }
+        >
+          <input
+            ref={(el) => queueMicrotask(() => el.select())}
+            data-action="sidebar-session-rename"
+            class="flex-1 min-w-0 bg-transparent outline-none text-v2-text-text-base"
+            value={state.draft}
+            aria-label={language.t("common.rename")}
+            onInput={(event) => setState("draft", event.currentTarget.value)}
+            onBlur={commit}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault()
+                commit()
+                return
+              }
+              if (event.key !== "Escape") return
+              event.preventDefault()
+              setState("renaming", false)
+            }}
+          />
+        </Show>
+      </MenuV2.Context.Trigger>
+      <MenuV2.Context.Portal>
+        <MenuV2.Context.Content
+          onCloseAutoFocus={(event) => {
+            // Start editing only after the menu has returned focus, or it steals the input's focus.
+            if (!state.pendingRename) return
+            event.preventDefault()
+            setState({ pendingRename: false, renaming: true, draft: title() })
           }}
-        />
-      </span>
-      <span class="truncate">{props.session.title}</span>
-    </A>
+        >
+          <MenuV2.Item onSelect={() => setState("pendingRename", true)}>{language.t("common.rename")}</MenuV2.Item>
+          <MenuV2.Item onSelect={() => props.onArchive(props.session)}>{language.t("common.archive")}</MenuV2.Item>
+        </MenuV2.Context.Content>
+      </MenuV2.Context.Portal>
+    </MenuV2.Context>
   )
 }

@@ -22,29 +22,37 @@ export function createSidebarSessions() {
   const serverSDK = useServerSDK()
   const serverSync = useServerSync()
   const cache = () => serverSync().homeSessions
-  const events = useQuery(() => ({
-    queryKey: cache().eventsKey,
-    queryFn: async (): Promise<HomeSessionEvents> => ({ sequence: 0, entries: [] }),
-    initialData: { sequence: 0, entries: [] } satisfies HomeSessionEvents,
-    enabled: false,
-  }))
-  const index = useQuery(() => ({
-    queryKey: cache().indexKey,
-    queryFn: async ({ signal }) => {
-      const sequence = cache().eventSequence()
-      const result = await loadHomeSessionIndex(
-        (input, options) => serverSDK().client.v2.session.list(input, options),
-        sequence,
-        signal,
-      )
-      cache().complete(sequence)
-      return result
-    },
-    retry: false,
-    staleTime: 30_000,
-    refetchOnMount: true,
-    refetchOnReconnect: true,
-  }))
+  const events = useQuery(
+    () => ({
+      queryKey: cache().eventsKey,
+      queryFn: async (): Promise<HomeSessionEvents> => ({ sequence: 0, entries: [] }),
+      initialData: { sequence: 0, entries: [] } satisfies HomeSessionEvents,
+      enabled: false,
+    }),
+    () => serverSync().queryClient,
+  )
+  // Read the index from server-sync's client: session events and archives update
+  // that cache, and the app's route-level QueryProvider is a different client.
+  const index = useQuery(
+    () => ({
+      queryKey: cache().indexKey,
+      queryFn: async ({ signal }) => {
+        const sequence = cache().eventSequence()
+        const result = await loadHomeSessionIndex(
+          (input, options) => serverSDK().client.v2.session.list(input, options),
+          sequence,
+          signal,
+        )
+        cache().complete(sequence)
+        return result
+      },
+      retry: false,
+      staleTime: 30_000,
+      refetchOnMount: true,
+      refetchOnReconnect: true,
+    }),
+    () => serverSync().queryClient,
+  )
   const sessions = createMemo(() =>
     retainHomeSessions(cache().sessions(index.data, events.data), SESSIONS_PER_DIRECTORY, Date.now()),
   )
