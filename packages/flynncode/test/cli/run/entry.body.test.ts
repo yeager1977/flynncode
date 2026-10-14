@@ -282,6 +282,39 @@ describe("run entry body", () => {
     })
   })
 
+  test("shows the usage-limit report of a stopped task", () => {
+    expect(
+      entryBody(
+        toolCommit({
+          tool: "task",
+          state: {
+            status: "completed",
+            input: {
+              description: "Inspect reducer",
+              subagent_type: "explore",
+            },
+            title: "",
+            output: [
+              '<task id="child-1" state="error">',
+              "<summary>Task stopped (usage limit): Inspect reducer</summary>",
+              "<task_error>",
+              "Subagent stopped: usage limit reached on anthropic/sonnet.",
+              "</task_error>",
+              "</task>",
+            ].join("\n"),
+            metadata: {
+              sessionId: "child-1",
+            },
+            time: { start: 1, end: 2 },
+          },
+        }),
+      ),
+    ).toEqual({
+      type: "markdown",
+      content: "Subagent stopped: usage limit reached on anthropic/sonnet.",
+    })
+  })
+
   test("streams tool progress text and treats completed progress as done", () => {
     const body = entryBody(
       commit({

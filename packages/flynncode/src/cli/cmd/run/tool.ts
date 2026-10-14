@@ -761,7 +761,7 @@ function taskResult(output: string): string | undefined {
     return undefined
   }
 
-  const match = output.match(/<task_result>\s*([\s\S]*?)\s*<\/task_result>/)
+  const match = output.match(/<task_(?:result|error)>\s*([\s\S]*?)\s*<\/task_(?:result|error)>/)
   if (match) {
     return match[1].trim() || undefined
   }
