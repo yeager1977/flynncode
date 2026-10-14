@@ -17,10 +17,7 @@ import { IconButton } from "@flynncode/ui/icon-button"
 import { Icon } from "@flynncode/ui/icon"
 import { Button } from "@flynncode/ui/button"
 import { Tooltip, TooltipKeybind } from "@flynncode/ui/tooltip"
-import { IconButtonV2 } from "@flynncode/ui/v2/icon-button-v2"
 import { Icon as IconV2 } from "@flynncode/ui/v2/icon"
-import { KeybindV2 } from "@flynncode/ui/v2/keybind-v2"
-import { TooltipV2 } from "@flynncode/ui/v2/tooltip-v2"
 
 import { LayoutRoute, useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
@@ -38,7 +35,6 @@ import { useTabs } from "@/context/tabs"
 import type { PromptModel, PromptSession } from "@/context/prompt"
 import { projectDraft } from "@/pages/layout/new-layout-sidebar"
 import "./titlebar.css"
-import { newTabTooltipKeybind } from "./command-tooltip-keybind"
 import { normalizeSessionInfo } from "@/utils/session"
 
 const legacyTitlebarHeight = 40
@@ -370,49 +366,7 @@ export function Titlebar(props: {
                   <WindowsAppMenu command={command} platform={platform} variant="v2" />
                 </Show>
                 {props.leading}
-                <TooltipV2
-                  placement="bottom"
-                  value={
-                    <>
-                      {language.t("home.title")}
-                      <KeybindV2 keys={command.keybindParts("home.toggle")} variant="neutral" />
-                    </>
-                  }
-                  class="shrink-0"
-                >
-                  <IconButtonV2
-                    type="button"
-                    variant="ghost-muted"
-                    size="large"
-                    class="!w-9 shrink-0"
-                    icon={<IconV2 name="grid-plus" />}
-                    state={layout.route().type === "home" ? "pressed" : undefined}
-                    onClick={toggleHome}
-                    aria-label={language.t("home.title")}
-                    aria-pressed={layout.route().type === "home"}
-                  />
-                </TooltipV2>
-
-                <div class="flex-1 min-w-0" />
-                <TooltipV2
-                  placement="bottom"
-                  value={
-                    <>
-                      {language.t("command.session.new")}
-                      <KeybindV2 keys={newTabTooltipKeybind(command)} variant="neutral" />
-                    </>
-                  }
-                >
-                  <IconButtonV2
-                    type="button"
-                    variant="ghost-muted"
-                    size="large"
-                    class="shrink-0"
-                    icon={<IconV2 name="plus" />}
-                    onClick={openNewTab}
-                    aria-label={language.t("command.session.new")}
-                  />
-                </TooltipV2>
+                {/* The sidebar owns New session and the session list; "/" opens a new session. */}
                 <div class="flex-1" />
                 {props.actions}
                 <TitlebarV2Right state={v2RightState()} />

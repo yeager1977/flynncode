@@ -1221,6 +1221,9 @@ export const dict = {
   "preview.server.add": "Add server",
   "sidebar.empty.title": "No projects open",
   "sidebar.empty.description": "Open a project to get started",
+  "sidebar.sessions.showMore.one": "Show {{count}} more",
+  "sidebar.sessions.showMore.other": "Show {{count}} more",
+  "sidebar.sessions.showLess": "Show less",
 
   "debugBar.ariaLabel": "Development performance diagnostics",
   "debugBar.na": "n/a",

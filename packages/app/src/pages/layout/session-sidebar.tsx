@@ -1,130 +1,180 @@
-import { For, Show } from "solid-js"
-import { DragDropProvider, SortableProvider } from "@thisbeyond/solid-dnd"
-import { ButtonV2 } from "@flynncode/ui/v2/button-v2"
+import { For, Show, type Accessor } from "solid-js"
+import { createStore } from "solid-js/store"
+import { A } from "@solidjs/router"
+import type { Session } from "@flynncode/sdk/v2/client"
 import { Icon } from "@flynncode/ui/v2/icon"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
-import { useLayout, type LocalProject } from "@/context/layout"
+import { useNotification } from "@/context/notification"
+import { useServerSync } from "@/context/server-sync"
 import { useSettingsDialog } from "@/components/settings-dialog"
 import { displayName } from "./helpers"
-import { pathKey } from "@/utils/path-key"
-import { LocalWorkspace, SortableWorkspace } from "./sidebar-workspace"
-import type { SidebarController } from "./sidebar-controller"
+import type { SidebarGroup } from "./sidebar-sessions"
 
-// Claude-desktop-style navigation: one column, projects as collapsible
-// headers, their sessions underneath. Clicking a session only routes.
+// Sessions a project shows before "Show more".
+export const SIDEBAR_SESSION_PREVIEW = 5
+
+// Claude-desktop-style navigation: search and new session on top, then each
+// open project as a quiet label over its sessions. Clicking a session only routes.
 export function SessionSidebar(props: {
-  sidebar: SidebarController
-  mobile?: boolean
+  groups: Accessor<SidebarGroup[]>
+  activeSessionID: Accessor<string | undefined>
+  currentDirectory: Accessor<string | undefined>
+  sessionHref: (session: Session) => string
   onNewSession: (directory: string) => void
+  onOpenProject: () => void
+  shown: (group: SidebarGroup) => Session[]
+  showAll: (worktree: string, value: boolean) => void
+  showingAll: (worktree: string) => boolean
 }) {
-  const layout = useLayout()
   const command = useCommand()
   const language = useLanguage()
   const settings = useSettingsDialog()
-  const current = () => props.sidebar.currentProject()?.worktree ?? layout.projects.list()[0]?.worktree
-  const worktrees = (project: LocalProject) =>
-    props.sidebar.workspaceIds(project).filter((directory) => pathKey(directory) !== pathKey(project.worktree))
 
   return (
-    <div class="size-full flex flex-col bg-v2-background-bg-deep">
-      <div class="flex flex-col gap-0.5 p-2">
-        <ButtonV2
-          variant="ghost-muted"
-          class="justify-start"
-          data-action="sidebar-new-session"
-          disabled={!current()}
+    <div class="size-full flex flex-col bg-v2-background-bg-deep text-13-regular">
+      <div class="flex flex-col gap-0.5 px-2 pt-2 pb-3">
+        <button
+          type="button"
+          data-action="sidebar-search"
+          class="flex items-center gap-2 h-8 px-2.5 mb-1.5 rounded-md border border-v2-border-border-muted text-v2-text-text-faint hover:bg-v2-overlay-simple-overlay-hover text-left"
+          onClick={() => command.show()}
+        >
+          <Icon name="magnifying-glass" />
+          <span class="truncate">{language.t("common.search.placeholder")}</span>
+        </button>
+        <SidebarRow
+          icon="plus"
+          label={language.t("command.session.new")}
+          action="sidebar-new-session"
+          disabled={!props.currentDirectory()}
           onClick={() => {
-            const directory = current()
+            const directory = props.currentDirectory()
             if (directory) props.onNewSession(directory)
           }}
-        >
-          <Icon name="edit" />
-          {language.t("command.session.new")}
-        </ButtonV2>
-        <ButtonV2 variant="ghost-muted" class="justify-start" data-action="sidebar-search" onClick={command.show}>
-          <Icon name="magnifying-glass" />
-          {language.t("home.sessions.search.placeholder")}
-        </ButtonV2>
+        />
       </div>
-      <div
-        ref={(el) => props.sidebar.workspaceSidebarCtx.setScrollContainerRef(el, props.mobile)}
-        class="flex-1 min-h-0 overflow-y-auto no-scrollbar px-2"
-      >
-        <For each={layout.projects.list()}>
-          {(project) => (
-            <div class="flex flex-col">
-              <div class="group flex items-center h-8 rounded-md hover:bg-v2-background-bg-layer-01">
-                <button
-                  type="button"
-                  class="flex-1 min-w-0 flex items-center gap-1.5 px-2 h-full text-left"
-                  data-action="sidebar-project-toggle"
-                  aria-expanded={project.expanded}
-                  onClick={() =>
-                    project.expanded
-                      ? layout.projects.collapse(project.worktree)
-                      : layout.projects.expand(project.worktree)
-                  }
-                >
-                  <span class="shrink-0" classList={{ "-rotate-90": !project.expanded }}>
-                    <Icon name="chevron-down" />
-                  </span>
-                  <span class="truncate font-medium">{displayName(project)}</span>
-                </button>
-                <button
-                  type="button"
-                  class="px-2 h-full"
-                  classList={{ "opacity-0 group-hover:opacity-100 focus-visible:opacity-100": !props.mobile }}
-                  data-action="sidebar-project-new-session"
-                  aria-label={language.t("command.session.new")}
-                  onClick={() => props.onNewSession(project.worktree)}
-                >
-                  <Icon name="plus" />
-                </button>
-              </div>
-              <Show when={project.expanded}>
-                <LocalWorkspace
-                  ctx={props.sidebar.workspaceSidebarCtx}
-                  project={project}
-                  sortNow={props.sidebar.sortNow}
-                  mobile={props.mobile}
-                  inline
-                  listOnly
-                />
-                {/* Worktrees follow the main folder, each a collapsible sub-heading.
-                    The sortable wiring is required by SortableWorkspace; without
-                    sensors nothing drags, so their order stays the saved one. */}
-                <DragDropProvider>
-                  <SortableProvider ids={worktrees(project)}>
-                    <For each={worktrees(project)}>
-                      {(directory) => (
-                        <SortableWorkspace
-                          ctx={props.sidebar.workspaceSidebarCtx}
-                          directory={directory}
-                          project={project}
-                          sortNow={props.sidebar.sortNow}
-                          mobile={props.mobile}
-                          listOnly
-                        />
-                      )}
-                    </For>
-                  </SortableProvider>
-                </DragDropProvider>
-              </Show>
+      <div class="flex-1 min-h-0 overflow-y-auto no-scrollbar px-2 pb-2 flex flex-col gap-4">
+        <Show
+          when={props.groups().length > 0}
+          fallback={
+            <div class="px-2.5 pt-2 flex flex-col gap-1">
+              <span class="text-v2-text-text-base">{language.t("sidebar.empty.title")}</span>
+              <span class="text-v2-text-text-faint">{language.t("sidebar.empty.description")}</span>
             </div>
-          )}
-        </For>
+          }
+        >
+          <For each={props.groups()}>
+            {(group) => (
+              <section class="flex flex-col gap-px" data-project={group.project.worktree}>
+                <div class="group/project flex items-center h-7 pl-2.5 pr-1 text-12-regular text-v2-text-text-faint">
+                  <span class="flex-1 min-w-0 truncate">{displayName(group.project)}</span>
+                  <button
+                    type="button"
+                    data-action="sidebar-project-new-session"
+                    aria-label={language.t("command.session.new")}
+                    class="size-6 flex items-center justify-center rounded-md opacity-0 group-hover/project:opacity-100 focus-visible:opacity-100 hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base"
+                    onClick={() => props.onNewSession(group.project.worktree)}
+                  >
+                    <Icon name="plus" />
+                  </button>
+                </div>
+                <For each={props.shown(group)}>
+                  {(session) => (
+                    <SessionLink
+                      session={session}
+                      href={props.sessionHref(session)}
+                      active={props.activeSessionID() === session.id}
+                    />
+                  )}
+                </For>
+                <Show when={group.sessions.length > SIDEBAR_SESSION_PREVIEW}>
+                  <button
+                    type="button"
+                    data-action="sidebar-show-more"
+                    class="h-7 pl-[30px] pr-2.5 rounded-md text-left text-v2-text-text-faint hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-muted"
+                    onClick={() =>
+                      props.showAll(group.project.worktree, !props.showingAll(group.project.worktree))
+                    }
+                  >
+                    {props.showingAll(group.project.worktree)
+                      ? language.t("sidebar.sessions.showLess")
+                      : language.plural("sidebar.sessions.showMore", group.sessions.length - SIDEBAR_SESSION_PREVIEW)}
+                  </button>
+                </Show>
+              </section>
+            )}
+          </For>
+        </Show>
       </div>
       <div class="flex flex-col gap-0.5 p-2 border-t border-v2-border-border-muted">
-        <ButtonV2 variant="ghost-muted" class="justify-start" onClick={() => props.sidebar.chooseProject()}>
-          <Icon name="folder-add-left" />
-          {language.t("command.project.open")}
-        </ButtonV2>
-        <ButtonV2 variant="ghost-muted" class="justify-start" onClick={() => settings()}>
-          <Icon name="settings-gear" />
-          {language.t("command.settings.open")}
-        </ButtonV2>
+        <SidebarRow
+          icon="folder-add-left"
+          label={language.t("command.project.open")}
+          action="sidebar-open-project"
+          onClick={props.onOpenProject}
+        />
+        <SidebarRow
+          icon="settings-gear"
+          label={language.t("sidebar.settings")}
+          action="sidebar-settings"
+          onClick={() => settings()}
+        />
       </div>
     </div>
+  )
+}
+
+function SidebarRow(props: {
+  icon: "plus" | "folder-add-left" | "settings-gear"
+  label: string
+  action: string
+  disabled?: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      data-action={props.action}
+      disabled={props.disabled}
+      class="flex items-center gap-2 h-7 px-2.5 rounded-md text-left text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base disabled:opacity-50 disabled:pointer-events-none"
+      onClick={() => props.onClick()}
+    >
+      <span class="shrink-0 text-v2-icon-icon-muted">
+        <Icon name={props.icon} />
+      </span>
+      <span class="truncate">{props.label}</span>
+    </button>
+  )
+}
+
+function SessionLink(props: { session: Session; href: string; active: boolean }) {
+  const serverSync = useServerSync()
+  const notification = useNotification()
+  const working = () => serverSync().session.data.session_working(props.session.id)
+  const unseen = () => notification.session.unseenCount(props.session.id) > 0
+
+  return (
+    <A
+      href={props.href}
+      data-session-id={props.session.id}
+      class="flex items-center gap-2.5 h-7 pl-2.5 pr-2 rounded-md min-w-0"
+      classList={{
+        "bg-v2-background-bg-layer-02 text-v2-text-text-base": props.active,
+        "text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base": !props.active,
+      }}
+    >
+      <span class="shrink-0 size-3 flex items-center justify-center">
+        <span
+          class="block rounded-full"
+          classList={{
+            "size-2 bg-v2-icon-icon-accent animate-pulse": working(),
+            "size-2 bg-v2-icon-icon-accent": !working() && unseen(),
+            "size-1.5 border border-v2-icon-icon-muted": !working() && !unseen(),
+          }}
+        />
+      </span>
+      <span class="truncate">{props.session.title}</span>
+    </A>
   )
 }

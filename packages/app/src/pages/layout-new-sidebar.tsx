@@ -18,7 +18,8 @@ import { pathKey } from "@/utils/path-key"
 import { sessionHref } from "@/utils/session-route"
 import { sortedRootSessions } from "./layout/helpers"
 import { createSidebarController } from "./layout/sidebar-controller"
-import { SessionSidebar } from "./layout/session-sidebar"
+import { SessionSidebar, SIDEBAR_SESSION_PREVIEW } from "./layout/session-sidebar"
+import { createSidebarSessions, type SidebarGroup } from "./layout/sidebar-sessions"
 import {
   listedWorktree,
   openProjectDirectory,
@@ -86,7 +87,11 @@ export function ProjectSidebar() {
   const command = useCommand()
   const language = useLanguage()
   const toggle = useSidebarToggle()
-  const [state, setState] = createStore({ remembered: undefined as string | undefined, sizing: false })
+  const [state, setState] = createStore({
+    remembered: undefined as string | undefined,
+    sizing: false,
+    showAll: {} as Record<string, boolean>,
+  })
   let sizet: number | undefined
 
   const sessionDirectory = (id: string) => serverSync().session.get(id)?.directory
@@ -158,23 +163,12 @@ export function ProjectSidebar() {
     home: () => navigate("/"),
   })
 
-  // Follow tab switches: reveal the routed session in the list and remember
-  // its project, as the classic layout does on route changes.
+  // Remember the routed session's project so New session and Home target it.
   createEffect(
-    on([routed, sessionID, sidebar.ready] as const, ([directory, id, ready]) => {
+    on([routed, sidebar.ready] as const, ([directory, ready]) => {
       if (!ready || !directory) return
       const root = sidebar.projectRoot(directory)
       if (server.projects.last() !== root) server.projects.touch(root)
-      if (!id) return
-      // A routed session under a collapsed project header or worktree would stay hidden.
-      if (layout.projects.list().some((project) => project.worktree === root && !project.expanded))
-        layout.projects.expand(root)
-      // Expansion is keyed by the listed spelling, which can differ from the session's.
-      const project = layout.projects.list().find((item) => item.worktree === root)
-      const worktree = project ? listedWorktree(sidebar.workspaceIds(project), root, directory) : undefined
-      const workspaces = sidebar.workspaceSidebarCtx
-      if (worktree && !workspaces.workspaceExpanded(worktree, false)) workspaces.setWorkspaceExpanded(worktree, true)
-      sidebar.revealSession(worktree ?? directory, id)
     }),
   )
 
@@ -210,27 +204,19 @@ export function ProjectSidebar() {
     }),
   )
 
-  // Mod+1-9 open the Nth session as listed: same per-directory source and
-  // order as the rendered list, skipping collapsed projects and worktrees.
-  // peek reads the lists without pinning every project's store; nothing is
-  // bound while the sidebar is closed.
-  const listed = (directory: string) =>
-    sortedRootSessions(serverSync().peek(directory, { bootstrap: false })[0], sidebar.sortNow())
+  const listing = createSidebarSessions()
+  // A project shows its newest sessions; the routed one stays listed even past the preview.
+  const shown = (group: SidebarGroup) => {
+    if (state.showAll[group.project.worktree]) return group.sessions
+    const preview = group.sessions.slice(0, SIDEBAR_SESSION_PREVIEW)
+    const active = group.sessions.find((session) => session.id === sessionID())
+    if (!active || preview.includes(active)) return preview
+    return [...preview, active]
+  }
+  // Mod+1-9 open the Nth session as listed; nothing is bound while the sidebar is closed.
   const visible = createMemo(() => {
     if (!toggle.opened()) return []
-    return visibleSessionOrder(
-      layout.projects.list().map((project) => ({
-        expanded: project.expanded,
-        sessions: listed(project.worktree),
-        worktrees: sidebar
-          .workspaceIds(project)
-          .filter((directory) => pathKey(directory) !== pathKey(project.worktree))
-          .map((directory) => ({
-            expanded: sidebar.workspaceSidebarCtx.workspaceExpanded(directory, false),
-            sessions: listed(directory),
-          })),
-      })),
-    )
+    return visibleSessionOrder(listing.groups().map((group) => ({ expanded: true, sessions: shown(group) })))
   })
   command.register("sidebar-session-index", () =>
     visible()
@@ -261,7 +247,19 @@ export function ProjectSidebar() {
 
   const side = createMemo(() => Math.max(layout.sidebar.width(), MIN_WIDTH))
 
-  const content = (mobile?: boolean) => <SessionSidebar sidebar={sidebar} mobile={mobile} onNewSession={openDraft} />
+  const content = () => (
+    <SessionSidebar
+      groups={listing.groups}
+      activeSessionID={sessionID}
+      currentDirectory={() => currentDir() || undefined}
+      sessionHref={(session) => sessionHref(server.key, session.id)}
+      onNewSession={openDraft}
+      onOpenProject={() => sidebar.chooseProject()}
+      shown={shown}
+      showingAll={(worktree) => !!state.showAll[worktree]}
+      showAll={(worktree, value) => setState("showAll", worktree, value)}
+    />
+  )
 
   return (
     <>
@@ -324,7 +322,7 @@ export function ProjectSidebar() {
             "padding-bottom": "env(safe-area-inset-bottom, 0px)",
           }}
         >
-          {content(true)}
+          {content()}
         </nav>
       </div>
     </>
