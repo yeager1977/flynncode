@@ -43,7 +43,10 @@ export function SessionSidebar(props: {
           {language.t("home.sessions.search.placeholder")}
         </ButtonV2>
       </div>
-      <div class="flex-1 min-h-0 overflow-y-auto no-scrollbar px-2">
+      <div
+        ref={(el) => props.sidebar.workspaceSidebarCtx.setScrollContainerRef(el, props.mobile)}
+        class="flex-1 min-h-0 overflow-y-auto no-scrollbar px-2"
+      >
         <For each={layout.projects.list()}>
           {(project) => (
             <div class="flex flex-col">
@@ -66,7 +69,8 @@ export function SessionSidebar(props: {
                 </button>
                 <button
                   type="button"
-                  class="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 px-2 h-full"
+                  class="px-2 h-full"
+                  classList={{ "opacity-0 group-hover:opacity-100 focus-visible:opacity-100": !props.mobile }}
                   data-action="sidebar-project-new-session"
                   aria-label={language.t("command.session.new")}
                   onClick={() => props.onNewSession(project.worktree)}

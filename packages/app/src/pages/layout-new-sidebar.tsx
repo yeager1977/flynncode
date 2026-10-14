@@ -160,7 +160,11 @@ export function ProjectSidebar() {
       if (!ready || !directory) return
       const root = sidebar.projectRoot(directory)
       if (server.projects.last() !== root) server.projects.touch(root)
-      if (id) sidebar.revealSession(directory, id)
+      if (!id) return
+      // A routed session under a collapsed project header would stay hidden.
+      if (layout.projects.list().some((project) => project.worktree === root && !project.expanded))
+        layout.projects.expand(root)
+      sidebar.revealSession(directory, id)
     }),
   )
 
