@@ -150,7 +150,7 @@ test("bulk model selection, ratings and task choices save a usable router config
   })
 })
 
-test("hidden models leave every list and are snapshotted as exclusions on save", async ({ page }) => {
+test("hidden models leave every list and a clean save does not write exclusions", async ({ page }) => {
   const { router, state } = await openRouter(page, {
     visible: [["ollama-local", "smart"]],
   })
@@ -165,6 +165,23 @@ test("hidden models leave every list and are snapshotted as exclusions on save",
   await expect(picker.getByRole("checkbox", { name: "Fast model", exact: true })).toHaveCount(0)
   await expect(picker.getByRole("checkbox", { name: "Smart model", exact: true })).toBeEnabled()
   await picker.getByRole("button", { name: "Cancel", exact: true }).click()
+  // A dirtying edit lets Save run (an unchanged form keeps it disabled).
+  await router.getByRole("tab", { name: "Routing", exact: true }).click()
+  await coding.getByRole("combobox", { name: "Priority for Coding", exact: true }).selectOption("speed")
+  await router.getByRole("button", { name: "Save", exact: true }).click()
+  await expect.poll(() => state.writes.length).toBe(1)
+  // Manage Models visibility now writes through to config; the editor Save
+  // must not re-derive a snapshot of its own.
+  expect(state.writes[0].model_router).not.toHaveProperty("excludeModels")
+})
+
+test("save keeps the server's configured exclusions untouched", async ({ page }) => {
+  const { router, state } = await openRouter(page, {
+    config: { providers: ["ollama-local"], excludeModels: ["ollama-local/fast"] },
+  })
+  await router.getByRole("tab", { name: "Routing", exact: true }).click()
+  const coding = router.getByRole("article", { name: "Coding", exact: true })
+  await coding.getByRole("combobox", { name: "Priority for Coding", exact: true }).selectOption("speed")
   await router.getByRole("button", { name: "Save", exact: true }).click()
   await expect.poll(() => state.writes.length).toBe(1)
   expect(state.writes[0].model_router).toMatchObject({ excludeModels: ["ollama-local/fast"] })

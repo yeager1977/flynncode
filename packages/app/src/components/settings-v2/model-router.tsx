@@ -129,20 +129,17 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
       setState({ baseline: next, incoming: undefined, raw: {}, error: "" })
     })
 
-  const inScope = (providerID: string) =>
-    form.providers.length > 0 ? form.providers.includes(providerID) : providerID.startsWith("ollama")
-
-  // Manage Models visibility is a client-side store the server plugin cannot
-  // read, so snapshot the hidden in-scope models into the config the router
-  // does see. Models hidden later need another Save to take effect.
-  const excludeSnapshot = () =>
-    catalog()
-      .filter((model) => !model.enabled && !model.disabled && inScope(model.providerID))
-      .map((model) => model.key)
+  // excludeModels is owned by Manage Models visibility, mirrored into config
+  // live. Pass the server's current list through so a Save cannot clobber
+  // live changes with a stale load-time snapshot.
+  const serverExcludeModels = () => {
+    const raw = (routerConfig()?.excludeModels as unknown) ?? []
+    return Array.isArray(raw) ? raw.filter((key): key is string => typeof key === "string") : []
+  }
 
   const save = async () => {
     if (state.saving || invalid()) return
-    const excludeModels = excludeSnapshot()
+    const excludeModels = serverExcludeModels()
     const result = validateForm({ ...form, excludeModels })
     if (!result.ok) {
       setState("error", language.t("settings.modelRouter.invalid"))
