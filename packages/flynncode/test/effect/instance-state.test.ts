@@ -1,12 +1,14 @@
-import { expect } from "bun:test"
+import { describe, expect } from "bun:test"
 import { CrossSpawnSpawner } from "@flynncode/core/cross-spawn-spawner"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { $ } from "bun"
 import { Context, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
+import * as TestClock from "effect/testing/TestClock"
 import { InstanceState } from "@/effect/instance-state"
 import {
   disposeAllInstancesEffect,
   provideInstanceEffect,
+  provideTmpdirInstance,
   reloadInstance,
   testInstanceStoreLayer,
   tmpdirScoped,
@@ -390,3 +392,45 @@ it.live("InstanceState survives deferred resume outside ALS when InstanceRef is 
     }).pipe(Effect.provide(Test.layer))
   }),
 )
+
+describe("InstanceState ttl", () => {
+  it.effect("rebuilds a state after the TTL expires", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        let builds = 0
+        const state = yield* InstanceState.make<number>(() => Effect.sync(() => ++builds), { timeToLive: "5 minutes" })
+        expect(yield* InstanceState.get(state)).toBe(1)
+        expect(yield* InstanceState.get(state)).toBe(1)
+        yield* TestClock.adjust(Duration.minutes(6))
+        expect(yield* InstanceState.get(state)).toBe(2)
+        expect(builds).toBe(2)
+      }),
+    ),
+  )
+
+  it.effect("keeps a state that is still fresh", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        let builds = 0
+        const state = yield* InstanceState.make<number>(() => Effect.sync(() => ++builds), { timeToLive: "5 minutes" })
+        yield* InstanceState.get(state)
+        yield* TestClock.adjust(Duration.minutes(4))
+        yield* InstanceState.get(state)
+        expect(builds).toBe(1)
+      }),
+    ),
+  )
+
+  it.effect("states without a TTL never rebuild", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        let builds = 0
+        const state = yield* InstanceState.make<number>(() => Effect.sync(() => ++builds))
+        yield* InstanceState.get(state)
+        yield* TestClock.adjust(Duration.hours(2))
+        yield* InstanceState.get(state)
+        expect(builds).toBe(1)
+      }),
+    ),
+  )
+})

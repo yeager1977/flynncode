@@ -1,4 +1,4 @@
-import { Effect, ScopedCache, Scope } from "effect"
+import { Duration, Effect, ScopedCache, Scope } from "effect"
 import type { InstanceContext } from "@/project/instance-context"
 import { InstanceRef, WorkspaceRef } from "./instance-ref"
 import { registerDisposer } from "./instance-registry"
@@ -25,6 +25,7 @@ export const directory = Effect.map(context, (ctx) => ctx.directory)
 
 export const make = <A, E = never, R = never>(
   init: (ctx: InstanceContext) => Effect.Effect<A, E, R | Scope.Scope>,
+  options?: { readonly timeToLive?: Duration.Input | undefined },
 ): Effect.Effect<InstanceState<A, E, Exclude<R, Scope.Scope>>, never, R | Scope.Scope> =>
   Effect.gen(function* () {
     const cache = yield* ScopedCache.make<string, A, E, R>({
@@ -33,6 +34,9 @@ export const make = <A, E = never, R = never>(
         Effect.gen(function* () {
           return yield* init(yield* context)
         }),
+      // Optional TTL: after expiry the next get() rebuilds. For services whose
+      // state embeds live external data (e.g. provider model discovery).
+      timeToLive: options?.timeToLive,
     })
 
     const off = registerDisposer((directory) => Effect.runPromise(ScopedCache.invalidate(cache, directory)))
