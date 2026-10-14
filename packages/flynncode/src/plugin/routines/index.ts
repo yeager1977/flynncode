@@ -6,6 +6,7 @@ import { applyEdits, modify, parse } from "jsonc-parser"
 import type { Hooks, PluginInput } from "@flynncode/plugin"
 import { createOpencodeClient } from "@flynncode/sdk"
 import { ServerAuth } from "@/server/auth"
+import { Filesystem } from "@/util/filesystem"
 import { dueRoutines } from "./due"
 import { parseRoutines, type Routine, type RoutineRunSummary } from "./parse"
 import { fileTriggersDue, githubDue, resolveDirectory } from "./trigger"
@@ -42,15 +43,15 @@ function stored(routine: Routine) {
 function configFile() {
   for (const name of CONFIG_CANDIDATES) {
     const candidate = path.join(Global.Path.config, name)
-    if (Bun.file(candidate).size > 0) return candidate
+    if (Filesystem.stat(candidate)?.size) return candidate
   }
   return path.join(Global.Path.config, CONFIG_CANDIDATES[0] ?? "opencode.jsonc")
 }
 
 async function readConfigRoutines() {
-  const file = Bun.file(configFile())
-  if (!(await file.exists())) return
-  const data = parse(await file.text()) as { routines?: unknown }
+  const file = configFile()
+  if (!(await Filesystem.exists(file))) return
+  const data = parse(await Filesystem.readText(file)) as { routines?: unknown }
   if (!data || data.routines === undefined) return
   const parsed = parseRoutines(data.routines)
   if (!parsed.ok) {
@@ -61,9 +62,8 @@ async function readConfigRoutines() {
 }
 
 async function readFileRoutines() {
-  const file = Bun.file(FILE)
-  if (!(await file.exists())) return { valid: true, routines: [] }
-  const parsed = parseRoutines(parse(await file.text()))
+  if (!(await Filesystem.exists(FILE))) return { valid: true, routines: [] }
+  const parsed = parseRoutines(parse(await Filesystem.readText(FILE)))
   if (!parsed.ok) {
     console.warn(`${PREFIX} invalid file:\n- ${parsed.errors.join("\n- ")}`)
     return { valid: false, routines: [] }
@@ -100,12 +100,12 @@ export const markRanEffect = Effect.fn("Routines.markRan")(function* (
   // is an object wrapping the list, as the config schema requires.
   const value = { routines: next.map(stored) }
   if (fresh.source === "file") {
-    yield* Effect.promise(() => Bun.write(FILE, JSON.stringify(value, null, 2)))
+    yield* Effect.promise(() => Filesystem.writeJson(FILE, value))
     return next
   }
-  const text = yield* Effect.promise(() => Bun.file(configFile()).text())
+  const text = yield* Effect.promise(() => Filesystem.readText(configFile()))
   const edits = modify(text, ["routines"], value, { formattingOptions: { insertSpaces: true, tabSize: 2 } })
-  yield* Effect.promise(() => Bun.write(configFile(), applyEdits(text, edits)))
+  yield* Effect.promise(() => Filesystem.write(configFile(), applyEdits(text, edits)))
   return next
 })
 
@@ -147,9 +147,8 @@ export function parseRunRecords(text: string): RoutineRun[] {
 // History readers skip the flock: the writer serializes its own
 // read-append-rewrite, so readers just need a consistent snapshot.
 export async function readRoutineRuns(file: string = RUNS_FILE) {
-  const runs = Bun.file(file)
-  if (!(await runs.exists())) return []
-  return parseRunRecords(await runs.text())
+  if (!(await Filesystem.exists(file))) return []
+  return parseRunRecords(await Filesystem.readText(file))
 }
 
 export async function recordRoutineRun(record: RoutineRun, file: string = RUNS_FILE) {
@@ -158,9 +157,9 @@ export async function recordRoutineRun(record: RoutineRun, file: string = RUNS_F
   return Effect.runPromise(
     Effect.gen(function* () {
       yield* Flock.effect(`routines-runs:${file}`, { staleMs: 10_000, timeoutMs: 30_000 })
-      const existing = (yield* Effect.promise(() => Bun.file(file).exists())) ? yield* Effect.promise(() => Bun.file(file).text()) : ""
+      const existing = (yield* Effect.promise(() => Filesystem.exists(file))) ? yield* Effect.promise(() => Filesystem.readText(file)) : ""
       const records = [...parseRunRecords(existing), record].slice(-MAX_RUNS)
-      yield* Effect.promise(() => Bun.write(file, records.map((row) => JSON.stringify(row)).join("\n") + "\n"))
+      yield* Effect.promise(() => Filesystem.write(file, records.map((row) => JSON.stringify(row)).join("\n") + "\n"))
       return records
     }).pipe(Effect.scoped),
   )

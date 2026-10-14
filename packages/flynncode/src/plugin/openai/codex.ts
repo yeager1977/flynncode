@@ -2,6 +2,7 @@ import type { Hooks, PluginInput } from "@flynncode/plugin"
 import { InstallationVersion } from "@flynncode/core/installation/version"
 import { OAUTH_DUMMY_KEY } from "../../auth"
 import { parseCodexAuth } from "../../auth/vendor-import"
+import { Filesystem } from "../../util/filesystem"
 import os from "os"
 import path from "path"
 import { setTimeout as sleep } from "node:timers/promises"
@@ -135,9 +136,9 @@ async function exchangeCodeForTokens(code: string, redirectUri: string, pkce: Pk
 }
 
 async function readCodexCliAuth() {
-  const raw = await Bun.file(path.join(process.env.HOME ?? os.homedir(), ".codex", "auth.json"))
-    .json()
-    .catch(() => undefined)
+  const raw = await Filesystem.readJson(path.join(process.env.HOME ?? os.homedir(), ".codex", "auth.json")).catch(
+    () => undefined,
+  )
   return parseCodexAuth(raw)
 }
 
