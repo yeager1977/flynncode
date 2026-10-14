@@ -20,6 +20,7 @@ import { sortedRootSessions } from "./layout/helpers"
 import { createSidebarController } from "./layout/sidebar-controller"
 import { SessionSidebar } from "./layout/session-sidebar"
 import {
+  listedWorktree,
   openProjectDirectory,
   openSidebarByDefault,
   projectDraft,
@@ -168,10 +169,12 @@ export function ProjectSidebar() {
       // A routed session under a collapsed project header or worktree would stay hidden.
       if (layout.projects.list().some((project) => project.worktree === root && !project.expanded))
         layout.projects.expand(root)
+      // Expansion is keyed by the listed spelling, which can differ from the session's.
+      const project = layout.projects.list().find((item) => item.worktree === root)
+      const worktree = project ? listedWorktree(sidebar.workspaceIds(project), root, directory) : undefined
       const workspaces = sidebar.workspaceSidebarCtx
-      if (pathKey(directory) !== pathKey(root) && !workspaces.workspaceExpanded(directory, false))
-        workspaces.setWorkspaceExpanded(directory, true)
-      sidebar.revealSession(directory, id)
+      if (worktree && !workspaces.workspaceExpanded(worktree, false)) workspaces.setWorkspaceExpanded(worktree, true)
+      sidebar.revealSession(worktree ?? directory, id)
     }),
   )
 

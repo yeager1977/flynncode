@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { visibleSessionOrder } from "./new-layout-sidebar"
+import { listedWorktree, visibleSessionOrder } from "./new-layout-sidebar"
 
 describe("visibleSessionOrder", () => {
   test("flattens expanded projects in order and skips collapsed ones", () => {
@@ -30,5 +30,18 @@ describe("visibleSessionOrder", () => {
   })
   test("empty when nothing is expanded", () => {
     expect(visibleSessionOrder([{ expanded: false, sessions: ["a"] }])).toEqual([])
+  })
+})
+
+describe("listedWorktree", () => {
+  const ids = ["/repo", "/repo-wt/feature", "/repo-wt/fix"]
+
+  test("returns the sidebar's spelling of the routed worktree", () => {
+    expect(listedWorktree(ids, "/repo", "/repo-wt/feature/")).toBe("/repo-wt/feature")
+  })
+
+  test("is undefined for the main folder or an unlisted directory", () => {
+    expect(listedWorktree(ids, "/repo", "/repo/")).toBeUndefined()
+    expect(listedWorktree(ids, "/repo", "/elsewhere")).toBeUndefined()
   })
 })

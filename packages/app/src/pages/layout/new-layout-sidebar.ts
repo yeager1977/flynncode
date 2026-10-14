@@ -193,6 +193,15 @@ export function sidebarCommands(input: SidebarCommandInput): CommandOption[] {
   ]
 }
 
+// The routed directory as the sidebar lists it among a project's worktrees
+// (workspaceIds spelling, which keys workspaceExpanded); undefined for the main
+// folder or a directory the project does not list.
+export function listedWorktree(ids: readonly string[], root: string, directory: string) {
+  const key = pathKey(directory)
+  if (key === pathKey(root)) return
+  return ids.find((item) => pathKey(item) === key)
+}
+
 type SessionGroup<T> = { expanded: boolean; sessions: readonly T[] }
 
 // Mod+1-9 order: what the sidebar shows, top to bottom. Under an expanded
