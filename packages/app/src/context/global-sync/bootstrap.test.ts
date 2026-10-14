@@ -358,15 +358,16 @@ describe("query keys", () => {
     )
 
     const result = await new Promise<ReturnType<typeof observer.getCurrentResult>>((resolve) => {
-      const unsubscribe = observer.subscribe((next) => {
-        if (next.status === "pending") return
-        unsubscribe()
-        resolve(next)
-      })
-      setTimeout(() => {
+      const fallback = setTimeout(() => {
         unsubscribe()
         resolve(observer.getCurrentResult())
       }, 500)
+      const unsubscribe = observer.subscribe((next) => {
+        if (next.status === "pending") return
+        clearTimeout(fallback)
+        unsubscribe()
+        resolve(next)
+      })
     })
 
     expect(result.status).toBe("error")

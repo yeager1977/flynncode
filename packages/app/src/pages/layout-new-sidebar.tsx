@@ -29,7 +29,6 @@ import {
   worktreeClosing,
 } from "./layout/new-layout-sidebar"
 
-const RAIL_WIDTH = 64
 const MIN_WIDTH = 244
 const MOBILE = "(max-width: 767px)"
 
@@ -210,9 +209,12 @@ export function ProjectSidebar() {
 
   // Mod+1-9 open the Nth session as listed: same per-directory source and
   // order as the rendered list, skipping collapsed projects and worktrees.
+  // peek reads the lists without pinning every project's store; nothing is
+  // bound while the sidebar is closed.
   const listed = (directory: string) =>
-    sortedRootSessions(serverSync().child(directory, { bootstrap: false })[0], sidebar.sortNow())
+    sortedRootSessions(serverSync().peek(directory, { bootstrap: false })[0], sidebar.sortNow())
   const visible = createMemo(() => {
+    if (!toggle.opened()) return []
     return visibleSessionOrder(
       layout.projects.list().map((project) => ({
         expanded: project.expanded,
@@ -270,6 +272,9 @@ export function ProjectSidebar() {
             !state.sizing,
         }}
         style={{ width: `${layout.sidebar.opened() ? side() : 0}px` }}
+        // Collapsed it is 0 wide but still mounted: keep it out of focus and the accessibility tree.
+        inert={!layout.sidebar.opened()}
+        aria-hidden={layout.sidebar.opened() ? undefined : "true"}
         ref={(el) => sidebar.setNav(el)}
       >
         <div class="@container h-full contain-strict" style={{ width: `${side()}px` }}>
@@ -283,7 +288,7 @@ export function ProjectSidebar() {
             direction="horizontal"
             size={layout.sidebar.width()}
             min={MIN_WIDTH}
-            max={typeof window === "undefined" ? 1000 : window.innerWidth * 0.3 + RAIL_WIDTH}
+            max={typeof window === "undefined" ? 1000 : window.innerWidth * 0.3}
             onResize={(width) => {
               setState("sizing", true)
               if (sizet !== undefined) clearTimeout(sizet)
