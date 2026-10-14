@@ -129,7 +129,7 @@ export function limitedTaskIDs(parts: readonly TaskToolPart[]) {
     const stopped = output.includes("Subagent stopped: usage limit")
     const sessionId = part.type === "tool" && part.tool === "task" ? part.state?.metadata?.sessionId : undefined
     const ids = [
-      ...output.matchAll(/<task id="([^"]+)" state="(?:running|completed|error)"/g).map((match) => match[1]),
+      ...Array.from(output.matchAll(/<task id="([^"]+)" state="(?:running|completed|error)"/g), (match) => match[1]),
       ...(typeof sessionId === "string" ? [sessionId] : []),
     ]
     for (const id of ids) {

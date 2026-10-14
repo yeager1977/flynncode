@@ -32,6 +32,22 @@ export function failDispatch(tasks: readonly DispatchTask[], sessionID: string) 
   )
 }
 
+// A finished (done or failed) task whose session is working again, e.g. resumed
+// after a usage limit, is running again. Persisting that lets the later idle
+// resolve from "running" instead of keeping the old failure, and does not
+// notify: only resolvedTransition (active -> terminal) does.
+export function resumeDispatch(tasks: readonly DispatchTask[], live: ReadonlyMap<string, DispatchStatus>) {
+  let changed = false
+  const next = tasks.map((task) => {
+    const status = live.get(task.sessionID)
+    if (task.status !== "done" && task.status !== "failed") return task
+    if (status !== "running" && status !== "blocked") return task
+    changed = true
+    return { ...task, status: "running" as const }
+  })
+  return changed ? next : tasks
+}
+
 export function markDispatchRead(tasks: readonly DispatchTask[], sessionID: string) {
   return tasks.map((task) => (task.sessionID === sessionID ? { ...task, unread: false } : task))
 }

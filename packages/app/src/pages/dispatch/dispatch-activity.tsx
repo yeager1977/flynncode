@@ -13,6 +13,7 @@ import {
   markDispatchRead,
   migrateDispatch,
   resolvedTransition,
+  resumeDispatch,
   type DispatchStatus,
   type DispatchTask,
 } from "./dispatch-store"
@@ -91,6 +92,8 @@ export const { use: useDispatchActivity, provider: DispatchActivityProvider } = 
           }),
         )
       }
+      const resumed = resumeDispatch(desk.tasks, current)
+      if (resumed !== desk.tasks) setDesk("tasks", resumed)
       previous.clear()
       current.forEach((status, id) => previous.set(id, status))
       primed = true
