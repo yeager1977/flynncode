@@ -10,6 +10,9 @@ import { Agent } from "../agent/agent"
 import { deriveSubagentSessionPermission, sandboxRules } from "../agent/subagent-permissions"
 import type { SessionPrompt } from "../session/prompt"
 import { Config } from "@/config/config"
+import { Provider } from "@/provider/provider"
+import { Todo } from "@/session/todo"
+import { usageLimit } from "@flynncode/core/session/usage-limit"
 import { ConfigPermissionV1 } from "@flynncode/core/v1/config/permission"
 import { Effect, Exit, Option, Schema, Scope } from "effect"
 import { EffectBridge } from "@/effect/bridge"
@@ -57,6 +60,10 @@ const BaseParameterFields = {
   isolation: Schema.optional(Schema.Literals(["inherit", "worktree"])).annotate({
     description: "Run the subagent in the parent directory (inherit) or in a temp worktree (worktree)",
   }),
+  model: Schema.optional(Schema.String).annotate({
+    description:
+      "provider/model to run this task on; use it to resume a task_id on a different model after a usage limit",
+  }),
   cleanup: Schema.optional(Schema.Literals(["retain", "dispose"])).annotate({
     description: "Keep the temp worktree after the task (retain) or mark it disposable on archive (dispose)",
   }),
@@ -89,12 +96,50 @@ function renderOutput(input: {
   ].join("\n")
 }
 
+const LAST_OUTPUT_LIMIT = 2000
+
+// Model-facing report returned (not thrown) when a subagent stops on a usage limit.
+function renderUsageLimit(input: {
+  taskID: SessionID
+  model: string
+  limit: NonNullable<ReturnType<typeof usageLimit>>
+  todos: ReadonlyArray<{ content: string; status: string }>
+  lastText: string | undefined
+}) {
+  const completed = input.todos.filter((todo) => todo.status === "completed").length
+  const pending = input.todos.filter((todo) => todo.status === "pending" || todo.status === "in_progress")
+  const lastText = input.lastText?.trim()
+  return [
+    `Subagent stopped: usage limit reached on ${input.model}${
+      input.limit.resetAt === undefined ? "" : `, resets around ${new Date(input.limit.resetAt).toISOString()}`
+    }.`,
+    `Provider message: ${input.limit.message}`,
+    ...(input.todos.length === 0
+      ? []
+      : [
+          `Todos: ${completed}/${input.todos.length} completed${
+            pending.length === 0 ? "" : ` — pending: ${pending.map((todo) => todo.content).join("; ")}`
+          }`,
+        ]),
+    ...(lastText
+      ? [
+          `Last output: ${
+            lastText.length > LAST_OUTPUT_LIMIT ? `${lastText.slice(0, LAST_OUTPUT_LIMIT)}… (truncated)` : lastText
+          }`,
+        ]
+      : []),
+    `Resume with task_id: ${input.taskID} and a different \`model\` (provider/model), or wait until the limit resets.`,
+  ].join("\n")
+}
+
 export const TaskTool = Tool.define(
   id,
   Effect.gen(function* () {
     const agent = yield* Agent.Service
     const background = yield* BackgroundJob.Service
     const config = yield* Config.Service
+    const providers = yield* Provider.Service
+    const todos = yield* Todo.Service
     const sessions = yield* Session.Service
     const scope = yield* Scope.Scope
     const flags = yield* RuntimeFlags.Service
@@ -144,6 +189,19 @@ export const TaskTool = Tool.define(
       const next = yield* agent.get(params.subagent_type)
       if (!next) {
         return yield* Effect.fail(new Error(`Unknown agent type: ${params.subagent_type} is not a valid agent type`))
+      }
+
+      // Resolve the requested model before any session or worktree is created
+      // so an unknown model fails without side effects.
+      const requestedModel = params.model ? Provider.parseModel(params.model) : undefined
+      if (requestedModel) {
+        yield* providers
+          .getModel(requestedModel.providerID, requestedModel.modelID)
+          .pipe(
+            Effect.catch(() =>
+              Effect.fail(new Error(`Unknown model: ${params.model} (expected provider/model of a configured model)`)),
+            ),
+          )
       }
 
       const agentDefaults = cfg.agent?.[params.subagent_type]
@@ -300,7 +358,8 @@ export const TaskTool = Tool.define(
       if (msg.info.role !== "assistant") return yield* Effect.fail(new Error("Not an assistant message"))
       const variant = msg.info.variant
 
-      const model = next.model ?? {
+      const model = requestedModel ??
+        next.model ?? {
         modelID: msg.info.modelID,
         providerID: msg.info.providerID,
       }
@@ -334,7 +393,7 @@ export const TaskTool = Tool.define(
             modelID: model.modelID,
             providerID: model.providerID,
           },
-          variant: next.model ? undefined : variant,
+          variant: requestedModel || next.model ? undefined : variant,
           agent: next.name,
           parts,
         })
@@ -343,6 +402,17 @@ export const TaskTool = Tool.define(
         // (the prompt was authored against the parent checkout).
         const result = yield* inChild(prompt).pipe(Effect.ensuring(release))
         if (result.info.role === "assistant" && result.info.error) {
+          const limit = usageLimit(result.info.error)
+          if (limit) {
+            const childTodos = yield* todos.get(nextSession.id)
+            return renderUsageLimit({
+              taskID: nextSession.id,
+              model: `${model.providerID}/${model.modelID}`,
+              limit,
+              todos: childTodos,
+              lastText: result.parts.findLast((item) => item.type === "text")?.text,
+            })
+          }
           const message =
             "message" in result.info.error.data && typeof result.info.error.data.message === "string"
               ? result.info.error.data.message

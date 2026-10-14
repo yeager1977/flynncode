@@ -11,6 +11,8 @@ import { Config } from "@/config/config"
 import { CrossSpawnSpawner } from "@flynncode/core/cross-spawn-spawner"
 import { Ripgrep } from "@flynncode/core/ripgrep"
 import { Session } from "@/session/session"
+import { Provider } from "@/provider/provider"
+import { Todo } from "@/session/todo"
 import type { SessionPrompt } from "../../src/session/prompt"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionRunState } from "@/session/run-state"
@@ -56,6 +58,8 @@ const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
       RuntimeFlags.node,
       Ripgrep.node,
       Worktree.node,
+      Provider.node,
+      Todo.node,
     ]),
     [
       [RuntimeFlags.node, RuntimeFlags.layer(flags)],
@@ -65,6 +69,28 @@ const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
 
 const it = testEffect(layer())
 const background = testEffect(layer({ experimentalBackgroundSubagents: true }))
+
+const otherProvider = {
+  name: "Other",
+  id: "other",
+  env: [],
+  npm: "@ai-sdk/openai-compatible",
+  models: {
+    "other-model": {
+      id: "other-model",
+      name: "Other Model",
+      attachment: false,
+      reasoning: false,
+      temperature: false,
+      tool_call: true,
+      release_date: "2025-01-01",
+      limit: { context: 100000, output: 10000 },
+      cost: { input: 0, output: 0 },
+      options: {},
+    },
+  },
+  options: { apiKey: "test-key", baseURL: "http://localhost:1/v1" },
+}
 
 function defer<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
@@ -332,6 +358,147 @@ describe("tool.task", () => {
       expect(failure).toBeInstanceOf(Error)
       if (!(failure instanceof Error)) throw new Error("expected Error defect")
       expect(failure.message).toBe(`Subagent failed (task_id: ${child?.id}): Network connection lost`)
+    }),
+  )
+
+  it.instance("execute reports a subagent usage limit instead of failing", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const todo = yield* Todo.Service
+      const { chat, assistant } = yield* seed()
+      const child = yield* sessions.create({ parentID: chat.id, title: "Existing child" })
+      yield* todo.update({
+        sessionID: child.id,
+        todos: [
+          { content: "write parser", status: "completed", priority: "high" },
+          { content: "wire cli", status: "in_progress", priority: "medium" },
+          { content: "add docs", status: "pending", priority: "low" },
+        ],
+      })
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+
+      const result = yield* def.execute(
+        {
+          description: "inspect bug",
+          prompt: "look into the cache key path",
+          subagent_type: "general",
+          task_id: child.id,
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: {
+            promptOps: stubOps({
+              text: "Parser written, cli half wired.",
+              error: new SessionV1.APIError({
+                message: "Rate limit exceeded",
+                statusCode: 429,
+                isRetryable: true,
+                responseHeaders: { "retry-after": "120" },
+              }).toObject(),
+            }),
+          },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      expect(result.output).toContain("usage limit")
+      expect(result.output).toContain("test/test-model")
+      expect(result.output).toMatch(/resets around \d{4}-\d{2}-\d{2}T/)
+      expect(result.output).toContain("Rate limit exceeded")
+      expect(result.output).toContain("Todos: 1/3 completed")
+      expect(result.output).toContain("wire cli")
+      expect(result.output).toContain("add docs")
+      expect(result.output).not.toContain("write parser")
+      expect(result.output).toContain("Parser written, cli half wired.")
+      expect(result.output).toContain(`task_id: ${child.id}`)
+      expect(result.metadata.model).toEqual(ref)
+    }),
+  )
+
+  it.instance(
+    "execute runs the child on the model parameter and records it",
+    () =>
+      Effect.gen(function* () {
+        const { chat, assistant } = yield* seed()
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        let seen: SessionPrompt.PromptInput | undefined
+
+        const result = yield* def.execute(
+          {
+            description: "inspect bug",
+            prompt: "look into the cache key path",
+            subagent_type: "general",
+            model: "other/other-model",
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps({ onPrompt: (input) => (seen = input) }) },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+        expect(seen?.model).toEqual({
+          providerID: ProviderV2.ID.make("other"),
+          modelID: ModelV2.ID.make("other-model"),
+        })
+        expect(seen?.variant).toBeUndefined()
+        expect(result.metadata.model).toEqual({
+          providerID: ProviderV2.ID.make("other"),
+          modelID: ModelV2.ID.make("other-model"),
+        })
+      }),
+    { config: { provider: { other: otherProvider } } },
+  )
+
+  it.instance("execute fails naming an unknown model", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      let prompted = false
+
+      const exit = yield* def
+        .execute(
+          {
+            description: "inspect bug",
+            prompt: "look into the cache key path",
+            subagent_type: "general",
+            model: "nope/missing-model",
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps({ onPrompt: () => (prompted = true) }) },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+        .pipe(Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isSuccess(exit)) throw new Error("expected task failure")
+      const failure = Cause.squash(exit.cause)
+      expect(failure).toBeInstanceOf(Error)
+      if (!(failure instanceof Error)) throw new Error("expected Error defect")
+      expect(failure.message).toContain("nope/missing-model")
+      expect(prompted).toBe(false)
+      expect(yield* sessions.children(chat.id)).toHaveLength(0)
     }),
   )
 

@@ -333,6 +333,10 @@ exports[`tool parameters JSON Schema (wire shape) task 1`] = `
       ],
       "type": "string",
     },
+    "model": {
+      "description": "provider/model to run this task on; use it to resume a task_id on a different model after a usage limit",
+      "type": "string",
+    },
     "prompt": {
       "description": "The task for the agent to perform",
       "type": "string",
