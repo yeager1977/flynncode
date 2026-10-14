@@ -21,7 +21,7 @@ behavior is configured through the `model_router` key in the global config
   "taskModels": {
     "review": "ollama-cloud/deepseek-v4-pro"
   },
-  // Models hidden in the app's Manage Models screen, captured on Save.
+  // Models hidden in the app's Manage Models screen, written live.
   "excludeModels": ["ollama-cloud/gemma4:31b"],
   "models": {
     "ollama-cloud/glm-5.3-flash": { "price": 3, "capability": 8, "speed": 9, "tags": ["coding"] }
@@ -53,7 +53,11 @@ With no `model_router` key the plugin stays inert (no warnings, no routing).
   when a provider connects or disconnects (`integration.connection.updated`)
   or models.dev refreshes (`models-dev.refreshed`), and revalidates at most
   every 5 minutes otherwise. Silent external changes (e.g. `opencode auth
-  login` in another process, pulled models) surface within that window.
+  login` in another process, pulled models) usually surface within that
+  window, but two 5-minute TTLs run in series — the server's own
+  provider-state cache and this plugin's catalog cache — so in the worst case
+  (this plugin's refetch landing just before the server-side TTL expires) a
+  silent change can take up to roughly 10 minutes to surface.
 - `excludeModels` lists `providerID/modelID` pairs the router must skip. Manage
   Models visibility writes it into the config live (explicit hides only), and
   the router settings editor passes the server's current list through on Save.
