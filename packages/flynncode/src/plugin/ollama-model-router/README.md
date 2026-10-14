@@ -49,9 +49,14 @@ With no `model_router` key the plugin stays inert (no warnings, no routing).
   ranked first even when unscored or tagged away. A disabled provider or an
   `excludeModels` entry still wins: the pin is ignored and the best-ranked
   eligible model is used instead.
-- `excludeModels` lists `providerID/modelID` pairs the router must skip. The app
-  writes it when the router settings are saved, from the Manage Models
-  visibility toggles.
+- The router keeps its model list live: it refetches the connected catalog
+  when a provider connects or disconnects (`integration.connection.updated`)
+  or models.dev refreshes (`models-dev.refreshed`), and revalidates at most
+  every 5 minutes otherwise. Silent external changes (e.g. `opencode auth
+  login` in another process, pulled models) surface within that window.
+- `excludeModels` lists `providerID/modelID` pairs the router must skip. Manage
+  Models visibility writes it into the config live (explicit hides only), and
+  the router settings editor passes the server's current list through on Save.
 - The router injects a virtual `model-router/auto` provider shown as **Model
   Router** in the model picker. Selecting it routes each prompt to the winning
   concrete model (per the active agent's task, or the selected task variant);
