@@ -995,6 +995,8 @@ export const SortableWorkspace = (props: {
   project: LocalProject
   sortNow: Accessor<number>
   mobile?: boolean
+  // Load only the session list unless this directory is routed (the new session sidebar).
+  listOnly?: boolean
 }): JSX.Element => {
   const params = useParams()
   const navigate = useNavigate()
@@ -1125,6 +1127,10 @@ export const SortableWorkspace = (props: {
   }
 
   createEffect(() => {
+    if (props.listOnly && !active()) {
+      if (open()) void serverSync().project.loadSessions(props.directory)
+      return
+    }
     if (!boot()) return
     serverSync().child(props.directory, { bootstrap: true })
   })
@@ -1239,13 +1245,27 @@ export const LocalWorkspace = (props: {
   mobile?: boolean
   // Rendered inside a parent that scrolls, so this list neither scrolls nor registers the scroll ref.
   inline?: boolean
+  // Load only the session list unless the routed session or draft is in this
+  // project (the new session sidebar), instead of bootstrapping every project.
+  listOnly?: boolean
 }): JSX.Element => {
   const serverSync = useServerSync()
   const queryOptions = useQueryOptions()
   const language = useLanguage()
+  const routedHere = createMemo(() => {
+    const directory = props.ctx.routedDir()
+    if (!directory) return false
+    const key = pathKey(directory)
+    return [props.project.worktree, ...(props.project.sandboxes ?? [])].some((item) => pathKey(item) === key)
+  })
+  const bootstrap = createMemo(() => !props.listOnly || routedHere())
   const workspace = createMemo(() => {
-    const [store, setStore] = serverSync().child(props.project.worktree)
+    const [store, setStore] = serverSync().child(props.project.worktree, { bootstrap: bootstrap() })
     return { store, setStore }
+  })
+  createEffect(() => {
+    if (bootstrap()) return
+    void serverSync().project.loadSessions(props.project.worktree)
   })
   const slug = createMemo(() => base64Encode(props.project.worktree))
   const sessions = createMemo(() => sortedRootSessions(workspace().store, props.sortNow()))

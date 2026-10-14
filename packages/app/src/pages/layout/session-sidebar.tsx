@@ -1,12 +1,14 @@
 import { For, Show } from "solid-js"
+import { DragDropProvider, SortableProvider } from "@thisbeyond/solid-dnd"
 import { ButtonV2 } from "@flynncode/ui/v2/button-v2"
 import { Icon } from "@flynncode/ui/v2/icon"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
-import { useLayout } from "@/context/layout"
+import { useLayout, type LocalProject } from "@/context/layout"
 import { useSettingsDialog } from "@/components/settings-dialog"
 import { displayName } from "./helpers"
-import { LocalWorkspace } from "./sidebar-workspace"
+import { pathKey } from "@/utils/path-key"
+import { LocalWorkspace, SortableWorkspace } from "./sidebar-workspace"
 import type { SidebarController } from "./sidebar-controller"
 
 // Claude-desktop-style navigation: one column, projects as collapsible
@@ -21,6 +23,8 @@ export function SessionSidebar(props: {
   const language = useLanguage()
   const settings = useSettingsDialog()
   const current = () => props.sidebar.currentProject()?.worktree ?? layout.projects.list()[0]?.worktree
+  const worktrees = (project: LocalProject) =>
+    props.sidebar.workspaceIds(project).filter((directory) => pathKey(directory) !== pathKey(project.worktree))
 
   return (
     <div class="size-full flex flex-col bg-v2-background-bg-deep">
@@ -85,7 +89,27 @@ export function SessionSidebar(props: {
                   sortNow={props.sidebar.sortNow}
                   mobile={props.mobile}
                   inline
+                  listOnly
                 />
+                {/* Worktrees follow the main folder, each a collapsible sub-heading.
+                    The sortable wiring is required by SortableWorkspace; without
+                    sensors nothing drags, so their order stays the saved one. */}
+                <DragDropProvider>
+                  <SortableProvider ids={worktrees(project)}>
+                    <For each={worktrees(project)}>
+                      {(directory) => (
+                        <SortableWorkspace
+                          ctx={props.sidebar.workspaceSidebarCtx}
+                          directory={directory}
+                          project={project}
+                          sortNow={props.sidebar.sortNow}
+                          mobile={props.mobile}
+                          listOnly
+                        />
+                      )}
+                    </For>
+                  </SortableProvider>
+                </DragDropProvider>
               </Show>
             </div>
           )}

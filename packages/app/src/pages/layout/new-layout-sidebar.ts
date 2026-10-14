@@ -193,7 +193,17 @@ export function sidebarCommands(input: SidebarCommandInput): CommandOption[] {
   ]
 }
 
-// Mod+1-9 order: what the sidebar shows, top to bottom.
-export function visibleSessionOrder<T>(groups: readonly { expanded: boolean; sessions: readonly T[] }[]): T[] {
-  return groups.flatMap((group) => (group.expanded ? [...group.sessions] : []))
+type SessionGroup<T> = { expanded: boolean; sessions: readonly T[] }
+
+// Mod+1-9 order: what the sidebar shows, top to bottom. Under an expanded
+// project come its main-folder sessions, then each expanded worktree's.
+export function visibleSessionOrder<T>(groups: readonly (SessionGroup<T> & { worktrees?: SessionGroup<T>[] })[]): T[] {
+  return groups.flatMap((group) =>
+    group.expanded
+      ? [
+          ...group.sessions,
+          ...(group.worktrees ?? []).flatMap((worktree) => (worktree.expanded ? worktree.sessions : [])),
+        ]
+      : [],
+  )
 }

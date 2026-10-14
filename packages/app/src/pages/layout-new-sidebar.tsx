@@ -14,6 +14,7 @@ import { useLayout } from "@/context/layout"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { useTabs } from "@/context/tabs"
+import { pathKey } from "@/utils/path-key"
 import { sessionHref } from "@/utils/session-route"
 import { sortedRootSessions } from "./layout/helpers"
 import { createSidebarController } from "./layout/sidebar-controller"
@@ -165,9 +166,12 @@ export function ProjectSidebar() {
       const root = sidebar.projectRoot(directory)
       if (server.projects.last() !== root) server.projects.touch(root)
       if (!id) return
-      // A routed session under a collapsed project header would stay hidden.
+      // A routed session under a collapsed project header or worktree would stay hidden.
       if (layout.projects.list().some((project) => project.worktree === root && !project.expanded))
         layout.projects.expand(root)
+      const workspaces = sidebar.workspaceSidebarCtx
+      if (pathKey(directory) !== pathKey(root) && !workspaces.workspaceExpanded(directory, false))
+        workspaces.setWorkspaceExpanded(directory, true)
       sidebar.revealSession(directory, id)
     }),
   )
@@ -204,17 +208,25 @@ export function ProjectSidebar() {
     }),
   )
 
-  // Mod+1-9 open the Nth session as listed: same per-project source and order
-  // as the rendered list, skipping collapsed projects.
-  const visible = createMemo(() =>
-    visibleSessionOrder(
+  // Mod+1-9 open the Nth session as listed: same per-directory source and
+  // order as the rendered list, skipping collapsed projects and worktrees.
+  const listed = (directory: string) =>
+    sortedRootSessions(serverSync().child(directory, { bootstrap: false })[0], sidebar.sortNow())
+  const visible = createMemo(() => {
+    return visibleSessionOrder(
       layout.projects.list().map((project) => ({
         expanded: project.expanded,
-        // Like the controller: only expanded projects bootstrap (LocalWorkspace does that).
-        sessions: sortedRootSessions(serverSync().child(project.worktree, { bootstrap: false })[0], sidebar.sortNow()),
+        sessions: listed(project.worktree),
+        worktrees: sidebar
+          .workspaceIds(project)
+          .filter((directory) => pathKey(directory) !== pathKey(project.worktree))
+          .map((directory) => ({
+            expanded: sidebar.workspaceSidebarCtx.workspaceExpanded(directory, false),
+            sessions: listed(directory),
+          })),
       })),
-    ),
-  )
+    )
+  })
   command.register("sidebar-session-index", () =>
     visible()
       .slice(0, 9)

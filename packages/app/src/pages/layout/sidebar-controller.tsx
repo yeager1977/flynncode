@@ -37,7 +37,12 @@ import { pathKey } from "@/utils/path-key"
 import { ConstrainDragXAxis, getDraggableId } from "@/utils/solid-dnd"
 import { displayName, effectiveWorkspaceOrder, errorMessage, latestRootSession, sortedRootSessions } from "./helpers"
 import { createInlineEditorController } from "./inline-editor"
-import { LocalWorkspace, SortableWorkspace, WorkspaceDragOverlay, type WorkspaceSidebarContext } from "./sidebar-workspace"
+import {
+  LocalWorkspace,
+  SortableWorkspace,
+  WorkspaceDragOverlay,
+  type WorkspaceSidebarContext,
+} from "./sidebar-workspace"
 import { ProjectDragOverlay, SortableProject, type ProjectSidebarContext } from "./sidebar-project"
 import { SidebarArtifacts } from "./sidebar-artifacts-section"
 import { adjacentProject, adjacentSession, adjacentUnseenSession } from "./sidebar-navigation"
@@ -737,7 +742,10 @@ export function createSidebarController(host: SidebarHost) {
             directory: item,
             parentID: null,
             order: "desc",
-          }).then((r) => r.sessions, () => []),
+          }).then(
+            (r) => r.sessions,
+            () => [],
+          ),
         })),
       ),
       Date.now(),
@@ -1074,7 +1082,10 @@ export function createSidebarController(host: SidebarHost) {
       const sessions = await listAllSessions(serverSDK().api.session, {
         directory: props.directory,
         order: "desc",
-      }).then((r) => r.sessions, () => [])
+      }).then(
+        (r) => r.sessions,
+        () => [],
+      )
       const active = sessions.filter((session) => session.time.archived === undefined)
       setState({ sessions: active })
     }
@@ -1471,12 +1482,7 @@ export function createSidebarController(host: SidebarHost) {
                       </Button>
                     }
                   >
-                    <ButtonV2
-                      variant="outline"
-                      size="large"
-                      icon="folder-add-left"
-                      onClick={chooseProject}
-                    >
+                    <ButtonV2 variant="outline" size="large" icon="folder-add-left" onClick={chooseProject}>
                       {language.t("command.project.open")}
                     </ButtonV2>
                   </Show>
@@ -1724,6 +1730,7 @@ export function createSidebarController(host: SidebarHost) {
     currentSessions,
     workspaceSetting,
     projectRoot,
+    workspaceIds,
     revealSession,
     connectProvider,
     projects,
