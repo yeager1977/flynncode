@@ -3,13 +3,21 @@ import { mkdir, unlink } from "fs/promises"
 import path from "path"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { AppNodeBuilder } from "@flynncode/core/effect/app-node-builder"
-import { Effect, Layer } from "effect"
+import { Duration, Effect, Layer } from "effect"
+import * as TestClock from "effect/testing/TestClock"
 import { ModelsDev } from "@flynncode/core/models-dev"
+import { Integration } from "@flynncode/core/integration"
 import { EventV2 } from "@flynncode/core/event"
 import { FSUtil } from "@flynncode/core/fs-util"
 import { CrossSpawnSpawner } from "@flynncode/core/cross-spawn-spawner"
 import { Global } from "@flynncode/core/global"
-import { disposeAllInstances, provideInstanceEffect, tmpdirScoped, TestInstance } from "../fixture/fixture"
+import {
+  disposeAllInstances,
+  provideInstanceEffect,
+  provideTmpdirInstance,
+  tmpdirScoped,
+  TestInstance,
+} from "../fixture/fixture"
 import { markPluginDependenciesReady } from "../fixture/plugin"
 import { Auth } from "@/auth"
 import { Config } from "@/config/config"
@@ -92,7 +100,7 @@ const languageBaseURL = (language: unknown) => (language as { config: { baseURL:
 
 const it = testEffect(LayerNode.compile(LayerNode.group([Provider.node, Env.node, Plugin.node])))
 const refreshedModels = testEffect(
-  LayerNode.compile(LayerNode.group([Provider.node, Env.node, Plugin.node, EventV2.node])),
+  LayerNode.compile(LayerNode.group([Provider.node, Env.node, Plugin.node, EventV2.node, CrossSpawnSpawner.node])),
 )
 const experimentalModels = testEffect(providerLayer({ enableExperimentalModels: true }))
 
@@ -2556,6 +2564,61 @@ refreshedModels.instance(
       },
     }),
   },
+)
+
+refreshedModels.instance(
+  "Meta discovery repeats when a provider connection changes",
+  Effect.gen(function* () {
+    const provider = (yield* list)[ProviderV2.ID.make("meta")]
+    expect(provider.models["muse-wonder-full-1.0"]).toBeDefined()
+    const before = discoveryModelsServer.metaRequests
+    yield* list
+    expect(discoveryModelsServer.metaRequests).toBe(before)
+    const events = yield* EventV2.Service
+    yield* events.publish(Integration.Event.ConnectionUpdated, { integrationID: Integration.ID.make("meta") })
+    yield* pollWithTimeout(
+      list.pipe(Effect.map(() => (discoveryModelsServer.metaRequests > before ? true : undefined))),
+      "Meta model discovery did not rerun after a connection change",
+    )
+    expect(discoveryModelsServer.metaRequests).toBe(before + 1)
+  }),
+  {
+    config: () => ({
+      provider: {
+        meta: {
+          options: { apiKey: "meta-key", baseURL: discoveryModelsServer.url.replace("/v1", "/meta/v1") },
+          models: metaDiscoveryModels,
+        },
+      },
+    }),
+  },
+)
+
+refreshedModels.effect(
+  "Meta discovery repeats after the provider state TTL expires",
+  provideTmpdirInstance(
+    () =>
+      Effect.gen(function* () {
+        const provider = (yield* list)[ProviderV2.ID.make("meta")]
+        expect(provider.models["muse-wonder-full-1.0"]).toBeDefined()
+        const before = discoveryModelsServer.metaRequests
+        yield* list
+        expect(discoveryModelsServer.metaRequests).toBe(before)
+        yield* TestClock.adjust(Duration.minutes(10))
+        yield* list
+        expect(discoveryModelsServer.metaRequests).toBe(before + 1)
+      }),
+    {
+      config: () => ({
+        provider: {
+          meta: {
+            options: { apiKey: "meta-key", baseURL: discoveryModelsServer.url.replace("/v1", "/meta/v1") },
+            models: metaDiscoveryModels,
+          },
+        },
+      }),
+    },
+  ),
 )
 
 it.instance(
