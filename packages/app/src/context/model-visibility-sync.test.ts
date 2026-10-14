@@ -26,6 +26,7 @@ describe("visibility exclude mirror", () => {
     expect(visibilityUnchanged(["openai/gpt-6-sol"], [])).toBe(false)
     expect(visibilityUnchanged(undefined, [])).toBe(false)
     expect(visibilityUnchanged(["openai/gpt-6-sol", 42], ["openai/gpt-6-sol"])).toBe(false)
+    expect(visibilityUnchanged(["openai/gpt-6-sol", 42], ["openai/gpt-6-sol", "anthropic/claude-opus-5"])).toBe(false)
     expect(visibilityUnchanged(["openai/gpt-6-sol"], ["openai/gpt-6-sol"])).toBe(true)
   })
 })

@@ -38,9 +38,12 @@ export function visibilityExcludeKeys(
 // rewritten, not adopted).
 export function visibilityUnchanged(current: unknown, hidden: string[]): boolean {
   if (!Array.isArray(current) || current.length !== hidden.length) return false
-  const left = current.filter((key): key is string => typeof key === "string").sort()
+  const left = current.filter((key): key is string => typeof key === "string")
+  // A non-string entry means the stored list is not the mirror this helper
+  // compares — rewrite it rather than adopting it.
+  if (left.length !== hidden.length) return false
   const right = [...hidden].sort()
-  return left.every((key, index) => key === right[index])
+  return left.sort().every((key, index) => key === right[index])
 }
 
 export const { use: useModels, provider: ModelsProvider } = createSimpleContext({
