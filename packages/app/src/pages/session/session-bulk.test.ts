@@ -59,10 +59,9 @@ describe("session bulk eligibility", () => {
     expect(roots.map((item) => item.id)).toEqual(["root"])
   })
 
-  test("locks open, tabbed, running, pending, and parent of a protected child", () => {
+  test("locks open, running, pending, and parent of a protected child", () => {
     const sessions = [
       session({ id: "route" }),
-      session({ id: "tab" }),
       session({ id: "running" }),
       session({ id: "waiting" }),
       session({ id: "parent" }),
@@ -71,16 +70,15 @@ describe("session bulk eligibility", () => {
     ]
     const blocked = protectedRootIDs(sessions, {
       openRouteID: "route",
-      openTabIDs: new Set(["tab"]),
       working: (id) => id === "running" || id === "child",
       pending: (id) => id === "waiting",
     })
-    expect([...blocked].sort()).toEqual(["child", "parent", "route", "running", "tab", "waiting"])
+    expect([...blocked].sort()).toEqual(["child", "parent", "route", "running", "waiting"])
   })
 
   test("locks a root when an open or running child is absent but its parent link is supplied", () => {
     const blocked = protectedRootIDs([session({ id: "root" })], {
-      openTabIDs: new Set(["open-child"]),
+      openRouteID: "open-child",
       working: (id) => id === "running-child",
       pending: () => false,
       parentID: new Map([
@@ -136,9 +134,10 @@ describe("project-scoped cleanup", () => {
   ]
 
   test("keeps only sessions in the project's directories, ignoring trailing slashes", () => {
-    expect(
-      sessionsInDirectories(sessions, ["/repo/", "/repo-worktrees/feature"]).map((item) => item.id),
-    ).toEqual(["root", "sandbox"])
+    expect(sessionsInDirectories(sessions, ["/repo/", "/repo-worktrees/feature"]).map((item) => item.id)).toEqual([
+      "root",
+      "sandbox",
+    ])
   })
 
   test("scans every session when no project is selected", () => {

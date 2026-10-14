@@ -3,7 +3,7 @@ import { createSimpleContext } from "@flynncode/ui/context"
 import { createStore, produce } from "solid-js/store"
 import { Persist, persisted, removePersisted, draftPersistedKeys } from "@/utils/persist"
 import { ServerConnection, useServer } from "./server"
-import { createEffect, getOwner, onCleanup, startTransition } from "solid-js"
+import { createEffect, createSignal, getOwner, on, onCleanup, startTransition } from "solid-js"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { usePlatform } from "./platform"
 import { uuid } from "@/utils/uuid"
@@ -11,8 +11,9 @@ import { SessionTabsRemovedDetail } from "@/components/titlebar-session-events"
 import { sessionHref } from "@/utils/session-route"
 import { createTabMemory } from "./tab-memory"
 import { nextTabAfterClose, pushClosedTab, removeClosedTabs, takeClosedTab, type ClosedTab } from "./closed-tabs"
-import { createDraftPromptSession, type PromptModel } from "./prompt-state"
+import { createDraftPromptSession, type PromptModel, type PromptSession } from "./prompt-state"
 import { migrateTabs } from "./tab-migration"
+import { draftRouteChange, promoteDraft } from "./draft-tabs"
 
 export type SessionTab = {
   type: "session"
@@ -50,10 +51,6 @@ export const tabHref = (tab: Tab) =>
 
 export const tabKey = (tab: Tab) => (tab.type === "draft" ? `draft:${tab.draftID}` : `${tab.server}\n${tabHref(tab)}`)
 
-export function sessionHasOpenTab(tabs: Tab[], server: ServerConnection.Key, session: Session) {
-  return tabs.some((tab) => tab.type === "session" && tab.server === server && tab.sessionId === session.id)
-}
-
 export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
   name: "Tabs",
   gate: false,
@@ -78,6 +75,7 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
     const memory = createTabMemory(getOwner())
 
     const closing = new Set<string>()
+    const [back, setBack] = createSignal<string>()
     let recentWrite = 0
     let recentValue: string | undefined
 
@@ -150,6 +148,34 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
       if (next.length !== closed.length) setClosed(() => next)
     })
 
+    // Track the Home toggle's return route, and drop drafts left without ever
+    // getting a prompt so the hidden draft list does not grow without bound.
+    createEffect(
+      on(
+        () => `${location.pathname}${location.search}`,
+        (path) => {
+          const change = draftRouteChange({
+            path,
+            back: back(),
+            tabs: store,
+            unused: (draft) => {
+              const prompt = memory.get<PromptSession>(tabKey(draft), "prompt")
+              return !!prompt && prompt.ready() && !prompt.dirty()
+            },
+          })
+          setBack(change.back)
+          if (!ready() || change.prune.length === 0) return
+          const pruned = new Set(change.prune)
+          setStore((tabs) => tabs.filter((tab) => !(tab.type === "draft" && pruned.has(tab.draftID))))
+          for (const draftID of change.prune) {
+            memory.remove(`draft:${draftID}`)
+            removeInfo(`draft:${draftID}`)
+            removeDraftPersisted(draftID)
+          }
+        },
+      ),
+    )
+
     const navigateTab = (tab: Tab) => {
       const href = tabHref(tab)
       setRecentKey(tabKey(tab))
@@ -181,20 +207,6 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
     }
 
     const actions = {
-      addSessionTab: (tab: Omit<SessionTab, "type">) => {
-        const next = { type: "session" as const, ...tab }
-        const existing = store.find((item) => tabKey(item) === tabKey(next))
-        if (existing) return existing
-        void startTransition(() => {
-          setStore(
-            produce((tabs) => {
-              if (tabs.some((item) => tabKey(item) === tabKey(next))) return
-              tabs.push(next)
-            }),
-          )
-        })
-        return next
-      },
       reorder(keys: string[]) {
         setStore(
           produce((tabs) => {
@@ -239,19 +251,14 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
         })
       },
       promoteDraft(draftID: string, session: Omit<SessionTab, "type">) {
-        // Keep the replacement and navigation atomic so /new-session never renders
+        // Keep the removal and navigation atomic so /new-session never renders
         // after its backing draft tab has been removed from the store.
         const active = location.pathname === "/new-session" && location.query.draftId === draftID
-        const next = { type: "session" as const, ...session }
+        const next = promoteDraft(store, draftID, session)
         void startTransition(() => {
-          setStore(
-            produce((tabs) => {
-              const index = tabs.findIndex((tab) => tab.type === "draft" && tab.draftID === draftID)
-              if (index !== -1) tabs[index] = next
-            }),
-          )
-          if (recent.key === `draft:${draftID}`) setRecentKey(tabKey(next))
-          if (active) navigateTab(next)
+          setStore(() => next.tabs)
+          if (recent.key === `draft:${draftID}`) setRecentKey(undefined)
+          if (active) navigate(next.href)
         })
         memory.remove(`draft:${draftID}`)
         removeDraftPersisted(draftID)
@@ -385,18 +392,14 @@ export const { use: useTabs, provider: TabsProvider } = createSimpleContext({
         const key = tabKey(tab)
         if (recentKey() !== key) setRecentKey(key)
       },
-      toggleHome(input: { home: boolean; current?: Tab }) {
-        if (input.home) {
-          const tab = store.find((tab) => tabKey(tab) === recentKey())
-          if (tab) navigateTab(tab)
-          return
-        }
-        if (input.current) {
-          setRecentKey(tabKey(input.current))
+      // From Home, return to the last route shown before it.
+      toggleHome(home: boolean) {
+        if (!home) {
           navigate("/")
           return
         }
-        navigate("/")
+        const path = back()
+        if (path) navigate(path)
       },
       state<T>(tab: Tab, name: string, init: () => T) {
         return memory.ensure(tabKey(tab), name, init)

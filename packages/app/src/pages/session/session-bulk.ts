@@ -16,7 +16,6 @@ export type BulkPreset = (typeof BULK_PRESETS)[number]["id"]
 
 export type ProtectionInput = {
   openRouteID?: string
-  openTabIDs: ReadonlySet<string>
   working: (id: string) => boolean
   pending: (id: string) => boolean
   parentID?: ReadonlyMap<string, string | undefined>
@@ -70,7 +69,6 @@ export function protectedRootIDs(sessions: readonly Session[], input: Protection
 
   const blocked = new Set<string>()
   if (input.openRouteID) blocked.add(input.openRouteID)
-  for (const id of input.openTabIDs) blocked.add(id)
   for (const id of parentOf.keys()) {
     if (input.working(id) || input.pending(id)) blocked.add(id)
   }

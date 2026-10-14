@@ -13,19 +13,19 @@ import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
-import { tabKey, useTabs } from "@/context/tabs"
+import { useTabs } from "@/context/tabs"
 import { sessionHref } from "@/utils/session-route"
 import { sortedRootSessions } from "./layout/helpers"
 import { createSidebarController } from "./layout/sidebar-controller"
 import { SessionSidebar } from "./layout/session-sidebar"
 import {
-  directoryTabs,
   openProjectDirectory,
   openSidebarByDefault,
   projectDraft,
   sidebarCommands,
   sidebarDirectory,
   visibleSessionOrder,
+  worktreeClosing,
 } from "./layout/new-layout-sidebar"
 
 const RAIL_WIDTH = 64
@@ -88,9 +88,7 @@ export function ProjectSidebar() {
   const [state, setState] = createStore({ remembered: undefined as string | undefined, sizing: false })
   let sizet: number | undefined
 
-  const sessionDirectory = (id: string) =>
-    serverSync().session.get(id)?.directory ??
-    tabs.info[tabKey({ type: "session", server: server.key, sessionId: id })]?.directory
+  const sessionDirectory = (id: string) => serverSync().session.get(id)?.directory
   const routed = createMemo(() =>
     sidebarDirectory({ route: layout.route(), server: server.key, tabs: tabs.store, sessionDirectory }),
   )
@@ -118,6 +116,16 @@ export function ProjectSidebar() {
       ) ?? "",
   )
 
+  // New session reuses the directory's open draft rather than stacking another.
+  const openDraft = (directory: string) => {
+    const draft = projectDraft(tabs.store, server.key, directory)
+    if (draft) {
+      tabs.select(draft)
+      return
+    }
+    void tabs.newDraft({ server: server.key, directory })
+  }
+
   const sidebar = createSidebarController({
     currentDir,
     routedDir: routed,
@@ -125,32 +133,26 @@ export function ProjectSidebar() {
     tabs: true,
     openSession: (_, id) => navigate(sessionHref(server.key, id)),
     closeTabs: async (input) => {
-      const found = directoryTabs(tabs.store, server.key, input.directory, sessionDirectory)
-      const drafts = input.drafts ? found.drafts : []
-      const route = layout.route()
-      const showing =
-        (route.type === "session" && found.sessions.includes(route.sessionId)) ||
-        (route.type === "draft" && drafts.includes(route.draftID))
+      const closing = worktreeClosing({
+        tabs: tabs.store,
+        server: server.key,
+        directory: input.directory,
+        drafts: input.drafts,
+        route: layout.route(),
+        sessionDirectory,
+      })
       // Like the session header's worktree menu: land on a draft in the main
-      // checkout before the removed worktree's tabs go away.
+      // checkout before the removed worktree's drafts go away.
       // A reset keeps the worktree, so its replacement draft stays there.
-      if (showing) await tabs.newDraft({ server: server.key, directory: input.drafts ? input.root : input.directory })
-      if (found.sessions.length > 0)
-        tabs.removeSessions({ server: server.key, directory: input.directory, sessionIDs: found.sessions })
-      for (const draftID of drafts) {
+      if (closing.showing)
+        await tabs.newDraft({ server: server.key, directory: input.drafts ? input.root : input.directory })
+      for (const draftID of closing.drafts) {
         const index = tabs.store.findIndex((tab) => tab.type === "draft" && tab.draftID === draftID)
         if (index !== -1) tabs.removeTab(index)
       }
     },
-    newSession: (directory) => void tabs.newDraft({ server: server.key, directory }),
-    openProject: (root) => {
-      const draft = projectDraft(tabs.store, server.key, root)
-      if (draft) {
-        tabs.select(draft)
-        return
-      }
-      void tabs.newDraft({ server: server.key, directory: root })
-    },
+    newSession: openDraft,
+    openProject: openDraft,
     sessionHref: (session) => sessionHref(server.key, session.id),
     home: () => navigate("/"),
   })
@@ -171,7 +173,13 @@ export function ProjectSidebar() {
   )
 
   // Opening a session, draft or artifact from the phone drawer closes it.
-  createEffect(on(() => layout.route(), () => layout.mobileSidebar.hide(), { defer: true }))
+  createEffect(
+    on(
+      () => layout.route(),
+      () => layout.mobileSidebar.hide(),
+      { defer: true },
+    ),
+  )
 
   openSidebarByDefault({
     ready: layout.ready,
@@ -203,10 +211,7 @@ export function ProjectSidebar() {
       layout.projects.list().map((project) => ({
         expanded: project.expanded,
         // Like the controller: only expanded projects bootstrap (LocalWorkspace does that).
-        sessions: sortedRootSessions(
-          serverSync().child(project.worktree, { bootstrap: false })[0],
-          sidebar.sortNow(),
-        ),
+        sessions: sortedRootSessions(serverSync().child(project.worktree, { bootstrap: false })[0], sidebar.sortNow()),
       })),
     ),
   )
@@ -239,13 +244,7 @@ export function ProjectSidebar() {
 
   const side = createMemo(() => Math.max(layout.sidebar.width(), MIN_WIDTH))
 
-  const content = (mobile?: boolean) => (
-    <SessionSidebar
-      sidebar={sidebar}
-      mobile={mobile}
-      onNewSession={(directory) => void tabs.newDraft({ server: server.key, directory })}
-    />
-  )
+  const content = (mobile?: boolean) => <SessionSidebar sidebar={sidebar} mobile={mobile} onNewSession={openDraft} />
 
   return (
     <>
@@ -267,10 +266,7 @@ export function ProjectSidebar() {
       </nav>
 
       <Show when={layout.sidebar.opened()}>
-        <div
-          class="relative hidden md:block w-0 shrink-0 z-30"
-          onPointerDown={() => setState("sizing", true)}
-        >
+        <div class="relative hidden md:block w-0 shrink-0 z-30" onPointerDown={() => setState("sizing", true)}>
           <ResizeHandle
             direction="horizontal"
             size={layout.sidebar.width()}

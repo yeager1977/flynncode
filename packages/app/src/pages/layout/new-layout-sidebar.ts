@@ -81,23 +81,30 @@ export function legacyDraftTarget(input: {
   return { type: "new" as const, directory }
 }
 
-// Tabs left pointing into a removed (or reset) worktree.
-export function directoryTabs(
-  tabs: Tab[],
-  server: ServerConnection.Key,
-  directory: string,
-  sessionDirectory: (sessionID: string) => string | undefined,
-) {
-  const key = pathKey(directory)
+// Closing a removed (or reset) worktree: its drafts go only when the worktree
+// does, and a routed session or draft inside it needs a draft elsewhere first.
+export function worktreeClosing(input: {
+  tabs: Tab[]
+  server: ServerConnection.Key
+  directory: string
+  drafts: boolean
+  route: LayoutRoute
+  sessionDirectory: (sessionID: string) => string | undefined
+}) {
+  const key = pathKey(input.directory)
   const inside = (value: string | undefined) => value !== undefined && pathKey(value) === key
-  return {
-    sessions: tabs.flatMap((tab) =>
-      tab.type === "session" && tab.server === server && inside(sessionDirectory(tab.sessionId)) ? [tab.sessionId] : [],
-    ),
-    drafts: tabs.flatMap((tab) =>
-      tab.type === "draft" && tab.server === server && inside(tab.directory) ? [tab.draftID] : [],
-    ),
-  }
+  const drafts = input.drafts
+    ? input.tabs.flatMap((tab) =>
+        tab.type === "draft" && tab.server === input.server && inside(tab.directory) ? [tab.draftID] : [],
+      )
+    : []
+  const route = input.route
+  const ours = route.type !== "home" && (route.server === undefined || route.server === input.server)
+  const showing =
+    ours &&
+    ((route.type === "session" && inside(input.sessionDirectory(route.sessionId))) ||
+      (route.type === "draft" && drafts.includes(route.draftID)))
+  return { drafts, showing }
 }
 
 export type SidebarCommandInput = {

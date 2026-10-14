@@ -35,7 +35,8 @@ import { readSessionTabsRemovedDetail, SESSION_TABS_REMOVED_EVENT } from "@/comp
 import { useGlobal } from "@/context/global"
 import { ServerConnection, useServer } from "@/context/server"
 import { useTabs } from "@/context/tabs"
-import type { PromptSession } from "@/context/prompt"
+import type { PromptModel, PromptSession } from "@/context/prompt"
+import { projectDraft } from "@/pages/layout/new-layout-sidebar"
 import "./titlebar.css"
 import { newTabTooltipKeybind } from "./command-tooltip-keybind"
 import { normalizeSessionInfo } from "@/utils/session"
@@ -257,6 +258,16 @@ export function Titlebar(props: {
               tabsStoreActions.removeSessions(detail)
             })
 
+            // Reuse the directory's open draft rather than stacking another hidden one.
+            const openDraft = (draft: { server: ServerConnection.Key; directory: string }, model?: PromptModel) => {
+              const existing = projectDraft(tabs.store, draft.server, draft.directory)
+              if (existing) {
+                tabs.select(existing)
+                return
+              }
+              void tabs.newDraft(draft, "", model)
+            }
+
             const openNewTab = () => {
               const route = layout.route()
               const activeSession = session()
@@ -267,14 +278,14 @@ export function Titlebar(props: {
                   sessionId: activeSession.id,
                 }
                 const model = tabs.stateValue<PromptSession>(sessionTab, "prompt")?.model.current()
-                tabs.newDraft({ server: sessionTab.server, directory: activeSession.directory }, "", model)
+                openDraft({ server: sessionTab.server, directory: activeSession.directory }, model)
                 return
               }
 
               const activeTab = currentTab()
               if (activeTab?.type === "draft") {
                 const model = tabs.stateValue<PromptSession>(activeTab, "prompt")?.model.current()
-                tabs.newDraft({ server: activeTab.server, directory: activeTab.directory }, "", model)
+                openDraft({ server: activeTab.server, directory: activeTab.directory }, model)
                 return
               }
 
@@ -288,14 +299,14 @@ export function Titlebar(props: {
                       .find((item) => item.worktree === selection.directory)
                   : undefined
                 if (conn && project) {
-                  tabs.newDraft({ server: ServerConnection.key(conn), directory: project.worktree }, "")
+                  openDraft({ server: ServerConnection.key(conn), directory: project.worktree })
                   return
                 }
               }
 
               const current = layout.projects.list()[0]
               if (current) {
-                tabs.newDraft({ server: server.key, directory: current.worktree }, "")
+                openDraft({ server: server.key, directory: current.worktree })
                 return
               }
 
@@ -305,9 +316,9 @@ export function Titlebar(props: {
               })[0]
               if (!fallback) return
 
-              tabs.newDraft({ server: fallback.server, directory: fallback.project.worktree }, "")
+              openDraft({ server: fallback.server, directory: fallback.project.worktree })
             }
-            const toggleHome = () => tabs.toggleHome({ home: layout.route().type === "home", current: currentTab() })
+            const toggleHome = () => tabs.toggleHome(layout.route().type === "home")
 
             command.register("titlebar-home", () => [
               {

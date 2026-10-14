@@ -2,6 +2,7 @@ import { getFilename } from "@flynncode/core/util/path"
 import type { Project } from "@flynncode/sdk/v2/client"
 import type { SessionInfo } from "@opencode-ai/client/promise"
 import { useDialog } from "@flynncode/ui/context/dialog"
+import { useNavigate } from "@solidjs/router"
 import { createMemo, onCleanup } from "solid-js"
 import { commandPaletteOptions, useCommand, type CommandOption } from "@/context/command"
 import { useFile } from "@/context/file"
@@ -10,11 +11,11 @@ import { useLanguage } from "@/context/language"
 import { useLayout, type LocalProject } from "@/context/layout"
 import { ServerConnection } from "@/context/server"
 import { useServerSDK } from "@/context/server-sdk"
-import { useTabs } from "@/context/tabs"
 import { displayName, projectForSession } from "@/pages/layout/helpers"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { normalizeSessionInfo } from "@/utils/session"
+import { sessionHref } from "@/utils/session-route"
 
 export type CommandPaletteEntry = {
   id: string
@@ -86,7 +87,7 @@ export function createCommandPaletteModel(props: { filesOnly?: () => boolean; on
   const dialog = useDialog()
   const serverSDK = useServerSDK()()
   const serverCtx = global.ensureServerCtx(serverSDK.server)
-  const appTabs = useTabs()
+  const navigate = useNavigate()
   const { tabs: sessionTabs } = useSessionLayout()
   const openFile = createCommandPaletteFileOpener(props.onOpenFile)
   const state = { cleanup: undefined as (() => void) | void, committed: false }
@@ -174,11 +175,7 @@ export function createCommandPaletteModel(props: { filesOnly?: () => boolean; on
         serverCtx.projects.open(directory)
         serverCtx.projects.touch(directory)
       }
-      const tab = appTabs.addSessionTab({
-        server: item.server,
-        sessionId: item.sessionID,
-      })
-      appTabs.select(tab)
+      navigate(sessionHref(item.server, item.sessionID))
       return
     }
     if (!item.path) return

@@ -24,7 +24,6 @@ import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync, useQueryOptions } from "@/context/server-sync"
-import { sessionHasOpenTab, useTabs } from "@/context/tabs"
 import { pathKey } from "@/utils/path-key"
 import { useDirectoryPicker } from "@/components/directory-picker"
 import {
@@ -33,17 +32,8 @@ import {
   type WorktreeMenuAction,
   type WorktreeMenuActionKey,
 } from "@/components/session/session-worktree-actions"
-import {
-  foldersConnection,
-  getSessionFolders,
-  setSessionExtras,
-  setSessionPrimary,
-} from "@/utils/session-folders-api"
-import {
-  MaxSessionExtraFolders,
-  normalizeSessionFolders,
-  removeSessionFolder,
-} from "@/components/session-folders"
+import { foldersConnection, getSessionFolders, setSessionExtras, setSessionPrimary } from "@/utils/session-folders-api"
+import { MaxSessionExtraFolders, normalizeSessionFolders, removeSessionFolder } from "@/components/session-folders"
 import { listAllSessions, normalizeSessionInfo } from "@/utils/session"
 import { showToast } from "@/utils/toast"
 import {
@@ -275,11 +265,7 @@ const WorkspaceActions = (props: {
           >
             {(action) => (
               <Tooltip
-                value={
-                  action.disabledReason
-                    ? props.language.t(action.disabledReason)
-                    : props.language.t(action.key)
-                }
+                value={action.disabledReason ? props.language.t(action.disabledReason) : props.language.t(action.key)}
                 placement="right"
               >
                 <DropdownMenu.Item
@@ -394,10 +380,8 @@ function useWorkspaceBulk(input: {
   const params = useParams()
   const dialog = useDialog()
   const language = useLanguage()
-  const server = useServer()
   const serverSDK = useServerSDK()
   const serverSync = useServerSync()
-  const tabs = useTabs()
   const [bulk, setBulk] = createStore({
     selecting: false,
     selected: [] as string[],
@@ -455,20 +439,10 @@ function useWorkspaceBulk(input: {
     const data = serverSync().session.data
     return (data.permission[id]?.length ?? 0) > 0 || (data.question[id]?.length ?? 0) > 0
   }
-  const openTabIDs = (list: readonly Session[]) => {
-    const ids = new Set<string>()
-    for (const tab of tabs.store) {
-      if (tab.type === "session" && tab.server === server.key) ids.add(tab.sessionId)
-    }
-    for (const session of list) {
-      if (sessionHasOpenTab(tabs.store, server.key, session)) ids.add(session.id)
-    }
-    return ids
-  }
   const parentLinkMap = () => {
     const sync = serverSync()
     const data = sync.session.data
-    const ids = openTabIDs([])
+    const ids = new Set<string>()
     if (params.id) ids.add(params.id)
     for (const id of Object.keys(data.session_status)) {
       if (data.session_working(id)) ids.add(id)
@@ -484,14 +458,18 @@ function useWorkspaceBulk(input: {
   const blockedFor = (list: readonly Session[]) =>
     protectedRootIDs(list, {
       openRouteID: params.id,
-      openTabIDs: openTabIDs(list),
       working: (id) => serverSync().session.data.session_working(id),
       pending,
       parentID: parentLinkMap(),
     })
   const allowed = createMemo(() => {
     const blocked = blockedFor(known())
-    return new Set(input.sessions().map((session) => session.id).filter((id) => !blocked.has(id)))
+    return new Set(
+      input
+        .sessions()
+        .map((session) => session.id)
+        .filter((id) => !blocked.has(id)),
+    )
   })
   const forget = (id: string, directory: string) => {
     const [, setStore] = serverSync().child(directory, { bootstrap: false })
@@ -516,7 +494,6 @@ function useWorkspaceBulk(input: {
   const protectedNow = (id: string, directory: string, extra: readonly Session[]) => {
     const list = mergeSessions(knownFor(directory), extra)
     if (params.id === id) return true
-    if (openTabIDs(list).has(id)) return true
     if (serverSync().session.data.session_working(id)) return true
     if (pending(id)) return true
     return blockedFor(list).has(id)
