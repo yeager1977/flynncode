@@ -216,7 +216,7 @@ describe("session.retry.policy usage limits", () => {
   it.instance("retry mode keeps today's behaviour for usage limits", () =>
     Effect.gen(function* () {
       const sets: number[] = []
-      const exit = yield* run("retry", 0, statusError(429, { "retry-after-ms": "0" }), sets)
+      const exit = yield* run("retry", 0, statusError(429, { "retry-after-ms": "20" }), sets)
       expect(exit._tag).toBe("Success")
       expect(sets).toStrictEqual([1])
     }),
@@ -225,8 +225,8 @@ describe("session.retry.policy usage limits", () => {
   it.instance("overload 503 retries in every mode", () =>
     Effect.gen(function* () {
       const sets: number[] = []
-      expect((yield* run("stop", 0, statusError(503, { "retry-after-ms": "0" }), sets))._tag).toBe("Success")
-      expect((yield* run("retry", 0, statusError(503, { "retry-after-ms": "0" }), sets))._tag).toBe("Success")
+      expect((yield* run("stop", 0, statusError(503, { "retry-after-ms": "20" }), sets))._tag).toBe("Success")
+      expect((yield* run("retry", 0, statusError(503, { "retry-after-ms": "20" }), sets))._tag).toBe("Success")
       expect(sets).toStrictEqual([1, 1])
     }),
   )
