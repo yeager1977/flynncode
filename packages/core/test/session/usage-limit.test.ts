@@ -16,7 +16,7 @@ describe("usageLimit", () => {
     expect(usageLimit(apiError({ message: "Rate limit exceeded" }), now)).toEqual({ message: "Rate limit exceeded" })
   })
 
-  test.each(["insufficient_quota", "FreeUsageLimitError", "resource_exhausted"])("classifies response body %s", (code) => {
+  test.each(["insufficient_quota", "FreeUsageLimitError", "GoUsageLimitError", "resource_exhausted"])("classifies response body %s", (code) => {
     expect(usageLimit(apiError({ statusCode: 400, message: "Bad", responseBody: `{"error":{"code":"${code}"}}` }), now)).toEqual({
       message: "Bad",
     })
@@ -24,6 +24,11 @@ describe("usageLimit", () => {
 
   test("ignores overloaded 503 errors", () => {
     expect(usageLimit(apiError({ statusCode: 503, message: "Service overloaded" }), now)).toBeUndefined()
+  })
+
+  test("lets a 5xx status veto the text heuristics", () => {
+    expect(usageLimit(apiError({ statusCode: 503, message: "rate limit exceeded" }), now)).toBeUndefined()
+    expect(usageLimit(apiError({ statusCode: 500, message: "Bad", responseBody: "resource_exhausted" }), now)).toBeUndefined()
   })
 
   test("ignores non-APIError errors", () => {
@@ -66,6 +71,11 @@ describe("usageLimit", () => {
     expect(usageLimit(apiError({ statusCode: 429, responseHeaders: { "Retry-After": "10" } }), now)?.resetAt).toBe(
       now + 10_000,
     )
+  })
+
+  test("ignores negative retry-after values", () => {
+    expect(usageLimit(apiError({ statusCode: 429, responseHeaders: { "retry-after": "-5" } }), now)?.resetAt).toBeUndefined()
+    expect(usageLimit(apiError({ statusCode: 429, responseHeaders: { "retry-after-ms": "-5" } }), now)?.resetAt).toBeUndefined()
   })
 
   test("leaves resetAt undefined without usable headers", () => {

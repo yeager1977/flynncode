@@ -1,7 +1,8 @@
 // Plain TypeScript on purpose: this is bundled into the desktop renderer, so no node builtins or Effect services.
 
-const MESSAGE_PATTERN = /rate[\s_-]?limit|usage limit|too many requests|insufficient[\s_]quota|quota exceeded/i
-const BODY_PATTERN = /insufficient_quota|FreeUsageLimitError|resource_exhausted/i
+// Shared by message and body. `\w*UsageLimitError` covers the Free/Go/Black variants.
+const LIMIT_PATTERN =
+  /rate[\s_-]?limit|usage[\s_-]?limit|\w*UsageLimitError|too many requests|insufficient[\s_]quota|quota exceeded|resource[\s_]exhausted/i
 
 /**
  * Classifies a recorded provider error as a usage/rate limit (as opposed to a transient
@@ -16,8 +17,10 @@ export function usageLimit(error: { name: string; data?: unknown } | undefined, 
 
   const message = typeof data.message === "string" ? data.message : undefined
   const body = typeof data.responseBody === "string" ? data.responseBody : undefined
-  const limited =
-    data.statusCode === 429 || (message && MESSAGE_PATTERN.test(message)) || (body && BODY_PATTERN.test(body))
+  // Status wins: 429 is always a limit, 5xx is always a server failure, otherwise fall back to text heuristics.
+  const status = typeof data.statusCode === "number" ? data.statusCode : undefined
+  if (status !== undefined && status >= 500) return undefined
+  const limited = status === 429 || LIMIT_PATTERN.test(message ?? "") || LIMIT_PATTERN.test(body ?? "")
   if (!limited) return undefined
 
   const resetAt = reset(record(data.responseHeaders), now)
@@ -33,12 +36,12 @@ function reset(headers: Record<string, unknown> | undefined, now: number) {
   const lower = Object.fromEntries(Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]))
 
   const ms = Number.parseFloat(String(lower["retry-after-ms"] ?? ""))
-  if (!Number.isNaN(ms)) return now + ms
+  if (ms >= 0) return now + ms
 
-  const retryAfter = lower["retry-after"]
-  if (typeof retryAfter !== "string" || !retryAfter) return undefined
+  const retryAfter = String(lower["retry-after"] ?? "")
+  if (!retryAfter) return undefined
   const seconds = Number.parseFloat(retryAfter)
-  if (!Number.isNaN(seconds)) return now + Math.ceil(seconds * 1000)
+  if (!Number.isNaN(seconds)) return seconds >= 0 ? now + Math.ceil(seconds * 1000) : undefined
   const date = Date.parse(retryAfter)
   return Number.isNaN(date) || date <= now ? undefined : date
 }
