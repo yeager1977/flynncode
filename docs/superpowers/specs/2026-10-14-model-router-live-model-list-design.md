@@ -1,7 +1,7 @@
 # Model Router: Live Model-List Freshness - Design
 
 Date: 2026-10-14
-Status: Approved (pending spec review)
+Status: Approved
 
 ## Problem
 
@@ -78,10 +78,13 @@ hidden in Manage Models).
 ### 4. App: Manage Models visibility writes through (`packages/app`)
 
 - The Manage Models visibility toggle updates the client store as today
-  (picker stays instant) and writes the full hidden-list to global config as
-  `model_router.excludeModels` — the same write path the router editor and
-  provider-connect flow already use (`global.config.update`; partial patch
-  preserves other `model_router` keys and replaces the `excludeModels` list).
+  (picker stays instant) and writes the full hidden-list to global config. The
+  write sends the whole effective `model_router` object (from the current
+  server config) with `excludeModels` replaced by the hidden keys — config
+  patches swap `model_router` as a whole subtree (`mergeWholeSubtrees`), so a
+  partial `{ excludeModels }`-only patch would wipe the router settings. Same
+  write path the router editor and provider-connect flow already use
+  (`global.config.update`).
 - Writes are coalesced with a **300 ms trailing debounce** so toggling several
   models causes one instance rebuild, not one per toggle. A failed write shows
   a toast (new i18n key; English source copy in `en.ts`).
@@ -92,10 +95,13 @@ hidden in Manage Models).
   workflow) get overwritten the next time visibility changes; identical to the
   old editor-Save snapshot semantics.
 - Multi-server: the write targets the current server connection.
-- The router-editor Save stops computing its client-side snapshot: the
-  `excludeModels` field is no longer included in its payload (it displays
-  hidden models derived from server config). This closes the race where an
-  editor Save overwrote fresh Manage Models changes with a stale baseline.
+- The router-editor Save stops computing its client-side snapshot: it passes
+  the server's current `excludeModels` through verbatim (the form's copy can
+  be stale mid-edit) instead of re-deriving it from the visibility store. This
+  closes the race where an editor Save overwrote fresh Manage Models changes
+  with a stale snapshot, and unifies the two writers' semantics: the server
+  list means "explicitly hidden by the user", not "invisible by default
+  (release-stale)".
 
 ## Data flow
 
