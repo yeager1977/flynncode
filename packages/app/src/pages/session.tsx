@@ -271,7 +271,6 @@ function SessionErrorFallback(props: { error: unknown; sessionID?: string; serve
 
 function ResolvedTargetSessionRoute() {
   const params = useParams<{ serverKey: string; id: string }>()
-  const tabs = useTabs()
   const sync = useServerSync()
   const serverKey = createMemo(() => requireServerKey(params.serverKey))
   const current = createSessionLineage(
@@ -280,15 +279,6 @@ function ResolvedTargetSessionRoute() {
   )
   const directory = createMemo(() => current()?.session.directory)
   const targetDirectory = () => directory()!
-
-  createEffect(() => {
-    const session = current()
-    if (!session) return
-    tabs.addSessionTab({
-      server: serverKey(),
-      sessionId: session.root.id,
-    })
-  })
 
   return (
     // Non-keyed: closes only while the target's directory is unknown (uncached

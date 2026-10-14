@@ -7,7 +7,6 @@ import {
   openProjectDirectory,
   openSidebarByDefault,
   projectDraft,
-  sessionTabStep,
   sidebarCommands,
   sidebarDirectory,
   type SidebarCommandInput,
@@ -154,32 +153,6 @@ describe("legacyDraftTarget", () => {
   test("opens a fresh draft to deliver a prompt", () => {
     const tabs: Tab[] = [{ type: "draft", draftID: "made", server: local, directory: "/repo" }]
     expect(target("/repo", tabs, "fix it")).toEqual({ type: "new", directory: "/repo" })
-  })
-})
-
-describe("sessionTabStep", () => {
-  const tabs: Tab[] = [
-    { type: "session", server: local, sessionId: "a" },
-    { type: "draft", draftID: "d", server: local, directory: "/repo" },
-    { type: "session", server: local, sessionId: "b" },
-    { type: "session", server: remote, sessionId: "c" },
-  ]
-
-  test("switches to an open tab for the next session", () => {
-    expect(sessionTabStep(tabs, local, "a", "b")).toEqual({
-      type: "select",
-      tab: { type: "session", server: local, sessionId: "b" },
-    })
-  })
-
-  test("swaps the next session into the current tab instead of adding one", () => {
-    expect(sessionTabStep(tabs, local, "b", "z")).toEqual({ type: "replace", index: 2 })
-  })
-
-  test("adds a tab when no session tab is routed on this server", () => {
-    expect(sessionTabStep(tabs, local, undefined, "z")).toEqual({ type: "add" })
-    expect(sessionTabStep(tabs, local, "c", "z")).toEqual({ type: "add" })
-    expect(sessionTabStep(tabs, remote, "a", "c")).toEqual({ type: "select", tab: tabs[3] })
   })
 })
 

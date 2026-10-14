@@ -1,4 +1,4 @@
-import { createEffect, createMemo, on, onCleanup, onMount, Show, startTransition } from "solid-js"
+import { createEffect, createMemo, on, onCleanup, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useNavigate } from "@solidjs/router"
 import { makeEventListener } from "@solid-primitives/event-listener"
@@ -22,7 +22,6 @@ import {
   openProjectDirectory,
   openSidebarByDefault,
   projectDraft,
-  sessionTabStep,
   sidebarCommands,
   sidebarDirectory,
 } from "./layout/new-layout-sidebar"
@@ -122,20 +121,7 @@ export function ProjectSidebar() {
     routedDir: routed,
     sessionID,
     tabs: true,
-    openSession: (_, id) => {
-      const step = sessionTabStep(tabs.store, server.key, sessionID(), id)
-      if (step.type === "select") {
-        tabs.select(step.tab)
-        return
-      }
-      if (step.type === "replace") {
-        tabs.replaceTab(step.index, { type: "session", server: server.key, sessionId: id })
-        return
-      }
-      void startTransition(() => {
-        tabs.select(tabs.addSessionTab({ server: server.key, sessionId: id }))
-      })
-    },
+    openSession: (_, id) => navigate(sessionHref(server.key, id)),
     closeTabs: async (input) => {
       const found = directoryTabs(tabs.store, server.key, input.directory, sessionDirectory)
       const drafts = input.drafts ? found.drafts : []

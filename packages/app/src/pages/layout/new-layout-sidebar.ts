@@ -2,7 +2,7 @@ import { createEffect, type Accessor } from "solid-js"
 import type { CommandOption } from "@/context/command"
 import type { LayoutRoute } from "@/context/layout"
 import type { ServerConnection } from "@/context/server"
-import type { DraftTab, SessionTab, Tab } from "@/context/tabs"
+import type { DraftTab, Tab } from "@/context/tabs"
 import { pathKey } from "@/utils/path-key"
 
 // Logic behind the new layout's project sidebar, kept out of JSX so it runs
@@ -79,21 +79,6 @@ export function legacyDraftTarget(input: {
   const draft = input.prompt ? undefined : projectDraft(input.tabs, input.server, directory)
   if (draft) return { type: "select" as const, draft }
   return { type: "new" as const, directory }
-}
-
-// Stepping to another session from the sidebar's keyboard navigation: switch
-// to its tab when open, else swap it into the current session's tab so
-// cycling does not stack a tab per step.
-export function sessionTabStep(tabs: Tab[], server: ServerConnection.Key, current: string | undefined, next: string) {
-  const open = tabs.find(
-    (tab): tab is SessionTab => tab.type === "session" && tab.server === server && tab.sessionId === next,
-  )
-  if (open) return { type: "select" as const, tab: open }
-  const index = current
-    ? tabs.findIndex((tab) => tab.type === "session" && tab.server === server && tab.sessionId === current)
-    : -1
-  if (index !== -1) return { type: "replace" as const, index }
-  return { type: "add" as const }
 }
 
 // Tabs left pointing into a removed (or reset) worktree.
