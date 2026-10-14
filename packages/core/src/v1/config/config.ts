@@ -143,6 +143,18 @@ export const Info = Schema.Struct({
   subagent_depth: Schema.optional(NonNegativeInt).annotate({
     description: "Maximum subagent nesting depth. Defaults to 1, which prevents subagents from launching subagents.",
   }),
+  rate_limit: Schema.optional(
+    Schema.Struct({
+      on_limit: Schema.optional(Schema.Literals(["stop", "retry"])).annotate({
+        description:
+          "What to do when a model hits a provider usage limit: stop the session, or keep retrying (default: stop)",
+      }),
+      retry_under: Schema.optional(NonNegativeInt).annotate({
+        description:
+          "Seconds. With on_limit stop, still retry when the provider says the limit resets within this many seconds (default: 0)",
+      }),
+    }),
+  ).annotate({ description: "Behavior when a model hits a provider usage limit" }),
   username: Schema.optional(Schema.String).annotate({
     description: "Custom username to display in conversations instead of system username",
   }),

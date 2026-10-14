@@ -2042,6 +2042,10 @@ export type Config = {
   model_family?: string
   default_agent?: string
   subagent_depth?: number
+  rate_limit?: {
+    on_limit?: "stop" | "retry"
+    retry_under?: number
+  }
   username?: string
   mode?: {
     build?: AgentConfig
