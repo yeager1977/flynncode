@@ -2414,7 +2414,7 @@ export type Config = {
     /**
      * Fraction of the context window at which compaction proactively runs instead of waiting for a hard overflow, between 0 and 1 (default: 0.9). Values outside (0,1) disable proactive compaction
      */
-    threshold?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    threshold?: number
   }
   experimental?: {
     disable_paste_summary?: boolean
