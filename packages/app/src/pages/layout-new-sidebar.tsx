@@ -15,6 +15,7 @@ import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { tabKey, useTabs } from "@/context/tabs"
 import { sessionHref } from "@/utils/session-route"
+import { sortedRootSessions } from "./layout/helpers"
 import { createSidebarController } from "./layout/sidebar-controller"
 import { SessionSidebar } from "./layout/session-sidebar"
 import {
@@ -24,6 +25,7 @@ import {
   projectDraft,
   sidebarCommands,
   sidebarDirectory,
+  visibleSessionOrder,
 } from "./layout/new-layout-sidebar"
 
 const RAIL_WIDTH = 64
@@ -192,6 +194,29 @@ export function ProjectSidebar() {
       session: sidebar.navigateSessionByOffset,
       unseen: sidebar.navigateSessionByUnseen,
     }),
+  )
+
+  // Mod+1-9 open the Nth session as listed: same per-project source and order
+  // as the rendered list, skipping collapsed projects.
+  const visible = createMemo(() =>
+    visibleSessionOrder(
+      layout.projects.list().map((project) => ({
+        expanded: project.expanded,
+        sessions: sortedRootSessions(serverSync().child(project.worktree)[0], sidebar.sortNow()),
+      })),
+    ),
+  )
+  command.register("sidebar-session-index", () =>
+    visible()
+      .slice(0, 9)
+      .map((session, index) => ({
+        id: `session.index.${index + 1}`,
+        category: language.t("command.category.session"),
+        title: session.title,
+        keybind: `mod+${index + 1}`,
+        hidden: true,
+        onSelect: () => navigate(sessionHref(server.key, session.id)),
+      })),
   )
 
   onMount(() => {
