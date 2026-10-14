@@ -159,9 +159,14 @@ export function ActivityInboxPanel() {
 
   const liveDispatchStatus = (sessionID: string, stored: ActivityStatus): ActivityStatus => {
     const live = serverSync().session.data.session_status[sessionID]
-    if (!live) return stored
     const waiting = waitingFor(sessionID)
-    return inboxRowStatus("dispatch", stored, { type: live.type, blocked: waiting }, waiting, limitedFor(sessionID))
+    return inboxRowStatus(
+      "dispatch",
+      stored,
+      live && { type: live.type, blocked: waiting },
+      waiting,
+      limitedFor(sessionID),
+    )
   }
 
   // Plain sessions have no stored dispatch status; without live work they
@@ -169,8 +174,14 @@ export function ActivityInboxPanel() {
   const liveSessionStatus = (sessionID: string): ActivityStatus => {
     const live = serverSync().session.data.session_status[sessionID]
     const waiting = waitingFor(sessionID)
-    if (!live) return waiting ? "needs-input" : "done"
-    return inboxRowStatus("session", "done", { type: live.type, blocked: waiting }, waiting, limitedFor(sessionID))
+    if (!live && waiting) return "needs-input"
+    return inboxRowStatus(
+      "session",
+      "done",
+      live && { type: live.type, blocked: waiting },
+      waiting,
+      limitedFor(sessionID),
+    )
   }
 
   const scheduleOf = (routine: StoredRoutine) =>

@@ -7,6 +7,7 @@ import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useServerSync } from "@/context/server-sync"
 import { Persist, persisted } from "@/utils/persist"
+import { endedOnUsageLimit } from "@/utils/usage-limit"
 import { inboxStatus } from "./activity-status"
 import {
   markDispatchRead,
@@ -36,11 +37,12 @@ export const { use: useDispatchActivity, provider: DispatchActivityProvider } = 
 
     const liveStatus = (task: DispatchTask): DispatchStatus => {
       const status = serverSync().session.data.session_status[task.sessionID]
-      if (!status) return task.status
+      const limited = endedOnUsageLimit(serverSync().session.data.message[task.sessionID])
+      if (!status) return inboxStatus(task.status, undefined, limited)
       const waiting =
         (serverSync().session.data.question[task.sessionID]?.length ?? 0) > 0 ||
         (serverSync().session.data.permission[task.sessionID]?.length ?? 0) > 0
-      return inboxStatus(task.status, { type: status.type, blocked: waiting })
+      return inboxStatus(task.status, { type: status.type, blocked: waiting }, limited)
     }
 
     const statusKey = (status: DispatchStatus) => {

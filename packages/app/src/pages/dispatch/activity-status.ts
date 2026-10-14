@@ -13,9 +13,15 @@ export function activityStatus(input: { type?: string; blocked?: boolean }): Tas
   return "done"
 }
 
-export function inboxStatus(stored: TaskStatus, live?: { type?: string; blocked?: boolean }) {
-  if (!live) return stored
-  if (live.type === "idle") return idleStatus(stored, live.blocked === true)
+// `limited` means the session's newest turn ended on a usage limit. Dispatch
+// tasks persist only TaskStatus, so a stopped-on-limit task is recorded as
+// failed rather than done. A missing live entry counts as idle for this check.
+export function inboxStatus(stored: TaskStatus, live?: { type?: string; blocked?: boolean }, limited = false) {
+  if (!live) return limited ? "failed" : stored
+  if (live.type === "idle") {
+    if (limited && live.blocked !== true) return "failed"
+    return idleStatus(stored, live.blocked === true)
+  }
   return activityStatus(live)
 }
 
@@ -40,7 +46,7 @@ export function inboxRowStatus(
   limited = false,
 ): ActivityStatus {
   void kind
-  if (!live) return stored
+  if (!live) return limited && !waiting ? "usage-limit" : stored
   if (live.type === "idle" && limited && !waiting) return "usage-limit"
   if (live.type === "idle") return idleStatus(stored, waiting)
   return activityStatus(live)
