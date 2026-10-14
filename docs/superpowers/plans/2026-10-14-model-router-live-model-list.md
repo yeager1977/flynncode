@@ -445,7 +445,7 @@ cd packages/flynncode && bun typecheck
 
 ```bash
 git add packages/flynncode/src/plugin/index.ts packages/flynncode/test/plugin/trigger.test.ts
-git commit -m "fix(opencode): deliver global events to plugin plugin hooks
+git commit -m "fix(opencode): deliver global events to plugin hooks
 
 Location-less v2 events (models.dev refresh, integration connections)
 never reached instance plugin event hooks because the loader filtered on
