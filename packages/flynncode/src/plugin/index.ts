@@ -281,7 +281,10 @@ const layer = Layer.effect(
         }
 
         const unsubscribe = yield* events.listen((event) => {
-          if (event.location?.directory !== ctx.directory) return Effect.void
+          // Location-less events are global (models.dev refresh, integration
+          // connections); instance plugins still need them. Events scoped to
+          // another directory stay filtered.
+          if (event.location?.directory !== undefined && event.location.directory !== ctx.directory) return Effect.void
           return Effect.sync(() => {
             for (const hook of hooks) {
               void hook["event"]?.({ event: { id: event.id, type: event.type, properties: event.data } as any })

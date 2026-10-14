@@ -18,9 +18,15 @@ import { ProviderV2 } from "@flynncode/core/provider"
 import { ModelV2 } from "@flynncode/core/model"
 import { AppNodeBuilder } from "@flynncode/core/effect/app-node-builder"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
+import { ModelsDev } from "@flynncode/core/models-dev"
+import { EventV2 } from "@flynncode/core/event"
+import { Location } from "@flynncode/core/location"
+import { Project } from "@flynncode/core/project"
+import { AbsolutePath } from "@flynncode/core/schema"
+import { pollWithTimeout } from "../lib/effect"
 
 const it = testEffect(
-  AppNodeBuilder.build(LayerNode.group([Plugin.node, CrossSpawnSpawner.node]), [
+  AppNodeBuilder.build(LayerNode.group([Plugin.node, CrossSpawnSpawner.node, EventV2.node]), [
     [Auth.node, AuthTest.empty],
     [Account.node, AccountTest.empty],
     [Npm.node, NpmTest.noop],
@@ -104,5 +110,91 @@ describe("plugin.trigger", () => {
         expect(yield* triggerSystemTransform()).toEqual(["async"])
       }),
     ),
+  )
+})
+
+describe("plugin event delivery", () => {
+  const recorded = (test: { directory: string }, name: string) => {
+    const file = path.join(test.directory, name)
+    const read = Effect.gen(function* () {
+      const text = yield* Effect.promise(() =>
+        Bun.file(file)
+          .text()
+          .catch(() => ""),
+      )
+      return text
+    })
+    return { read, file }
+  }
+
+  const source = (eventsFile: string) =>
+    [
+      "export default async () => ({",
+      `  event: async ({ event }) => {`,
+      `    await Bun.write(${JSON.stringify(eventsFile)}, (event.type + " " + String(event.location?.directory ?? "global") + "\\n"), { append: true })`,
+      `  },`,
+      `})`,
+      "",
+    ].join("\n")
+
+  // The listener registers during the Plugin.Service state build, which is
+  // lazy per directory — force it with a harmless trigger before publishing.
+  const loadHooks = Effect.gen(function* () {
+    const pluginSvc = yield* Plugin.Service
+    yield* pluginSvc.trigger("experimental.chat.system.transform", {}, { system: [] as string[] })
+  })
+
+  it.instance("location-less v2 events reach plugin event hooks", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const { read, file } = recorded(test, "events-global.txt")
+      // Use the raw EventV2.Service (not EventV2Bridge) so the publish has no
+      // ambient InstanceRef location attached — EventV2Bridge.publish fills in
+      // the current instance's directory when one is in scope, which this
+      // test (running inside it.instance) always has, so it could never
+      // produce a genuinely location-less event. ModelsDev itself publishes
+      // through the raw EventV2.Service for exactly this reason.
+      const events = yield* EventV2.Service
+      yield* withProject(
+        source(file),
+        Effect.gen(function* () {
+          yield* loadHooks
+          yield* events.publish(ModelsDev.Event.Refreshed, {})
+        }),
+      )
+      yield* pollWithTimeout(
+        Effect.flatMap(read, (text) =>
+          text.includes("models-dev.refreshed") ? Effect.succeed(true) : Effect.succeed(undefined),
+        ),
+        "plugin event hook never saw the location-less refresh event",
+      )
+    }),
+  )
+
+  it.instance("events scoped to another directory stay filtered", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const { read, file } = recorded(test, "events-other.txt")
+      const events = yield* EventV2.Service
+      yield* withProject(
+        source(file),
+        Effect.gen(function* () {
+          yield* loadHooks
+          yield* events.publish(
+            ModelsDev.Event.Refreshed,
+            {},
+            {
+              location: new Location.Info({
+                directory: AbsolutePath.make("/other-directory"),
+                project: { id: Project.ID.make("other-project"), directory: AbsolutePath.make("/other-directory") },
+              }),
+            },
+          )
+        }),
+      )
+      yield* Effect.sleep("300 millis")
+      const text = yield* read
+      expect(text).not.toContain("models-dev.refreshed")
+    }),
   )
 })
