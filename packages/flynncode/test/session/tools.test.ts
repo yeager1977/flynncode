@@ -63,6 +63,7 @@ const fakePlugin = Plugin.Service.of({
 
 const fakePermission = Permission.Service.of({
   ask: () => Effect.void,
+  wouldAsk: () => Effect.succeed(true),
   reply: () => Effect.void,
   list: () => Effect.succeed([]),
 } satisfies Permission.Interface)
@@ -404,7 +405,12 @@ describe("resolveEffectiveArgs", () => {
 // Auto-approval ("auto") environments: a recording permission service, the
 // auto approval policy, and an optional AutoReviewer stub with a fixed
 // verdict. When `verdict` is undefined no reviewer layer is provided at all.
-function autoLayer(verdict: "allow" | "deny" | "defer" | undefined, reviewed: string[] = []) {
+// `approved` stands in for rules the user granted with "Always allow".
+function autoLayer(
+  verdict: "allow" | "deny" | "defer" | undefined,
+  reviewed: string[] = [],
+  approved: PermissionV1.Ruleset = [],
+) {
   const asks: PermissionV1.AskInput[] = []
   return {
     asks,
@@ -420,6 +426,8 @@ function autoLayer(verdict: "allow" | "deny" | "defer" | undefined, reviewed: st
               Effect.sync(() => {
                 asks.push(input)
               }),
+            wouldAsk: (input) =>
+              Effect.succeed(Permission.wouldAsk(input.permission, input.patterns, input.ruleset, approved)),
             reply: () => Effect.void,
             list: () => Effect.succeed([]),
           } satisfies Permission.Interface),
@@ -538,6 +546,18 @@ allowedEnv.it.effect("auto approval skips the LLM reviewer for a rule-allowed ca
     expect(reviewCalls).toEqual([])
     expect(allowedEnv.asks.length).toBe(1)
     expect(allowedEnv.asks[0]?.reviewer).toBeUndefined()
+  }),
+)
+
+// A pattern the user approved with "Always allow" never reaches the prompt either.
+const approvedCalls: string[] = []
+const approvedEnv = autoLayer("deny", approvedCalls, [{ permission: "bash", pattern: "git status", action: "allow" }])
+approvedEnv.it.effect("auto approval skips the LLM reviewer for an always-approved pattern", () =>
+  Effect.gen(function* () {
+    const exit = yield* runAsker()
+    expect(Exit.isSuccess(exit)).toBe(true)
+    expect(approvedCalls).toEqual([])
+    expect(approvedEnv.asks[0]?.reviewer).toBeUndefined()
   }),
 )
 

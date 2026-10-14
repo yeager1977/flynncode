@@ -388,6 +388,10 @@ for (const approval of ["manual", "auto", "accept-edits"] as const) {
       // A config-allowed list never asks, so the plugin deny hook is skipped and it succeeds.
       yield* permission.ask({ ...request([{ permission: "list", pattern: "*", action: "allow" }]), permission: "list", approval })
       expect(yield* permission.list()).toEqual([])
+      const marks = yield* Effect.promise(() => Bun.file(path.join(dir, "marks.jsonl")).text())
+      const asked = marks.trim().split("\n").map((line) => JSON.parse(line).input.permission)
+      expect(asked).not.toContain("list")
+      expect(asked).toHaveLength(3)
     })),
   )
 }
