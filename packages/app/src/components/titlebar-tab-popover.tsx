@@ -1,5 +1,5 @@
 import { HoverCard as Kobalte } from "@kobalte/core/hover-card"
-import { createSignal, Show, type JSXElement } from "solid-js"
+import { createEffect, createSignal, onCleanup, Show, type JSXElement } from "solid-js"
 import "./titlebar-tab-popover.css"
 
 // Initial hover delay before the preview appears, per design.
@@ -11,6 +11,9 @@ const CLOSE_DELAY = 0
 // tabs doesn't re-wait the full delay each time.
 const SKIP_WINDOW = 500
 let lastClosedAt = 0
+// Only one tab preview is accepted at a time: opening a new one closes the previous. Hovering the
+// gap between neighbouring tabs keeps the strip's shared preview state warm instead of resetting it.
+let activePreview: (() => void) | undefined
 
 export interface TabPreviewData {
   projectName?: string
@@ -31,13 +34,33 @@ export function TabPreviewPopover(props: {
   // "cold" preview animates. Mirrors how browsers reuse one tab tooltip.
   const [instant, setInstant] = createSignal(false)
 
-  const warm = () => Date.now() - lastClosedAt < SKIP_WINDOW
+  const close = () => props.onOpenChange(false)
+
+  // Observe accepted, controlled state, including drag/menu suppression in the tab strip.
+  createEffect(() => {
+    if (props.open) {
+      if (activePreview !== close) activePreview?.()
+      activePreview = close
+
+      return
+    }
+
+    if (activePreview !== close) return
+    activePreview = undefined
+    lastClosedAt = Date.now()
+  })
+  onCleanup(() => {
+    if (activePreview !== close) return
+    activePreview = undefined
+    lastClosedAt = Date.now()
+  })
+
+  const warm = () => !!activePreview || Date.now() - lastClosedAt < SKIP_WINDOW
   // Kobalte reads openDelay lazily when the pointer enters the trigger, so this
   // resolves the skip window per-hover.
   const resolveOpenDelay = () => (warm() ? 0 : OPEN_DELAY)
   const handleOpenChange = (open: boolean) => {
     if (open) setInstant(warm())
-    else lastClosedAt = Date.now()
     props.onOpenChange(open)
   }
 
