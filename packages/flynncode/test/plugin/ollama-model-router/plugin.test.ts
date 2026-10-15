@@ -13,15 +13,70 @@ const fakeInput = {
 }
 
 describe("plugin", () => {
-  test("registers config hook and both tools", async () => {
+  test("active router exposes rank_models and route_task, never auth_status", async () => {
     const hooks = await plugin.server(fakeInput, {
-      autoRoute: false,
       providers: ["ollama-cloud"],
       models: { "ollama-cloud/a": { price: 1, capability: 5, speed: 5 } },
     })
     expect(typeof hooks.config).toBe("function")
+    await hooks.config?.({ provider: {}, agent: {} } as any)
     expect(hooks.tool?.rank_models).toBeDefined()
     expect(hooks.tool?.route_task).toBeDefined()
+    expect(hooks.tool?.auth_status).toBeUndefined()
+  })
+
+  test("inactive router (no config, no options) exposes no tools", async () => {
+    const hooks = await plugin.server(fakeInput)
+    await hooks.config?.({ provider: {}, agent: {} } as any)
+    expect(hooks.tool?.rank_models).toBeUndefined()
+    expect(hooks.tool?.route_task).toBeUndefined()
+  })
+
+  test("disabled routing exposes no tools", async () => {
+    const hooks = await plugin.server(fakeInput, {
+      enabled: false,
+      providers: ["ollama-cloud"],
+      models: { "ollama-cloud/a": { price: 1, capability: 5, speed: 5 } },
+    })
+    await hooks.config?.({ provider: { "ollama-cloud": { models: { a: {} } } }, agent: {} } as any)
+    expect(hooks.tool?.rank_models).toBeUndefined()
+    expect(hooks.tool?.route_task).toBeUndefined()
+  })
+
+  test("small_model returns the lookup winner from the connected catalog", async () => {
+    const fast = { id: "fast", providerID: "ollama-cloud", name: "Fast", api: { url: "", npm: "" } } as any
+    const slow = { id: "slow", providerID: "ollama-cloud", name: "Slow", api: { url: "", npm: "" } } as any
+    const hooks = await plugin.server(
+      { ...fakeInput, client: { provider: { list: async () => ({ data: { all: [{ id: "ollama-cloud", name: "Ollama Cloud", models: { fast, slow } }], connected: ["ollama-cloud"] } }) } } } as any,
+      {
+        providers: ["ollama-cloud"],
+        models: {
+          "ollama-cloud/fast": { price: 1, capability: 5, speed: 9 },
+          "ollama-cloud/slow": { price: 1, capability: 9, speed: 1 },
+        },
+      } as any,
+    )
+    await hooks.config?.({ provider: {}, agent: {} } as any)
+    const output: { model?: unknown } = {}
+    await (hooks as any)["experimental.provider.small_model"]?.(
+      { provider: { id: "ollama-cloud" } },
+      output,
+    )
+    expect(output.model).toBe(fast)
+  })
+
+  test("small_model hook stays inert for providers outside the router pool", async () => {
+    const hooks = await plugin.server(fakeInput, {
+      providers: ["ollama-cloud"],
+      models: { "ollama-cloud/fast": { price: 1, capability: 5, speed: 9 } },
+    })
+    await hooks.config?.({ provider: { "ollama-cloud": { models: { fast: {} } } }, agent: {} } as any)
+    const output: { model?: unknown } = {}
+    await (hooks as any)["experimental.provider.small_model"]?.(
+      { provider: { id: "github-copilot" } },
+      output,
+    )
+    expect(output.model).toBeUndefined()
   })
 
   test("config hook assigns agent models when autoRoute is true", async () => {
@@ -101,14 +156,14 @@ describe("plugin", () => {
     expect(cfg.agent.build.model).toBe("ollama-cloud/visible")
   })
 
-  test("invalid options disable routing but keep tools", async () => {
+  test("invalid options disable routing and hide the tools", async () => {
     const hooks = await plugin.server(fakeInput, {
       models: { bad: { price: 99, capability: 1, speed: 1 } },
     })
     const cfg: any = { provider: {}, agent: {} }
     await hooks.config?.(cfg)
     expect(cfg.agent).toEqual({})
-    expect(hooks.tool?.rank_models).toBeDefined()
+    expect(hooks.tool?.rank_models).toBeUndefined()
   })
 
   test("options come from cfg.model_router when present", async () => {
@@ -401,12 +456,11 @@ describe("plugin", () => {
     expect(text.filter((line) => line.includes("shadows"))).toHaveLength(1)
   })
 
-  test("rank_models reports disabled when enabled is false", async () => {
+  test("rank_models is not exposed when enabled is false", async () => {
     const hooks = await plugin.server(fakeInput)
     const cfg: any = { model_router: { enabled: false } }
     await hooks.config?.(cfg)
-    const output = await hooks.tool!.rank_models.execute({ task: "coding" } as any, { sessionID: "s" } as any)
-    expect(String(output)).toBe("Model router disabled.")
+    expect(hooks.tool?.rank_models).toBeUndefined()
   })
 
   const familyCfg = (model_family: unknown): any => ({

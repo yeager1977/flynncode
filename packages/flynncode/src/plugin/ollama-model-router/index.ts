@@ -1,14 +1,16 @@
 import type { Hooks, PluginInput, PluginOptions } from "@flynncode/plugin"
+import type { Model } from "@flynncode/sdk/v2"
 import { assignAgents, resolveTaskModel } from "./assign"
 import {
   catalogStale,
+  collectCandidates,
   ROUTER_MODEL_ID,
   ROUTER_PROVIDER_ID,
   type CatalogLike,
 } from "./candidates"
 import { MODEL_FAMILIES, type ModelFamily } from "./provider-family"
 import { parseOptions, parseTaskVariant, ROUTER_VARIANTS, VALUE_TASK_WEIGHTS } from "./scorecard"
-import { createTools } from "./tools"
+import { createTools, rankFor } from "./tools"
 import type { RouterOptions, TaskName } from "./types"
 
 const PREFIX = "[ollama-model-router]"
@@ -152,52 +154,84 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
     return Boolean(block.npm || block.api || block.options?.baseURL)
   }
 
+  const allTools = createTools({
+    client: input.client,
+    directory: input.directory,
+    getOptions,
+    getOptionsError,
+    getConfig: () => currentConfig,
+    getCatalog,
+    loadCatalog,
+    getAssignments: () => assignments,
+  })
+
+  // The config hook owns the LLM-facing tool set: an inactive router (no
+  // model_router config, no options tuple, parse failure, or enabled=false)
+  // registers nothing, so sessions that never asked for routing don't pay
+  // ~300-350 tokens per provider turn for unused definitions. This hook runs
+  // before the tool registry snapshots plugin tools. auth_status is
+  // diagnostics for this controller, not the model.
+  const exposedTools: NonNullable<Hooks["tool"]> = {}
+  const syncToolExposure = () => {
+    for (const id of Object.keys(exposedTools)) delete exposedTools[id]
+    if (!currentOptions || currentOptions.enabled === false) return
+    for (const [id, def] of Object.entries(allTools ?? {})) {
+      if (id === "auth_status") continue
+      exposedTools[id] = def
+    }
+  }
+
+  const applyConfig = async (cfg: any) => {
+    currentConfig = cfg
+    const { raw, source, modelFamily } = resolveOptions(cfg)
+    if (raw === undefined) {
+      // Built-in plugin with no `model_router` config and no options tuple:
+      // stay silently inert so unconfigured users see no warnings.
+      currentOptions = undefined
+      optionsError = undefined
+      return
+    }
+    const parsed = parseOptions(raw, modelFamily)
+    if (!parsed.ok) {
+      currentOptions = undefined
+      optionsError = parsed.errors
+      console.warn(`${PREFIX} invalid options (${source}); routing disabled:\n- ${parsed.errors.join("\n- ")}`)
+      return
+    }
+    currentOptions = parsed.options
+    optionsError = undefined
+    if (!parsed.options.enabled) {
+      assignments = {}
+      return
+    }
+
+    warnShadowedRouter(cfg)
+    injectRouterProvider(cfg)
+
+    // Assignment mutates agent models and is legacy-only. Normal activation
+    // is selecting Model Router, resolved at prompt time.
+    const result = assignAgents(cfg, parsed.options)
+    assignments = result.assignments
+    for (const warning of result.warnings) console.warn(`${PREFIX} ${warning}`)
+    if (Object.keys(result.assignments).length > 0) {
+      console.info(
+        `${PREFIX} agent routing: ` +
+          Object.entries(result.assignments)
+            .map(([agent, model]) => `${agent}→${model}`)
+            .join(", "),
+      )
+    }
+  }
+
   return {
     config: async (cfg) => {
       try {
-        currentConfig = cfg
-        const { raw, source, modelFamily } = resolveOptions(cfg)
-        if (raw === undefined) {
-          // Built-in plugin with no `model_router` config and no options tuple:
-          // stay silently inert so unconfigured users see no warnings.
-          currentOptions = undefined
-          optionsError = undefined
-          return
-        }
-        const parsed = parseOptions(raw, modelFamily)
-        if (!parsed.ok) {
-          currentOptions = undefined
-          optionsError = parsed.errors
-          console.warn(`${PREFIX} invalid options (${source}); routing disabled:\n- ${parsed.errors.join("\n- ")}`)
-          return
-        }
-        currentOptions = parsed.options
-        optionsError = undefined
-        if (!parsed.options.enabled) {
-          assignments = {}
-          return
-        }
-
-        warnShadowedRouter(cfg)
-        injectRouterProvider(cfg)
-
-        // Assignment mutates agent models and is legacy-only. Normal activation
-        // is selecting Model Router, resolved at prompt time.
-        const result = assignAgents(cfg, parsed.options)
-        assignments = result.assignments
-        for (const warning of result.warnings) console.warn(`${PREFIX} ${warning}`)
-        if (Object.keys(result.assignments).length > 0) {
-          console.info(
-            `${PREFIX} agent routing: ` +
-              Object.entries(result.assignments)
-                .map(([agent, model]) => `${agent}→${model}`)
-                .join(", "),
-          )
-        }
+        await applyConfig(cfg)
       } catch (error) {
         console.error(`${PREFIX} config hook failed; routing disabled`, error)
         currentOptions = undefined
       }
+      syncToolExposure()
     },
     "chat.message": async (event, output) => {
       // Another plugin may have already replaced the sentinel; never touch a
@@ -238,16 +272,23 @@ export const OllamaModelRouterPlugin = async (input: PluginInput, options?: Plug
       const type = (event as { type?: string }).type
       if (type === "models-dev.refreshed" || type === "integration.connection.updated") catalogDirty = true
     },
-    tool: createTools({
-      client: input.client,
-      directory: input.directory,
-      getOptions,
-      getOptionsError,
-      getConfig: () => currentConfig,
-      getCatalog,
-      loadCatalog,
-      getAssignments: () => assignments,
-    }),
+    tool: exposedTools,
+    // Auxiliary calls (title, memory, auto-review) otherwise fall back to the
+    // routed flagship on ollama-family providers. Answer with the fast-tier
+    // lookup winner for providers the router manages; anything else keeps its
+    // own small-model resolution.
+    "experimental.provider.small_model": async (incoming, output) => {
+      if (!currentOptions || currentOptions.enabled === false) return
+      const providerID = incoming.provider?.id
+      if (!providerID) return
+      await loadCatalog()
+      const catalog = getCatalog()
+      const candidates = collectCandidates(currentConfig, currentOptions, catalog)
+      const winner = rankFor(currentConfig, candidates, currentOptions, "lookup", catalog).ranked[0]
+      if (!winner || winner.providerID !== providerID) return
+      const entry = catalog?.[winner.providerID]?.models?.[winner.modelID] as Model | undefined
+      output.model = entry
+    },
   }
 
   function warnShadowedRouter(cfg: any) {
