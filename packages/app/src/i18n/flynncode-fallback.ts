@@ -190,6 +190,8 @@ const keys = [
   "session.taskSuggestion.confirm.action",
   "session.taskSuggestion.confirm.description",
   "session.taskSuggestion.confirm.title",
+  "session.taskSuggestion.noWorktree.description",
+  "session.taskSuggestion.noWorktree.title",
   "session.worktree.handoffLocal",
   "session.worktree.handoffNoTab",
   "session.worktree.menu",

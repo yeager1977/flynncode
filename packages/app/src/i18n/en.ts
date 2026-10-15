@@ -850,6 +850,8 @@ export const dict = {
   "session.taskSuggestion.confirm.title": "Start task in a new worktree?",
   "session.taskSuggestion.confirm.description": "Creates a new git worktree and opens a session there for: {{title}}",
   "session.taskSuggestion.confirm.action": "Start task",
+  "session.taskSuggestion.noWorktree.title": "Can't start a task here",
+  "session.taskSuggestion.noWorktree.description": "Task chips need a git worktree. Open a project inside a git repository to start this in its own session.",
   "session.review.addressComments": "Address comments",
   "session.review.addressCommentsDisabled": "Add a line comment before addressing comments",
   "session.review.followUp.turn": "Address these review comments on the last turn.",

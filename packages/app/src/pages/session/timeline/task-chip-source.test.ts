@@ -41,4 +41,15 @@ describe("session task chip wiring", () => {
     expect(timelineSource).toContain("{chipRow().title}")
     expect(timelineSource).not.toMatch(/data-slot="session-task-suggestion"[\s\S]{0,400}>(?![^{])\s*[A-Z][a-z]+ [a-z]+/)
   })
+
+  test("settled body text hides the envelope the chip represents", () => {
+    expect(rowsSource).toContain("hideTrailingSuggestion")
+    expect(timelineSource).toContain("hideTrailingSuggestion")
+    expect(timelineSource).toContain("TaskSuggestion.strip")
+  })
+
+  test("missing worktree shows a toast instead of failing silently", () => {
+    expect(timelineSource).toContain("session.taskSuggestion.noWorktree.title")
+    expect(timelineSource).toContain("session.taskSuggestion.noWorktree.description")
+  })
 })

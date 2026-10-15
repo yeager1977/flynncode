@@ -2426,3 +2426,16 @@ it.effect("merges hooks.json files with inline hooks tables across layers", () =
     expect((cfg.hooks?.PreToolUse ?? []).map((group) => group.matcher).sort()).toEqual(["f", "g", "i"])
   }),
 )
+
+it.live("updateGlobal refreshes the running instance config", () =>
+  withConfigTree(
+    {},
+    Effect.gen(function* () {
+      const before = yield* Config.use.get()
+      expect((before.permission as { sandbox?: unknown } | undefined)?.sandbox).toBeUndefined()
+      yield* Config.use.updateGlobal({ permission: { sandbox: "full-access" } })
+      const after = yield* Config.use.get()
+      expect((after.permission as { sandbox?: unknown } | undefined)?.sandbox).toBe("full-access")
+    }),
+  ),
+)
