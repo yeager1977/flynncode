@@ -84,7 +84,7 @@ import { scheduleConnectedMeasure } from "./measure"
 import { observeElementOffsetReconnectAware } from "./observe-element-offset"
 import { UsageLimitCard } from "./usage-limit-card"
 import { createTimelineProjection } from "./projection"
-import { MessageComment, SummaryDiff, TimelineRow, TimelineRowMap } from "./rows"
+import { MessageComment, SummaryDiff, TaskSuggestion, TimelineRow, TimelineRowMap } from "./rows"
 import { filterVirtualIndexes } from "./virtual-items"
 
 const emptyMessages: MessageType[] = []
@@ -1138,7 +1138,14 @@ export function MessageTimeline(props: {
     const part = createMemo(() => {
       const group = row().group
       if (group.type !== "part") return
-      return getMsgPart(group.ref.messageID, group.ref.partID)
+      const item = getMsgPart(group.ref.messageID, group.ref.partID)
+      if (!item) return
+      // The chip row already represents the suggestion; strip the raw
+      // envelope from settled body text so it does not render twice.
+      if (row().hideTrailingSuggestion && item.type === "text" && item.text) {
+        return { ...item, text: TaskSuggestion.strip(item.text) }
+      }
+      return item
     })
     const defaultOpen = createMemo(() => {
       const item = part()
