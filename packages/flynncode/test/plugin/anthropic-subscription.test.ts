@@ -3,6 +3,7 @@ import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import {
   AnthropicSubscriptionPlugin,
+  fetchAnthropicUsage,
   fetchSubscriptionModelIDs,
   filterSubscriptionModels,
   oauthState,
@@ -93,6 +94,34 @@ describe("subscription model discovery", () => {
     const badShape = (async () =>
       new Response(JSON.stringify({ nope: true }), { status: 200 })) as unknown as typeof fetch
     expect(await fetchSubscriptionModelIDs({ fetchImpl: badShape, token: "t" })).toBeUndefined()
+  })
+
+  it("maps usage buckets to windows and ignores internal codename buckets", async () => {
+    const fetchImpl = (async () =>
+      new Response(
+        JSON.stringify({
+          five_hour: { utilization: 42.5, resets_at: "2026-10-15T05:00:00+00:00" },
+          seven_day: { utilization: 10, resets_at: null },
+          seven_day_sonnet: null,
+          iguana_necktie: { utilization: 87, resets_at: "2026-11-05T07:59:00+00:00" },
+        }),
+        { status: 200 },
+      )) as unknown as typeof fetch
+    const usage = await fetchAnthropicUsage({ fetchImpl, token: "t", apiBaseUrl: "https://example.test" })
+    expect(usage).toEqual({
+      windows: [
+        { id: "session", percent: 42.5, resetsAt: Date.parse("2026-10-15T05:00:00+00:00") },
+        { id: "weekly", percent: 10 },
+      ],
+    })
+  })
+
+  it("returns undefined for usage when the endpoint fails or has no windows", async () => {
+    const denied = (async () => new Response("denied", { status: 401 })) as unknown as typeof fetch
+    expect(await fetchAnthropicUsage({ fetchImpl: denied, token: "t" })).toBeUndefined()
+    const empty = (async () =>
+      new Response(JSON.stringify({ seven_day: null }), { status: 200 })) as unknown as typeof fetch
+    expect(await fetchAnthropicUsage({ fetchImpl: empty, token: "t" })).toBeUndefined()
   })
 })
 

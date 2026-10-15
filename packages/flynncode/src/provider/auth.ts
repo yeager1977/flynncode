@@ -65,6 +65,19 @@ export const CallbackInput = Schema.Struct({
 })
 export type CallbackInput = Schema.Schema.Type<typeof CallbackInput>
 
+export class UsageWindow extends Schema.Class<UsageWindow>("ProviderAuthUsageWindow")({
+  id: Schema.String,
+  percent: Schema.Finite.annotate({ description: "Utilization from 0 to 100" }),
+  resetsAt: optional(Schema.Finite).annotate({ description: "Epoch milliseconds when the window resets" }),
+}) {}
+
+export class Usage extends Schema.Class<Usage>("ProviderAuthUsage")({
+  windows: Schema.Array(UsageWindow),
+}) {}
+
+export const UsageResult = Schema.Record(Schema.String, Usage)
+export type UsageResult = typeof UsageResult.Type
+
 export class OauthMissing extends Schema.TaggedErrorClass<OauthMissing>()("ProviderAuthOauthMissing", {
   providerID: ProviderV2.ID,
 }) {}
@@ -95,11 +108,13 @@ export interface Interface {
     } & AuthorizeInput,
   ) => Effect.Effect<Authorization | undefined, Error>
   readonly callback: (input: { providerID: ProviderV2.ID } & CallbackInput) => Effect.Effect<void, Error>
+  readonly usage: () => Effect.Effect<UsageResult>
 }
 
 interface State {
   hooks: Record<ProviderV2.ID, Hook>
   pending: Map<ProviderV2.ID, AuthOAuthResult>
+  usageHooks: Array<{ providerID: ProviderV2.ID; usage: NonNullable<Hook["usage"]> }>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/ProviderAuth") {}
@@ -114,6 +129,19 @@ const layer: Layer.Layer<Service, never, Auth.Service | Plugin.Service> = Layer.
     const state = yield* InstanceState.make<State>(
       Effect.fn("ProviderAuth.state")(function* () {
         const plugins = yield* plugin.list()
+        // Usage resolution walks every plugin hook instead of the deduped
+        // `hooks` map: an external auth plugin (e.g. a third-party Claude
+        // auth plugin) can shadow a built-in one in `hooks` while defining
+        // no `usage` of its own. First hook defining `usage` wins, which
+        // keeps built-in hooks authoritative since they load first.
+        const usageHooks: State["usageHooks"] = []
+        for (const item of plugins) {
+          const authHook = item.auth
+          if (!authHook?.provider || !authHook.usage) continue
+          const providerID = ProviderV2.ID.make(authHook.provider)
+          if (usageHooks.some((entry) => entry.providerID === providerID)) continue
+          usageHooks.push({ providerID, usage: authHook.usage })
+        }
         return {
           hooks: Record.fromEntries(
             Arr.filterMap(plugins, (x) =>
@@ -123,6 +151,7 @@ const layer: Layer.Layer<Service, never, Auth.Service | Plugin.Service> = Layer.
             ),
           ),
           pending: new Map<ProviderV2.ID, AuthOAuthResult>(),
+          usageHooks,
         }
       }),
     )
@@ -220,7 +249,59 @@ const layer: Layer.Layer<Service, never, Auth.Service | Plugin.Service> = Layer.
       }
     })
 
-    return Service.of({ methods, authorize, callback })
+    // Usage snapshots are best-effort display data: cache briefly so the
+    // titlebar poll doesn't hammer provider usage endpoints, and never let a
+    // plugin failure fail the whole aggregation.
+    const USAGE_CACHE_TTL_MS = 60_000
+    const usageCache = new Map<string, { usage: Usage; expires: number }>()
+
+    const usage = Effect.fn("ProviderAuth.usage")(function* () {
+      const { usageHooks } = yield* InstanceState.get(state)
+      const entries = yield* Effect.forEach(
+        usageHooks,
+        ({ providerID, usage: usageHook }) =>
+          Effect.gen(function* () {
+            const stored = yield* auth.get(providerID).pipe(Effect.orDie)
+            if (!stored) return undefined
+            const now = Date.now()
+            const hit = usageCache.get(providerID)
+            if (hit && now < hit.expires) return [providerID, hit.usage] as const
+            // Resolve auth up front and close over it: re-entering Effect
+            // through the bridge here would depend on layer-build fiber
+            // context instead of the caller's.
+            const result = yield* Effect.promise(() =>
+              Promise.race([
+                usageHook(() => Promise.resolve(stored)),
+                new Promise<undefined>((resolve) => {
+                  const timer = setTimeout(() => resolve(undefined), 10_000)
+                  timer.unref?.()
+                }),
+              ]).catch(() => undefined),
+            )
+            if (!result) return undefined
+            const value = new Usage({
+              windows: result.windows.map(
+                (window) =>
+                  new UsageWindow({
+                    id: window.id,
+                    percent: window.percent,
+                    ...(window.resetsAt !== undefined ? { resetsAt: window.resetsAt } : {}),
+                  }),
+              ),
+            })
+            usageCache.set(providerID, { usage: value, expires: now + USAGE_CACHE_TTL_MS })
+            return [providerID, value] as const
+          }),
+        { concurrency: "unbounded" },
+      )
+      return Object.fromEntries(
+        entries.filter(
+          (entry): entry is readonly [ProviderV2.ID, Usage] => entry !== undefined,
+        ),
+      )
+    })
+
+    return Service.of({ methods, authorize, callback, usage })
   }),
 )
 

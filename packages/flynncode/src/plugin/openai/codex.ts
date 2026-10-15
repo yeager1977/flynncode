@@ -1,4 +1,4 @@
-import type { Hooks, PluginInput } from "@flynncode/plugin"
+import type { Hooks, PluginInput, ProviderUsage } from "@flynncode/plugin"
 import { InstallationVersion } from "@flynncode/core/installation/version"
 import { OAUTH_DUMMY_KEY } from "../../auth"
 import { parseCodexAuth } from "../../auth/vendor-import"
@@ -115,6 +115,8 @@ interface CodexAuthPluginOptions {
   issuer?: string
   codexApiEndpoint?: string
   experimentalWebSockets?: boolean
+  // Full URL of the ChatGPT usage endpoint queried for rate-limit windows.
+  usageEndpoint?: string
 }
 
 async function exchangeCodeForTokens(code: string, redirectUri: string, pkce: PkceCodes): Promise<TokenResponse> {
@@ -179,6 +181,55 @@ async function refreshAccessToken(refreshToken: string, issuer = ISSUER): Promis
     throw new Error(`Token refresh failed: ${response.status}`)
   }
   return response.json()
+}
+
+const CODEX_USAGE_ENDPOINT = "https://chatgpt.com/backend-api/wham/usage"
+const USAGE_FETCH_TIMEOUT_MS = 5_000
+
+function usageWindow(id: string, value: unknown): ProviderUsage["windows"][number] | undefined {
+  if (typeof value !== "object" || value === null) return undefined
+  const window = value as Record<string, unknown>
+  const percent = window.used_percent
+  if (typeof percent !== "number" || !Number.isFinite(percent)) return undefined
+  const resetAt = window.reset_at
+  const resetAfter = window.reset_after_seconds
+  const resetsAt =
+    typeof resetAt === "number" && Number.isFinite(resetAt)
+      ? resetAt * 1000
+      : typeof resetAfter === "number" && Number.isFinite(resetAfter)
+        ? Date.now() + resetAfter * 1000
+        : undefined
+  return { id, percent, ...(resetsAt !== undefined ? { resetsAt } : {}) }
+}
+
+/**
+ * Fetch ChatGPT subscription rate-limit windows for the titlebar meters.
+ * Returns undefined on any failure so callers omit the provider.
+ */
+export async function fetchCodexUsage(input: {
+  fetchImpl: typeof fetch
+  token: string
+  accountId?: string
+  usageEndpoint?: string
+}): Promise<ProviderUsage | undefined> {
+  const headers = new Headers({ Authorization: `Bearer ${input.token}` })
+  if (input.accountId) headers.set("ChatGPT-Account-Id", input.accountId)
+  const res = await input
+    .fetchImpl(input.usageEndpoint ?? CODEX_USAGE_ENDPOINT, {
+      method: "GET",
+      signal: AbortSignal.timeout(USAGE_FETCH_TIMEOUT_MS),
+      headers,
+    })
+    .catch(() => undefined)
+  if (!res || !res.ok) return undefined
+  const body = (await res.json().catch(() => undefined)) as Record<string, unknown> | undefined
+  const rateLimit = body?.rate_limit as Record<string, unknown> | undefined
+  if (!rateLimit) return undefined
+  const windows = [usageWindow("primary", rateLimit.primary_window), usageWindow("secondary", rateLimit.secondary_window)].filter(
+    (window): window is NonNullable<typeof window> => window !== undefined,
+  )
+  if (windows.length === 0) return undefined
+  return { windows }
 }
 
 // Kept as a named export for plugin.codex tests; delegates to the shared branded page.
@@ -360,6 +411,42 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
     },
     auth: {
       provider: "openai",
+      async usage(getAuth): Promise<ProviderUsage | undefined> {
+        const auth = await getAuth()
+        if (auth.type !== "oauth") return undefined
+        const withAccount = auth as typeof auth & { accountId?: string }
+        if (auth.access && auth.expires > Date.now()) {
+          return fetchCodexUsage({
+            fetchImpl: fetch,
+            token: auth.access,
+            accountId: withAccount.accountId,
+            usageEndpoint: options.usageEndpoint,
+          })
+        }
+        // Expired token: refresh (adopting Codex CLI tokens on rotation
+        // races, same as the loader) and persist before querying usage.
+        const tokens = await refreshAccessToken(auth.refresh, issuer)
+          .catch((error) => refreshFromCodexCli(auth.refresh, withAccount.accountId, issuer, error))
+          .catch(() => undefined)
+        if (!tokens) return undefined
+        const accountId = extractAccountId(tokens) || withAccount.accountId
+        await input.client.auth.set({
+          path: { id: "openai" },
+          body: {
+            type: "oauth",
+            refresh: tokens.refresh_token,
+            access: tokens.access_token,
+            expires: Date.now() + (tokens.expires_in ?? 3600) * 1000,
+            ...(accountId && { accountId }),
+          },
+        })
+        return fetchCodexUsage({
+          fetchImpl: fetch,
+          token: tokens.access_token,
+          accountId,
+          usageEndpoint: options.usageEndpoint,
+        })
+      },
       async loader(getAuth) {
         const auth = await getAuth()
         const websocketFetch = options.experimentalWebSockets

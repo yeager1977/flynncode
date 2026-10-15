@@ -85,9 +85,27 @@ type Rule = {
   value: string
 }
 
+export type ProviderUsageWindow = {
+  id: string
+  /** Utilization from 0 to 100. */
+  percent: number
+  /** Epoch milliseconds when the window resets, if known. */
+  resetsAt?: number
+}
+
+export type ProviderUsage = {
+  windows: ProviderUsageWindow[]
+}
+
 export type AuthHook = {
   provider: string
   loader?: (auth: () => Promise<Auth>, provider: Provider) => Promise<Record<string, any>>
+  /**
+   * Optional subscription usage for this provider's account. Return undefined
+   * when the credential in auth cannot produce a usage snapshot (expired,
+   * unsupported, offline) — UIs simply omit meters for the provider.
+   */
+  usage?: (auth: () => Promise<Auth>) => Promise<ProviderUsage | undefined>
   methods: (
     | {
         type: "oauth"

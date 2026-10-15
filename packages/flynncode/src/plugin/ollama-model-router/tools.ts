@@ -24,6 +24,10 @@ function metaLine(meta: Map<string, ModelMeta> | undefined, key: string): string
   return fields.length > 0 ? ` (${fields.join(", ")})` : ""
 }
 
+// The rank table's excluded section: everything past this becomes a count, so
+// a big catalog cannot push a multi-KB tool result into the transcript.
+const EXCLUDED_LIMIT = 5
+
 export function formatRankTable(result: RankResult, limit = 10, meta?: Map<string, ModelMeta>): string {
   const lines: string[] = [`Task: ${result.task}`]
   if (result.ranked.length === 0) {
@@ -36,7 +40,9 @@ export function formatRankTable(result: RankResult, limit = 10, meta?: Map<strin
   }
   if (result.excluded.length > 0) {
     lines.push("", "Excluded:")
-    for (const e of result.excluded) lines.push(`- ${e.key}${metaLine(meta, e.key)}: ${e.excluded}`)
+    for (const e of result.excluded.slice(0, EXCLUDED_LIMIT)) lines.push(`- ${e.key}${metaLine(meta, e.key)}: ${e.excluded}`)
+    const rest = result.excluded.length - EXCLUDED_LIMIT
+    if (rest > 0) lines.push(`+ ${rest} more excluded`)
   }
   return lines.join("\n")
 }
@@ -80,7 +86,9 @@ function familyWinnerFor(
   })
 }
 
-function rankFor(
+// Exported for the plugin's small_model hook, which ranks the same pool with
+// the same honor-the-family rule prompt-time routing uses.
+export function rankFor(
   cfg: any,
   candidates: ReturnType<typeof collectCandidates>,
   options: RouterOptions,
@@ -94,50 +102,73 @@ function rankFor(
   })
 }
 
+// Compact no-arg view: one winner per task. Seven full tables would push a
+// multi-KB block into the transcript only to be re-sent on every later turn;
+// models that want the details pass a task and get the full table.
+function winnersView(
+  cfg: any,
+  candidates: ReturnType<typeof collectCandidates>,
+  options: RouterOptions,
+  catalog: CatalogLike | undefined,
+): string {
+  const lines: string[] = ["Winners per task (use rank_models with a task for the full table):"]
+  for (const task of TASK_NAMES) {
+    const result = rankFor(cfg, candidates, options, task, catalog)
+    const winner = result.ranked[0]
+    lines.push(`${task} → ${winner ? `${winner.key} (${winner.score.toFixed(2)})` : "none"}`)
+  }
+  return lines.join("\n")
+}
+
 export function createTools(deps: Deps): Hooks["tool"] {
   const inFlight = new Set<string>()
   return {
     rank_models: tool({
-      description:
-        "Show ranked Ollama models per task type. Use to inspect which model routing considers best/cheapest/fastest.",
+      description: "Show ranked models per task type (best/cheapest/fastest pick).",
       args: {
-        task: tool.schema.string().optional().describe(`One of: ${TASK_NAMES.join(", ")}`),
+        task: tool.schema.string().optional().describe(`One of: ${TASK_NAMES.join("|")}`),
       },
-      async execute(args) {
+      async execute(args, ctx) {
         const options = deps.getOptions()
         if (options?.enabled === false) return "Model router disabled."
         if (!options) return disabledMessage(deps.getOptionsError())
+        if (args.task !== undefined && !isTaskName(args.task)) {
+          return `Unknown task "${args.task}". Valid tasks: ${TASK_NAMES.join(", ")}`
+        }
         await deps.loadCatalog()
         const cfg = deps.getConfig()
         const catalog = deps.getCatalog()
         const candidates = collectCandidates(cfg, options, catalog)
         const meta = collectMeta(cfg, options, catalog)
-        const tasks = args.task ? [args.task] : TASK_NAMES
-        const blocks: string[] = []
-        for (const task of tasks) {
-          if (!isTaskName(task)) {
-            return `Unknown task "${task}". Valid tasks: ${TASK_NAMES.join(", ")}`
+        const sections: string[] = []
+        if (args.task !== undefined) {
+          sections.push(formatRankTable(rankFor(cfg, candidates, options, args.task, catalog), 10, meta))
+        } else {
+          // Explicit task beats the calling agent's mapping; an unmapped agent
+          // gets the compact winners view instead of seven full tables.
+          const agentTask = typeof ctx.agent === "string" ? options.agentTasks[ctx.agent] : undefined
+          if (agentTask) {
+            sections.push(formatRankTable(rankFor(cfg, candidates, options, agentTask, catalog), 10, meta))
+          } else {
+            sections.push(winnersView(cfg, candidates, options, catalog))
           }
-          const result = rankFor(cfg, candidates, options, task, catalog)
-          blocks.push(formatRankTable(result, 10, meta))
         }
         const unmatched = findUnmatchedScorecardKeys(cfg, options, catalog)
         if (unmatched.length > 0) {
-          blocks.push("", "Scorecard entries with no matching model (check for typos):", ...unmatched.map((k) => `- ${k}`))
+          sections.push("Scorecard entries with no matching model (check for typos):", ...unmatched.map((k) => `- ${k}`))
         }
         const assignments = deps.getAssignments()
         if (Object.keys(assignments).length > 0) {
-          blocks.push("", "Agent assignments: " + Object.entries(assignments).map(([a, m]) => `${a}→${m}`).join(", "))
+          sections.push("Agent assignments: " + Object.entries(assignments).map(([a, m]) => `${a}→${m}`).join(", "))
         }
-        return blocks.join("\n\n")
+        return sections.join("\n\n")
       },
     }),
 
     route_task: tool({
-      description:
-        "Pick the best model for a task and optionally run the prompt on it. Use execute:true to launch a background child session.",
+      description: "Run a task on the best-ranked model; execute:true launches a background child session.",
       args: {
-        task: tool.schema.string().describe(`One of: ${TASK_NAMES.join(", ")}`),
+        task: tool.schema.string().describe(`One of: ${TASK_NAMES.join("|")}`),
         prompt: tool.schema.string().describe("The prompt to run"),
         execute: tool.schema.boolean().optional().describe("Run the prompt in a child session (default false)"),
         wait: tool.schema.boolean().optional().describe("Wait for the response instead of returning immediately"),

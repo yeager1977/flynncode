@@ -65,6 +65,10 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       return yield* svc.methods()
     })
 
+    const usage = Effect.fn("ProviderHttpApi.usage")(function* () {
+      return yield* svc.usage()
+    })
+
     const authorize = Effect.fn("ProviderHttpApi.authorize")(function* (ctx: {
       params: { providerID: ProviderV2.ID }
       payload: ProviderAuth.AuthorizeInput
@@ -110,6 +114,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
     return handlers
       .handle("list", list)
       .handle("auth", auth)
+      .handle("usage", usage)
       .handleRaw("authorize", authorizeRaw)
       .handle("callback", callback)
   }),

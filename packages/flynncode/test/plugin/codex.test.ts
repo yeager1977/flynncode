@@ -5,6 +5,7 @@ import path from "node:path"
 import { WebSocketServer } from "ws"
 import {
   CodexAuthPlugin,
+  fetchCodexUsage,
   parseJwtClaims,
   extractAccountIdFromClaims,
   extractAccountId,
@@ -23,6 +24,49 @@ function createTestJwt(payload: object): string {
 }
 
 describe("plugin.codex", () => {
+  describe("fetchCodexUsage", () => {
+    test("maps rate-limit windows to usage windows", async () => {
+      const fetchImpl = (async () =>
+        new Response(
+          JSON.stringify({
+            plan_type: "pro",
+            rate_limit: {
+              primary_window: { used_percent: 31, limit_window_seconds: 604800, reset_at: 1792610249 },
+              secondary_window: null,
+            },
+          }),
+          { status: 200 },
+        )) as unknown as typeof fetch
+      const usage = await fetchCodexUsage({ fetchImpl, token: "t", accountId: "acc" })
+      expect(usage).toEqual({ windows: [{ id: "primary", percent: 31, resetsAt: 1792610249000 }] })
+    })
+
+    test("falls back to reset_after_seconds when reset_at is absent", async () => {
+      const fetchImpl = (async () =>
+        new Response(
+          JSON.stringify({
+            rate_limit: {
+              primary_window: { used_percent: 10, reset_after_seconds: 3600 },
+              secondary_window: { used_percent: 80, reset_at: 1792610249 },
+            },
+          }),
+          { status: 200 },
+        )) as unknown as typeof fetch
+      const usage = await fetchCodexUsage({ fetchImpl, token: "t" })
+      expect(usage?.windows).toContainEqual({ id: "secondary", percent: 80, resetsAt: 1792610249000 })
+      expect(usage?.windows[0]?.percent).toBe(10)
+      expect(usage?.windows[0]?.resetsAt).toBeGreaterThan(Date.now())
+    })
+
+    test("returns undefined on failure or unexpected shape", async () => {
+      const denied = (async () => new Response("denied", { status: 403 })) as unknown as typeof fetch
+      expect(await fetchCodexUsage({ fetchImpl: denied, token: "t" })).toBeUndefined()
+      const badShape = (async () =>
+        new Response(JSON.stringify({ rate_limit: {} }), { status: 200 })) as unknown as typeof fetch
+      expect(await fetchCodexUsage({ fetchImpl: badShape, token: "t" })).toBeUndefined()
+    })
+  })
+
   test("escapes provider errors in callback HTML", () => {
     const error = `</div><script>alert("xss" & 'more')</script>`
     const html = renderOAuthError(error)
