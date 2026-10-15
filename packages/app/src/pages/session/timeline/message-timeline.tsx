@@ -942,7 +942,13 @@ export function MessageTimeline(props: {
   // draft controller consumes ?prompt=.
   const startTaskSession = async (prompt: string) => {
     const root = sync().project?.worktree
-    if (!root) return
+    if (!root) {
+      showToast({
+        title: language.t("session.taskSuggestion.noWorktree.title"),
+        description: language.t("session.taskSuggestion.noWorktree.description"),
+      })
+      return
+    }
     const created = await serverSDK()
       .client.worktree.create({ directory: root })
       .then((result) => result.data)

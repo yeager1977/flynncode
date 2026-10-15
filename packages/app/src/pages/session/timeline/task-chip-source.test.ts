@@ -47,4 +47,9 @@ describe("session task chip wiring", () => {
     expect(timelineSource).toContain("hideTrailingSuggestion")
     expect(timelineSource).toContain("TaskSuggestion.strip")
   })
+
+  test("missing worktree shows a toast instead of failing silently", () => {
+    expect(timelineSource).toContain("session.taskSuggestion.noWorktree.title")
+    expect(timelineSource).toContain("session.taskSuggestion.noWorktree.description")
+  })
 })
