@@ -174,3 +174,34 @@ describe("task-chip timeline rows", () => {
     expect(result.rows.some((row) => row._tag === "TaskSuggestion")).toBe(false)
   })
 })
+
+describe("task-chip envelope strip", () => {
+  test("removes a trailing envelope and keeps the prose", () => {
+    expect(
+      TaskSuggestion.strip(
+        'Done.\n<task-suggestion title="Extract helper" prompt="Extract the shared helper">Separable cleanup.</task-suggestion>',
+      ),
+    ).toBe("Done.")
+  })
+
+  test("removes the blank line before a trailing envelope", () => {
+    expect(
+      TaskSuggestion.strip(
+        'Done.\n\n<task-suggestion title="T" prompt="P">n</task-suggestion>',
+      ),
+    ).toBe("Done.")
+  })
+
+  test("reduces an envelope-only reply to empty", () => {
+    expect(TaskSuggestion.strip('<task-suggestion title="T" prompt="P">n</task-suggestion>')).toBe("")
+  })
+
+  test("leaves a mid-text envelope untouched", () => {
+    const text = 'A <task-suggestion title="T" prompt="P">n</task-suggestion> B'
+    expect(TaskSuggestion.strip(text)).toBe(text)
+  })
+
+  test("passes text without an envelope through", () => {
+    expect(TaskSuggestion.strip("plain answer")).toBe("plain answer")
+  })
+})

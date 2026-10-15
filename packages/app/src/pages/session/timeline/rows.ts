@@ -57,6 +57,19 @@ export namespace TaskSuggestion {
     return note ? { title, prompt, note } : { title, prompt }
   }
 
+  // Removes a trailing suggestion envelope (plus preceding trailing
+  // whitespace) from assistant body text. The chip row is the envelope's
+  // only visible representation once the turn settles, so the body keeps
+  // just the prose. A non-trailing envelope is left alone.
+  export const strip = (text: string): string => {
+    const pattern = /<task-suggestion\b[^>]*>[\s\S]*?<\/task-suggestion>/g
+    let last: RegExpExecArray | undefined
+    for (const match of text.matchAll(pattern)) last = match
+    if (!last) return text
+    if (text.slice(last.index + last[0].length).trim() !== "") return text
+    return text.slice(0, last.index).replace(/\s*$/, "")
+  }
+
   // Suggestions live at the very end of an assistant reply (the guidance says
   // standalone trailing line), so only the last text part is scanned.
   export const fromParts = (parts: readonly Part[]): Suggestion | undefined => {
