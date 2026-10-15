@@ -5,6 +5,19 @@ Flynncode, not upstream opencode. The Ollama model router is a Flynncode-specifi
 plugin (`packages/flynncode/src/plugin/ollama-model-router`) and third-party
 plugins must be verified against it before adoption.
 
+## Rename Status (the opencode → flynncode rename has happened — do not revert it)
+
+An agent on 2026-10-15 wrongly assumed the rename had not happened and shipped a desktop build that
+lost the owner's history. These are the facts; check them, not upstream opencode docs:
+
+- The server package is `packages/flynncode` (npm scope `@flynncode/*`, CLI bin `flynncode`). There is no `packages/opencode`.
+- Desktop app: product "Flynncode Dev", installed at `/opt/Flynncode Dev`, app id `ai.flynncode.desktop.dev`.
+- User config lives in `~/.config/flynncode/opencode.jsonc` (imported once from `~/.config/opencode`; marker `.opencode-imported`). `~/.config/opencode` is legacy — don't read or write it.
+- Data intentionally still lives in `~/.local/share/opencode` (`Global.Path.data`, app name "opencode"); that is not a sign the rename was undone. Do not move it.
+- Session history is the SQLite database `~/.local/share/opencode/opencode-<channel>.db`. The owner's real history is `opencode-dev.db`. Any build whose channel is not `dev` opens a different, empty database and the owner's sessions and imports "disappear".
+- Desktop debs for the owner: build from `packages/desktop` with `OPENCODE_CHANNEL=dev` (`OPENCODE_CHANNEL=dev bun run build && OPENCODE_CHANNEL=dev bun run package:linux --linux deb`). Local builds now default to `dev`, but set it explicitly anyway. Verify with `grep -a -o 'InstallationChannel = [^;]\{0,20\}' "<app.asar>"` → `"dev"` before handing a deb over.
+- Never build or install from a stale or detached checkout of upstream opencode, and never vendor upstream releases.
+
 ## Repo Conventions
 
 - To regenerate the legacy JavaScript SDK, run `./packages/sdk/js/script/build.ts`.

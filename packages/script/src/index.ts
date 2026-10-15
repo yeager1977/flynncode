@@ -1,4 +1,3 @@
-import { $ } from "bun"
 import semver from "semver"
 import path from "path"
 
@@ -27,7 +26,11 @@ const CHANNEL = await (async () => {
   if (env.OPENCODE_CHANNEL) return env.OPENCODE_CHANNEL
   if (env.OPENCODE_BUMP) return "latest"
   if (env.OPENCODE_VERSION && !env.OPENCODE_VERSION.startsWith("0.0.0-")) return "latest"
-  return await $`git branch --show-current`.text().then((x) => x.trim())
+  // Local builds share the owner's dev data. The channel names the database
+  // (opencode-<channel>.db), so deriving it from the git branch opened an empty
+  // opencode-<branch>.db, and a detached checkout (no branch) an empty
+  // opencode-.db, hiding all history. CI sets OPENCODE_CHANNEL explicitly.
+  return "dev"
 })()
 const IS_PREVIEW = CHANNEL !== "latest"
 
