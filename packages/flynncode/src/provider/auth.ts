@@ -2,7 +2,6 @@ import { LayerNode } from "@flynncode/core/effect/layer-node"
 import type { AuthOAuthResult, Hooks } from "@flynncode/plugin"
 import { serviceUse } from "@flynncode/core/effect/service-use"
 import { Auth } from "@/auth"
-import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { optional } from "@flynncode/core/schema"
 import { Plugin } from "../plugin"
@@ -115,6 +114,7 @@ export interface Interface {
 interface State {
   hooks: Record<ProviderV2.ID, Hook>
   pending: Map<ProviderV2.ID, AuthOAuthResult>
+  usageHooks: Array<{ providerID: ProviderV2.ID; usage: NonNullable<Hook["usage"]> }>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/ProviderAuth") {}
@@ -126,10 +126,22 @@ const layer: Layer.Layer<Service, never, Auth.Service | Plugin.Service> = Layer.
   Effect.gen(function* () {
     const auth = yield* Auth.Service
     const plugin = yield* Plugin.Service
-    const bridge = yield* EffectBridge.make()
     const state = yield* InstanceState.make<State>(
       Effect.fn("ProviderAuth.state")(function* () {
         const plugins = yield* plugin.list()
+        // Usage resolution walks every plugin hook instead of the deduped
+        // `hooks` map: an external auth plugin (e.g. a third-party Claude
+        // auth plugin) can shadow a built-in one in `hooks` while defining
+        // no `usage` of its own. First hook defining `usage` wins, which
+        // keeps built-in hooks authoritative since they load first.
+        const usageHooks: State["usageHooks"] = []
+        for (const item of plugins) {
+          const authHook = item.auth
+          if (!authHook?.provider || !authHook.usage) continue
+          const providerID = ProviderV2.ID.make(authHook.provider)
+          if (usageHooks.some((entry) => entry.providerID === providerID)) continue
+          usageHooks.push({ providerID, usage: authHook.usage })
+        }
         return {
           hooks: Record.fromEntries(
             Arr.filterMap(plugins, (x) =>
@@ -139,6 +151,7 @@ const layer: Layer.Layer<Service, never, Auth.Service | Plugin.Service> = Layer.
             ),
           ),
           pending: new Map<ProviderV2.ID, AuthOAuthResult>(),
+          usageHooks,
         }
       }),
     )
@@ -243,21 +256,22 @@ const layer: Layer.Layer<Service, never, Auth.Service | Plugin.Service> = Layer.
     const usageCache = new Map<string, { usage: Usage; expires: number }>()
 
     const usage = Effect.fn("ProviderAuth.usage")(function* () {
-      const { hooks } = yield* InstanceState.get(state)
+      const { usageHooks } = yield* InstanceState.get(state)
       const entries = yield* Effect.forEach(
-        Object.entries(hooks),
-        ([id, hook]) =>
+        usageHooks,
+        ({ providerID, usage: usageHook }) =>
           Effect.gen(function* () {
-            const providerID = ProviderV2.ID.make(id)
-            if (!hook.usage) return undefined
             const stored = yield* auth.get(providerID).pipe(Effect.orDie)
             if (!stored) return undefined
             const now = Date.now()
-            const hit = usageCache.get(id)
-            if (hit && now < hit.expires) return [id, hit.usage] as const
+            const hit = usageCache.get(providerID)
+            if (hit && now < hit.expires) return [providerID, hit.usage] as const
+            // Resolve auth up front and close over it: re-entering Effect
+            // through the bridge here would depend on layer-build fiber
+            // context instead of the caller's.
             const result = yield* Effect.promise(() =>
               Promise.race([
-                hook.usage!(() => bridge.promise(auth.get(providerID).pipe(Effect.orDie)) as any),
+                usageHook(() => Promise.resolve(stored)),
                 new Promise<undefined>((resolve) => {
                   const timer = setTimeout(() => resolve(undefined), 10_000)
                   timer.unref?.()
@@ -275,12 +289,16 @@ const layer: Layer.Layer<Service, never, Auth.Service | Plugin.Service> = Layer.
                   }),
               ),
             })
-            usageCache.set(id, { usage: value, expires: now + USAGE_CACHE_TTL_MS })
-            return [id, value] as const
+            usageCache.set(providerID, { usage: value, expires: now + USAGE_CACHE_TTL_MS })
+            return [providerID, value] as const
           }),
         { concurrency: "unbounded" },
       )
-      return Object.fromEntries(entries.filter((entry): entry is readonly [string, Usage] => entry !== undefined))
+      return Object.fromEntries(
+        entries.filter(
+          (entry): entry is readonly [ProviderV2.ID, Usage] => entry !== undefined,
+        ),
+      )
     })
 
     return Service.of({ methods, authorize, callback, usage })

@@ -39,6 +39,10 @@ const fakePlugin = Layer.mock(Plugin.Service, {
           usage: async () => ({ windows: [{ id: "w", percent: 7 }] }),
         },
       },
+      // A later hook for the same provider without usage (e.g. an external
+      // auth plugin shadowing a built-in one) must not displace the earlier
+      // usage implementation.
+      { auth: { provider: "fake-usage", methods: [] } },
       { auth: { provider: "fake-silent", methods: [] } },
     ]),
 })
