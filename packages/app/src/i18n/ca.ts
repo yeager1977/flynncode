@@ -994,6 +994,7 @@ export const dict = {
   "settings.mcp.empty": "No hi ha servidors MCP configurats.",
   "settings.mcp.deleted": "{{name}} suprimit.",
   "settings.mcp.errors.refresh": "No s'han pogut carregar els servidors MCP.",
+  "settings.mcp.status.pending": "connectant…",
   "settings.mcp.action.connect": "Connecta",
   "settings.mcp.action.disconnect": "Desconnecta",
   "settings.mcp.action.authenticate": "Autentica",

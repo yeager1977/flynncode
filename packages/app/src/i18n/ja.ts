@@ -894,6 +894,7 @@ export const dict = {
   "settings.mcp.empty": "設定されたMCPサーバーはありません。",
   "settings.mcp.deleted": "{{name}} を削除しました。",
   "settings.mcp.errors.refresh": "MCPサーバーを読み込めませんでした。",
+  "settings.mcp.status.pending": "接続中…",
   "settings.mcp.action.connect": "接続",
   "settings.mcp.action.disconnect": "切断",
   "settings.mcp.action.authenticate": "認証",

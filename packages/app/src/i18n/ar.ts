@@ -908,6 +908,7 @@ export const dict = {
   "settings.mcp.empty": "لا توجد خوادم MCP مهيأة.",
   "settings.mcp.deleted": "تم حذف {{name}}.",
   "settings.mcp.errors.refresh": "تعذّر تحميل خوادم MCP.",
+  "settings.mcp.status.pending": "جارٍ الاتصال…",
   "settings.mcp.action.connect": "اتصال",
   "settings.mcp.action.disconnect": "قطع الاتصال",
   "settings.mcp.action.authenticate": "مصادقة",

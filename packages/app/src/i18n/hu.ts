@@ -1000,6 +1000,7 @@ export const dict = {
   "settings.mcp.empty": "Nincs konfigurálva MCP-szerver.",
   "settings.mcp.deleted": "{{name}} törölve.",
   "settings.mcp.errors.refresh": "Az MCP-szerverek betöltése nem sikerült.",
+  "settings.mcp.status.pending": "kapcsolódás…",
   "settings.mcp.action.connect": "Kapcsolódás",
   "settings.mcp.action.disconnect": "Kapcsolat bontása",
   "settings.mcp.action.authenticate": "Hitelesítés",

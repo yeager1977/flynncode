@@ -986,6 +986,7 @@ export const dict = {
   "settings.mcp.empty": "Ягон сервери MCP танзим нашудааст.",
   "settings.mcp.deleted": "{{name}} нест карда шуд.",
   "settings.mcp.errors.refresh": "Боркунӣ серверҳои MCP имконнопазир аст.",
+  "settings.mcp.status.pending": "пайвастан…",
   "settings.mcp.action.connect": "Пайваст",
   "settings.mcp.action.disconnect": "Ҷуда кардан",
   "settings.mcp.action.authenticate": "Санҷиши ҳувият",

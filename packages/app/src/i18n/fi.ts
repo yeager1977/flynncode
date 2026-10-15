@@ -882,6 +882,7 @@ export const dict = {
   "settings.mcp.empty": "Yhtään MCP-palvelinta ei ole määritetty.",
   "settings.mcp.deleted": "{{name}} poistettu.",
   "settings.mcp.errors.refresh": "MCP-palvelimia ei voitu ladata.",
+  "settings.mcp.status.pending": "yhdistetään…",
   "settings.mcp.action.connect": "Yhdistä",
   "settings.mcp.action.disconnect": "Katkaise yhteys",
   "settings.mcp.action.authenticate": "Todenna",

@@ -988,6 +988,7 @@ export const dict = {
   "settings.mcp.empty": "Inga MCP-servrar konfigurerade.",
   "settings.mcp.deleted": "{{name}} borttagen.",
   "settings.mcp.errors.refresh": "Kunde inte läsa in MCP-servrar.",
+  "settings.mcp.status.pending": "ansluter…",
   "settings.mcp.action.connect": "Anslut",
   "settings.mcp.action.disconnect": "Koppla från",
   "settings.mcp.action.authenticate": "Autentisera",

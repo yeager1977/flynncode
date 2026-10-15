@@ -941,6 +941,7 @@ export const dict = {
   "settings.mcp.empty": "ยังไม่มีการกำหนดค่าเซิร์ฟเวอร์ MCP",
   "settings.mcp.deleted": "ลบ {{name}} แล้ว",
   "settings.mcp.errors.refresh": "โหลดเซิร์ฟเวอร์ MCP ไม่สำเร็จ",
+  "settings.mcp.status.pending": "กำลังเชื่อมต่อ…",
   "settings.mcp.action.connect": "เชื่อมต่อ",
   "settings.mcp.action.disconnect": "ยกเลิกการเชื่อมต่อ",
   "settings.mcp.action.authenticate": "ยืนยันตัวตน",

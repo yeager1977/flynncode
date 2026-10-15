@@ -979,6 +979,7 @@ export const dict: Record<string, string> = {
   "settings.mcp.empty": "වින්‍යාස කර ඇති MCP සේවාදායක නැත.",
   "settings.mcp.deleted": "{{name}} මකා දන්වා ඇත.",
   "settings.mcp.errors.refresh": "MCP සේවාදායක පූරණය කළ නොහැක.",
+  "settings.mcp.status.pending": "සම්බන්ධ වෙමින්…",
   "settings.mcp.action.connect": "සම්බන්ධ කරන්න",
   "settings.mcp.action.disconnect": "විසන්ධි කරන්න",
   "settings.mcp.action.authenticate": "සත්‍යාපනය කරන්න",

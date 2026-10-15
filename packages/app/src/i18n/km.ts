@@ -980,6 +980,7 @@ export const dict = {
   "settings.mcp.empty": "មិនមានម៉ាស៊ីនបម្រើ MCP បានកំណត់រចនាសម្ព័ន្ធទេ។",
   "settings.mcp.deleted": "បានលុប {{name}} ។",
   "settings.mcp.errors.refresh": "មិនអាចផ្ទុកម៉ាស៊ីនបម្រើ MCP បានទេ។",
+  "settings.mcp.status.pending": "កំពុងភ្ជាប់…",
   "settings.mcp.action.connect": "ភ្ជាប់",
   "settings.mcp.action.disconnect": "ផ្ដាច់",
   "settings.mcp.action.authenticate": "ផ្ទៀងផ្ទាត់",

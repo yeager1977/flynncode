@@ -991,6 +991,7 @@ export const dict = {
   "settings.mcp.empty": "कोई MCP सर्वर कॉन्फ़िगर नहीं है।",
   "settings.mcp.deleted": "{{name}} हटा दिया गया।",
   "settings.mcp.errors.refresh": "MCP सर्वर लोड नहीं हो सके।",
+  "settings.mcp.status.pending": "जुड़ रहे हैं…",
   "settings.mcp.action.connect": "कनेक्ट करें",
   "settings.mcp.action.disconnect": "डिस्कनेक्ट करें",
   "settings.mcp.action.authenticate": "प्रमाणित करें",

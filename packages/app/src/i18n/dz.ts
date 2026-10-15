@@ -998,6 +998,7 @@ export const dict: Record<string, string> = {
   "settings.mcp.empty": "MCP སར་བར་ གནས་ཚུལ་བཀོད་མེད།",
   "settings.mcp.deleted": "{{name}} བསྡོམས་ཡོད།",
   "settings.mcp.errors.refresh": "MCP སར་བར་ ལོག་ནི་མ་འགྲུབ།",
+  "settings.mcp.status.pending": "མཐུད་དོ།…",
   "settings.mcp.action.connect": "མཐུད།",
   "settings.mcp.action.disconnect": "མཐུད་མཚམས་བཞག",
   "settings.mcp.action.authenticate": "རྒྱུ་དཔང་བཟོ།",

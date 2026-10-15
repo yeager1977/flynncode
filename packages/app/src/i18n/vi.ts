@@ -1012,6 +1012,7 @@ export const dict = {
   "settings.mcp.empty": "Chưa cấu hình máy chủ MCP nào.",
   "settings.mcp.deleted": "Đã xóa {{name}}.",
   "settings.mcp.errors.refresh": "Không thể tải các máy chủ MCP.",
+  "settings.mcp.status.pending": "đang kết nối…",
   "settings.mcp.action.connect": "Kết nối",
   "settings.mcp.action.disconnect": "Ngắt kết nối",
   "settings.mcp.action.authenticate": "Xác thực",

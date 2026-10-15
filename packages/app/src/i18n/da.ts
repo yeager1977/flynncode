@@ -830,6 +830,7 @@ export const dict = {
   "settings.mcp.empty": "Ingen MCP-servere konfigureret.",
   "settings.mcp.deleted": "{{name}} slettet.",
   "settings.mcp.errors.refresh": "Kunne ikke indlæse MCP-servere.",
+  "settings.mcp.status.pending": "forbinder…",
   "settings.mcp.action.connect": "Forbind",
   "settings.mcp.action.disconnect": "Afbryd",
   "settings.mcp.action.authenticate": "Godkend",

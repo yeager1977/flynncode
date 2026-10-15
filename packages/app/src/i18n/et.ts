@@ -979,6 +979,7 @@ export const dict = {
   "settings.mcp.empty": "Ühtegi MCP-serverit pole seadistatud.",
   "settings.mcp.deleted": "{{name}} kustutati.",
   "settings.mcp.errors.refresh": "MCP-serverite laadimine ebaõnnestus.",
+  "settings.mcp.status.pending": "ühendamine…",
   "settings.mcp.action.connect": "Ühenda",
   "settings.mcp.action.disconnect": "Katkesta ühendus",
   "settings.mcp.action.authenticate": "Autenti",

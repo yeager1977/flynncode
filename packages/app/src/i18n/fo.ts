@@ -982,6 +982,7 @@ export const dict = {
   "settings.mcp.empty": "Ongin MCP-ambætarar uppsett.",
   "settings.mcp.deleted": "{{name}} strikað.",
   "settings.mcp.errors.refresh": "Kundi ikki lesa MCP-ambætara.",
+  "settings.mcp.status.pending": "knýtir…",
   "settings.mcp.action.connect": "Knýttu til",
   "settings.mcp.action.disconnect": "Fjalknýtta",
   "settings.mcp.action.authenticate": "Góðkenn",

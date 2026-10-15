@@ -994,6 +994,7 @@ export const dict = {
   "settings.mcp.empty": "Engir MCP-þjónar stilltir.",
   "settings.mcp.deleted": "{{name}} eytt.",
   "settings.mcp.errors.refresh": "Mistókst að hlaða MCP-þjónum.",
+  "settings.mcp.status.pending": "tengist…",
   "settings.mcp.action.connect": "Tengjast",
   "settings.mcp.action.disconnect": "Aftengjast",
   "settings.mcp.action.authenticate": "Auðkenna",

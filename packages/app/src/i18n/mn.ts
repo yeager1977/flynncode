@@ -990,6 +990,7 @@ export const dict = {
   "settings.mcp.empty": "Тохиргоотой MCP сервер байхгүй.",
   "settings.mcp.deleted": "{{name}} устгагдлаа.",
   "settings.mcp.errors.refresh": "MCP серверүүдийг ачаалж чадсангүй.",
+  "settings.mcp.status.pending": "холбогдож байна…",
   "settings.mcp.action.connect": "Холбох",
   "settings.mcp.action.disconnect": "Салгах",
   "settings.mcp.action.authenticate": "Нотлох",

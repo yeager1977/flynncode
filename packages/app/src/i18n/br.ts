@@ -893,6 +893,7 @@ export const dict = {
   "settings.mcp.empty": "N'eus dafariad MCP kefluniet ebet.",
   "settings.mcp.deleted": "{{name}} dilammet.",
   "settings.mcp.errors.refresh": "N'haller ket kargañ an dafariadoù MCP.",
+  "settings.mcp.status.pending": "o kevreañ…",
   "settings.mcp.action.connect": "Kevreañ",
   "settings.mcp.action.disconnect": "Digevreañ",
   "settings.mcp.action.authenticate": "Autentikañ",

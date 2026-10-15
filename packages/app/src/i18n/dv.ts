@@ -997,6 +997,7 @@ export const dict = {
   "settings.mcp.empty": "ކޮނފިގް ކުރެވިފައިވާ MCP ސަރވަރ ނުވޭނީ.",
   "settings.mcp.deleted": "{{name}} ފުރައިފައި",
   "settings.mcp.errors.refresh": "MCP ސަރވަރ ލޯޑް ކުރުން ފޭލް",
+  "settings.mcp.status.pending": "ގުޅާލައިފައި…",
   "settings.mcp.action.connect": "ގުޅުއާ",
   "settings.mcp.action.disconnect": "ވަކިކުރޭ",
   "settings.mcp.action.authenticate": "އެންތެންޓިކޭޓް",

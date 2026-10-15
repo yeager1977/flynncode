@@ -990,6 +990,7 @@ export const dict = {
   "settings.mcp.empty": "Nav konfigurētu MCP serveru.",
   "settings.mcp.deleted": "{{name}} dzēsts.",
   "settings.mcp.errors.refresh": "Nevar ielādēt MCP serverus.",
+  "settings.mcp.status.pending": "savienojas…",
   "settings.mcp.action.connect": "Izveidot savienojumu",
   "settings.mcp.action.disconnect": "Pārtraukt savienojumu",
   "settings.mcp.action.authenticate": "Autentificēt",

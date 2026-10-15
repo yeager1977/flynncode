@@ -986,6 +986,7 @@ export const dict = {
   "settings.mcp.empty": "Nuk ka servera MCP të konfiguruar.",
   "settings.mcp.deleted": "{{name}} u fshi.",
   "settings.mcp.errors.refresh": "Serverat MCP nuk u ngarkuan dot.",
+  "settings.mcp.status.pending": "po lidhet…",
   "settings.mcp.action.connect": "Lidh",
   "settings.mcp.action.disconnect": "Shkëput",
   "settings.mcp.action.authenticate": "Vërteto",

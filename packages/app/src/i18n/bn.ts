@@ -981,6 +981,7 @@ export const dict: Record<string, string> = {
   "settings.mcp.empty": "কোনো MCP সার্ভার কনফিগার করা নেই।",
   "settings.mcp.deleted": "{{name}} মুছে ফেলা হয়েছে।",
   "settings.mcp.errors.refresh": "MCP সার্ভার লোড করা যায়নি।",
+  "settings.mcp.status.pending": "সংযোগ হচ্ছে…",
   "settings.mcp.action.connect": "সংযোগ করুন",
   "settings.mcp.action.disconnect": "সংযোগ বিচ্ছিন্ন করুন",
   "settings.mcp.action.authenticate": "প্রমাণীকরণ করুন",

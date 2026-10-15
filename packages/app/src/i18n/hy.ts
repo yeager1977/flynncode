@@ -990,6 +990,7 @@ export const dict = {
   "settings.mcp.empty": "Կոնֆիգուրացված MCP սերվերներ չկան։",
   "settings.mcp.deleted": "{{name}}-ը ջնջված է։",
   "settings.mcp.errors.refresh": "Չհաջողվեց բեռնել MCP սերվերները։",
+  "settings.mcp.status.pending": "միանում է…",
   "settings.mcp.action.connect": "Միանալ",
   "settings.mcp.action.disconnect": "Անջատել",
   "settings.mcp.action.authenticate": "Նույնականացնել",

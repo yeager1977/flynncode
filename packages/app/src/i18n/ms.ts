@@ -982,6 +982,7 @@ export const dict = {
   "settings.mcp.empty": "Tiada pelayan MCP dikonfigurasi.",
   "settings.mcp.deleted": "{{name}} dipadam.",
   "settings.mcp.errors.refresh": "Gagal memuatkan pelayan MCP.",
+  "settings.mcp.status.pending": "menyambung…",
   "settings.mcp.action.connect": "Sambung",
   "settings.mcp.action.disconnect": "Putuskan",
   "settings.mcp.action.authenticate": "Sah",

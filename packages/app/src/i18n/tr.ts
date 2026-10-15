@@ -976,6 +976,7 @@ export const dict = {
   "settings.mcp.empty": "Yapılandırılmış MCP sunucusu yok.",
   "settings.mcp.deleted": "{{name}} silindi.",
   "settings.mcp.errors.refresh": "MCP sunucuları yüklenemedi.",
+  "settings.mcp.status.pending": "bağlanıyor…",
   "settings.mcp.action.connect": "Bağlan",
   "settings.mcp.action.disconnect": "Bağlantıyı kes",
   "settings.mcp.action.authenticate": "Kimlik doğrula",

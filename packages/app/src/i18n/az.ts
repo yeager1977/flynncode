@@ -992,6 +992,7 @@ export const dict = {
   "settings.mcp.empty": "Konfiqurasiya edilmiş MCP serveri yoxdur.",
   "settings.mcp.deleted": "{{name}} silindi.",
   "settings.mcp.errors.refresh": "MCP serverləri yüklənə bilmədi.",
+  "settings.mcp.status.pending": "qoşulur…",
   "settings.mcp.action.connect": "Qoş",
   "settings.mcp.action.disconnect": "Ayır",
   "settings.mcp.action.authenticate": "Doğrula",

@@ -977,6 +977,7 @@ export const dict = {
   "settings.mcp.empty": "ຍັງບໍ່ມີການຕັ້ງຄ່າເຊີບເວີ MCP.",
   "settings.mcp.deleted": "ລຶບ {{name}} ແລ້ວ.",
   "settings.mcp.errors.refresh": "ບໍ່ສາມາດໂຫຼດເຊີບເວີ MCP ໄດ້.",
+  "settings.mcp.status.pending": "ກຳລັງເຊື່ອມຕໍ່…",
   "settings.mcp.action.connect": "ເຊື່ອມຕໍ່",
   "settings.mcp.action.disconnect": "ຕັດການເຊື່ອມຕໍ່",
   "settings.mcp.action.authenticate": "ຢືນຢັນຕົວຕົນ",

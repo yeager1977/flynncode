@@ -817,6 +817,7 @@ export const dict = {
   "settings.mcp.empty": "Ingen MCP-servere konfigurert.",
   "settings.mcp.deleted": "{{name}} slettet.",
   "settings.mcp.errors.refresh": "Kunne ikke laste inn MCP-servere.",
+  "settings.mcp.status.pending": "kobler til…",
   "settings.mcp.action.connect": "Koble til",
   "settings.mcp.action.disconnect": "Koble fra",
   "settings.mcp.action.authenticate": "Autentiser",

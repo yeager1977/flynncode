@@ -983,6 +983,7 @@ export const dict = {
   "settings.mcp.empty": "Inşik edil serwerler ýok.",
   "settings.mcp.deleted": "{{name}} aýryldy.",
   "settings.mcp.errors.refresh": "MCP serwerleri ýüklenmedi.",
+  "settings.mcp.status.pending": "birleşýär…",
   "settings.mcp.action.connect": "Birleş",
   "settings.mcp.action.disconnect": "Aýyr",
   "settings.mcp.action.authenticate": "Şahadatnama",

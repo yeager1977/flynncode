@@ -988,6 +988,7 @@ export const dict = {
   "settings.mcp.empty": "Nie sú nakonfigurované žiadne servery MCP.",
   "settings.mcp.deleted": "{{name}} bol odstránený.",
   "settings.mcp.errors.refresh": "Nepodarilo sa načítať servery MCP.",
+  "settings.mcp.status.pending": "pripájanie…",
   "settings.mcp.action.connect": "Pripojiť",
   "settings.mcp.action.disconnect": "Odpojiť",
   "settings.mcp.action.authenticate": "Autentifikovať",

@@ -950,6 +950,7 @@ export const dict = {
   "settings.mcp.empty": "尚未設定 MCP 伺服器。",
   "settings.mcp.deleted": "已刪除 {{name}}。",
   "settings.mcp.errors.refresh": "無法載入 MCP 伺服器。",
+  "settings.mcp.status.pending": "連線中…",
   "settings.mcp.action.connect": "連線",
   "settings.mcp.action.disconnect": "中斷連線",
   "settings.mcp.action.authenticate": "驗證",

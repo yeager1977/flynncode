@@ -980,6 +980,7 @@ export const dict = {
   "settings.mcp.empty": "هیچ سرور MCP پیکربندی نشده است.",
   "settings.mcp.deleted": "{{name}} حذف شد.",
   "settings.mcp.errors.refresh": "بارگذاری سرورهای MCP ممکن نشد.",
+  "settings.mcp.status.pending": "در حال اتصال…",
   "settings.mcp.action.connect": "اتصال",
   "settings.mcp.action.disconnect": "قطع اتصال",
   "settings.mcp.action.authenticate": "احراز هویت",

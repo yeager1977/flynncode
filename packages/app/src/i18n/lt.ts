@@ -1008,6 +1008,7 @@ export const dict = {
   "settings.mcp.empty": "Nėra sukonfigūruotų MCP serverių.",
   "settings.mcp.deleted": "{{name}} ištrintas.",
   "settings.mcp.errors.refresh": "Nepavyko įkelti MCP serverių.",
+  "settings.mcp.status.pending": "jungiamasi…",
   "settings.mcp.action.connect": "Prisijungti",
   "settings.mcp.action.disconnect": "Atsijungti",
   "settings.mcp.action.authenticate": "Autentifikuoti",

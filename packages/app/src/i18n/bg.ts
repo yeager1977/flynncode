@@ -989,6 +989,7 @@ export const dict = {
   "settings.mcp.empty": "Няма конфигурирани MCP сървъри.",
   "settings.mcp.deleted": "{{name}} е изтрит.",
   "settings.mcp.errors.refresh": "Сървърите MCP не можаха да се заредят.",
+  "settings.mcp.status.pending": "свързване…",
   "settings.mcp.action.connect": "Свързване",
   "settings.mcp.action.disconnect": "Разказване",
   "settings.mcp.action.authenticate": "Удостоверяване",

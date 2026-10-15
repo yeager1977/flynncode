@@ -982,6 +982,7 @@ export const dict = {
   "settings.mcp.empty": "MCP სერვერები კონფიგურირებული არაა.",
   "settings.mcp.deleted": "{{name}} წაიშალა.",
   "settings.mcp.errors.refresh": "MCP სერვერების ჩატვირთვა ვერ მოხერხდა.",
+  "settings.mcp.status.pending": "დაკავშირება…",
   "settings.mcp.action.connect": "დაკავშირება",
   "settings.mcp.action.disconnect": "გათიშვა",
   "settings.mcp.action.authenticate": "ავთენტიფიკაცია",

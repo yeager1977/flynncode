@@ -1010,6 +1010,7 @@ export const dict = {
   "settings.mcp.empty": "Geen MCP-servers geconfigureerd.",
   "settings.mcp.deleted": "{{name}} verwijderd.",
   "settings.mcp.errors.refresh": "Kan MCP-servers niet laden.",
+  "settings.mcp.status.pending": "verbinden…",
   "settings.mcp.action.connect": "Verbinden",
   "settings.mcp.action.disconnect": "Verbreken",
   "settings.mcp.action.authenticate": "Authenticeren",

@@ -989,6 +989,7 @@ export const dict = {
   "settings.mcp.empty": "Nu există servere MCP configurate.",
   "settings.mcp.deleted": "{{name}} a fost șters.",
   "settings.mcp.errors.refresh": "Nu s-au putut încărca serverele MCP.",
+  "settings.mcp.status.pending": "se conectează…",
   "settings.mcp.action.connect": "Conectare",
   "settings.mcp.action.disconnect": "Deconectare",
   "settings.mcp.action.authenticate": "Autentificare",

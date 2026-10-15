@@ -995,6 +995,7 @@ export const dict = {
   "settings.mcp.empty": "MCP ဆာဗာ မည်မျှမထည့်သွင်းရသေးပါ။",
   "settings.mcp.deleted": "{{name}} ကို ဖျက်ပြီးပါပြီ။",
   "settings.mcp.errors.refresh": "MCP ဆာဗာများ ဝန်တင်မရပါ။",
+  "settings.mcp.status.pending": "ချိတ်ဆက်နေသည်…",
   "settings.mcp.action.connect": "ချိတ်ဆက်",
   "settings.mcp.action.disconnect": "ချိတ်ဆက်မှု ဖြုတ်",
   "settings.mcp.action.authenticate": "စစ်မှန်ကြောင်း အတည်ပြု",

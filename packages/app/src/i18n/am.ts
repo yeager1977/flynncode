@@ -964,6 +964,7 @@ export const dict = {
   "settings.mcp.empty": "የተዋቀሩ የMCP አገልጋዮች የሉም።",
   "settings.mcp.deleted": "{{name}} ተሰርዟል።",
   "settings.mcp.errors.refresh": "የMCP አገልጋዮችን መጫን አልተቻለም።",
+  "settings.mcp.status.pending": "በመገናኘት ላይ…",
   "settings.mcp.action.connect": "አገናኝ",
   "settings.mcp.action.disconnect": "ግንኙነት አቋርጥ",
   "settings.mcp.action.authenticate": "ያረጋግጡ",

@@ -993,6 +993,7 @@ export const dict = {
   "settings.mcp.empty": "Δεν έχουν ρυθμιστεί διακομιστές MCP.",
   "settings.mcp.deleted": "Διαγράφηκε ο {{name}}.",
   "settings.mcp.errors.refresh": "Αδύνατη η φόρτωση διακομιστών MCP.",
+  "settings.mcp.status.pending": "σύνδεση…",
   "settings.mcp.action.connect": "Σύνδεση",
   "settings.mcp.action.disconnect": "Αποσύνδεση",
   "settings.mcp.action.authenticate": "Πιστοποίηση",

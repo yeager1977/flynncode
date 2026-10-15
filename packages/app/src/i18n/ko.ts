@@ -655,6 +655,7 @@ export const dict = {
   "settings.mcp.empty": "구성된 MCP 서버가 없습니다.",
   "settings.mcp.deleted": "{{name}} 삭제됨.",
   "settings.mcp.errors.refresh": "MCP 서버를 불러올 수 없습니다.",
+  "settings.mcp.status.pending": "연결 중…",
   "settings.mcp.action.connect": "연결",
   "settings.mcp.action.disconnect": "연결 해제",
   "settings.mcp.action.authenticate": "인증",
