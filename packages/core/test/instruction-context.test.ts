@@ -1,9 +1,12 @@
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
+import { FetchHttpClient } from "effect/unstable/http"
 import fs from "fs/promises"
 import path from "path"
 import { AppNodeBuilder } from "@flynncode/core/effect/app-node-builder"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
+import { LayerNodePlatform } from "@flynncode/core/effect/app-node-platform"
+import { Config } from "@flynncode/core/config"
 import { FSUtil } from "@flynncode/core/fs-util"
 import { Global } from "@flynncode/core/global"
 import { InstructionContext } from "@flynncode/core/instruction-context"
@@ -17,14 +20,20 @@ import { testEffect } from "./lib/effect"
 
 const it = testEffect(Layer.empty)
 
+const configLayer = (entries: Config.Entry[]) =>
+  Layer.succeed(Config.Service, Config.Service.of({ entries: () => Effect.succeed(entries) }))
+
 const instructionLayer = (input: {
   config: string
+  configEntries?: Config.Entry[]
   locationServiceLayer: Layer.Layer<Location.Service>
   filesystemLayer?: Layer.Layer<FSUtil.Service>
 }) =>
   AppNodeBuilder.build(LayerNode.group([SystemContextRegistry.node, InstructionContext.node]), [
     [Global.node, Global.layerWith({ config: input.config })],
     [Location.node, input.locationServiceLayer],
+    [Config.node, configLayer(input.configEntries ?? [])],
+    [LayerNodePlatform.httpClient, FetchHttpClient.layer],
     ...(input.filesystemLayer ? [[FSUtil.node, input.filesystemLayer] as const] : []),
   ])
 
@@ -319,5 +328,64 @@ describe("InstructionContext", () => {
 
       expect(scanned).toBe(false)
     }),
+  )
+
+  it.live("loads configured instructions from relative patterns and absolute paths", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((tmp) =>
+        Effect.gen(function* () {
+          const global = path.join(tmp.path, "global")
+          const project = path.join(tmp.path, "project")
+          const directory = path.join(project, "packages", "core")
+          const globalFile = path.join(global, "AGENTS.md")
+          const notesFile = path.join(project, "instructions", "notes.md")
+          const absoluteFile = path.join(tmp.path, "shared", "custom.md")
+          yield* Effect.promise(async () => {
+            await fs.mkdir(global, { recursive: true })
+            await fs.mkdir(directory, { recursive: true })
+            await fs.mkdir(path.join(project, "instructions"), { recursive: true })
+            await fs.mkdir(path.dirname(absoluteFile), { recursive: true })
+            await fs.writeFile(globalFile, "global")
+            await fs.writeFile(notesFile, "configured notes")
+            await fs.writeFile(absoluteFile, "configured absolute")
+          })
+
+          const initialized = yield* SystemContextRegistry.Service.pipe(
+            Effect.flatMap((service) => service.load()),
+            Effect.flatMap(SystemContext.initialize),
+            Effect.provide(
+              instructionLayer({
+                config: global,
+                configEntries: [
+                  new Config.Document({
+                    type: "document",
+                    info: new Config.Info({ instructions: ["instructions/*.md", absoluteFile] }),
+                  }),
+                ],
+                locationServiceLayer: Layer.succeed(
+                  Location.Service,
+                  Location.Service.of(
+                    location(
+                      { directory: AbsolutePath.make(directory) },
+                      { projectDirectory: AbsolutePath.make(project) },
+                    ),
+                  ),
+                ),
+              }),
+            ),
+          )
+          expect(initialized.baseline).toBe(
+            [
+              `Instructions from: ${globalFile}\nglobal`,
+              `Instructions from: ${notesFile}\nconfigured notes`,
+              `Instructions from: ${absoluteFile}\nconfigured absolute`,
+            ].join("\n\n"),
+          )
+        }),
+      ),
+    ),
   )
 })

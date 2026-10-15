@@ -96,7 +96,10 @@ export function createChildStoreManager(input: {
         set.delete(directory)
         if (set.size === 0) ownerPins.delete(key)
       }
-      unpin(directory)
+      // A re-running memo cleans up before it pins its directories again. Unpinning at once lets
+      // eviction dispose them mid-run, so the memo recreates them, and their hydration re-runs it.
+      // (ported from upstream anomalyco/opencode be674e3158)
+      queueMicrotask(() => unpin(directory))
     })
   }
 

@@ -10,12 +10,12 @@ export const PTY_CONNECT_TICKET_QUERY = "ticket"
 export const PTY_CONNECT_TOKEN_HEADER = "x-opencode-ticket"
 export const PTY_CONNECT_TOKEN_HEADER_VALUE = "1"
 
-const PTY_CONNECT_PATH = /^\/api\/pty\/[^/]+\/connect$/
+export const PTY_CONNECT_PATH = "/api/pty/:ptyID/connect"
 
-// Authorization middleware skips credential checks when this matches; the PTY connect handler
-// is then responsible for consuming and validating the ticket.
+const PTY_CONNECT_URL = /^\/api\/pty\/[^/]+\/connect$/
+
 export function hasPtyConnectTicketURL(url: URL) {
-  return PTY_CONNECT_PATH.test(url.pathname) && !!url.searchParams.get(PTY_CONNECT_TICKET_QUERY)
+  return PTY_CONNECT_URL.test(url.pathname) && !!url.searchParams.get(PTY_CONNECT_TICKET_QUERY)
 }
 
 export const PtyGroup = HttpApiGroup.make("server.pty")
@@ -116,7 +116,7 @@ export const PtyGroup = HttpApiGroup.make("server.pty")
   .add(
     // Query fields are decoded in the raw handler after the existence check so a missing
     // session responds with an empty 404 before any upgrade work.
-    HttpApiEndpoint.get("pty.connect", "/api/pty/:ptyID/connect", {
+    HttpApiEndpoint.get("pty.connect", PTY_CONNECT_PATH, {
       params: { ptyID: Pty.ID },
       success: Schema.Boolean,
       error: [ForbiddenError, PtyNotFoundError],

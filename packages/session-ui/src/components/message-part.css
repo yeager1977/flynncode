@@ -1367,8 +1367,8 @@ body[data-new-layout] [data-component="user-message"] {
     }
   }
 
-  [data-slot="user-message-body"] + [data-slot="user-message-attachments"],
-  [data-slot="user-message-comments"] + [data-slot="user-message-attachments"] {
+  [data-slot="user-message-attachments"] + [data-slot="user-message-body"],
+  [data-slot="user-message-attachments"] + [data-slot="user-message-comments"] {
     margin-top: 8px;
   }
 

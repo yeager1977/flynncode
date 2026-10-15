@@ -3,7 +3,9 @@ import { getFilename } from "@flynncode/core/util/path"
 import type { FilePart } from "@flynncode/sdk/v2"
 
 export function attached(part: FilePart) {
-  return part.url.startsWith("data:") && !inline(part)
+  // Blob URLs are admitted alongside data URLs so in-memory prompt attachments render as cards
+  // (ported from upstream anomalyco/opencode 4ea42c47df).
+  return (part.url.startsWith("data:") || part.url.startsWith("blob:")) && !inline(part)
 }
 
 export function inline(part: FilePart) {
