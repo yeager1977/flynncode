@@ -237,11 +237,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     }
 
     const current = () => {
-      const item = firstModel(
-        () => scope()?.model,
-        () => agent.current()?.model,
-        fallback,
-      )
+      // Catalog availability must not replace a user's choice with a default on the next submission.
+      const item = scope()?.model ?? firstModel(() => agent.current()?.model, fallback)
       if (!item) return
       return models.find(item)
     }
