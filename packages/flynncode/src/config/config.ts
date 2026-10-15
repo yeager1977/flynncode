@@ -869,6 +869,11 @@ const layer = Layer.effect(
 
     const invalidate = Effect.fn("Config.invalidate")(function* () {
       yield* invalidateGlobal
+      // The global cache is only half the story: per-directory instance
+      // snapshots hold their own merged copy, so without dropping them a
+      // config write (e.g. granting sandbox full-access) never reaches
+      // running sessions until restart.
+      yield* InstanceState.invalidateAll(state)
     })
 
     const updateGlobal = Effect.fn("Config.updateGlobal")(function* (config: Info) {
