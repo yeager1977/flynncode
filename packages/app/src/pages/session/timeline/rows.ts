@@ -99,6 +99,9 @@ export type TimelineRowMap = {
     group: PartGroup
     previousAssistantPart: boolean
     verbose?: boolean
+    // Set when this part's text ends with the turn's task-suggestion envelope;
+    // the renderer strips the envelope so the chip is its only representation.
+    hideTrailingSuggestion?: boolean
   }
   Thinking: { userMessageID: string; reasoningHeading?: string }
   Retry: { userMessageID: string }
@@ -262,6 +265,13 @@ export namespace Timeline {
       )
     }
 
+    // Task chip: the model-suggested follow-up renders after the turn's parts
+    // once the turn has settled (not while it is still streaming).
+    const settled = !(isActive && status === "busy")
+    const found = settled
+      ? MessageComment.taskSuggestionFromMessages(assistantMessages, getMessageParts)
+      : undefined
+
     let assistantGroupIndex = 0
     assistantItems.forEach((item) => {
       if (item.type === "interrupted") {
@@ -280,17 +290,20 @@ export namespace Timeline {
           group: item.group,
           previousAssistantPart: assistantGroupIndex > 0,
           verbose: viewMode === "verbose",
+          hideTrailingSuggestion:
+            found &&
+            item.group.type === "part" &&
+            item.group.ref.messageID === found.messageID &&
+            item.group.ref.partID === found.partID
+              ? true
+              : undefined,
         }),
       )
       assistantGroupIndex += 1
     })
 
-    // Task chip: the model-suggested follow-up renders after the turn's parts
-    // once the turn has settled (not while it is still streaming).
-    const settled = !(isActive && status === "busy")
-    const suggestion = settled
-      ? MessageComment.taskSuggestionFromMessages(assistantMessages, getMessageParts)
-      : undefined
+    // Chip row for the suggestion computed above.
+    const suggestion = found?.suggestion
     if (suggestion) {
       rows.push(
         new TimelineRow.TaskSuggestion({
@@ -479,16 +492,18 @@ export namespace MessageComment {
 
   // First task-suggestion envelope across a turn's assistant messages, in
   // chronological order; later messages win only when earlier ones lack one.
+  // Returns the source part ref alongside the suggestion so the row builder
+  // can mark the exact row for envelope stripping.
   export const taskSuggestionFromMessages = (
     assistantMessages: readonly AssistantMessage[],
     getMessageParts: (messageID: string) => Part[],
-  ): TaskSuggestion.Suggestion | undefined => {
+  ): { suggestion: TaskSuggestion.Suggestion; messageID: string; partID: string } | undefined => {
     for (const message of [...assistantMessages].reverse()) {
       const parts = getMessageParts(message.id)
       const text = parts.toReversed().find((part) => part.type === "text" && !!part.text?.trim())
       if (!text || text.type !== "text") continue
       const suggestion = TaskSuggestion.parse(text.text ?? "")
-      if (suggestion) return suggestion
+      if (suggestion) return { suggestion, messageID: message.id, partID: text.id }
     }
     return
   }

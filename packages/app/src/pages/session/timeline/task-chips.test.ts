@@ -173,6 +173,77 @@ describe("task-chip timeline rows", () => {
 
     expect(result.rows.some((row) => row._tag === "TaskSuggestion")).toBe(false)
   })
+
+  test("flags the text row carrying the envelope", () => {
+    const source = [
+      { id: "msg_u", type: "user", text: "do the main task", time: { created: 1 } },
+      {
+        id: "msg_a",
+        type: "assistant",
+        agent: "build",
+        model: { id: "model", providerID: "provider" },
+        content: [
+          {
+            type: "text",
+            text: 'Done.\n<task-suggestion title="Extract helper" prompt="Extract the shared helper into its own module">Separable cleanup.</task-suggestion>',
+          },
+        ],
+        time: { created: 2, completed: 3 },
+      },
+    ] satisfies SessionMessageInfo[]
+    const normalized = normalizeSessionMessages("ses_1", source)
+    const messages = new Map(normalized.messages.map((message) => [message.id, message]))
+
+    const result = Timeline.constructSessionMessageRows(
+      source,
+      (messageID) => messages.get(messageID),
+      (messageID) => normalized.parts.get(messageID) ?? [],
+      true,
+      "idle",
+      true,
+      normalized.messages.filter((message) => message.role === "user"),
+    )
+
+    const assistant = result.rows.find((row) => row._tag === "AssistantPart")
+    expect(assistant?._tag).toBe("AssistantPart")
+    if (assistant?._tag !== "AssistantPart") return
+    expect(assistant.hideTrailingSuggestion).toBe(true)
+    const chip = result.rows.at(-1)
+    expect(chip?._tag).toBe("TaskSuggestion")
+    if (chip?._tag !== "TaskSuggestion") return
+    expect(chip.title).toBe("Extract helper")
+  })
+
+  test("no flag on rows without an envelope", () => {
+    const source = [
+      { id: "msg_u", type: "user", text: "hi", time: { created: 1 } },
+      {
+        id: "msg_a",
+        type: "assistant",
+        agent: "build",
+        model: { id: "model", providerID: "provider" },
+        content: [{ type: "text", text: "plain answer" }],
+        time: { created: 2, completed: 3 },
+      },
+    ] satisfies SessionMessageInfo[]
+    const normalized = normalizeSessionMessages("ses_1", source)
+    const messages = new Map(normalized.messages.map((message) => [message.id, message]))
+
+    const result = Timeline.constructSessionMessageRows(
+      source,
+      (messageID) => messages.get(messageID),
+      (messageID) => normalized.parts.get(messageID) ?? [],
+      true,
+      "idle",
+      true,
+      normalized.messages.filter((message) => message.role === "user"),
+    )
+
+    const assistant = result.rows.find((row) => row._tag === "AssistantPart")
+    expect(assistant?._tag).toBe("AssistantPart")
+    if (assistant?._tag !== "AssistantPart") return
+    expect(assistant.hideTrailingSuggestion).toBeUndefined()
+  })
 })
 
 describe("task-chip envelope strip", () => {
