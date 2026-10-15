@@ -14,6 +14,7 @@ import {
   type ComponentProps,
 } from "solid-js"
 import { createStore } from "solid-js/store"
+import { createMediaQuery } from "@solid-primitives/media"
 import stripAnsi from "strip-ansi"
 import { Dynamic } from "solid-js/web"
 import {
@@ -1226,9 +1227,13 @@ export function UserMessageDisplay(props: {
     return timefmt().format(created)
   })
 
+  // Mobile shows the current agent and model in the composer, so repeating them per message is noise
+  // (ported from upstream anomalyco/opencode e65080dd08).
+  const mobile = createMediaQuery("(max-width: 767px)")
+
   const metaHead = createMemo(() => {
     const agent = props.message.agent
-    const items = [agent ? agent[0]?.toUpperCase() + agent.slice(1) : "", model()]
+    const items = mobile() ? [] : [agent ? agent[0]?.toUpperCase() + agent.slice(1) : "", model()]
     return items.filter((x) => !!x).join("\u00A0\u00B7\u00A0")
   })
 
@@ -1689,12 +1694,14 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     })
   })
 
+  // Mobile omits the per-response agent and model; see metaHead.
+  const mobile = createMediaQuery("(max-width: 767px)")
+
   const meta = createMemo(() => {
     if (props.message.role !== "assistant") return ""
     const agent = (props.message as AssistantMessage).agent
     const items = [
-      agent ? agent[0]?.toUpperCase() + agent.slice(1) : "",
-      model(),
+      ...(mobile() ? [] : [agent ? agent[0]?.toUpperCase() + agent.slice(1) : "", model()]),
       duration(),
       interrupted() ? i18n.t("ui.message.interrupted") : "",
     ]
@@ -1923,7 +1930,7 @@ ToolRegistry.register({
               <span data-slot="basic-tool-tool-title">
                 <TextShimmer text={i18n.t("ui.tool.webfetch")} active={pending()} />
               </span>
-              <Show when={!pending() && url()}>
+              <Show when={props.status !== "pending" && url()}>
                 <a
                   data-slot="basic-tool-tool-subtitle"
                   class="clickable subagent-link"
@@ -1936,7 +1943,7 @@ ToolRegistry.register({
                 </a>
               </Show>
             </div>
-            <Show when={!pending() && url()}>
+            <Show when={props.status !== "pending" && url()}>
               <div data-component="tool-action">
                 <Icon name="square-arrow-top-right" size="small" />
               </div>
