@@ -6,9 +6,9 @@ export function createMarkdownParser(highlight: (code: string, language: string)
   return new Marked(
     {
       renderer: {
-        link({ href, title, text }) {
+        link({ href, title, tokens }) {
           const titleAttr = title ? ` title="${title}"` : ""
-          return `<a href="${href}"${titleAttr} class="external-link" target="_blank" rel="noopener noreferrer">${text}</a>`
+          return `<a href="${href}"${titleAttr} class="external-link" target="_blank" rel="noopener noreferrer">${this.parser.parseInline(tokens)}</a>`
         },
       },
     },

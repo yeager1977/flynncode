@@ -66,18 +66,16 @@ export async function substitute(input: SubstituteInput) {
     const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(configDir, filePath)
     const fileContent = (
       await Filesystem.readText(resolvedPath).catch((error: NodeJS.ErrnoException) => {
+        // Like a missing {env:VAR}, a missing file substitutes empty so one stale secret
+        // reference cannot take down every config that loads this file
+        // (ported from upstream anomalyco/opencode c458ad72d3).
+        if (error.code === "ENOENT") {
+          console.warn(`config file reference is missing: ${token} -> ${resolvedPath}`)
+          return ""
+        }
         if (missing === "empty") return ""
 
         const errMsg = `bad file reference: "${token}"`
-        if (error.code === "ENOENT") {
-          throw new InvalidError(
-            {
-              path: configSource,
-              message: errMsg + ` ${resolvedPath} does not exist`,
-            },
-            { cause: error },
-          )
-        }
         throw new InvalidError({ path: configSource, message: errMsg }, { cause: error })
       })
     ).trim()

@@ -62,7 +62,9 @@ export async function startBackgroundCli(logger: Logger, shellStateHome?: string
 }
 
 async function installCli(source: string, version: string, logger: Logger) {
-  const directory = join(app.getPath("userData"), "cli", version.replace(/[^a-zA-Z0-9._-]/g, "-"))
+  // x64 and ARM64 installers share userData on Windows ARM64, so a same-version switch must not reuse the other copy.
+  const stage = `${version}-${process.arch}`.replace(/[^a-zA-Z0-9._-]/g, "-")
+  const directory = join(app.getPath("userData"), "cli", stage)
   const destination = join(directory, executableName())
   if (existsSync(destination)) {
     logger.log("v2 CLI staged executable reused", { path: destination, version })

@@ -1759,7 +1759,7 @@ export default function Page() {
         if (!tab) return
         const path = file.pathFromTab(tab)
         if (!path) return
-        void file.load(path, { force: true })
+        void file.load(path, { force: true, silent: true })
       },
       { defer: true },
     ),

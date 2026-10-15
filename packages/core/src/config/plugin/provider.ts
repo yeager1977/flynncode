@@ -25,7 +25,7 @@ export const Plugin = define({
             const integrationID = id
             if (!configuredIntegrations.has(id) && !integrations.get(integrationID)) continue
             integrations.update(integrationID, (integration) => {
-              integration.name = item.name ?? integration.name
+              integration.name = item.name || integration.name
             })
             if (item.env !== undefined) {
               integrations.method.update({
@@ -51,7 +51,7 @@ export const Plugin = define({
           for (const [id, item] of Object.entries(file.info.providers ?? {})) {
             const providerID = id
             catalog.provider.update(providerID, (provider) => {
-              if (item.name !== undefined) provider.name = item.name
+              if (item.name) provider.name = item.name
               if (item.api !== undefined) provider.api = { ...item.api }
               if (item.request !== undefined) {
                 Object.assign(provider.request.headers, item.request.headers)
@@ -61,7 +61,7 @@ export const Plugin = define({
             for (const [id, config] of Object.entries(item.models ?? {})) {
               catalog.model.update(providerID, id, (model) => {
                 if (config.family !== undefined) model.family = config.family
-                if (config.name !== undefined) model.name = config.name
+                if (config.name) model.name = config.name
                 if (config.api !== undefined) model.api = { ...model.api, ...config.api }
                 if (config.capabilities !== undefined) {
                   model.capabilities = {

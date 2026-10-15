@@ -112,7 +112,9 @@ function timeoutController(ms: number) {
 // fetch layer, on top of `options.fetch` when a custom fetch is configured.
 function timeoutFetch(options: Record<string, any>) {
   const customFetch = options["fetch"]
-  const chunkTimeout = options["chunkTimeout"] ?? 300_000
+  // 15m default for the SSE idle timeout: reasoning models can stream nothing for minutes while
+  // they think (ported from upstream anomalyco/opencode d8129ca1e0).
+  const chunkTimeout = options["chunkTimeout"] ?? 900_000
   const headerTimeout = options["headerTimeout"] ?? 300_000
   const timeout = options["timeout"]
 
