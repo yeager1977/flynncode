@@ -69,7 +69,7 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       SessionStateKey.from(serverSDK().scope, SessionRouteKey.fromRoute(base64Encode(sdk().directory), params.id)),
     )
 
-    const inflight = new Map<string, Promise<void>>()
+    const inflight = new Map<string, { promise: Promise<void>; silent: boolean }>()
     const [store, setStore] = createStore<{
       file: Record<string, FileState>
     }>({
@@ -148,7 +148,7 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       )
     }
 
-    const setLoadError = (file: string, message: string) => {
+    const setLoadError = (file: string, message: string, options?: { silent?: boolean }) => {
       setStore(
         "file",
         file,
@@ -157,6 +157,10 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
           draft.error = message
         }),
       )
+      // Restored and already-open tabs show their inline failure state instead of a toast
+      // (ported from upstream anomalyco/opencode 2a593c0d1b).
+      const hasOpenTab = tabs.all().some((tab) => path.pathFromTab(tab) === file)
+      if (options?.silent || hasOpenTab) return
       showToast({
         variant: "error",
         title: language.t("toast.file.loadFailed.title"),
@@ -164,7 +168,7 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       })
     }
 
-    const load = (input: string, options?: { force?: boolean }) => {
+    const load = (input: string, options?: { force?: boolean; silent?: boolean }) => {
       const file = path.normalize(input)
       if (!file) return Promise.resolve()
 
@@ -175,12 +179,18 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       const current = store.file[file]
       if (!options?.force && current?.loaded) return Promise.resolve()
 
+      const silent = Boolean(options?.silent)
       const pending = inflight.get(key)
-      if (pending) return pending
+      if (pending) {
+        if (!silent) pending.silent = false
+        return pending.promise
+      }
 
       setLoading(file)
 
-      const promise = sdk()
+      const entry = { silent, promise: Promise.resolve() }
+
+      entry.promise = sdk()
         .client.file.read({ path: file })
         .then((x) => {
           if (scope() !== directory) return
@@ -193,14 +203,14 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
         })
         .catch((e) => {
           if (scope() !== directory) return
-          setLoadError(file, errorMessage(e, language.t("error.chain.unknown")))
+          setLoadError(file, errorMessage(e, language.t("error.chain.unknown")), { silent: entry.silent })
         })
         .finally(() => {
           inflight.delete(key)
         })
 
-      inflight.set(key, promise)
-      return promise
+      inflight.set(key, entry)
+      return entry.promise
     }
 
     const search = (query: string, dirs: "true" | "false", options?: { limit?: number; signal?: AbortSignal }) =>
@@ -228,7 +238,7 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
         hasFile: (file) => Boolean(store.file[file]),
         isOpen: (file) => tabs.all().some((tab) => path.pathFromTab(tab) === file),
         loadFile: (file) => {
-          void load(file, { force: true })
+          void load(file, { force: true, silent: true })
         },
         node: tree.node,
         isDirLoaded: tree.isLoaded,
