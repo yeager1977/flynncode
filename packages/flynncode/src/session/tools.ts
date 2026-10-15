@@ -563,7 +563,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           if (resolvedMcp.warning) yield* Effect.logWarning(resolvedMcp.warning, { toolID: key })
           const effectiveMcp = resolvedMcp.effective
           const result: Awaited<ReturnType<NonNullable<typeof execute>>> = yield* Effect.gen(function* () {
-            yield* ctx.ask({ permission: key, metadata: {}, patterns: ["*"], always: ["*"] })
+            yield* ctx.ask({ permission: key, metadata: { input: effectiveMcp }, patterns: ["*"], always: ["*"] })
             return yield* Effect.promise(() => execute(effectiveMcp, opts))
           }).pipe(
             Effect.withSpan("Tool.execute", {
