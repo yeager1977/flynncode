@@ -1997,7 +1997,7 @@ export default function Page() {
         sync: sync(),
         serverSync: serverSync(),
         draft: item,
-        optimisticBusy: item.sessionDirectory === sdk().directory,
+        optimisticBusy: true,
       }).catch((err) => {
         setFollowup("failed", input.sessionID, input.id)
         fail(err)

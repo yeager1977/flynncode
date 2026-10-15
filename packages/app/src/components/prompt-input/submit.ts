@@ -52,6 +52,9 @@ type FollowupSendInput = {
   sync: DirectorySync
   draft: FollowupDraft
   messageID?: string
+  // Always pass true when work was requested: the status store is
+  // server-scoped and keyed by session ID, so every directory's timeline
+  // sees the optimistic busy — including worktree sessions.
   optimisticBusy?: boolean
   before?: () => Promise<boolean> | boolean
 }
@@ -723,7 +726,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       serverSync: serverSync(),
       draft,
       messageID,
-      optimisticBusy: sessionDirectory === projectDirectory,
+      optimisticBusy: true,
       before: waitForWorktree,
     }).catch((err) => {
       pending.delete(pendingKey(session.id))
