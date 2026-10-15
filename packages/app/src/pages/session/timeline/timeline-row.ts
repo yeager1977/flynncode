@@ -25,6 +25,9 @@ export namespace TimelineRow {
     previousAssistantPart: boolean
     // Verbose view mode: tool parts in this group render with details forced open.
     verbose?: boolean
+    // Set when this part's text ends with the turn's task-suggestion envelope;
+    // the renderer strips the envelope so the chip is its only representation.
+    hideTrailingSuggestion?: boolean
   }> {}
   export class Thinking extends Data.TaggedClass("Thinking")<{
     userMessageID: string

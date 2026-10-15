@@ -43,7 +43,10 @@ export function createPromptModelSelection(input: { agent: () => { model?: Model
   }
 
   const current = () => {
-    const key = [prompt.model.current(), input.agent()?.model, configured(), recent(), fallback()].find(
+    // Catalog availability must not replace a user's choice with a default on the next submission.
+    const explicit = prompt.model.current()
+    if (explicit) return models.find(explicit)
+    const key = [input.agent()?.model, configured(), recent(), fallback()].find(
       (item): item is ModelKey => !!item && valid(item),
     )
     if (!key) return
