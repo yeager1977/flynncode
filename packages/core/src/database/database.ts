@@ -76,7 +76,13 @@ export function path() {
     process.env.OPENCODE_DISABLE_CHANNEL_DB === "true"
   )
     return join(Global.Path.data, "opencode.db")
-  return join(Global.Path.data, `opencode-${InstallationChannel.replace(/[^a-zA-Z0-9._-]/g, "-")}.db`)
+  return join(Global.Path.data, channelDatabaseName(InstallationChannel))
+}
+
+// An empty channel only comes from a build without a channel define; use the
+// dev database instead of silently creating an empty `opencode-.db`.
+export function channelDatabaseName(channel: string) {
+  return `opencode-${(channel || "dev").replace(/[^a-zA-Z0-9._-]/g, "-")}.db`
 }
 
 export const node = makeGlobalNode({ service: Service, layer: layerFromPath(path()), deps: [] })
