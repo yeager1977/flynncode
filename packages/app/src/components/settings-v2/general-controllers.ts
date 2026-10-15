@@ -18,7 +18,7 @@ import {
 } from "@/context/settings"
 import { playSoundPreview, SOUND_OPTIONS } from "@/utils/sound"
 import { memoryFromConfig, memoryToConfig, type MemoryPatch } from "./memory-payload"
-import { createOptimisticToggle, createSoundPreviewController, type ShellOption } from "./general-controller-behavior"
+import { createSoundPreviewController, type ShellOption } from "./general-controller-behavior"
 
 export { createShellOptions, createSoundPreviewController } from "./general-controller-behavior"
 export type { ShellOption, ShellSelectOption } from "./general-controller-behavior"
