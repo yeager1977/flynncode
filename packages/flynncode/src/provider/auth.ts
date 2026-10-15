@@ -2,6 +2,7 @@ import { LayerNode } from "@flynncode/core/effect/layer-node"
 import type { AuthOAuthResult, Hooks } from "@flynncode/plugin"
 import { serviceUse } from "@flynncode/core/effect/service-use"
 import { Auth } from "@/auth"
+import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { optional } from "@flynncode/core/schema"
 import { Plugin } from "../plugin"
@@ -65,6 +66,19 @@ export const CallbackInput = Schema.Struct({
 })
 export type CallbackInput = Schema.Schema.Type<typeof CallbackInput>
 
+export class UsageWindow extends Schema.Class<UsageWindow>("ProviderAuthUsageWindow")({
+  id: Schema.String,
+  percent: Schema.Finite.annotate({ description: "Utilization from 0 to 100" }),
+  resetsAt: optional(Schema.Finite).annotate({ description: "Epoch milliseconds when the window resets" }),
+}) {}
+
+export class Usage extends Schema.Class<Usage>("ProviderAuthUsage")({
+  windows: Schema.Array(UsageWindow),
+}) {}
+
+export const UsageResult = Schema.Record(Schema.String, Usage)
+export type UsageResult = typeof UsageResult.Type
+
 export class OauthMissing extends Schema.TaggedErrorClass<OauthMissing>()("ProviderAuthOauthMissing", {
   providerID: ProviderV2.ID,
 }) {}
@@ -95,6 +109,7 @@ export interface Interface {
     } & AuthorizeInput,
   ) => Effect.Effect<Authorization | undefined, Error>
   readonly callback: (input: { providerID: ProviderV2.ID } & CallbackInput) => Effect.Effect<void, Error>
+  readonly usage: () => Effect.Effect<UsageResult>
 }
 
 interface State {
@@ -111,6 +126,7 @@ const layer: Layer.Layer<Service, never, Auth.Service | Plugin.Service> = Layer.
   Effect.gen(function* () {
     const auth = yield* Auth.Service
     const plugin = yield* Plugin.Service
+    const bridge = yield* EffectBridge.make()
     const state = yield* InstanceState.make<State>(
       Effect.fn("ProviderAuth.state")(function* () {
         const plugins = yield* plugin.list()
@@ -220,7 +236,54 @@ const layer: Layer.Layer<Service, never, Auth.Service | Plugin.Service> = Layer.
       }
     })
 
-    return Service.of({ methods, authorize, callback })
+    // Usage snapshots are best-effort display data: cache briefly so the
+    // titlebar poll doesn't hammer provider usage endpoints, and never let a
+    // plugin failure fail the whole aggregation.
+    const USAGE_CACHE_TTL_MS = 60_000
+    const usageCache = new Map<string, { usage: Usage; expires: number }>()
+
+    const usage = Effect.fn("ProviderAuth.usage")(function* () {
+      const { hooks } = yield* InstanceState.get(state)
+      const entries = yield* Effect.forEach(
+        Object.entries(hooks),
+        ([id, hook]) =>
+          Effect.gen(function* () {
+            const providerID = ProviderV2.ID.make(id)
+            if (!hook.usage) return undefined
+            const stored = yield* auth.get(providerID).pipe(Effect.orDie)
+            if (!stored) return undefined
+            const now = Date.now()
+            const hit = usageCache.get(id)
+            if (hit && now < hit.expires) return [id, hit.usage] as const
+            const result = yield* Effect.promise(() =>
+              Promise.race([
+                hook.usage!(() => bridge.promise(auth.get(providerID).pipe(Effect.orDie)) as any),
+                new Promise<undefined>((resolve) => {
+                  const timer = setTimeout(() => resolve(undefined), 10_000)
+                  timer.unref?.()
+                }),
+              ]).catch(() => undefined),
+            )
+            if (!result) return undefined
+            const value = new Usage({
+              windows: result.windows.map(
+                (window) =>
+                  new UsageWindow({
+                    id: window.id,
+                    percent: window.percent,
+                    ...(window.resetsAt !== undefined ? { resetsAt: window.resetsAt } : {}),
+                  }),
+              ),
+            })
+            usageCache.set(id, { usage: value, expires: now + USAGE_CACHE_TTL_MS })
+            return [id, value] as const
+          }),
+        { concurrency: "unbounded" },
+      )
+      return Object.fromEntries(entries.filter((entry): entry is readonly [string, Usage] => entry !== undefined))
+    })
+
+    return Service.of({ methods, authorize, callback, usage })
   }),
 )
 

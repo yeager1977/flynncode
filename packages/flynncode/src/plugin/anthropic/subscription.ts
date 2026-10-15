@@ -1,4 +1,4 @@
-import type { Hooks, PluginInput } from "@flynncode/plugin"
+import type { Hooks, PluginInput, ProviderUsage } from "@flynncode/plugin"
 import { OauthCallbackPage } from "@flynncode/core/oauth/page"
 import { OAUTH_DUMMY_KEY } from "../../auth"
 import { parseClaudeCredentials } from "../../auth/vendor-import"
@@ -128,6 +128,52 @@ async function discoverSubscriptionModelIDs(input: {
   const ids = await fetchSubscriptionModelIDs(input)
   if (ids) discovered = { ids, expires: Date.now() + MODELS_CACHE_TTL_MS }
   return ids
+}
+
+/**
+ * Fetch subscription usage windows from Anthropic's OAuth usage endpoint.
+ * Returns undefined on any failure so callers can omit meters for this
+ * provider instead of rendering stale or made-up numbers.
+ */
+export async function fetchAnthropicUsage(input: {
+  fetchImpl: typeof fetch
+  token: string
+  apiBaseUrl?: string
+}): Promise<ProviderUsage | undefined> {
+  const base = (input.apiBaseUrl ?? MODELS_API_BASE_URL).replace(/\/+$/, "")
+  const res = await input
+    .fetchImpl(`${base}/api/oauth/usage`, {
+      method: "GET",
+      signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS),
+      headers: {
+        Authorization: `Bearer ${input.token}`,
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": "oauth-2025-04-20",
+      },
+    })
+    .catch(() => undefined)
+  if (!res || !res.ok) return undefined
+  const body = (await res.json().catch(() => undefined)) as Record<string, unknown> | undefined
+  if (!body) return undefined
+  // Only surface the named product windows; the response also carries
+  // internal codename buckets that mean nothing in a UI.
+  const named: Array<[string, string]> = [
+    ["session", "five_hour"],
+    ["weekly", "seven_day"],
+    ["weekly-sonnet", "seven_day_sonnet"],
+    ["weekly-opus", "seven_day_opus"],
+  ]
+  const windows = named.flatMap(([id, key]) => {
+    const value = body[key]
+    if (typeof value !== "object" || value === null) return []
+    const record = value as Record<string, unknown>
+    const percent = record.utilization
+    if (typeof percent !== "number" || !Number.isFinite(percent)) return []
+    const resetsAt = typeof record.resets_at === "string" ? Date.parse(record.resets_at) : Number.NaN
+    return [{ id, percent, ...(Number.isFinite(resetsAt) ? { resetsAt } : {}) }]
+  })
+  if (windows.length === 0) return undefined
+  return { windows }
 }
 
 interface RefreshResult {
@@ -328,6 +374,30 @@ export async function AnthropicSubscriptionPlugin(
     },
     auth: {
       provider: "anthropic",
+      async usage(getAuth): Promise<ProviderUsage | undefined> {
+        const auth = await getAuth()
+        if (auth.type !== "oauth") return undefined
+        if (auth.access && auth.expires > Date.now()) {
+          return fetchAnthropicUsage({ fetchImpl: fetch, token: auth.access, apiBaseUrl: options.apiBaseUrl })
+        }
+        // Usage is display-only, but an expired token would hide the meters
+        // indefinitely; refresh and persist it the same way the loader does.
+        const tokens = await refreshSubscriptionToken(auth.refresh, {
+          tokenEndpoint: tokenEndpointFor(options),
+          clientId: options.clientId ?? CLIENT_ID,
+        }).catch(() => undefined)
+        if (!tokens) return undefined
+        await input.client.auth.set({
+          path: { id: "anthropic" },
+          body: {
+            type: "oauth",
+            refresh: tokens.refresh_token ?? auth.refresh,
+            access: tokens.access_token,
+            expires: Date.now() + (tokens.expires_in ?? 3600) * 1000,
+          },
+        })
+        return fetchAnthropicUsage({ fetchImpl: fetch, token: tokens.access_token, apiBaseUrl: options.apiBaseUrl })
+      },
       async loader(getAuth) {
         const auth = await getAuth()
         if (auth.type !== "oauth") return {}

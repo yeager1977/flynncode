@@ -55,6 +55,17 @@ export const ProviderApi = HttpApi.make("provider")
             description: "Retrieve available authentication methods for all AI providers.",
           }),
         ),
+        HttpApiEndpoint.get("usage", `${root}/usage`, {
+          query: WorkspaceRoutingQuery,
+          success: described(ProviderAuth.UsageResult, "Provider usage windows"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "provider.usage",
+            summary: "Get provider usage",
+            description:
+              "Retrieve subscription usage windows (utilization percent and reset time) for connected providers that report them.",
+          }),
+        ),
         HttpApiEndpoint.post("authorize", `${root}/:providerID/oauth/authorize`, {
           params: { providerID: ProviderV2.ID },
           query: WorkspaceRoutingQuery,
