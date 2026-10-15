@@ -3,6 +3,7 @@ import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import {
   AnthropicSubscriptionPlugin,
+  fetchSubscriptionModelIDs,
   filterSubscriptionModels,
   oauthState,
   refreshSubscriptionToken,
@@ -32,6 +33,23 @@ describe("subscription helpers", () => {
     }
     expect(Object.keys(filterSubscriptionModels(models, false))).toHaveLength(2)
   })
+  it("falls back to the static lineup, which includes sonnet-5-5", () => {
+    const models = {
+      "claude-sonnet-5-5": { api: { id: "claude-sonnet-5-5" } },
+      "some-other": { api: { id: "some-other" } },
+    }
+    expect(Object.keys(filterSubscriptionModels(models, true))).toContain("claude-sonnet-5-5")
+    expect(Object.keys(filterSubscriptionModels(models, true))).not.toContain("some-other")
+  })
+  it("filters against a discovered set when provided", () => {
+    const models = {
+      "claude-sonnet-5-5": { api: { id: "claude-sonnet-5-5" } },
+      "claude-sonnet-5": { api: { id: "claude-sonnet-5" } },
+    }
+    expect(Object.keys(filterSubscriptionModels(models, true, new Set(["claude-sonnet-5-5"])))).toEqual([
+      "claude-sonnet-5-5",
+    ])
+  })
   it("reads a JWT's exp claim and rejects malformed tokens", () => {
     expect(jwtExpiry("not-a-jwt")).toBeUndefined()
     expect(jwtExpiry(createTestJwt({ sub: "user-1" }))).toBeUndefined()
@@ -41,6 +59,40 @@ describe("subscription helpers", () => {
     const access = createTestJwt({ exp: 1_700_000_000 })
     const imported = parseCodexAuth({ tokens: { access_token: access, refresh_token: "r" } })
     expect(imported).toMatchObject({ kind: "oauth", expires: 1_700_000_000_000 })
+  })
+})
+
+describe("subscription model discovery", () => {
+  it("collects accessible ids across pages", async () => {
+    const pages = [
+      { data: [{ id: "claude-sonnet-5-5" }, { id: "claude-opus-5-5" }], has_more: true, last_id: "claude-opus-5-5" },
+      { data: [{ id: "claude-haiku-5-5" }], has_more: false },
+    ]
+    const urls: string[] = []
+    const fetchImpl = (async (url: unknown) => {
+      urls.push(String(url))
+      return new Response(JSON.stringify(pages.shift()), { status: 200 })
+    }) as typeof fetch
+    const ids = await fetchSubscriptionModelIDs({ fetchImpl, token: "t", apiBaseUrl: "https://example.test" })
+    expect([...ids!].sort()).toEqual(["claude-haiku-5-5", "claude-opus-5-5", "claude-sonnet-5-5"])
+    expect(urls).toEqual([
+      "https://example.test/v1/models?limit=1000",
+      "https://example.test/v1/models?limit=1000&after_id=claude-opus-5-5",
+    ])
+  })
+
+  it("returns undefined when discovery fails so callers fall back", async () => {
+    const denied = (async () => new Response("denied", { status: 401 })) as unknown as typeof fetch
+    expect(await fetchSubscriptionModelIDs({ fetchImpl: denied, token: "t" })).toBeUndefined()
+    const boom = (async () => {
+      throw new Error("network")
+    }) as unknown as typeof fetch
+    expect(await fetchSubscriptionModelIDs({ fetchImpl: boom, token: "t" })).toBeUndefined()
+    const empty = (async () => new Response(JSON.stringify({ data: [] }), { status: 200 })) as unknown as typeof fetch
+    expect(await fetchSubscriptionModelIDs({ fetchImpl: empty, token: "t" })).toBeUndefined()
+    const badShape = (async () =>
+      new Response(JSON.stringify({ nope: true }), { status: 200 })) as unknown as typeof fetch
+    expect(await fetchSubscriptionModelIDs({ fetchImpl: badShape, token: "t" })).toBeUndefined()
   })
 })
 

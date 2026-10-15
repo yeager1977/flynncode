@@ -20,6 +20,8 @@ export interface AnthropicSubscriptionOptions {
   tokenIssuer?: string
   clientId?: string
   tokenEndpoint?: string
+  // Base URL for live subscription model discovery (GET /v1/models).
+  apiBaseUrl?: string
 }
 
 interface PkceCodes {
@@ -43,15 +45,89 @@ function base64UrlEncode(buffer: ArrayBuffer): string {
 }
 
 // Subscription OAuth only serves the Claude Pro/Max lineup; API keys keep the
-// full provider catalog.
-const SUBSCRIPTION_MODELS = new Set(["claude-sonnet-5", "claude-opus-5-5", "claude-fable-5-1"])
+// full provider catalog. The servable set is discovered live from Anthropic's
+// /v1/models endpoint (see fetchSubscriptionModelIDs); this static set is the
+// fallback when discovery fails, so keep it to the current lineup only.
+const SUBSCRIPTION_MODELS = new Set([
+  "claude-fable-5",
+  "claude-fable-5-1",
+  "claude-sonnet-5",
+  "claude-sonnet-5-5",
+  "claude-opus-5",
+  "claude-opus-5-5",
+  "claude-haiku-5-5",
+])
 
 export function filterSubscriptionModels<Model extends { api: { id: string } }>(
   models: Record<string, Model>,
   isOAuth: boolean,
+  accessible: ReadonlySet<string> = SUBSCRIPTION_MODELS,
 ): Record<string, Model> {
   if (!isOAuth) return models
-  return Object.fromEntries(Object.entries(models).filter(([, model]) => SUBSCRIPTION_MODELS.has(model.api.id)))
+  return Object.fromEntries(Object.entries(models).filter(([, model]) => accessible.has(model.api.id)))
+}
+
+const MODELS_API_BASE_URL = "https://api.anthropic.com"
+// A failed discovery must never stall provider state resolution; the static
+// fallback covers transient errors.
+const MODELS_FETCH_TIMEOUT_MS = 5_000
+const MODELS_CACHE_TTL_MS = 5 * 60_000
+
+/**
+ * Fetch the model ids the given OAuth token can actually use. Returns
+ * undefined on any failure (network, auth, unexpected shape) so callers fall
+ * back to the static lineup.
+ */
+export async function fetchSubscriptionModelIDs(input: {
+  fetchImpl: typeof fetch
+  token: string
+  apiBaseUrl?: string
+}): Promise<ReadonlySet<string> | undefined> {
+  const base = (input.apiBaseUrl ?? MODELS_API_BASE_URL).replace(/\/+$/, "")
+  const ids = new Set<string>()
+  let url: string | undefined = `${base}/v1/models?limit=1000`
+  // Cap pagination so a misbehaving endpoint cannot loop forever.
+  for (let page = 0; url && page < 5; page++) {
+    const res = await input
+      .fetchImpl(url, {
+        method: "GET",
+        signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS),
+        headers: {
+          Authorization: `Bearer ${input.token}`,
+          "anthropic-version": "2023-06-01",
+          "anthropic-beta": "oauth-2025-04-20",
+        },
+      })
+      .catch(() => undefined)
+    if (!res || !res.ok) return undefined
+    const body = (await res.json().catch(() => undefined)) as
+      | { data?: Array<{ id?: unknown }>; has_more?: unknown; last_id?: unknown }
+      | undefined
+    if (!body || !Array.isArray(body.data)) return undefined
+    for (const entry of body.data) {
+      if (typeof entry.id === "string") ids.add(entry.id)
+    }
+    url =
+      body.has_more === true && typeof body.last_id === "string"
+        ? `${base}/v1/models?limit=1000&after_id=${encodeURIComponent(body.last_id)}`
+        : undefined
+  }
+  return ids.size > 0 ? ids : undefined
+}
+
+let discovered: { ids: ReadonlySet<string>; expires: number } | undefined
+
+// Provider state (and thus the models hook) rebuilds on a short TTL; align
+// discovery caching with it so one list fetch serves a burst of rebuilds.
+async function discoverSubscriptionModelIDs(input: {
+  fetchImpl: typeof fetch
+  token: string
+  apiBaseUrl?: string
+}): Promise<ReadonlySet<string> | undefined> {
+  if (discovered && Date.now() < discovered.expires) return discovered.ids
+  const ids = await fetchSubscriptionModelIDs(input)
+  if (ids) discovered = { ids, expires: Date.now() + MODELS_CACHE_TTL_MS }
+  return ids
 }
 
 interface RefreshResult {
@@ -234,7 +310,19 @@ export async function AnthropicSubscriptionPlugin(
     provider: {
       id: "anthropic",
       async models(provider, ctx) {
-        if (ctx.auth?.type !== "oauth") return provider.models
+        const auth = ctx.auth
+        if (auth?.type !== "oauth") return provider.models
+        // The stored access token may be stale at state-build time; only
+        // attempt discovery with a live one and fall back to the static
+        // lineup otherwise (the loader refreshes on first request anyway).
+        if (auth.access && auth.expires > Date.now()) {
+          const ids = await discoverSubscriptionModelIDs({
+            fetchImpl: fetch,
+            token: auth.access,
+            apiBaseUrl: options.apiBaseUrl,
+          })
+          if (ids) return filterSubscriptionModels(provider.models, true, ids)
+        }
         return filterSubscriptionModels(provider.models, true)
       },
     },
