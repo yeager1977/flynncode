@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import {
   expandSubagent,
+  latestAssistantModel,
   limitedTaskIDs,
   groupSubagents,
   mergeSubagents,
@@ -187,6 +188,60 @@ describe("tasksFromParts", () => {
     )
     expect(groupSubagents(merged).active.map((item) => item.id)).toEqual(["ses_child"])
     expect(groupSubagents(merged).finished).toEqual([])
+  })
+})
+
+describe("latestAssistantModel", () => {
+  const user = { role: "user" as const }
+  const assistant = (providerID: string, modelID: string, completed?: number) => ({
+    role: "assistant" as const,
+    providerID,
+    modelID,
+    time: { created: 1, ...(completed === undefined ? {} : { completed }) },
+  })
+
+  test("labels the newest assistant turn with provider/model", () => {
+    expect(latestAssistantModel([user, assistant("anthropic", "claude-sonnet-5", 2), user])).toBe(
+      "anthropic/claude-sonnet-5",
+    )
+  })
+
+  test("an in-progress turn keeps the model it started with", () => {
+    expect(
+      latestAssistantModel([assistant("openai", "gpt-6-luna", 2), user, assistant("meta", "muse-wonder-full-1.0")]),
+    ).toBe("meta/muse-wonder-full-1.0")
+  })
+
+  test("returns undefined until an assistant turn exists", () => {
+    expect(latestAssistantModel([user])).toBeUndefined()
+    expect(latestAssistantModel([])).toBeUndefined()
+    expect(latestAssistantModel(undefined)).toBeUndefined()
+    expect(latestAssistantModel([assistant("", "")])).toBeUndefined()
+  })
+
+  test("a task row carries its requested model until the child reports its own", () => {
+    const tasks = tasksFromParts(
+      [
+        {
+          type: "tool",
+          tool: "task",
+          state: {
+            status: "running",
+            title: "Build packages",
+            input: { model: "ollama-cloud/glm-5.3-flash" },
+            metadata: { sessionId: "ses_child" },
+          },
+        },
+      ],
+      10,
+      () => false,
+    )
+    expect(tasks[0]?.model).toBe("ollama-cloud/glm-5.3-flash")
+    const merged = mergeSubagents(
+      [{ id: "ses_child", title: "Child", updated: 1, status: "busy", text: "", model: "anthropic/claude-sonnet-5" }],
+      tasks,
+    )
+    expect(merged[0]?.model).toBe("anthropic/claude-sonnet-5")
   })
 })
 

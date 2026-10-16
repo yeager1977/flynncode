@@ -68,6 +68,7 @@ import { useDialog } from "@flynncode/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { useLayout, type SessionTimelineViewMode } from "@/context/layout"
 import { useSessionKey } from "@/pages/session/session-layout"
+import { latestAssistantModel } from "@/pages/session/subagent-list"
 import { useSessionArchive } from "@/pages/session/session-archive"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
@@ -137,12 +138,18 @@ const markBoundaryGesture = (input: {
   }
 }
 
-function TimelineThinkingRow(props: { reasoningHeading?: string; showReasoningSummaries: boolean }) {
+function TimelineThinkingRow(props: { reasoningHeading?: string; showReasoningSummaries: boolean; model?: string }) {
   const language = useLanguage()
 
   return (
     <div data-slot="session-turn-thinking">
       <TextShimmer text={language.t("ui.sessionTurn.status.thinking")} />
+      <Show when={props.model}>
+        <span class="text-12-regular text-text-weak">
+          {" · "}
+          <bdi dir="ltr">{props.model}</bdi>
+        </span>
+      </Show>
       <Show when={!props.showReasoningSummaries}>
         <TextReveal text={props.reasoningHeading} class="session-turn-thinking-heading" travel={25} duration={700} />
       </Show>
@@ -1336,6 +1343,7 @@ export function MessageTimeline(props: {
               <TimelineThinkingRow
                 reasoningHeading={thinkingRow().reasoningHeading}
                 showReasoningSummaries={settings.general.showReasoningSummaries()}
+                model={latestAssistantModel(assistantMessagesByParent().get(thinkingRow().userMessageID))}
               />
             </div>
           </TimelineRowFrame>

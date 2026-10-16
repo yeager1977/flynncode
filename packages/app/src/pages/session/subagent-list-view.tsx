@@ -12,6 +12,7 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import {
   expandSubagent,
   groupSubagents,
+  latestAssistantModel,
   limitedTaskIDs,
   mergeSubagents,
   subagentListState,
@@ -39,6 +40,7 @@ export function SubagentList(props: { sessionID: () => string }) {
         updated: session.time.updated,
         directory: session.directory,
         status: sync().data.session_status[session.id]?.type,
+        model: latestAssistantModel(sync().data.message[session.id]),
         text: latestText(sync().data.message[session.id] ?? [], sync().data.part),
         // Loaded child messages are authoritative; otherwise fall back to the
         // parent's task output, which survives reload.
@@ -54,6 +56,17 @@ export function SubagentList(props: { sessionID: () => string }) {
   })
 
   const groups = createMemo(() => groupSubagents(rows()))
+  const childrenByID = createMemo(() => {
+    const map = new Map<string, SubagentChild>()
+    for (const child of rows()) map.set(child.id, child)
+    return map
+  })
+  // <For> reuses a row's DOM only while the item reference is unchanged, and
+  // rows() rebuilds child objects on every sync-store change, so key the rows
+  // by id strings and let each row's fields update reactively. Recreating the
+  // card would reset its scrolled output box and in-flight stop/steer state.
+  const activeIDs = createMemo(() => groups().active.map((child) => child.id))
+  const finishedIDs = createMemo(() => groups().finished.map((child) => child.id))
 
   createEffect(() => {
     const expanded = view().subagents.expandedID()
@@ -79,7 +92,9 @@ export function SubagentList(props: { sessionID: () => string }) {
       fallback={<div class="p-2 text-12-regular text-text-weak">{language.t("session.subagents.empty")}</div>}
     >
       <div class="flex flex-col gap-2 p-2 text-12-regular text-text-base">
-        <For each={groups().active}>{(child) => <Row child={child} finished={false} open={open} />}</For>
+        <For each={activeIDs()}>
+          {(id) => <Row child={childrenByID().get(id)!} finished={false} open={open} />}
+        </For>
         <Show when={groups().finished.length > 0}>
           <button
             type="button"
@@ -90,7 +105,9 @@ export function SubagentList(props: { sessionID: () => string }) {
             {language.t("session.subagents.finished")} {groups().finished.length}
           </button>
           <Show when={view().subagents.finishedOpen()}>
-            <For each={groups().finished}>{(child) => <Row child={child} finished={true} open={open} />}</For>
+            <For each={finishedIDs()}>
+              {(id) => <Row child={childrenByID().get(id)!} finished={true} open={open} />}
+            </For>
           </Show>
         </Show>
       </div>
@@ -238,6 +255,12 @@ function Row(props: {
               <bdi>{props.child.title}</bdi>
             </div>
             <span class="text-text-weak"> {status()}</span>
+            <Show when={props.child.model}>
+              <span class="text-text-weak">
+                {" · "}
+                <bdi dir="ltr">{props.child.model}</bdi>
+              </span>
+            </Show>
             <Show when={!expanded() && subagentPreview(props.child.text)}>
               <div class="text-text-weak line-clamp-2">
                 <bdi dir="auto">{subagentPreview(props.child.text)}</bdi>
@@ -269,7 +292,7 @@ function Row(props: {
         />
       </Show>
       <Show when={expanded() && rename() === undefined}>
-        <div class="flex gap-1">
+        <div class="flex flex-wrap gap-1">
           <Button
             type="button"
             size="small"
@@ -292,21 +315,23 @@ function Row(props: {
               {archiving() ? language.t("session.subagents.archiving") : language.t("session.subagents.archive")}
             </Button>
           </Show>
+          <Show when={props.child.status === "busy" || props.child.status === "retry"}>
+            <Button
+              type="button"
+              size="small"
+              variant="ghost"
+              data-action="subagent-stop"
+              disabled={stopping()}
+              onClick={() => {
+                void stopChild()
+              }}
+            >
+              {stopping() ? language.t("session.subagents.stopping") : language.t("session.subagents.stop")}
+            </Button>
+          </Show>
         </div>
       </Show>
       <Show when={expanded() && (props.child.status === "busy" || props.child.status === "retry")}>
-        <Button
-          type="button"
-          size="small"
-          variant="ghost"
-          data-action="subagent-stop"
-          disabled={stopping()}
-          onClick={() => {
-            void stopChild()
-          }}
-        >
-          {stopping() ? language.t("session.subagents.stopping") : language.t("session.subagents.stop")}
-        </Button>
         <form
           class="flex gap-1"
           data-action="subagent-steer"

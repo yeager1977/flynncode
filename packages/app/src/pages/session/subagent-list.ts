@@ -9,8 +9,22 @@ export type SubagentChild = {
   directory?: string
   status: SubagentStatus | undefined
   text: string
+  // "provider/model" of the child's newest assistant turn: the model that is
+  // doing (or last did) the work, which can differ from any picker selection.
+  model?: string
   // The child's newest assistant turn ended on a provider usage limit.
   limited?: boolean
+}
+
+// Assistant messages record the model they started with, so the newest one
+// names the model behind the current (or most recent) run even if the user
+// has since switched the session's selected model.
+export function latestAssistantModel(
+  messages: readonly { role: string; providerID?: string; modelID?: string }[] | undefined,
+) {
+  const last = messages?.findLast((message) => message.role === "assistant" && message.providerID && message.modelID)
+  if (!last?.providerID || !last.modelID) return undefined
+  return `${last.providerID}/${last.modelID}`
 }
 
 export type SubagentGroups = {
@@ -63,6 +77,9 @@ export type TaskToolPart = {
     status?: string
     title?: string
     output?: string
+    input?: {
+      model?: string
+    }
     metadata?: {
       sessionId?: string
       background?: boolean
@@ -78,7 +95,7 @@ export function tasksFromParts(
   updated: number,
   live: (sessionID: string) => boolean,
 ): SubagentChild[] {
-  const tasks = new Map<string, { title: string; text: string; running: boolean }>()
+  const tasks = new Map<string, { title: string; text: string; running: boolean; model?: string }>()
   for (const part of parts) {
     const output = part.state?.output ?? (typeof part.text === "string" ? part.text : "")
     const title = part.state?.title
@@ -104,6 +121,7 @@ export function tasksFromParts(
       title: title || current?.title || sessionId,
       text: output || current?.text || "",
       running,
+      model: part.state?.input?.model || current?.model,
     })
   }
   return [...tasks.values()].length
@@ -115,6 +133,7 @@ export function tasksFromParts(
           updated,
           status: "busy" as const,
           text: item.text,
+          model: item.model,
         }))
     : []
 }
@@ -154,6 +173,7 @@ export function mergeSubagents(sessions: readonly SubagentChild[], tasks: readon
       title: current.title || task.title,
       text: current.text || task.text,
       status: current.status ?? task.status,
+      model: current.model ?? task.model,
     })
   }
   return [...byID.values()]

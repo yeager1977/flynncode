@@ -35,6 +35,9 @@ export default defineConfig({
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
+    // Distros whose registry playwright does not know (e.g. ubuntu 26.04) cannot
+    // download managed browsers; run against the system Chrome instead.
+    ...(process.env.PLAYWRIGHT_SYSTEM_CHROME ? { channel: "chrome" } : {}),
   },
   projects: [
     {
