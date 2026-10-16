@@ -3004,10 +3004,8 @@ export type ProviderAuthMethod = {
 
 export type ProviderAuthUsageWindow = {
   id: string
-  /**
-   * Utilization from 0 to 100
-   */
-  percent: number
+  percent?: number
+  count?: number
   resetsAt?: number
 }
 
