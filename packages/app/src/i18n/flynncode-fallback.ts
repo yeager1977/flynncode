@@ -5,6 +5,8 @@ import { dict } from "./en"
 // before their own entries, so a real translation always wins and English shows
 // otherwise. Remove a key here once every locale translates it.
 const keys = [
+  "sidebar.dot.unseen",
+  "sidebar.dot.working",
   "sidebar.sessions.showLess",
   "sidebar.sessions.showMore.one",
   "sidebar.sessions.showMore.other",
@@ -51,6 +53,8 @@ const keys = [
   "session.bulk.cleanup.scopeProject",
   "session.artifacts.tab",
   "inbox.agentPlaceholder",
+  "inbox.compose.close",
+  "inbox.compose.open",
   "inbox.empty",
   "inbox.emptyFilter",
   "inbox.failedRun",
@@ -209,6 +213,8 @@ const keys = [
   "settings.models.visibilitySyncFailed.title",
   "provider.usage.meter",
   "provider.usage.meterCount",
+  "provider.usage.contextMeter",
+  "provider.usage.clickRefresh",
   "provider.usage.row",
   "provider.usage.rowResets",
   "provider.usage.countRow",

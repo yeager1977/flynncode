@@ -4,6 +4,7 @@ import { A } from "@solidjs/router"
 import { MenuV2 } from "@flynncode/ui/v2/menu-v2"
 import type { Session } from "@flynncode/sdk/v2/client"
 import { Icon } from "@flynncode/ui/v2/icon"
+import { TooltipV2 } from "@flynncode/ui/v2/tooltip-v2"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useNotification } from "@/context/notification"
@@ -114,9 +115,9 @@ export function SessionSidebar(props: {
         </Show>
       </div>
       <div class="flex flex-col gap-0.5 p-2 border-t border-v2-border-border-muted">
-        {/* Provider usage meters stay visible here with the project actions,
-            so quota clocks are watchable without a session open. */}
-        <ProviderUsageMeters row />
+        {/* Usage rings stay visible here with the project actions: context of
+            the open session plus the engaged provider's quota windows. */}
+        <ProviderUsageMeters variant="rings" sessionID={props.activeSessionID} row />
         <SidebarRow
           icon="folder-add-left"
           label={language.t("command.project.open")}
@@ -207,14 +208,14 @@ function SessionLink(props: { session: Session; href: string; active: boolean; o
         }}
       >
         <span class="shrink-0 size-3 flex items-center justify-center">
-          <span
-            class="block rounded-full"
-            classList={{
-              "size-2 bg-v2-icon-icon-accent animate-pulse": working(),
-              "size-2 bg-v2-icon-icon-accent": !working() && unseen(),
-              "size-1.5 border border-v2-icon-icon-muted": !working() && !unseen(),
-            }}
-          />
+          <Show
+            when={working() || unseen()}
+            fallback={<span class="block rounded-full size-1.5 border border-v2-icon-icon-muted" />}
+          >
+            <TooltipV2 placement="top" value={working() ? language.t("sidebar.dot.working") : language.t("sidebar.dot.unseen")}>
+              <span class="block rounded-full size-2 bg-v2-icon-icon-accent" classList={{ "animate-pulse": working() }} />
+            </TooltipV2>
+          </Show>
         </span>
         <Show
           when={state.renaming}
