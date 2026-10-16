@@ -22,6 +22,7 @@ import { CloudflareAIGatewayAuthPlugin, CloudflareWorkersAuthPlugin } from "./cl
 import { AzureAuthPlugin } from "./azure"
 import { DigitalOceanAuthPlugin } from "./digitalocean"
 import { XaiAuthPlugin } from "./xai"
+import { OllamaCloudUsagePlugin } from "./ollama-cloud"
 import { CerebrasPlugin } from "./cerebras"
 import { SnowflakeCortexAuthPlugin } from "./snowflake-cortex"
 import { OllamaModelRouterPlugin } from "./ollama-model-router"
@@ -108,6 +109,7 @@ function internalPlugins(flags: RuntimeFlags.Info): PluginInstance[] {
     XaiAuthPlugin,
     CerebrasPlugin,
     OllamaModelRouterPlugin,
+    OllamaCloudUsagePlugin,
     PreviewPlugin,
     RoutinesPlugin,
   ]

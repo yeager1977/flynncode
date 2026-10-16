@@ -87,8 +87,10 @@ type Rule = {
 
 export type ProviderUsageWindow = {
   id: string
-  /** Utilization from 0 to 100. */
-  percent: number
+  /** Utilization from 0 to 100, when the provider knows a utilizable limit. */
+  percent?: number
+  /** Absolute usage inside the window (e.g. requests), when the provider reports counts instead. */
+  count?: number
   /** Epoch milliseconds when the window resets, if known. */
   resetsAt?: number
 }

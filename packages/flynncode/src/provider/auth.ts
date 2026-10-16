@@ -67,7 +67,8 @@ export type CallbackInput = Schema.Schema.Type<typeof CallbackInput>
 
 export class UsageWindow extends Schema.Class<UsageWindow>("ProviderAuthUsageWindow")({
   id: Schema.String,
-  percent: Schema.Finite.annotate({ description: "Utilization from 0 to 100" }),
+  percent: optional(Schema.Finite).annotate({ description: "Utilization from 0 to 100" }),
+  count: optional(Schema.Finite).annotate({ description: "Absolute usage inside the window, e.g. requests" }),
   resetsAt: optional(Schema.Finite).annotate({ description: "Epoch milliseconds when the window resets" }),
 }) {}
 
@@ -280,14 +281,17 @@ const layer: Layer.Layer<Service, never, Auth.Service | Plugin.Service> = Layer.
             )
             if (!result) return undefined
             const value = new Usage({
-              windows: result.windows.map(
-                (window) =>
-                  new UsageWindow({
-                    id: window.id,
-                    percent: window.percent,
-                    ...(window.resetsAt !== undefined ? { resetsAt: window.resetsAt } : {}),
-                  }),
-              ),
+              windows: result.windows
+                .filter((window) => window.percent !== undefined || window.count !== undefined)
+                .map(
+                  (window) =>
+                    new UsageWindow({
+                      id: window.id,
+                      ...(window.percent !== undefined ? { percent: window.percent } : {}),
+                      ...(window.count !== undefined ? { count: window.count } : {}),
+                      ...(window.resetsAt !== undefined ? { resetsAt: window.resetsAt } : {}),
+                    }),
+                ),
             })
             usageCache.set(providerID, { usage: value, expires: now + USAGE_CACHE_TTL_MS })
             return [providerID, value] as const

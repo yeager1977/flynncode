@@ -10,6 +10,7 @@ import { useNotification } from "@/context/notification"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useSettingsDialog } from "@/components/settings-dialog"
+import { ProviderUsageMeters } from "@/components/provider-usage-meters"
 import { showToast } from "@/utils/toast"
 import { displayName } from "./helpers"
 import type { SidebarGroup } from "./sidebar-sessions"
@@ -113,6 +114,9 @@ export function SessionSidebar(props: {
         </Show>
       </div>
       <div class="flex flex-col gap-0.5 p-2 border-t border-v2-border-border-muted">
+        {/* Provider usage meters stay visible here with the project actions,
+            so quota clocks are watchable without a session open. */}
+        <ProviderUsageMeters row />
         <SidebarRow
           icon="folder-add-left"
           label={language.t("command.project.open")}
