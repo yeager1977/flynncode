@@ -49,6 +49,7 @@ export function ActivityInboxPanel() {
     text: "",
     sending: false,
     error: "",
+    composing: false,
     directory: "",
     agent: "build",
     model: "",
@@ -141,7 +142,7 @@ export function ActivityInboxPanel() {
           // the live-status watcher sees the session go idle (or reconcile
           // finds it inactive). Success clears the composed text; a failure
           // keeps it so the user can retry without retyping.
-          setState({ sending: false, text: "" })
+          setState({ sending: false, text: "", composing: false })
         },
         () => {
           setDesk("tasks", (current) => failDispatch(current, created.id))
@@ -272,75 +273,91 @@ export function ActivityInboxPanel() {
         </Show>
       </DialogTitle>
       <div class="flex flex-col gap-3 p-4">
-        <div class="flex flex-col gap-1 text-12-regular text-text-weak">
-          <span>{language.t("dispatch.project")}</span>
-          <SelectV2
-            data-action="inbox-project"
-            options={projects()}
-            current={projects().find((project) => project.worktree === state.directory)}
-            value={(project) => project.worktree}
-            label={(project) => project.worktree}
-            placeholder={language.t("inbox.projectPlaceholder")}
-            onSelect={(project) => project && setState("directory", project.worktree)}
-          />
+        {/* Filters and New task share the first screen so the activity list
+            reads without scrolling; the compose form only opens on demand. */}
+        <div class="flex items-center gap-1">
+          <div class="flex flex-row gap-1 flex-wrap" role="tablist">
+            <For each={["all", "running", "needs-input", "blocked", "done", "failed", "unread"] as const}>
+              {(tab) => (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={state.filter === tab}
+                  class={
+                    tab === state.filter
+                      ? "rounded px-2 py-1 text-12-regular bg-surface-raised text-text-strong"
+                      : "rounded px-2 py-1 text-12-regular text-text-weak"
+                  }
+                  onClick={() => setState("filter", tab)}
+                >
+                  {language.t(filterKey(tab))}
+                </button>
+              )}
+            </For>
+          </div>
+          <ButtonV2
+            class="ml-auto shrink-0"
+            variant="outline"
+            data-action="inbox-new-task"
+            onClick={() => setState("composing", !state.composing)}
+          >
+            {language.t(state.composing ? "inbox.compose.close" : "inbox.compose.open")}
+          </ButtonV2>
         </div>
-        <div class="flex flex-col gap-1 text-12-regular text-text-weak">
-          <span>{language.t("dispatch.agent")}</span>
-          <SelectV2
-            data-action="inbox-agent"
-            options={agents()}
-            current={agents().find((agent) => agent === state.agent)}
-            placeholder={language.t("inbox.agentPlaceholder")}
-            onSelect={(agent) => agent && setState("agent", agent)}
-          />
-        </div>
-        <div class="flex flex-col gap-1 text-12-regular text-text-weak">
-          <span>{language.t("dispatch.model")}</span>
-          <SelectV2
-            data-action="inbox-model"
-            options={modelOptions()}
-            current={selectedModel()}
-            value={(model) => `${model.provider.id}/${model.id}`}
-            label={(model) => `${model.provider.name} / ${model.name}`}
-            placeholder={language.t("inbox.modelPlaceholder")}
-            onSelect={(model) => model && setState("model", `${model.provider.id}/${model.id}`)}
-          />
-        </div>
-        <textarea
-          class="min-h-24 w-full rounded border border-border-weak bg-surface-base p-2 text-14-regular"
-          aria-label={language.t("dispatch.placeholder")}
-          placeholder={language.t("dispatch.placeholder")}
-          value={state.text}
-          onInput={(event) => setState("text", event.currentTarget.value)}
-        />
-        <ButtonV2
-          disabled={!ready() || state.sending || state.text.trim() === "" || state.directory === ""}
-          onClick={() => void send()}
-        >
-          {language.t("dispatch.send")}
-        </ButtonV2>
-        <Show when={state.error}>
-          <p class="text-text-critical">{state.error}</p>
+        <Show when={state.composing}>
+          <div class="flex flex-col gap-1 self-start justify-self-start w-full min-w-0">
+            <div class="flex flex-col gap-1 text-12-regular text-text-weak">
+              <span>{language.t("dispatch.project")}</span>
+              <SelectV2
+                data-action="inbox-project"
+                options={projects()}
+                current={projects().find((project) => project.worktree === state.directory)}
+                value={(project) => project.worktree}
+                label={(project) => project.worktree}
+                placeholder={language.t("inbox.projectPlaceholder")}
+                onSelect={(project) => project && setState("directory", project.worktree)}
+              />
+            </div>
+            <div class="flex flex-col gap-1 text-12-regular text-text-weak">
+              <span>{language.t("dispatch.agent")}</span>
+              <SelectV2
+                data-action="inbox-agent"
+                options={agents()}
+                current={agents().find((agent) => agent === state.agent)}
+                placeholder={language.t("inbox.agentPlaceholder")}
+                onSelect={(agent) => agent && setState("agent", agent)}
+              />
+            </div>
+            <div class="flex flex-col gap-1 text-12-regular text-text-weak">
+              <span>{language.t("dispatch.model")}</span>
+              <SelectV2
+                data-action="inbox-model"
+                options={modelOptions()}
+                current={selectedModel()}
+                value={(model) => `${model.provider.id}/${model.id}`}
+                label={(model) => `${model.provider.name} / ${model.name}`}
+                placeholder={language.t("inbox.modelPlaceholder")}
+                onSelect={(model) => model && setState("model", `${model.provider.id}/${model.id}`)}
+              />
+            </div>
+            <textarea
+              class="min-h-20 w-full rounded border border-border-weak bg-surface-base p-2 text-14-regular"
+              aria-label={language.t("dispatch.placeholder")}
+              placeholder={language.t("dispatch.placeholder")}
+              value={state.text}
+              onInput={(event) => setState("text", event.currentTarget.value)}
+            />
+            <ButtonV2
+              disabled={!ready() || state.sending || state.text.trim() === "" || state.directory === ""}
+              onClick={() => void send()}
+            >
+              {language.t("dispatch.send")}
+            </ButtonV2>
+            <Show when={state.error}>
+              <p class="text-text-critical">{state.error}</p>
+            </Show>
+          </div>
         </Show>
-        <div class="flex flex-row gap-1" role="tablist">
-          <For each={["all", "running", "needs-input", "blocked", "done", "failed", "unread"] as const}>
-            {(tab) => (
-              <button
-                type="button"
-                role="tab"
-                aria-selected={state.filter === tab}
-                class={
-                  tab === state.filter
-                    ? "rounded px-2 py-1 text-12-regular bg-surface-raised text-text-strong"
-                    : "rounded px-2 py-1 text-12-regular text-text-weak"
-                }
-                onClick={() => setState("filter", tab)}
-              >
-                {language.t(filterKey(tab))}
-              </button>
-            )}
-          </For>
-        </div>
         <Show when={visible().length === 0}>
           <p class="text-14-regular text-text-weak">
             {state.filter === "all" ? language.t("inbox.empty") : language.t("inbox.emptyFilter")}
