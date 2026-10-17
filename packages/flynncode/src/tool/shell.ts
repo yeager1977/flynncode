@@ -612,6 +612,11 @@ export const ShellTool = Tool.define(
     ) {
       const pty = yield* Pty.Service
       const done = yield* Deferred.make<{ exitCode?: number }>()
+      // The tool result only consumes a bounded tail, so cap the accumulator:
+      // a pathological command piping gigabytes keeps the sidecar's heap flat.
+      const TEXT_CAP = 512 * 1024
+      const append = (current: string, chunk: string) =>
+        current.length + chunk.length > TEXT_CAP ? (current + chunk).slice(-TEXT_CAP) : current + chunk
       let text = ""
       const info = yield* pty.create({
         command: input.shell,
@@ -624,7 +629,7 @@ export const ShellTool = Tool.define(
       const attachment = yield* pty
         .attach(info.id, {
           onData: (chunk) => {
-            text += chunk
+            text = append(text, chunk)
           },
           onEnd: (event) => Deferred.doneUnsafe(done, Effect.succeed(event)),
         })
@@ -639,7 +644,7 @@ export const ShellTool = Tool.define(
           ),
         )
       // Output printed before the attach only arrives as replay; later chunks wait for activate().
-      text = attachment?.replay ?? ""
+      text = attachment?.replay ? append("", attachment.replay) : ""
       yield* ctx.metadata({
         title: input.command,
         metadata: {
