@@ -163,10 +163,12 @@ const layer = Layer.effect(
 
         if (disabled) return cache
 
+        // Core's Unsubscribe is an Effect you run to detach the listener.
+        type Unsubscribe = Effect.Effect<void>
         const watch = <D extends EventV2.Definition>(
           def: D,
           fn: (data: EventV2.Data<D>) => Effect.Effect<void, unknown>,
-        ) =>
+        ): Effect.Effect<Unsubscribe> =>
           events.listen((event) => {
             if (event.type !== def.type || event.location?.directory !== _ctx.directory) return Effect.void
             return fn(event.data as EventV2.Data<D>).pipe(
@@ -176,28 +178,40 @@ const layer = Layer.effect(
             )
           })
 
-        yield* watch(Session.Event.Updated, (data) =>
-          Effect.gen(function* () {
-            const info = data.info
-            yield* sync(info.id, [{ type: "session", data: structuredClone(info) as SDK.Session }])
-          }),
+        // Every subscription must be dropped with the instance state; the
+        // unsubscription handle is a real value the finalizer runs, otherwise
+        // each reload leaves five listeners behind on the shared event hub and
+        // every published event forever pays for scanning them.
+        const unsubscribers: Array<Unsubscribe> = []
+        yield* Effect.addFinalizer(() => Effect.forEach(unsubscribers, (unsubscribe) => unsubscribe, { discard: true }))
+        yield* Effect.forEach(
+          [
+            watch(Session.Event.Updated, (data) =>
+              Effect.gen(function* () {
+                const info = data.info
+                yield* sync(info.id, [{ type: "session", data: structuredClone(info) as SDK.Session }])
+              }),
+            ),
+            watch(MessageV2.Event.Updated, (data) =>
+              Effect.gen(function* () {
+                const info = data.info
+                yield* sync(info.sessionID, [{ type: "message", data: structuredClone(info) as SDK.Message }])
+                if (info.role !== "user") return
+                const model = yield* provider.getModel(info.model.providerID, info.model.modelID)
+                yield* sync(info.sessionID, [{ type: "model", data: [model] }])
+              }),
+            ),
+            watch(MessageV2.Event.PartUpdated, (data) =>
+              sync(data.part.sessionID, [{ type: "part", data: structuredClone(data.part) as SDK.Part }]),
+            ),
+            watch(Session.Event.Diff, (data) =>
+              sync(data.sessionID, [{ type: "session_diff", data: structuredClone(data.diff) as SDK.SnapshotFileDiff[] }]),
+            ),
+            watch(Session.Event.Deleted, (data) => remove(data.sessionID)),
+          ],
+          (subscribe) => subscribe.pipe(Effect.map((unsubscribe) => unsubscribers.push(unsubscribe))),
+          { discard: true },
         )
-        yield* watch(MessageV2.Event.Updated, (data) =>
-          Effect.gen(function* () {
-            const info = data.info
-            yield* sync(info.sessionID, [{ type: "message", data: structuredClone(info) as SDK.Message }])
-            if (info.role !== "user") return
-            const model = yield* provider.getModel(info.model.providerID, info.model.modelID)
-            yield* sync(info.sessionID, [{ type: "model", data: [model] }])
-          }),
-        )
-        yield* watch(MessageV2.Event.PartUpdated, (data) =>
-          sync(data.part.sessionID, [{ type: "part", data: structuredClone(data.part) as SDK.Part }]),
-        )
-        yield* watch(Session.Event.Diff, (data) =>
-          sync(data.sessionID, [{ type: "session_diff", data: structuredClone(data.diff) as SDK.SnapshotFileDiff[] }]),
-        )
-        yield* watch(Session.Event.Deleted, (data) => remove(data.sessionID))
 
         return cache
       }),
