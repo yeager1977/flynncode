@@ -132,7 +132,7 @@ async function pair(request: Request, remoteAddress: string | undefined, gate: S
 
 // Resolves to the body bytes, or undefined once they grow past `limit` bytes
 // (the rest is never read) or the stream fails.
-async function readCapped(
+export async function readCapped(
   reader: ReadableStreamDefaultReader<Uint8Array>,
   limit: number,
   chunks: Uint8Array[] = [],

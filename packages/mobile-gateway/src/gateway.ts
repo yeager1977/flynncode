@@ -6,6 +6,7 @@ import { envAuthHeader, matchesCredentials, type GatewayOptions } from "./config
 import { streamThrough } from "./proxy.ts"
 import { createSessionStore } from "./session.ts"
 import { Upstream, upstreamHeaders, upstreamUrl } from "./upstream.ts"
+import { readCapped } from "./sync-routes.ts"
 import { buildStatusPayload, listLanIPv4 } from "./lan-ips.ts"
 import { loadLauncher } from "./launcher.ts"
 import { listNeedsInput } from "./inbox.ts"
@@ -140,7 +141,15 @@ export function createGateway(input: { options: GatewayOptions; sync?: SyncGate 
       if (Number.isFinite(declaredLength) && declaredLength > RELAY_MAX_BODY_BYTES) {
         return new Response("Payload too large", { status: 413 })
       }
-      const body = await request.json().catch(() => undefined)
+      const body = await (async () => {
+        // Read with the cap before parsing: chunked bodies carry no
+        // content-length, so without this the full body lands in memory
+        // before the length check.
+        const bytes = request.body ? await readCapped(request.body.getReader(), RELAY_MAX_BODY_BYTES) : new Uint8Array()
+        if (bytes === undefined) return new Response("Payload too large", { status: 413 })
+        return new Response(Buffer.from(bytes).toString("utf8")).json().catch(() => undefined)
+      })()
+      if (body instanceof Response) return body
       // The header pre-check above is only a fast path: chunked bodies carry
       // no content-length, so enforce the cap on the serialized post-parse
       // length as well. Parsed JSON always re-serializes to a string.
