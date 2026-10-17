@@ -1,7 +1,7 @@
 {
   "name": "@flynncode/desktop",
   "private": true,
-  "version": "1.18.34-dev-202610171732",
+  "version": "1.18.34-dev-202610171751",
   "type": "module",
   "license": "MIT",
   "description": "Flynncode desktop app",
