@@ -79,6 +79,63 @@ ${relay}
 </html>`
 }
 
+// A plain form, not the browser's Basic prompt: password managers offer to
+// save credentials submitted from a form with autocomplete fields, while
+// HTTP Basic prompts are never offered for saving on phones.
+export function renderLogin(input: { next: string; error?: string }) {
+  const error = input.error ? `<p class="warn">${escapeHtml(input.error)}</p>` : ""
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Sign in</title>
+<style>
+${STYLE}
+label { display: block; font-size: 13px; color: #777; margin: 16px 0 6px }
+input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #e5e5e5;
+  border-radius: 10px;
+  background: #fff;
+  color: inherit;
+  font-size: 16px;
+  font-family: inherit;
+}
+button {
+  width: 100%;
+  min-height: 48px;
+  margin-top: 20px;
+  border: 0;
+  border-radius: 12px;
+  background: #111;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 500;
+}
+@media (prefers-color-scheme: dark) {
+  input { background: #1c1c1c; border-color: #333; color: #eee }
+  button { background: #eee; color: #111 }
+}
+</style>
+</head>
+<body>
+<h1>Sign in</h1>
+${error}
+<form method="POST" action="/login">
+<label for="username">Username</label>
+<input id="username" name="username" type="text" value="opencode" autocomplete="username" autocapitalize="none" autocorrect="off" required>
+<label for="password">Password</label>
+<input id="password" name="password" type="password" autocomplete="current-password" required>
+<input type="hidden" name="next" value="${escapeHtml(input.next)}">
+<button type="submit">Sign in</button>
+</form>
+</body>
+</html>`
+}
+
 export function renderUnreachable() {
   return `<!doctype html>
 <html lang="en">

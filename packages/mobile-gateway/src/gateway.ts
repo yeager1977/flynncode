@@ -11,7 +11,7 @@ import { buildStatusPayload, listLanIPv4 } from "./lan-ips.ts"
 import { loadLauncher } from "./launcher.ts"
 import { listNeedsInput } from "./inbox.ts"
 import { createRelayStore, isRelayAuthorized, type RelayDigest } from "./relay.ts"
-import { renderLauncher, renderUnauthorized, renderUnreachable } from "./launcher-html.ts"
+import { renderLauncher, renderLogin, renderUnauthorized, renderUnreachable } from "./launcher-html.ts"
 import type { SyncGate } from "./sync-gate.ts"
 import { handleSync } from "./sync-routes.ts"
 
@@ -40,6 +40,21 @@ const relayStore = createRelayStore()
 function unauthorized() {
   return new Response("Authentication required", { status: 401, headers: { "www-authenticate": UNAUTHORIZED } })
 }
+
+// Keep post-login targets inside the gateway: allow only same-origin paths.
+function safeNext(value: string | null | undefined) {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return "/m"
+  return value
+}
+
+// A document navigation from a browser — as opposed to an API call, which
+// should keep getting a 401 it can handle programmatically.
+function isBrowserNavigation(request: Request) {
+  if (request.method !== "GET") return false
+  return (request.headers.get("accept") ?? "").includes("text/html")
+}
+
+const LOGIN_MAX_BODY_BYTES = 8 * 1024
 
 function decodeBasic(header: string | null) {
   if (!header) return
@@ -168,16 +183,66 @@ export function createGateway(input: { options: GatewayOptions; sync?: SyncGate 
     const token = readCookie(request.headers.get("cookie"), SESSION_COOKIE)
     const cookieValid = token !== undefined && sessions.verify(token)
 
+    // Both Basic auth and the login form end up here: credentials must match
+    // and the upstream must accept them before a session is issued.
+    const authenticate = async (credentials: { username: string; password: string }) => {
+      if (!matchesCredentials(options, credentials)) return "invalid" as const
+      const probe = await Upstream.probe({ base: options.upstream, authorization })
+      if (!probe.ok && probe.reason === "unreachable") return "unreachable" as const
+      if (!probe.ok) return "invalid" as const
+      return "ok" as const
+    }
+
+    if (parsed.pathname === "/login") {
+      const next = safeNext(request.method === "GET" ? parsed.searchParams.get("next") : undefined)
+      if (request.method === "GET") {
+        if (cookieValid) return new Response(null, { status: 303, headers: { location: next } })
+        return new Response(renderLogin({ next }), {
+          status: 200,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        })
+      }
+      if (request.method !== "POST") return new Response("Method not allowed", { status: 405 })
+      const declared = Number(request.headers.get("content-length") ?? 0)
+      if (Number.isFinite(declared) && declared > LOGIN_MAX_BODY_BYTES) return new Response("Payload too large", { status: 413 })
+      const bytes = request.body ? await readCapped(request.body.getReader(), LOGIN_MAX_BODY_BYTES) : new Uint8Array()
+      if (bytes === undefined) return new Response("Payload too large", { status: 413 })
+      const form = new URLSearchParams(new TextDecoder().decode(bytes))
+      const credentials = { username: form.get("username") ?? "", password: form.get("password") ?? "" }
+      const formNext = safeNext(form.get("next"))
+      const result = await authenticate(credentials)
+      if (result === "unreachable") {
+        return new Response(renderLogin({ next: formNext, error: "The opencode server is unreachable." }), {
+          status: 503,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        })
+      }
+      if (result === "invalid") {
+        return new Response(renderLogin({ next: formNext, error: "That username or password is not right." }), {
+          status: 401,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        })
+      }
+      const response = new Response(null, { status: 303, headers: { location: formNext } })
+      response.headers.set("set-cookie", sessionCookie(sessions.issue()))
+      return response
+    }
+
     let issued: string | undefined
     if (!cookieValid) {
       const credentials = decodeBasic(request.headers.get("authorization"))
-      if (!credentials) return unauthorized()
-      if (!matchesCredentials(options, credentials)) return unauthorized()
-      const probe = await Upstream.probe({ base: options.upstream, authorization })
-      if (!probe.ok && probe.reason === "unreachable") {
-        return new Response("Upstream server unreachable", { status: 503 })
+      if (!credentials) {
+        // A phone browser gets a real login page whose credentials the OS
+        // password manager can save, instead of a Basic prompt it never saves.
+        if (isBrowserNavigation(request)) {
+          const target = `/login?next=${encodeURIComponent(parsed.pathname + parsed.search)}`
+          return new Response(null, { status: 303, headers: { location: target } })
+        }
+        return unauthorized()
       }
-      if (!probe.ok) return unauthorized()
+      const result = await authenticate(credentials)
+      if (result === "unreachable") return new Response("Upstream server unreachable", { status: 503 })
+      if (result === "invalid") return unauthorized()
       issued = sessions.issue()
     }
 

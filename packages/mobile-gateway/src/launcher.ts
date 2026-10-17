@@ -96,7 +96,8 @@ function placeholder(id: string) {
 }
 
 const TIMEOUT_MS = 5000
-const RECENT_LIMIT = 30
+const RECENT_LIMIT = 100
+const RECENT_PAGES = 10
 
 export type LauncherLoad =
   | { kind: "loaded"; data: LauncherData; partial: boolean }
@@ -106,10 +107,7 @@ export type LauncherLoad =
 export async function loadLauncher(input: { upstream: string; authorization: string }): Promise<LauncherLoad> {
   const [active, recent] = await Promise.all([
     request(input, "http://gateway/api/session/active"),
-    // roots=true: the newest page is otherwise dominated by subagent sessions
-    // (they update far more often than chats), leaving only subagents hiding
-    // every real chat the phone should show.
-    request(input, `http://gateway/api/session?limit=${RECENT_LIMIT}&order=desc&roots=true`),
+    loadRecentSessions(input),
   ])
 
   if (active.kind === "unauthorized" || recent.kind === "unauthorized") return { kind: "unauthorized" }
@@ -117,12 +115,55 @@ export async function loadLauncher(input: { upstream: string; authorization: str
 
   return {
     kind: "loaded",
-    partial: active.kind === "failed" || recent.kind === "failed",
+    partial: active.kind === "failed" || recent.kind === "failed" || (recent.kind === "ok" && recent.partial),
     data: groupSessions({
-      sessions: parseSessions(recent.kind === "ok" ? recent.value : undefined),
+      sessions: recent.kind === "ok" ? recent.sessions : [],
       running: parseActive(active.kind === "ok" ? active.value : undefined),
     }),
   }
+}
+
+// Walk every page of root sessions newest-first so the phone shows all of
+// them, not just the first page. roots=true still matters: a bare page is
+// dominated by subagent sessions, which update far more often than chats
+// and hide every real chat the phone should show.
+async function loadRecentSessions(
+  input: { upstream: string; authorization: string },
+): Promise<
+  | { kind: "ok"; sessions: LauncherSession[]; partial: boolean }
+  | { kind: "unauthorized" }
+  | { kind: "failed" }
+> {
+  const sessions: LauncherSession[] = []
+  const seen = new Set<string>()
+  let cursor: string | undefined
+  for (let page = 0; page < RECENT_PAGES; page++) {
+    const query =
+      `limit=${RECENT_LIMIT}&order=desc&roots=true` + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "")
+    const outcome = await request(input, `http://gateway/api/session?${query}`)
+    if (outcome.kind === "unauthorized") return { kind: "unauthorized" }
+    if (outcome.kind === "failed") {
+      // A failed first page is a failed load; a failed later page keeps what
+      // was already gathered and just reports partial.
+      if (page === 0) return { kind: "failed" }
+      return { kind: "ok", sessions, partial: true }
+    }
+    for (const session of parseSessions(outcome.value)) {
+      if (seen.has(session.id)) continue
+      seen.add(session.id)
+      sessions.push(session)
+    }
+    const next = parseNextCursor(outcome.value)
+    if (!next) return { kind: "ok", sessions, partial: false }
+    cursor = next
+  }
+  return { kind: "ok", sessions, partial: true }
+}
+
+function parseNextCursor(value: unknown) {
+  if (!isRecord(value) || !isRecord(value.cursor)) return
+  if (typeof value.cursor.next !== "string" || value.cursor.next === "") return
+  return value.cursor.next
 }
 
 type FetchOutcome =
