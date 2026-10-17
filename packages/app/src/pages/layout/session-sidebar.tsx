@@ -15,6 +15,7 @@ import { ProviderUsageMeters } from "@/components/provider-usage-meters"
 import { showToast } from "@/utils/toast"
 import type { LocalProject } from "@/context/layout"
 import { displayName } from "./helpers"
+import { dispatchContextMenu } from "./keyboard-menu"
 import type { SidebarGroup } from "./sidebar-sessions"
 
 // Sessions a project shows before "Show more".
@@ -168,6 +169,8 @@ function SidebarRow(props: {
 
 // A quiet project label with the management menu on right-click: new session,
 // edit, hide, forget. Hiding tucks the project into the hidden section below.
+// The header is a tab stop; Enter-less keys — the ContextMenu key or Shift+F10
+// — open the same menu for keyboard users.
 function ProjectHeader(props: {
   project: LocalProject
   onNewSession: (directory: string) => void
@@ -180,7 +183,12 @@ function ProjectHeader(props: {
     <MenuV2.Context>
       <MenuV2.Context.Trigger
         as="div"
-        class="group/project flex items-center h-7 pl-2.5 pr-1 text-12-regular text-v2-text-text-faint"
+        tabindex="0"
+        aria-label={props.project.name ?? displayName(props.project)}
+        class="rounded-md outline outline-1 outline-transparent focus-visible:outline-v2-border-border-focus group/project flex items-center h-7 pl-2.5 pr-1 text-12-regular text-v2-text-text-faint"
+        onKeyDown={(event) => {
+          dispatchContextMenu(event.currentTarget, event)
+        }}
       >
         <span class="flex-1 min-w-0 truncate">{displayName(props.project)}</span>
         <button
@@ -256,6 +264,9 @@ function HiddenProjectsSection(props: {
                 title={language.t("sidebar.project.show")}
                 class="group/hidden flex items-center h-7 pl-2.5 pr-2 rounded-md text-left text-v2-text-text-faint hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-muted"
                 onClick={() => props.onUnhideProject(project.worktree)}
+                onKeyDown={(event) => {
+                  dispatchContextMenu(event.currentTarget, event)
+                }}
               >
                 <span class="flex-1 min-w-0 truncate">{displayName(project)}</span>
               </MenuV2.Context.Trigger>
