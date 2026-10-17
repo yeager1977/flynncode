@@ -6,6 +6,10 @@ import { makeGlobalNode } from "./effect/app-node"
 
 export type Status = "running" | "completed" | "error" | "cancelled"
 
+// Settled jobs keep their full output text; this cap bounds how many of them
+// linger in the registry over a long-running process.
+const JOB_RETENTION_LIMIT = 200
+
 export type Info = {
   id: string
   type: string
@@ -130,6 +134,20 @@ export const make = Effect.gen(function* () {
     exit: Exit.Exit<string, unknown>,
   ) {
     const completed_at = yield* Clock.currentTimeMillis
+    // Finished jobs only matter for their recent results; drop the oldest
+    // settled ones once the map passes the cap so a long-running instance's
+    // registry stays bounded (settled_at entries keep their full output text).
+    const settleRetention = (jobs: Map<string, Active>) => {
+      if (jobs.size <= JOB_RETENTION_LIMIT) return jobs
+      const settled = [...jobs.entries()]
+        .filter(([, job]) => job.info.status !== "running")
+        .sort((a, b) => (a[1].info.completed_at ?? a[1].info.started_at) - (b[1].info.completed_at ?? b[1].info.started_at))
+      for (const [key] of settled) {
+        if (jobs.size <= JOB_RETENTION_LIMIT) break
+        jobs.delete(key)
+      }
+      return jobs
+    }
     const result = yield* SynchronizedRef.modify(state.jobs, (jobs): readonly [FinishResult, Map<string, Active>] => {
       const job = jobs.get(id)
       if (!job) return [{}, jobs]
@@ -141,7 +159,7 @@ export const make = Effect.gen(function* () {
           ? { sequence, text: exit.value }
           : job.output
       if (Exit.isSuccess(exit) && pending > 0) {
-        return [{}, new Map(jobs).set(id, { ...job, pending, output })]
+        return [{}, settleRetention(new Map(jobs).set(id, { ...job, pending, output }))]
       }
       const status: Exclude<Status, "running"> = Exit.isSuccess(exit)
         ? "completed"
@@ -161,7 +179,7 @@ export const make = Effect.gen(function* () {
           ...(Exit.isFailure(exit) ? { error: errorText(Cause.squash(exit.cause)) } : {}),
         },
       }
-      return [{ info: snapshot(next), done: job.done, scope: job.scope }, new Map(jobs).set(id, next)]
+      return [{ info: snapshot(next), done: job.done, scope: job.scope }, settleRetention(new Map(jobs).set(id, next))]
     })
     if (result.info && result.done) yield* Deferred.succeed(result.done, result.info).pipe(Effect.ignore)
     if (result.scope) {

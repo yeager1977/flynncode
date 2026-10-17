@@ -46,7 +46,28 @@ function format(input: unknown) {
   return /^[^\s="\\]+$/.test(value) ? value : JSON.stringify(value)
 }
 
+// Boot-time rotation: the append-only log otherwise grows without bound
+// across many long-lived sidecars (day-long sessions have already pushed it
+// past 100 MB). Past the cap, the log moves aside as opencode.log.previous
+// (one previous generation kept). Other processes' open handles stay valid
+// and keep appending to the moved file until they restart; renames that race
+// a concurrent boot are ignored.
+const LOG_ROTATE_CAP_BYTES = 64 * 1024 * 1024
+let rotated = false
+
+async function rotateOversizedLog(file: string) {
+  if (rotated) return
+  rotated = true
+  try {
+    const fs = await import("node:fs")
+    const stat = fs.statSync(file)
+    if (stat.size <= LOG_ROTATE_CAP_BYTES) return
+    fs.renameSync(file, `${file}.previous`)
+  } catch {}
+}
+
 export function fileLogger(file = path.join(Global.Path.log, "opencode.log"), id: string = runID) {
+  void rotateOversizedLog(file)
   // Do not set batchWindow to 0; it causes high idle CPU usage.
   return Logger.toFile(formatter(id), file, { flag: "a" })
 }
