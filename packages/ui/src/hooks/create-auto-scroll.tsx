@@ -10,6 +10,22 @@ export interface AutoScrollOptions {
   bottomThreshold?: number
 }
 
+// Tracks scroll height across resize observations and reports whether the
+// content grew since the previous observation. The bottom lock must only fire
+// on growth: locking on every observation writes scrollTop from inside the
+// ResizeObserver callback, that write resizes scroll-dependent chrome (sticky
+// gradients, overlays), the next observation re-locks, and the cycle repeats
+// once per frame — Chromium reports every cycle as a "ResizeObserver loop
+// completed with undelivered notifications" console error.
+export function createResizeLock() {
+  let lastHeight = 0
+  return (scrollHeight: number) => {
+    const grew = scrollHeight > lastHeight
+    lastHeight = scrollHeight
+    return grew
+  }
+}
+
 export function createAutoScroll(options: AutoScrollOptions) {
   let settling = false
   let settleTimer: ReturnType<typeof setTimeout> | undefined
@@ -169,16 +185,21 @@ export function createAutoScroll(options: AutoScrollOptions) {
     el.style.overflowAnchor = store.userScrolled ? "auto" : "none"
   }
 
+  const contentGrew = createResizeLock()
   createResizeObserver(
     () => store.contentRef,
     () => {
       const el = store.scrollRef
+      // Track every observation so a return to follow mode after the user
+      // scrolled away still locks on the next real growth.
+      const grew = el ? contentGrew(el.scrollHeight) : false
       if (el && !canScroll(el)) {
         if (store.userScrolled) setStore("userScrolled", false)
         return
       }
       if (!active()) return
       if (store.userScrolled) return
+      if (!grew) return
       // ResizeObserver fires after layout, before paint.
       // Keep the bottom locked in the same frame to avoid visible
       // "jump up then catch up" artifacts while streaming content.
