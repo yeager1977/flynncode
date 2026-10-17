@@ -30,6 +30,9 @@ const SessionsQueryFields = {
   order: Schema.optional(Schema.Union([Schema.Literal("asc"), Schema.Literal("desc")])).annotate({
     description: "Session order for the first page. Use desc for newest first or asc for oldest first.",
   }),
+  roots: Schema.optional(Schema.Boolean).annotate({
+    description: "Only top-level sessions (parentID is null). Subagent sessions churn far more often than chats, so a plain newest-first page is mostly subagents.",
+  }),
   search: Schema.optional(Schema.String),
 }
 

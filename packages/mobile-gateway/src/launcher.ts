@@ -106,7 +106,10 @@ export type LauncherLoad =
 export async function loadLauncher(input: { upstream: string; authorization: string }): Promise<LauncherLoad> {
   const [active, recent] = await Promise.all([
     request(input, "http://gateway/api/session/active"),
-    request(input, `http://gateway/api/session?limit=${RECENT_LIMIT}&order=desc`),
+    // roots=true: the newest page is otherwise dominated by subagent sessions
+    // (they update far more often than chats), leaving only subagents hiding
+    // every real chat the phone should show.
+    request(input, `http://gateway/api/session?limit=${RECENT_LIMIT}&order=desc&roots=true`),
   ])
 
   if (active.kind === "unauthorized" || recent.kind === "unauthorized") return { kind: "unauthorized" }

@@ -184,7 +184,7 @@ describe("loadLauncher", () => {
     await loadLauncher({ upstream: `http://127.0.0.1:${upstream.port}`, authorization: AUTH })
     upstream.stop(true)
 
-    expect(seen).toEqual(["?limit=30&order=desc"])
+    expect(seen).toEqual(["?limit=30&order=desc&roots=true"])
   })
 
   test("reports unreachable when both calls fail", async () => {
