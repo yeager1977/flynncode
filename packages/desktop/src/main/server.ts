@@ -7,6 +7,7 @@ import { getUserShell, loadShellEnv } from "./shell-env"
 import { getStore } from "./store"
 import { DEFAULT_SERVER_URL_KEY } from "./store-keys"
 import { MOBILE_GATEWAY_PORT } from "./mobile-gateway-launch"
+import { sidecarExecArgv } from "./sidecar-exec-args"
 import { isSyncMessage, type SidecarSyncCommand, type SidecarSyncMessage, type SidecarSyncStart } from "./sidecar-sync"
 
 export type HealthCheck = { wait: Promise<void> }
@@ -67,15 +68,10 @@ export async function spawnLocalServer(
   options: SpawnLocalServerOptions,
 ) {
   const sidecar = join(dirname(fileURLToPath(import.meta.url)), "sidecar.js")
-  // Opt-in Node runtime args for the server sidecar (e.g. --inspect for heap
-  // debugging); empty by default so normal launches keep stock behavior.
-  const execArgs = (process.env.FLYNN_SIDECAR_EXEC_ARGS ?? "")
-    .split(",")
-    .flatMap((arg) => (arg === "" ? [] : [arg.trim()]))
   const child = utilityProcess.fork(sidecar, [], {
     cwd: process.cwd(),
     env: createSidecarEnv(),
-    execArgv: execArgs.length > 0 ? execArgs : undefined,
+    ...sidecarExecArgv(process.env.FLYNN_SIDECAR_EXEC_ARGS),
     serviceName: SIDECAR_SERVICE_NAME,
     stdio: "pipe",
   })
