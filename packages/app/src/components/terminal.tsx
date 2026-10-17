@@ -152,7 +152,10 @@ const persistTerminal = (input: {
   if (!input.addon || !input.onCleanup || !input.term) return
   const buffer = (() => {
     try {
-      return input.addon.serialize()
+      // Serialize a bounded tail: the full 10k-line scrollback (ANSI markup
+      // included) is written into the per-workspace persisted store on every
+      // terminal unmount, and those stores pile up across many workspaces.
+      return input.addon.serialize({ scrollback: 1_000 })
     } catch {
       debugTerminal("failed to serialize terminal buffer")
       return ""
