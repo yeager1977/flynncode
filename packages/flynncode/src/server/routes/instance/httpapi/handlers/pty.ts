@@ -25,6 +25,10 @@ import * as ApiError from "../errors"
 import { CursorQuery, PtyConnectApi } from "../groups/pty"
 import { WebSocketTracker } from "../websocket-tracker"
 
+// Frames buffered per attached terminal while a single writer drains the
+// socket; sliding so a stalled reader drops old frames instead of growing.
+const PTY_OUTBOX_CAPACITY = 4_096
+
 function validOrigin(request: HttpServerRequest.HttpServerRequest, opts: CorsOptions | undefined) {
   return isAllowedRequestOrigin(request.headers.origin, request.headers.host, opts)
 }
@@ -221,8 +225,11 @@ export const ptyConnectHandlers = HttpApiBuilder.group(PtyConnectApi, "pty-conne
         }
 
         // Outbound frames flow through one queue drained by a single writer so replay, live
-        // output, and the close frame keep their order.
-        const outbox = yield* Queue.unbounded<string | Uint8Array | Socket.CloseEvent>()
+        // output, and the close frame keep their order. The queue is sliding:
+        // a stalled reader (backgrounded tab, dead remote) must not grow the
+        // queue without bound — old frames drop while new output keeps
+        // flowing, and a re-attach replays from the cursor anyway.
+        const outbox = yield* Queue.sliding<string | Uint8Array | Socket.CloseEvent>(PTY_OUTBOX_CAPACITY)
         const attachment = yield* pty(
           Pty.Service.use((service) =>
             service.attach(ctx.params.ptyID, {
