@@ -449,11 +449,14 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
       },
       async loader(getAuth) {
         const auth = await getAuth()
+        // One pool per plugin instance: the loader runs on every provider
+        // state rebuild (the 5-minute TTL plus invalidations), and each fresh
+        // pool leaked its live prune timer plus any sockets it held until the
+        // plugin disposed.
         const websocketFetch = options.experimentalWebSockets
-          ? OpenAIWebSocketPool.createWebSocketFetch({ httpFetch: fetch })
+          ? (websocketFetches[0] ??= OpenAIWebSocketPool.createWebSocketFetch({ httpFetch: fetch }))
           : undefined
         if (websocketFetch) {
-          websocketFetches.push(websocketFetch)
           websocketFetchInstalled = true
         }
         if (auth.type !== "oauth") return websocketFetch ? { fetch: websocketFetch } : {}
