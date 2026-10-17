@@ -14,13 +14,14 @@ const metainfoFpm = (appId: string) =>
   `${path.join(packageDir, "resources", `${appId}.metainfo.xml`)}=/usr/share/metainfo/${appId}.metainfo.xml`
 
 // Stopping a running instance before its files change is part of every Linux
-// package (see the script for why); metainfo ships alongside it.
+// package (see the script for why). fpm requires flags before the first
+// positional input, so the metainfo mapping goes last.
 const linuxFpm = (appId: string) => {
   const stop = path.join(packageDir, "maintainer", "stop-running-instances.sh")
   return [
-    metainfoFpm(appId),
     `--before-install=${stop}`,
     `--before-remove=${stop}`,
+    metainfoFpm(appId),
   ]
 }
 
