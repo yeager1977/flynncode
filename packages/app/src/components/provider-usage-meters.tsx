@@ -1,7 +1,7 @@
 import { createQuery } from "@tanstack/solid-query"
 import { ProgressCircle } from "@flynncode/ui/progress-circle"
 import { TooltipV2 } from "@flynncode/ui/v2/tooltip-v2"
-import { For, Match, Show, Switch, createMemo, type Accessor } from "solid-js"
+import { For, Show, createMemo, type Accessor, type JSX } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useProviders } from "@/hooks/use-providers"
 import { useServerSDK } from "@/context/server-sdk"
@@ -10,14 +10,9 @@ import { getSessionContext } from "@/components/session/session-context-metrics"
 
 type UsageWindow = { id: string; percent?: number; count?: number; resetsAt?: number }
 
-type UsageEntry = { providerID: string; name: string; windows: UsageWindow[] }
+type UsageEntry = { providerID: string; windows: UsageWindow[] }
 
-type Ring = {
-  id: string
-  percent: number
-  title: string
-  rows: Array<{ name?: string; value: string }>
-}
+type Row = { text: string }
 
 function windowLabel(t: (key: string) => string, id: string) {
   if (id === "session") return t("provider.usage.window.session")
@@ -40,11 +35,16 @@ function formatCount(count: number) {
   return String(Math.round(count))
 }
 
+// Sentinel provider the router plugin injects; it is a picker entry, not a
+// connection with usage.
+const ROUTER_PROVIDER_ID = "model-router"
+
 export function ProviderUsageMeters(props: {
   row?: boolean
-  // "providers" (default) renders one meter per reporting provider, as in the
-  // session header; "rings" renders the working three: the open session's
-  // context window plus the engaged provider's two quota windows.
+  // "providers" (default) renders one flat meter per reporting provider, as in
+  // the session header; "rings" renders one concentric meter per connected
+  // provider: an inner context band (the open session), a session quota band,
+  // and a weekly quota band.
   variant?: "providers" | "rings"
   sessionID?: Accessor<string | undefined>
 }) {
@@ -66,22 +66,6 @@ export function ProviderUsageMeters(props: {
     retry: false,
   }))
 
-  const entries = createMemo((): UsageEntry[] => {
-    const data = query.data
-    if (!data) return []
-    return Object.entries(data)
-      .filter(
-        (entry): entry is [string, { windows: UsageWindow[] }] =>
-          Array.isArray(entry[1]?.windows) && entry[1].windows.length > 0,
-      )
-      .map(([providerID, usage]) => ({
-        providerID,
-        name: providers.all().get(providerID)?.name ?? providerID,
-        windows: usage.windows,
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name))
-  })
-
   const messages = createMemo(() => {
     const sessionID = props.sessionID?.()
     if (!sessionID) return []
@@ -90,114 +74,152 @@ export function ProviderUsageMeters(props: {
 
   const context = createMemo(() => getSessionContext(messages(), [...providers.all().values()]))
 
-  // The rings' quota windows follow the provider the session actually engaged
-  // (the model behind its latest turn) when it reports utilization; count-only
-  // or fresh-cold sessions fall through to the first reporting provider so the
-  // rings stay visible on home and on providers without plan caps.
-  const ringWindows = createMemo((): UsageEntry | undefined => {
-    const engaged = entries().find((entry) => entry.providerID === context()?.message.providerID)
-    const reporting = (entry: UsageEntry | undefined) =>
-      entry?.windows.some((window) => window.percent !== undefined) ? entry : undefined
-    return reporting(engaged) ?? entries().find((entry) => entry.windows.some((window) => window.percent !== undefined))
+  const entries = createMemo((): UsageEntry[] => {
+    const data = query.data
+    if (!data) return []
+    return Object.entries(data)
+      .filter((entry): entry is [string, { windows: UsageWindow[] }] => Array.isArray(entry[1]?.windows))
+      .map(([providerID, usage]) => ({ providerID, windows: usage.windows ?? [] }))
   })
 
-  const rings = createMemo((): Ring[] => {
-    const rings: Ring[] = []
-    const used = context()
-    if (used && used.usage !== null) {
-      rings.push({
-        id: "context",
-        percent: used.usage,
-        title: `${used.providerLabel} / ${used.modelLabel}`,
-        rows: [
-          { name: language.t("context.usage.usage"), value: `${Math.round(used.usage)}%` },
-          {
-            name: language.t("context.usage.tokens"),
-            value: used.total.toLocaleString(language.intl()),
-          },
-        ],
+  const rings = createMemo(() => {
+    const engaged = context()
+    const ids = new Set<string>()
+    if (engaged) ids.add(engaged.message.providerID)
+    for (const entry of entries()) ids.add(entry.providerID)
+    for (const provider of providers.connected()) ids.add(provider.id)
+    ids.delete(ROUTER_PROVIDER_ID)
+    return [...ids]
+      .map((providerID) => ({
+        providerID,
+        name: providers.all().get(providerID)?.name ?? providerID,
+        windows: query.data?.[providerID]?.windows ?? [],
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  })
+
+  const ringRows = (providerID: string, windows: UsageWindow[]): Row[] => {
+    const engaged = context()
+    const rows: Row[] = []
+    if (engaged && engaged.message.providerID === providerID && engaged.usage !== null) {
+      rows.push({ text: language.t("provider.usage.contextRow", { percent: Math.round(engaged.usage) }) })
+    }
+    for (const id of ["session", "primary", "weekly", "secondary"] as const) {
+      const window = windows.find((window) => window.id === id && window.percent !== undefined)
+      if (!window) continue
+      const time = formatTime(window.resetsAt)
+      rows.push({
+        text: time
+          ? language.t("provider.usage.rowResets", {
+              label: windowLabel(language.t, window.id),
+              percent: Math.round(window.percent ?? 0),
+              time,
+            })
+          : language.t("provider.usage.row", {
+              label: windowLabel(language.t, window.id),
+              percent: Math.round(window.percent ?? 0),
+            }),
       })
     }
-    const entry = ringWindows()
-    if (entry) {
-      for (const window of entry.windows.filter((window) => window.percent !== undefined).slice(0, 2)) {
-        const time = formatTime(window.resetsAt)
-        rings.push({
-          id: `${entry.providerID}:${window.id}`,
-          percent: window.percent ?? 0,
-          title: entry.name,
-          rows: [
-            {
-              value: time
-                ? language.t("provider.usage.rowResets", {
-                    label: windowLabel(language.t, window.id),
-                    percent: Math.round(window.percent ?? 0),
-                    time,
-                  })
-                : language.t("provider.usage.row", {
-                    label: windowLabel(language.t, window.id),
-                    percent: Math.round(window.percent ?? 0),
-                  }),
-            },
-          ],
-        })
-      }
+    for (const window of windows.filter((window) => window.count !== undefined)) {
+      const time = formatTime(window.resetsAt)
+      rows.push({
+        text: time
+          ? language.t("provider.usage.countRowResets", {
+              label: windowLabel(language.t, window.id),
+              count: formatCount(window.count!),
+              time,
+            })
+          : language.t("provider.usage.countRow", {
+              label: windowLabel(language.t, window.id),
+              count: formatCount(window.count!),
+            }),
+      })
     }
-    return rings
-  })
+    if (rows.length === 0) rows.push({ text: language.t("provider.usage.none") })
+    return rows
+  }
 
-  const tooltipValue = (content: import("solid-js").JSX.Element) => (
-    <div class="flex w-[170px] flex-col gap-1">
-      {content}
-      <div class="text-v2-text-text-faint">{language.t("provider.usage.clickRefresh")}</div>
-    </div>
-  )
+  // Concentric bands inside one provider meter: an inner context band, the
+  // session quota, and the weekly quota. Bands with nothing to report render
+  // as track only, so every connected provider still shows its circle.
+  const bandsFor = (providerID: string, windows: UsageWindow[]) => {
+    const engaged = context()
+    const contextPercent =
+      engaged && engaged.message.providerID === providerID && engaged.usage !== null ? engaged.usage : undefined
+    const session = windows.find((window) => (window.id === "session" || window.id === "primary") && window.percent !== undefined)
+    const weekly = windows.find((window) => (window.id === "weekly" || window.id === "secondary") && window.percent !== undefined)
+    return [
+      { radius: 5.5, percent: contextPercent },
+      { radius: 11, percent: session?.percent },
+      { radius: 16.5, percent: weekly?.percent },
+    ]
+  }
+
+  const ariaFor = (name: string, rows: Row[]) => language.t("provider.usage.ringMeter", { provider: name, parts: rows.map((row) => row.text).join("; ") })
+
+  function UsageRing(props: { name: string; providerID: string; windows: UsageWindow[] }) {
+    const bands = createMemo(() => bandsFor(props.providerID, props.windows))
+    const rows = createMemo(() => ringRows(props.providerID, props.windows))
+    const circumference = (radius: number) => 2 * Math.PI * radius
+    return (
+      <TooltipV2 placement="bottom" value={ringTooltip(props.name, rows())}>
+        <button
+          type="button"
+          class="flex cursor-pointer items-center justify-center"
+          role="img"
+          aria-label={ariaFor(props.name, rows())}
+          onClick={() => void query.refetch()}
+        >
+          <svg width="20" height="20" viewBox="0 0 40 40" fill="none" aria-hidden="true">
+            <For each={bands()}>
+              {(band) => {
+                const clamped = Math.max(0, Math.min(100, band.percent ?? 0))
+                return (
+                  <>
+                    <circle
+                      cx="20"
+                      cy="20"
+                      r={band.radius}
+                      stroke="var(--v2-border-border-muted)"
+                      stroke-width="4.5"
+                    />
+                    <Show when={band.percent !== undefined}>
+                      <circle
+                        cx="20"
+                        cy="20"
+                        r={band.radius}
+                        stroke={clamped >= 90 ? "var(--v2-state-fg-danger)" : "var(--v2-icon-icon-base)"}
+                        stroke-width="4.5"
+                        stroke-linecap="round"
+                        stroke-dasharray={`${(clamped / 100) * circumference(band.radius)} ${circumference(band.radius)}`}
+                        transform="rotate(-90 20 20)"
+                      />
+                    </Show>
+                  </>
+                )
+              }}
+            </For>
+          </svg>
+        </button>
+      </TooltipV2>
+    )
+  }
+
+  function ringTooltip(name: string, rows: Row[]) {
+    const content = (
+      <>
+        <div class="font-medium">{name}</div>
+        <For each={rows}>{(row) => <div>{row.text}</div>}</For>
+        <div class="text-v2-text-text-faint">{language.t("provider.usage.clickRefresh")}</div>
+      </>
+    )
+    return content
+  }
 
   const ringStrip = () => (
     <For each={rings()}>
-      {(ring) => (
-        <TooltipV2 placement="bottom" value={tooltipValue(
-          <>
-            <div class="font-medium">{ring.title}</div>
-            <For each={ring.rows}>
-              {(row) => (
-                <Show when={row.name} fallback={<div>{row.value}</div>}>
-                  {(name) => (
-                    <div class="flex min-w-0 items-center justify-between gap-3">
-                      <span class="text-v2-text-text-muted">{name()}</span>
-                      <span class="min-w-0 truncate text-right">{row.value}</span>
-                    </div>
-                  )}
-                </Show>
-              )}
-            </For>
-          </>,
-        )}>
-          <button
-            type="button"
-            class="flex cursor-pointer items-center justify-center"
-            role="img"
-            aria-label={language.t(
-              ring.id === "context" ? "provider.usage.contextMeter" : "provider.usage.meter",
-              ring.id === "context"
-                ? { percent: Math.round(ring.percent) }
-                : { provider: ring.title, percent: Math.round(ring.percent) },
-            )}
-            onClick={() => void query.refetch()}
-          >
-            <ProgressCircle
-              size={16}
-              strokeWidth={2}
-              percentage={ring.percent}
-              style={
-                ring.percent >= 90
-                  ? { "--progress-circle-progress": "var(--v2-state-fg-danger)" }
-                  : { "--progress-circle-progress": "var(--v2-icon-icon-base)" }
-              }
-            />
-          </button>
-        </TooltipV2>
-      )}
+      {(ring) => <UsageRing name={ring.name} providerID={ring.providerID} windows={ring.windows} />}
     </For>
   )
 
@@ -241,12 +263,13 @@ export function ProviderUsageMeters(props: {
         return (
           <TooltipV2
             placement="bottom"
-            value={tooltipValue(
-              <>
-                <div class="font-medium">{entry.name}</div>
+            value={
+              <div class="flex w-[170px] flex-col gap-1">
+                <div class="font-medium">{providers.all().get(entry.providerID)?.name ?? entry.providerID}</div>
                 <For each={rows}>{(row) => <div>{row}</div>}</For>
-              </>,
-            )}
+                <div class="text-v2-text-text-faint">{language.t("provider.usage.clickRefresh")}</div>
+              </div>
+            }
           >
             <Show
               when={percent !== undefined}
@@ -254,7 +277,7 @@ export function ProviderUsageMeters(props: {
                 <div
                   class="flex cursor-pointer items-center justify-center"
                   role="img"
-                  aria-label={language.t("provider.usage.meterCount", { provider: entry.name, count: count ?? 0 })}
+                  aria-label={language.t("provider.usage.meterCount", { provider: entry.providerID, count: count ?? 0 })}
                   onClick={() => void query.refetch()}
                 >
                   <span class="rounded-full bg-v2-overlay-simple-overlay-hover px-1.5 text-11-medium text-v2-text-text-muted">
@@ -267,7 +290,7 @@ export function ProviderUsageMeters(props: {
                 type="button"
                 class="flex cursor-pointer items-center justify-center"
                 role="img"
-                aria-label={language.t("provider.usage.meter", { provider: entry.name, percent: Math.round(percent ?? 0) })}
+                aria-label={language.t("provider.usage.meter", { provider: entry.providerID, percent: Math.round(percent ?? 0) })}
                 onClick={() => void query.refetch()}
               >
                 <ProgressCircle
@@ -288,8 +311,12 @@ export function ProviderUsageMeters(props: {
     </For>
   )
 
+  const visible = createMemo(() =>
+    props.variant === "rings" ? rings().length > 0 : entries().some((entry) => entry.windows.length > 0),
+  )
+
   return (
-    <Show when={props.variant === "rings" ? rings().length > 0 : entries().length > 0}>
+    <Show when={visible()}>
       <div class="flex items-center gap-1" classList={{ "min-h-7 w-full px-2.5": !!props.row }}>
         <Show when={props.variant === "rings"} fallback={providerStrip()}>
           {ringStrip()}
