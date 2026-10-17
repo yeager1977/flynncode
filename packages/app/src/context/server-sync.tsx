@@ -174,6 +174,15 @@ export function seedActiveSessionStatuses(
     const status = active[sessionID]
     session.set("session_status", sessionID, status?.type === "running" ? { type: "busy" } : status)
   }
+  // Reconcile against the server truth: a status the server no longer
+  // considers active (e.g. one seeded before a crashed/restarted server, so
+  // no idle event ever arrived) must be cleared, or it pins that session's
+  // message cache out of the eviction LRU forever.
+  for (const sessionID of Object.keys(session.data.session_status)) {
+    if (sessionID === "" || sessionID in active) continue
+    if (session.data.session_status[sessionID] === undefined) continue
+    delete session.data.session_status[sessionID]
+  }
 }
 
 function makeQueryOptionsApi(
@@ -544,8 +553,11 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     if (eventType === "integration.connection.updated") void refreshProviders()
 
     if (directory === "global") {
-      if (eventType === "server.connected" && activeSessionsQuery.data === undefined && !activeSessionsQuery.isFetching)
-        void activeSessionsQuery.refetch()
+      // Every connect (boot or reconnect after a server restart) resyncs the
+      // active-session seed; the reconcile in seedActiveSessionStatuses
+      // clears statuses the new server no longer reports, including the
+      // stale "busy" ones that pinned sessions out of the message-cache LRU.
+      if (eventType === "server.connected" && !activeSessionsQuery.isFetching) void activeSessionsQuery.refetch()
       applyGlobalEvent({
         event,
         project: globalStore.project,
