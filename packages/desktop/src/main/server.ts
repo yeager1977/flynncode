@@ -67,9 +67,15 @@ export async function spawnLocalServer(
   options: SpawnLocalServerOptions,
 ) {
   const sidecar = join(dirname(fileURLToPath(import.meta.url)), "sidecar.js")
+  // Opt-in Node runtime args for the server sidecar (e.g. --inspect for heap
+  // debugging); empty by default so normal launches keep stock behavior.
+  const execArgs = (process.env.FLYNN_SIDECAR_EXEC_ARGS ?? "")
+    .split(",")
+    .flatMap((arg) => (arg === "" ? [] : [arg.trim()]))
   const child = utilityProcess.fork(sidecar, [], {
     cwd: process.cwd(),
     env: createSidecarEnv(),
+    execArgv: execArgs.length > 0 ? execArgs : undefined,
     serviceName: SIDECAR_SERVICE_NAME,
     stdio: "pipe",
   })
