@@ -23,6 +23,7 @@ import { AzureAuthPlugin } from "./azure"
 import { DigitalOceanAuthPlugin } from "./digitalocean"
 import { XaiAuthPlugin } from "./xai"
 import { OllamaCloudUsagePlugin } from "./ollama-cloud"
+import { MusePlugin } from "./muse"
 import { CerebrasPlugin } from "./cerebras"
 import { SnowflakeCortexAuthPlugin } from "./snowflake-cortex"
 import { OllamaModelRouterPlugin } from "./ollama-model-router"
@@ -110,6 +111,7 @@ function internalPlugins(flags: RuntimeFlags.Info): PluginInstance[] {
     CerebrasPlugin,
     OllamaModelRouterPlugin,
     OllamaCloudUsagePlugin,
+    MusePlugin,
     PreviewPlugin,
     RoutinesPlugin,
   ]

@@ -1,3 +1,4 @@
+import type { Model } from "@flynncode/sdk/v2"
 import { describe, expect, test } from "bun:test"
 import { OllamaCloudUsagePlugin, fetchOllamaUsage } from "../../src/plugin/ollama-cloud"
 
@@ -70,5 +71,73 @@ describe("plugin.ollama-cloud", () => {
     const plugin = await OllamaCloudUsagePlugin({} as never, {})
     const usage = await plugin.auth?.usage?.(async () => ({ type: "oauth", access: "a", refresh: "r", expires: 1 }) as never)
     expect(usage).toBeUndefined()
+  })
+})
+describe("plugin.ollama-cloud provider models hook", () => {
+  const catalogModel: Model = {
+    id: "glm-5.3-flash",
+    providerID: "ollama-cloud",
+    name: "GLM 5.3 Flash",
+    api: { id: "glm-5.3-flash", url: "https://ollama.com/v1", npm: "@ai-sdk/openai-compatible" },
+    family: "glm",
+    status: "active",
+    headers: {},
+    options: {},
+    cost: { input: 1, output: 2, cache: { read: 0, write: 0 } },
+    limit: { context: 1000, input: undefined, output: 100 },
+    capabilities: {
+      temperature: true,
+      reasoning: true,
+      attachment: false,
+      toolcall: true,
+      input: { text: true, audio: false, image: false, video: false, pdf: false },
+      output: { text: true, audio: false, image: false, video: false, pdf: false },
+      interleaved: false,
+    },
+    release_date: "2026-09-11",
+    variants: {},
+  }
+
+  const provider = { models: { "glm-5.3-flash": catalogModel } } as never
+
+  test("merges newly added cloud models into the catalog", async () => {
+    const fetchImpl = (async () =>
+      new Response(
+        JSON.stringify({
+          models: [
+            { name: "glm-5.3-flash", capabilities: ["completion", "tools"] },
+            { name: "beam", capabilities: ["completion", "thinking", "tools"] },
+          ],
+        }),
+      )) as unknown as typeof fetch
+    const plugin = await OllamaCloudUsagePlugin({} as never, { fetchImpl })
+    const models = await plugin.provider?.models?.(provider, { auth: { type: "api", key: "k" } } as never)
+    const additions = Object.keys(models ?? {})
+    expect(additions).toEqual(["glm-5.3-flash", "beam"])
+    const beam = models?.["beam"]
+    expect(beam?.name).toBe("beam")
+    expect(beam?.api).toEqual({ id: "beam", url: "https://ollama.com/v1", npm: "@ai-sdk/openai-compatible" })
+    expect(beam?.capabilities.toolcall).toBe(true)
+    expect(beam?.capabilities.reasoning).toBe(true)
+    // Existing catalog entries keep their identity and pricing.
+    expect(models?.["glm-5.3-flash"]).toBe(catalogModel)
+  })
+
+  test("keeps the catalog on failures and short polls", async () => {
+    const denied = (async () => new Response("denied", { status: 401 })) as unknown as typeof fetch
+    const plugin = await OllamaCloudUsagePlugin({} as never, { fetchImpl: denied })
+    const models = await plugin.provider?.models?.(provider, { auth: { type: "api", key: "k" } } as never)
+    expect(Object.keys(models ?? {})).toEqual(["glm-5.3-flash"])
+
+    const empty = (async () => new Response(JSON.stringify({ models: [] }))) as unknown as typeof fetch
+    const plugin2 = await OllamaCloudUsagePlugin({} as never, { fetchImpl: empty })
+    const models2 = await plugin2.provider?.models?.(provider, { auth: { type: "api", key: "k" } } as never)
+    expect(Object.keys(models2 ?? {})).toEqual(["glm-5.3-flash"])
+  })
+
+  test("skips polling without api credentials", async () => {
+    const plugin = await OllamaCloudUsagePlugin({} as never, {})
+    const models = await plugin.provider?.models?.(provider, {} as never)
+    expect(Object.keys(models ?? {})).toEqual(["glm-5.3-flash"])
   })
 })
