@@ -13,6 +13,7 @@ import { getStore, removeStoreFile } from "./store"
 import { PINCH_ZOOM_ENABLED_KEY, WINDOW_IDS_KEY } from "./store-keys"
 import { createUnresponsiveSampler } from "./unresponsive"
 import { nativeT } from "./native-translations"
+import { rendererDeathAction } from "./renderer-recovery"
 import { createWindowRegistry } from "./window-registry"
 import { safeWindowURL } from "./window-state"
 import { resolveExternalURL, resolveLocalFilePath } from "./external-url"
@@ -344,6 +345,7 @@ function loadWindow(win: BrowserWindow, html: string) {
 
 function wireWindowRecovery(win: BrowserWindow, name: string) {
   let showing = false
+  let lastReloadAt = 0
   const sampler = createUnresponsiveSampler(win, name)
 
   type RecoveryAction = "relaunch" | "export-logs" | "keep-waiting" | "quit"
@@ -442,6 +444,15 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
   win.webContents.on("render-process-gone", (_event, details) => {
     sampler.stopAndFlush()
     writeLog("window", "renderer process gone", { window: name, currentURL: safeWindowURL(win), details }, "error")
+    // During shutdown the teardown is expected; recovery would fight the quit.
+    if (registry.isQuitting()) return
+    const now = Date.now()
+    if (rendererDeathAction({ reason: details.reason, lastReloadAt, now }) === "reload") {
+      lastReloadAt = now
+      writeLog("window", "reloading renderer after process gone", { window: name, reason: details.reason })
+      win.webContents.reload()
+      return
+    }
     void show(
       nativeT("desktop.recovery.terminated"),
       nativeT("desktop.recovery.terminated.detail", {

@@ -13,6 +13,17 @@ const signScript = path.join(rootDir, "script", "sign-windows.ps1")
 const metainfoFpm = (appId: string) =>
   `${path.join(packageDir, "resources", `${appId}.metainfo.xml`)}=/usr/share/metainfo/${appId}.metainfo.xml`
 
+// Stopping a running instance before its files change is part of every Linux
+// package (see the script for why); metainfo ships alongside it.
+const linuxFpm = (appId: string) => {
+  const stop = path.join(packageDir, "maintainer", "stop-running-instances.sh")
+  return [
+    metainfoFpm(appId),
+    `--before-install=${stop}`,
+    `--before-remove=${stop}`,
+  ]
+}
+
 async function signWindows(configuration: { path: string }) {
   if (process.platform !== "win32") return
   if (process.env.GITHUB_ACTIONS !== "true") return
@@ -123,8 +134,8 @@ function getConfig() {
         ...base,
         appId,
         productName: "Flynncode Dev",
-        deb: { packageName: "flynncode-dev", fpm: [metainfoFpm(appId)] },
-        rpm: { packageName: "flynncode-dev", fpm: [metainfoFpm(appId)] },
+        deb: { packageName: "flynncode-dev", fpm: linuxFpm(appId) },
+        rpm: { packageName: "flynncode-dev", fpm: linuxFpm(appId) },
       }
     }
     case "beta": {
@@ -134,8 +145,8 @@ function getConfig() {
         productName: "Flynncode Beta",
         protocols: { name: "Flynncode Beta", schemes: ["opencode"] },
         publish: { provider: "github", owner: "yeager1977", repo: "flynncode-beta", channel: "latest" },
-        deb: { packageName: "flynncode-beta", fpm: [metainfoFpm(appId)] },
-        rpm: { packageName: "flynncode-beta", fpm: [metainfoFpm(appId)] },
+        deb: { packageName: "flynncode-beta", fpm: linuxFpm(appId) },
+        rpm: { packageName: "flynncode-beta", fpm: linuxFpm(appId) },
       }
     }
     case "prod": {
@@ -145,8 +156,8 @@ function getConfig() {
         productName: "Flynncode",
         protocols: { name: "Flynncode", schemes: ["opencode"] },
         publish: { provider: "github", owner: "yeager1977", repo: "flynncode", channel: "latest" },
-        deb: { packageName: "flynncode", fpm: [metainfoFpm(appId)] },
-        rpm: { packageName: "flynncode", fpm: [metainfoFpm(appId)] },
+        deb: { packageName: "flynncode", fpm: linuxFpm(appId) },
+        rpm: { packageName: "flynncode", fpm: linuxFpm(appId) },
       }
     }
   }
