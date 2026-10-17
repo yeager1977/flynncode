@@ -3,14 +3,18 @@ import { createStore } from "solid-js/store"
 import { useNavigate } from "@solidjs/router"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createMediaQuery } from "@solid-primitives/media"
+import { useDialog } from "@flynncode/ui/context/dialog"
 import { ResizeHandle } from "@flynncode/ui/resize-handle"
+import { ButtonV2 } from "@flynncode/ui/v2/button-v2"
+import { Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitle } from "@flynncode/ui/v2/dialog-v2"
+import { DividerV2 } from "@flynncode/ui/v2/divider-v2"
 import { IconButtonV2 } from "@flynncode/ui/v2/icon-button-v2"
 import { Icon } from "@flynncode/ui/v2/icon"
 import { KeybindV2 } from "@flynncode/ui/v2/keybind-v2"
 import { TooltipV2 } from "@flynncode/ui/v2/tooltip-v2"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
-import { useLayout } from "@/context/layout"
+import { useLayout, type LocalProject } from "@/context/layout"
 import { useServer } from "@/context/server"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
@@ -19,7 +23,7 @@ import { pathKey } from "@/utils/path-key"
 import { sessionHref } from "@/utils/session-route"
 import { showToast } from "@/utils/toast"
 import type { Session } from "@flynncode/sdk/v2/client"
-import { sortedRootSessions } from "./layout/helpers"
+import { displayName, sortedRootSessions } from "./layout/helpers"
 import { createSidebarController } from "./layout/sidebar-controller"
 import { SessionSidebar, SIDEBAR_SESSION_PREVIEW } from "./layout/session-sidebar"
 import { createSidebarSessions, type SidebarGroup } from "./layout/sidebar-sessions"
@@ -167,6 +171,37 @@ export function ProjectSidebar() {
     home: () => navigate("/"),
   })
 
+  const dialog = useDialog()
+
+  const showEditProjectDialog = (project: LocalProject) => {
+    const conn = server.current
+    if (!conn) return
+    void import("@/components/dialog-edit-project-v2").then(({ DialogEditProjectV2 }) => {
+      void dialog.show(() => <DialogEditProjectV2 server={conn} project={project} />)
+    })
+  }
+
+  const hideProject = (worktree: string) => {
+    layout.projects.hide(worktree)
+  }
+
+  const unhideProject = (worktree: string) => {
+    layout.projects.unhide(worktree)
+  }
+
+  const forgetProject = (project: LocalProject) => {
+    dialog.show(() => (
+      <DialogForgetProject
+        name={displayName(project)}
+        onCancel={() => dialog.close()}
+        onConfirm={() => {
+          dialog.close()
+          layout.projects.forget(project.worktree)
+        }}
+      />
+    ))
+  }
+
   // Remember the routed session's project so New session and Home target it.
   createEffect(
     on([routed, sidebar.ready] as const, ([directory, ready]) => {
@@ -273,6 +308,11 @@ export function ProjectSidebar() {
       onNewSession={openDraft}
       onOpenProject={() => sidebar.chooseProject()}
       onArchive={(session) => void archive(session)}
+      onEditProject={showEditProjectDialog}
+      onHideProject={hideProject}
+      onUnhideProject={unhideProject}
+      onForgetProject={forgetProject}
+      hiddenProjects={layout.projects.hidden}
       shown={shown}
       showingAll={(worktree) => !!state.showAll[worktree]}
       showAll={(worktree, value) => setState("showAll", worktree, value)}
@@ -344,5 +384,35 @@ export function ProjectSidebar() {
         </nav>
       </div>
     </>
+  )
+}
+
+// "Forget" removes the project from the app entirely — files and sessions stay
+// on disk and the project can return by opening the folder again.
+function DialogForgetProject(props: { name: string; onCancel: () => void; onConfirm: () => void }) {
+  const language = useLanguage()
+  return (
+    <Dialog fit>
+      <DialogHeader>
+        <DialogTitle>{language.t("sidebar.project.forget.title")}</DialogTitle>
+      </DialogHeader>
+      <DividerV2 />
+      <DialogBody class="flex flex-col gap-1 px-4 pb-1">
+        <span class="text-14-regular text-v2-text-text-base">
+          {language.t("sidebar.project.forget.confirm", { name: props.name })}
+        </span>
+        <span class="text-12-regular text-v2-text-text-muted">
+          {language.t("sidebar.project.forget.description")}
+        </span>
+      </DialogBody>
+      <DialogFooter>
+        <ButtonV2 type="button" variant="neutral" onClick={props.onCancel}>
+          {language.t("common.cancel")}
+        </ButtonV2>
+        <ButtonV2 type="button" variant="danger" onClick={props.onConfirm}>
+          {language.t("sidebar.project.forget.action")}
+        </ButtonV2>
+      </DialogFooter>
+    </Dialog>
   )
 }

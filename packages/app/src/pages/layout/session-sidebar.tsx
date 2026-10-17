@@ -13,6 +13,7 @@ import { useServerSync } from "@/context/server-sync"
 import { useSettingsDialog } from "@/components/settings-dialog"
 import { ProviderUsageMeters } from "@/components/provider-usage-meters"
 import { showToast } from "@/utils/toast"
+import type { LocalProject } from "@/context/layout"
 import { displayName } from "./helpers"
 import type { SidebarGroup } from "./sidebar-sessions"
 
@@ -29,6 +30,11 @@ export function SessionSidebar(props: {
   onNewSession: (directory: string) => void
   onOpenProject: () => void
   onArchive: (session: Session) => void
+  onEditProject: (project: LocalProject) => void
+  onHideProject: (worktree: string) => void
+  onUnhideProject: (worktree: string) => void
+  onForgetProject: (project: LocalProject) => void
+  hiddenProjects: Accessor<LocalProject[]>
   shown: (group: SidebarGroup) => Session[]
   showAll: (worktree: string, value: boolean) => void
   showingAll: (worktree: string) => boolean
@@ -73,18 +79,13 @@ export function SessionSidebar(props: {
           <For each={props.groups()}>
             {(group) => (
               <section class="flex flex-col gap-px" data-project={group.project.worktree}>
-                <div class="group/project flex items-center h-7 pl-2.5 pr-1 text-12-regular text-v2-text-text-faint">
-                  <span class="flex-1 min-w-0 truncate">{displayName(group.project)}</span>
-                  <button
-                    type="button"
-                    data-action="sidebar-project-new-session"
-                    aria-label={language.t("command.session.new")}
-                    class="size-6 flex items-center justify-center rounded-md opacity-0 group-hover/project:opacity-100 focus-visible:opacity-100 hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base"
-                    onClick={() => props.onNewSession(group.project.worktree)}
-                  >
-                    <Icon name="plus" />
-                  </button>
-                </div>
+                <ProjectHeader
+                  project={group.project}
+                  onNewSession={props.onNewSession}
+                  onEditProject={props.onEditProject}
+                  onHideProject={props.onHideProject}
+                  onForgetProject={props.onForgetProject}
+                />
                 <For each={props.shown(group)}>
                   {(session) => (
                     <SessionLink
@@ -113,6 +114,13 @@ export function SessionSidebar(props: {
             )}
           </For>
         </Show>
+        {/* Outside the groups' Show: hidden projects stay manageable even
+            when every visible list is empty. */}
+        <HiddenProjectsSection
+          projects={props.hiddenProjects}
+          onUnhideProject={props.onUnhideProject}
+          onForgetProject={props.onForgetProject}
+        />
       </div>
       <div class="flex flex-col gap-0.5 p-2 border-t border-v2-border-border-muted">
         {/* Usage rings stay visible here with the project actions: context of
@@ -155,6 +163,125 @@ function SidebarRow(props: {
       </span>
       <span class="truncate">{props.label}</span>
     </button>
+  )
+}
+
+// A quiet project label with the management menu on right-click: new session,
+// edit, hide, forget. Hiding tucks the project into the hidden section below.
+function ProjectHeader(props: {
+  project: LocalProject
+  onNewSession: (directory: string) => void
+  onEditProject: (project: LocalProject) => void
+  onHideProject: (worktree: string) => void
+  onForgetProject: (project: LocalProject) => void
+}) {
+  const language = useLanguage()
+  return (
+    <MenuV2.Context>
+      <MenuV2.Context.Trigger
+        as="div"
+        class="group/project flex items-center h-7 pl-2.5 pr-1 text-12-regular text-v2-text-text-faint"
+      >
+        <span class="flex-1 min-w-0 truncate">{displayName(props.project)}</span>
+        <button
+          type="button"
+          data-action="sidebar-project-new-session"
+          data-project={props.project.worktree}
+          aria-label={language.t("command.session.new")}
+          class="size-6 flex items-center justify-center rounded-md opacity-0 group-hover/project:opacity-100 focus-visible:opacity-100 hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base"
+          onClick={() => props.onNewSession(props.project.worktree)}
+        >
+          <Icon name="plus" />
+        </button>
+      </MenuV2.Context.Trigger>
+      <MenuV2.Context.Portal>
+        <MenuV2.Context.Content>
+          <MenuV2.Item
+            data-action="sidebar-project-menu-new-session"
+            data-project={props.project.worktree}
+            onSelect={() => props.onNewSession(props.project.worktree)}
+          >
+            {language.t("command.session.new")}
+          </MenuV2.Item>
+          <MenuV2.Item
+            data-action="sidebar-project-edit"
+            data-project={props.project.worktree}
+            onSelect={() => props.onEditProject(props.project)}
+          >
+            {language.t("common.edit")}
+          </MenuV2.Item>
+          <MenuV2.Item
+            data-action="sidebar-project-hide"
+            data-project={props.project.worktree}
+            onSelect={() => props.onHideProject(props.project.worktree)}
+          >
+            {language.t("sidebar.project.hide")}
+          </MenuV2.Item>
+          <MenuV2.Separator />
+          <MenuV2.Item
+            data-action="sidebar-project-forget"
+            data-project={props.project.worktree}
+            onSelect={() => props.onForgetProject(props.project)}
+          >
+            {language.t("sidebar.project.forget")}
+          </MenuV2.Item>
+        </MenuV2.Context.Content>
+      </MenuV2.Context.Portal>
+    </MenuV2.Context>
+  )
+}
+
+// Hidden projects stay reachable: a row un-hides on click, and the context
+// menu offers Show and Forget.
+function HiddenProjectsSection(props: {
+  projects: Accessor<LocalProject[]>
+  onUnhideProject: (worktree: string) => void
+  onForgetProject: (project: LocalProject) => void
+}) {
+  const language = useLanguage()
+  return (
+    <Show when={props.projects().length > 0}>
+      <div class="flex flex-col gap-px" data-sidebar-hidden-projects>
+        <div class="h-7 flex items-center pl-2.5 text-12-regular text-v2-text-text-faint">
+          {language.t("sidebar.project.hidden")}
+        </div>
+        <For each={props.projects()}>
+          {(project) => (
+            <MenuV2.Context>
+              <MenuV2.Context.Trigger
+                as="button"
+                type="button"
+                data-action="sidebar-project-hidden"
+                data-project={project.worktree}
+                title={language.t("sidebar.project.show")}
+                class="group/hidden flex items-center h-7 pl-2.5 pr-2 rounded-md text-left text-v2-text-text-faint hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-muted"
+                onClick={() => props.onUnhideProject(project.worktree)}
+              >
+                <span class="flex-1 min-w-0 truncate">{displayName(project)}</span>
+              </MenuV2.Context.Trigger>
+              <MenuV2.Context.Portal>
+                <MenuV2.Context.Content>
+                  <MenuV2.Item
+                    data-action="sidebar-project-show"
+                    data-project={project.worktree}
+                    onSelect={() => props.onUnhideProject(project.worktree)}
+                  >
+                    {language.t("sidebar.project.show")}
+                  </MenuV2.Item>
+                  <MenuV2.Item
+                    data-action="sidebar-project-forget"
+                    data-project={project.worktree}
+                    onSelect={() => props.onForgetProject(project)}
+                  >
+                    {language.t("sidebar.project.forget")}
+                  </MenuV2.Item>
+                </MenuV2.Context.Content>
+              </MenuV2.Context.Portal>
+            </MenuV2.Context>
+          )}
+        </For>
+      </div>
+    </Show>
   )
 }
 

@@ -11,6 +11,10 @@ type ServerProjectState = {
   projects: Record<string, StoredProject[]>
   lastProject: Record<string, string>
   recentlyClosed: Record<string, string[]>
+  // Projects removed from the list on purpose (right-click > Hide). Hidden
+  // projects survive restarts and are only shown again by an explicit show(),
+  // never by an ambient open() or a startup reopen.
+  hiddenProjects: Record<string, string[]>
 }
 const HEALTH_POLL_INTERVAL_MS = 10_000
 // The store retains more history than is displayed. Consumers filter recently closed entries
@@ -18,6 +22,9 @@ const HEALTH_POLL_INTERVAL_MS = 10_000
 // RECENTLY_CLOSED_DISPLAY_LIMIT. Retaining extra history ensures entries that are temporarily
 // filtered out do not evict still-visible ones from the persisted store.
 const RECENTLY_CLOSED_HISTORY_LIMIT = 16
+// The hidden list is user-curated; a generous cap keeps a runaway hide-loop
+// from growing the persisted store without bound.
+const HIDDEN_HISTORY_LIMIT = 50
 export const RECENTLY_CLOSED_DISPLAY_LIMIT = 5
 
 export function normalizeServerUrl(input: string) {
@@ -84,6 +91,31 @@ export function createServerProjects<T extends ServerProjectState>(input: {
   const setStore = input.setStore as unknown as SetStoreFunction<ServerProjectState>
   const current = () => input.store.projects[input.scope()] ?? []
   const currentClosed = () => input.store.recentlyClosed?.[input.scope()] ?? []
+  // Deduped by normalized path first-occurrence order, so stale duplicates in
+  // older stores collapse without moving anything.
+  const currentHidden = () => {
+    const stored = input.store.hiddenProjects?.[input.scope()] ?? []
+    const seen = new Set<string>()
+    return stored.filter((worktree) => {
+      const key = pathKey(worktree)
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }
+  const isHidden = (directory: string) => {
+    const key = pathKey(directory)
+    return currentHidden().some((worktree) => pathKey(worktree) === key)
+  }
+  const setHidden = (directories: string[]) => setStore("hiddenProjects", input.scope(), directories)
+  const dropHidden = (directory: string) => {
+    const key = pathKey(directory)
+    setHidden(currentHidden().filter((worktree) => pathKey(worktree) !== key))
+  }
+  const dropClosed = (directory: string) => {
+    const key = pathKey(directory)
+    setStore("recentlyClosed", input.scope(), currentClosed().filter((worktree) => pathKey(worktree) !== key))
+  }
   const remove = (directory: string) => {
     setStore(
       "projects",
@@ -91,33 +123,78 @@ export function createServerProjects<T extends ServerProjectState>(input: {
       current().filter((project) => project.worktree !== directory),
     )
   }
+  const openProject = (directory: string) => {
+    // Ambient opens (startup, worktree normalization) never reveal a hidden
+    // project; show() is how an explicit open does.
+    if (isHidden(directory)) return
+    const scope = input.scope()
+    const key = pathKey(directory)
+    const closed = currentClosed()
+    if (closed.some((worktree) => pathKey(worktree) === key)) {
+      setStore(
+        "recentlyClosed",
+        scope,
+        closed.filter((worktree) => pathKey(worktree) !== key),
+      )
+    }
+    if (current().some((project) => project.worktree === directory)) return
+    setStore("projects", scope, [{ worktree: directory, expanded: true }, ...current()])
+  }
   return {
-    list: current,
-    recentlyClosed: currentClosed,
+    list: () => current().filter((project) => !isHidden(project.worktree)),
+    hidden: currentHidden,
+    recentlyClosed: () => currentClosed().filter((worktree) => !isHidden(worktree)),
     remove,
+    isHidden,
     open(directory: string) {
-      const scope = input.scope()
+      openProject(directory)
+    },
+    // Explicit open (directory picker, deep link, project card): reveals a
+    // hidden project again.
+    show(directory: string) {
+      dropHidden(directory)
+      openProject(directory)
+    },
+    // User-initiated hide: removes the project from the list and remembers the
+    // choice, so it survives restarts and any ambient reopen.
+    hide(directory: string) {
       const key = pathKey(directory)
-      const closed = currentClosed()
-      if (closed.some((worktree) => pathKey(worktree) === key)) {
-        setStore(
-          "recentlyClosed",
-          scope,
-          closed.filter((worktree) => pathKey(worktree) !== key),
-        )
+      setStore(
+        "projects",
+        input.scope(),
+        current().filter((project) => pathKey(project.worktree) !== key),
+      )
+      dropClosed(directory)
+      setHidden([directory, ...currentHidden().filter((worktree) => pathKey(worktree) !== key)].slice(0, HIDDEN_HISTORY_LIMIT))
+    },
+    unhide(directory: string) {
+      dropHidden(directory)
+      openProject(directory)
+    },
+    // Forget the project everywhere: the open list, hidden list, recently
+    // closed, and the last-project pointer. Disk data is untouched.
+    forget(directory: string) {
+      const key = pathKey(directory)
+      setStore(
+        "projects",
+        input.scope(),
+        current().filter((project) => pathKey(project.worktree) !== key),
+      )
+      dropHidden(directory)
+      dropClosed(directory)
+      if (pathKey(input.store.lastProject[input.scope()] ?? "") === key) {
+        setStore("lastProject", input.scope(), "")
       }
-      if (current().some((project) => project.worktree === directory)) return
-      setStore("projects", scope, [{ worktree: directory, expanded: true }, ...current()])
     },
     // User-initiated close: removes the project and records it in recently closed.
     // Internal, non-user removals (e.g. sandbox/worktree normalization) should use remove().
     close(directory: string) {
-      remove(directory)
       const key = pathKey(directory)
       const closed = [directory, ...currentClosed().filter((worktree) => pathKey(worktree) !== key)].slice(
         0,
         RECENTLY_CLOSED_HISTORY_LIMIT,
       )
+      remove(directory)
       setStore("recentlyClosed", input.scope(), closed)
     },
     expand(directory: string) {
@@ -270,6 +347,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         projects: {} as Record<string, StoredProject[]>,
         lastProject: {} as Record<string, string>,
         recentlyClosed: {} as Record<string, string[]>,
+        hiddenProjects: {} as Record<string, string[]>,
       }),
     )
 

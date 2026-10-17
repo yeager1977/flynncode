@@ -318,7 +318,8 @@ export default function LegacyLayout(props: ParentProps) {
     const last = server.projects.last()
 
     if (list.length === 0) {
-      if (!last) return
+      // A deliberately hidden project never resurfaces on startup.
+      if (!last || server.projects.isHidden(last)) return
       await sidebar.openProject(last, true)
     } else {
       const next = list.find((project) => project.worktree === last) ?? list[0]

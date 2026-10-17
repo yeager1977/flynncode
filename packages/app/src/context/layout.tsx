@@ -513,6 +513,9 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         for (const project of projects) {
           const root = rootFor(project.worktree)
           if (root === project.worktree) continue
+          // A hidden root must not consolidate away its sub-worktree projects:
+          // the replacement open() below would refuse, silently deleting them.
+          if (server.projects.isHidden(root)) continue
 
           server.projects.remove(project.worktree)
 
@@ -645,6 +648,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       },
       projects: {
         list,
+        hidden: createMemo(() => server.projects.hidden().map((worktree) => enrich({ worktree, expanded: false }))),
         recentlyClosed: createMemo(() => {
           const known = new Set(serverSync().data.project.map((project) => pathKey(project.worktree)))
           return server.projects
@@ -654,10 +658,23 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             .map((worktree) => enrich({ worktree, expanded: false }))
         }),
         open(directory: string) {
+          // Explicit open (project card, directory picker, deep link): reveals
+          // a hidden project. Ambient openers stay on server.projects.open().
           const root = rootFor(directory)
           if (server.projects.list().find((x) => x.worktree === root)) return
           void serverSync().project.loadSessions(root)
-          server.projects.open(root)
+          server.projects.show(root)
+        },
+        hide(directory: string) {
+          server.projects.hide(rootFor(directory))
+        },
+        unhide(directory: string) {
+          const root = rootFor(directory)
+          server.projects.unhide(root)
+          void serverSync().project.loadSessions(root)
+        },
+        forget(directory: string) {
+          server.projects.forget(rootFor(directory))
         },
         close(directory: string) {
           server.projects.close(directory)

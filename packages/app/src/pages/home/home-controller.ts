@@ -103,7 +103,8 @@ export function createHomeController() {
             })
             .then((project) => ctx.sync.child(item, { bootstrap: false })[1]("project", project.id))
             .catch(() => undefined)
-          ctx.projects.open(item)
+          // Deliberately re-adding a folder reveals it, even when it was hidden before.
+          ctx.projects.show(item)
         })
         ctx.projects.touch(directory)
         setSelection({ server: ServerConnection.key(conn), directory })

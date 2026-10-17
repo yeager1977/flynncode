@@ -99,7 +99,7 @@ describe("createServerProjects", () => {
   test("keeps active and explicit server buckets in one reactive store", () => {
     createRoot((dispose) => {
       const [scope] = createSignal(ServerScope.local)
-      const [store, setStore] = createStore({ projects: {}, lastProject: {}, recentlyClosed: {} })
+      const [store, setStore] = createStore({ projects: {}, lastProject: {}, recentlyClosed: {}, hiddenProjects: {} })
       const active = createServerProjects({ scope, store, setStore })
       const remote = createServerProjects({ scope: () => "https://debian.example" as ServerScope, store, setStore })
 
@@ -119,7 +119,7 @@ describe("createServerProjects", () => {
   test("tracks recently closed projects and drops them when reopened", () => {
     createRoot((dispose) => {
       const [scope] = createSignal(ServerScope.local)
-      const [store, setStore] = createStore({ projects: {}, lastProject: {}, recentlyClosed: {} })
+      const [store, setStore] = createStore({ projects: {}, lastProject: {}, recentlyClosed: {}, hiddenProjects: {} })
       const projects = createServerProjects({ scope, store, setStore })
 
       projects.open("/a")
@@ -140,7 +140,7 @@ describe("createServerProjects", () => {
   test("remove drops a project without recording it as recently closed", () => {
     createRoot((dispose) => {
       const [scope] = createSignal(ServerScope.local)
-      const [store, setStore] = createStore({ projects: {}, lastProject: {}, recentlyClosed: {} })
+      const [store, setStore] = createStore({ projects: {}, lastProject: {}, recentlyClosed: {}, hiddenProjects: {} })
       const projects = createServerProjects({ scope, store, setStore })
 
       projects.open("/repo/subdir")
@@ -154,7 +154,7 @@ describe("createServerProjects", () => {
   test("retains recently closed history beyond the visible display limit", () => {
     createRoot((dispose) => {
       const [scope] = createSignal(ServerScope.local)
-      const [store, setStore] = createStore({ projects: {}, lastProject: {}, recentlyClosed: {} })
+      const [store, setStore] = createStore({ projects: {}, lastProject: {}, recentlyClosed: {}, hiddenProjects: {} })
       const projects = createServerProjects({ scope, store, setStore })
 
       // Closing 6 projects keeps all 6 in the store even though only 5 are displayed;
@@ -171,7 +171,7 @@ describe("createServerProjects", () => {
   test("caps recently closed history at the store limit", () => {
     createRoot((dispose) => {
       const [scope] = createSignal(ServerScope.local)
-      const [store, setStore] = createStore({ projects: {}, lastProject: {}, recentlyClosed: {} })
+      const [store, setStore] = createStore({ projects: {}, lastProject: {}, recentlyClosed: {}, hiddenProjects: {} })
       const projects = createServerProjects({ scope, store, setStore })
 
       for (let i = 1; i <= 20; i++) {
@@ -188,12 +188,153 @@ describe("createServerProjects", () => {
   test("dedupes recently closed entries by normalized path", () => {
     createRoot((dispose) => {
       const [scope] = createSignal(ServerScope.local)
-      const [store, setStore] = createStore({ projects: {}, lastProject: {}, recentlyClosed: {} })
+      const [store, setStore] = createStore({ projects: {}, lastProject: {}, recentlyClosed: {}, hiddenProjects: {} })
       const projects = createServerProjects({ scope, store, setStore })
 
       projects.close("/repo")
       projects.close("/repo/")
       expect(projects.recentlyClosed()).toEqual(["/repo/"])
+      dispose()
+    })
+  })
+
+  test("hide removes a project from the list and remembers it as hidden", () => {
+    createRoot((dispose) => {
+      const [scope] = createSignal(ServerScope.local)
+      const [store, setStore] = createStore({ projects: {}, lastProject: {}, recentlyClosed: {}, hiddenProjects: {} })
+      const projects = createServerProjects({ scope, store, setStore })
+
+      projects.open("/a")
+      projects.open("/b")
+      projects.close("/a")
+      projects.open("/a")
+      projects.hide("/b")
+      expect(projects.list()).toEqual([{ worktree: "/a", expanded: true }])
+      expect(projects.hidden()).toEqual(["/b"])
+      // Hiding does not count as closing: Home's recently closed stays quiet.
+      expect(projects.recentlyClosed()).toEqual([])
+      dispose()
+    })
+  })
+
+  test("list and recentlyClosed stay quiet about hidden projects", () => {
+    createRoot((dispose) => {
+      const [scope] = createSignal(ServerScope.local)
+      const [store, setStore] = createStore({ projects: {}, lastProject: {}, recentlyClosed: {}, hiddenProjects: {} })
+      const projects = createServerProjects({ scope, store, setStore })
+
+      projects.open("/a")
+      projects.hide("/a")
+      projects.open("/b")
+      projects.close("/b")
+      projects.open("/b")
+      projects.hide("/b")
+      // Hidden projects leave the list and Home's recently closed alike.
+      expect(projects.list()).toEqual([])
+      expect(projects.recentlyClosed()).toEqual([])
+      expect(projects.hidden()).toEqual(["/b", "/a"])
+      dispose()
+    })
+  })
+
+  test("open refuses a hidden project; show reveals it", () => {
+    createRoot((dispose) => {
+      const [scope] = createSignal(ServerScope.local)
+      const [store, setStore] = createStore({ projects: {}, lastProject: {}, recentlyClosed: {}, hiddenProjects: {} })
+      const projects = createServerProjects({ scope, store, setStore })
+
+      projects.open("/a")
+      projects.hide("/a")
+      expect(projects.open("/a")).toBeUndefined()
+      expect(projects.list()).toEqual([])
+      projects.show("/a")
+      expect(projects.list()).toEqual([{ worktree: "/a", expanded: true }])
+      expect(projects.hidden()).toEqual([])
+      dispose()
+    })
+  })
+
+  test("unhide re-opens the project without a navigation", () => {
+    createRoot((dispose) => {
+      const [scope] = createSignal(ServerScope.local)
+      const [store, setStore] = createStore({ projects: {}, lastProject: {}, recentlyClosed: {}, hiddenProjects: {} })
+      const projects = createServerProjects({ scope, store, setStore })
+
+      projects.open("/a")
+      projects.open("/b")
+      projects.hide("/a")
+      projects.unhide("/a")
+      expect(projects.hidden()).toEqual([])
+      expect(projects.list()[0]).toEqual({ worktree: "/a", expanded: true })
+      dispose()
+    })
+  })
+
+  test("forget clears the list, hidden list, recently closed and the last pointer", () => {
+    createRoot((dispose) => {
+      const [scope] = createSignal(ServerScope.local)
+      const [store, setStore] = createStore({ projects: {}, lastProject: {}, recentlyClosed: {}, hiddenProjects: {} })
+      const projects = createServerProjects({ scope, store, setStore })
+
+      projects.open("/a")
+      projects.open("/b")
+      projects.touch("/b")
+      projects.hide("/a")
+      projects.forget("/b")
+      expect(projects.list()).toEqual([])
+      expect(projects.hidden()).toEqual(["/a"])
+      expect(projects.recentlyClosed()).toEqual([])
+      // The last-project pointer is cleared when it named the forgotten project.
+      expect(projects.last()).toBe("")
+      dispose()
+    })
+  })
+
+  test("forget accepts a different path spelling of the forgotten project", () => {
+    createRoot((dispose) => {
+      const [scope] = createSignal(ServerScope.local)
+      const [store, setStore] = createStore({ projects: {}, lastProject: {}, recentlyClosed: {}, hiddenProjects: {} })
+      const projects = createServerProjects({ scope, store, setStore })
+
+      projects.open("/a")
+      projects.hide("/a")
+      projects.touch("/a")
+      projects.forget("/a/")
+      expect(projects.hidden()).toEqual([])
+      expect(projects.last()).toBe("")
+      dispose()
+    })
+  })
+
+  test("hidden state is stored per server scope", () => {
+    createRoot((dispose) => {
+      const [scope] = createSignal(ServerScope.local)
+      const [store, setStore] = createStore({ projects: {}, lastProject: {}, recentlyClosed: {}, hiddenProjects: {} })
+      const local = createServerProjects({ scope, store, setStore })
+      const remote = createServerProjects({ scope: () => "https://debian.example" as ServerScope, store, setStore })
+
+      remote.open("/repo")
+      local.hide("/repo")
+      expect(local.list()).toEqual([])
+      expect(remote.list()).toEqual([{ worktree: "/repo", expanded: true }])
+      expect(remote.hidden()).toEqual([])
+      dispose()
+    })
+  })
+
+  test("caps the hidden list like the recently closed history", () => {
+    createRoot((dispose) => {
+      const [scope] = createSignal(ServerScope.local)
+      const [store, setStore] = createStore({ projects: {}, lastProject: {}, recentlyClosed: {}, hiddenProjects: {} })
+      const projects = createServerProjects({ scope, store, setStore })
+
+      for (let i = 1; i <= 60; i++) {
+        projects.open(`/p${i}`)
+        projects.hide(`/p${i}`)
+      }
+      expect(projects.hidden()).toHaveLength(50)
+      expect(projects.hidden()[0]).toBe("/p60")
+      expect(projects.hidden().at(-1)).toBe("/p11")
       dispose()
     })
   })
