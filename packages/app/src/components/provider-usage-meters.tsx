@@ -24,11 +24,6 @@ function windowLabel(t: (key: string) => string, id: string) {
   return id
 }
 
-function formatTime(resetsAt: number | undefined) {
-  if (resetsAt === undefined) return undefined
-  return new Date(resetsAt).toLocaleTimeString()
-}
-
 function formatCount(count: number) {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`
   if (count >= 1_000) return `${(count / 1_000).toFixed(1)}k`
@@ -107,33 +102,19 @@ export function ProviderUsageMeters(props: {
     for (const id of ["session", "primary", "weekly", "secondary"] as const) {
       const window = windows.find((window) => window.id === id && window.percent !== undefined)
       if (!window) continue
-      const time = formatTime(window.resetsAt)
       rows.push({
-        text: time
-          ? language.t("provider.usage.rowResets", {
-              label: windowLabel(language.t, window.id),
-              percent: Math.round(window.percent ?? 0),
-              time,
-            })
-          : language.t("provider.usage.row", {
-              label: windowLabel(language.t, window.id),
-              percent: Math.round(window.percent ?? 0),
-            }),
+        text: language.t("provider.usage.row", {
+          label: windowLabel(language.t, window.id),
+          percent: Math.round(window.percent ?? 0),
+        }),
       })
     }
     for (const window of windows.filter((window) => window.count !== undefined)) {
-      const time = formatTime(window.resetsAt)
       rows.push({
-        text: time
-          ? language.t("provider.usage.countRowResets", {
-              label: windowLabel(language.t, window.id),
-              count: formatCount(window.count!),
-              time,
-            })
-          : language.t("provider.usage.countRow", {
-              label: windowLabel(language.t, window.id),
-              count: formatCount(window.count!),
-            }),
+        text: language.t("provider.usage.countRow", {
+          label: windowLabel(language.t, window.id),
+          count: formatCount(window.count!),
+        }),
       })
     }
     if (rows.length === 0) rows.push({ text: language.t("provider.usage.none") })
@@ -206,15 +187,10 @@ export function ProviderUsageMeters(props: {
     )
   }
 
-  function ringTooltip(name: string, rows: Row[]) {
-    const content = (
-      <>
-        <div class="font-medium">{name}</div>
-        <For each={rows}>{(row) => <div>{row.text}</div>}</For>
-        <div class="text-v2-text-text-faint">{language.t("provider.usage.clickRefresh")}</div>
-      </>
-    )
-    return content
+  // One line per band: Context/Session/Weekly percent (or the count label),
+  // nothing else.
+  function ringTooltip(_name: string, rows: Row[]) {
+    return <For each={rows}>{(row) => <div>{row.text}</div>}</For>
   }
 
   const ringStrip = () => (
@@ -231,32 +207,19 @@ export function ProviderUsageMeters(props: {
         const percent = entry.windows.find((window) => window.percent !== undefined)?.percent
         const count = entry.windows.find((window) => window.count !== undefined)?.count
         const rows = entry.windows.flatMap((window) => {
-          const time = formatTime(window.resetsAt)
           if (window.percent !== undefined)
             return [
-              time
-                ? language.t("provider.usage.rowResets", {
-                    label: windowLabel(language.t, window.id),
-                    percent: Math.round(window.percent),
-                    time,
-                  })
-                : language.t("provider.usage.row", {
-                    label: windowLabel(language.t, window.id),
-                    percent: Math.round(window.percent),
-                  }),
+              language.t("provider.usage.row", {
+                label: windowLabel(language.t, window.id),
+                percent: Math.round(window.percent),
+              }),
             ]
           if (window.count !== undefined)
             return [
-              time
-                ? language.t("provider.usage.countRowResets", {
-                    label: windowLabel(language.t, window.id),
-                    count: formatCount(window.count),
-                    time,
-                  })
-                : language.t("provider.usage.countRow", {
-                    label: windowLabel(language.t, window.id),
-                    count: formatCount(window.count),
-                  }),
+              language.t("provider.usage.countRow", {
+                label: windowLabel(language.t, window.id),
+                count: formatCount(window.count),
+              }),
             ]
           return []
         })
@@ -264,10 +227,8 @@ export function ProviderUsageMeters(props: {
           <TooltipV2
             placement="bottom"
             value={
-              <div class="flex w-[170px] flex-col gap-1">
-                <div class="font-medium">{providers.all().get(entry.providerID)?.name ?? entry.providerID}</div>
+              <div class="flex flex-col">
                 <For each={rows}>{(row) => <div>{row}</div>}</For>
-                <div class="text-v2-text-text-faint">{language.t("provider.usage.clickRefresh")}</div>
               </div>
             }
           >
