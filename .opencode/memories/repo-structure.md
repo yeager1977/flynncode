@@ -1,0 +1,2 @@
+- Main repo is /home/yeager1977/GitHub/flynncode; dev branch is owned by the main repo, sync worktrees in /tmp must not git switch dev
+- Desktop builds: use packages/desktop (bun run package:linux), deb lands at repo root as flynncode-desktop-linux-amd64.deb

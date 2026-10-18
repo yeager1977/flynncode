@@ -1,0 +1,2 @@
+- Merge all feature work to the `dev` branch as the integration target
+- Flyncode (like Claude) should spawn sub-sessions from task cards it discovers

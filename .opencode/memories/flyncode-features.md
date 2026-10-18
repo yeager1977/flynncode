@@ -1,0 +1,3 @@
+- Flyncode should spawn its own sub-sessions from context (like Claude does with cards)
+- Show token usage info in the UI
+- Continue improving the model router to decrease token usage

@@ -1,0 +1,2 @@
+- Scratch/work notes go under /home/yeager1977/GitHub/flynncode/.leak-load/scr/.
+- Round-based note files follow the naming pattern notes-<round number>.md (e.g., notes-3.md, notes-15.md).

@@ -1,0 +1,2 @@
+- Full-access sandbox grant config lives in `~/.config/opencode/opencode.json`; fixing the full-access grant was a requested change
+- Model router was switched to and investigated for reducing token usage

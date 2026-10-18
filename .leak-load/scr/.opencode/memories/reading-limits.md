@@ -1,0 +1,1 @@
+- When reading large files, read only the first 400 lines unless told otherwise.

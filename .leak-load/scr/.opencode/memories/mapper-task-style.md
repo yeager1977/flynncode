@@ -1,0 +1,3 @@
+- Recurring mapping tasks: explore src/index.ts, server/server.ts, session/prompt.ts, plugin/loader.ts; keep to read-only unless writing note files.
+- Grep targets include "Layer.effect" (Effect-TS patterns are relevant to this codebase).
+- Use the task tool with a general subagent for delegated file analysis.

@@ -1,0 +1,1 @@
+- Work rounds are short, read-only mapping tasks (read files, summarize, grep count); only notes to the scratch dir, no source modifications.

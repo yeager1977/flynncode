@@ -1,0 +1,2 @@
+- flynncode is a pnpm-style monorepo with the main package at packages/flynncode/src, containing modules like server/server.ts, session/prompt.ts, and plugin/loader.ts.
+- The codebase makes significant use of Effect-ts patterns such as Layer.effect; grep results for such patterns are logged in the scratch notes.

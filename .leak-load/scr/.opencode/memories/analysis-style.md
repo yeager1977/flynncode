@@ -1,0 +1,1 @@
+- Entrypoint/file summaries are expected to be brief (2 sentences or "briefly").

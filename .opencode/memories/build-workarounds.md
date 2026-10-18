@@ -1,0 +1,2 @@
+- Don't build or log to /tmp — writes fail with EDQUOT (tmpfs charged to the user's memory cgroup). Build in place instead; if a packaged build is needed, use TMPDIR=<dir on disk>.
+- Desktop deliverables land at the repo root (flynncode-desktop-linux-amd64.deb) and in packages/desktop/dist.

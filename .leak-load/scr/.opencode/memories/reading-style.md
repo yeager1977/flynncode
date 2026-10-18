@@ -1,0 +1,2 @@
+- When reading large files, default to the first 400 lines and summarize responsibilities briefly.
+- Spawn a general subagent via the task tool for file inspections when delegated analysis is requested.

@@ -1,0 +1,1 @@
+- Scratch notes for read-only work rounds are written under `/home/yeager1977/GitHub/flynncode/.leak-load/scr/`, named `notes-<round>.md`, and read back after writing.

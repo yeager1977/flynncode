@@ -1,0 +1,2 @@
+- Server sessions repeatedly crash/disconnect; investigate server stability
+- The `/loop` command was not actually implemented as instructed in the rpb etl session

@@ -1,0 +1,3 @@
+- Tasks are read-only exploration rounds: listing files, reading source (often first 400 lines), summarizing responsibilities, and grepping patterns like "Layer.effect"
+- Subagent summaries are requested via the task tool (spawn a general subagent), then relayed back
+- Most rounds end with "No modifications" — avoid editing unless a step explicitly asks to write a note

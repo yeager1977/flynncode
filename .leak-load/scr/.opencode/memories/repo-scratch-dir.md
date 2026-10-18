@@ -1,0 +1,2 @@
+- The flynncode repo uses /home/yeager1977/GitHub/flynncode/.leak-load/scr as a scratch directory for working notes (e.g., notes-<round>.md).
+- Most reader tasks in this repo are strictly no-modification except explicit note writes to that scratch directory.

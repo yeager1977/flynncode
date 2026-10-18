@@ -1,0 +1,2 @@
+- User works in recurring "mapper" rounds with read-only analysis tasks, expecting brief summaries and no code modifications.
+- Notes are written as one-line markdown files (e.g., notes-<round>.md) and read back after writing.

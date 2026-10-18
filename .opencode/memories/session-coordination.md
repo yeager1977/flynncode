@@ -1,0 +1,1 @@
+- Coordinate with peer agent sessions before rebuilding deliverables so fixes from multiple sessions land in one build; avoid committing over an in-flight merge.

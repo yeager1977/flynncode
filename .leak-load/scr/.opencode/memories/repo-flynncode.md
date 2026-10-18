@@ -1,0 +1,2 @@
+- Work targets /home/yeager1977/GitHub/flynncode, mainly packages/flynncode/src (entrypoint index.ts, server/server.ts, session/prompt.ts, plugin/loader.ts)
+- Codebase uses Effect-TS patterns (grep for "Layer.effect" is a common source-check)

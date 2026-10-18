@@ -1,0 +1,3 @@
+- The mobile connector should use the opencode iOS mobile app (repo: github doza62/opencode-mobile)
+- Known mobile issues: horrible display/usage, task lists get lost, only one task can be opened at a time, new tasks can't traverse a file tree beyond one-level selection
+- Finished subtask work is not cleaned up and stays sitting in the right-hand view

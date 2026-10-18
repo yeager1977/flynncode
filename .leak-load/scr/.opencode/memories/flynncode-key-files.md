@@ -1,0 +1,1 @@
+- Core files to know in `packages/flynncode`: `src/index.ts` (entrypoint), `src/server/server.ts`, `src/session/prompt.ts`, `src/plugin/loader.ts`.

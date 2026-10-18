@@ -1,0 +1,1 @@
+- Tasks are structured as reader rounds; exploration rounds are strictly "no modifications" unless a write is explicitly requested (e.g. notes files under .leak-load/scr).

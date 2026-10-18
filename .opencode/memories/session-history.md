@@ -1,0 +1,1 @@
+- Multi-session coordination: task-card fix (subagent scroll + consolidated action row, subagent-list.* files, e2e spec) landed on dev as 6794de10b7, meters as 6eb7e419b2; stash@{1} still parks unrelated router/subscription WIP — pull only targeted files from it, never pop the whole stash.

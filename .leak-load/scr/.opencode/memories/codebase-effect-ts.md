@@ -1,0 +1,1 @@
+- The flynncode codebase uses Effect-TS patterns; grep for "Layer.effect" is a recurring way to survey its usage.

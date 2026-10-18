@@ -1,0 +1,2 @@
+- /tmp writes fail with EDQUOT (disk-quota); tmpfs counts against the user's memory cgroup, so avoid big writes/logs there
+- Workaround for packaging: `TMPDIR=<dir on disk> bun run package:linux` in packages/desktop

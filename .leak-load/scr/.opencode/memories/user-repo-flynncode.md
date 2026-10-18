@@ -1,0 +1,1 @@
+- Working repo lives at /home/yeager1977/GitHub/flynncode, TypeScript monorepo with packages/flynncode/src and a local notes/scratch dir at .leak-load/scr (one-line markdown notes like notes-<round>.md).

@@ -1,0 +1,1 @@
+- Codebase uses Effect-TS patterns (e.g., "Layer.effect"); plugin loader analysis is delegated to general subagents via the task tool.

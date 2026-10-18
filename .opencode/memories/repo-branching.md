@@ -1,0 +1,2 @@
+- Merge all feature branches into dev as the default integration flow
+- Ensure feature work (e.g., spawning child sessions from task cards) reaches dev

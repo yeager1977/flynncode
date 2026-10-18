@@ -1,0 +1,1 @@
+- Sub task chips and main task views should show the provider/model actually doing the work, not just the currently selected model.

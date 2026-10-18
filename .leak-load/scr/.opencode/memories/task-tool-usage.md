@@ -1,0 +1,1 @@
+- For code summary subtasks like analyzing src/plugin/loader.ts, spawn a general-purpose subagent via the task tool, then relay the summary to the user.

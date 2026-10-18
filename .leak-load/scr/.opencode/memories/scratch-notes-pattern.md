@@ -1,0 +1,1 @@
+- Scratch directory .leak-load/scr/ is used for one-line notes written as notes-<round>.md, then read back to verify.

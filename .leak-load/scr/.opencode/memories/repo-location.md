@@ -1,0 +1,2 @@
+- Primary work happens in /home/yeager1977/GitHub/flynncode, main package at packages/flynncode/src
+- Scratch output lives under /home/yeager1977/GitHub/flynncode/.leak-load/scr

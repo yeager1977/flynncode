@@ -1,0 +1,3 @@
+- Dev environment is a WSL/Linux box: `~/GitHub/rl/rl-edge-dev`, opencode server binds 0.0.0.0
+- Local Ollama providers (ollama-local, ollama-gpu) plus ollama-cloud are configured via `@ai-sdk/openai-compatible`
+- Note: changing settings can stall sessions; app restart may load slowly

@@ -1,0 +1,2 @@
+- Repo lives at ~/GitHub/rl/rl-edge-dev (rl-edge project)
+- Merge all completed work to the `dev` branch

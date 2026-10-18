@@ -1,0 +1,2 @@
+- After fixing crash/memory errors, check logs to confirm the fix matches what was claimed before declaring done.
+- User expects an installable build delivered after error fixes; crashes may recur, so keep investigating.

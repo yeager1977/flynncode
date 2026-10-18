@@ -1,0 +1,1 @@
+- Scratch/notes directory used across rounds: /home/yeager1977/GitHub/flynncode/.leak-load/scr, with per-round one-line notes written as notes-<round>.md

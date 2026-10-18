@@ -1,0 +1,1 @@
+- Codebase uses Effect TypeScript patterns (e.g., Layer.effect); grep "Layer.effect" is a useful codebase survey probe.

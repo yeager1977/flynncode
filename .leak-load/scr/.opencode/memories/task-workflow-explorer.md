@@ -1,0 +1,2 @@
+- Work rounds are explorer-style: read-only tasks with explicit "No modifications" instructions; only writes are small one-line notes.
+- Notes are written to `/home/yeager1977/GitHub/flynncode/.leak-load/scr/` as `notes-N.md` matching the round number; subagents are spawned via the task tool (general type) for focused file analysis.

@@ -1,0 +1,3 @@
+- Working repo is /home/yeager1977/GitHub/flynncode; key package lives in packages/flynncode/src (entrypoint src/index.ts).
+- Uses Effect-TS idioms (Layer.effect); plugin loader at src/plugin/loader.ts, server at src/server/server.ts, prompt logic at src/session/prompt.ts.
+- Scratch notes directory: /home/yeager1977/GitHub/flynncode/.leak-load/scr (one-line notes like notes-N.md).

@@ -1,0 +1,1 @@
+- Main repo: /home/yeager1977/GitHub/flynncode, with a TypeScript monorepo under packages/flynncode/src (entrypoint at index.ts, key modules: server/server.ts, session/prompt.ts, plugin/loader.ts)

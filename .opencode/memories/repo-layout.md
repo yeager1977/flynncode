@@ -1,0 +1,2 @@
+- Main repo at /home/yeager1977/GitHub/flynncode owns branch `dev`; the detached /tmp/opencode/flynncode-sync worktree is only for merges — don't `git switch dev` there.
+- Avoid popping mixed stashes wholesale; cherry-pick only relevant files (unrelated WIP like ollama-model-router/subscription lives parked in stash).

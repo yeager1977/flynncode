@@ -1,0 +1,1 @@
+- Use /home/yeager1977/GitHub/flynncode/.leak-load/scr as the scratch directory for note files, with per-round notes named notes-<roundNumber>.md; writing is only done during designated rounds (otherwise "no modifications").

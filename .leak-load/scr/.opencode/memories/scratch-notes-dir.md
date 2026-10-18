@@ -1,0 +1,1 @@
+- Use .leak-load/scr under the repo root for scratch files and notes (e.g., notes-<round>.md)

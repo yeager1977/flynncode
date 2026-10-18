@@ -1,0 +1,2 @@
+- Sessions are read-only "explorer" rounds: list/read/grep/summarize, with explicit "No modifications" constraints
+- Subagent delegation via the task tool (general subagents) for code-reading summaries

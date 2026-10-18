@@ -1,0 +1,2 @@
+- Provider usage meters (anthropic, openai, grok, ollama, muse) must always be visible bottom-left of the main window, near open project/settings
+- Each provider shows one circle with three sub-circles for context, session, and weekly limits; usage data must refresh periodically (about every minute) or on click

@@ -1,0 +1,1 @@
+- Mapper rounds follow a repeating 4-step cadence: list scratch dir + summarize index.ts entrypoint (2 sentences); read server.ts and prompt.ts (first 400 lines) for a brief responsibility summary; spawn a general subagent via the task tool to summarize plugin/loader.ts's 3 most important functions; grep src for "Layer.effect", write a one-line note, then read it back

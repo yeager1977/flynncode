@@ -1,0 +1,3 @@
+- Repeated reader rounds use a standard cycle: list scr files, read src/index.ts, read server/server.ts and session/prompt.ts (first 400 lines), inspect plugin/loader.ts via a general subagent, then grep for "Layer.effect".
+- Use the task tool to spawn a general subagent for single-file deep reads like plugin/loader.ts (report its 3 most important functions).
+- Note files are named notes-<round>.md and are written then read back to verify.

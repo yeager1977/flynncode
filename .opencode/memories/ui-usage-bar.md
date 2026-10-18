@@ -1,0 +1,1 @@
+- Provider usage meters (ollama, anthropic, openai, grok, muse) must stay always visible on the bottom-left of the main window, alongside open-project/settings; watch for newly added ollama beam models when updating model lists

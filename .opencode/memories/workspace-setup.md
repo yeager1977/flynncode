@@ -1,0 +1,1 @@
+- Main repo is /home/yeager1977/GitHub/flynncode; dev branch should be built/committed there, not in /tmp sync worktrees (user prefers building in place, not /tmp).

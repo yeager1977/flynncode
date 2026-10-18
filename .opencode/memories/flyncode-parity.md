@@ -1,0 +1,2 @@
+- Flyncode should match Claude's behavior of spawning sessions from discovered items (little cards).
+- User cares about app responsiveness — hung/slow loads after settings changes are a known pain point.

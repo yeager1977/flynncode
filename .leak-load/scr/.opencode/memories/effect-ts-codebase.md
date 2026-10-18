@@ -1,0 +1,1 @@
+- The flynncode package is built on Effect-TS; "Layer.effect" is a key pattern to grep for when surveying the source.

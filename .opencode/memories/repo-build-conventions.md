@@ -1,0 +1,3 @@
+- Build in place in /home/yeager1977/GitHub/flynncode, not in /tmp sync dirs; /tmp writes fail with EDQUOT (tmpfs charged to memory cgroup), including log files.
+- Main repo owns the dev branch; /tmp worktrees stay detached — don't git switch dev in them.
+- Build desktop packages via `TMPDIR=<dir on disk> bun run package:linux` in packages/desktop (bun.lock, package.json dep-sort, and mobile-gateway bin exec-bit are part of dev hygiene).

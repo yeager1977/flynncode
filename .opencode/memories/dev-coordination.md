@@ -1,0 +1,2 @@
+- Peer agent ses_ebaf06dfcffeZOHq4L9oJ2l29r (build) owns task-card fixes; coordinate before committing over each other's in-flight merges; only pull targeted files from stashes.
+- Keep commits scoped; don't push without asking.

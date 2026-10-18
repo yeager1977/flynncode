@@ -1,0 +1,2 @@
+- SQLite database lives at `.local/share/opencode-dev.db`
+- User permission granted to kill the app whenever needed during development

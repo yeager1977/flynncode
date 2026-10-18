@@ -1,0 +1,2 @@
+- Working repo is /home/yeager1977/GitHub/flynncode; the main package entrypoint is packages/flynncode/src/index.ts, with key modules under src/server, src/session, and src/plugin.
+- Session ran as an "explorer" role: tasks ask for brief descriptions/summaries with explicit "No modifications" constraints, except small note files.

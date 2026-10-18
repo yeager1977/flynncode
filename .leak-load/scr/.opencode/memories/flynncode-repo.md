@@ -1,0 +1,2 @@
+- Target repo is /home/yeager1977/GitHub/flynncode, with the main package at packages/flynncode; key files: src/index.ts (entrypoint), src/server/server.ts, src/session/prompt.ts, src/plugin/loader.ts.
+- Codebase uses Effect-ts patterns (e.g., Layer.effect); grep within packages/flynncode/src to survey usage.

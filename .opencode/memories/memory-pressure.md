@@ -1,0 +1,1 @@
+The box has ~59Gi RAM with a tight 4Gi swap and crashes under load; a Flynncode OOM crash happened 2026-10-16 while dev/repro stacks were running. Rules: kill the dev backend, vite servers, agent-browser/Chromium and build processes immediately after each verification (they survive via setsid), never stack multiple repro instances, and prefer spot checks over long-lived servers.

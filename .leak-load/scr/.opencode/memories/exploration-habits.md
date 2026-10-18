@@ -1,0 +1,3 @@
+- User favors read-first workflows: list files, read limited line ranges (e.g., first 400 lines), and grep counts before any modification.
+- Tasks are often labeled "No modifications" — respect read-only constraints when stated.
+- For deeper file analysis, the user prefers spawning a general subagent via the task tool and relaying its summary.

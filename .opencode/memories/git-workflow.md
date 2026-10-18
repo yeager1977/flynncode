@@ -1,0 +1,2 @@
+- Prefer merging all work branches into the `dev` branch
+- User often issues short imperative commands ("continue", "go") and expects work to proceed without extra confirmation

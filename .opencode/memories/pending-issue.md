@@ -1,0 +1,1 @@
+- App crashed by exhausting system memory multiple times; user asked to investigate and deliver a fresh build; latest build reports same version as prior — version bump needed

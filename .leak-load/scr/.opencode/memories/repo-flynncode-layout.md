@@ -1,0 +1,3 @@
+- Work targets the flynncode monorepo at /home/yeager1977/GitHub/flynncode, primarily the packages/flynncode package (src/index.ts entrypoint, src/server/server.ts, src/session/prompt.ts, src/plugin/loader.ts).
+- Scratch/output files are written under /home/yeager1977/GitHub/flynncode/.leak-load/scr (e.g., notes-<round>.md).
+- The codebase uses Effect-TS patterns (grep target "Layer.effect").

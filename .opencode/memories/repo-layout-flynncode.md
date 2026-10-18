@@ -1,0 +1,3 @@
+- Main repo at /home/yeager1977/GitHub/flynncode is the dev-branch owner; treat sync worktrees (e.g. /tmp/opencode/flynncode-sync) as detached/secondary, never `git switch dev` in them
+- User prefers building in place at the main repo checkout, not from /tmp sync copies
+- Main repo stash holds unrelated WIP (router/subscription etc.); pull only intended hunks/files from stashes, don't pop whole stashes

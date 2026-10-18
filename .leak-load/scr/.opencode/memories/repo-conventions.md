@@ -1,0 +1,3 @@
+- Main package lives at packages/flynncode/src with entrypoint index.ts; key areas include server/server.ts, session/prompt.ts, and plugin/loader.ts.
+- Codebase uses Effect TS patterns (e.g., Layer.effect) throughout.
+- Scratch/mapping notes are written under /home/yeager1977/GitHub/flynncode/.leak-load/scr/ with per-round filenames like notes-<round>.md.

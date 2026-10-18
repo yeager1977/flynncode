@@ -1,0 +1,1 @@
+- Git stashes in the main repo may park unrelated WIP (ollama-model-router, subscription, message-part edits); when restoring files from a stash, hand-apply only the relevant hunks rather than popping the whole stash.

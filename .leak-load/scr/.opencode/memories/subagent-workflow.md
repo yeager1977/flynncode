@@ -1,0 +1,1 @@
+- User delegates file reading/summarization via the task tool with general-purpose subagents when a deep single-file report is needed.

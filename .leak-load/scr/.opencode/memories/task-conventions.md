@@ -1,0 +1,3 @@
+- Read/analysis rounds are typically read-only and short-sentence summaries are requested
+- Larger file analyses (one file, key functions) are delegated to a general-purpose subagent via the task tool
+- Brief notes are written to scratch files named notes-<round>.md, then read back for verification

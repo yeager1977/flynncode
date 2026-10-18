@@ -1,0 +1,2 @@
+- Main repo lives at /home/yeager1977/GitHub/flynncode; the primary package source is packages/flynncode/src with entrypoint at src/index.ts.
+- Key modules to know: src/server/server.ts, src/session/prompt.ts, and src/plugin/loader.ts (loader.ts works well when summarized via a general subagent).

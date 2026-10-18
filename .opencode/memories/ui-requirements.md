@@ -1,0 +1,1 @@
+- Provider usage meters (ollama, anthropic, openai, grok, muse) must always be visible bottom-left of the main window next to Open Project / Settings; usage data must refresh about every minute (or on click).

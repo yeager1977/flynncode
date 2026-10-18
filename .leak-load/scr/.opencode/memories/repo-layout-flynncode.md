@@ -1,0 +1,1 @@
+- Target repo is /home/yeager1977/GitHub/flynncode, a monorepo with packages under packages/flynncode (src/entrypoint index.ts, plus server/, session/, plugin/ modules); scratch/notes work goes under /home/yeager1977/GitHub/flynncode/.leak-load/scr.

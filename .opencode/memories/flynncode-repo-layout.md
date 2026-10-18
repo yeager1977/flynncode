@@ -1,0 +1,2 @@
+- Main repo /home/yeager1977/GitHub/flynncode is the dev owner; /tmp/opencode/flynncode-sync is a detached sync worktree — don't git switch dev in it.
+- Stash@{1} in the main repo parks unrelated router/subscription WIP; don't pop it wholesale.

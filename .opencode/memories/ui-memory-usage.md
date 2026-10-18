@@ -1,0 +1,2 @@
+- Provider usage meters (ollama, anthropic, openai, grok, muse) must stay always visible bottom-left of the main window next to Open Project/Settings.
+- User watch: pick up newly added Ollama models; consider ring indicators for context/session/weekly usage with refresh every minute or on click.

@@ -1,0 +1,78 @@
+2026-10-17T19:55:47.132Z parent=ses_eb490b5c7ffe6yvJIx3CDud44u
+19:55:47 {"directory":"/home/yeager1977/GitHub/flynncode/.leak-load/scr","project":"global","payload":{"id":"evt_14b6f4a52001sXVkvgPqsq51uT","type":"session.status","properties":{"sessionID":"ses_eb490b5c7ffe6yvJIx3CDud44u","stat
+19:55:47 {"directory":"/home/yeager1977/GitHub/flynncode/.leak-load/scr","project":"global","payload":{"id":"evt_14b6f4c3a001pJKXD9Y785dPV7","type":"session.status","properties":{"sessionID":"ses_eb490b5c7ffe6yvJIx3CDud44u","stat
+19:55:49 {"directory":"/home/yeager1977/GitHub/flynncode/.leak-load/scr","project":"global","payload":{"id":"evt_14b6f52a6001d3vP6Mf4aU0K0r","type":"session.status","properties":{"sessionID":"ses_eb490ad72ffeWXjZ3aClkDzspl","stat
+19:55:49 {"directory":"/home/yeager1977/GitHub/flynncode/.leak-load/scr","project":"global","payload":{"id":"evt_14b6f53cd001M2xvujpJazFkwm","type":"session.status","properties":{"sessionID":"ses_eb490ad72ffeWXjZ3aClkDzspl","stat
+2026-10-17T19:55:50.149Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_b49cfe8a"}}
+19:55:51 {"directory":"/home/yeager1977/GitHub/flynncode/.leak-load/scr","project":"global","payload":{"id":"evt_14b6f5a48001NYlOwFXVp0YhZ7","type":"session.status","properties":{"sessionID":"ses_eb490ad72ffeWXjZ3aClkDzspl","stat
+19:55:51 {"directory":"/home/yeager1977/GitHub/flynncode/.leak-load/scr","project":"global","payload":{"id":"evt_14b6f5b9a001HcWVfHVstyGHvu","type":"session.status","properties":{"sessionID":"ses_eb490ad72ffeWXjZ3aClkDzspl","stat
+19:55:52 {"directory":"/home/yeager1977/GitHub/flynncode/.leak-load/scr","project":"global","payload":{"id":"evt_14b6f606b001U4NotyKNZWvPnZ","type":"session.status","properties":{"sessionID":"ses_eb490ad72ffeWXjZ3aClkDzspl","stat
+19:55:52 {"directory":"/home/yeager1977/GitHub/flynncode/.leak-load/scr","project":"global","payload":{"id":"evt_14b6f606d0018X2j9evbAODK4V","type":"session.status","properties":{"sessionID":"ses_eb490ad72ffeWXjZ3aClkDzspl","stat
+19:55:52 {"directory":"/home/yeager1977/GitHub/flynncode/.leak-load/scr","project":"global","payload":{"id":"evt_14b6f606d002Un2xSAyF5G7D3n","type":"session.idle","properties":{"sessionID":"ses_eb490ad72ffeWXjZ3aClkDzspl"}}}
+2026-10-17T19:55:53.166Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_f2d1f062"}}
+19:55:53 {"directory":"/home/yeager1977/GitHub/flynncode/.leak-load/scr","project":"global","payload":{"id":"evt_14b6f6269001fvn8BQE5oKcE9o","type":"session.status","properties":{"sessionID":"ses_eb490b5c7ffe6yvJIx3CDud44u","stat
+19:55:53 {"directory":"/home/yeager1977/GitHub/flynncode/.leak-load/scr","project":"global","payload":{"id":"evt_14b6f640d0017St3hZFy7n2Lbg","type":"session.status","properties":{"sessionID":"ses_eb490b5c7ffe6yvJIx3CDud44u","stat
+19:55:54 {"directory":"/home/yeager1977/GitHub/flynncode/.leak-load/scr","project":"global","payload":{"id":"evt_14b6f6828001QvLT0AX2Q7PkmY","type":"session.status","properties":{"sessionID":"ses_eb490b5c7ffe6yvJIx3CDud44u","stat
+19:55:54 {"directory":"/home/yeager1977/GitHub/flynncode/.leak-load/scr","project":"global","payload":{"id":"evt_14b6f682a001VWFW023tLCGSw1","type":"session.status","properties":{"sessionID":"ses_eb490b5c7ffe6yvJIx3CDud44u","stat
+19:55:54 {"directory":"/home/yeager1977/GitHub/flynncode/.leak-load/scr","project":"global","payload":{"id":"evt_14b6f682a0029HElYc67RZ1j44","type":"session.idle","properties":{"sessionID":"ses_eb490b5c7ffe6yvJIx3CDud44u"}}}
+2026-10-17T19:55:56.169Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_4762a813"}}
+2026-10-17T19:55:59.171Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_88c4e47f"}}
+2026-10-17T19:56:02.175Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_c2c2ec38"}}
+2026-10-17T19:56:05.178Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_379de9da"}}
+2026-10-17T19:56:08.180Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_d8f6072a"}}
+2026-10-17T19:56:11.184Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_1b538b12"}}
+2026-10-17T19:56:14.186Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_ae108a1d"}}
+2026-10-17T19:56:17.189Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_23fee82f"}}
+2026-10-17T19:56:20.192Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_8d55eb9b"}}
+2026-10-17T19:56:23.194Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_f942819c"}}
+2026-10-17T19:56:26.196Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_2d172342"}}
+2026-10-17T19:56:29.198Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_32bea3b8"}}
+2026-10-17T19:56:32.201Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_75b38a45"}}
+2026-10-17T19:56:35.204Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_05480350"}}
+2026-10-17T19:56:38.207Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_336713be"}}
+2026-10-17T19:56:41.210Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_040ee117"}}
+2026-10-17T19:56:44.212Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_5c1a3dfb"}}
+2026-10-17T19:56:47.215Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_cd973454"}}
+2026-10-17T19:56:50.218Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_ea55931d"}}
+2026-10-17T19:56:53.221Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_c05084c1"}}
+2026-10-17T19:56:56.224Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_60f29a58"}}
+2026-10-17T19:56:59.226Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_e838a6d6"}}
+2026-10-17T19:57:02.228Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_5d80c978"}}
+2026-10-17T19:57:05.231Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_806e7cfc"}}
+2026-10-17T19:57:08.234Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_b5658e7c"}}
+2026-10-17T19:57:11.236Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_8fdcc110"}}
+2026-10-17T19:57:14.238Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_0ede8ad7"}}
+2026-10-17T19:57:17.240Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_b5fa2a1a"}}
+2026-10-17T19:57:20.242Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_32423edf"}}
+2026-10-17T19:57:23.256Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_086e4be1"}}
+2026-10-17T19:57:26.259Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_9ce9c426"}}
+2026-10-17T19:57:29.262Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_eb4bfd12"}}
+2026-10-17T19:57:32.265Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_cf6cc8c9"}}
+2026-10-17T19:57:35.268Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_17959a99"}}
+2026-10-17T19:57:38.270Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_662ad99c"}}
+2026-10-17T19:57:41.272Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_3a9f57e0"}}
+2026-10-17T19:57:44.276Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_ff9dedf0"}}
+2026-10-17T19:57:47.277Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_86995197"}}
+2026-10-17T19:57:50.281Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_61bff208"}}
+2026-10-17T19:57:53.284Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_b7a6eb3f"}}
+2026-10-17T19:57:56.286Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_13b6f655"}}
+2026-10-17T19:57:59.289Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_edfde06e"}}
+2026-10-17T19:58:02.291Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_ac5bd647"}}
+2026-10-17T19:58:05.294Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_f931067e"}}
+2026-10-17T19:58:08.297Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_9152af8d"}}
+2026-10-17T19:58:11.300Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_6ebb879c"}}
+2026-10-17T19:58:14.303Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_166c5dd2"}}
+2026-10-17T19:58:17.305Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_8266dd40"}}
+2026-10-17T19:58:20.307Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_aec46ec6"}}
+2026-10-17T19:58:23.309Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_b98a5d48"}}
+2026-10-17T19:58:26.312Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_8a8aef64"}}
+2026-10-17T19:58:29.314Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_b9ed8717"}}
+2026-10-17T19:58:32.316Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_d798337a"}}
+2026-10-17T19:58:35.319Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_4086c751"}}
+2026-10-17T19:58:38.321Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_22851fc2"}}
+2026-10-17T19:58:41.324Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_980a4c14"}}
+2026-10-17T19:58:44.327Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_8d0cc2bc"}}
+2026-10-17T19:58:47.329Z active {"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_9cf29221"}}
+2026-10-17T19:58:47.331Z parent status: {"error":"Not Found"}
+2026-10-17T19:58:47.344Z child ses_eb490ad72ffeWXjZ3aClkDzspl "Read a.txt and summarize (@general subagent)" status={"error":"Not Found"}
+2026-10-17T19:58:47.344Z captured 14 status events

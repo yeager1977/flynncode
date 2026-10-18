@@ -1,0 +1,2 @@
+- Research and improve the model router to decrease token usage.
+- Surface usage/token info visibly on the UI.

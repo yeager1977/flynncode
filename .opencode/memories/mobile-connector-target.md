@@ -1,0 +1,1 @@
+- The mobile connector should target the opencode iOS mobile app rather than any other client.

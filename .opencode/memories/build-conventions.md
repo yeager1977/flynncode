@@ -1,0 +1,2 @@
+- Build deb/AppImage from dev via packages/desktop (bun run package:linux); /tmp writes fail with EDQUOT quota — user wants builds done in place, not /tmp; use TMPDIR on disk.
+- AppImage/deb land at repo root / packages/desktop/dist respectively.

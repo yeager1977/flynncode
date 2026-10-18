@@ -1,0 +1,1 @@
+- I (the assistant) may kill/restart the app process myself whenever needed during debugging
