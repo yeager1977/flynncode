@@ -384,7 +384,7 @@
     },
     "packages/desktop": {
       "name": "@flynncode/desktop",
-      "version": "1.18.34-dev-202610181729",
+      "version": "1.18.34-dev-202610181914",
       "dependencies": {
         "@flynncode/mobile-gateway": "workspace:*",
         "@zip.js/zip.js": "2.7.62",
