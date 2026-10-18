@@ -1,0 +1,17 @@
++ cd /home/yeager1977/GitHub/flynncode/packages/desktop
++ export OPENCODE_CHANNEL=dev
++ OPENCODE_CHANNEL=dev
++ export TMPDIR=/home/yeager1977/GitHub/flynncode/packages/desktop/.buildtmp
++ TMPDIR=/home/yeager1977/GitHub/flynncode/packages/desktop/.buildtmp
++ mkdir -p /home/yeager1977/GitHub/flynncode/packages/desktop/.buildtmp
++ bun run build
++ cd /home/yeager1977/GitHub/flynncode/packages/desktop
++ export OPENCODE_CHANNEL=dev
++ OPENCODE_CHANNEL=dev
++ export TMPDIR=/home/yeager1977/GitHub/flynncode/packages/desktop/.buildtmp
++ TMPDIR=/home/yeager1977/GitHub/flynncode/packages/desktop/.buildtmp
++ mkdir -p /home/yeager1977/GitHub/flynncode/packages/desktop/.buildtmp
++ bun run build
++ bun run package:linux --linux deb
++ cp -f dist/flynncode-desktop-linux-amd64.deb /home/yeager1977/GitHub/flynncode/flynncode-desktop-linux-amd64.deb
++ echo 'PIPELINE DONE'
