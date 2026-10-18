@@ -603,6 +603,61 @@ describe("launcher route", () => {
     stopGateway()
   })
 
+  test("redirects an unauthenticated browser to the login page instead of a Basic prompt", async () => {
+    const { running } = await withUpstream()
+    const response = await fetch(`http://127.0.0.1:${running.port}/m`, {
+      redirect: "manual",
+      headers: { accept: "text/html" },
+    })
+    expect(response.status).toBe(303)
+    expect(response.headers.get("location")).toBe("/login?next=%2Fm")
+    const page = await fetch(`http://127.0.0.1:${running.port}${response.headers.get("location")}`)
+    expect(page.status).toBe(200)
+    const html = await page.text()
+    expect(html).toContain('<form method="POST" action="/login">')
+    expect(html).toContain('autocomplete="current-password"')
+    expect(html).toContain('name="next" value="/m"')
+    stopGateway()
+    upstream.stop(true)
+  })
+
+  test("logs in through the form, issues the session cookie, and redirects", async () => {
+    const { upstream, running } = await withUpstream()
+    const form = new URLSearchParams({ username: "opencode", password: "secret", next: "/m" })
+    const response = await fetch(`http://127.0.0.1:${running.port}/login`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: `${form}`,
+    })
+    expect(response.status).toBe(303)
+    expect(response.headers.get("location")).toBe("/m")
+    const cookie = response.headers.getSetCookie()[0]
+    expect(cookie).toContain("oc_mobile_session=")
+    const page = await fetch(`http://127.0.0.1:${running.port}/m`, { headers: { cookie: cookie.split(";")[0] } })
+    expect(page.status).toBe(200)
+    expect(await page.text()).toContain("Sessions")
+    stopGateway()
+    upstream.stop(true)
+  })
+
+  test("wrong form credentials re-render the login page with an error", async () => {
+    const { running } = await withUpstream()
+    const form = new URLSearchParams({ username: "opencode", password: "nope", next: "/m" })
+    const response = await fetch(`http://127.0.0.1:${running.port}/login`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: `${form}`,
+    })
+    expect(response.status).toBe(401)
+    expect(response.headers.get("www-authenticate")).toBeNull()
+    const html = await response.text()
+    expect(html).toContain("not right")
+    stopGateway()
+    upstream.stop(true)
+  })
+
   test("rejects a first-time visitor with 503 when the upstream is down", async () => {
     // Without a session cookie the credential probe cannot succeed, so the request
     // never reaches the launcher. The distinct 503 (rather than 401) tells the user

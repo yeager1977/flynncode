@@ -187,10 +187,15 @@ export function ProviderUsageMeters(props: {
     )
   }
 
-  // One line per band: Context/Session/Weekly percent (or the count label),
-  // nothing else.
-  function ringTooltip(_name: string, rows: Row[]) {
-    return <For each={rows}>{(row) => <div>{row.text}</div>}</For>
+  // First line names the service so a hovered ring is identifiable; the rest
+  // is one line per band: Context/Session/Weekly percent (or count rows).
+  function ringTooltip(name: string, rows: Row[]) {
+    return (
+      <div>
+        <div>{name}</div>
+        <For each={rows}>{(row) => <div>{row.text}</div>}</For>
+      </div>
+    )
   }
 
   const ringStrip = () => (

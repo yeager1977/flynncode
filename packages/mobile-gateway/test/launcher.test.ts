@@ -187,6 +187,34 @@ describe("loadLauncher", () => {
     expect(seen).toEqual(["?limit=100&order=desc&roots=true"])
   })
 
+  test("walks every cursor page so the phone can show all sessions", async () => {
+    const seen: string[] = []
+    const upstream = upstreamWith((request) => {
+      const url = new URL(request.url)
+      if (url.pathname === "/api/session") {
+        seen.push(url.search)
+        const page = url.searchParams.get("cursor")
+        if (!page) return Response.json({ data: [{ id: "ses_1", title: "One", time: { updated: 3 } }], cursor: { next: "CUR2" } })
+        if (page === "CUR2") return Response.json({ data: [{ id: "ses_2", title: "Two", time: { updated: 2 } }], cursor: { next: "CUR3" } })
+        return Response.json({ data: [{ id: "ses_3", title: "Three", time: { updated: 1 } }], cursor: {} })
+      }
+      return Response.json({ data: {} })
+    })
+
+    const result = await loadLauncher({ upstream: `http://127.0.0.1:${upstream.port}`, authorization: AUTH })
+    upstream.stop(true)
+
+    expect(seen).toEqual([
+      "?limit=100&order=desc&roots=true",
+      "?limit=100&order=desc&roots=true&cursor=CUR2",
+      "?limit=100&order=desc&roots=true&cursor=CUR3",
+    ])
+    expect(result.kind).toBe("loaded")
+    if (result.kind !== "loaded") return
+    expect(result.partial).toBe(false)
+    expect(result.data.groups[0].sessions.map((item) => item.id)).toEqual(["ses_1", "ses_2", "ses_3"])
+  })
+
   test("reports unreachable when both calls fail", async () => {
     const result = await loadLauncher({ upstream: "http://127.0.0.1:1", authorization: AUTH })
     expect(result).toEqual({ kind: "unreachable" })
