@@ -6,12 +6,13 @@ import { ProviderIcon } from "@flynncode/ui/provider-icon"
 import { useMutation } from "@tanstack/solid-query"
 import { TextField } from "@flynncode/ui/text-field"
 import { showToast } from "@/utils/toast"
-import { batch, For } from "solid-js"
+import { batch, createMemo, For, Show } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { ExternalLink } from "@/components/external-link"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
+import { useProviders } from "@/hooks/use-providers"
 import { type FormState, headerRow, modelRow, validateCustomProvider } from "./dialog-custom-provider-form"
 
 type Props = {
@@ -40,21 +41,63 @@ export function DialogCustomProvider(props: Props) {
   )
 }
 
-export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
+export function CustomProviderForm(props: { autofocus?: boolean; kind?: "openai" | "anthropic" } = {}) {
   const dialog = useDialog()
   const serverSync = useServerSync()
   const serverSDK = useServerSDK()
   const language = useLanguage()
+  const providers = useProviders(() => undefined)
+
+  // The Anthropic template copies the catalog's capability/cost/limit data
+  // into the saved config so claude-model entries don't fall back to sparse
+  // defaults (reasoning off, zero limits) under the native Anthropic SDK.
+  const anthropic = createMemo(() => {
+    if (props.kind !== "anthropic") return undefined
+    const provider = providers.all().get("anthropic")
+    if (!provider) return undefined
+    const models: Record<string, Record<string, unknown>> = {}
+    for (const [id, model] of Object.entries(provider.models)) {
+      models[id] = {
+        name: model.name,
+        ...(model.family ? { family: model.family } : {}),
+        reasoning: model.capabilities.reasoning,
+        tool_call: model.capabilities.toolcall,
+        temperature: model.capabilities.temperature,
+        attachment: model.capabilities.attachment,
+        cost: {
+          input: model.cost.input,
+          output: model.cost.output,
+          cache_read: model.cost.cache.read,
+          cache_write: model.cost.cache.write,
+        },
+        limit: {
+          context: model.limit.context,
+          ...(model.limit.input === undefined ? {} : { input: model.limit.input }),
+          output: model.limit.output,
+        },
+      }
+    }
+    return { name: provider.name, models }
+  })
 
   const [form, setForm] = createStore<FormState>({
-    providerID: "",
-    name: "",
-    baseURL: "",
+    providerID: props.kind === "anthropic" ? "anthropic-api" : "",
+    name: props.kind === "anthropic" ? (anthropic()?.name ?? "Anthropic API") : "",
+    baseURL: props.kind === "anthropic" ? "https://api.anthropic.com/v1" : "",
     apiKey: "",
-    models: [modelRow()],
+    models: props.kind === "anthropic" ? anthropicModels() : [modelRow()],
     headers: [headerRow()],
+    kind: props.kind === "anthropic" ? "anthropic" : undefined,
     err: {},
   })
+
+  function anthropicModels() {
+    const models = anthropic()?.models ?? {}
+    const rows = Object.entries(models).map(([id, config]) =>
+      modelRow(id, typeof config.name === "string" ? config.name : id),
+    )
+    return rows.length > 0 ? rows : [modelRow()]
+  }
 
   const addModel = () => {
     setForm(
@@ -120,6 +163,7 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
       t: language.t,
       disabledProviders: serverSync().data.config.disabled_providers ?? [],
       existingProviderIDs: new Set(serverSync().data.provider.all.keys()),
+      catalogModels: anthropic()?.models,
     })
     batch(() => {
       setForm("err", output.err)
@@ -178,17 +222,22 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
   return (
     <div class="flex flex-col gap-6 px-2.5 pb-3 overflow-y-auto max-h-[60vh]">
       <div class="px-2.5 flex gap-4 items-center">
-        <ProviderIcon id="synthetic" class="size-5 shrink-0 icon-strong-base" />
-        <div class="text-16-medium text-text-strong">{language.t("provider.custom.title")}</div>
+        <ProviderIcon id={props.kind === "anthropic" ? "anthropic-api" : "synthetic"} class="size-5 shrink-0 icon-strong-base" />
+        <div class="text-16-medium text-text-strong">
+          {language.t(props.kind === "anthropic" ? "provider.custom.anthropic.title" : "provider.custom.title")}
+        </div>
       </div>
 
       <form onSubmit={save} class="px-2.5 pb-6 flex flex-col gap-6">
         <p class="text-14-regular text-text-base">
-          {language.t("provider.custom.description.prefix")}
-          <ExternalLink href="https://opencode.ai/docs/providers/#custom-provider" tabIndex={-1}>
-            {language.t("provider.custom.description.link")}
-          </ExternalLink>
-          {language.t("provider.custom.description.suffix")}
+          {language.t(props.kind === "anthropic" ? "provider.custom.anthropic.description" : "provider.custom.description.prefix")}
+          <Show when={props.kind !== "anthropic"}>
+            {" "}
+            <ExternalLink href="https://opencode.ai/docs/providers/#custom-provider" tabIndex={-1}>
+              {language.t("provider.custom.description.link")}
+            </ExternalLink>
+            {language.t("provider.custom.description.suffix")}
+          </Show>
         </p>
 
         <div class="flex flex-col gap-4">

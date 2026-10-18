@@ -3,6 +3,64 @@ import { validateCustomProvider } from "./dialog-custom-provider-form"
 
 const t = (key: string) => key
 
+describe("anthropic template", () => {
+  test("saves the native anthropic npm with copied catalog model data", () => {
+    const result = validateCustomProvider({
+      form: {
+        providerID: "anthropic-api",
+        name: "Anthropic API",
+        baseURL: "https://api.anthropic.com/v1",
+        apiKey: " sk-ant-secret ",
+        models: [{ row: "m0", id: "claude-opus-5-5", name: "Claude Opus 5.5", err: {} }],
+        headers: [{ row: "h0", key: "", value: "", err: {} }],
+        kind: "anthropic",
+        err: {},
+      },
+      t,
+      disabledProviders: [],
+      existingProviderIDs: new Set(),
+      catalogModels: {
+        "claude-opus-5-5": {
+          reasoning: true,
+          tool_call: true,
+          cost: { input: 5, output: 25, cache_read: 0.5, cache_write: 6.25 },
+          limit: { context: 200000, output: 64000 },
+        },
+      },
+    })
+
+    expect(result.result?.config.npm).toBe("@ai-sdk/anthropic")
+    expect(result.result?.config.models["claude-opus-5-5"]).toEqual({
+      reasoning: true,
+      tool_call: true,
+      cost: { input: 5, output: 25, cache_read: 0.5, cache_write: 6.25 },
+      limit: { context: 200000, output: 64000 },
+      name: "Claude Opus 5.5",
+    })
+  })
+
+  test("does not copy catalog data for entries the user renamed", () => {
+    const result = validateCustomProvider({
+      form: {
+        providerID: "anthropic-api",
+        name: "Anthropic API",
+        baseURL: "https://api.anthropic.com/v1",
+        apiKey: "sk-ant-secret",
+        models: [{ row: "m0", id: "my-model", name: "My model", err: {} }],
+        headers: [{ row: "h0", key: "", value: "", err: {} }],
+        kind: "anthropic",
+        err: {},
+      },
+      t,
+      disabledProviders: [],
+      existingProviderIDs: new Set(),
+      catalogModels: { "claude-opus-5-5": { reasoning: true } },
+    })
+
+    expect(result.result?.config.models["my-model"]).toEqual({ name: "My model" })
+  })
+})
+
 describe("validateCustomProvider", () => {
   test("builds trimmed config payload", () => {
     const result = validateCustomProvider({

@@ -41,6 +41,7 @@ import { CustomProviderForm } from "./dialog-custom-provider"
 import { decode64 } from "@/utils/base64"
 
 const CUSTOM_ID = "_custom"
+const ANTHROPIC_API_ID = "_anthropic-api"
 type ConnectMethod = Extract<IntegrationMethod, { type: "key" | "oauth" }>
 
 export function useProviderConnectController(options: { onBack?: () => void } = {}) {
@@ -77,6 +78,9 @@ export const DialogConnectProvider: Component<{
       <Switch>
         <Match when={controller.selected() === CUSTOM_ID}>
           <CustomProviderForm autofocus={!newLayout()} />
+        </Match>
+        <Match when={controller.selected() === ANTHROPIC_API_ID}>
+          <CustomProviderForm kind="anthropic" autofocus={!newLayout()} />
         </Match>
         <Match when={controller.selected() && controller.selected() !== CUSTOM_ID ? controller.selected() : undefined}>
           {(provider) => (
@@ -181,13 +185,19 @@ function ProviderPicker(props: {
       key={(x) => x?.id}
       items={() => {
         language.locale()
-        return [{ id: CUSTOM_ID, name: customLabel() }, ...providers.all().values()]
+        return [
+          { id: CUSTOM_ID, name: customLabel() },
+          { id: ANTHROPIC_API_ID, name: language.t("dialog.provider.anthropicApi.label") },
+          ...providers.all().values(),
+        ]
       }}
       filterKeys={["id", "name"]}
       groupBy={(x) => (popularProviders.includes(x.id) ? popularGroup() : otherGroup())}
       sortBy={(a, b) => {
         if (a.id === CUSTOM_ID) return -1
         if (b.id === CUSTOM_ID) return 1
+        if (a.id === ANTHROPIC_API_ID) return -1
+        if (b.id === ANTHROPIC_API_ID) return 1
         if (popularProviders.includes(a.id) && popularProviders.includes(b.id))
           return popularProviders.indexOf(a.id) - popularProviders.indexOf(b.id)
         return a.name.localeCompare(b.name)
@@ -240,10 +250,11 @@ function ProviderPickerV2(props: {
   })
   const featured = ["opencode", "opencode-go", "anthropic", "openai", "google", "openrouter", "vercel"]
   const custom = () => ({ id: CUSTOM_ID, name: language.t("dialog.provider.custom.label") })
+  const anthropicApi = () => ({ id: ANTHROPIC_API_ID, name: language.t("dialog.provider.anthropicApi.label") })
   const all = createMemo(() => {
     language.locale()
     const query = store.filter.trim().toLowerCase()
-    const values = [custom(), ...providers.all().values()]
+    const values = [custom(), anthropicApi(), ...providers.all().values()]
     if (!query) return values
     return values.filter((provider) => `${provider.id} ${provider.name}`.toLowerCase().includes(query))
   })
@@ -258,6 +269,8 @@ function ProviderPickerV2(props: {
       .sort((a, b) => {
         if (a.id === CUSTOM_ID) return -1
         if (b.id === CUSTOM_ID) return 1
+        if (a.id === ANTHROPIC_API_ID) return -1
+        if (b.id === ANTHROPIC_API_ID) return 1
         return a.name.localeCompare(b.name)
       }),
   )

@@ -1,5 +1,6 @@
 const PROVIDER_ID = /^[a-z0-9][a-z0-9-_]*$/
 const OPENAI_COMPATIBLE = "@ai-sdk/openai-compatible"
+const ANTHROPIC = "@ai-sdk/anthropic"
 
 type Translator = (key: string, vars?: Record<string, string | number | boolean>) => string
 
@@ -34,6 +35,9 @@ export type FormState = {
   apiKey: string
   models: ModelRow[]
   headers: HeaderRow[]
+  // "anthropic" saves the native Anthropic npm SDK instead of the
+  // OpenAI-compatible default; undefined means the default.
+  kind?: "anthropic"
   err: {
     providerID?: string
     name?: string
@@ -46,6 +50,9 @@ type ValidateArgs = {
   t: Translator
   disabledProviders: string[]
   existingProviderIDs: Set<string>
+  // Per-model config copied from the source catalog (capabilities, costs,
+  // limits) so templated entries don't fall back to sparse defaults.
+  catalogModels?: Record<string, Record<string, unknown>>
 }
 
 export function validateCustomProvider(input: ValidateArgs) {
@@ -92,7 +99,14 @@ export function validateCustomProvider(input: ValidateArgs) {
     return { id: idError, name: nameError }
   })
   const modelsValid = models.every((m) => !m.id && !m.name)
-  const modelConfig = Object.fromEntries(input.form.models.map((m) => [m.id.trim(), { name: m.name.trim() }]))
+  const catalogModel = (id: string) =>
+    input.form.kind === "anthropic" ? input.catalogModels?.[id] : undefined
+  const modelConfig = Object.fromEntries(
+    input.form.models.map((m) => {
+      const value: Record<string, unknown> = { ...catalogModel(m.id.trim()), name: m.name.trim() }
+      return [m.id.trim(), value]
+    }),
+  )
 
   const seenHeaders = new Set<string>()
   const headers = input.form.headers.map((h) => {
@@ -137,7 +151,7 @@ export function validateCustomProvider(input: ValidateArgs) {
       name,
       key,
       config: {
-        npm: OPENAI_COMPATIBLE,
+        npm: input.form.kind === "anthropic" ? ANTHROPIC : OPENAI_COMPATIBLE,
         name,
         ...(env ? { env: [env] } : {}),
         options: {
@@ -154,5 +168,5 @@ let row = 0
 
 const nextRow = () => `row-${row++}`
 
-export const modelRow = (): ModelRow => ({ row: nextRow(), id: "", name: "", err: {} })
+export const modelRow = (id = "", name = ""): ModelRow => ({ row: nextRow(), id, name, err: {} })
 export const headerRow = (): HeaderRow => ({ row: nextRow(), key: "", value: "", err: {} })
