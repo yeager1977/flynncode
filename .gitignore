@@ -38,3 +38,4 @@ tsconfig.tsbuildinfo
 .superpowers/
 /.playwright-mcp
 k8s/sync-hub/secret.yaml
+.leak-load/scr/.git
