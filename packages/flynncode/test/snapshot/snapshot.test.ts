@@ -962,6 +962,50 @@ it.instance(
 )
 
 it.instance(
+  "diffFull drops the patch text of a file over the per-file patch limit",
+  withTrackedSnapshot(({ tmp, snapshot, before }) =>
+    Effect.gen(function* () {
+      yield* write(`${tmp.path}/huge.js.map`, "x".repeat(Snapshot.patchLimit.file + 1))
+      yield* write(`${tmp.path}/small.txt`, "small change")
+      const after = yield* snapshot.track()
+      expect(after).toBeTruthy()
+      const map = new Map((yield* snapshot.diffFull(before, after!)).map((item) => [item.file, item]))
+      expect(map.get("huge.js.map")!.patch).toBe("")
+      expect(map.get("huge.js.map")!.additions).toBe(1)
+      expect(map.get("huge.js.map")!.status).toBe("added")
+      expect(map.get("small.txt")!.patch).toContain("+small change")
+    }),
+  ),
+  { git: true },
+)
+
+it.instance(
+  "diffFull keeps the total patch text of one diff within the total patch limit",
+  withTrackedSnapshot(({ tmp, snapshot, before }) =>
+    Effect.gen(function* () {
+      const size = Math.floor(Snapshot.patchLimit.file / 2)
+      const count = Math.ceil(Snapshot.patchLimit.total / size) + 2
+      yield* Effect.all(
+        Array.from({ length: count }, (_, i) =>
+          write(`${tmp.path}/bulk/${i.toString().padStart(3, "0")}.txt`, `${i}`.repeat(size / `${i}`.length)),
+        ),
+        { concurrency: "unbounded" },
+      )
+      const after = yield* snapshot.track()
+      expect(after).toBeTruthy()
+      const diffs = yield* snapshot.diffFull(before, after!)
+      expect(diffs).toHaveLength(count)
+      expect(diffs.reduce((sum, item) => sum + (item.patch?.length ?? 0), 0)).toBeLessThanOrEqual(
+        Snapshot.patchLimit.total,
+      )
+      expect(diffs[0].patch).not.toBe("")
+      expect(diffs.every((item) => item.additions === 1 && item.status === "added")).toBe(true)
+    }),
+  ),
+  { git: true },
+)
+
+it.instance(
   "diffFull preserves git diff order across batch boundaries",
   Effect.gen(function* () {
     const tmp = yield* bootstrap()

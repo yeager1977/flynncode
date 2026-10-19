@@ -22,6 +22,15 @@ export type FileDiff = typeof FileDiff.Type
 
 const prune = "7.days"
 const limit = 2 * 1024 * 1024
+// diffFull patches carry the whole file as context and are persisted on user
+// messages (summary.diffs) and in events. Untracked build output with multi-MB
+// sourcemaps once put 232MB into one message row; every later prompt loaded it
+// and the server died with a V8 heap OOM. Oversized patches keep their counts
+// and status but drop the text, the same shape binary files already use.
+export const patchLimit = {
+  file: 256 * 1024,
+  total: 4 * 1024 * 1024,
+}
 const core = ["-c", "core.longpaths=true", "-c", "core.symlinks=true"]
 const cfg = ["-c", "core.autocrlf=false", ...core]
 const quote = [...cfg, "-c", "core.quotepath=false"]
@@ -736,6 +745,7 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
               const patch = (file: string, before: string, after: string) =>
                 formatPatch(structuredPatch(file, file, before, after, "", "", { context: Number.MAX_SAFE_INTEGER }))
 
+              let budget = patchLimit.total
               for (let i = 0; i < rows.length; i += step) {
                 const run = rows.slice(i, i + step)
                 const text = yield* load(run)
@@ -743,9 +753,13 @@ const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Service | C
                 for (const row of run) {
                   const hit = text?.get(row.file) ?? { before: "", after: "" }
                   const [before, after] = row.binary ? ["", ""] : text ? [hit.before, hit.after] : yield* show(row)
+                  const size = before.length + after.length
+                  const full = row.binary || size > patchLimit.file || size > budget ? "" : patch(row.file, before, after)
+                  const kept = full.length > budget ? "" : full
+                  budget -= kept.length
                   result.push({
                     file: row.file,
-                    patch: row.binary ? "" : patch(row.file, before, after),
+                    patch: kept,
                     additions: row.additions,
                     deletions: row.deletions,
                     status: row.status,
