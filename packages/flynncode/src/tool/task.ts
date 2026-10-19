@@ -62,7 +62,7 @@ const BaseParameterFields = {
   }),
   model: Schema.optional(Schema.String).annotate({
     description:
-      "provider/model to run this task on; use it to resume a task_id on a different model after a usage limit",
+      "Only with task_id: provider/model to move a task that stopped on a usage limit onto a different model than the one that hit it. Ignored otherwise; subagents run on the model selected for the session.",
   }),
   cleanup: Schema.optional(Schema.Literals(["retain", "dispose"])).annotate({
     description: "Keep the temp worktree after the task (retain) or mark it disposable on archive (dispose)",
@@ -135,7 +135,7 @@ function renderUsageLimit(input: {
           }`,
         ]
       : []),
-    `Resume with task_id: ${input.taskID} and a different \`model\` (provider/model), or wait until the limit resets.`,
+    `Resume with task_id: ${input.taskID}; it continues on the session's current model. Pass a different \`model\` (provider/model) only if the session is still on ${input.model}, or wait until the limit resets.`,
   ].join("\n")
 }
 
@@ -198,9 +198,39 @@ export const TaskTool = Tool.define(
         return yield* Effect.fail(new Error(`Unknown agent type: ${params.subagent_type} is not a valid agent type`))
       }
 
+      const session = params.task_id
+        ? yield* sessions.get(SessionID.make(params.task_id)).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
+        : undefined
+
+      // The model argument is the calling LLM's guess, and models copy it from
+      // their earlier task calls. Once the user switched models mid-run, that
+      // stale copy kept sending new and resumed subagents to the previous model
+      // (50 of the 51 mismatching calls in a 3-day sample), so the user's
+      // selection (the model of the calling message) wins. The argument only
+      // counts as the documented recovery: moving a resumed task whose last run
+      // hit a usage limit onto a different model than the one that hit it.
+      const lastRun = session
+        ? yield* sessions
+            .findMessage(session.id, (item) => item.info.role === "assistant")
+            .pipe(
+              Effect.map(Option.getOrUndefined),
+              Effect.catch(() => Effect.succeed(undefined)),
+            )
+        : undefined
+      const limitedOn =
+        lastRun?.info.role === "assistant" && usageLimit(lastRun.info.error)
+          ? { providerID: lastRun.info.providerID, modelID: lastRun.info.modelID }
+          : undefined
+      const parsedModel = params.model ? Provider.parseModel(params.model) : undefined
+      const requestedModel =
+        parsedModel &&
+        limitedOn &&
+        (parsedModel.providerID !== limitedOn.providerID || parsedModel.modelID !== limitedOn.modelID)
+          ? parsedModel
+          : undefined
+
       // Resolve the requested model before any session or worktree is created
       // so an unknown model fails without side effects.
-      const requestedModel = params.model ? Provider.parseModel(params.model) : undefined
       if (requestedModel) {
         yield* providers
           .getModel(requestedModel.providerID, requestedModel.modelID)
@@ -231,9 +261,6 @@ export const TaskTool = Tool.define(
       const mode = ConfigPermissionV1.isSandboxMode(sandbox) ? sandbox : parentMode
       const sandboxMeta = mode ? { sandbox: mode } : undefined
 
-      const session = params.task_id
-        ? yield* sessions.get(SessionID.make(params.task_id)).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
-        : undefined
       // Fresh sessions isolate in a temp worktree named after the pending
       // child (unique per spawn, so siblings never collide). Resumed sessions
       // keep their existing directory.
@@ -370,6 +397,11 @@ export const TaskTool = Tool.define(
           modelID: msg.info.modelID,
           providerID: msg.info.providerID,
         }
+      // Told to the LLM so it stops repeating an argument that has no effect.
+      const modelNote =
+        params.model && !requestedModel
+          ? `The model argument was ignored (it only applies when resuming a task that stopped on a usage limit). This task ran on ${model.providerID}/${model.modelID}.`
+          : undefined
       const metadata = {
         parentSessionId: ctx.sessionID,
         sessionId: nextSession.id,
@@ -574,7 +606,12 @@ export const TaskTool = Tool.define(
                     summary: `Task stopped (usage limit): ${params.description}`,
                     text: result?.output ?? "",
                   })
-                : renderOutput({ sessionID: nextSession.id, state: "completed", text: result?.output ?? "" }),
+                : renderOutput({
+                    sessionID: nextSession.id,
+                    state: "completed",
+                    ...(modelNote ? { summary: modelNote } : {}),
+                    text: result?.output ?? "",
+                  }),
             }
           }),
         (_, exit) =>

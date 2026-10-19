@@ -261,27 +261,43 @@ const layer = Layer.effect(
         ? yield* provider.getModel(ag.model.providerID, ag.model.modelID)
         : ((yield* provider.getSmallModel(input.providerID)) ??
           (yield* provider.getModel(input.providerID, input.modelID)))
-      const msgs = onlySubtasks
-        ? [{ role: "user" as const, content: subtasks.map((p) => p.prompt).join("\n") }]
-        : yield* MessageV2.toModelMessagesEffect(context, mdl)
-      const text = yield* llm
-        .stream({
-          agent: ag,
-          user: firstInfo,
-          system: [],
-          small: true,
-          tools: {},
-          model: mdl,
-          sessionID: input.session.id,
-          retries: 2,
-          messages: [{ role: "user", content: "Generate a title for this conversation:\n" }, ...msgs],
-        })
-        .pipe(
-          Stream.filter(LLMEvent.is.textDelta),
-          Stream.map((e) => e.text),
-          Stream.mkString,
-          Effect.orDie,
-        )
+      const generate = Effect.fnUntraced(function* (model: Provider.Model) {
+        const msgs = onlySubtasks
+          ? [{ role: "user" as const, content: subtasks.map((p) => p.prompt).join("\n") }]
+          : yield* MessageV2.toModelMessagesEffect(context, model)
+        return yield* llm
+          .stream({
+            agent: ag,
+            user: firstInfo,
+            system: [],
+            small: true,
+            tools: {},
+            model,
+            sessionID: input.session.id,
+            retries: 2,
+            messages: [{ role: "user", content: "Generate a title for this conversation:\n" }, ...msgs],
+          })
+          .pipe(Stream.filter(LLMEvent.is.textDelta), Stream.map((e) => e.text), Stream.mkString)
+      })
+      // The preferred title model can be down or out of quota at runtime. Without a
+      // fallback the session keeps its timestamp title for good, because only the
+      // first user message is ever eligible for a title. The session's own model is
+      // the one that is known to be working.
+      const text = yield* generate(mdl).pipe(
+        Effect.catch((error) =>
+          mdl.providerID === input.providerID && mdl.id === input.modelID
+            ? Effect.fail(error)
+            : Effect.logWarning("title model failed, retrying with the session model", {
+                "session.id": input.session.id,
+                providerID: mdl.providerID,
+                modelID: mdl.id,
+              }).pipe(
+                Effect.andThen(provider.getModel(input.providerID, input.modelID)),
+                Effect.flatMap(generate),
+              ),
+        ),
+        Effect.orDie,
+      )
       const cleaned = text
         .replace(/<think>[\s\S]*?<\/think>\s*/g, "")
         .split("\n")

@@ -11,6 +11,7 @@ import {
 import { ConfigPlugin } from "@/config/plugin"
 import { ConfigPluginV1 } from "@flynncode/core/v1/config/plugin"
 import { InstallationVersion } from "@flynncode/core/installation/version"
+import { ensureNodeExtensionlessResolveHook } from "./node-extensions"
 
 export namespace PluginLoader {
   // A normalized plugin declaration derived from config before any filesystem or npm work happens.
@@ -136,6 +137,7 @@ export namespace PluginLoader {
   export async function load(row: Resolved): Promise<{ ok: true; value: Loaded } | { ok: false; error: unknown }> {
     let mod
     try {
+      ensureNodeExtensionlessResolveHook()
       mod = await import(row.entry)
     } catch (error) {
       return { ok: false, error }

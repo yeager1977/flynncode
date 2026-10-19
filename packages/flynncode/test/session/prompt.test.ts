@@ -2701,3 +2701,47 @@ it.instance("structured output honors an explicit retryCount of one", () =>
     if (result.info.role === "assistant") expect(result.info.error).toEqual(structuredError(0))
   }),
 )
+
+// Title generation
+
+// The preferred (small) title model can be unavailable at runtime, e.g. a
+// provider returning "weekly usage limit reached". The session must still be
+// renamed from its default timestamp title using the session's own model.
+const titleFallbackCfg = (url: string) => {
+  const base = providerCfg(url)
+  return {
+    ...base,
+    model: "test/test-model",
+    small_model: "test/test-small",
+    provider: {
+      test: {
+        ...base.provider.test,
+        models: {
+          ...base.provider.test.models,
+          "test-small": { ...base.provider.test.models["test-model"], id: "test-small", name: "Test Small" },
+        },
+      },
+    },
+  }
+}
+
+it.instance("title generation falls back to the session model when the small title model fails", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(titleFallbackCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    // No explicit title: only the generated timestamp default is eligible for renaming.
+    const chat = yield* sessions.create({ permission: [{ permission: "*", pattern: "*", action: "allow" }] })
+    yield* llm.titleError(403, { error: { message: "you have reached your weekly usage limit" } })
+    yield* llm.text("hello")
+
+    yield* prompt.prompt({ sessionID: chat.id, agent: "build", parts: [{ type: "text", text: "hello" }] })
+
+    const renamed = yield* pollWithTimeout(
+      sessions.get(chat.id).pipe(Effect.map((info) => (info.title === "E2E Title" ? info : undefined))),
+      "session title was never generated",
+    )
+    expect(renamed.title).toBe("E2E Title")
+    expect((yield* llm.hits).filter(isTitleHit).map((hit) => hit.body.model)).toEqual(["test-small", "test-model"])
+  }),
+)

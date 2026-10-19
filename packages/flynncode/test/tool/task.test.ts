@@ -130,6 +130,71 @@ const seed = Effect.fn("TaskToolTest.seed")(function* (title = "Pinned") {
   return { chat, assistant }
 })
 
+const otherRef = {
+  providerID: ProviderV2.ID.make("other"),
+  modelID: ModelV2.ID.make("other-model"),
+}
+
+const usageLimitError = () =>
+  new SessionV1.APIError({
+    message: "Rate limit exceeded",
+    statusCode: 429,
+    isRetryable: true,
+    responseHeaders: { "retry-after": "120" },
+  }).toObject()
+
+// A later step of the same session after the user switched its model: the next
+// assistant message carries the model the user selected.
+const switchModel = Effect.fn("TaskToolTest.switchModel")(function* (
+  assistant: SessionV1.Assistant,
+  model: typeof ref,
+) {
+  const session = yield* Session.Service
+  const next = {
+    ...assistant,
+    id: MessageID.ascending(),
+    providerID: model.providerID,
+    modelID: model.modelID,
+    time: { created: Date.now() },
+  }
+  yield* session.updateMessage(next)
+  return next
+})
+
+// The last run of a task that is later resumed: an assistant reply on `model`,
+// optionally ended by a provider error.
+const seedChildRun = Effect.fn("TaskToolTest.seedChildRun")(function* (
+  childID: SessionID,
+  model: typeof ref,
+  error?: NonNullable<SessionV1.Assistant["error"]>,
+) {
+  const session = yield* Session.Service
+  const user = yield* session.updateMessage({
+    id: MessageID.ascending(),
+    role: "user",
+    sessionID: childID,
+    agent: "general",
+    model,
+    time: { created: Date.now() },
+  })
+  yield* session.updateMessage({
+    id: MessageID.ascending(),
+    role: "assistant",
+    parentID: user.id,
+    sessionID: childID,
+    mode: "general",
+    agent: "general",
+    cost: 0,
+    path: { cwd: "/tmp", root: "/tmp" },
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    modelID: model.modelID,
+    providerID: model.providerID,
+    time: { created: Date.now() },
+    finish: "stop",
+    error,
+  })
+})
+
 function stubOps(opts?: {
   onPrompt?: (input: SessionPrompt.PromptInput) => void
   text?: string
@@ -467,7 +532,7 @@ describe("tool.task", () => {
   )
 
   it.instance(
-    "execute runs the child on the model parameter and records it",
+    "execute ignores the model parameter for a new task and runs on the calling session's model",
     () =>
       Effect.gen(function* () {
         const { chat, assistant } = yield* seed()
@@ -494,23 +559,61 @@ describe("tool.task", () => {
           },
         )
 
-        expect(seen?.model).toEqual({
-          providerID: ProviderV2.ID.make("other"),
-          modelID: ModelV2.ID.make("other-model"),
-        })
-        expect(seen?.variant).toBeUndefined()
-        expect(result.metadata.model).toEqual({
-          providerID: ProviderV2.ID.make("other"),
-          modelID: ModelV2.ID.make("other-model"),
-        })
+        expect(seen?.model).toEqual(ref)
+        // The variant belongs to the calling model, so it travels with it.
+        expect(seen?.variant).toBe("xhigh")
+        expect(result.metadata.model).toEqual(ref)
+        // The LLM is told, so it stops repeating an argument that has no effect.
+        expect(result.output).toContain("The model argument was ignored")
+        expect(result.output).toContain("ran on test/test-model")
       }),
     { config: { provider: { other: otherProvider } } },
   )
 
-  it.instance("execute fails naming an unknown model", () =>
+  // Models copy the `model` argument from their earlier task calls. After the
+  // user switches the session's model mid-run, the repeated argument used to
+  // keep sending every new subagent to the previous model.
+  it.instance(
+    "execute follows a mid-run model switch even when the LLM repeats the previous model",
+    () =>
+      Effect.gen(function* () {
+        const { chat, assistant } = yield* seed()
+        const switched = yield* switchModel(assistant, otherRef)
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        let seen: SessionPrompt.PromptInput | undefined
+
+        const result = yield* def.execute(
+          {
+            description: "inspect bug",
+            prompt: "look into the cache key path",
+            subagent_type: "general",
+            model: "test/test-model",
+          },
+          {
+            sessionID: chat.id,
+            messageID: switched.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps({ onPrompt: (input) => (seen = input) }) },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+        expect(seen?.model).toEqual(otherRef)
+        expect(result.metadata.model).toEqual(otherRef)
+      }),
+    { config: { provider: { other: otherProvider } } },
+  )
+
+  it.instance("execute fails naming an unknown model when resuming a usage-limited task", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const { chat, assistant } = yield* seed()
+      const child = yield* sessions.create({ parentID: chat.id, title: "Existing child" })
+      yield* seedChildRun(child.id, ref, usageLimitError())
       const tool = yield* TaskTool
       const def = yield* tool.init()
       let prompted = false
@@ -521,6 +624,7 @@ describe("tool.task", () => {
             description: "inspect bug",
             prompt: "look into the cache key path",
             subagent_type: "general",
+            task_id: child.id,
             model: "nope/missing-model",
           },
           {
@@ -543,7 +647,7 @@ describe("tool.task", () => {
       if (!(failure instanceof Error)) throw new Error("expected Error defect")
       expect(failure.message).toContain("nope/missing-model")
       expect(prompted).toBe(false)
-      expect(yield* sessions.children(chat.id)).toHaveLength(0)
+      expect(yield* sessions.children(chat.id)).toHaveLength(1)
     }),
   )
 
@@ -1203,6 +1307,7 @@ describe("tool.task", () => {
         const sessions = yield* Session.Service
         const { chat, assistant } = yield* seed()
         const child = yield* sessions.create({ parentID: chat.id, title: "Existing child" })
+        yield* seedChildRun(child.id, ref, usageLimitError())
         const tool = yield* TaskTool
         const def = yield* tool.init()
         let seen: SessionPrompt.PromptInput | undefined
@@ -1228,14 +1333,133 @@ describe("tool.task", () => {
         )
 
         expect(seen?.sessionID).toBe(child.id)
-        expect(seen?.model).toEqual({
-          providerID: ProviderV2.ID.make("other"),
-          modelID: ModelV2.ID.make("other-model"),
-        })
+        expect(seen?.model).toEqual(otherRef)
         expect(seen?.variant).toBeUndefined()
         expect(result.metadata.sessionId).toBe(child.id)
         expect(result.output).toContain(`<task id="${child.id}" state="completed">`)
+        expect(result.output).not.toContain("The model argument was ignored")
         expect(yield* sessions.children(chat.id)).toHaveLength(1)
+      }),
+    { config: { provider: { other: otherProvider } } },
+  )
+
+  // Resuming a healthy task is not a model change request. The LLM repeats the
+  // child's own model to keep it going; the user's selection still wins.
+  it.instance(
+    "execute resumes a task that did not hit a limit on the calling session's model",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const { chat, assistant } = yield* seed()
+        const child = yield* sessions.create({ parentID: chat.id, title: "Existing child" })
+        yield* seedChildRun(child.id, otherRef)
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        let seen: SessionPrompt.PromptInput | undefined
+
+        const result = yield* def.execute(
+          {
+            description: "inspect bug",
+            prompt: "continue",
+            subagent_type: "general",
+            task_id: child.id,
+            model: "other/other-model",
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps({ text: "finished", onPrompt: (input) => (seen = input) }) },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+        expect(seen?.sessionID).toBe(child.id)
+        expect(seen?.model).toEqual(ref)
+        expect(result.metadata.model).toEqual(ref)
+        expect(result.output).toContain("The model argument was ignored")
+      }),
+    { config: { provider: { other: otherProvider } } },
+  )
+
+  // After a usage limit the user usually switches the session to another model.
+  // Re-requesting the model that hit the limit would only hit it again.
+  it.instance(
+    "execute does not resume a usage-limited task on the model that hit the limit",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const { chat, assistant } = yield* seed()
+        const switched = yield* switchModel(assistant, otherRef)
+        const child = yield* sessions.create({ parentID: chat.id, title: "Existing child" })
+        yield* seedChildRun(child.id, ref, usageLimitError())
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        let seen: SessionPrompt.PromptInput | undefined
+
+        yield* def.execute(
+          {
+            description: "inspect bug",
+            prompt: "continue",
+            subagent_type: "general",
+            task_id: child.id,
+            model: "test/test-model",
+          },
+          {
+            sessionID: chat.id,
+            messageID: switched.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps({ text: "finished", onPrompt: (input) => (seen = input) }) },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+        expect(seen?.model).toEqual(otherRef)
+      }),
+    { config: { provider: { other: otherProvider } } },
+  )
+
+  // A run the user interrupted is not a limit either: they stopped it, switched
+  // models and expect the resumed task to follow.
+  it.instance(
+    "execute resumes an interrupted task on the calling session's model",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const { chat, assistant } = yield* seed()
+        const child = yield* sessions.create({ parentID: chat.id, title: "Existing child" })
+        yield* seedChildRun(child.id, otherRef, new SessionV1.AbortedError({ message: "Aborted" }).toObject())
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        let seen: SessionPrompt.PromptInput | undefined
+
+        yield* def.execute(
+          {
+            description: "inspect bug",
+            prompt: "continue",
+            subagent_type: "general",
+            task_id: child.id,
+            model: "other/other-model",
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps({ text: "finished", onPrompt: (input) => (seen = input) }) },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+        expect(seen?.model).toEqual(ref)
       }),
     { config: { provider: { other: otherProvider } } },
   )

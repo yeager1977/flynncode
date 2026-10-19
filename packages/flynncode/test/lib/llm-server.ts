@@ -622,6 +622,8 @@ namespace TestLLMServer {
     readonly reason: (value: string, opts?: { text?: string; usage?: Usage }) => Effect.Effect<void>
     readonly fail: (message?: unknown) => Effect.Effect<void>
     readonly error: (status: number, body: unknown) => Effect.Effect<void>
+    /** Fail the next title-generation request. Kept off the shared queue so matchers cannot consume it. */
+    readonly titleError: (status: number, body: unknown) => Effect.Effect<void>
     readonly hang: Effect.Effect<void>
     readonly hold: (value: string, wait: PromiseLike<unknown>) => Effect.Effect<void>
     readonly reset: Effect.Effect<void>
@@ -642,6 +644,7 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
       const router = yield* HttpRouter.HttpRouter
 
       let hits: Hit[] = []
+      let titleFailures: HttpError[] = []
       let list: Queue[] = []
       let waits: Wait[] = []
       let misses: Hit[] = []
@@ -676,6 +679,11 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
         if (isTitleRequest(body)) {
           hits = [...hits, current]
           yield* notify()
+          const failure = titleFailures[0]
+          if (failure) {
+            titleFailures = titleFailures.slice(1)
+            return fail(failure)
+          }
           const auto: Sse = { type: "sse", head: [role()], tail: [textLine("E2E Title"), finishLine("stop")] }
           if (mode === "responses") return send(responses(auto, modelFrom(body)))
           return send(auto)
@@ -750,6 +758,9 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
         error: Effect.fn("TestLLMServer.error")(function* (status: number, body: unknown) {
           queue(httpError(status, body))
         }),
+        titleError: Effect.fn("TestLLMServer.titleError")(function* (status: number, body: unknown) {
+          titleFailures = [...titleFailures, { type: "http-error", status, body }]
+        }),
         hang: Effect.gen(function* () {
           queue(reply().hang().item())
         }).pipe(Effect.withSpan("TestLLMServer.hang")),
@@ -758,6 +769,7 @@ export class TestLLMServer extends Context.Service<TestLLMServer, TestLLMServer.
         }),
         reset: Effect.sync(() => {
           hits = []
+          titleFailures = []
           list = []
           waits = []
           misses = []

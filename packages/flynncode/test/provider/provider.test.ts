@@ -1615,6 +1615,23 @@ it.instance(
   },
 )
 
+it.instance(
+  "openrouter lists only free catalog models",
+  Effect.gen(function* () {
+    yield* set("OPENROUTER_API_KEY", "test-api-key")
+    const providers = yield* list
+    const models = Object.keys(providers[ProviderV2.ID.openrouter].models)
+
+    expect(models.filter((id) => !id.endsWith(":free") && id !== "openrouter/free" && id !== "my/paid-model")).toEqual([])
+    expect(models.length).toBeGreaterThan(0)
+    // Zero cost is not free: this router bills whichever paid model it picks.
+    expect(models).not.toContain("openrouter/auto")
+    // A model the user declared in config is an explicit choice and stays.
+    expect(models).toContain("my/paid-model")
+  }),
+  { config: { provider: { openrouter: { models: { "my/paid-model": {} } } } } },
+)
+
 test("mode options and cost are derived from the base model", () => {
   const provider = {
     id: "openai",

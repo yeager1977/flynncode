@@ -1859,6 +1859,16 @@ const layer = Layer.effect(
                 delete provider.models[modelID]
               if (model.status === "alpha" && !runtimeFlags.enableExperimentalModels) delete provider.models[modelID]
               if (model.status === "deprecated") delete provider.models[modelID]
+              // OpenRouter's own convention marks free models with a ":free" suffix (plus its free router).
+              // Zero catalog cost is not a safe test: routers like openrouter/auto price at zero here but
+              // bill the paid model they pick. Models declared in config are an explicit choice and stay.
+              if (
+                providerID === ProviderV2.ID.openrouter &&
+                !configProvider?.models?.[modelID] &&
+                !modelID.endsWith(":free") &&
+                modelID !== "openrouter/free"
+              )
+                delete provider.models[modelID]
               if (
                 (configProvider?.blacklist && configProvider.blacklist.includes(modelID)) ||
                 (configProvider?.whitelist && !configProvider.whitelist.includes(modelID))
