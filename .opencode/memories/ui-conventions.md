@@ -1,2 +1,3 @@
-- Provider usage meters (anthropic, openai, grok, ollama, muse) must always be visible bottom-left of the main window, near open project/settings
-- Each provider shows one circle with three sub-circles for context, session, and weekly limits; usage data must refresh periodically (about every minute) or on click
+- Session usage indicators should show context for the current session plus used percentage of account usage (not the whole account).
+- Provide a page listing all enabled providers' current limits and usage.
+- Session model selector should also let me pick which server runs the job.

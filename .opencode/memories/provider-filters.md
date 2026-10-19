@@ -1,0 +1,1 @@
+- Filter OpenRouter model list to free models.

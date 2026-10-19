@@ -1,3 +1,2 @@
-- The mobile connector should use the opencode iOS mobile app (repo: github doza62/opencode-mobile)
-- Known mobile issues: horrible display/usage, task lists get lost, only one task can be opened at a time, new tasks can't traverse a file tree beyond one-level selection
-- Finished subtask work is not cleaned up and stays sitting in the right-hand view
+- I use the opencode-mobile iOS app (github: doza62/opencode-mobile) as the mobile connector target for the server.
+- Mobile UX issues to keep fixing: task lists get lost, only one task viewable, limited file-tree traversal in new sessions.

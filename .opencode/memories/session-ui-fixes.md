@@ -1,0 +1,1 @@
+- New sessions should update their names after the timestamp-based naming; subtask cleanup in the right-hand view left finished tasks lingering.

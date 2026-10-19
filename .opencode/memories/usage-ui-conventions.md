@@ -1,0 +1,1 @@
+- Usage circles should reflect the current session's context and used percentage, not account-wide totals; a page should list all enabled providers' limits/usage.

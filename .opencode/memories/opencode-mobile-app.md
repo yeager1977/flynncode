@@ -1,0 +1,1 @@
+- The mobile connector should target the OpenCode iOS mobile app from GitHub repo doza62/opencode-mobile.

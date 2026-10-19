@@ -1,1 +1,1 @@
-- Desktop deliverables are a .deb at repo root (flynncode-desktop-linux-amd64.deb) plus an AppImage in packages/desktop/dist; rebuild both when dev tip is updated.
+- I often request new builds packaged as `.deb` files for installation.

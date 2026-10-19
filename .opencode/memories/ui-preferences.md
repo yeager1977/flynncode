@@ -1,0 +1,2 @@
+- Mobile UI must support multiple task lists with traversable file trees (not single-task, one-level selection).
+- Usage indicators should reflect the current session's context and used percentage, plus a page listing all enabled providers' limits and usage.

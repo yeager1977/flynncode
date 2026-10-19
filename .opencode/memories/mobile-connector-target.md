@@ -1,1 +1,1 @@
-- The mobile connector should target the opencode iOS mobile app rather than any other client.
+- Mobile connector should use the OpenCode iOS app from GitHub repo `doza62/opencode-mobile`; the current mobile mobile display is considered poor (loses task lists, restricted file tree traversal).

@@ -1,0 +1,1 @@
+- Usage circles should reflect the current session context and used percentage; add a page showing all enabled providers' limits and usage.
