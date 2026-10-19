@@ -124,6 +124,7 @@ export const dict: Record<string, string> = {
   "ui.promptInput.shell": "ޝެލް ކޮމާންޑެވެ",
   "ui.promptInput.chooseAgent": "އޭޖެންޓް ހޮވާށެވެ",
   "ui.promptInput.chooseModel": "މޮޑެލް ހޮވާށެވެ",
+  "ui.promptInput.chooseServer": "ސަރވަރ ހޮވާށެވެ",
   "ui.promptInput.chooseVariant": "މޮޑެލް ވެރިއަންޓް ހޮވާށެވެ",
   "ui.promptInput.send": "ފޮނުވުން",
   "ui.promptInput.stop": "ހުއްޓުން",

@@ -11,6 +11,7 @@ import { resolveDefaultModel } from "@/hooks/provider-catalog"
 import { Persist, persisted } from "@/utils/persist"
 import { hasCustomAgent, resolveAgent } from "./local-agent"
 import { cycleModelVariant, getConfiguredAgentVariant, resolveModelVariant } from "./model-variant"
+import { modelServers } from "./model-servers"
 import { useSDK } from "./sdk"
 import { useSync } from "./sync"
 import { useServerSDK } from "./server-sdk"
@@ -346,6 +347,31 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       },
       setVisibility(item: ModelKey, visible: boolean) {
         models.setVisibility(item, visible)
+      },
+      // The same model id can run on several connected providers; the server
+      // chip lets the user pick which endpoint runs the job. Concrete picks
+      // bypass the ollama model router by design.
+      server: {
+        options() {
+          const selected = current()
+          if (!selected) return []
+          return modelServers({
+            items: models
+              .list()
+              .filter((item) => connected().has(item.provider.id))
+              .filter((item) => models.visible({ providerID: item.provider.id, modelID: item.id })),
+            modelID: selected.id,
+            current: selected.provider.id,
+          }).map((option) => ({ id: option.providerID, label: option.label, providerID: option.providerID }))
+        },
+        current() {
+          return current()?.provider.id ?? ""
+        },
+        onSelect(providerID: string) {
+          const selected = current()
+          if (!selected || providerID === selected.provider.id) return
+          model.set({ providerID, modelID: selected.id })
+        },
       },
       variant: {
         configured,

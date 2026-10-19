@@ -266,6 +266,10 @@ const keys = [
   "settings.shortcuts.quickEntry.description",
   "settings.shortcuts.quickEntry.title",
   "toast.folders.updated",
+  "usage.page.title",
+  "usage.provider.connected",
+  "usage.provider.notConnected",
+  "usage.noLimit",
 ] as const
 
 export const flynncodeFallback = Object.fromEntries(

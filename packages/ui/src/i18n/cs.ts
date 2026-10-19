@@ -131,6 +131,7 @@ export const dict: Record<string, string> = {
   "ui.promptInput.shell": "Shell příkaz",
   "ui.promptInput.chooseAgent": "Vyberte agenta",
   "ui.promptInput.chooseModel": "Vyberte model",
+  "ui.promptInput.chooseServer": "Zvolte server",
   "ui.promptInput.chooseVariant": "Vyberte variantu modelu",
   "ui.promptInput.send": "Odeslat",
   "ui.promptInput.stop": "Zastavit",

@@ -37,6 +37,7 @@ import type { SolidQueryOptions } from "@tanstack/solid-query"
 import { createRefreshQueue } from "./global-sync/queue"
 import { directoryKey } from "./global-sync/utils"
 import { PathKey } from "@/utils/path-key"
+import { createActiveSessionRefetch } from "./active-session-reconcile"
 import { createDirSyncContext } from "./directory-sync"
 import { createSimpleContext } from "@flynncode/ui/context"
 import { NormalizedProviderListResponse } from "@flynncode/session-ui/context"
@@ -537,6 +538,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     })
   }
 
+  const activeSessionRefetch = createActiveSessionRefetch(activeSessionsQuery)
   const unsub = serverSDK.event.listen((e) => {
     const directory = e.name
     const key = directoryKey(directory)
@@ -557,7 +559,11 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       // active-session seed; the reconcile in seedActiveSessionStatuses
       // clears statuses the new server no longer reports, including the
       // stale "busy" ones that pinned sessions out of the message-cache LRU.
-      if (eventType === "server.connected" && !activeSessionsQuery.isFetching) void activeSessionsQuery.refetch()
+      // A connect arriving while the reconcile fetch is already in flight
+      // must NOT be skipped: the follow-up is queued and flushed once the
+      // fetch settles, otherwise sessions whose live status events were
+      // missed stay pinned "busy" until the next reconnect.
+      if (eventType === "server.connected") activeSessionRefetch.connected()
       applyGlobalEvent({
         event,
         project: globalStore.project,

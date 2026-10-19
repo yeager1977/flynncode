@@ -208,6 +208,7 @@ export const dict = {
   "ui.promptInput.shell": "Shell-kommando",
   "ui.promptInput.chooseAgent": "Vælg agent",
   "ui.promptInput.chooseModel": "Vælg model",
+  "ui.promptInput.chooseServer": "Vælg server",
   "ui.promptInput.chooseVariant": "Vælg modelvariant",
   "ui.promptInput.send": "Send",
   "ui.promptInput.stop": "Stop",

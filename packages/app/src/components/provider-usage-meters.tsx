@@ -1,65 +1,35 @@
-import { createQuery } from "@tanstack/solid-query"
+import { Show, For, createMemo, type Accessor } from "solid-js"
 import { ProgressCircle } from "@flynncode/ui/progress-circle"
 import { TooltipV2 } from "@flynncode/ui/v2/tooltip-v2"
-import { For, Show, createMemo, type Accessor, type JSX } from "solid-js"
 import { useLanguage } from "@/context/language"
-import { useProviders } from "@/hooks/use-providers"
-import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
+import { useProviders } from "@/hooks/use-providers"
+import { useProviderUsage } from "@/hooks/use-provider-usage"
 import { getSessionContext } from "@/components/session/session-context-metrics"
-
-type UsageWindow = { id: string; percent?: number; count?: number; resetsAt?: number }
-
-type UsageEntry = { providerID: string; windows: UsageWindow[] }
+import {
+  bindingWindow,
+  formatRequestCount,
+  orderedWindows,
+  usageEntries,
+  windowLabel,
+  type UsageWindow,
+} from "@/utils/provider-usage"
 
 type Row = { text: string }
 
-function windowLabel(t: (key: string) => string, id: string) {
-  if (id === "session") return t("provider.usage.window.session")
-  if (id === "weekly") return t("provider.usage.window.weekly")
-  if (id === "primary") return t("provider.usage.window.primary")
-  if (id === "secondary") return t("provider.usage.window.secondary")
-  if (id === "daily") return t("provider.usage.window.daily")
-  if (id === "monthly") return t("provider.usage.window.monthly")
-  return id
-}
-
-function formatCount(count: number) {
-  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`
-  if (count >= 1_000) return `${(count / 1_000).toFixed(1)}k`
-  return String(Math.round(count))
-}
-
-// Sentinel provider the router plugin injects; it is a picker entry, not a
-// connection with usage.
-const ROUTER_PROVIDER_ID = "model-router"
-
+// One circle per reporting provider, as in the session header ("providers"),
+// or concentric rings per connected provider ("rings"), as in the sidebar: an
+// inner context band (the open session), a session quota band, and a weekly
+// quota band.
 export function ProviderUsageMeters(props: {
   row?: boolean
-  // "providers" (default) renders one flat meter per reporting provider, as in
-  // the session header; "rings" renders one concentric meter per connected
-  // provider: an inner context band (the open session), a session quota band,
-  // and a weekly quota band.
   variant?: "providers" | "rings"
   sessionID?: Accessor<string | undefined>
 }) {
   const language = useLanguage()
-  const serverSDK = useServerSDK()
   const serverSync = useServerSync()
   const providers = useProviders(() => undefined)
-
-  const query = createQuery(() => ({
-    queryKey: [serverSDK().scope, null, "provider-usage"],
-    queryFn: async ({ signal }) => {
-      const result = await serverSDK().client.provider.usage(undefined, { signal })
-      return (result.data ?? {}) as Record<string, { windows?: UsageWindow[] }>
-    },
-    // Minute-level freshness: the server aggregates on a 60s cache, so the two
-    // clocks line up instead of stacking provider requests.
-    refetchInterval: 60_000,
-    staleTime: 60_000,
-    retry: false,
-  }))
+  const query = useProviderUsage()
 
   const messages = createMemo(() => {
     const sessionID = props.sessionID?.()
@@ -69,53 +39,35 @@ export function ProviderUsageMeters(props: {
 
   const context = createMemo(() => getSessionContext(messages(), [...providers.all().values()]))
 
-  const entries = createMemo((): UsageEntry[] => {
-    const data = query.data
-    if (!data) return []
-    return Object.entries(data)
-      .filter((entry): entry is [string, { windows: UsageWindow[] }] => Array.isArray(entry[1]?.windows))
-      .map(([providerID, usage]) => ({ providerID, windows: usage.windows ?? [] }))
-  })
-
-  const rings = createMemo(() => {
+  const rows = createMemo(() => {
     const engaged = context()
-    const ids = new Set<string>()
-    if (engaged) ids.add(engaged.message.providerID)
-    for (const entry of entries()) ids.add(entry.providerID)
-    for (const provider of providers.connected()) ids.add(provider.id)
-    ids.delete(ROUTER_PROVIDER_ID)
-    return [...ids]
-      .map((providerID) => ({
-        providerID,
-        name: providers.all().get(providerID)?.name ?? providerID,
-        windows: query.data?.[providerID]?.windows ?? [],
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name))
+    return usageEntries({
+      connected: providers.connected(),
+      usage: query.data,
+      extraIDs: engaged ? [engaged.message.providerID] : [],
+    })
   })
 
   const ringRows = (providerID: string, windows: UsageWindow[]): Row[] => {
     const engaged = context()
     const rows: Row[] = []
-    if (engaged && engaged.message.providerID === providerID && engaged.usage !== null) {
+    if (engaged && engaged.message.providerID === providerID && engaged.usage !== null)
       rows.push({ text: language.t("provider.usage.contextRow", { percent: Math.round(engaged.usage) }) })
-    }
-    for (const id of ["session", "primary", "weekly", "secondary"] as const) {
-      const window = windows.find((window) => window.id === id && window.percent !== undefined)
-      if (!window) continue
-      rows.push({
-        text: language.t("provider.usage.row", {
-          label: windowLabel(language.t, window.id),
-          percent: Math.round(window.percent ?? 0),
-        }),
-      })
-    }
-    for (const window of windows.filter((window) => window.count !== undefined)) {
-      rows.push({
-        text: language.t("provider.usage.countRow", {
-          label: windowLabel(language.t, window.id),
-          count: formatCount(window.count!),
-        }),
-      })
+    for (const window of orderedWindows(windows)) {
+      if (window.percent !== undefined)
+        rows.push({
+          text: language.t("provider.usage.row", {
+            label: windowLabel(language.t, window.id),
+            percent: Math.round(window.percent),
+          }),
+        })
+      else if (window.count !== undefined)
+        rows.push({
+          text: language.t("provider.usage.countRow", {
+            label: windowLabel(language.t, window.id),
+            count: formatRequestCount(window.count),
+          }),
+        })
     }
     if (rows.length === 0) rows.push({ text: language.t("provider.usage.none") })
     return rows
@@ -142,12 +94,13 @@ export function ProviderUsageMeters(props: {
   function UsageRing(props: { name: string; providerID: string; windows: UsageWindow[] }) {
     const bands = createMemo(() => bandsFor(props.providerID, props.windows))
     const rows = createMemo(() => ringRows(props.providerID, props.windows))
+    const binding = createMemo(() => bindingWindow(props.windows))
     const circumference = (radius: number) => 2 * Math.PI * radius
     return (
       <TooltipV2 placement="bottom" value={ringTooltip(props.name, rows())}>
         <button
           type="button"
-          class="flex cursor-pointer items-center justify-center"
+          class="flex cursor-pointer items-center justify-center gap-0.5"
           role="img"
           aria-label={ariaFor(props.name, rows())}
           onClick={() => void query.refetch()}
@@ -182,6 +135,22 @@ export function ProviderUsageMeters(props: {
               }}
             </For>
           </svg>
+          <Show when={binding()}>
+            {(binding) => {
+              const clamped = Math.max(0, Math.min(100, binding().percent ?? 0))
+              return (
+                <span
+                  class="text-10-medium"
+                  classList={{
+                    "text-v2-state-fg-danger": clamped >= 90,
+                    "text-v2-text-text-muted": clamped < 90,
+                  }}
+                >
+                  {Math.round(clamped)}%
+                </span>
+              )
+            }}
+          </Show>
         </button>
       </TooltipV2>
     )
@@ -199,19 +168,21 @@ export function ProviderUsageMeters(props: {
   }
 
   const ringStrip = () => (
-    <For each={rings()}>
+    <For each={rows()}>
       {(ring) => <UsageRing name={ring.name} providerID={ring.providerID} windows={ring.windows} />}
     </For>
   )
 
   const providerStrip = () => (
-    <For each={entries()}>
+    <For
+      each={query.data ? Object.entries(query.data).filter(([, value]) => Array.isArray(value?.windows)) : []}
+    >
       {(entry) => {
         // Circles need a plan limit; providers that only report counts render
-        // as count pills on the first count window instead.
-        const percent = entry.windows.find((window) => window.percent !== undefined)?.percent
-        const count = entry.windows.find((window) => window.count !== undefined)?.count
-        const rows = entry.windows.flatMap((window) => {
+        // as count pills instead.
+        const percent = bindingWindow(entry[1]?.windows ?? [])?.percent
+        const count = (entry[1]?.windows ?? []).find((window) => window.count !== undefined)?.count
+        const rows = orderedWindows(entry[1]?.windows ?? []).flatMap((window) => {
           if (window.percent !== undefined)
             return [
               language.t("provider.usage.row", {
@@ -223,7 +194,7 @@ export function ProviderUsageMeters(props: {
             return [
               language.t("provider.usage.countRow", {
                 label: windowLabel(language.t, window.id),
-                count: formatCount(window.count),
+                count: formatRequestCount(window.count),
               }),
             ]
           return []
@@ -243,11 +214,11 @@ export function ProviderUsageMeters(props: {
                 <div
                   class="flex cursor-pointer items-center justify-center"
                   role="img"
-                  aria-label={language.t("provider.usage.meterCount", { provider: entry.providerID, count: count ?? 0 })}
+                  aria-label={language.t("provider.usage.meterCount", { provider: entry[0], count: count ?? 0 })}
                   onClick={() => void query.refetch()}
                 >
                   <span class="rounded-full bg-v2-overlay-simple-overlay-hover px-1.5 text-11-medium text-v2-text-text-muted">
-                    {formatCount(count ?? 0)}
+                    {formatRequestCount(count ?? 0)}
                   </span>
                 </div>
               }
@@ -256,7 +227,7 @@ export function ProviderUsageMeters(props: {
                 type="button"
                 class="flex cursor-pointer items-center justify-center"
                 role="img"
-                aria-label={language.t("provider.usage.meter", { provider: entry.providerID, percent: Math.round(percent ?? 0) })}
+                aria-label={language.t("provider.usage.meter", { provider: entry[0], percent: Math.round(percent ?? 0) })}
                 onClick={() => void query.refetch()}
               >
                 <ProgressCircle
@@ -278,7 +249,7 @@ export function ProviderUsageMeters(props: {
   )
 
   const visible = createMemo(() =>
-    props.variant === "rings" ? rings().length > 0 : entries().some((entry) => entry.windows.length > 0),
+    props.variant === "rings" ? rows().length > 0 : Object.values(query.data ?? {}).some((value) => (value?.windows ?? []).length > 0),
   )
 
   return (

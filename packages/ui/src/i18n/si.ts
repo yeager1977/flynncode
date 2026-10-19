@@ -123,6 +123,7 @@ export const dict: Record<string, string> = {
   "ui.promptInput.shell": "ෂෙල් විධානය",
   "ui.promptInput.chooseAgent": "නියෝජිතයා තෝරන්න",
   "ui.promptInput.chooseModel": "ආකෘතිය තෝරන්න",
+  "ui.promptInput.chooseServer": "සේවාදායකය තෝරන්න",
   "ui.promptInput.chooseVariant": "ආකෘති ප්රභේදය තෝරන්න",
   "ui.promptInput.send": "යවන්න",
   "ui.promptInput.stop": "නවත්වන්න",

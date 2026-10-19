@@ -124,6 +124,7 @@ export const dict: Record<string, string> = {
   "ui.promptInput.shell": "شیل کمانڈ",
   "ui.promptInput.chooseAgent": "ایجنٹ چنو",
   "ui.promptInput.chooseModel": "ماڈل چنو",
+  "ui.promptInput.chooseServer": "ਸਰਵਰ ਚੁਣੋ",
   "ui.promptInput.chooseVariant": "ماڈل دی قسم چنو",
   "ui.promptInput.send": "گھلو",
   "ui.promptInput.stop": "روکو",

@@ -130,6 +130,7 @@ export const dict = {
   "ui.promptInput.shell": "Shell 命令",
   "ui.promptInput.chooseAgent": "选择智能体",
   "ui.promptInput.chooseModel": "选择模型",
+  "ui.promptInput.chooseServer": "选择服务器",
   "ui.promptInput.chooseVariant": "选择模型变体",
   "ui.promptInput.send": "发送",
   "ui.promptInput.stop": "停止",

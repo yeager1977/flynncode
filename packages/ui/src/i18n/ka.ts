@@ -123,6 +123,7 @@ export const dict: Record<string, string> = {
   "ui.promptInput.shell": "Shell ბრძანება",
   "ui.promptInput.chooseAgent": "აირჩიე აგენტი",
   "ui.promptInput.chooseModel": "აირჩიე მოდელი",
+  "ui.promptInput.chooseServer": "აირჩიეთ სერვერი",
   "ui.promptInput.chooseVariant": "აირჩიე მოდელის ვარიანტი",
   "ui.promptInput.send": "გაგზავნა",
   "ui.promptInput.stop": "შეჩერება",

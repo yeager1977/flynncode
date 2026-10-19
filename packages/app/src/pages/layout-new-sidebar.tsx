@@ -308,6 +308,7 @@ export function ProjectSidebar() {
       onNewSession={openDraft}
       onOpenProject={() => sidebar.chooseProject()}
       onArchive={(session) => void archive(session)}
+      onOpenUsage={() => navigate("/usage")}
       onEditProject={showEditProjectDialog}
       onHideProject={hideProject}
       onUnhideProject={unhideProject}

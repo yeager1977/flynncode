@@ -122,6 +122,7 @@ export const dict: Record<string, string> = {
   "ui.promptInput.shell": "የሼል ትዕዛዝ",
   "ui.promptInput.chooseAgent": "ወኪሉን ይምረጡ",
   "ui.promptInput.chooseModel": "ሞዴል ምረጥ",
+  "ui.promptInput.chooseServer": "ሰርቨር ምረጥ",
   "ui.promptInput.chooseVariant": "የሞዴል ልዩነትን ምረጥ",
   "ui.promptInput.send": "ላክ",
   "ui.promptInput.stop": "አቁም",

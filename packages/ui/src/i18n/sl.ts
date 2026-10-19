@@ -132,6 +132,7 @@ export const dict: Record<string, string> = {
   "ui.promptInput.shell": "Ukaz lupine",
   "ui.promptInput.chooseAgent": "Izberite agenta",
   "ui.promptInput.chooseModel": "Izberite model",
+  "ui.promptInput.chooseServer": "Izberi strežnik",
   "ui.promptInput.chooseVariant": "Izberite različico modela",
   "ui.promptInput.send": "Pošlji",
   "ui.promptInput.stop": "Ustavi",

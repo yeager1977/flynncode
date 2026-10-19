@@ -127,6 +127,7 @@ export const dict: Record<string, string> = {
   "ui.promptInput.shell": "Ordre de l'intèrpret d'ordres",
   "ui.promptInput.chooseAgent": "Trieu un agent",
   "ui.promptInput.chooseModel": "Tria el model",
+  "ui.promptInput.chooseServer": "Trieu el servidor",
   "ui.promptInput.chooseVariant": "Trieu la variant del model",
   "ui.promptInput.send": "Enviar",
   "ui.promptInput.stop": "Atureu-vos",

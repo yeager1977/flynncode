@@ -6,6 +6,7 @@ import {
   createMemo,
   createSignal,
   For,
+  on,
   Show,
   splitProps,
   type ComponentProps,
@@ -190,6 +191,11 @@ export default function FileTreeV2(props: {
       virtualizer.scrollToIndex(next, { align: "auto" })
     })
   })
+
+  // TanStack Virtual listens for scroll/resize only: growing the flat row list
+  // (expanding a directory) left child rows unrendered until the next scroll,
+  // so re-measure whenever the row list changes.
+  createEffect(on(rows, () => queueMicrotask(() => virtualizer.measure())))
 
   const selectFile = (node: FileTreeV2Node, action?: (file: FileNode) => void) => {
     action?.({

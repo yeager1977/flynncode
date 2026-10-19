@@ -34,6 +34,7 @@ export type PromptInputV2ViewConfig = {
   agent?: PromptInputV2SelectControl
   model?: PromptInputV2SelectControl
   variant?: PromptInputV2SelectControl
+  server?: PromptInputV2SelectControl
   acceptAll?: {
     active: Accessor<boolean>
     title: Accessor<string>

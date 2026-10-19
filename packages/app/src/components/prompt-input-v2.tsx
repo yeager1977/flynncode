@@ -464,6 +464,9 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
         onSelect: (value) => props.controls.model.selection.variant.set(value === "default" ? undefined : value),
         keybind: () => command.keybindParts("model.variant.cycle"),
       },
+      get server() {
+        return props.controls.model.selection.server
+      },
       acceptAll: {
         active: accepting,
         title: () =>

@@ -125,6 +125,7 @@ export const dict: Record<string, string> = {
   "ui.promptInput.shell": "Shell parancs",
   "ui.promptInput.chooseAgent": "Válasszon ügynököt",
   "ui.promptInput.chooseModel": "Válasszon modellt",
+  "ui.promptInput.chooseServer": "Válassz szervert",
   "ui.promptInput.chooseVariant": "Válasszon modellváltozatot",
   "ui.promptInput.send": "Elküld",
   "ui.promptInput.stop": "Leállítás",

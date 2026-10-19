@@ -127,6 +127,7 @@ export const dict = {
   "ui.promptInput.shell": "シェルコマンド",
   "ui.promptInput.chooseAgent": "エージェントを選択",
   "ui.promptInput.chooseModel": "モデルを選択",
+  "ui.promptInput.chooseServer": "サーバーを選択",
   "ui.promptInput.chooseVariant": "モデルバリアントを選択",
   "ui.promptInput.send": "送信",
   "ui.promptInput.stop": "停止",

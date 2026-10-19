@@ -127,6 +127,7 @@ export const dict: Record<string, string> = {
   "ui.promptInput.shell": "Čaulas komanda",
   "ui.promptInput.chooseAgent": "Izvēlies aģentu",
   "ui.promptInput.chooseModel": "Izvēlies modeli",
+  "ui.promptInput.chooseServer": "Izvēlieties serveri",
   "ui.promptInput.chooseVariant": "Izvēlies modeļa variantu",
   "ui.promptInput.send": "Sūtīt",
   "ui.promptInput.stop": "Apturēt",

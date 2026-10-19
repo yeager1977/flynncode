@@ -126,6 +126,7 @@ export const dict: Record<string, string> = {
   "ui.promptInput.shell": "Shell buyrug'i",
   "ui.promptInput.chooseAgent": "Agentni tanlang",
   "ui.promptInput.chooseModel": "Modelni tanlang",
+  "ui.promptInput.chooseServer": "Serverni tanlang",
   "ui.promptInput.chooseVariant": "Model variantini tanlang",
   "ui.promptInput.send": "Yuborish",
   "ui.promptInput.stop": "To'xtang",

@@ -136,6 +136,7 @@ export const dict = {
   "ui.promptInput.shell": "Polecenie powłoki",
   "ui.promptInput.chooseAgent": "Wybierz agenta",
   "ui.promptInput.chooseModel": "Wybierz model",
+  "ui.promptInput.chooseServer": "Wybierz serwer",
   "ui.promptInput.chooseVariant": "Wybierz wariant modelu",
   "ui.promptInput.send": "Wyślij",
   "ui.promptInput.stop": "Zatrzymaj",

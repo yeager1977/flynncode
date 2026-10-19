@@ -1,6 +1,7 @@
 import { batch, createMemo, startTransition } from "solid-js"
 import { useDialog } from "@flynncode/ui/context/dialog"
 import { useModels } from "@/context/models"
+import { modelServers } from "@/context/model-servers"
 import type { ModelKey, ModelSelection } from "@/context/local"
 import { cycleModelVariant, getConfiguredAgentVariant, resolveModelVariant } from "@/context/model-variant"
 import { usePrompt } from "@/context/prompt"
@@ -156,6 +157,29 @@ export function createPromptModelSelection(input: { agent: () => { model?: Model
             configured: this.configured(),
           }),
         )
+      },
+    },
+    // Mirrors the launcher-local server chip on the session-scoped selection.
+    server: {
+      options() {
+        const selected = current()
+        if (!selected) return []
+        return modelServers({
+          items: models
+            .list()
+            .filter((item) => connected().has(item.provider.id))
+            .filter((item) => models.visible({ providerID: item.provider.id, modelID: item.id })),
+          modelID: selected.id,
+          current: selected.provider.id,
+        }).map((option) => ({ id: option.providerID, label: option.label, providerID: option.providerID }))
+      },
+      current() {
+        return current()?.provider.id ?? ""
+      },
+      onSelect(providerID: string) {
+        const selected = current()
+        if (!selected || providerID === selected.provider.id) return
+        selection.set({ providerID, modelID: selected.id })
       },
     },
   } satisfies ModelSelection

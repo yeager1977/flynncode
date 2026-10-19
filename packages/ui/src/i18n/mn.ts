@@ -123,6 +123,7 @@ export const dict = {
   "ui.promptInput.shell": "Shell тушаал",
   "ui.promptInput.chooseAgent": "Агент сонгох",
   "ui.promptInput.chooseModel": "Загвар сонгох",
+  "ui.promptInput.chooseServer": "Сервер сонгох",
   "ui.promptInput.chooseVariant": "Загварын хувилбарыг сонгоно уу",
   "ui.promptInput.send": "Илгээх",
   "ui.promptInput.stop": "Зогс",

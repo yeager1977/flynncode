@@ -124,6 +124,7 @@ export const dict = {
   "ui.promptInput.shell": "Shell အမိန့်",
   "ui.promptInput.chooseAgent": "အေးဂျင့်ကို ရွေးပါ။",
   "ui.promptInput.chooseModel": "မော်ဒယ်ကို ရွေးပါ။",
+  "ui.promptInput.chooseServer": "ဆာဗာ ရွေးချယ်ပါ",
   "ui.promptInput.chooseVariant": "မော်ဒယ်အမျိုးအစားကို ရွေးပါ။",
   "ui.promptInput.send": "ပို့ပါ။",
   "ui.promptInput.stop": "ရပ်ပါ။",

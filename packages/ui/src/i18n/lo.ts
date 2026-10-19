@@ -123,6 +123,7 @@ export const dict = {
   "ui.promptInput.shell": "ຄໍາສັ່ງ Shell",
   "ui.promptInput.chooseAgent": "ເລືອກຕົວແທນ",
   "ui.promptInput.chooseModel": "ເລືອກຕົວແບບ",
+  "ui.promptInput.chooseServer": "ເລືອກເຊີບເວີ",
   "ui.promptInput.chooseVariant": "ເລືອກຕົວແປຕົວແບບ",
   "ui.promptInput.send": "ສົ່ງ",
   "ui.promptInput.stop": "ຢຸດ",

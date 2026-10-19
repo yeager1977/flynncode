@@ -123,6 +123,7 @@ export const dict: Record<string, string> = {
   "ui.promptInput.shell": "εντολή Shell",
   "ui.promptInput.chooseAgent": "Επιλογή πράκτορα",
   "ui.promptInput.chooseModel": "Επιλογή μοντέλου",
+  "ui.promptInput.chooseServer": "Επιλέξτε διακομιστή",
   "ui.promptInput.chooseVariant": "Επιλογή παραλλαγής μοντέλου",
   "ui.promptInput.send": "Αποστολή",
   "ui.promptInput.stop": "Διακοπή",

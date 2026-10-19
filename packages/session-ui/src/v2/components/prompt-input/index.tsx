@@ -258,6 +258,17 @@ export function PromptInputV2(props: PromptInputV2Props) {
                 </Show>
               )}
             </Show>
+            <Show when={view.server} keyed>
+              {(control) => (
+                <Show when={control.options().length > 1}>
+                  <PromptInputV2ConfiguredSelect
+                    title={i18n.t("ui.promptInput.chooseServer")}
+                    control={control}
+                    model
+                  />
+                </Show>
+              )}
+            </Show>
             <Show when={view.acceptAll} keyed>
               {(control) => (
                 <TooltipV2

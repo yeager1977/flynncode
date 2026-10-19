@@ -123,6 +123,7 @@ export const dict: Record<string, string> = {
   "ui.promptInput.shell": "Shell əmri",
   "ui.promptInput.chooseAgent": "Agent seçin",
   "ui.promptInput.chooseModel": "Model seçin",
+  "ui.promptInput.chooseServer": "Serveri seçin",
   "ui.promptInput.chooseVariant": "Model variantını seçin",
   "ui.promptInput.send": "Göndər",
   "ui.promptInput.stop": "Dayandır",

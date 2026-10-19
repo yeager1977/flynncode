@@ -123,6 +123,7 @@ export const dict: Record<string, string> = {
   "ui.promptInput.shell": "Lệnh shell",
   "ui.promptInput.chooseAgent": "Chọn tác nhân",
   "ui.promptInput.chooseModel": "Chọn mô hình",
+  "ui.promptInput.chooseServer": "Chọn máy chủ",
   "ui.promptInput.chooseVariant": "Chọn biến thể mô hình",
   "ui.promptInput.send": "Gửi",
   "ui.promptInput.stop": "Dừng",

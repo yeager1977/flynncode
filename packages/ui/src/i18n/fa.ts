@@ -123,6 +123,7 @@ export const dict: Record<string, string> = {
   "ui.promptInput.shell": "دستور پوسته",
   "ui.promptInput.chooseAgent": "عامل را انتخاب کنید",
   "ui.promptInput.chooseModel": "مدل را انتخاب کنید",
+  "ui.promptInput.chooseServer": "انتخاب سرور",
   "ui.promptInput.chooseVariant": "نوع مدل را انتخاب کنید",
   "ui.promptInput.send": "ارسال کنید",
   "ui.promptInput.stop": "توقف کنید",

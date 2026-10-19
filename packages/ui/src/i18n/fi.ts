@@ -190,6 +190,7 @@ export const dict: Record<string, string> = {
   "ui.promptInput.shell": "Shell-komento",
   "ui.promptInput.chooseAgent": "Valitse agentti",
   "ui.promptInput.chooseModel": "Valitse malli",
+  "ui.promptInput.chooseServer": "Valitse palvelin",
   "ui.promptInput.chooseVariant": "Valitse mallivariantti",
   "ui.promptInput.send": "Lähetä",
   "ui.promptInput.stop": "Pysäytä",

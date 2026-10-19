@@ -39,6 +39,7 @@ export function SessionSidebar(props: {
   shown: (group: SidebarGroup) => Session[]
   showAll: (worktree: string, value: boolean) => void
   showingAll: (worktree: string) => boolean
+  onOpenUsage: () => void
 }) {
   const command = useCommand()
   const language = useLanguage()
@@ -128,6 +129,12 @@ export function SessionSidebar(props: {
             the open session plus the engaged provider's quota windows. */}
         <ProviderUsageMeters variant="rings" sessionID={props.activeSessionID} row />
         <SidebarRow
+          icon="status"
+          label={language.t("usage.page.title")}
+          action="sidebar-usage"
+          onClick={() => props.onOpenUsage()}
+        />
+        <SidebarRow
           icon="folder-add-left"
           label={language.t("command.project.open")}
           action="sidebar-open-project"
@@ -145,7 +152,7 @@ export function SessionSidebar(props: {
 }
 
 function SidebarRow(props: {
-  icon: "plus" | "folder-add-left" | "settings-gear"
+  icon: "plus" | "folder-add-left" | "settings-gear" | "status"
   label: string
   action: string
   disabled?: boolean
