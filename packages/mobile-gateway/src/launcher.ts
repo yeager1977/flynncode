@@ -1,11 +1,20 @@
 import { upstreamUrl } from "./upstream.ts"
 
+export type LauncherTodo = {
+  content: string
+  status: string
+  priority: string
+}
+
 export type LauncherSession = {
   id: string
   title: string
   directory: string | undefined
   updated: number
   subagent: boolean
+  // Present only when the session has at least one todo and its list could be
+  // fetched; a missing list renders as nothing, never as an error.
+  todos?: LauncherTodo[]
 }
 
 export type LauncherGroup = {
@@ -113,14 +122,60 @@ export async function loadLauncher(input: { upstream: string; authorization: str
   if (active.kind === "unauthorized" || recent.kind === "unauthorized") return { kind: "unauthorized" }
   if (active.kind === "failed" && recent.kind === "failed") return { kind: "unreachable" }
 
+  const data = groupSessions({
+    sessions: recent.kind === "ok" ? recent.sessions : [],
+    running: parseActive(active.kind === "ok" ? active.value : undefined),
+  })
+  await attachTodos(input, data)
+
   return {
     kind: "loaded",
     partial: active.kind === "failed" || recent.kind === "failed" || (recent.kind === "ok" && recent.partial),
-    data: groupSessions({
-      sessions: recent.kind === "ok" ? recent.sessions : [],
-      running: parseActive(active.kind === "ok" ? active.value : undefined),
-    }),
+    data,
   }
+}
+
+const TODO_CONCURRENCY = 8
+// One upstream request per session; the cap keeps a huge estate from turning
+// the launcher into hundreds of requests. Sessions past the cap just show no
+// task affordance.
+const TODO_MAX_SESSIONS = 48
+
+// Todos are fetched after the session list so per-session requests can start
+// in parallel at bounded concurrency. Everything fails silent: session rows
+// already have titles and links, and a flaky todo endpoint must not degrade
+// the whole page.
+async function attachTodos(input: { upstream: string; authorization: string }, data: LauncherData) {
+  const sessions = [...data.running, ...data.groups.flatMap((group) => group.sessions)]
+  let index = 0
+  const load = async () => {
+    while (true) {
+      const next = index++
+      if (next >= sessions.length || next >= TODO_MAX_SESSIONS) return
+      const session = sessions[next]
+      const outcome = await request(input, `http://gateway/api/session/${encodeURIComponent(session.id)}/todo`)
+      if (outcome.kind !== "ok") continue
+      const todos = parseTodos(outcome.value)
+      if (todos.length) session.todos = todos
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(TODO_CONCURRENCY, sessions.length) }, () => load()))
+}
+
+function parseTodos(value: unknown): LauncherTodo[] {
+  if (!Array.isArray(value)) return []
+  const todos: LauncherTodo[] = []
+  for (const item of value) {
+    if (!isRecord(item)) continue
+    if (typeof item.content !== "string" || !item.content) continue
+    if (typeof item.status !== "string" || !item.status) continue
+    todos.push({
+      content: item.content,
+      status: item.status,
+      priority: typeof item.priority === "string" && item.priority ? item.priority : "medium",
+    })
+  }
+  return todos
 }
 
 // Walk every page of root sessions newest-first so the phone shows all of

@@ -1,9 +1,14 @@
-import { projectLabel, relativeTime, sessionSlug, type LauncherData, type LauncherSession } from "./launcher.ts"
+import { projectLabel, relativeTime, sessionSlug, type LauncherData, type LauncherSession, type LauncherTodo } from "./launcher.ts"
 import type { InboxItem } from "./inbox.ts"
 import type { RelayDigest } from "./relay.ts"
 
 const RUNNING_BADGE = "running"
 const SUBAGENT_BADGE = "subagent"
+const TASKS_DONE_LABEL = "done"
+const TASKS_TODO_LABEL = "todo"
+// Statuses the CSS knows; a status from the model outside this set stays
+// unstyled instead of becoming part of a class name.
+const TASK_STATUSES = new Set(["pending", "in_progress", "completed", "cancelled"])
 
 export function escapeHtml(value: string) {
   return value
@@ -14,6 +19,22 @@ export function escapeHtml(value: string) {
     .replace(/'/g, "&#39;")
 }
 
+function taskBlock(session: LauncherSession) {
+  const todos = session.todos
+  if (!todos?.length) return ""
+  const done = todos.filter((todo) => todo.status === "completed").length
+  const open = todos.filter((todo) => todo.status === "pending" || todo.status === "in_progress").length
+  // A native <details> disclosure: the summary is a tappable tasks affordance
+  // with no script, and expanding lists the items in place.
+  const items = todos
+    .map((todo) => {
+      const className = TASK_STATUSES.has(todo.status) ? ` class="${todo.status}"` : ""
+      return `<li${className}>${escapeHtml(todo.content)}</li>`
+    })
+    .join("")
+  return `<details class="tasks"><summary>${done} ${TASKS_DONE_LABEL} / ${open} ${TASKS_TODO_LABEL}</summary><ul>${items}</ul></details>`
+}
+
 function row(session: LauncherSession, now: number, running: boolean) {
   const title = `<span class="title">${escapeHtml(session.title)}</span>`
   const badges = `${running ? ` &middot; ${RUNNING_BADGE}` : ""}${session.subagent ? ` &middot; ${SUBAGENT_BADGE}` : ""}`
@@ -21,9 +42,16 @@ function row(session: LauncherSession, now: number, running: boolean) {
   // time; showing "20000d ago" would be worse than showing nothing.
   const when = session.updated > 0 ? ` &middot; ${escapeHtml(relativeTime(session.updated, now))}` : ""
   const meta = `<span class="meta">${escapeHtml(projectLabel(session.directory))}${when}${badges}</span>`
-  if (session.directory === undefined) return `<div class="row">${title}${meta}</div>`
+  const tasks = taskBlock(session)
+  if (session.directory === undefined || !tasks) {
+    const body = `${title}${meta}${tasks}`
+    if (session.directory === undefined) return `<div class="row">${body}</div>`
+    return `<a class="row" href="${escapeHtml(`/${sessionSlug(session.directory)}/session/${encodeURIComponent(session.id)}`)}">${body}</a>`
+  }
+  // A disclosure element cannot nest inside a link, so a row with tasks splits
+  // into the link side and the task list; the card look stays on .row.
   const href = `/${sessionSlug(session.directory)}/session/${encodeURIComponent(session.id)}`
-  return `<a class="row" href="${escapeHtml(href)}">${title}${meta}</a>`
+  return `<div class="row"><a class="row-link" href="${escapeHtml(href)}">${title}${meta}</a>${tasks}</div>`
 }
 
 function section(heading: string, rows: string[]) {
@@ -218,12 +246,30 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: #
 }
 .title { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .meta { display: block; font-size: 13px; color: #777; margin-top: 4px }
+.row-link { display: block; color: inherit; text-decoration: none }
+.tasks { margin-top: 10px; font-size: 13px }
+.tasks summary { color: #666; cursor: pointer }
+.tasks ul { margin: 8px 0 0; padding: 0; list-style: none }
+.tasks li {
+  padding: 6px 2px;
+  border-top: 1px solid #e5e5e5;
+  font-size: 15px;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tasks li.completed, .tasks li.cancelled { color: #999; text-decoration: line-through }
+.tasks li.in_progress { font-weight: 500 }
 .quiet { color: #777; font-size: 15px }
 .warn { background: #fff3cd; color: #664d03; padding: 10px 12px; border-radius: 10px; font-size: 14px }
 @media (prefers-color-scheme: dark) {
   body { background: #111; color: #eee }
   .row { background: #1c1c1c; border-color: #333 }
   .meta, .quiet { color: #999 }
+  .tasks summary { color: #999 }
+  .tasks li { border-color: #333; color: #ddd }
+  .tasks li.completed, .tasks li.cancelled { color: #777 }
   h2 { color: #999 }
   .warn { background: #3a2f00; color: #ffd76e }
 }`

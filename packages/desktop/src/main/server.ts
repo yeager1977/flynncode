@@ -8,6 +8,7 @@ import { getStore } from "./store"
 import { DEFAULT_SERVER_URL_KEY } from "./store-keys"
 import { MOBILE_GATEWAY_PORT } from "./mobile-gateway-launch"
 import { sidecarExecArgv } from "./sidecar-exec-args"
+import { sidecarArguments, sidecarNodeFlags } from "./sidecar-args"
 import { isSyncMessage, type SidecarSyncCommand, type SidecarSyncMessage, type SidecarSyncStart } from "./sidecar-sync"
 
 export type HealthCheck = { wait: Promise<void> }
@@ -68,13 +69,26 @@ export async function spawnLocalServer(
   options: SpawnLocalServerOptions,
 ) {
   const sidecar = join(dirname(fileURLToPath(import.meta.url)), "sidecar.js")
-  const child = utilityProcess.fork(sidecar, [], {
-    cwd: process.cwd(),
-    env: createSidecarEnv(),
-    ...sidecarExecArgv(process.env.FLYNN_SIDECAR_EXEC_ARGS),
-    serviceName: SIDECAR_SERVICE_NAME,
-    stdio: "pipe",
-  })
+  const child = utilityProcess.fork(
+    sidecar,
+    sidecarArguments(),
+    {
+      cwd: process.cwd(),
+      env: createSidecarEnv(),
+      // Dev builds get the near-heap-limit snapshot flag ahead of anything set
+      // for debugging via FLYNN_SIDECAR_EXEC_ARGS.
+      ...sidecarExecArgv(
+        [
+          ...sidecarNodeFlags(app.getVersion().includes("-dev-") ? "dev" : "other"),
+          process.env.FLYNN_SIDECAR_EXEC_ARGS ?? "",
+        ]
+          .filter(Boolean)
+          .join(","),
+      ),
+      serviceName: SIDECAR_SERVICE_NAME,
+      stdio: "pipe",
+    },
+  )
   let exited = false
   const exit = defer<number>()
 
