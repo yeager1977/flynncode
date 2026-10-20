@@ -56,16 +56,53 @@ export function createSidebarSessions() {
   const sessions = createMemo(() =>
     retainHomeSessions(cache().sessions(index.data, events.data), SESSIONS_PER_DIRECTORY, Date.now()),
   )
-  const groups = createMemo(() => groupByProject(layout.projects.list(), sessions()))
+  // Keep unchanged session objects across refreshes so the sidebar rows (and
+  // an in-progress rename or an open context menu) survive a re-fetch. The
+  // order still follows the fresh time.updated.
+  let previous: Session[] = []
+  const stable = createMemo(() => {
+    const next = sessions()
+    previous = stableSessions(previous, next)
+    return previous
+  })
+  const groups = createMemo(() => groupByProject(layout.projects.list(), stable(), sessions()))
   return { groups, loading: () => index.isLoading }
 }
 
-export function groupByProject(projects: readonly LocalProject[], sessions: readonly Session[]): SidebarGroup[] {
+export function groupByProject(
+  projects: readonly LocalProject[],
+  sessions: readonly Session[],
+  order?: readonly Session[],
+): SidebarGroup[] {
+  // Sort by the fresh sessions when given, so a session that just received a
+  // message moves up even though its rendered row is unchanged.
+  const byID = new Map((order ?? sessions).map((session) => [session.id, session]))
+  const sorted = [...sessions].toSorted((a, b) => compareSessionTime(byID.get(a.id) ?? a, byID.get(b.id) ?? b))
   return projects.map((project) => {
     const directories = new Set([project.worktree, ...(project.sandboxes ?? [])].map(pathKey))
     return {
       project,
-      sessions: sessions.filter((session) => directories.has(pathKey(session.directory))).toSorted(compareSessionTime),
+      sessions: sorted.filter((session) => directories.has(pathKey(session.directory))),
     }
+  })
+}
+
+// The sidebar list re-fetches on mount, on reconnect and every 30s, and each
+// fetch returns fresh session objects. Solid's <For> reuses a row only when
+// the item is the same reference, so a refresh tears down every row — which
+// drops an in-progress rename and closes an open context menu. Reuse the
+// previous object when the row would render the same thing. The sort order
+// still follows the fresh time.updated.
+export function stableSessions(previous: readonly Session[], next: readonly Session[]) {
+  const byID = new Map(previous.map((session) => [session.id, session]))
+  return next.map((session) => {
+    const prior = byID.get(session.id)
+    if (!prior) return session
+    if (prior.title !== session.title) return session
+    if (prior.directory !== session.directory) return session
+    if (prior.parentID !== session.parentID) return session
+    if (prior.agent !== session.agent) return session
+    if (prior.time?.archived !== session.time?.archived) return session
+    return prior
   })
 }

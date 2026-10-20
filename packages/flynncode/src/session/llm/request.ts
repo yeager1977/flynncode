@@ -55,9 +55,11 @@ const mergeOptions = (target: Record<string, any>, source: Record<string, any> |
 
 export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: PrepareInput) {
   const isOpenaiOauth = input.provider.id === "openai" && input.auth?.type === "oauth"
+  const editing = SystemPrompt.editingTools(Object.keys(input.tools))
   const system = [
     [
       ...(input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(input.model)),
+      ...(editing ? [editing] : []),
       ...input.system,
       ...(input.user.system ? [input.user.system] : []),
     ]

@@ -115,6 +115,30 @@ afterEach(async () => {
 })
 
 describe("tool.registry", () => {
+  it.instance("exposes a file editing tool to every model, not just gpt", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agents = yield* Agent.Service
+      const agent = yield* agents.defaultInfo()
+
+      // The skill harness tells the model to use apply_patch for edits. A
+      // model that is not offered apply_patch must still be offered the
+      // write/edit path, and the two must never both be missing.
+      for (const modelID of ["glm-5.3-flash", "claude-sonnet-4", "gpt-5"]) {
+        const tools = yield* registry.tools({
+          providerID: ProviderV2.ID.opencode,
+          modelID: ModelV2.ID.make(modelID),
+          agent,
+        })
+        const ids = tools.map((tool) => tool.id)
+        const editors = ids.filter((id) => id === "apply_patch" || id === "edit" || id === "write")
+        expect(editors.length).toBeGreaterThan(0)
+        // Never both: apply_patch replaces edit/write for gpt models.
+        expect(ids.includes("apply_patch") && ids.includes("edit")).toBe(false)
+      }
+    }),
+  )
+
   it.instance("does not expose task_status", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service

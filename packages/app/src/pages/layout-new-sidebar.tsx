@@ -257,6 +257,18 @@ export function ProjectSidebar() {
     // Archiving the open session leaves it; "/" starts a new one in this project.
     if (sessionID() === session.id) navigate("/")
   }
+  const remove = async (session: Session) => {
+    const ok = await serverSDK()
+      .client.session.delete({ sessionID: session.id, directory: session.directory })
+      .then(() => true)
+      .catch(() => false)
+    if (!ok) {
+      showToast({ title: language.t("common.requestFailed") })
+      return
+    }
+    serverSync().homeSessions.remove(session.id)
+    if (sessionID() === session.id) navigate("/")
+  }
   // A project shows its newest sessions; the routed one stays listed even past the preview.
   const shown = (group: SidebarGroup) => {
     if (state.showAll[group.project.worktree]) return group.sessions
@@ -308,6 +320,7 @@ export function ProjectSidebar() {
       onNewSession={openDraft}
       onOpenProject={() => sidebar.chooseProject()}
       onArchive={(session) => void archive(session)}
+      onDelete={(session) => void remove(session)}
       onOpenUsage={() => navigate("/usage")}
       onEditProject={showEditProjectDialog}
       onHideProject={hideProject}

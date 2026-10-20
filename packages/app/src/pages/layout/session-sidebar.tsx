@@ -1,6 +1,9 @@
 import { createEffect, For, Show, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { A } from "@solidjs/router"
+import { Dialog } from "@flynncode/ui/dialog"
+import { Button } from "@flynncode/ui/button"
+import { useDialog } from "@flynncode/ui/context/dialog"
 import { MenuV2 } from "@flynncode/ui/v2/menu-v2"
 import type { Session } from "@flynncode/sdk/v2/client"
 import { Icon } from "@flynncode/ui/v2/icon"
@@ -13,10 +16,12 @@ import { useServerSync } from "@/context/server-sync"
 import { useSettingsDialog } from "@/components/settings-dialog"
 import { ProviderUsageMeters } from "@/components/provider-usage-meters"
 import { showToast } from "@/utils/toast"
+import { agentColor } from "@/utils/agent"
 import type { LocalProject } from "@/context/layout"
 import { displayName } from "./helpers"
 import { dispatchContextMenu } from "./keyboard-menu"
 import type { SidebarGroup } from "./sidebar-sessions"
+import { createRenameState, type RenameState } from "./session-sidebar-rename"
 
 // Sessions a project shows before "Show more".
 export const SIDEBAR_SESSION_PREVIEW = 5
@@ -31,6 +36,7 @@ export function SessionSidebar(props: {
   onNewSession: (directory: string) => void
   onOpenProject: () => void
   onArchive: (session: Session) => void
+  onDelete: (session: Session) => void
   onEditProject: (project: LocalProject) => void
   onHideProject: (worktree: string) => void
   onUnhideProject: (worktree: string) => void
@@ -44,6 +50,13 @@ export function SessionSidebar(props: {
   const command = useCommand()
   const language = useLanguage()
   const settings = useSettingsDialog()
+  const dialog = useDialog()
+  // A refresh of the session list re-creates the rows, so the rename state
+  // lives above the list and is keyed by session id.
+  const rename = createRenameState()
+  const [deleting, setDeleting] = createStore<{ session?: Session }>({})
+
+  const confirmDelete = (session: Session) => setDeleting("session", session)
 
   return (
     <div class="size-full flex flex-col bg-v2-background-bg-deep text-13-regular">
@@ -95,6 +108,8 @@ export function SessionSidebar(props: {
                       href={props.sessionHref(session)}
                       active={props.activeSessionID() === session.id}
                       onArchive={props.onArchive}
+                      onDelete={confirmDelete}
+                      rename={rename}
                     />
                   )}
                 </For>
@@ -147,6 +162,34 @@ export function SessionSidebar(props: {
           onClick={() => settings()}
         />
       </div>
+      <Show when={deleting.session} keyed>
+        {(session) => (
+          <Dialog title={language.t("session.delete.title")} fit>
+            <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
+              <div class="flex flex-col gap-1">
+                <span class="text-14-regular text-text-strong">
+                  {language.t("session.delete.confirm", { name: session.title })}
+                </span>
+              </div>
+              <div class="flex justify-end gap-2">
+                <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+                  {language.t("common.cancel")}
+                </Button>
+                <Button
+                  variant="primary"
+                  size="large"
+                  onClick={() => {
+                    dialog.close()
+                    props.onDelete(session)
+                  }}
+                >
+                  {language.t("session.delete.button")}
+                </Button>
+              </div>
+            </div>
+          </Dialog>
+        )}
+      </Show>
     </div>
   )
 }
@@ -303,36 +346,43 @@ function HiddenProjectsSection(props: {
   )
 }
 
-function SessionLink(props: { session: Session; href: string; active: boolean; onArchive: (session: Session) => void }) {
+function SessionLink(props: {
+  session: Session
+  href: string
+  active: boolean
+  onArchive: (session: Session) => void
+  onDelete: (session: Session) => void
+  rename: RenameState
+}) {
   const serverSync = useServerSync()
   const serverSDK = useServerSDK()
   const notification = useNotification()
   const language = useLanguage()
-  // `title` shows a rename optimistically until the session index reports it.
-  const [state, setState] = createStore({
-    renaming: false,
-    pendingRename: false,
-    draft: "",
-    title: undefined as string | undefined,
-  })
+  const sessionID = () => props.session.id
+  // The menu hands focus back before the input can take it, so the rename
+  // starts on the menu's close.
+  const [menu, setMenu] = createStore({ pendingRename: false })
   const working = () => serverSync().session.data.session_working(props.session.id)
   const unseen = () => notification.session.unseenCount(props.session.id) > 0
-  const title = () => state.title ?? props.session.title
+  // `title` shows a rename optimistically until the session index reports it.
+  const renaming = () => props.rename.renaming(sessionID())
+  const draft = () => props.rename.draft(sessionID()) ?? ""
+  const title = () => props.rename.optimisticTitle(sessionID()) ?? props.session.title
   // Drop the optimistic title once the index catches up.
   createEffect(() => {
-    if (state.title !== undefined && props.session.title === state.title) setState("title", undefined)
+    props.rename.synced(sessionID(), props.session.title)
   })
 
   const commit = () => {
-    if (!state.renaming) return
-    const next = state.draft.trim()
-    setState("renaming", false)
+    if (!renaming()) return
+    const next = draft().trim()
+    props.rename.stop(sessionID())
     if (!next || next === title()) return
-    setState("title", next)
+    props.rename.setOptimisticTitle(sessionID(), next)
     void serverSDK()
       .api.session.rename({ sessionID: props.session.id, title: next, directory: props.session.directory })
       .catch((err: unknown) => {
-        setState("title", undefined)
+        props.rename.clearOptimisticTitle(sessionID())
         showToast({
           title: language.t("common.requestFailed"),
           description: err instanceof Error ? err.message : undefined,
@@ -340,16 +390,26 @@ function SessionLink(props: { session: Session; href: string; active: boolean; o
       })
   }
 
+  // The session's main agent, shown under the title; the server keeps
+  // session.agent fresh on every prompt.
+  const agentLabel = () => {
+    const name = props.session.agent
+    if (!name) return undefined
+    return { name, tint: agentColor(name) }
+  }
+
   return (
     <MenuV2.Context>
       <MenuV2.Context.Trigger
         as="div"
         data-session-id={props.session.id}
-        class="flex items-center gap-2.5 h-7 pl-2.5 pr-2 rounded-md min-w-0"
+        class="flex items-center gap-2.5 pl-2.5 pr-2 rounded-md min-w-0"
         classList={{
-          "bg-v2-background-bg-layer-02 text-v2-text-text-base": props.active || state.renaming,
+          "h-7": !agentLabel(),
+          "py-1": !!agentLabel(),
+          "bg-v2-background-bg-layer-02 text-v2-text-text-base": props.active || renaming(),
           "text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base":
-            !props.active && !state.renaming,
+            !props.active && !renaming(),
         }}
       >
         <span class="shrink-0 size-3 flex items-center justify-center">
@@ -363,20 +423,36 @@ function SessionLink(props: { session: Session; href: string; active: boolean; o
           </Show>
         </span>
         <Show
-          when={state.renaming}
+          when={renaming()}
           fallback={
-            <A href={props.href} class="flex-1 min-w-0 truncate leading-7">
-              {title()}
-            </A>
+            <Show
+              when={agentLabel()}
+              fallback={
+                <A href={props.href} class="flex-1 min-w-0 truncate leading-7">
+                  {title()}
+                </A>
+              }
+            >
+              {(agent) => (
+                <div class="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+                  <A href={props.href} class="min-w-0 truncate">
+                    {title()}
+                  </A>
+                  <span class="text-11-regular min-w-0 truncate capitalize" style={{ color: agent().tint }}>
+                    {agent().name}
+                  </span>
+                </div>
+              )}
+            </Show>
           }
         >
           <input
             ref={(el) => queueMicrotask(() => el.select())}
             data-action="sidebar-session-rename"
             class="flex-1 min-w-0 bg-transparent outline-none text-v2-text-text-base"
-            value={state.draft}
+            value={draft()}
             aria-label={language.t("common.rename")}
-            onInput={(event) => setState("draft", event.currentTarget.value)}
+            onInput={(event) => props.rename.setDraft(sessionID(), event.currentTarget.value)}
             onBlur={commit}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
@@ -386,7 +462,7 @@ function SessionLink(props: { session: Session; href: string; active: boolean; o
               }
               if (event.key !== "Escape") return
               event.preventDefault()
-              setState("renaming", false)
+              props.rename.stop(sessionID())
             }}
           />
         </Show>
@@ -395,13 +471,17 @@ function SessionLink(props: { session: Session; href: string; active: boolean; o
         <MenuV2.Context.Content
           onCloseAutoFocus={(event) => {
             // Start editing only after the menu has returned focus, or it steals the input's focus.
-            if (!state.pendingRename) return
+            if (!menu.pendingRename) return
             event.preventDefault()
-            setState({ pendingRename: false, renaming: true, draft: title() })
+            setMenu("pendingRename", false)
+            props.rename.start(sessionID(), title())
           }}
         >
-          <MenuV2.Item onSelect={() => setState("pendingRename", true)}>{language.t("common.rename")}</MenuV2.Item>
+          <MenuV2.Item onSelect={() => setMenu("pendingRename", true)}>{language.t("common.rename")}</MenuV2.Item>
           <MenuV2.Item onSelect={() => props.onArchive(props.session)}>{language.t("common.archive")}</MenuV2.Item>
+          <MenuV2.Item class="text-text-danger-base" onSelect={() => props.onDelete(props.session)}>
+            {language.t("common.delete")}
+          </MenuV2.Item>
         </MenuV2.Context.Content>
       </MenuV2.Context.Portal>
     </MenuV2.Context>

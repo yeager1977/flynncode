@@ -8,9 +8,43 @@ import {
   createSessionTabs,
   focusTerminalById,
   getTabReorderIndex,
+  shellHandoff,
   shellPtyID,
   shouldShowFileTree,
 } from "./helpers"
+import type { Part } from "@flynncode/sdk/v2/client"
+
+const shellPart = (input: { tool?: string; sessionID?: string; finished?: boolean }): Part => {
+  const metadata = { ptyID: "pty_abc", interactive: true }
+  return {
+    id: "prt_1",
+    sessionID: input.sessionID ?? "ses_viewed",
+    messageID: "msg_1",
+    type: "tool",
+    callID: "call_1",
+    tool: input.tool ?? "bash",
+    state: input.finished
+      ? { status: "completed", input: {}, output: "", title: "sudo id", metadata, time: { start: 1, end: 2 } }
+      : { status: "running", input: {}, title: "sudo id", metadata, time: { start: 1 } },
+  }
+}
+
+describe("shellHandoff", () => {
+  test("hands off the PTY of a running shell tool under its exposed id, bash", () => {
+    // packages/flynncode/src/tool/shell/id.ts keeps the tool id "bash" for compatibility.
+    expect(shellHandoff(shellPart({}), "ses_viewed")).toEqual({ id: "pty_abc", title: "sudo id" })
+  })
+
+  test("also hands off under the future shell id", () => {
+    expect(shellHandoff(shellPart({ tool: "shell" }), "ses_viewed")?.id).toBe("pty_abc")
+  })
+
+  test("ignores finished shells, other sessions, and other tools", () => {
+    expect(shellHandoff(shellPart({ finished: true }), "ses_viewed")).toBeUndefined()
+    expect(shellHandoff(shellPart({ sessionID: "ses_other" }), "ses_viewed")).toBeUndefined()
+    expect(shellHandoff(shellPart({ tool: "read" }), "ses_viewed")).toBeUndefined()
+  })
+})
 
 describe("shellPtyID", () => {
   test("reads a pty id from shell tool metadata", () => {

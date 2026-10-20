@@ -54,6 +54,27 @@ export function provider(model: Provider.Model) {
   return [PROMPT_DEFAULT]
 }
 
+// The skill harness (and model-specific prompts) name editing tools by name.
+// The registry only offers apply_patch to some models, so a model told to use
+// a tool it was not given reports a missing tool instead of editing. State
+// the editing tools this request actually has.
+const EDITING_TOOLS = ["apply_patch", "edit", "write"] as const
+
+export function editingTools(toolIDs: Iterable<string>) {
+  const ids = new Set(toolIDs)
+  const available = EDITING_TOOLS.filter((tool) => ids.has(tool))
+  if (available.length === 0) return undefined
+  const missing = available.includes("apply_patch") ? [] : ["apply_patch"]
+  return [
+    `File editing tools available in this session: ${available.join(", ")}.`,
+    ...(missing.length > 0
+      ? [
+          `The ${missing.join(" and ")} tool is not available here, so do not attempt to call it; use ${available.join(" or ")} instead.`,
+        ]
+      : []),
+  ].join("\n")
+}
+
 export interface Interface {
   readonly environment: (model: Provider.Model, sessionID?: SessionID) => Effect.Effect<string[]>
   readonly skills: (agent: Agent.Info) => Effect.Effect<string | undefined>

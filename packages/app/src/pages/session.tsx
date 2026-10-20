@@ -81,7 +81,7 @@ import {
   createOpenReviewFile,
   createSessionTabs,
   createSizing,
-  shellPtyID,
+  shellHandoff,
   shouldShowFileTree,
 } from "@/pages/session/helpers"
 import { MessageTimeline } from "@/pages/session/timeline/message-timeline"
@@ -386,8 +386,8 @@ export default function Page() {
   const navigate = useNavigate()
   const { params, sessionKey, workspaceKey, tabs, view } = useSessionLayout()
 
-  // Adopt PTYs only from shell tools still running in this session: finished
-  // or other sessions' shells must not reopen terminals on load or switch.
+  // Interactive shell handoff: open the terminal panel on the PTY of a shell
+  // tool that is waiting for the user (see shellHandoff).
   const handedPty = new Set<string>()
   createEffect(() => {
     const sessionID = params.id
@@ -396,12 +396,10 @@ export default function Page() {
     messages
       .flatMap((message) => sync().data.part[message.id] ?? [])
       .forEach((part) => {
-        if (part.type !== "tool" || part.tool !== "shell") return
-        if (part.sessionID !== sessionID || part.state.status !== "running") return
-        const id = shellPtyID(part.state.metadata)
-        if (!id || handedPty.has(id)) return
-        handedPty.add(id)
-        terminal.adopt(id, part.state.title)
+        const pty = shellHandoff(part, sessionID)
+        if (!pty || handedPty.has(pty.id)) return
+        handedPty.add(pty.id)
+        terminal.adopt(pty.id, pty.title)
         view().terminal.open()
       })
   })
@@ -2444,6 +2442,12 @@ export default function Page() {
                   }
                 : undefined,
             onResponseSubmit: resumeScroll,
+            onOpenWaitingTerminal: (ptyID: string) => {
+              // The subagent's PTY lives in the same directory, so the main
+              // session's terminal panel can attach to it directly.
+              terminal.adopt(ptyID)
+              view().terminal.open()
+            },
             openParent: () => {
               const id = info()?.parentID
               if (!id) return

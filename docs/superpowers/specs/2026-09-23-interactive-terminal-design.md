@@ -65,3 +65,18 @@ Three existing pieces, no new terminal widget:
 ## RTL
 
 Terminal contents stay `dir="ltr"`. Any new panel chrome uses logical properties and the existing terminal panel. No new physical left/right layout.
+
+## Amendment 2026-10-19 (owner decision)
+
+- The desktop half never fired until now: the session page matched `part.tool === "shell"`, but the tool's exposed id is `"bash"` (`packages/flynncode/src/tool/shell/id.ts`). The match now lives in `shellHandoff` (`packages/app/src/pages/session/helpers.ts`) and accepts both ids.
+- Automatic handoff is narrowed. `su` and `passwd` always hand off. `sudo` hands off unless `-n`/`--non-interactive` is one of its own options. `ssh` hands off only when one of its own options includes `-t`: without a remote terminal nothing remote can prompt, and the owner's key-auth `ssh host 'cmd'` calls (62 of 206 recorded interactive calls) would otherwise each open a terminal tab and take focus. A plain ssh that does hit a local password or host-key prompt fails fast, and the tool prompt tells the model to retry with `interactive: true`.
+- Only a command's own leading options count (`ssh host 'sudo -n id'` is plain ssh).
+
+## Amendment 2026-10-20 (subagent wait surfaces in the main session)
+
+- The handoff above only fires for the session you are looking at. A subagent that waits for input therefore stayed invisible, and the main session's model reported "the user can keep typing" with nowhere to type.
+- The composer now walks the session tree for a subagent holding an interactive shell and shows a card above the message box: the command, that it needs input, and an "Open terminal" link. The link adopts that PTY in the main session's terminal panel and focuses it. All 980 recorded child sessions run in their parent's directory, so one panel reaches them all.
+- Liveness comes from the server's PTY list, which reports only live terminals (`packages/flynncode/src/server/routes/instance/httpapi/handlers/pty.ts`). The card therefore survives the shell tool's own timeout, which leaves the terminal open, and disappears when the terminal exits.
+- The card is for subagents only: the viewed session's own interactive shell already opens its terminal directly.
+- Query: `sessionWaitingTerminal` (`packages/app/src/pages/session/composer/session-request-tree.ts`). Card: `SessionWaitingTerminalDock` (`packages/app/src/pages/session/composer/session-waiting-terminal-dock.tsx`).
+- A Set inside a Solid store is not reactive; the live terminal ids are a plain array.

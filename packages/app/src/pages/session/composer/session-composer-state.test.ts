@@ -1,5 +1,13 @@
 import { beforeAll, describe, expect, mock, test } from "bun:test"
-import type { OpencodeClient, PermissionRequest, QuestionRequest, Session, Todo } from "@flynncode/sdk/v2/client"
+import type {
+  Message,
+  OpencodeClient,
+  Part,
+  PermissionRequest,
+  QuestionRequest,
+  Session,
+  Todo,
+} from "@flynncode/sdk/v2/client"
 import type { ApprovalMode, SandboxLevel } from "@/context/permission"
 
 // The `solid` test condition resolves solid-js to its SSR build, where
@@ -20,6 +28,14 @@ let solidStore: typeof import("solid-js/store")
 let currentServer: ReturnType<(typeof import("@/context/server-session"))["createServerSession"]>
 let currentParams: () => { id: string | undefined }
 let setCurrentParams: (id: string | undefined) => void
+// The session tree, messages and parts the sync mock exposes, and the live
+// terminals the server reports.
+let syncData: {
+  session: Session[]
+  message: Record<string, Message[] | undefined>
+  part: Record<string, Part[] | undefined>
+}
+let livePtyIDs: string[] = []
 
 // Mutable per-test state read by the permission context mock. Defaults mirror
 // the real context (workspace-write sandbox, manual approvals, no auto-respond
@@ -45,7 +61,11 @@ beforeAll(async () => {
     useParams: () => currentParams(),
   }))
   mock.module("@/context/sdk", () => ({
-    useSDK: () => () => ({ api: { permission: { reply: () => Promise.resolve() } }, directory: "/repo" }),
+    useSDK: () => () => ({
+      api: { permission: { reply: () => Promise.resolve() } },
+      client: { pty: { list: () => Promise.resolve({ data: livePtyIDs.map((id) => ({ id })) }) } },
+      directory: "/repo",
+    }),
   }))
   mock.module("@/context/permission", () => ({
     usePermission: () => permissionMock,
@@ -67,7 +87,9 @@ beforeAll(async () => {
     useSync: () => () => ({
       data: {
         session_working: currentServer.data.session_working.bind(currentServer.data),
-        session: [] as Session[],
+        session: syncData.session,
+        message: syncData.message,
+        part: syncData.part,
         permission: {} as Record<string, PermissionRequest[]>,
         question: {} as Record<string, QuestionRequest[]>,
       },
@@ -134,6 +156,7 @@ function harness(id = "s1"): ControllerHarness {
   currentServer = sessions.createServerSession({} as OpencodeClient)
   currentServer.remember(session({ id: "s1", parentID: "root" }))
   currentServer.remember(session({ id: "s2", parentID: "root" }))
+  if (!syncData) syncData = { session: [], message: {}, part: {} }
   let controller: ControllerHarness["controller"]
   const dispose = solid.createRoot((d) => {
     controller = composer.createSessionComposerController({ closeMs: 0 })
@@ -379,6 +402,64 @@ describe("permission dock wiring", () => {
     const h = harness("s1")
     h.controller.setPermissionApprovalMode("accept-edits")
     expect(calls).toEqual([{ sessionID: "s1", directory: "/repo", mode: "accept-edits" }])
+    h.dispose()
+  })
+})
+
+describe("waiting terminal wiring", () => {
+  const waitingShell = (sessionID: string, ptyID: string) =>
+    ({
+      id: "prt_1",
+      sessionID,
+      messageID: "msg_1",
+      type: "tool",
+      callID: "call_1",
+      tool: "bash",
+      state: {
+        status: "running",
+        input: { command: "sudo id" },
+        title: "sudo id",
+        metadata: { ptyID, interactive: true },
+        time: { start: 1 },
+      },
+    }) as Part
+
+  test("surfaces a subagent terminal that is still waiting", async () => {
+    syncData = {
+      session: [session({ id: "s1" }), session({ id: "s2", parentID: "s1" })],
+      message: { s2: [{ id: "msg_1", sessionID: "s2", role: "assistant", time: { created: 1 } } as Message] },
+      part: { msg_1: [waitingShell("s2", "pty_open")] },
+    }
+    livePtyIDs = ["pty_open"]
+    const h = harness("s1")
+    await waitFor(() => h.controller.waitingTerminal() !== undefined)
+    expect(h.controller.waitingTerminal()).toMatchObject({ ptyID: "pty_open", sessionID: "s2" })
+    h.dispose()
+  })
+
+  test("drops the card once the terminal is gone", async () => {
+    syncData = {
+      session: [session({ id: "s1" }), session({ id: "s2", parentID: "s1" })],
+      message: { s2: [{ id: "msg_1", sessionID: "s2", role: "assistant", time: { created: 1 } } as Message] },
+      part: { msg_1: [waitingShell("s2", "pty_open")] },
+    }
+    livePtyIDs = []
+    const h = harness("s1")
+    await waitFor(() => h.controller.waitingTerminal() === undefined)
+    expect(h.controller.waitingTerminal()).toBeUndefined()
+    h.dispose()
+  })
+
+  test("ignores the viewed session's own terminal", async () => {
+    syncData = {
+      session: [session({ id: "s1" })],
+      message: { s1: [{ id: "msg_1", sessionID: "s1", role: "assistant", time: { created: 1 } } as Message] },
+      part: { msg_1: [waitingShell("s1", "pty_open")] },
+    }
+    livePtyIDs = ["pty_open"]
+    const h = harness("s1")
+    await waitFor(() => h.controller.waitingTerminal() === undefined)
+    expect(h.controller.waitingTerminal()).toBeUndefined()
     h.dispose()
   })
 })

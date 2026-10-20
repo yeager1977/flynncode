@@ -21,7 +21,7 @@ export function parameterSchema() {
     }),
     interactive: Schema.optional(Schema.Boolean).annotate({
       description:
-        "Open the command in the session terminal so the user can type, including passwords and Enter. Use this for prompts. sudo, ssh, su, and passwd do this automatically.",
+        "Open the command in the session terminal so the user can type, including passwords and Enter. Use this for prompts. sudo (without -n), ssh -t, su, and passwd do this automatically.",
     }),
   })
 }
@@ -29,16 +29,45 @@ export function parameterSchema() {
 export const Parameters = parameterSchema()
 export type Parameters = Schema.Schema.Type<typeof Parameters>
 
-const INTERACTIVE = new Set(["sudo", "ssh", "su", "passwd"])
+// Short options that take a value, so the value is not mistaken for the first operand.
+const SSH_VALUED = "BbcDEeFIiJLlmOoPpQRSWw"
+const SUDO_VALUED = "CDghpRrTtUu"
 
 export function needsInteractiveTerminal(command: string, interactive: boolean | undefined) {
   if (interactive !== undefined) return interactive
-  const token = command
-    .trim()
-    .split(/\s+/)
-    .find((part) => !part.includes("="))
-  if (!token) return false
-  return INTERACTIVE.has(token)
+  const tokens = command.trim().split(/\s+/)
+  const index = tokens.findIndex((part) => !part.includes("="))
+  if (index === -1) return false
+  const name = tokens[index]
+  const args = tokens.slice(index + 1)
+  if (name === "su" || name === "passwd") return true
+  // sudo -n fails instead of asking for a password.
+  if (name === "sudo")
+    return !leadingOptions(args, SUDO_VALUED).some(
+      (option) => option === "--non-interactive" || setsFlag(option, "n", SUDO_VALUED),
+    )
+  // Without -t the remote side has no terminal to prompt on. A local password
+  // prompt then fails fast and the model retries with interactive: true, so
+  // routine key-auth ssh calls never open the terminal panel.
+  if (name === "ssh") return leadingOptions(args, SSH_VALUED).some((option) => setsFlag(option, "t", SSH_VALUED))
+  return false
+}
+
+// Whether a short-option cluster sets `flag` before any value-taking option:
+// "-nE" sets -n, while "-unobody" is -u with the value "nobody".
+function setsFlag(option: string, flag: string, valued: string) {
+  return new RegExp(`^-[^-${valued}]*${flag}`).test(option)
+}
+
+// A command's options before its first operand (only these are its own; the
+// rest belongs to the remote or wrapped command), each value-taking short
+// option joined with its value ("-l", "tom" becomes "-ltom").
+function leadingOptions(args: string[], valued: string): string[] {
+  const head = args[0]
+  if (head === undefined || head === "--" || !head.startsWith("-")) return []
+  if (head.length === 2 && valued.includes(head[1]))
+    return [head + (args[1] ?? ""), ...leadingOptions(args.slice(2), valued)]
+  return [head, ...leadingOptions(args.slice(1), valued)]
 }
 
 function renderPrompt(template: string, values: Record<string, string>) {

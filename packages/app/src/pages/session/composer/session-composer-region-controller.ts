@@ -35,6 +35,7 @@ export function createSessionComposerRegionController(input: {
   followup: Accessor<SessionComposerFollowupDock | undefined>
   revert: Accessor<SessionComposerRevertDock | undefined>
   onResponseSubmit: () => void
+  onOpenWaitingTerminal: (ptyID: string) => void
   openParent: () => void
   setPromptRef: (el: HTMLDivElement) => void
   setDockRef: (el: HTMLDivElement) => void
@@ -126,6 +127,7 @@ export function createSessionComposerRegionController(input: {
     followup: input.followup,
     revert: input.revert,
     onResponseSubmit: input.onResponseSubmit,
+    onOpenWaitingTerminal: input.onOpenWaitingTerminal,
     openParent: input.openParent,
     setPromptRef: input.setPromptRef,
     setDockRef: input.setDockRef,

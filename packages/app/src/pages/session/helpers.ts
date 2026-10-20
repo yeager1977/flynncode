@@ -3,6 +3,7 @@ import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { same } from "@/utils/same"
 import { SESSION_OPEN_FILE_TAB } from "@/context/layout-tabs"
+import type { Part } from "@flynncode/sdk/v2/client"
 
 export { SESSION_OPEN_FILE_TAB } from "@/context/layout-tabs"
 
@@ -94,6 +95,18 @@ export const createSessionTabs = (input: TabsInput) => {
     activeFileTab,
     closableTab,
   }
+}
+
+// Only a shell still running in the viewed session hands its PTY to the
+// terminal panel: finished shells and other sessions' shells must not reopen
+// terminals on load or session switch. The shell tool is exposed as "bash"
+// (packages/flynncode/src/tool/shell/id.ts); "shell" is its planned rename.
+export function shellHandoff(part: Part, sessionID: string) {
+  if (part.type !== "tool" || (part.tool !== "bash" && part.tool !== "shell")) return
+  if (part.sessionID !== sessionID || part.state.status !== "running") return
+  const id = shellPtyID(part.state.metadata)
+  if (!id) return
+  return { id, title: part.state.title }
 }
 
 export function shellPtyID(metadata: unknown) {

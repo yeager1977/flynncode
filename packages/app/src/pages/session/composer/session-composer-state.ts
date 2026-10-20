@@ -9,7 +9,11 @@ import { usePermission } from "@/context/permission"
 import type { ApprovalMode, SandboxLevel } from "@/context/permission"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
-import { sessionPermissionRequest, sessionQuestionRequest } from "./session-request-tree"
+import {
+  sessionPermissionRequest,
+  sessionQuestionRequest,
+  sessionWaitingTerminal,
+} from "./session-request-tree"
 
 export const todoState = (input: {
   count: number
@@ -51,6 +55,53 @@ export function createSessionComposerController(options?: { closeMs?: number | (
     return sessionPermissionRequest(sync().data.session, sync().data.permission, params.id, (item) => {
       return !permission.autoResponds(item, sdk().directory)
     })
+  })
+
+  // A subagent waiting on terminal input: the main session shows it so the
+  // terminal is reachable without opening the subagent's session. The server
+  // lists only live terminals, so a finished shell drops the card.
+  const waitingCandidate = createMemo(() => {
+    const id = params.id
+    if (!id) return undefined
+    return sessionWaitingTerminal(sync().data.session, sync().data.message, sync().data.part, id)
+  })
+
+  // A Set inside a Solid store is not tracked, so the live ids are a plain
+  // array and the membership check reads it.
+  const [liveTerminals, setLiveTerminals] = createStore<{ ids: string[] }>({ ids: [] })
+
+  const refreshLiveTerminals = async () => {
+    const candidate = waitingCandidate()
+    if (!candidate) return
+    try {
+      const live = await sdk()
+        .client.pty.list({ directory: sdk().directory })
+        .then((result) => result.data?.map((pty) => pty.id) ?? [])
+        .catch(() => [] as string[])
+      setLiveTerminals("ids", live)
+    } catch {
+      setLiveTerminals("ids", [])
+    }
+  }
+
+  createEffect(() => {
+    const candidate = waitingCandidate()
+    if (!candidate) {
+      setLiveTerminals("ids", [])
+      return
+    }
+    void refreshLiveTerminals()
+    // A waiting shell can run for minutes; poll while it is pending so the
+    // card disappears when the terminal finally goes away.
+    const timer = window.setInterval(() => void refreshLiveTerminals(), 5_000)
+    onCleanup(() => window.clearInterval(timer))
+  })
+
+  const waitingTerminal = createMemo(() => {
+    const candidate = waitingCandidate()
+    if (!candidate) return undefined
+    if (!liveTerminals.ids.includes(candidate.ptyID)) return undefined
+    return candidate
   })
 
   const blocked = createMemo(() => {
@@ -214,6 +265,7 @@ export function createSessionComposerController(options?: { closeMs?: number | (
     questionRequest,
     permissionRequest,
     permissionResponding,
+    waitingTerminal,
     decide,
     permissionSandbox,
     permissionApprovalMode,

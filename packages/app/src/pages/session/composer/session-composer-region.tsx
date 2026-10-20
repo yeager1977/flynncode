@@ -7,6 +7,7 @@ import { SessionQuestionDock } from "@/pages/session/composer/session-question-d
 import { SessionFollowupDock } from "@/pages/session/composer/session-followup-dock"
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
+import { SessionWaitingTerminalDock } from "@/pages/session/composer/session-waiting-terminal-dock"
 import { SessionSideChatDock } from "@/pages/session/composer/session-side-chat-dock"
 import { useSideChat } from "@/pages/session/composer/session-side-chat-context"
 import { useSideChatDockState } from "@/pages/session/composer/session-side-chat-dock-state"
@@ -58,6 +59,17 @@ export function SessionComposerRegion(props: {
             onSend={sideChatDock.onSend}
             onClose={sideChatDock.onClose}
           />
+        </Show>
+
+        <Show when={controller.state.waitingTerminal()} keyed>
+          {(waiting) => (
+            <div>
+              <SessionWaitingTerminalDock
+                command={waiting.command}
+                onOpen={() => controller.onOpenWaitingTerminal(waiting.ptyID)}
+              />
+            </div>
+          )}
         </Show>
 
         <Show when={controller.state.questionRequest()} keyed>

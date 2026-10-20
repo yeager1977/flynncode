@@ -1501,7 +1501,94 @@ body:not([data-new-layout]) {
     }
   }
 
-  [data-component="dock-prompt"][data-kind="question"] {
+[data-component="dock-prompt"][data-kind="terminal"] {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 0;
+
+  [data-slot="terminal-body"] {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+    min-height: 0;
+    padding: 12px 12px 0;
+  }
+
+  [data-slot="terminal-header"] {
+    padding: 0;
+  }
+
+  [data-slot="terminal-row"] {
+    display: grid;
+    grid-template-columns: 20px 1fr;
+    column-gap: 8px;
+    align-items: start;
+  }
+
+  [data-slot="terminal-row"][data-variant="header"] {
+    align-items: center;
+  }
+
+  [data-slot="terminal-icon"] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  [data-slot="terminal-icon"] [data-component="icon"] {
+    color: var(--icon-warning-base);
+  }
+
+  [data-slot="terminal-header-title"] {
+    font-family: var(--font-family-sans);
+    font-size: 14px;
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-large);
+    color: var(--v2-text-text-base);
+    min-width: 0;
+  }
+
+  [data-slot="terminal-hint"] {
+    font-family: var(--font-family-sans);
+    font-size: 14px;
+    font-weight: var(--font-weight-regular);
+    line-height: var(--line-height-large);
+    color: var(--v2-text-text-muted);
+    padding: 0;
+  }
+
+  [data-slot="terminal-command"] {
+    font-size: 13px;
+    line-height: var(--line-height-large);
+    color: var(--v2-text-text-base);
+    overflow-wrap: anywhere;
+    unicode-bidi: plaintext;
+  }
+
+  [data-slot="terminal-footer"] {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    padding: 16px 8px 8px;
+  }
+
+  [data-slot="terminal-footer-actions"] {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    [data-component="button"] {
+      padding-left: 12px;
+      padding-right: 12px;
+    }
+  }
+}
+
+[data-component="dock-prompt"][data-kind="question"] {
     [data-slot="question-header-title"],
     [data-slot="question-text"],
     [data-slot="option-label"] {
