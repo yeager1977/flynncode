@@ -14,7 +14,7 @@ import { useLanguage } from "@/context/language"
 import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
 import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
-import { messageAgentColor } from "@/utils/agent"
+import { agentColor, messageAgentColor } from "@/utils/agent"
 import { sessionTitle } from "@/utils/session-title"
 import { sessionPermissionRequest } from "../session/composer/session-request-tree"
 import { childSessionOnPath, getProjectAvatarSource, hasProjectPermissions } from "./helpers"
@@ -101,6 +101,8 @@ const SessionRow = (props: {
   href: string
   mobile?: boolean
   dense?: boolean
+  // The session's main agent name, shown under the title.
+  agent?: { name: string; tint?: string }
   tint: Accessor<string | undefined>
   isWorking: Accessor<boolean>
   hasPermissions: Accessor<boolean>
@@ -138,7 +140,19 @@ const SessionRow = (props: {
           </Switch>
         </div>
       </Show>
-      <span class="text-14-regular text-text-strong min-w-0 flex-1 truncate">{title()}</span>
+      <div class="min-w-0 flex-1 flex flex-col justify-center gap-0.5">
+        <span class="text-14-regular text-text-strong min-w-0 truncate">{title()}</span>
+        <Show when={props.agent} keyed>
+          {(agent) => (
+            <span
+              class="text-11-regular text-text-weak min-w-0 truncate capitalize"
+              style={{ color: agent.tint }}
+            >
+              {agent.name}
+            </span>
+          )}
+        </Show>
+      </div>
     </>
   )
   if (props.selecting) {
@@ -207,6 +221,14 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
   const tint = createMemo(() =>
     messageAgentColor(serverSync().session.data.message[props.session.id], sessionStore.agent),
   )
+  // The session's main agent; the server keeps session.agent fresh on every
+  // prompt. Hidden on child rows (their titles already carry the agent name)
+  // and on the collapsed rail where titles are only slivers.
+  const agentLabel = createMemo(() => {
+    const name = props.session.agent
+    if (!name || props.level || (!props.sidebarExpanded() && !props.mobile)) return undefined
+    return { name, tint: agentColor(name, sessionStore.agent.find((agent) => agent.name === name)?.color) }
+  })
   const tooltip = createMemo(() => props.showTooltip ?? (props.mobile || !props.sidebarExpanded()))
   const currentChild = createMemo(() => {
     if (!props.showChild) return
@@ -239,6 +261,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
       href={props.href?.(props.session) ?? `/${props.slug}/session/${props.session.id}`}
       mobile={props.mobile}
       dense={props.dense}
+      agent={agentLabel()}
       tint={tint}
       isWorking={isWorking}
       hasPermissions={hasPermissions}
