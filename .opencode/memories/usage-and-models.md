@@ -1,0 +1,3 @@
+- Usage circles should reflect the current session (context and used percentage of usage), not the entire account; add a page showing all enabled providers' limits and usage.
+- Filter OpenRouter model list to free models; make models' "input this in the terminal" requests obvious in the main session with a link.
+- OpenAI-style verbosity settings don't work like other model settings.

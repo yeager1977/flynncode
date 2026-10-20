@@ -1,2 +1,3 @@
-- Mobile UI must support multiple task lists with traversable file trees (not single-task, one-level selection).
-- Usage indicators should reflect the current session's context and used percentage, plus a page listing all enabled providers' limits and usage.
+- Model selector should also let the user pick which server runs the job.
+- Usage circles should show current-session context and used percentage; add a page showing all enabled providers' limits and usage.
+- Filter the OpenRouter model list to free models only.

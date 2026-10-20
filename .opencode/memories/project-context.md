@@ -1,2 +1,1 @@
-- Working on an opencode-based session/orchestrator server with agent loops ("/loop" command) and multi-agent task dispatch
-- Mobile connector targets GitHub repo: doza62/opencode-mobile (opencode iOS app)
+- The project is an OpenCode mobile connector for iOS, based on the user's GitHub repo `doza62/opencode-mobile`.

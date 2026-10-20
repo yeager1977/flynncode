@@ -1,0 +1,2 @@
+- New sessions should auto-update their names (timestamp-based names were rejected)
+- Finished sub-task work must be cleaned up from the right-hand view, not left sitting

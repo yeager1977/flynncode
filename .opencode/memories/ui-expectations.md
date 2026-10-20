@@ -1,0 +1,3 @@
+- Session/model selectors should also allow choosing which server runs the job
+- Usage display should show current-session context and percent used, plus a page listing all enabled providers' limits and usage
+- OpenRouter model list should be filtered to free models by default

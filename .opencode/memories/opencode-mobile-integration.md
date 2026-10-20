@@ -1,0 +1,1 @@
+- I use the opencode iOS mobile app (GitHub: doza62/opencode-mobile) as the mobile connector target; mobile UI must support multiple task lists, file-tree traversal (more than one level), and not lose task lists.

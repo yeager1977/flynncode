@@ -1,0 +1,2 @@
+- User reports tool call issues (e.g., apply_patch unavailable, MCP add failures) as they occur and expects them fixed
+- Recurring problems: server/session crashes, sub-agent tasks not cleaned from right-hand view, session names not updating after timestamps

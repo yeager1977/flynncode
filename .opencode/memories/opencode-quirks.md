@@ -1,0 +1,2 @@
+- Known issues being tracked: sessions disconnecting/crashing repeatedly, subagent work not cleaned up in right-hand view, session list not updating after creation, timestamp-based session names not refreshing, UI refresh killing rename/archive edits mid-interaction, delete option missing.
+- Model routing must propagate mid-run model changes to subagents; the old router ideas should not persist.

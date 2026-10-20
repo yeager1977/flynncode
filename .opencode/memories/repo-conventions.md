@@ -1,2 +1,1 @@
-- Repo lives at ~/GitHub/rl/rl-edge-dev (rl-edge project)
-- Merge all completed work to the `dev` branch
+- I ship installable artifacts for the project as a build plus a .deb file when the user asks for an update.

@@ -1,0 +1,2 @@
+- Mobile connector targets the opencode iOS app at github doza62/opencode-mobile
+- Deliverables include builds and .deb files for installation

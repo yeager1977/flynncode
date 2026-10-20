@@ -1,0 +1,1 @@
+- User prefers autonomous work: grants blanket approval with "yes go"/"continue" and expects execution without repeated confirmation prompts.

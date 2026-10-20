@@ -1,0 +1,2 @@
+- When I change models mid-run, the new model must apply to sub-agents too, not just the main session; model router logic must not override my selection.
+- Model selector should also allow choosing which server a job runs on; OpenRouter model list should be filterable to free models.

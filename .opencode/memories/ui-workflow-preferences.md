@@ -1,0 +1,2 @@
+- UI fixes requested: rename and archive flows must survive refreshes; delete must be an option; usage circles should reflect current session context/percent used
+- Wants a page showing all enabled providers' current limits and usage; filter OpenRouter model list to free models

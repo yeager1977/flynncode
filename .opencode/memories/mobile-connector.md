@@ -1,2 +1,1 @@
-- I use the opencode-mobile iOS app (github: doza62/opencode-mobile) as the mobile connector target for the server.
-- Mobile UX issues to keep fixing: task lists get lost, only one task viewable, limited file-tree traversal in new sessions.
+- I integrated the opencode iOS mobile app as the mobile connector; reference repo is GitHub `doza62/opencode-mobile`.

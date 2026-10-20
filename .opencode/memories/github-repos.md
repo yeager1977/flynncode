@@ -1,0 +1,1 @@
+- GitHub user is doza62; the opencode mobile connector should use the opencode-mobile iOS app at github.com/doza62/opencode-mobile

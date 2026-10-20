@@ -1,0 +1,2 @@
+- I work on an opencode hub/server project; the user tests via a mobile connector based on the opencode-mobile iOS app (github: doza62/opencode-mobile).
+- Build deliverables are requested as a new build plus a .deb install file.

@@ -1,1 +1,1 @@
-- I should use the opencode iOS mobile app as the mobile connector: repo `doza62/opencode-mobile` on GitHub.
+- Mobile connector targets the opencode iOS mobile app at github.com/doza62/opencode-mobile

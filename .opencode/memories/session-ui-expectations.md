@@ -1,0 +1,2 @@
+- New sessions must update their name after initial timestamp-based creation; sub-agent task entries must be cleaned up/removed from the right-hand view when finished.
+- Usage circles should reflect current session (context + used percentage), plus a page showing all enabled providers' current limits and usage.

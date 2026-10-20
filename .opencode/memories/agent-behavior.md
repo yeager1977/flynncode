@@ -1,0 +1,4 @@
+- Sub task work must be cleaned up from the right-hand view when finished.
+- Session names must update after timestamp-based naming; new sessions must appear in the list.
+- When models are changed mid-run, sub agents must use the new model (no stale model routing).
+- When a model asks the user to run terminal commands, surface it obviously in the main session with a link, since no terminal exists there.

@@ -1,0 +1,1 @@
+- The user reports tool call failures as they occur (e.g., apply_patch unavailable in a session -> fix so it doesn't happen); fix each when reported. Also MCP add failures were reported.
