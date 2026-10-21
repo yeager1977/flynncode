@@ -402,7 +402,15 @@ const layer = Layer.effect(
             )
             if (!SessionInput.equivalent(admitted, expected))
               return yield* new PromptConflictError({ sessionID: input.sessionID, messageID })
-            if (input.resume !== false) yield* execution.wake(admitted.sessionID)
+            if (input.resume !== false) {
+              // A steer must take effect now: stop the running turn so the model
+              // pivots to the new instruction instead of finishing the old one
+              // first. The interrupt settles the turn (in-flight tools fail), and
+              // the wake then promotes the steer into the next turn.
+              if (delivery === "steer" && (yield* execution.active).has(admitted.sessionID))
+                yield* execution.interrupt(admitted.sessionID)
+              yield* execution.wake(admitted.sessionID)
+            }
             return admitted
           }),
         ),

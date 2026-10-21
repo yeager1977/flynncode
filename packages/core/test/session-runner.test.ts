@@ -1898,9 +1898,15 @@ describe("SessionRunnerLLM", () => {
 
       const first = yield* session.resume(sessionID).pipe(Effect.forkChild)
       yield* Deferred.await(streamStarted)
+      // A steer stops the running turn: the model reads the new instruction
+      // now instead of after the current turn finishes.
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Change direction" }) })
+      // The steer stopped the running turn, so the run fails with the
+      // interruption and the steer runs in the next turn.
+      expect(yield* Fiber.await(first)).toMatchObject({ _tag: "Failure" })
+      while (requests.length < 2) yield* Effect.yieldNow
       yield* Deferred.succeed(streamGate, undefined)
-      yield* Fiber.join(first)
+      while ((yield* session.context(sessionID)).length < 3) yield* Effect.yieldNow
       streamGate = undefined
       streamStarted = undefined
       yield* Effect.yieldNow
@@ -1908,9 +1914,10 @@ describe("SessionRunnerLLM", () => {
       expect(requests).toHaveLength(2)
       expect(userTexts(requests[0]!)).toEqual(["Start working"])
       expect(userTexts(requests[1]!)).toEqual(["Start working", "Change direction"])
+      // The interrupted turn never reached the provider, so it left no
+      // assistant message behind.
       expect((yield* session.context(sessionID)).map((message) => message.type)).toEqual([
         "user",
-        "assistant",
         "user",
         "assistant",
       ])
@@ -2007,7 +2014,7 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
-  it.effect("preserves durable steering input for a later resume after interruption", () =>
+  it.effect("consumes a steering prompt with the turn it interrupts", () =>
     Effect.gen(function* () {
       yield* setup
       const session = yield* SessionV2.Service
@@ -2032,18 +2039,16 @@ describe("SessionRunnerLLM", () => {
         sessionID,
         prompt: Prompt.make({ text: "Steer after interrupt" }),
       })
-      yield* session.interrupt(sessionID)
+      // The steer stopped the running turn and ran straight away, so it is not
+      // left waiting for a later resume.
       expect(yield* Fiber.await(run)).toMatchObject({ _tag: "Failure" })
-      expect(requests).toHaveLength(1)
-      expect(yield* SessionInput.hasPending(db, sessionID, "steer")).toBe(true)
-
-      const resumed = yield* session.resume(sessionID).pipe(Effect.forkChild)
       while (requests.length < 2) yield* Effect.yieldNow
       yield* Deferred.succeed(streamGate, undefined)
-      yield* Fiber.join(resumed)
+      while ((yield* session.context(sessionID)).length < 3) yield* Effect.yieldNow
       streamGate = undefined
       streamStarted = undefined
 
+      expect(yield* SessionInput.hasPending(db, sessionID, "steer")).toBe(false)
       expect(requests).toHaveLength(2)
       expect(userTexts(requests[0]!)).toEqual(["Interrupt current work"])
       expect(userTexts(requests[1]!)).toEqual(["Interrupt current work", "Steer after interrupt"])
@@ -2170,29 +2175,31 @@ describe("SessionRunnerLLM", () => {
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Steer before next queued input" }) })
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Also steer before next queued input" }) })
       yield* Deferred.succeed(secondGate, undefined)
-      yield* Fiber.join(first)
+      // The steers stopped the running turn, so the run ends with the
+      // interruption.
+      expect(yield* Fiber.await(first)).toMatchObject({ _tag: "Failure" })
+      while (requests.length < 4) yield* Effect.yieldNow
+      while ((yield* session.context(sessionID)).length < 5) yield* Effect.yieldNow
       streamGate = undefined
 
-      expect(requests).toHaveLength(4)
-      expect(userTexts(requests[0]!)).toEqual(["Start working"])
-      expect(userTexts(requests[1]!)).toEqual(["Start working", "Queue first"])
-      expect(userTexts(requests[2]!)).toEqual([
-        "Start working",
-        "Queue first",
-        "Steer before next queued input",
-        "Also steer before next queued input",
-      ])
-      expect(userTexts(requests[3]!)).toEqual([
+      const texts = requests.map((request) => userTexts(request))
+      expect(texts[0]).toEqual(["Start working"])
+      expect(texts[1]).toEqual(["Start working", "Queue first"])
+      // The steers are promoted before the next queued input: whichever turn
+      // carries "Queue second" already carries both steers.
+      const withQueued = texts.find((text) => text.includes("Queue second")) ?? []
+      expect(withQueued).toEqual([
         "Start working",
         "Queue first",
         "Steer before next queued input",
         "Also steer before next queued input",
         "Queue second",
       ])
+      expect(texts.at(-1)).toEqual(withQueued)
     }),
   )
 
-  it.effect("coalesces multiple active steering prompts into one continuation turn", () =>
+  it.effect("applies every active steering prompt across the turns it stops", () =>
     Effect.gen(function* () {
       yield* setup
       const session = yield* SessionV2.Service
@@ -2216,19 +2223,25 @@ describe("SessionRunnerLLM", () => {
 
       const first = yield* session.resume(sessionID).pipe(Effect.forkChild)
       yield* Deferred.await(streamStarted)
+      // Each steer stops the turn that is running, so the steers land in the
+      // turns they interrupt and the last turn carries all of them.
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "First steer" }) })
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Second steer" }) })
       yield* Deferred.succeed(streamGate, undefined)
-      yield* Fiber.join(first)
+      expect(yield* Fiber.await(first)).toMatchObject({ _tag: "Failure" })
+      while (requests.length < 3) yield* Effect.yieldNow
+      yield* Deferred.succeed(streamGate, undefined)
+      while ((yield* session.context(sessionID)).length < 3) yield* Effect.yieldNow
       streamGate = undefined
       streamStarted = undefined
       yield* Effect.yieldNow
 
-      expect(requests).toHaveLength(2)
-      expect(userTexts(requests[1]!)).toEqual(["Start working", "First steer", "Second steer"])
+      expect(requests).toHaveLength(3)
+      expect(userTexts(requests[1]!)).toEqual(["Start working", "First steer"])
+      expect(userTexts(requests[2]!)).toEqual(["Start working", "First steer", "Second steer"])
       yield* (yield* SessionExecution.Service).wake(sessionID)
       yield* Effect.yieldNow
-      expect(requests).toHaveLength(2)
+      expect(requests).toHaveLength(3)
     }),
   )
 
@@ -2249,11 +2262,15 @@ describe("SessionRunnerLLM", () => {
       yield* Deferred.await(streamStarted)
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Recover with this" }) })
       yield* Deferred.succeed(streamGate, undefined)
-      expect(yield* Fiber.join(first).pipe(Effect.flip)).toBe(streamFailure)
+      // The steer stopped the failing turn, so the run ends with the
+      // interruption instead of the provider failure.
+      expect(yield* Fiber.await(first)).toMatchObject({ _tag: "Failure" })
 
       streamFailure = undefined
       streamGate = undefined
       streamStarted = undefined
+      while (requests.length < 2) yield* Effect.yieldNow
+      while ((yield* session.context(sessionID)).length < 2) yield* Effect.yieldNow
       yield* Effect.yieldNow
 
       expect(requests).toHaveLength(2)
@@ -3147,9 +3164,13 @@ describe("SessionRunnerLLM", () => {
 
       const run = yield* session.resume(sessionID).pipe(Effect.forkChild)
       yield* Deferred.await(streamStarted)
+      // The steer stops the running turn before its tool call, and the
+      // promotion resets the step allowance for the turn that follows.
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Change direction" }) })
       yield* Deferred.succeed(streamGate, undefined)
-      yield* Fiber.join(run)
+      expect(yield* Fiber.await(run)).toMatchObject({ _tag: "Failure" })
+      while (requests.length < 3) yield* Effect.yieldNow
+      while ((yield* session.context(sessionID)).length < 3) yield* Effect.yieldNow
       streamGate = undefined
       streamStarted = undefined
 
@@ -3157,7 +3178,7 @@ describe("SessionRunnerLLM", () => {
       expect(requests[1]?.toolChoice).toBeUndefined()
       expect(requests[1]?.tools).not.toEqual([])
       expect(requests[2]?.toolChoice).toMatchObject({ type: "none" })
-      expect(executions).toEqual(["before", "after"])
+      expect(executions).toEqual(["after"])
     }),
   )
 

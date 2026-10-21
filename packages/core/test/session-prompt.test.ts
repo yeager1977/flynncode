@@ -23,6 +23,7 @@ import { testEffect } from "./lib/effect"
 const executionCalls: SessionV2.ID[] = []
 const interruptCalls: SessionV2.ID[] = []
 const wakeCalls: SessionV2.ID[] = []
+const order: string[] = []
 const activeSessions = new Set<SessionV2.ID>()
 const execution = Layer.succeed(
   SessionExecution.Service,
@@ -35,10 +36,12 @@ const execution = Layer.succeed(
     interrupt: (sessionID) =>
       Effect.sync(() => {
         interruptCalls.push(sessionID)
+        order.push("interrupt")
       }),
     wake: (sessionID) =>
       Effect.sync(() => {
         wakeCalls.push(sessionID)
+        order.push("wake")
       }),
   }),
 )
@@ -138,6 +141,70 @@ describe("SessionV2.prompt", () => {
       yield* session.interrupt(SessionV2.ID.make("ses_missing"))
       expect(interruptCalls).toEqual([SessionV2.ID.make("ses_missing")])
     }),
+  )
+
+  it.effect("a steer interrupts the running turn before waking it", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      interruptCalls.length = 0
+      wakeCalls.length = 0
+      order.length = 0
+      activeSessions.add(sessionID)
+
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Pivot now" }) })
+
+      // The model must see the new instruction now, not after the running
+      // turn finishes: the steer stops the turn, then execution resumes.
+      expect(interruptCalls).toEqual([sessionID])
+      expect(wakeCalls).toEqual([sessionID])
+      expect(order).toEqual(["interrupt", "wake"])
+    }).pipe(Effect.ensuring(Effect.sync(() => activeSessions.clear()))),
+  )
+
+  it.effect("a queued prompt waits for the session to go idle", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      interruptCalls.length = 0
+      wakeCalls.length = 0
+      activeSessions.add(sessionID)
+
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Later" }), delivery: "queue" })
+
+      expect(interruptCalls).toEqual([])
+      expect(wakeCalls).toEqual([sessionID])
+    }).pipe(Effect.ensuring(Effect.sync(() => activeSessions.clear()))),
+  )
+
+  it.effect("an idle session is not interrupted", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      interruptCalls.length = 0
+      wakeCalls.length = 0
+      activeSessions.clear()
+
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Start" }) })
+
+      expect(interruptCalls).toEqual([])
+      expect(wakeCalls).toEqual([sessionID])
+    }),
+  )
+
+  it.effect("an admit-only prompt leaves the running turn alone", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      interruptCalls.length = 0
+      wakeCalls.length = 0
+      activeSessions.add(sessionID)
+
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Record only" }), resume: false })
+
+      expect(interruptCalls).toEqual([])
+      expect(wakeCalls).toEqual([])
+    }).pipe(Effect.ensuring(Effect.sync(() => activeSessions.clear()))),
   )
 
   it.effect("durably admits one user message before transcript promotion", () =>
