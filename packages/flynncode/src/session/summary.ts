@@ -69,6 +69,25 @@ export interface Interface {
   readonly computeDiff: (input: { messages: SessionV1.WithParts[] }) => Effect.Effect<Snapshot.FileDiff[]>
 }
 
+// A turn's diff list is stored on the user message, copied into the message
+// event and mirrored into the session row, so its patch text is paid for
+// three times over. Keep the file metadata for every file, but bound what is
+// stored: a file's diff is loaded on demand whenever its patch is missing.
+export const summaryLimit = {
+  files: 2_000,
+  patchBytes: 64 * 1024,
+}
+
+export function boundSummaryDiffs(diffs: Snapshot.FileDiff[]) {
+  let budget = summaryLimit.patchBytes
+  return diffs.slice(0, summaryLimit.files).map((diff) => {
+    if (!diff.patch) return diff
+    if (diff.patch.length > budget) return { ...diff, patch: "" }
+    budget -= diff.patch.length
+    return diff
+  })
+}
+
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionSummary") {}
 
 const layer = Layer.effect(
@@ -122,7 +141,7 @@ const layer = Layer.effect(
       const target = messages.find((m) => m.info.id === input.messageID)
       if (!target || target.info.role !== "user") return
       const msgDiffs = yield* computeDiff({ messages })
-      target.info.summary = { ...target.info.summary, diffs: msgDiffs }
+      target.info.summary = { ...target.info.summary, diffs: boundSummaryDiffs(msgDiffs) }
       yield* sessions.updateMessage(target.info)
     })
 
