@@ -334,7 +334,7 @@ exports[`tool parameters JSON Schema (wire shape) task 1`] = `
       "type": "string",
     },
     "model": {
-      "description": "Only with task_id: provider/model to move a task that stopped on a usage limit onto a different model than the one that hit it. Ignored otherwise; subagents run on the model selected for the session.",
+      "description": "provider/model to run this subagent on. Pass it only when the user asked for a specific model; omit it otherwise and the subagent runs on the model selected for the session (or the model configured for its agent type).",
       "type": "string",
     },
     "prompt": {

@@ -70,6 +70,28 @@ const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
 const it = testEffect(layer())
 const background = testEffect(layer({ experimentalBackgroundSubagents: true }))
 
+const testProvider = {
+  name: "Test",
+  id: "test",
+  env: [],
+  npm: "@ai-sdk/openai-compatible",
+  models: {
+    "test-model": {
+      id: "test-model",
+      name: "Test Model",
+      attachment: false,
+      reasoning: false,
+      temperature: false,
+      tool_call: true,
+      release_date: "2025-01-01",
+      limit: { context: 100000, output: 10000 },
+      cost: { input: 0, output: 0 },
+      options: {},
+    },
+  },
+  options: { apiKey: "test-key", baseURL: "http://localhost:1/v1" },
+}
+
 const otherProvider = {
   name: "Other",
   id: "other",
@@ -532,7 +554,7 @@ describe("tool.task", () => {
   )
 
   it.instance(
-    "execute ignores the model parameter for a new task and runs on the calling session's model",
+    "execute runs a new task on the model the caller asked for",
     () =>
       Effect.gen(function* () {
         const { chat, assistant } = yield* seed()
@@ -559,22 +581,20 @@ describe("tool.task", () => {
           },
         )
 
-        expect(seen?.model).toEqual(ref)
-        // The variant belongs to the calling model, so it travels with it.
-        expect(seen?.variant).toBe("xhigh")
-        expect(result.metadata.model).toEqual(ref)
-        // The LLM is told, so it stops repeating an argument that has no effect.
-        expect(result.output).toContain("The model argument was ignored")
-        expect(result.output).toContain("ran on test/test-model")
+        expect(seen?.model).toEqual(otherRef)
+        // The session's variant belongs to its own model, not to this one.
+        expect(seen?.variant).toBeUndefined()
+        expect(result.metadata.model).toEqual(otherRef)
+        expect(result.output).not.toContain("The model argument was ignored")
       }),
     { config: { provider: { other: otherProvider } } },
   )
 
-  // Models copy the `model` argument from their earlier task calls. After the
-  // user switches the session's model mid-run, the repeated argument used to
-  // keep sending every new subagent to the previous model.
+  // A requested model wins over the session's current model: the user asked
+  // for it, and the tool description asks the model to pass one only when the
+  // user did.
   it.instance(
-    "execute follows a mid-run model switch even when the LLM repeats the previous model",
+    "execute runs on the requested model even after a mid-run model switch",
     () =>
       Effect.gen(function* () {
         const { chat, assistant } = yield* seed()
@@ -602,10 +622,10 @@ describe("tool.task", () => {
           },
         )
 
-        expect(seen?.model).toEqual(otherRef)
-        expect(result.metadata.model).toEqual(otherRef)
+        expect(seen?.model).toEqual(ref)
+        expect(result.metadata.model).toEqual(ref)
       }),
-    { config: { provider: { other: otherProvider } } },
+    { config: { provider: { test: testProvider, other: otherProvider } } },
   )
 
   it.instance("execute fails naming an unknown model when resuming a usage-limited task", () =>
@@ -1343,10 +1363,10 @@ describe("tool.task", () => {
     { config: { provider: { other: otherProvider } } },
   )
 
-  // Resuming a healthy task is not a model change request. The LLM repeats the
-  // child's own model to keep it going; the user's selection still wins.
+  // A resumed task runs on the model the caller asked for, not only when the
+  // previous run stopped on a usage limit.
   it.instance(
-    "execute resumes a task that did not hit a limit on the calling session's model",
+    "execute resumes a task that did not hit a limit on the requested model",
     () =>
       Effect.gen(function* () {
         const sessions = yield* Session.Service
@@ -1378,9 +1398,9 @@ describe("tool.task", () => {
         )
 
         expect(seen?.sessionID).toBe(child.id)
-        expect(seen?.model).toEqual(ref)
-        expect(result.metadata.model).toEqual(ref)
-        expect(result.output).toContain("The model argument was ignored")
+        expect(seen?.model).toEqual(otherRef)
+        expect(result.metadata.model).toEqual(otherRef)
+        expect(result.output).not.toContain("The model argument was ignored")
       }),
     { config: { provider: { other: otherProvider } } },
   )
@@ -1425,10 +1445,10 @@ describe("tool.task", () => {
     { config: { provider: { other: otherProvider } } },
   )
 
-  // A run the user interrupted is not a limit either: they stopped it, switched
-  // models and expect the resumed task to follow.
+  // A run the user interrupted is not a limit either: they stopped it and
+  // expect the resumed task to follow the model they asked for.
   it.instance(
-    "execute resumes an interrupted task on the calling session's model",
+    "execute resumes an interrupted task on the requested model",
     () =>
       Effect.gen(function* () {
         const sessions = yield* Session.Service
@@ -1459,7 +1479,7 @@ describe("tool.task", () => {
           },
         )
 
-        expect(seen?.model).toEqual(ref)
+        expect(seen?.model).toEqual(otherRef)
       }),
     { config: { provider: { other: otherProvider } } },
   )

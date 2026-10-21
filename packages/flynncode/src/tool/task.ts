@@ -62,7 +62,7 @@ const BaseParameterFields = {
   }),
   model: Schema.optional(Schema.String).annotate({
     description:
-      "Only with task_id: provider/model to move a task that stopped on a usage limit onto a different model than the one that hit it. Ignored otherwise; subagents run on the model selected for the session.",
+      "provider/model to run this subagent on. Pass it only when the user asked for a specific model; omit it otherwise and the subagent runs on the model selected for the session (or the model configured for its agent type).",
   }),
   cleanup: Schema.optional(Schema.Literals(["retain", "dispose"])).annotate({
     description: "Keep the temp worktree after the task (retain) or mark it disposable on archive (dispose)",
@@ -135,7 +135,7 @@ function renderUsageLimit(input: {
           }`,
         ]
       : []),
-    `Resume with task_id: ${input.taskID}; it continues on the session's current model. Pass a different \`model\` (provider/model) only if the session is still on ${input.model}, or wait until the limit resets.`,
+    `Resume with task_id: ${input.taskID}; it continues on the session's current model. Pass a different \`model\` (provider/model) to move it off ${input.model}, or wait until the limit resets.`,
   ].join("\n")
 }
 
@@ -202,13 +202,15 @@ export const TaskTool = Tool.define(
         ? yield* sessions.get(SessionID.make(params.task_id)).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
         : undefined
 
-      // The model argument is the calling LLM's guess, and models copy it from
-      // their earlier task calls. Once the user switched models mid-run, that
-      // stale copy kept sending new and resumed subagents to the previous model
-      // (50 of the 51 mismatching calls in a 3-day sample), so the user's
-      // selection (the model of the calling message) wins. The argument only
-      // counts as the documented recovery: moving a resumed task whose last run
-      // hit a usage limit onto a different model than the one that hit it.
+      // The user can ask for a specific model for a subagent. When they do,
+      // the call carries it and it wins over the session's model and over the
+      // model configured for the agent type. Models sometimes copy the
+      // argument from an earlier call, so the parameter description asks for
+      // it only when the user asked for a model.
+      // The one case that keeps its own rule: resuming a task that stopped on
+      // a usage limit onto the same model that hit the limit would only hit
+      // the limit again, so that request is ignored and the run continues on
+      // the session's model.
       const lastRun = session
         ? yield* sessions
             .findMessage(session.id, (item) => item.info.role === "assistant")
@@ -225,9 +227,10 @@ export const TaskTool = Tool.define(
       const requestedModel =
         parsedModel &&
         limitedOn &&
-        (parsedModel.providerID !== limitedOn.providerID || parsedModel.modelID !== limitedOn.modelID)
-          ? parsedModel
-          : undefined
+        parsedModel.providerID === limitedOn.providerID &&
+        parsedModel.modelID === limitedOn.modelID
+          ? undefined
+          : parsedModel
 
       // Resolve the requested model before any session or worktree is created
       // so an unknown model fails without side effects.
@@ -400,7 +403,7 @@ export const TaskTool = Tool.define(
       // Told to the LLM so it stops repeating an argument that has no effect.
       const modelNote =
         params.model && !requestedModel
-          ? `The model argument was ignored (it only applies when resuming a task that stopped on a usage limit). This task ran on ${model.providerID}/${model.modelID}.`
+          ? `The model argument was ignored (it named the same model that hit the usage limit). This task ran on ${model.providerID}/${model.modelID}.`
           : undefined
       const metadata = {
         parentSessionId: ctx.sessionID,
