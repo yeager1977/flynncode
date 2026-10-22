@@ -310,7 +310,7 @@ Examples:
     return
   }
 
-  if (failed.length) console.error(`\nOpenCode failed for: ${failed.map((result) => result.locale).join(", ")}`)
+  if (failed.length) console.error(`\nFlynncode failed for: ${failed.map((result) => result.locale).join(", ")}`)
   if (incomplete.length)
     console.error(`Translation remains incomplete for: ${incomplete.map((plan) => plan.locale).join(", ")}`)
   if (escaped.length) console.error(`Translation changed files outside its locale targets: ${escaped.join(", ")}`)

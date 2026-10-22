@@ -15,8 +15,8 @@ Flynncode Goでは、人気のオープンなコーディングモデルに安�
 | **Go**      | **月額$10** | 以下のモデルを低コストで利用可能 |
 | **Go Plus** | **月額$40** | 以下のモデルをより多く利用可能   |
 
-GoはOpenCodeの他のプロバイダーと同様に機能します。Flynncode Goをサブスクライブして
-APIキーを取得します。これは**完全に任意**であり、OpenCodeを使用するために
+GoはFlynncodeの他のプロバイダーと同様に機能します。Flynncode Goをサブスクライブして
+APIキーを取得します。これは**完全に任意**であり、Flynncodeを使用するために
 必須ではありません。
 
 このサービスは主に海外ユーザー向けに設計されており、世界中から安定してアクセスできます。
@@ -30,7 +30,7 @@ APIキーを取得します。これは**完全に任意**であり、OpenCode�
 しかし、これらのモデルに安定して低遅延でアクセスすることは困難な場合があります。プロバイダーによって品質や可用性が異なります。
 
 :::tip
-OpenCodeでうまく動作する一部のモデルとプロバイダーをテストしました。
+Flynncodeでうまく動作する一部のモデルとプロバイダーをテストしました。
 :::
 
 この問題を解決するために、私たちはいくつかの取り組みを行いました：
@@ -45,7 +45,7 @@ GoとGo Plusのどちらでもこれらのモデルを利用できます。利�
 
 ## 仕組み
 
-Flynncode Goは、OpenCodeの他のプロバイダーと同様に機能します。
+Flynncode Goは、Flynncodeの他のプロバイダーと同様に機能します。
 
 1. **<a href={console}>Flynncode Console</a>**にサインインし、GoまたはGo PlusをサブスクライブしてAPIキーをコピーします。
 2. TUIで`/connect`コマンドを実行し、`Flynncode Go`を選択して、APIキーを貼り付けます。
@@ -105,18 +105,18 @@ Flynncode Goは、[Flynncode](https://opencode.ai)および同様の種類のリ
 
 ### 動作確認済みのクライアント
 
-OpenCodeに加えて、以下のクライアントがOpenCode Goで正常に動作することを確認しています。
+Flynncodeに加えて、以下のクライアントがFlynncode Goで正常に動作することを確認しています。
 ただし、今後も動作し続けることを保証するものではありません。
 
 | クライアント      | セッション対応                                                                                                                                                                                                                                                                |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Hermes**        | [PR #101864](https://github.com/NousResearch/hermes-agent/pull/101864)を含むビルドでは、OpenCodeのメインリクエストと補助リクエストの両方でヘッダーが送信されます。この修正はv0.21.0より後にマージされたため、v0.21.0自体には含まれていません。                                |
+| **Hermes**        | [PR #101864](https://github.com/NousResearch/hermes-agent/pull/101864)を含むビルドでは、Flynncodeのメインリクエストと補助リクエストの両方でヘッダーが送信されます。この修正はv0.21.0より後にマージされたため、v0.21.0自体には含まれていません。                                |
 | **Claude Code**   | GoはClaude Code固有のセッションヘッダーを認識します。カスタムヘッダーを追加するラッパーは不要です。                                                                                                                                                                           |
 | **Codex**         | GoはCodex固有のセッションヘッダーを認識します。一部のバージョンやプロキシ設定では引き続きヘッダーが省略されるため、リクエストを転送するときはセッションヘッダーを保持してください。                                                                                           |
 | **ZCode**         | GoはZCode固有のセッションヘッダーを認識します。[`x-opencode-session`の追加リクエスト](https://github.com/zai-org/feedback/issues/492)は未解決ですが、この特定のヘッダーを送信する必要はなくなりました。                                                                       |
-| **Pi**            | 現在のビルドはOpenCodeにセッション情報を送信します。古いインストールは更新してください。                                                                                                                                                                                      |
+| **Pi**            | 現在のビルドはFlynncodeにセッション情報を送信します。古いインストールは更新してください。                                                                                                                                                                                      |
 | **jcode**         | [セッションヘッダーの修正](https://github.com/1jehuang/jcode/issues/1167)を含む**v0.81.6以降**に更新してください。                                                                                                                                                            |
-| **Kilo Code CLI** | [PR #13752](https://github.com/Kilo-Org/kilocode/pull/13752)を含むビルドでは、OpenCodeのセッションヘッダーが再び送信されます。この修正の対象はCLIであり、VS Code拡張機能ではありません。[issue #13723](https://github.com/Kilo-Org/kilocode/issues/13723)を参照してください。 |
+| **Kilo Code CLI** | [PR #13752](https://github.com/Kilo-Org/kilocode/pull/13752)を含むビルドでは、Flynncodeのセッションヘッダーが再び送信されます。この修正の対象はCLIであり、VS Code拡張機能ではありません。[issue #13723](https://github.com/Kilo-Org/kilocode/issues/13723)を参照してください。 |
 
 ### 既知の問題があるクライアント
 
@@ -415,7 +415,7 @@ Goでは、含まれる月間利用枠がモデルによって異なります。
 | Hy3                          | hy3                          | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
 | Space Bunny Free             | space-bunny-free             | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
 
-OpenCode設定の[model id](/docs/config/#models)は、`opencode-go/<model-id>`という形式を使用します。Kimi K3の場合は、設定で
+Flynncode設定の[model id](/docs/config/#models)は、`opencode-go/<model-id>`という形式を使用します。Kimi K3の場合は、設定で
 `opencode-go/kimi-k3`を使用します。
 
 ---
@@ -480,4 +480,4 @@ Flynncode Goを作成した目的は以下の通りです：
 1. 低価格のサブスクリプションで、より多くの人がAIコーディングを**利用しやすく**する。
 2. 最高のオープンなコーディングモデルに**安定した**アクセスを提供する。
 3. コーディングエージェントの利用向けに**テストおよびベンチマークされた**モデルを厳選する。
-4. OpenCodeで他のプロバイダーも使用できるようにすることで、**ベンダーロックインをなくす**。
+4. Flynncodeで他のプロバイダーも使用できるようにすることで、**ベンダーロックインをなくす**。

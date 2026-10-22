@@ -700,9 +700,9 @@ git mv .opencode .flynncode
 - [ ] **Step 2: Brand-swap user-facing prose**
 
 ```bash
-grep -rln '\bOpenCode\b' packages/app packages/session-ui packages/tui packages/web docs specs \
+grep -rln '\bFlynncode\b' packages/app packages/session-ui packages/tui packages/web docs specs \
   --exclude-dir=node_modules \
-  | xargs sed -i 's/\bOpenCode\b/Flynncode/g'
+  | xargs sed -i 's/\bFlynncode\b/Flynncode/g'
 ```
 
 Careful: skip `packages/app` files importing `@opencode-ai/client` where the text `Flynncode` is the class name from the vendored SDK — after the sed, `git diff` and revert any line that changed an SDK-identifier (`Flynncode` class) rather than prose:

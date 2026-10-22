@@ -85,7 +85,7 @@ opencode github install
 - `agent`: الـagent الذي سيتم استخدامه. يجب أن يكون agent أساسيًا. يعود افتراضيًا إلى `default_agent` من الإعدادات أو `"build"` إذا لم يُعثر عليه.
 - `share`: هل تتم مشاركة جلسة Flynncode. القيمة الافتراضية **true** للمستودعات العامة.
 - `prompt`: موجه مخصص اختياري لتجاوز السلوك الافتراضي. استخدمه لتخصيص كيفية معالجة Flynncode للطلبات.
-- `token`: GitHub access token اختياري لتنفيذ عمليات مثل إنشاء التعليقات، وcommit للتغييرات، وفتح Pull Requests. افتراضيًا يستخدم Flynncode installation access token الخاص بـOpenCode GitHub App، لذا تظهر commits والتعليقات وPull Requests وكأنها صادرة من التطبيق.
+- `token`: GitHub access token اختياري لتنفيذ عمليات مثل إنشاء التعليقات، وcommit للتغييرات، وفتح Pull Requests. افتراضيًا يستخدم Flynncode installation access token الخاص بـFlynncode GitHub App، لذا تظهر commits والتعليقات وPull Requests وكأنها صادرة من التطبيق.
 
   بدلًا من ذلك، يمكنك استخدام [`GITHUB_TOKEN` المدمج](https://docs.github.com/en/actions/tutorials/authenticate-with-github_token) في GitHub Action runner دون تثبيت Flynncode GitHub App. فقط تأكد من منح الأذونات المطلوبة في الـworkflow:
 
