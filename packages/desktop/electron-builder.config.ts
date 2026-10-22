@@ -78,6 +78,12 @@ const getBase = (appId: string): Configuration => ({
       to: "native/",
       filter: ["index.js", "index.d.ts", "build/Release/mac_window.node", "swift-build/**"],
     },
+    // The tray icon has to be a real file on disk: nativeImage cannot read
+    // it out of the asar.
+    {
+      from: "resources/icons/icon.png",
+      to: "icons/tray.png",
+    },
   ],
   mac: {
     category: "public.app-category.developer-tools",

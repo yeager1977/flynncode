@@ -59,6 +59,7 @@ import type { SidecarSyncCommand } from "./sidecar-sync"
 import { getOrCreateMobilePhonePassword } from "./mobile-password"
 import { generateRelayToken } from "./relay-publisher"
 import { getStore } from "./store"
+import { createTray, destroyTray, trayActive } from "./tray"
 
 const APP_NAMES: Record<string, string> = {
   dev: "OpenCode Dev",
@@ -253,6 +254,7 @@ const main = Effect.gen(function* () {
 
   app.on("will-quit", () => {
     setAppQuitting()
+    destroyTray()
     void stopSidecars()
   })
 
@@ -503,8 +505,13 @@ const main = Effect.gen(function* () {
 
   yield* Fiber.await(loadingTask)
 
+  // The tray icon keeps the app (and its sidecar server, so sessions keep
+  // running) alive once the window is closed.
+  createTray()
+
   app.on("window-all-closed", () => {
     if (process.platform === "darwin") return
+    if (trayActive()) return
     app.quit()
   })
   app.on("activate", () => {

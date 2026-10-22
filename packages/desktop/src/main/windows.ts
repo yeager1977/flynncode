@@ -5,6 +5,7 @@ import oc2ThemeJson from "../../../ui/src/theme/themes/oc-2.json"
 import { randomUUID } from "node:crypto"
 import { rmSync } from "node:fs"
 import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol, shell } from "electron"
+import { shouldHideOnClose, trayActive } from "./tray-state"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
@@ -90,6 +91,13 @@ function iconsDir() {
   return app.isPackaged ? join(process.resourcesPath, "icons") : join(root, "../../resources/icons")
 }
 
+export function trayIconPath() {
+  // The packaged app keeps the tray icon outside the asar; in development it
+  // sits with the other icons.
+  if (app.isPackaged) return join(process.resourcesPath, "icons/tray.png")
+  return join(iconsDir(), "icon.png")
+}
+
 function iconPath() {
   const ext = process.platform === "win32" ? "ico" : "png"
   return join(iconsDir(), `icon.${ext}`)
@@ -158,6 +166,17 @@ export function getLastFocusedWindow() {
 export function restoreMainWindows() {
   const ids = registry.persisted()
   return (ids.length ? ids : [randomUUID()]).map((id) => createMainWindow(id))
+}
+
+export function showMainWindows() {
+  const windows = registry.list().filter((win) => !win.isDestroyed())
+  if (windows.length === 0) {
+    // Every window was closed for real: open a fresh one.
+    restoreMainWindows()
+    return
+  }
+  for (const win of windows) win.show()
+  windows[0]?.focus()
 }
 
 export function setDockIcon() {
@@ -229,6 +248,15 @@ export function createMainWindow(id: string = randomUUID()) {
 
   win.once("ready-to-show", () => {
     win.show()
+  })
+
+  // With the tray icon in place, closing the window only hides it: the
+  // sidecar server keeps running so sessions continue, and the tray brings
+  // the UI back.
+  win.on("close", (event) => {
+    if (!shouldHideOnClose({ trayActive: trayActive(), quitting: registry.isQuitting() })) return
+    event.preventDefault()
+    win.hide()
   })
 
   return win
