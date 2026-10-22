@@ -33608,7 +33608,7 @@
     "env": ["OPENCODE_API_KEY"],
     "npm": "@ai-sdk/openai-compatible",
     "api": "https://opencode.ai/zen/go/v1",
-    "name": "OpenCode Go",
+    "name": "Flynncode Go",
     "doc": "https://opencode.ai/docs/zen",
     "models": {
       "deepseek-v4-flash": {
@@ -90324,7 +90324,7 @@
     "env": ["OPENCODE_API_KEY"],
     "npm": "@ai-sdk/openai-compatible",
     "api": "https://opencode.ai/zen/v1",
-    "name": "OpenCode Zen",
+    "name": "Flynncode Zen",
     "doc": "https://opencode.ai/docs/zen",
     "models": {
       "ring-2.6-1t-free": {

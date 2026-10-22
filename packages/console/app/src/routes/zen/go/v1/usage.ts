@@ -101,7 +101,7 @@ export async function GET(input: APIEvent) {
         type: "error",
         error: {
           type: "EntitlementError",
-          message: "OpenCode Go subscription required.",
+          message: "Flynncode Go subscription required.",
         },
       }),
       {

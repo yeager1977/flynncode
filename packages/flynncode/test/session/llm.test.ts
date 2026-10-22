@@ -840,7 +840,7 @@ describe("session.llm.stream", () => {
             enabled_providers: [input.providerID],
             provider: {
               [input.providerID]: {
-                name: "OpenCode Test",
+                name: "Flynncode Test",
                 npm: "@ai-sdk/openai-compatible",
                 models: { [fixture.model.id]: configModel(fixture.model) as ConfigModel },
                 options: { apiKey: "test-key", baseURL: `${state.server!.url.origin}/v1` },

@@ -513,7 +513,7 @@ name: opencode-skill
 description: A skill in the .opencode/skill directory.
 ---
 
-# OpenCode Skill
+# Flynncode Skill
 `,
               ),
             ]),
@@ -560,7 +560,7 @@ name: opencode-skill
 description: A skill in the .opencode/skill directory.
 ---
 
-# OpenCode Skill
+# Flynncode Skill
 `,
               ),
               Bun.write(
@@ -570,7 +570,7 @@ name: opencode-skill
 description: A skill in the .opencode/skills directory.
 ---
 
-# OpenCode Skill
+# Flynncode Skill
 `,
               ),
             ]),

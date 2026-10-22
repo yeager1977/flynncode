@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test"
 import { mockOpenCodeServer } from "../utils/mock-server"
 import { expectSessionTitle } from "../utils/waits"
 
-const directory = "C:/OpenCode/TodoDockNavigation"
+const directory = "C:/Flynncode/TodoDockNavigation"
 const projectID = "proj_todo_dock_navigation"
 const sourceID = "ses_todo_dock_source"
 const otherID = "ses_todo_dock_other"
@@ -43,7 +43,7 @@ test("animates todo lifecycle without replaying it across session tabs", async (
       all: [
         {
           id: "opencode",
-          name: "OpenCode",
+          name: "Flynncode",
           models: {
             "claude-opus-4-6": {
               id: "claude-opus-4-6",

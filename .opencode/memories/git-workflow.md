@@ -1,2 +1,2 @@
-- Prefer merging all work branches into the `dev` branch
-- User often issues short imperative commands ("continue", "go") and expects work to proceed without extra confirmation
+- Merge completed work to the dev branch as the integration target
+- Commit fixes once their purpose is confirmed with the user

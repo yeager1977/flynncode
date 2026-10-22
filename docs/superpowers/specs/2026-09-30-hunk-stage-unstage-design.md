@@ -2,7 +2,7 @@
 
 Date: 2026-09-30
 Status: Draft — awaiting review
-Product: Flynncode desktop, not upstream OpenCode
+Product: Flynncode desktop, not upstream Flynncode
 
 ## Decision
 

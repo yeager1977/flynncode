@@ -8,14 +8,14 @@ import { Tabs, TabItem } from "@astrojs/starlight/components"
 export const console = config.console
 export const email = `mailto:${config.email}`
 
-OpenCode Go는 인기 있는 오픈 코딩 모델에 안정적으로 액세스할 수 있는 두 가지 월간 요금제를 제공합니다.
+Flynncode Go는 인기 있는 오픈 코딩 모델에 안정적으로 액세스할 수 있는 두 가지 월간 요금제를 제공합니다.
 
 | 요금제      | 가격       | 포함된 사용량                   |
 | ----------- | ---------- | ------------------------------- |
 | **Go**      | **월 $10** | 아래 모델을 더 저렴하게 이용    |
 | **Go Plus** | **월 $40** | 아래 모델을 더 높은 한도로 이용 |
 
-Go는 OpenCode의 다른 제공자와 똑같이 작동합니다. OpenCode Go를 구독하고
+Go는 OpenCode의 다른 제공자와 똑같이 작동합니다. Flynncode Go를 구독하고
 API 키를 발급받으면 됩니다. 이는 **완전히 선택 사항**이며, OpenCode를 사용하기 위해
 꼭 필요하지는 않습니다.
 
@@ -45,14 +45,14 @@ Go와 Go Plus 모두 이러한 모델을 이용할 수 있습니다. 사용량�
 
 ## 작동 방식
 
-OpenCode Go는 OpenCode의 다른 제공자와 똑같이 작동합니다.
+Flynncode Go는 OpenCode의 다른 제공자와 똑같이 작동합니다.
 
-1. **<a href={console}>OpenCode Console</a>**에 로그인해 Go 또는 Go Plus를 구독하고 API 키를 복사합니다.
-2. TUI에서 `/connect` 명령을 실행하고 `OpenCode Go`를 선택한 다음 API 키를 붙여넣습니다.
+1. **<a href={console}>Flynncode Console</a>**에 로그인해 Go 또는 Go Plus를 구독하고 API 키를 복사합니다.
+2. TUI에서 `/connect` 명령을 실행하고 `Flynncode Go`를 선택한 다음 API 키를 붙여넣습니다.
 3. TUI에서 `/models`를 실행해 Go를 통해 사용할 수 있는 모델 목록을 확인합니다.
 
 :::note
-workspace당 한 명의 멤버만 OpenCode Go 또는 Go Plus를 구독할 수 있습니다.
+workspace당 한 명의 멤버만 Flynncode Go 또는 Go Plus를 구독할 수 있습니다.
 :::
 
 현재 모델 목록에는 다음이 포함됩니다.
@@ -94,7 +94,7 @@ workspace당 한 명의 멤버만 OpenCode Go 또는 Go Plus를 구독할 수 �
 
 ## 어디에서 사용할 수 있나요?
 
-OpenCode Go는 [OpenCode](https://opencode.ai) 및 유사한 유형의 요청을 생성하는 다른 코딩 에이전트용으로 설계되었습니다.
+Flynncode Go는 [Flynncode](https://opencode.ai) 및 유사한 유형의 요청을 생성하는 다른 코딩 에이전트용으로 설계되었습니다.
 다른 사용자의 이용 경험을 저해하는 악용이 있는지 트래픽을 모니터링합니다.
 
 클라이언트는 다음 요건을 충족해야 합니다.
@@ -105,7 +105,7 @@ OpenCode Go는 [OpenCode](https://opencode.ai) 및 유사한 유형의 요청을
 
 ### 검증된 클라이언트
 
-OpenCode 외에도 다음 클라이언트가 OpenCode Go에서 올바르게 작동하는 것으로 검증되었습니다.
+Flynncode 외에도 다음 클라이언트가 Flynncode Go에서 올바르게 작동하는 것으로 검증되었습니다.
 다만 앞으로도 계속 작동할 것이라고 보장하지는 않습니다.
 
 | 클라이언트        | 세션 지원                                                                                                                                                                                                                                                    |
@@ -116,7 +116,7 @@ OpenCode 외에도 다음 클라이언트가 OpenCode Go에서 올바르게 작�
 | **ZCode**         | Go는 ZCode의 고유 세션 헤더를 인식합니다. [`x-opencode-session` 요청](https://github.com/zai-org/feedback/issues/492)은 아직 열려 있지만 이제 해당 헤더를 별도로 전송할 필요는 없습니다.                                                                     |
 | **Pi**            | 현재 빌드는 OpenCode에 세션 정보를 전송합니다. 이전 설치 버전은 업데이트하세요.                                                                                                                                                                              |
 | **jcode**         | [세션 헤더 수정](https://github.com/1jehuang/jcode/issues/1167)이 포함된 **v0.81.6 이상**으로 업데이트하세요.                                                                                                                                                |
-| **Kilo Code CLI** | [PR #13752](https://github.com/Kilo-Org/kilocode/pull/13752)가 포함된 빌드는 OpenCode 세션 헤더를 복원합니다. 이 수정은 CLI에만 적용되며 VS Code 확장에는 적용되지 않습니다. [issue #13723](https://github.com/Kilo-Org/kilocode/issues/13723)을 참조하세요. |
+| **Kilo Code CLI** | [PR #13752](https://github.com/Kilo-Org/kilocode/pull/13752)가 포함된 빌드는 Flynncode 세션 헤더를 복원합니다. 이 수정은 CLI에만 적용되며 VS Code 확장에는 적용되지 않습니다. [issue #13723](https://github.com/Kilo-Org/kilocode/issues/13723)을 참조하세요. |
 
 ### 알려진 문제가 있는 클라이언트
 
@@ -415,7 +415,7 @@ Go에 포함된 월간 사용량은 모델마다 다릅니다.
 | Hy3                          | hy3                          | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
 | Space Bunny Free             | space-bunny-free             | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
 
-OpenCode config의 [model id](/docs/config/#models)는 `opencode-go/<model-id>` 형식을 사용합니다. 예를 들어 Kimi K3의 경우 config에서
+Flynncode config의 [model id](/docs/config/#models)는 `opencode-go/<model-id>` 형식을 사용합니다. 예를 들어 Kimi K3의 경우 config에서
 `opencode-go/kimi-k3`를 사용하면 됩니다.
 
 ---
@@ -475,7 +475,7 @@ https://opencode.ai/zen/go/v1/models
 
 ## 목표
 
-OpenCode Go를 만든 목적은 다음과 같습니다.
+Flynncode Go를 만든 목적은 다음과 같습니다.
 
 1. 저비용 구독으로 더 많은 사람이 AI 코딩을 **접근 가능하게** 이용할 수 있도록 합니다.
 2. 최고의 오픈 코딩 모델에 **안정적으로** 액세스할 수 있게 합니다.

@@ -42,7 +42,7 @@ EXCL=(--exclude-dir=node_modules --exclude-dir=.worktrees --exclude-dir=.turbo -
 
 label=${1:-baseline}
 echo "=== rename audit: $label ==="
-for pat in '@opencode-ai/' '^const app = "opencode"' 'packages/flynncode' '\.opencode' 'opencode\.json' '~/.config/opencode' '~/.local/share/opencode' 'opencode\.ai' '"OpenCode"' 'ai\.opencode' 'OPENCODE_[A-Z]+' 'productName: "opencode"' 'schemes: \["opencode"\]'; do
+for pat in '@opencode-ai/' '^const app = "opencode"' 'packages/flynncode' '\.opencode' 'opencode\.json' '~/.config/opencode' '~/.local/share/opencode' 'opencode\.ai' '"Flynncode"' 'ai\.opencode' 'OPENCODE_[A-Z]+' 'productName: "opencode"' 'schemes: \["opencode"\]'; do
   n=$(grep -rE --color=never "${pat}" . "${EXCL[@]}" -l 2>/dev/null | wc -l)
   printf '%-40s %s files\n' "$pat" "$n"
 done
@@ -214,7 +214,7 @@ git commit -m "chore(core): rename the core package dir and bin to flynncode"
 ### Task 4: CLI-facing strings
 
 **Files:**
-- Modify: `packages/flynncode/src/cli/cmd/run.ts:1052` (`$0`), `packages/flynncode/src/cli/cmd/pr.ts:83,104` (spawning `opencode`), `packages/flynncode/src/cli/cmd/uninstall.ts` (brew/choco/scoop package names, intro/success strings → handled with Task 8's branding for "OpenCode" prose), `packages/flynncode/src/cli/cmd/models.ts:57-58` (`.startsWith("opencode")` stays — that is the provider id, do NOT change), `install` script (`APP=opencode`, `INSTALL_DIR=$HOME/.opencode/bin`, GitHub release URLs → ServiceEndpoints in Task 9 changes those URLs), `packages/flynncode/src/installation/index.ts:126-129` (brew tap)
+- Modify: `packages/flynncode/src/cli/cmd/run.ts:1052` (`$0`), `packages/flynncode/src/cli/cmd/pr.ts:83,104` (spawning `opencode`), `packages/flynncode/src/cli/cmd/uninstall.ts` (brew/choco/scoop package names, intro/success strings → handled with Task 8's branding for "Flynncode" prose), `packages/flynncode/src/cli/cmd/models.ts:57-58` (`.startsWith("opencode")` stays — that is the provider id, do NOT change), `install` script (`APP=opencode`, `INSTALL_DIR=$HOME/.opencode/bin`, GitHub release URLs → ServiceEndpoints in Task 9 changes those URLs), `packages/flynncode/src/installation/index.ts:126-129` (brew tap)
 
 **Interfaces:**
 - Consumes: nothing new
@@ -554,10 +554,10 @@ git commit -m "feat(core): FLYNNCODE_ env flag prefix with OPENCODE_ fallback"
 - [ ] **Step 1: Update the electron-builder config**
 
 ```bash
-grep -rn 'OpenCode\|opencode' packages/desktop/electron-builder.config.ts
+grep -rn 'Flynncode\|opencode' packages/desktop/electron-builder.config.ts
 ```
 
-Replacements: `productNames` and `productName` strings `"OpenCode*"` → `"Flynncode"*`; `schemes: ["opencode"]` → `["flynncode"]` (both protocol blocks, and their `name:` entries); appId and metainfo ids `ai.opencode.desktop` / `ai.opencode.desktop.*` → `ai.flynncode.desktop`; rpm/deb `packageName` → `flynncode`. For publish:
+Replacements: `productNames` and `productName` strings `"Flynncode*"` → `"Flynncode"*`; `schemes: ["opencode"]` → `["flynncode"]` (both protocol blocks, and their `name:` entries); appId and metainfo ids `ai.opencode.desktop` / `ai.opencode.desktop.*` → `ai.flynncode.desktop`; rpm/deb `packageName` → `flynncode`. For publish:
 
 ```ts
 publish: { provider: "github", owner: process.env.FLYNNCODE_GH_OWNER ?? "flynncode", repo: process.env.FLYNNCODE_GH_REPO ?? "flynncode", channel: "latest" },
@@ -574,11 +574,11 @@ cd packages/desktop && bun test electron-builder --timeout 30000 --only-failures
 - [ ] **Step 3: Grep audit desktop + app UI**
 
 ```bash
-grep -rn 'OpenCode\b' packages/desktop packages/app --include='*.ts' --include='*.tsx' --include='*.html' \
+grep -rn 'Flynncode\b' packages/desktop packages/app --include='*.ts' --include='*.tsx' --include='*.html' \
   --exclude-dir=node_modules | grep -v '@opencode-ai/client' | grep -vi 'OpenCodeProvider' | head -40
 ```
 
-Swap user-facing strings (window titles, dock names, deep-link schemes) to "Flynncode"/`flynncode://`. Leave `@opencode-ai/client` imports and API-visible `OpenCode` class names alone.
+Swap user-facing strings (window titles, dock names, deep-link schemes) to "Flynncode"/`flynncode://`. Leave `@opencode-ai/client` imports and API-visible `Flynncode` class names alone.
 
 - [ ] **Step 4: Commit**
 
@@ -682,7 +682,7 @@ git commit -m "feat(core): parameterize upstream service endpoints"
 ### Task 10: UI strings and docs
 
 **Files:**
-- Modify: user-facing "OpenCode" prose in `packages/app`, `packages/session-ui`, `packages/tui`, `packages/web`, `packages/docs` (brand-level only); root `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `SECURITY.md`; `packages/flynncode/AGENTS.md` (dev server section); repo-local `.opencode/` → `.flynncode/`; `packages/flynncode/src/skill/index.ts:34` and other help/skill prose that names this binary's own config ("opencode.json" → "flynncode.json" etc.)
+- Modify: user-facing "Flynncode" prose in `packages/app`, `packages/session-ui`, `packages/tui`, `packages/web`, `packages/docs` (brand-level only); root `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, `SECURITY.md`; `packages/flynncode/AGENTS.md` (dev server section); repo-local `.opencode/` → `.flynncode/`; `packages/flynncode/src/skill/index.ts:34` and other help/skill prose that names this binary's own config ("opencode.json" → "flynncode.json" etc.)
 - Deliberately NOT: the 21 translated `README.*.md` files, the `sdks/` docs prose, the `docs/` and `packages/docs/` long-form upstream prose.
 
 **Interfaces:**
@@ -705,10 +705,10 @@ grep -rln '\bOpenCode\b' packages/app packages/session-ui packages/tui packages/
   | xargs sed -i 's/\bOpenCode\b/Flynncode/g'
 ```
 
-Careful: skip `packages/app` files importing `@opencode-ai/client` where the text `OpenCode` is the class name from the vendored SDK — after the sed, `git diff` and revert any line that changed an SDK-identifier (`OpenCode` class) rather than prose:
+Careful: skip `packages/app` files importing `@opencode-ai/client` where the text `Flynncode` is the class name from the vendored SDK — after the sed, `git diff` and revert any line that changed an SDK-identifier (`Flynncode` class) rather than prose:
 
 ```bash
-git diff | grep -E '^\+.*(from "@opencode-ai/client|new OpenCode\b)' 
+git diff | grep -E '^\+.*(from "@opencode-ai/client|new Flynncode\b)' 
 # inspect each hit; `git checkout -- <file>` the false positives and fix manually
 ```
 

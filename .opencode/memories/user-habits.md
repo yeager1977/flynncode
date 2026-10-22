@@ -1,1 +1,1 @@
-- User prefers autonomous work: grants blanket approval with "yes go"/"continue" and expects execution without repeated confirmation prompts.
+- Expects agents to be verified/committed proactively ("commit them", "go") rather than awaiting detailed instructions.

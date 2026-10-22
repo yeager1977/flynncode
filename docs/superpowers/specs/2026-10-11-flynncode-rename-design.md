@@ -59,14 +59,14 @@ working, and external upstream services keep functioning.
 
 ## Pass 3 — Desktop/UI branding
 
-- `productName`: "OpenCode" / "OpenCode Dev" / "OpenCode Beta" →
+- `productName`: "Flynncode" / "Flynncode Dev" / "Flynncode Beta" →
   "Flynncode" / "Flynncode Dev" / "Flynncode Beta".
 - Desktop appId `ai.opencode.desktop` → `ai.flynncode.desktop`; URL scheme
   `opencode` → `flynncode`; deb/rpm package name `flynncode`.
 - Electron `publish` points at owner/repo defaults `flynncode/flynncode`,
   overridable via env in CI. Desktop-entry paths in the existing test are updated to
   match.
-- Window titles and "OpenCode" UI strings across app, session-ui, web, tui →
+- Window titles and "Flynncode" UI strings across app, session-ui, web, tui →
   "Flynncode". Icon artwork is unchanged in this pass.
 
 ## Pass 4 — Service URL parameterization

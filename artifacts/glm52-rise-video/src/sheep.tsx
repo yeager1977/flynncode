@@ -8,7 +8,7 @@ const c = {
 }
 const MONO = '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
 
-// verified: NZ OpenCode Go, week of Jun 22-28, 2026 (2026-W26)
+// verified: NZ Flynncode Go, week of Jun 22-28, 2026 (2026-W26)
 const TOKENS = 40_915_594_381 // 40.9B
 const SHEEP = 23_600_000 // 23.6M
 const PER_SHEEP = Math.round(TOKENS / SHEEP) // 1,734

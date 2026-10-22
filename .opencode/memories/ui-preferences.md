@@ -1,3 +1,1 @@
-- Model selector should also let the user pick which server runs the job.
-- Usage circles should show current-session context and used percentage; add a page showing all enabled providers' limits and usage.
-- Filter the OpenRouter model list to free models only.
+- Session list should display agent names (at least the main agent's) under the session heading

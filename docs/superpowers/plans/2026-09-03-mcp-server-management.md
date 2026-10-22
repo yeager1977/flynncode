@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add an "MCP" settings tab to OpenCode Desktop/app that manages MCP servers (add/edit/delete with local/remote configs, OAuth credential fields, and status actions) via the existing `sdk.mcp.*` server API.
+**Goal:** Add an "MCP" settings tab to Flynncode Desktop/app that manages MCP servers (add/edit/delete with local/remote configs, OAuth credential fields, and status actions) via the existing `sdk.mcp.*` server API.
 
 **Architecture:** Pure app-package feature — no desktop main-process changes, no core changes. New component `packages/app/src/components/settings-v2/mcp.tsx` wired as a tab in `dialog-settings-v2.tsx`. Data through `useServerSDK()` (`serverSdk.client.mcp.*` — the `OpenCodeClient` promise API; see `server-session.ts:62` where `ServerApi = OpenCodeClient`) and `useServerSync()` for the current directory + status polling already wired (`server-sync.tsx:702-715` shows the exact v1/v2 protocol-branch patterns for connect/disconnect/authenticate).
 

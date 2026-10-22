@@ -11,7 +11,7 @@ import { dueRoutines } from "./due"
 import { parseRoutines, type Routine, type RoutineRunSummary } from "./parse"
 import { fileTriggersDue, githubDue, resolveDirectory } from "./trigger"
 
-// Mirrors globalConfigFile() precedence so we patch the file OpenCode loads.
+// Mirrors globalConfigFile() precedence so we patch the file Flynncode loads.
 const CONFIG_CANDIDATES = ["opencode.jsonc", "opencode.json", "config.json"]
 const FILE = path.join(Global.Path.config, "routines.jsonc")
 const PREFIX = "[routines]"

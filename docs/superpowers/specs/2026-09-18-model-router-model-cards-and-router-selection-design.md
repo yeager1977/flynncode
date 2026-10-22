@@ -71,7 +71,7 @@ anthropic, openai, ollama-cloud, and opencode providers. Key facts used:
 - Synthetic `-fast` IDs (gpt-6-astra-fast etc.) and dated snapshots
   (deepseek-v4-flash:0731, deepseek-v4-pro:0813, claude-opus-4-5-20251101,
   etc.) are aliases; excluded from routing, documented here.
-- OpenCode free tier (big-pickle, ling-3.0-flash-fin-free, mimo-v2.5-free,
+- Flynncode free tier (big-pickle, ling-3.0-flash-fin-free, mimo-v2.5-free,
   muse-spark-1.2/1.3-contributor-free, nemotron-3-ultra-free,
   nemotron-3.5-lightning-free) is excluded from routing by decision.
 

@@ -243,7 +243,7 @@ describe("SessionStatus.Info", () => {
         reason: "free_tier_limit",
         provider: "opencode",
         title: "Free limit reached",
-        message: "Subscribe to OpenCode Go.",
+        message: "Subscribe to Flynncode Go.",
         label: "subscribe",
         link: "https://opencode.ai/go",
       },

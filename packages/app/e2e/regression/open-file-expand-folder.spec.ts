@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test"
 import { mockOpenCodeServer } from "../utils/mock-server"
 import { expectSessionTitle } from "../utils/waits"
 
-const directory = "C:/OpenCode/OpenFileExpand"
+const directory = "C:/Flynncode/OpenFileExpand"
 const projectID = "proj_open_file_expand"
 const sessionID = "ses_open_file_expand"
 const title = "Open file expand"
@@ -26,7 +26,7 @@ test("expands a folder whose path has a trailing Windows separator", async ({ pa
       all: [
         {
           id: "opencode",
-          name: "OpenCode",
+          name: "Flynncode",
           models: { test: { id: "test", name: "Test", limit: { context: 200_000 } } },
         },
       ],

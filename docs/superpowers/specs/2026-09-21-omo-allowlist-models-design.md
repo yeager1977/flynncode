@@ -1,11 +1,11 @@
-# Oh My OpenCode Allowlist Models - Design
+# Oh My Flynncode Allowlist Models - Design
 
 Date: 2026-09-21
 Status: Implemented
 
 ## Problem
 
-The Oh My OpenCode installer wrote `~/.omo/omo.jsonc` with stock chains that
+The Oh My Flynncode installer wrote `~/.omo/omo.jsonc` with stock chains that
 prefer OpenAI and omit Ollama Cloud. Defaults must stay on the user's
 allowlist, **Claude over ChatGPT**, **no xAI**, and **coding work must
 prefer DeepSeek and GLM 5.3 Flash**, with **Claude on reviews**.
@@ -68,4 +68,4 @@ only; do not vendor OMO.
   `ollama-cloud/deepseek-v4.1-flash`, or `ollama-cloud/deepseek-v4-pro`
 - review agents (`oracle`, `momus`) primary on `anthropic/`
 - `$schema` and the top comment remain
-- Restart OpenCode
+- Restart Flynncode

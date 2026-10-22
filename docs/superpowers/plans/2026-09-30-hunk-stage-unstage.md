@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Product is Flynncode, not upstream OpenCode.
+- Product is Flynncode, not upstream Flynncode.
 - Do not add a `/vcs/hunk` route.
 - Omitted `index` means working-tree `git apply -`.
 - Stage and unstage appear only when the selected scope is the unstaged git diff and the active file has a patch.

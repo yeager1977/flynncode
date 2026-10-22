@@ -3,7 +3,7 @@ import { base64Encode } from "@flynncode/core/util/encode"
 import { mockOpenCodeServer } from "../utils/mock-server"
 import { expectAppVisible } from "../utils/waits"
 
-const directory = "C:/OpenCode/PromptThinkingLevelRegression"
+const directory = "C:/Flynncode/PromptThinkingLevelRegression"
 const projectID = "proj_prompt_thinking_level_regression"
 const sessionID = "ses_prompt_thinking_level_regression"
 
@@ -22,7 +22,7 @@ test("shows the V2 thinking level control while relevant", async ({ page }) => {
       all: [
         {
           id: "opencode",
-          name: "OpenCode",
+          name: "Flynncode",
           models: {
             "thinking-model": {
               id: "thinking-model",

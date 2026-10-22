@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test"
 import { mockOpenCodeServer } from "../utils/mock-server"
 import { expectSessionTitle } from "../utils/waits"
 
-const directory = "C:/OpenCode/TodoSessionIsolation"
+const directory = "C:/Flynncode/TodoSessionIsolation"
 const projectID = "proj_todo_session_isolation"
 const sessionA = { id: "ses_todo_a", title: "Todo session A" }
 const sessionB = { id: "ses_todo_b", title: "Todo session B" }
@@ -36,7 +36,7 @@ test("shrinking one session todo list leaves the other session unchanged", async
       all: [
         {
           id: "opencode",
-          name: "OpenCode",
+          name: "Flynncode",
           models: {
             "claude-opus-4-6": {
               id: "claude-opus-4-6",

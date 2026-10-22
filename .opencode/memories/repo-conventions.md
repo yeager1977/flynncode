@@ -1,1 +1,2 @@
-- I ship installable artifacts for the project as a build plus a .deb file when the user asks for an update.
+- Rename/rebrand references from "opencode" to "flynncode" throughout the codebase.
+- Merge work to the dev branch.

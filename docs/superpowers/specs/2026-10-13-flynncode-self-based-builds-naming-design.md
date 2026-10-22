@@ -5,7 +5,7 @@ Status: approved by user (verbal: "implement it")
 
 ## Problem
 
-The desktop app ("OpenCode Dev", deb `opencode-dev`, version
+The desktop app ("Flynncode Dev", deb `opencode-dev`, version
 `1.18.34~dev~202610031719`) ships a bundled server binary
 `resources/opencode-cli` that is byte-identical to the pinned **upstream**
 `@opencode-ai/cli 0.0.0-next-16350`, fetched by

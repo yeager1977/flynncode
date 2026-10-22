@@ -566,21 +566,21 @@ const APP_IDS = {
 
 ```ts
 // Old:
-        productName: "OpenCode Dev",
+        productName: "Flynncode Dev",
 // New:
         productName: "Flynncode Dev",
 ```
 
 ```ts
 // Old (beta):
-        productName: "OpenCode Beta",
+        productName: "Flynncode Beta",
 // New:
         productName: "Flynncode Beta",
 ```
 
 ```ts
 // Old (prod):
-        productName: "OpenCode",
+        productName: "Flynncode",
 // New:
         productName: "Flynncode",
 ```
@@ -611,8 +611,8 @@ git rm packages/desktop/resources/linux/opencode-desktop.desktop
 
 - [ ] **Step 3: Keep the `opencode://` protocol scheme, rename only the protocol display name**
 
-Update each channel's `protocols.name` ("OpenCode" → "Flynncode Dev", "OpenCode Beta" →
-"Flynncode Beta", "OpenCode" → "Flynncode") but leave `schemes: ["opencode"]` untouched —
+Update each channel's `protocols.name` ("Flynncode" → "Flynncode Dev", "Flynncode Beta" →
+"Flynncode Beta", "Flynncode" → "Flynncode") but leave `schemes: ["opencode"]` untouched —
 existing shared links and handler registrations keep working.
 
 - [ ] **Step 4: Pin explicit Linux package names per channel**
@@ -680,7 +680,7 @@ are unchanged artwork and need no edit.
 // Old:
   "homepage": "https://opencode.ai",
   "author": {
-    "name": "OpenCode",
+    "name": "Flynncode",
     "email": "hello@opencode.ai"
   },
 // New:

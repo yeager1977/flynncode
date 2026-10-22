@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a Plugins tab to OpenCode Desktop's settings dialog that browses a plugin catalog (ecosystem docs + awesome-opencode, enriched from npm), and installs/manages plugins in global or project `opencode.json`.
+**Goal:** Add a Plugins tab to Flynncode Desktop's settings dialog that browses a plugin catalog (ecosystem docs + awesome-opencode, enriched from npm), and installs/manages plugins in global or project `opencode.json`.
 
 **Architecture:** Two layers. (1) Electron main process module `plugin-manager.ts` exposing catalog fetch/cache and JSONC-aware config mutation over new `plugins:*` IPC handlers; (2) a SolidJS settings tab in `packages/app` that reaches those APIs through the existing `window.api` bridge and `usePlatform()` context. Catalog sources: `https://opencode.ai/docs/ecosystem/` (HTML scrape) + `https://raw.githubusercontent.com/awesome-opencode/awesome-opencode/main/README.md` (markdown parse), enriched with npm registry + downloads API, cached 24h on disk under `app.getPath("userData")`.
 
@@ -1227,7 +1227,7 @@ In `packages/app/src/i18n/en.ts`, after the `"settings.tab.shortcuts"` line (lin
   "settings.plugins.install.global": "Global (~/.config/opencode)",
   "settings.plugins.install.project": "This project",
   "settings.plugins.install.cancel": "Cancel",
-  "settings.plugins.install.success": "Installed {{name}}. Restart OpenCode to load it.",
+  "settings.plugins.install.success": "Installed {{name}}. Restart Flynncode to load it.",
   "settings.plugins.installed.empty": "No plugins installed.",
   "settings.plugins.installed.provenance.global": "Global",
   "settings.plugins.installed.provenance.project": "Project",

@@ -1,4 +1,4 @@
-import { OpenCode } from "@flynncode/client/effect"
+import { Flynncode } from "@flynncode/client/effect"
 import { AppNodeBuilder } from "@flynncode/core/effect/app-node-builder"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { PermissionSaved } from "@flynncode/core/permission/saved"
@@ -7,7 +7,7 @@ import { createEmbeddedRoutes } from "@flynncode/server/routes"
 import { Context, Effect, Layer, Scope } from "effect"
 import { FetchHttpClient, HttpRouter, HttpServer } from "effect/unstable/http"
 
-export const create = Effect.fn("OpenCode.create")(function* () {
+export const create = Effect.fn("Flynncode.create")(function* () {
   const scope = yield* Scope.Scope
   const memoMap = yield* Layer.makeMemoMap
   const context = yield* Layer.buildWithMemoMap(
@@ -32,7 +32,7 @@ export const create = Effect.fn("OpenCode.create")(function* () {
   const fetch = Object.assign((input: RequestInfo | URL, init?: RequestInit) => web.handler(new Request(input, init)), {
     preconnect: () => undefined,
   }) satisfies typeof globalThis.fetch
-  const client = yield* OpenCode.make({ baseUrl: "http://opencode.local" }).pipe(
+  const client = yield* Flynncode.make({ baseUrl: "http://opencode.local" }).pipe(
     Effect.provide(FetchHttpClient.layer),
     Effect.provideService(FetchHttpClient.Fetch, fetch),
   )
@@ -44,6 +44,6 @@ export const create = Effect.fn("OpenCode.create")(function* () {
 
 export type Interface = Effect.Success<ReturnType<typeof create>>
 
-export class Service extends Context.Service<Service, Interface>()("@flynncode/sdk-next/OpenCode") {}
+export class Service extends Context.Service<Service, Interface>()("@flynncode/sdk-next/Flynncode") {}
 
 export const layer = Layer.effect(Service, create())

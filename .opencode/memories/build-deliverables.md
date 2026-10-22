@@ -1,1 +1,1 @@
-- I want deliverables as builds plus .deb install files; agent-initiated terminal suggestions must be surfaced visibly in the main session (e.g., link), since no terminal exists for them.
+- Leave built artifacts in the Downloads folder when work is complete.

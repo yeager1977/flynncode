@@ -1,4 +1,4 @@
-# MCP Server Management for OpenCode Desktop — Design
+# MCP Server Management for Flynncode Desktop — Design
 
 **Date:** 2026-09-03
 **Status:** Approved (design), pending spec review

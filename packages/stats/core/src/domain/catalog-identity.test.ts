@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { catalogIdentity } from "./catalog-identity"
 
 describe("stats catalog identity", () => {
-  test("resolves OpenCode offerings to canonical labs", () => {
+  test("resolves Flynncode offerings to canonical labs", () => {
     const identity = catalogIdentity({
       models: { "meituan/longcat-2.5-preview": {} },
       providers: {
@@ -44,7 +44,7 @@ describe("stats catalog identity", () => {
 
   test("rejects a catalog without published canonical identities", () => {
     expect(() => catalogIdentity({ models: {}, providers: { opencode: { models: { model: {} } } } })).toThrow(
-      "Model catalog has no canonical OpenCode offerings",
+      "Model catalog has no canonical Flynncode offerings",
     )
   })
 })

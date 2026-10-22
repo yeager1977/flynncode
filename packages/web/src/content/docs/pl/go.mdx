@@ -8,16 +8,16 @@ import { Tabs, TabItem } from "@astrojs/starlight/components"
 export const console = config.console
 export const email = `mailto:${config.email}`
 
-OpenCode Go zapewnia niezawodny dostęp do popularnych otwartych modeli do kodowania w ramach dwóch planów miesięcznych:
+Flynncode Go zapewnia niezawodny dostęp do popularnych otwartych modeli do kodowania w ramach dwóch planów miesięcznych:
 
 | Plan        | Cena            | Użycie w cenie                         |
 | ----------- | --------------- | -------------------------------------- |
 | **Go**      | **$10/miesiąc** | Tańszy dostęp do poniższych modeli     |
 | **Go Plus** | **$40/miesiąc** | Wyższe limity użycia poniższych modeli |
 
-Go działa jak każdy inny dostawca w OpenCode. Subskrybujesz OpenCode Go i
+Go działa jak każdy inny dostawca w Flynncode. Subskrybujesz Flynncode Go i
 otrzymujesz swój klucz API. Jest to **całkowicie opcjonalne** i nie musisz z tego korzystać, aby
-używać OpenCode.
+używać Flynncode.
 
 Usługa jest przeznaczona przede wszystkim dla użytkowników z całego świata i zapewnia stabilny dostęp globalny.
 
@@ -33,7 +33,7 @@ Jednak uzyskanie do nich niezawodnego dostępu o niskich opóźnieniach może by
 różnią się pod względem jakości i dostępności.
 
 :::tip
-Przetestowaliśmy wybraną grupę modeli i dostawców, którzy dobrze współpracują z OpenCode.
+Przetestowaliśmy wybraną grupę modeli i dostawców, którzy dobrze współpracują z Flynncode.
 :::
 
 Aby rozwiązać ten problem, zrobiliśmy kilka rzeczy:
@@ -52,16 +52,16 @@ intensywności korzystania z nich.
 
 ## Jak to działa
 
-OpenCode Go działa jak każdy inny dostawca w OpenCode.
+Flynncode Go działa jak każdy inny dostawca w Flynncode.
 
-1. Zaloguj się do **<a href={console}>OpenCode Console</a>**, zasubskrybuj Go lub Go Plus i
+1. Zaloguj się do **<a href={console}>Flynncode Console</a>**, zasubskrybuj Go lub Go Plus i
    skopiuj swój klucz API.
-2. Uruchom polecenie `/connect` w TUI, wybierz `OpenCode Go` i wklej
+2. Uruchom polecenie `/connect` w TUI, wybierz `Flynncode Go` i wklej
    swój klucz API.
 3. Uruchom `/models` w TUI, aby zobaczyć listę modeli dostępnych w ramach Go.
 
 :::note
-Tylko jeden członek obszaru roboczego może zasubskrybować OpenCode Go lub Go Plus.
+Tylko jeden członek obszaru roboczego może zasubskrybować Flynncode Go lub Go Plus.
 :::
 
 Obecna lista modeli obejmuje:
@@ -103,7 +103,7 @@ Lista modeli może ulec zmianie w miarę testowania i dodawania nowych.
 
 ## Gdzie można z tego korzystać?
 
-OpenCode Go jest przeznaczony dla [OpenCode](https://opencode.ai) i innych agentów kodujących,
+Flynncode Go jest przeznaczony dla [Flynncode](https://opencode.ai) i innych agentów kodujących,
 którzy wysyłają podobne rodzaje żądań. Ruch jest monitorowany pod kątem nadużyć,
 które pogarszają komfort innych użytkowników.
 
@@ -117,18 +117,18 @@ Twój klient powinien:
 
 ### Zweryfikowane klienty
 
-Poza OpenCode zweryfikowano, że poniżsi klienci działają prawidłowo
-z OpenCode Go. Nie gwarantujemy jednak, że będą nadal działać w przyszłości.
+Poza Flynncode zweryfikowano, że poniżsi klienci działają prawidłowo
+z Flynncode Go. Nie gwarantujemy jednak, że będą nadal działać w przyszłości.
 
 | Klient            | Obsługa sesji                                                                                                                                                                                                                                              |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Hermes**        | Kompilacje zawierające [PR #101864](https://github.com/NousResearch/hermes-agent/pull/101864) wysyłają nagłówek w głównych i pomocniczych żądaniach OpenCode. Poprawkę scalono po wersji v0.21.0; samo to wydanie jej nie zawiera.                         |
+| **Hermes**        | Kompilacje zawierające [PR #101864](https://github.com/NousResearch/hermes-agent/pull/101864) wysyłają nagłówek w głównych i pomocniczych żądaniach Flynncode. Poprawkę scalono po wersji v0.21.0; samo to wydanie jej nie zawiera.                         |
 | **Claude Code**   | Go rozpoznaje jego natywny nagłówek sesji. Wrapper dodający niestandardowy nagłówek nie jest potrzebny.                                                                                                                                                    |
 | **Codex**         | Go rozpoznaje jego natywny nagłówek sesji. Niektóre wersje i konfiguracje proxy nadal go pomijają; podczas przekazywania żądań należy zachować nagłówek sesji.                                                                                             |
 | **ZCode**         | Go rozpoznaje jego natywny nagłówek sesji. Nasza [prośba o `x-opencode-session`](https://github.com/zai-org/feedback/issues/492) pozostaje otwarta, ale wysyłanie tego konkretnego nagłówka nie jest już konieczne.                                        |
-| **Pi**            | Aktualne kompilacje wysyłają informacje o sesji dla OpenCode. Zaktualizuj starsze instalacje.                                                                                                                                                              |
+| **Pi**            | Aktualne kompilacje wysyłają informacje o sesji dla Flynncode. Zaktualizuj starsze instalacje.                                                                                                                                                              |
 | **jcode**         | Zaktualizuj do wersji **v0.81.6 lub nowszej**, która zawiera [poprawkę nagłówka sesji](https://github.com/1jehuang/jcode/issues/1167).                                                                                                                     |
-| **Kilo Code CLI** | Kompilacje zawierające [PR #13752](https://github.com/Kilo-Org/kilocode/pull/13752) przywracają nagłówki sesji OpenCode. Ta poprawka obejmuje CLI, ale nie rozszerzenie VS Code. Zobacz [issue #13723](https://github.com/Kilo-Org/kilocode/issues/13723). |
+| **Kilo Code CLI** | Kompilacje zawierające [PR #13752](https://github.com/Kilo-Org/kilocode/pull/13752) przywracają nagłówki sesji Flynncode. Ta poprawka obejmuje CLI, ale nie rozszerzenie VS Code. Zobacz [issue #13723](https://github.com/Kilo-Org/kilocode/issues/13723). |
 
 ### Klienty ze znanymi problemami
 
@@ -431,7 +431,7 @@ Możesz również uzyskać dostęp do modeli Go za pośrednictwem następującyc
 | Hy3                          | hy3                          | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
 | Space Bunny Free             | space-bunny-free             | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
 
-[ID modelu](/docs/config/#models) w konfiguracji OpenCode
+[ID modelu](/docs/config/#models) w konfiguracji Flynncode
 ma format `opencode-go/<model-id>`. Na przykład dla Kimi K3 należy użyć
 `opencode-go/kimi-k3` w konfiguracji.
 
@@ -492,9 +492,9 @@ https://opencode.ai/zen/go/v1/models
 
 ## Cele
 
-Stworzyliśmy OpenCode Go, aby:
+Stworzyliśmy Flynncode Go, aby:
 
 1. Uczynić kodowanie z pomocą sztucznej inteligencji **dostępnym** dla większej liczby osób dzięki niskokosztowej subskrypcji.
 2. Zapewnić **niezawodny** dostęp do najlepszych otwartych modeli do kodowania.
 3. Wybierać modele, które są **przetestowane i sprawdzone w testach wydajności** do użytku przez agentów kodujących.
-4. Zapewnić **brak uzależnienia od dostawcy**, umożliwiając korzystanie z dowolnego innego dostawcy wraz z OpenCode.
+4. Zapewnić **brak uzależnienia od dostawcy**, umożliwiając korzystanie z dowolnego innego dostawcy wraz z Flynncode.

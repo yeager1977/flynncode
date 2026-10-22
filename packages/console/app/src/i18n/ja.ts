@@ -20,7 +20,7 @@ export const dict = {
   "nav.home": "ホーム",
   "nav.openMenu": "メニューを開く",
   "nav.getStartedFree": "無料ではじめる",
-  "nav.logoAlt": "OpenCode",
+  "nav.logoAlt": "Flynncode",
 
   "nav.context.copyLogo": "ロゴをSVGでコピー",
   "nav.context.copyWordmark": "ワードマークをSVGでコピー",
@@ -42,7 +42,7 @@ export const dict = {
   "email.subscribe": "登録",
   "email.success": "ほぼ完了です。受信トレイを確認してメールアドレスを認証してください",
 
-  "notFound.title": "見つかりません | OpenCode",
+  "notFound.title": "見つかりません | Flynncode",
   "notFound.heading": "404 - ページが見つかりません",
   "notFound.home": "ホーム",
   "notFound.docs": "ドキュメント",
@@ -87,13 +87,13 @@ export const dict = {
   "error.reloadAmountMin": "リロード額は少なくとも ${{amount}} である必要があります",
   "error.reloadTriggerMin": "残高トリガーは少なくとも ${{amount}} である必要があります",
 
-  "app.meta.description": "OpenCode - オープンソースのコーディングエージェント。",
+  "app.meta.description": "Flynncode - オープンソースのコーディングエージェント。",
 
-  "home.title": "OpenCode | オープンソースのAIコーディングエージェント",
+  "home.title": "Flynncode | オープンソースのAIコーディングエージェント",
 
-  "temp.title": "OpenCode | ターミナル向けに構築されたAIコーディングエージェント",
+  "temp.title": "Flynncode | ターミナル向けに構築されたAIコーディングエージェント",
   "temp.hero.title": "ターミナル向けに構築されたAIコーディングエージェント",
-  "temp.zen": "OpenCode Zen",
+  "temp.zen": "Flynncode Zen",
   "temp.getStarted": "はじめる",
   "temp.feature.native.title": "ネイティブ TUI",
   "temp.feature.native.body": "レスポンシブでネイティブ、テーマ変更可能なターミナルUI",
@@ -102,8 +102,8 @@ export const dict = {
   "temp.feature.zen.afterLink": "",
   "temp.feature.models.beforeLink": "ローカルモデルを含む、",
   "temp.feature.models.afterLink": "を通じて75以上のLLMプロバイダーをサポート",
-  "temp.screenshot.caption": "tokyonight テーマを使用した OpenCode TUI",
-  "temp.screenshot.alt": "tokyonight テーマの OpenCode TUI",
+  "temp.screenshot.caption": "tokyonight テーマを使用した Flynncode TUI",
+  "temp.screenshot.alt": "tokyonight テーマの Flynncode TUI",
   "temp.logoLightAlt": "opencodeのロゴ（ライト）",
   "temp.logoDarkAlt": "opencodeのロゴ（ダーク）",
 
@@ -198,12 +198,12 @@ export const dict = {
     "Zenは、OpenCodeがコーディングエージェント向けにテスト・ベンチマーク済みのAIモデルを厳選して提供します。プロバイダー間の性能・品質のブレを気にせず、検証済みのモデルを利用できます。",
   "home.zenCta.link": "Zenについて知る",
 
-  "zen.title": "OpenCode Zen | コーディングエージェント向けの信頼できる最適化モデル",
+  "zen.title": "Flynncode Zen | コーディングエージェント向けの信頼できる最適化モデル",
   "zen.hero.title": "コーディングエージェント向けの信頼できる最適化モデル",
   "zen.hero.body":
     "Zenは、OpenCodeがコーディングエージェント向けにテスト・ベンチマーク済みのAIモデルを厳選して提供します。プロバイダー間の性能・品質のブレを気にせず、検証済みのモデルを利用できます。",
 
-  "zen.faq.q1": "OpenCode Zenとは？",
+  "zen.faq.q1": "Flynncode Zenとは？",
   "zen.faq.a1":
     "Zenは、OpenCodeのチームが作成した、コーディングエージェント向けにテスト・ベンチマークされたAIモデルの厳選セットです。",
   "zen.faq.q2": "Zenはなぜ精度が高いのですか？",
@@ -261,7 +261,7 @@ export const dict = {
     "すべてのZenモデルは米国でホストされています。プロバイダーはゼロ保持ポリシーに従い、モデルのトレーニングにデータを使用しません（",
   "zen.privacy.exceptionsLink": "以下の例外",
 
-  "go.title": "OpenCode Go | すべての人のための低価格なコーディングモデル",
+  "go.title": "Flynncode Go | すべての人のための低価格なコーディングモデル",
   "go.meta.description":
     "Goは月額$10で、主要なコーディングモデルへのゆとりある利用上限と安定したアクセスを提供します。",
   "go.hero.title": "すべての人のための低価格なコーディングモデル",
@@ -306,7 +306,7 @@ export const dict = {
 
   "go.testimonials.brand.zen": "Zen",
   "go.testimonials.brand.go": "Go",
-  "go.testimonials.handle": "@OpenCode",
+  "go.testimonials.handle": "@Flynncode",
   "go.testimonials.dax.name": "Dax Raad",
   "go.testimonials.dax.title": "元CEO, Terminal Products",
   "go.testimonials.dax.quoteAfter": "は人生を変えるものでした。本当に迷う必要はありません。",
@@ -328,7 +328,7 @@ export const dict = {
   "go.testimonials.frank.quote": "まだNvidiaにいられたらよかったのに。",
   "go.problem.title": "Goはどのような問題を解決していますか？",
   "go.problem.body":
-    "私たちはOpenCodeの体験をできるだけ多くの人に届けることに注力しています。OpenCode Goは月額$10の低価格なサブスクリプションです。ゆとりある上限と、最も高性能なオープンソースモデルへの信頼できるアクセスを提供します。",
+    "私たちはOpenCodeの体験をできるだけ多くの人に届けることに注力しています。Flynncode Goは月額$10の低価格なサブスクリプションです。ゆとりある上限と、最も高性能なオープンソースモデルへの信頼できるアクセスを提供します。",
   "go.problem.subtitle": " ",
   "go.problem.item1": "低価格なサブスクリプション料金",
   "go.problem.item2": "十分な制限と安定したアクセス",
@@ -351,7 +351,7 @@ export const dict = {
   "go.privacy.beforeExceptions":
     "Goのモデルは米国でホストされています。プロバイダーはゼロ保持ポリシーに従い、モデルのトレーニングにデータを使用しません（",
   "go.privacy.exceptionsLink": "以下の例外",
-  "go.faq.q1": "OpenCode Goとは？",
+  "go.faq.q1": "Flynncode Goとは？",
   "go.faq.a1":
     "Goは、エージェント型コーディングのための有能なオープンソースモデルへの安定したアクセスを提供する低価格なサブスクリプションです。",
   "go.faq.q2": "Goにはどのモデルが含まれますか？",
@@ -430,13 +430,13 @@ export const dict = {
   "zen.api.error.trainingNotAllowed":
     "このモデルは品質向上のためのデータを収集します。利用するには明示的な同意が必要です: {{consoleGoUrl}}",
   "zen.api.error.trialEnded":
-    "{{model}} の無料プロモーションは終了しました。OpenCode Go を購読するとモデルを引き続き使用できます - {{link}}",
+    "{{model}} の無料プロモーションは終了しました。Flynncode Go を購読するとモデルを引き続き使用できます - {{link}}",
 
-  "black.meta.title": "OpenCode Black | 世界最高峰のコーディングモデルすべてにアクセス",
-  "black.meta.description": "OpenCode Black サブスクリプションプランで、Claude、GPT、Gemini などにアクセス。",
+  "black.meta.title": "Flynncode Black | 世界最高峰のコーディングモデルすべてにアクセス",
+  "black.meta.description": "Flynncode Black サブスクリプションプランで、Claude、GPT、Gemini などにアクセス。",
   "black.hero.title": "世界最高峰のコーディングモデルすべてにアクセス",
   "black.hero.subtitle": "Claude、GPT、Gemini などを含む",
-  "black.title": "OpenCode Black | 料金",
+  "black.title": "Flynncode Black | 料金",
   "black.paused": "Blackプランの登録は一時的に停止しています。",
   "black.plan.icon20": "Black 20 プラン",
   "black.plan.icon100": "Black 100 プラン",
@@ -455,10 +455,10 @@ export const dict = {
   "black.action.continue": "続ける",
   "black.finePrint.beforeTerms": "表示価格には適用される税金は含まれていません",
   "black.finePrint.terms": "利用規約",
-  "black.workspace.title": "OpenCode Black | ワークスペースの選択",
+  "black.workspace.title": "Flynncode Black | ワークスペースの選択",
   "black.workspace.selectPlan": "このプランのワークスペースを選択してください",
   "black.workspace.name": "ワークスペース {{n}}",
-  "black.subscribe.title": "OpenCode Black を購読する",
+  "black.subscribe.title": "Flynncode Black を購読する",
   "black.subscribe.paymentMethod": "支払い方法",
   "black.subscribe.loadingPaymentForm": "支払いフォームを読み込み中...",
   "black.subscribe.selectWorkspaceToContinue": "続けるにはワークスペースを選択してください",
@@ -470,9 +470,9 @@ export const dict = {
   "black.subscribe.processing": "処理中...",
   "black.subscribe.submit": "購読する ${{plan}}",
   "black.subscribe.form.chargeNotice": "サブスクリプションが有効化された時点でのみ請求されます",
-  "black.subscribe.success.title": "OpenCode Black ウェイトリストに登録されました",
+  "black.subscribe.success.title": "Flynncode Black ウェイトリストに登録されました",
   "black.subscribe.success.subscriptionPlan": "サブスクリプションプラン",
-  "black.subscribe.success.planName": "OpenCode Black {{plan}}",
+  "black.subscribe.success.planName": "Flynncode Black {{plan}}",
   "black.subscribe.success.amount": "金額",
   "black.subscribe.success.amountValue": "${{plan}} / 月",
   "black.subscribe.success.paymentMethod": "支払い方法",
@@ -672,17 +672,17 @@ export const dict = {
   "workspace.black.time.minutes": "分",
   "workspace.black.time.fewSeconds": "数秒",
   "workspace.black.subscription.title": "サブスクリプション",
-  "workspace.black.subscription.message": "あなたは OpenCode Black を月額 ${{plan}} で購読しています。",
+  "workspace.black.subscription.message": "あなたは Flynncode Black を月額 ${{plan}} で購読しています。",
   "workspace.black.subscription.ending":
-    "OpenCode Black は現在の請求期間の終了とともに終了し、更新されません。新しいコンソールへ移行いたします。",
+    "Flynncode Black は現在の請求期間の終了とともに終了し、更新されません。新しいコンソールへ移行いたします。",
   "workspace.black.subscription.rollingUsage": "5時間利用",
   "workspace.black.subscription.weeklyUsage": "週間利用量",
   "workspace.black.subscription.resetsIn": "リセットまで",
   "workspace.black.subscription.useBalance": "利用限度額に達したら利用可能な残高を使用する",
   "workspace.black.waitlist.title": "ウェイトリスト",
   "workspace.black.waitlist.joined":
-    "あなたは月額 ${{plan}} の OpenCode Black プランのウェイトリストに登録されています。",
-  "workspace.black.waitlist.ready": "月額 ${{plan}} の OpenCode Black プランに登録する準備ができました。",
+    "あなたは月額 ${{plan}} の Flynncode Black プランのウェイトリストに登録されています。",
+  "workspace.black.waitlist.ready": "月額 ${{plan}} の Flynncode Black プランに登録する準備ができました。",
   "workspace.black.waitlist.leave": "ウェイトリストから抜ける",
   "workspace.black.waitlist.leaving": "処理中...",
   "workspace.black.waitlist.left": "退会済み",
@@ -700,7 +700,7 @@ export const dict = {
   "workspace.lite.time.minute": "分",
   "workspace.lite.time.minutes": "分",
   "workspace.lite.time.fewSeconds": "数秒",
-  "workspace.lite.subscription.message": "あなたは OpenCode Go を購読しています。",
+  "workspace.lite.subscription.message": "あなたは Flynncode Go を購読しています。",
   "workspace.lite.subscription.manage": "サブスクリプションの管理",
   "workspace.lite.subscription.rollingUsage": "5時間利用量",
   "workspace.lite.subscription.rollingQuota": "5時間上限",
@@ -716,17 +716,17 @@ export const dict = {
   "workspace.lite.subscription.total": "合計",
   "workspace.lite.subscription.useBalance": "利用限度額に達したら利用可能な残高を使用する",
   "workspace.lite.subscription.selectProvider":
-    "Go モデルを使用するには、opencode の設定で「OpenCode Go」をプロバイダーとして選択してください。",
+    "Go モデルを使用するには、opencode の設定で「Flynncode Go」をプロバイダーとして選択してください。",
   "workspace.lite.providers.title": "プロバイダー",
   "workspace.lite.providers.description": "ルーティングに使用するプロバイダーを管理します。",
   "workspace.lite.providers.allowTraining": "リクエストデータを学習に使用するモデルを許可",
   "workspace.lite.providers.useChina": "中国でホストされているモデルを有効にする",
   "workspace.lite.black.message":
-    "現在 OpenCode Black を購読中、またはウェイティングリストに登録されています。Go に切り替える場合は、先に登録を解除してください。",
+    "現在 Flynncode Black を購読中、またはウェイティングリストに登録されています。Go に切り替える場合は、先に登録を解除してください。",
   "workspace.lite.other.message":
-    "このワークスペースの別のメンバーが既に OpenCode Go を購読しています。ワークスペースにつき1人のメンバーのみが購読できます。",
+    "このワークスペースの別のメンバーが既に Flynncode Go を購読しています。ワークスペースにつき1人のメンバーのみが購読できます。",
   "workspace.lite.promo.description":
-    "OpenCode Goは{{price}}で、人気の高いオープンコーディングモデルへの安定したアクセスと余裕のある利用枠を提供します。",
+    "Flynncode Goは{{price}}で、人気の高いオープンコーディングモデルへの安定したアクセスと余裕のある利用枠を提供します。",
   "workspace.lite.promo.price": "$10/月",
   "workspace.lite.promo.modelsTitle": "含まれるもの",
   "workspace.lite.promo.footer":
@@ -769,15 +769,15 @@ export const dict = {
   "workspace.referral.apply.confirmBody": "{{amount}} を適用して、このワークスペースの現在の使用量を減らします。",
   "workspace.referral.apply.confirmAction": "適用",
 
-  "download.title": "OpenCode | ダウンロード",
-  "download.meta.description": "OpenCode を macOS、Windows、Linux 向けにダウンロード",
-  "download.hero.title": "OpenCode デスクトップ版をダウンロード",
+  "download.title": "Flynncode | ダウンロード",
+  "download.meta.description": "Flynncode を macOS、Windows、Linux 向けにダウンロード",
+  "download.hero.title": "Flynncode デスクトップ版をダウンロード",
   "download.hero.subtitle": "macOS、Windows、Linux 向けベータ版を利用可能",
   "download.hero.button": "{{os}} 向けダウンロード",
-  "download.section.terminal": "OpenCode Terminal",
-  "download.section.desktop": "OpenCode Desktop",
-  "download.section.extensions": "OpenCode Extensions",
-  "download.section.integrations": "OpenCode Integrations",
+  "download.section.terminal": "Flynncode Terminal",
+  "download.section.desktop": "Flynncode Desktop",
+  "download.section.extensions": "Flynncode Extensions",
+  "download.section.integrations": "Flynncode Integrations",
   "download.action.download": "ダウンロード",
   "download.action.install": "インストール",
 
@@ -803,7 +803,7 @@ export const dict = {
   "download.faq.a6.p2.beforeShare": "詳しくは",
   "download.faq.a6.shareLink": "共有ページ",
 
-  "enterprise.title": "OpenCode | 組織向けエンタープライズソリューション",
+  "enterprise.title": "Flynncode | 組織向けエンタープライズソリューション",
   "enterprise.meta.description": "エンタープライズソリューションについてOpenCodeに問い合わせる",
   "enterprise.hero.title": "あなたのコードはあなたのもの",
   "enterprise.hero.body1":
@@ -829,27 +829,27 @@ export const dict = {
   "enterprise.form.error.invalidEmailFormat": "無効なメール形式です。",
   "enterprise.form.error.internalServer": "内部サーバーエラー。",
   "enterprise.faq.title": "FAQ",
-  "enterprise.faq.q1": "OpenCode Enterpriseとは？",
+  "enterprise.faq.q1": "Flynncode Enterpriseとは？",
   "enterprise.faq.a1":
-    "OpenCode Enterpriseは、コードとデータが決してインフラの外に出ないことを保証したい組織向けです。SSOや社内AIゲートウェイと統合する集中設定を使用することでこれを実現します。",
-  "enterprise.faq.q2": "OpenCode Enterpriseを始めるには？",
+    "Flynncode Enterpriseは、コードとデータが決してインフラの外に出ないことを保証したい組織向けです。SSOや社内AIゲートウェイと統合する集中設定を使用することでこれを実現します。",
+  "enterprise.faq.q2": "Flynncode Enterpriseを始めるには？",
   "enterprise.faq.a2":
     "まずはチームでの社内トライアルから始めてください。OpenCodeはデフォルトでコードやコンテキストデータを保存しないため、簡単に始められます。その後、価格や導入オプションについてお問い合わせください。",
   "enterprise.faq.q3": "エンタープライズ価格の仕組みは？",
   "enterprise.faq.a3":
     "シート単位（ユーザー数）でのエンタープライズ価格を提供します。独自のLLMゲートウェイをお持ちの場合、使用トークンに対する課金はありません。詳細は、組織の要件に基づいた見積もりのためにお問い合わせください。",
-  "enterprise.faq.q4": "OpenCode Enterpriseでデータは安全ですか？",
+  "enterprise.faq.q4": "Flynncode Enterpriseでデータは安全ですか？",
   "enterprise.faq.a4":
     "はい。OpenCodeはコードやコンテキストデータを保存しません。すべての処理はローカル、またはAIプロバイダーへの直接API呼び出しを通じて行われます。集中設定とSSO統合により、データは組織のインフラ内で安全に保たれます。",
 
-  "brand.title": "OpenCode | ブランド",
-  "brand.meta.description": "OpenCode ブランドガイドライン",
+  "brand.title": "Flynncode | ブランド",
+  "brand.meta.description": "Flynncode ブランドガイドライン",
   "brand.heading": "ブランドガイドライン",
   "brand.subtitle": "OpenCodeブランドを扱うためのリソースと素材です。",
   "brand.downloadAll": "すべての素材をダウンロード",
 
-  "changelog.title": "OpenCode | 変更履歴",
-  "changelog.meta.description": "OpenCode リリースノートと変更履歴",
+  "changelog.title": "Flynncode | 変更履歴",
+  "changelog.meta.description": "Flynncode リリースノートと変更履歴",
   "changelog.hero.title": "変更履歴",
   "changelog.hero.subtitle": "OpenCodeの新しいアップデートと改善",
   "changelog.empty": "変更履歴が見つかりませんでした。",

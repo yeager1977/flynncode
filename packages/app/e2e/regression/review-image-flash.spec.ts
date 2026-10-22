@@ -3,7 +3,7 @@ import { base64Encode } from "@flynncode/core/util/encode"
 import { mockOpenCodeServer } from "../utils/mock-server"
 import { expectAppVisible, expectSessionTitle } from "../utils/waits"
 
-const directory = "C:/OpenCode/ReviewImageFlashRegression"
+const directory = "C:/Flynncode/ReviewImageFlashRegression"
 const sessionID = "ses_review_image_flash_regression"
 const title = "Review image flash regression"
 const imageFile = "assets/preview.png"

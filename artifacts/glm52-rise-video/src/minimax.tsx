@@ -17,7 +17,7 @@ const MONO = '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Cons
 const DOT_MASK =
   "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 6 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0H2V2H0V0Z' fill='black'/%3E%3C/svg%3E\")"
 
-// verified: minimax-m3, OpenCode Go (tier=Go, dataset=zen), weekly total_tokens.
+// verified: minimax-m3, Flynncode Go (tier=Go, dataset=zen), weekly total_tokens.
 // W26 2.559T is +23.2% / +482.3B vs W25 2.077T.
 const weeks = [
   { label: "May 25", t: 0.008 },

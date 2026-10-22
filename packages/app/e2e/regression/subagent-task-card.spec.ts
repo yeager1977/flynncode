@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test"
 import { currentSession, mockOpenCodeServer } from "../utils/mock-server"
 import { expectSessionTitle } from "../utils/waits"
 
-const directory = "C:/OpenCode/TaskCard"
+const directory = "C:/Flynncode/TaskCard"
 const projectID = "proj_task_card"
 const parentID = "ses_task_parent"
 const childID = "ses_task_child"
@@ -206,7 +206,7 @@ async function setup(page: Page) {
       all: [
         {
           id: "opencode",
-          name: "OpenCode",
+          name: "Flynncode",
           models: {
             "claude-opus-4-6": { id: "claude-opus-4-6", name: "Claude Opus 4.6", limit: { context: 200_000 } },
           },

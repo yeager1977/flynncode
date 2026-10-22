@@ -25,14 +25,14 @@ ACP — это открытый протокол, который стандар�
 
 ### Zed
 
-Установите OpenCode из [реестра ACP Zed](https://zed.dev/docs/ai/external-agents#registry), выполнив `zed: acp registry` в палитре команд.
+Установите Flynncode из [реестра ACP Zed](https://zed.dev/docs/ai/external-agents#registry), выполнив `zed: acp registry` в палитре команд.
 
-Чтобы вместо этого использовать собственный исполняемый файл OpenCode, добавьте его в конфигурацию [Zed](https://zed.dev) (`~/.config/zed/settings.json`):
+Чтобы вместо этого использовать собственный исполняемый файл Flynncode, добавьте его в конфигурацию [Zed](https://zed.dev) (`~/.config/zed/settings.json`):
 
 ```json title="~/.config/zed/settings.json"
 {
   "agent_servers": {
-    "OpenCode": {
+    "Flynncode": {
       "type": "custom",
       "command": "opencode",
       "args": ["acp"]
@@ -54,7 +54,7 @@ ACP — это открытый протокол, который стандар�
         {
           "agent": {
             "custom": {
-              "name": "OpenCode",
+              "name": "Flynncode",
               "command": {
                 "command": "opencode",
                 "args": ["acp"]
@@ -77,7 +77,7 @@ ACP — это открытый протокол, который стандар�
 ```json title="acp.json"
 {
   "agent_servers": {
-    "OpenCode": {
+    "Flynncode": {
       "command": "/absolute/path/bin/opencode",
       "args": ["acp"]
     }

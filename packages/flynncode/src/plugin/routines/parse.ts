@@ -39,7 +39,7 @@ export type Routine = {
   recentRuns?: RoutineRunSummary[]
   trigger?: RoutineTrigger
   // Where the routine's sessions run: the local server ("local", omitted) or a
-  // remote OpenCode host reached over HTTP.
+  // remote Flynncode host reached over HTTP.
   target?: "local" | RoutineTarget
 }
 

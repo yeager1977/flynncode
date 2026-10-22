@@ -1,9 +1,9 @@
 ---
 title: ACP サポート
-description: ACP 互換エディターで OpenCode を使用します。
+description: ACP 互換エディターで Flynncode を使用します。
 ---
 
-OpenCode は [Agent Client Protocol](https://agentclientprotocol.com) または (ACP) をサポートしているため、互換性のあるエディターや IDE で直接使用できます。
+Flynncode は [Agent Client Protocol](https://agentclientprotocol.com) または (ACP) をサポートしているため、互換性のあるエディターや IDE で直接使用できます。
 
 :::tip
 ACP をサポートするエディターとツールのリストについては、[ACP progress report](https://zed.dev/blog/acp-progress-report#available-now) を参照してください。
@@ -14,9 +14,9 @@ ACP は、コードエディターと AI コーディングエージェント間
 
 ## 設定
 
-ACP 経由で OpenCode を使用するには、`opencode acp` コマンドを実行するようにエディタを設定します。
+ACP 経由で Flynncode を使用するには、`opencode acp` コマンドを実行するようにエディタを設定します。
 
-このコマンドは、stdio 経由で JSON-RPC 経由でエディターと通信する ACP 互換のサブプロセスとして OpenCode を開始します。
+このコマンドは、stdio 経由で JSON-RPC 経由でエディターと通信する ACP 互換のサブプロセスとして Flynncode を開始します。
 
 以下は、ACP をサポートする一般的なエディタの例です。
 
@@ -24,14 +24,14 @@ ACP 経由で OpenCode を使用するには、`opencode acp` コマンドを実
 
 ### Zed
 
-コマンドパレットで `zed: acp registry` を実行し、[Zed ACP レジストリ](https://zed.dev/docs/ai/external-agents#registry)から OpenCode をインストールします。
+コマンドパレットで `zed: acp registry` を実行し、[Zed ACP レジストリ](https://zed.dev/docs/ai/external-agents#registry)から Flynncode をインストールします。
 
-代わりにカスタムの OpenCode 実行ファイルを使用する場合は、[Zed](https://zed.dev) の設定 (`~/.config/zed/settings.json`) に追加します。
+代わりにカスタムの Flynncode 実行ファイルを使用する場合は、[Zed](https://zed.dev) の設定 (`~/.config/zed/settings.json`) に追加します。
 
 ```json title="~/.config/zed/settings.json"
 {
   "agent_servers": {
-    "OpenCode": {
+    "Flynncode": {
       "type": "custom",
       "command": "opencode",
       "args": ["acp"]
@@ -53,7 +53,7 @@ ACP 経由で OpenCode を使用するには、`opencode acp` コマンドを実
         {
           "agent": {
             "custom": {
-              "name": "OpenCode",
+              "name": "Flynncode",
               "command": {
                 "command": "opencode",
                 "args": ["acp"]
@@ -76,7 +76,7 @@ ACP 経由で OpenCode を使用するには、`opencode acp` コマンドを実
 ```json title="acp.json"
 {
   "agent_servers": {
-    "OpenCode": {
+    "Flynncode": {
       "command": "/absolute/path/bin/opencode",
       "args": ["acp"]
     }
@@ -84,7 +84,7 @@ ACP 経由で OpenCode を使用するには、`opencode acp` コマンドを実
 }
 ```
 
-これを開くには、AI Chat エージェントセレクターで新しい「OpenCode」エージェントを使用します。
+これを開くには、AI Chat エージェントセレクターで新しい「Flynncode」エージェントを使用します。
 
 ---
 
@@ -123,7 +123,7 @@ ACP 経由で OpenCode を使用するには、`opencode acp` コマンドを実
 
 ### CodeCompanion.nvim
 
-[CodeCompanion.nvim](https://github.com/olimorris/codecompanion.nvim) で OpenCode を ACP エージェントとして使用するには、以下を Neovim 構成に追加します。
+[CodeCompanion.nvim](https://github.com/olimorris/codecompanion.nvim) で Flynncode を ACP エージェントとして使用するには、以下を Neovim 構成に追加します。
 
 ```lua
 require("codecompanion").setup({
@@ -138,13 +138,13 @@ require("codecompanion").setup({
 })
 ```
 
-この構成は、OpenCode をチャットの ACP エージェントとして使用するように CodeCompanion をセットアップします。
+この構成は、Flynncode をチャットの ACP エージェントとして使用するように CodeCompanion をセットアップします。
 
 環境変数 (`OPENCODE_API_KEY` など) を渡す必要がある場合、詳細については、CodeCompanion.nvim ドキュメントの「[アダプターの構成: 環境変数](https://codecompanion.olimorris.dev/getting-started#setting-an-api-key)」を参照してください。
 
 ## サポート
 
-OpenCode は、ACP 経由でもターミナル内で動作するのと同じように動作します。すべての機能がサポートされています。
+Flynncode は、ACP 経由でもターミナル内で動作するのと同じように動作します。すべての機能がサポートされています。
 
 :::note
 `/undo` や `/redo` などの一部の組み込みスラッシュコマンドは現在サポートされていません。
@@ -152,7 +152,7 @@ OpenCode は、ACP 経由でもターミナル内で動作するのと同じよ�
 
 - 組み込みツール (ファイル操作、ターミナルコマンドなど)
 - カスタムツールとスラッシュコマンド
-- OpenCode 設定で構成された MCP サーバー
+- Flynncode 設定で構成された MCP サーバー
 - `AGENTS.md` のプロジェクト固有のルール
 - カスタムフォーマッタとリンター
 - エージェントと権限システム

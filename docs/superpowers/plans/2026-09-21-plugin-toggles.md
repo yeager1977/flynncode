@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add Settings+config on/off switches for Model Router and Oh My OpenCode, default this machine to router off and OMO on, without deleting either system.
+**Goal:** Add Settings+config on/off switches for Model Router and Oh My Flynncode, default this machine to router off and OMO on, without deleting either system.
 
 **Architecture:** Parse `model_router.enabled` in the built-in plugin. When false, skip sentinel injection, agent assignment, and sentinel rewrite; tools stay declared (plugin hooks are returned at load) but execute reports disabled. Settings serializes `enabled` and retargets `model-router/auto` to `small_model`. A pure helper adds/removes `oh-my-openagent` from `plugin[]`. OMO is installed on this machine only.
 
@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Do not vendor Oh My OpenCode into the Flynncode repo.
+- Do not vendor Oh My Flynncode into the Flynncode repo.
 - Do not delete scorecards, `~/.omo/`, or the router plugin.
 - English UI copy is source; add keys to `packages/app/src/i18n/en.ts` only (locales inherit via `model-router-fallback.ts`).
 - Never hardcode user-visible English in production UI.
@@ -317,7 +317,7 @@ git commit -m "feat(app): serialize model router enabled flag"
 
 ---
 
-### Task 4: Oh My OpenCode plugin-array helper
+### Task 4: Oh My Flynncode plugin-array helper
 
 **Files:**
 - Create: `packages/app/src/components/settings-v2/omo-plugin.ts`
@@ -417,14 +417,14 @@ git commit -m "feat(app): add oh-my-openagent plugin array helper"
 
 **Interfaces:**
 - Consumes: `form.enabled`, `serializeForm`, `modelAfterDisable` from Task 3; `hasOmoPlugin`, `setOmoPlugin` from Task 4
-- Produces: Model Router tab shows Enable Model Router (saved with the existing Save path) and Enable Oh My OpenCode (writes `plugin` immediately via `updateConfig`)
+- Produces: Model Router tab shows Enable Model Router (saved with the existing Save path) and Enable Oh My Flynncode (writes `plugin` immediately via `updateConfig`)
 
 - [ ] **Step 1: Add i18n keys** in `packages/app/src/i18n/en.ts` immediately after `settings.modelRouter.autoRoute.description`:
 
 ```ts
 "settings.modelRouter.enabled.title": "Enable Model Router",
 "settings.modelRouter.enabled.description": "When off, keep the scorecard but do not inject or resolve Model Router.",
-"settings.modelRouter.omo.title": "Enable Oh My OpenCode",
+"settings.modelRouter.omo.title": "Enable Oh My Flynncode",
 "settings.modelRouter.omo.description": "Load the oh-my-openagent plugin. Turning off removes it from plugin without deleting ~/.omo.",
 ```
 
@@ -542,7 +542,7 @@ console.log("ok")
 
 Expected: `ok`. Do not print secrets.
 
-- [ ] **Step 4: Tell the user to quit and restart OpenCode**
+- [ ] **Step 4: Tell the user to quit and restart Flynncode**
 
 No git commit for the home config.
 

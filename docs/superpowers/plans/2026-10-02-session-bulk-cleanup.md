@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Product is Flynncode, not upstream OpenCode.
+- Product is Flynncode, not upstream Flynncode.
 - Both the sidebar session list and the home session list get Select and Clean up.
 - Archive and permanent delete are both available for multi-select and age cleanup.
 - Age uses `time.updated`, then `time.created`. A session is older only when that timestamp is strictly before `now - duration`.

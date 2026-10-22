@@ -1,4 +1,4 @@
-# Model Router and Oh My OpenCode Toggles - Design
+# Model Router and Oh My Flynncode Toggles - Design
 
 Date: 2026-09-21
 Status: Draft
@@ -10,7 +10,7 @@ Flynncode's Model Router is always on once `model_router` exists in config.
 provider is still injected, `chat.message` still rewrites the sentinel, and
 `rank_models` / `route_task` still register.
 
-The user wants to try Oh My OpenCode (OMO) on this machine without deleting
+The user wants to try Oh My Flynncode (OMO) on this machine without deleting
 router code or scorecards. OMO must not be bundled into Flynncode. The two
 features need independent on/off switches in Settings, persisted in config.
 
@@ -60,11 +60,11 @@ Out of scope:
   must not rewrite.
 - Settings keeps the Model Router tab and scorecard. The master switch sits
   at the top. Other controls stay visible but do not apply until the switch
-  is on and OpenCode is restarted.
+  is on and Flynncode is restarted.
 - Saving the switch writes `model_router.enabled` through the existing
   settings save path. Copy uses i18n keys; English is the source.
 
-### Oh My OpenCode toggle
+### Oh My Flynncode toggle
 
 - This machine only. Run `bunx oh-my-openagent install` (or the documented
   `oh-my-opencode` alias) into the user config. Do not vendor the package.
@@ -99,7 +99,7 @@ settings error path rather than guessing.
 - After install, `plugin` includes `oh-my-openagent` and `model_router.enabled`
   is false.
 - `model` is not `model-router/auto`.
-- Restart OpenCode. Model picker has no Model Router sentinel. OMO agents or
+- Restart Flynncode. Model picker has no Model Router sentinel. OMO agents or
   commands are present.
 - Flip the router switch on, save, restart: sentinel returns.
 - Flip OMO off, save, restart: OMO is gone; `~/.omo/` remains.
@@ -111,5 +111,5 @@ settings error path rather than guessing.
 - **Installer mutates config.** Run it first, then apply `enabled: false` and
   the model retarget so the installer cannot re-select the sentinel last.
 - **Unknown top-level keys.** `model_router` is already a Flynncode key.
-  `enabled` lives under it, not at the root, so OpenCode schema rejection
+  `enabled` lives under it, not at the root, so Flynncode schema rejection
   does not apply.

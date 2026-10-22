@@ -53,7 +53,7 @@ session** include exact repro steps for a human to run.
   and `install project writes <dir>/opencode.json` pass in
   `packages/desktop/src/main/plugin-manager.test.ts`.
 - Unit-verified: success toast key `settings.plugins.install.success`
-  ("Installed {{name}}. Restart OpenCode to load it.") is rendered after install
+  ("Installed {{name}}. Restart Flynncode to load it.") is rendered after install
   (`plugins.tsx`, `doInstall` flow).
 - GUI repro:
   1. Browse → Install… on any entry.

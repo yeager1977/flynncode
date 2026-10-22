@@ -8,14 +8,14 @@ import { Tabs, TabItem } from "@astrojs/starlight/components"
 export const console = config.console
 export const email = `mailto:${config.email}`
 
-OpenCode Go 讓您能穩定存取受歡迎的開源寫程式模型，並提供兩種月繳方案：
+Flynncode Go 讓您能穩定存取受歡迎的開源寫程式模型，並提供兩種月繳方案：
 
 | 方案        | 價格       | 包含的用量                   |
 | ----------- | ---------- | ---------------------------- |
 | **Go**      | **$10/月** | 以較低成本存取下列模型       |
 | **Go Plus** | **$40/月** | 下列模型均享有更高的用量限制 |
 
-Go 的運作方式與 OpenCode 中的其他供應商相同。訂閱 OpenCode Go 後，您會取得 API key。這是**完全可選的**，您不需要使用它也能使用 OpenCode。
+Go 的運作方式與 Flynncode 中的其他供應商相同。訂閱 Flynncode Go 後，您會取得 API key。這是**完全可選的**，您不需要使用它也能使用 Flynncode。
 
 這項服務主要為國際使用者設計，提供穩定的全球存取體驗。
 
@@ -28,7 +28,7 @@ Go 的運作方式與 OpenCode 中的其他供應商相同。訂閱 OpenCode Go 
 然而，要獲得穩定、低延遲的存取可能很困難。各家供應商的品質和可用性不一。
 
 :::tip
-我們測試了一組精選的模型和供應商，它們與 OpenCode 搭配運作良好。
+我們測試了一組精選的模型和供應商，它們與 Flynncode 搭配運作良好。
 :::
 
 為了解決這個問題，我們做了幾件事：
@@ -43,14 +43,14 @@ Go 和 Go Plus 均可存取這些模型；請依您的使用量選擇合適的�
 
 ## 運作方式
 
-OpenCode Go 的運作方式與 OpenCode 中的其他供應商相同。
+Flynncode Go 的運作方式與 Flynncode 中的其他供應商相同。
 
-1. 登入 **<a href={console}>OpenCode Console</a>**，訂閱 Go 或 Go Plus，然後複製您的 API key。
-2. 在 TUI 中執行 `/connect` 命令，選擇 `OpenCode Go`，然後貼上您的 API key。
+1. 登入 **<a href={console}>Flynncode Console</a>**，訂閱 Go 或 Go Plus，然後複製您的 API key。
+2. 在 TUI 中執行 `/connect` 命令，選擇 `Flynncode Go`，然後貼上您的 API key。
 3. 在 TUI 中執行 `/models`，查看可透過 Go 使用的模型清單。
 
 :::note
-每個工作區只能有一位成員訂閱 OpenCode Go 或 Go Plus。
+每個工作區只能有一位成員訂閱 Flynncode Go 或 Go Plus。
 :::
 
 目前的模型清單包括：
@@ -92,7 +92,7 @@ OpenCode Go 的運作方式與 OpenCode 中的其他供應商相同。
 
 ## 可以在哪裡使用？
 
-OpenCode Go 適用於 [OpenCode](https://opencode.ai) 以及其他會產生類似請求的寫程式 Agent。我們會監控流量，以識別影響其他使用者體驗的濫用行為。
+Flynncode Go 適用於 [Flynncode](https://opencode.ai) 以及其他會產生類似請求的寫程式 Agent。我們會監控流量，以識別影響其他使用者體驗的濫用行為。
 
 您的用戶端應：
 
@@ -102,17 +102,17 @@ OpenCode Go 適用於 [OpenCode](https://opencode.ai) 以及其他會產生類�
 
 ### 已驗證的用戶端
 
-除了 OpenCode，以下用戶端已通過驗證，可正常使用 OpenCode Go。但我們無法保證它們未來仍能正常使用。
+除了 Flynncode，以下用戶端已通過驗證，可正常使用 Flynncode Go。但我們無法保證它們未來仍能正常使用。
 
 | 用戶端            | 工作階段支援                                                                                                                                                                                                                        |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Hermes**        | 包含 [PR #101864](https://github.com/NousResearch/hermes-agent/pull/101864) 的建置版本會在主要和輔助 OpenCode 請求中傳送該標頭。此修正是在 v0.21.0 發布後才合併，因此該版本本身並未包含此修正。                                     |
+| **Hermes**        | 包含 [PR #101864](https://github.com/NousResearch/hermes-agent/pull/101864) 的建置版本會在主要和輔助 Flynncode 請求中傳送該標頭。此修正是在 v0.21.0 發布後才合併，因此該版本本身並未包含此修正。                                     |
 | **Claude Code**   | Go 可辨識其原生工作階段標頭，無須自訂標頭封裝。                                                                                                                                                                                     |
 | **Codex**         | Go 可辨識其原生工作階段標頭。部分版本和代理伺服器設定仍會遺漏該標頭；轉送請求時請保留工作階段標頭。                                                                                                                                 |
 | **ZCode**         | Go 可辨識其原生工作階段標頭。我們[請求支援 `x-opencode-session`](https://github.com/zai-org/feedback/issues/492) 仍未關閉，但已不再需要傳送這個特定標頭。                                                                           |
-| **Pi**            | 目前的建置版本會為 OpenCode 傳送工作階段資訊。請更新舊版安裝。                                                                                                                                                                      |
+| **Pi**            | 目前的建置版本會為 Flynncode 傳送工作階段資訊。請更新舊版安裝。                                                                                                                                                                      |
 | **jcode**         | 請更新至 **v0.81.6 或更新版本**，其中包含[工作階段標頭修正](https://github.com/1jehuang/jcode/issues/1167)。                                                                                                                        |
-| **Kilo Code CLI** | 包含 [PR #13752](https://github.com/Kilo-Org/kilocode/pull/13752) 的建置版本恢復了 OpenCode 工作階段標頭。此修正僅適用於 CLI，不適用於 VS Code 擴充套件。請參閱 [issue #13723](https://github.com/Kilo-Org/kilocode/issues/13723)。 |
+| **Kilo Code CLI** | 包含 [PR #13752](https://github.com/Kilo-Org/kilocode/pull/13752) 的建置版本恢復了 Flynncode 工作階段標頭。此修正僅適用於 CLI，不適用於 VS Code 擴充套件。請參閱 [issue #13723](https://github.com/Kilo-Org/kilocode/issues/13723)。 |
 
 ### 已知有問題的用戶端
 
@@ -408,7 +408,7 @@ Token 價格按每 1M tokens 計算。
 | Hy3                          | hy3                          | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
 | Space Bunny Free             | space-bunny-free             | `https://opencode.ai/zen/go/v1/chat/completions` | `@ai-sdk/openai-compatible` |
 
-OpenCode 設定中的[模型 ID](/docs/config/#models)使用 `opencode-go/<model-id>` 格式。例如，Kimi K3 在設定中應使用 `opencode-go/kimi-k3`。
+Flynncode 設定中的[模型 ID](/docs/config/#models)使用 `opencode-go/<model-id>` 格式。例如，Kimi K3 在設定中應使用 `opencode-go/kimi-k3`。
 
 ---
 
@@ -467,9 +467,9 @@ https://opencode.ai/zen/go/v1/models
 
 ## 目標
 
-我們建立 OpenCode Go 的目的是：
+我們建立 Flynncode Go 的目的是：
 
 1. 透過低成本訂閱，讓更多人能**輕鬆使用** AI 寫程式。
 2. 提供**穩定可靠**的方式來存取最佳開源寫程式模型。
 3. 精選經過**測試與效能評估**、適合寫程式 Agent 使用的模型。
-4. 允許您在 OpenCode 中同時使用任何其他供應商，確保**不被單一供應商綁定**。
+4. 允許您在 Flynncode 中同時使用任何其他供應商，確保**不被單一供應商綁定**。

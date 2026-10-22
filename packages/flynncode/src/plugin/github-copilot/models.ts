@@ -101,7 +101,7 @@ function build(key: string, remote: SelectableItem, url: string, prev?: Model): 
         ? "chat"
         : undefined
   const prices = remote.billing?.token_prices
-  // Copilot prices are AIC per billing batch; OpenCode stores USD per million tokens.
+  // Copilot prices are AIC per billing batch; Flynncode stores USD per million tokens.
   const usdPerMillion = prices && prices.batch_size > 0 ? 10_000 / prices.batch_size : 0
 
   const model: CopilotModel = {

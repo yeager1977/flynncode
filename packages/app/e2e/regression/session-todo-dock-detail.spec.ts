@@ -14,7 +14,7 @@ const PATH_TODO_SUMMARY = "Add validateEmail() for input sanitization"
 // Plain todo: summary === detail → no toggle shown
 const PLAIN_TODO_CONTENT = "Keep the dock visible across tabs"
 
-const directory = "C:/OpenCode/TodoDockDetail"
+const directory = "C:/Flynncode/TodoDockDetail"
 const projectID = "proj_todo_dock_detail"
 const sessionID = "ses_todo_dock_detail"
 const sessionTitle = "Todo dock detail regression"
@@ -179,7 +179,7 @@ async function setupMock(
       all: [
         {
           id: "opencode",
-          name: "OpenCode",
+          name: "Flynncode",
           models: {
             "claude-opus-4-6": {
               id: "claude-opus-4-6",

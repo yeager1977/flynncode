@@ -192,7 +192,7 @@ Affected schema:
 
 Change:
 
-- Spill oversized model-facing tool text into globally unique files under OpenCode's shared tool-output directory.
+- Spill oversized model-facing tool text into globally unique files under Flynncode's shared tool-output directory.
 - Include the absolute file path in the bounded preview so ordinary `read`, `grep`, and `bash` operations can inspect it.
 
 Reason:

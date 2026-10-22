@@ -1,13 +1,13 @@
 # @flynncode/sdk-next
 
-Effect-native scoped OpenCode host for in-process applications. This transitional package will replace the existing generated `@flynncode/sdk` after its consumers migrate.
+Effect-native scoped Flynncode host for in-process applications. This transitional package will replace the existing generated `@flynncode/sdk` after its consumers migrate.
 
 The SDK executes Server's assembled HTTP router in memory. It opens no listener and performs no network I/O, while preserving the same routing, middleware, handlers, codecs, and errors as the network client.
 
 ```ts
-import { OpenCode } from "@flynncode/sdk-next"
+import { Flynncode } from "@flynncode/sdk-next"
 
-const opencode = yield * OpenCode.create()
+const opencode = yield * Flynncode.create()
 const session = yield * opencode.sessions.get({ sessionID })
 ```
 
@@ -19,11 +19,11 @@ The same constructor is available as a service Layer:
 
 ```ts
 const program = Effect.gen(function* () {
-  const opencode = yield* OpenCode.Service
+  const opencode = yield* Flynncode.Service
   return yield* opencode.sessions.get({ sessionID })
 })
 
-yield * program.pipe(Effect.provide(OpenCode.layer))
+yield * program.pipe(Effect.provide(Flynncode.layer))
 ```
 
-`OpenCode.layer` adapts `OpenCode.create()` for dependency injection; it does not define another host implementation.
+`Flynncode.layer` adapts `Flynncode.create()` for dependency injection; it does not define another host implementation.

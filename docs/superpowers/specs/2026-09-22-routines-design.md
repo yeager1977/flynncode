@@ -43,7 +43,7 @@ Out of scope:
   check, session spawn via SDK client), `index.ts` (plugin hooks).
 - App: settings-v2 `routines.tsx` page reusing SettingsRowV2 list patterns;
   nav item "Routines" in settings tab list.
-- The scheduler runs only while OpenCode runs; missed schedules while the
+- The scheduler runs only while Flynncode runs; missed schedules while the
   app was closed are skipped (documented behavior).
 - Enable/disable per routine; disabled routines never run.
 

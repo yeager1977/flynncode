@@ -12,7 +12,7 @@ const PLAIN_TODO_CONTENT = "Keep the dock visible across tabs"
 const COMPLETED_TODO_CONTENT = "Implement login form validation"
 const CANCELLED_TODO_CONTENT = "Migrate legacy auth module"
 
-const directory = "C:/OpenCode/TodoDockScreenshots"
+const directory = "C:/Flynncode/TodoDockScreenshots"
 const projectID = "proj_todo_dock_screenshots"
 const sessionID = "ses_todo_dock_screenshots"
 const sessionTitle = "Todo dock screenshots"
@@ -333,7 +333,7 @@ async function setupMock(
       all: [
         {
           id: "opencode",
-          name: "OpenCode",
+          name: "Flynncode",
           models: {
             "claude-opus-4-6": {
               id: "claude-opus-4-6",

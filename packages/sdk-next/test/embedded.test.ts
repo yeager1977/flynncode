@@ -10,13 +10,13 @@ test("embedded client uses the real router and handlers", async () => {
   const directory = await mkdtemp(join(tmpdir(), "opencode-embedded-"))
   const database = Flag.OPENCODE_DB
   Flag.OPENCODE_DB = join(directory, "opencode.sqlite")
-  const { AbsolutePath, Agent, Location, Model, OpenCode, Prompt, Provider, Session, Tool } = await import("../src")
+  const { AbsolutePath, Agent, Location, Model, Flynncode, Prompt, Provider, Session, Tool } = await import("../src")
   const sessionID = Session.ID.make(`ses_embedded_${crypto.randomUUID()}`)
   const model = Model.Ref.make({ id: Model.ID.make("embedded"), providerID: Provider.ID.make("test") })
 
   try {
     const program = Effect.gen(function* () {
-      const opencode = yield* OpenCode.create()
+      const opencode = yield* Flynncode.create()
       yield* opencode.tools.register({
         embedded_tool: Tool.make({
           description: "Embedded test tool",
@@ -108,12 +108,12 @@ test("Location-owned runner events reach the ready global client", async () => {
   const directory = await mkdtemp(join(tmpdir(), "opencode-embedded-events-"))
   const database = Flag.OPENCODE_DB
   Flag.OPENCODE_DB = join(directory, "opencode.sqlite")
-  const { AbsolutePath, Location, OpenCode, Prompt, Session } = await import("../src")
+  const { AbsolutePath, Location, Flynncode, Prompt, Session } = await import("../src")
   const sessionID = Session.ID.make(`ses_embedded_${crypto.randomUUID()}`)
 
   try {
     const program = Effect.gen(function* () {
-      const opencode = yield* OpenCode.create()
+      const opencode = yield* Flynncode.create()
       const connected = yield* Latch.make(false)
       const prompted = yield* Deferred.make<OpenCodeEvent>()
       yield* opencode.events.subscribe().pipe(
@@ -147,13 +147,13 @@ test("independent embedded hosts do not share live notifications", async () => {
   const directory = await mkdtemp(join(tmpdir(), "opencode-embedded-hosts-"))
   const database = Flag.OPENCODE_DB
   Flag.OPENCODE_DB = join(directory, "opencode.sqlite")
-  const { AbsolutePath, Agent, Location, OpenCode, Session } = await import("../src")
+  const { AbsolutePath, Agent, Location, Flynncode, Session } = await import("../src")
   const sessionID = Session.ID.make(`ses_embedded_${crypto.randomUUID()}`)
 
   try {
     const program = Effect.gen(function* () {
-      const first = yield* OpenCode.create()
-      const second = yield* OpenCode.create()
+      const first = yield* Flynncode.create()
+      const second = yield* Flynncode.create()
       const firstReady = yield* Latch.make(false)
       const secondReady = yield* Latch.make(false)
       const firstEvent = yield* Latch.make(false)
@@ -190,18 +190,18 @@ test("embedded client is available as a Layer service", async () => {
   const directory = await mkdtemp(join(tmpdir(), "opencode-embedded-layer-"))
   const database = Flag.OPENCODE_DB
   Flag.OPENCODE_DB = join(directory, "opencode.sqlite")
-  const { AbsolutePath, Location, OpenCode, Session } = await import("../src")
+  const { AbsolutePath, Location, Flynncode, Session } = await import("../src")
   const sessionID = Session.ID.make(`ses_embedded_${crypto.randomUUID()}`)
 
   try {
     const created = await Effect.runPromise(
       Effect.gen(function* () {
-        const opencode = yield* OpenCode.Service
+        const opencode = yield* Flynncode.Service
         return yield* opencode.sessions.create({
           id: sessionID,
           location: Location.Ref.make({ directory: AbsolutePath.make(directory) }),
         })
-      }).pipe(Effect.provide(OpenCode.layer), Effect.scoped),
+      }).pipe(Effect.provide(Flynncode.layer), Effect.scoped),
     )
 
     expect(created.id).toBe(sessionID)

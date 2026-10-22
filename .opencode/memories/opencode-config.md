@@ -1,1 +1,1 @@
-- Project is "flyncode," an OpenCode-based tool at ~/GitHub/rl/rl-edge-dev; config lives at ~/.config/opencode/opencode.json with providers ollama-local, ollama-gpu, and ollama-cloud
+- Project is "flyncode," an Flynncode-based tool at ~/GitHub/rl/rl-edge-dev; config lives at ~/.config/opencode/opencode.json with providers ollama-local, ollama-gpu, and ollama-cloud

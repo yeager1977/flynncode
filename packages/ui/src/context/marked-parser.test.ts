@@ -4,7 +4,7 @@ import { createMarkdownParser } from "./marked-parser"
 const parser = createMarkdownParser((code, language) => `<pre data-language="${language}">${code}</pre>`)
 
 test.each([
-  ["OpenCode", "OpenCode"],
+  ["Flynncode", "Flynncode"],
   ["**`#123`**", "<strong><code>#123</code></strong>"],
   ["*Review* ~~draft~~", "<em>Review</em> <del>draft</del>"],
   ["`<example>`", "<code>&lt;example&gt;</code>"],

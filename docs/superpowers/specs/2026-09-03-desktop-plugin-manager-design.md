@@ -1,4 +1,4 @@
-# Plugin Manager for OpenCode Desktop — Design
+# Plugin Manager for Flynncode Desktop — Design
 
 **Date:** 2026-09-03
 **Status:** Approved (design), pending spec review
@@ -6,7 +6,7 @@
 
 ## Problem
 
-OpenCode has no plugin browser or manager in the desktop app. Plugin discovery
+Flynncode has no plugin browser or manager in the desktop app. Plugin discovery
 today is manual: the docs ecosystem page, `awesome-opencode`, npm search, or
 the third-party `ocx` CLI. Users must hand-edit `opencode.json` to install a
 plugin.

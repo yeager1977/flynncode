@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test"
 import { mockOpenCodeServer } from "../utils/mock-server"
 import { expectSessionTitle } from "../utils/waits"
 
-const directory = "C:/OpenCode/HeaderTerminalToggleRegression"
+const directory = "C:/Flynncode/HeaderTerminalToggleRegression"
 const projectID = "proj_header_terminal_toggle_regression"
 const sessionID = "ses_header_terminal_toggle_regression"
 const title = "Header terminal toggle regression"
@@ -24,7 +24,7 @@ test("v2 header terminal button toggles the terminal panel", async ({ page }) =>
       all: [
         {
           id: "opencode",
-          name: "OpenCode",
+          name: "Flynncode",
           models: { test: { id: "test", name: "Test", limit: { context: 200_000 } } },
         },
       ],

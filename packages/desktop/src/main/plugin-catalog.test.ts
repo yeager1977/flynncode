@@ -11,7 +11,7 @@ const CAFE_JSON = JSON.stringify([
   {
     productId: "opencode-helicone-session",
     type: "plugin",
-    displayName: "OpenCode Helicone Session",
+    displayName: "Flynncode Helicone Session",
     description: "Automatically inject Helicone session headers",
     repoUrl: "https://github.com/H2Shami/opencode-helicone-session",
   },
@@ -221,7 +221,7 @@ describe("createCatalogFetcher", () => {
     const treeHtml = `
 <table>
   <tr><td><a href="https://github.com/daytona/integrations/tree/main/packages/flynncode-plugin">Daytona Integration</a></td><td>Run sessions in Daytona sandboxes</td></tr>
-  <tr><td><a href="https://github.com/willytop8/OpenCode-goal-plugin">opencode-goal-plugin</a></td><td>Session-scoped <code dir="auto">/goal</code> workflow</td></tr>
+  <tr><td><a href="https://github.com/willytop8/Flynncode-goal-plugin">opencode-goal-plugin</a></td><td>Session-scoped <code dir="auto">/goal</code> workflow</td></tr>
 </table>`
     const fetchImpl: typeof fetch = async (input) => {
       const url = String(input instanceof Request ? input.url : input)

@@ -1,1 +1,1 @@
-- Fix/ensure the "full-access" (sandbox full-access) grant works in OpenCode config
+- Fix/ensure the "full-access" (sandbox full-access) grant works in Flynncode config

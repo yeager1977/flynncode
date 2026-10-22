@@ -740,7 +740,7 @@ const ANTHROPIC_BLOCK_BINDING = { prefixMismatchBehavior: "drop_block" }
 function anthropicBlockBinding(model: Provider.Model, options: { [x: string]: any }) {
   const sdk = sdkKey(model.api.npm)
   const key = sdk === "bedrock" ? "reasoningConfig" : sdk === "anthropic" ? "thinking" : undefined
-  // Consume the OpenCode-only opt-out even on models outside the default scope.
+  // Consume the Flynncode-only opt-out even on models outside the default scope.
   if (key && options[key]?.blockBinding === false) {
     const result = { ...options, [key]: { ...options[key] } }
     delete result[key].blockBinding
@@ -1625,7 +1625,7 @@ export function schema(model: Provider.Model, schema: JSONSchema7): JSONSchema7 
 
   if (model.api.npm === "@ai-sdk/openai" || model.api.npm === "@ai-sdk/azure") {
     schema = sanitizeOpenAISchema(schema) as JSONSchema7
-    // Codex also applies lossy compaction above 4 KB; defer that until OpenCode needs the same schema budget.
+    // Codex also applies lossy compaction above 4 KB; defer that until Flynncode needs the same schema budget.
   }
 
   if (model.providerID === "moonshotai" || model.api.id.toLowerCase().includes("kimi")) {

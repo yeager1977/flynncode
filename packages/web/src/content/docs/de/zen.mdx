@@ -1,15 +1,15 @@
 ---
 title: Zen
-description: Kuratierte Modellliste direkt von OpenCode.
+description: Kuratierte Modellliste direkt von Flynncode.
 ---
 
 import config from "../../../../config.mjs"
 export const console = config.console
 export const email = `mailto:${config.email}`
 
-OpenCode Zen ist eine Liste von getesteten und verifizierten Modellen, die vom OpenCode-Team bereitgestellt wird.
+Flynncode Zen ist eine Liste von getesteten und verifizierten Modellen, die vom Flynncode-Team bereitgestellt wird.
 
-Zen funktioniert wie jeder andere Provider in OpenCode. Du meldest dich bei OpenCode Zen an und erhältst deinen API-Key. Es ist **vollständig optional** und du musst es nicht verwenden, um OpenCode zu nutzen.
+Zen funktioniert wie jeder andere Provider in Flynncode. Du meldest dich bei Flynncode Zen an und erhältst deinen API-Key. Es ist **vollständig optional** und du musst es nicht verwenden, um Flynncode zu nutzen.
 
 ---
 
@@ -18,7 +18,7 @@ Zen funktioniert wie jeder andere Provider in OpenCode. Du meldest dich bei Open
 Es gibt eine große Anzahl an Modellen, aber nur wenige davon eignen sich gut als Coding-Agenten. Außerdem sind die meisten Provider sehr unterschiedlich konfiguriert, sodass du sehr unterschiedliche Leistung und Qualität erhältst.
 
 :::tip
-Wir haben eine ausgewählte Gruppe von Modellen und Providern getestet, die gut mit OpenCode funktionieren.
+Wir haben eine ausgewählte Gruppe von Modellen und Providern getestet, die gut mit Flynncode funktionieren.
 :::
 
 Wenn du also ein Modell über etwas wie OpenRouter nutzt, kannst du nie sicher sein, ob du die beste Version des gewünschten Modells bekommst.
@@ -29,16 +29,16 @@ Um das zu beheben, haben wir ein paar Dinge getan:
 2. Anschließend haben wir mit einigen Providern zusammengearbeitet, um sicherzustellen, dass diese korrekt ausgeliefert werden.
 3. Schließlich haben wir die Kombination aus Modell und Provider benchmarked und eine Liste erstellt, die wir guten Gewissens empfehlen können.
 
-OpenCode Zen ist ein AI-Gateway, das dir Zugriff auf diese Modelle gibt.
+Flynncode Zen ist ein AI-Gateway, das dir Zugriff auf diese Modelle gibt.
 
 ---
 
 ## So funktioniert es
 
-OpenCode Zen funktioniert wie jeder andere Provider in OpenCode.
+Flynncode Zen funktioniert wie jeder andere Provider in Flynncode.
 
-1. Du meldest dich bei **<a href={console}>OpenCode Zen</a>** an, hinterlegst deine Zahlungsdaten und kopierst deinen API-Key.
-2. Du führst den Befehl `/connect` in der TUI aus, wählst OpenCode Zen aus und fügst deinen API-Key ein.
+1. Du meldest dich bei **<a href={console}>Flynncode Zen</a>** an, hinterlegst deine Zahlungsdaten und kopierst deinen API-Key.
+2. Du führst den Befehl `/connect` in der TUI aus, wählst Flynncode Zen aus und fügst deinen API-Key ein.
 3. Führe `/models` in der TUI aus, um die Liste der Modelle zu sehen, die wir empfehlen.
 
 Dir wird pro Anfrage berechnet, und du kannst deinem Konto Guthaben hinzufügen.
@@ -136,7 +136,7 @@ Du kannst auch über die folgenden API-Endpunkte auf unsere Modelle zugreifen.
 | Nemotron 3.5 Lightning Free     | nemotron-3.5-lightning-free     | `https://opencode.ai/zen/v1/chat/completions`             | `@ai-sdk/openai-compatible` |
 | Muse Spark 1.3 Contributor Free | muse-spark-1.3-contributor-free | `https://opencode.ai/zen/v1/responses`                    | `@ai-sdk/openai`            |
 
-Die [Model-ID](/docs/config/#models) in deiner OpenCode-Konfiguration verwendet das Format `opencode/<model-id>`. Für GPT 5.5 würdest du zum Beispiel `opencode/gpt-5.5` in deiner Konfiguration verwenden.
+Die [Model-ID](/docs/config/#models) in deiner Flynncode-Konfiguration verwendet das Format `opencode/<model-id>`. Für GPT 5.5 würdest du zum Beispiel `opencode/gpt-5.5` in deiner Konfiguration verwenden.
 
 ---
 
@@ -154,7 +154,7 @@ https://opencode.ai/zen/v1/models
 
 Jev ist ein System One-Modell von TypeSafe AI für schnelle, strukturierte Entscheidungen. Anstatt Text zu generieren, wertet es einen `state` anhand typisierter Fragen aus und gibt Werte und Wahrscheinlichkeiten zurück, die dein Code direkt verwenden kann. Es unterstützt Ja/Nein-Fragen (`noul`), Multiple-Choice-Fragen (`choice`) und bewertungsbasierte Fragen (`score`).
 
-Verwende deinen OpenCode Zen API-Key mit dem Endpunkt `https://opencode.ai/zen/v1/systemone`. Dieses Beispiel prüft, ob eine Supportanfrage dringend ist:
+Verwende deinen Flynncode Zen API-Key mit dem Endpunkt `https://opencode.ai/zen/v1/systemone`. Dieses Beispiel prüft, ob eine Supportanfrage dringend ist:
 
 ```bash
 curl https://opencode.ai/zen/v1/systemone \
@@ -311,7 +311,7 @@ Wir unterstützen ein Pay-as-you-go-Modell. Unten findest du die Preise **pro 1M
 
 **DeepSeek V4 Flash Vision Exp:** Bilder werden anhand ihrer Abmessungen in Tokens umgewandelt und zusammen mit Text-Tokens als Input-Tokens abgerechnet. [Mehr erfahren](https://api-docs.deepseek.com/quick_start/pricing/).
 
-Möglicherweise siehst du [kostengünstige Modelle](/docs/config/#models) wie Haiku, Nano oder Flash in deinem Nutzungsverlauf. OpenCode verwendet diese Modelle, um Session-Titel zu generieren.
+Möglicherweise siehst du [kostengünstige Modelle](/docs/config/#models) wie Haiku, Nano oder Flash in deinem Nutzungsverlauf. Flynncode verwendet diese Modelle, um Session-Titel zu generieren.
 
 :::note
 Kreditkartengebühren werden zum Selbstkostenpreis weitergegeben (4.4% + $0.30 pro Transaktion); wir berechnen darüber hinaus nichts.
@@ -319,18 +319,18 @@ Kreditkartengebühren werden zum Selbstkostenpreis weitergegeben (4.4% + $0.30 p
 
 Die kostenlosen Modelle:
 
-- Fledge Alpha Free ist für begrenzte Zeit auf OpenCode verfügbar. Das Team nutzt diese Zeit, um Feedback zu sammeln und das Modell zu verbessern.
-- MiMo-V2.6-Flash Free ist für begrenzte Zeit auf OpenCode verfügbar. Das Team nutzt diese Zeit, um Feedback zu sammeln und das Modell zu verbessern.
-- MiMo-V2.5 Free ist für begrenzte Zeit auf OpenCode verfügbar. Das Team nutzt diese Zeit, um Feedback zu sammeln und das Modell zu verbessern.
-- Ling 3.1 Flash Free ist für begrenzte Zeit auf OpenCode verfügbar. Das Team nutzt diese Zeit, um Feedback zu sammeln und das Modell zu verbessern.
-- Ling 3.0 Flash Fin Free ist für begrenzte Zeit auf OpenCode verfügbar. Das Team nutzt diese Zeit, um Feedback zu sammeln und das Modell zu verbessern.
-- Nemotron 3 Ultra Free ist für begrenzte Zeit auf OpenCode verfügbar. Das Team nutzt diese Zeit, um Feedback zu sammeln und das Modell zu verbessern.
-- Nemotron 3.5 Lightning Free ist für begrenzte Zeit auf OpenCode verfügbar. Das Team nutzt diese Zeit, um Feedback zu sammeln und das Modell zu verbessern.
-- Big Pickle ist ein Stealth-Modell, das für begrenzte Zeit kostenlos auf OpenCode verfügbar ist. Das Team nutzt diese Zeit, um Feedback zu sammeln und das Modell zu verbessern.
-- Space Bunny Free ist ein Stealth-Modell, das für begrenzte Zeit kostenlos auf OpenCode verfügbar ist. Der Anbieter befolgt eine Zero-Retention-Richtlinie und verwendet deine Daten nicht zum Trainieren von Modellen.
-- LongCat 2.5 Preview Free ist für begrenzte Zeit kostenlos auf OpenCode verfügbar. Der Anbieter befolgt eine Zero-Retention-Richtlinie und verwendet deine Daten nicht zum Trainieren von Modellen.
-- Muse Spark 1.3 Contributor Free ist für begrenzte Zeit auf OpenCode verfügbar. Das Team nutzt diese Zeit, um Feedback zu sammeln und das Modell zu verbessern.
-- Jev 1.13 Free ist für begrenzte Zeit auf OpenCode verfügbar.
+- Fledge Alpha Free ist für begrenzte Zeit auf Flynncode verfügbar. Das Team nutzt diese Zeit, um Feedback zu sammeln und das Modell zu verbessern.
+- MiMo-V2.6-Flash Free ist für begrenzte Zeit auf Flynncode verfügbar. Das Team nutzt diese Zeit, um Feedback zu sammeln und das Modell zu verbessern.
+- MiMo-V2.5 Free ist für begrenzte Zeit auf Flynncode verfügbar. Das Team nutzt diese Zeit, um Feedback zu sammeln und das Modell zu verbessern.
+- Ling 3.1 Flash Free ist für begrenzte Zeit auf Flynncode verfügbar. Das Team nutzt diese Zeit, um Feedback zu sammeln und das Modell zu verbessern.
+- Ling 3.0 Flash Fin Free ist für begrenzte Zeit auf Flynncode verfügbar. Das Team nutzt diese Zeit, um Feedback zu sammeln und das Modell zu verbessern.
+- Nemotron 3 Ultra Free ist für begrenzte Zeit auf Flynncode verfügbar. Das Team nutzt diese Zeit, um Feedback zu sammeln und das Modell zu verbessern.
+- Nemotron 3.5 Lightning Free ist für begrenzte Zeit auf Flynncode verfügbar. Das Team nutzt diese Zeit, um Feedback zu sammeln und das Modell zu verbessern.
+- Big Pickle ist ein Stealth-Modell, das für begrenzte Zeit kostenlos auf Flynncode verfügbar ist. Das Team nutzt diese Zeit, um Feedback zu sammeln und das Modell zu verbessern.
+- Space Bunny Free ist ein Stealth-Modell, das für begrenzte Zeit kostenlos auf Flynncode verfügbar ist. Der Anbieter befolgt eine Zero-Retention-Richtlinie und verwendet deine Daten nicht zum Trainieren von Modellen.
+- LongCat 2.5 Preview Free ist für begrenzte Zeit kostenlos auf Flynncode verfügbar. Der Anbieter befolgt eine Zero-Retention-Richtlinie und verwendet deine Daten nicht zum Trainieren von Modellen.
+- Muse Spark 1.3 Contributor Free ist für begrenzte Zeit auf Flynncode verfügbar. Das Team nutzt diese Zeit, um Feedback zu sammeln und das Modell zu verbessern.
+- Jev 1.13 Free ist für begrenzte Zeit auf Flynncode verfügbar.
 
 <a href={email}>Kontaktiere uns</a>, wenn du Fragen hast.
 
@@ -439,9 +439,9 @@ Zum Beispiel hat deine Organisation möglicherweise bereits einen Key für OpenA
 
 ## Ziele
 
-Wir haben OpenCode Zen geschaffen, um:
+Wir haben Flynncode Zen geschaffen, um:
 
 1. die besten Modelle/Provider für Coding-Agenten zu **benchmarken**.
 2. Zugriff auf die **höchste Qualität** zu haben und die Leistung nicht zu verschlechtern oder an günstigere Provider weiterzuleiten.
 3. **Preissenkungen** weiterzugeben, indem wir zum Selbstkostenpreis verkaufen; der einzige Aufschlag dient also dazu, unsere Bearbeitungsgebühren abzudecken.
-4. **keinen Lock-in** zu haben, indem du es mit jedem anderen Coding-Agenten verwenden kannst. Und dir außerdem immer zu erlauben, mit OpenCode auch jeden anderen Provider zu verwenden.
+4. **keinen Lock-in** zu haben, indem du es mit jedem anderen Coding-Agenten verwenden kannst. Und dir außerdem immer zu erlauben, mit Flynncode auch jeden anderen Provider zu verwenden.

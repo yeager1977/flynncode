@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test"
 import { currentSession, mockOpenCodeServer } from "../utils/mock-server"
 import { expectSessionTitle } from "../utils/waits"
 
-const directory = "C:/OpenCode/SubagentNavigation"
+const directory = "C:/Flynncode/SubagentNavigation"
 const projectID = "proj_subagent_navigation"
 const parentID = "ses_subagent_parent"
 const childID = "ses_subagent_child"
@@ -58,7 +58,7 @@ async function setup(page: Page, events?: () => EventPayload[]) {
       all: [
         {
           id: "opencode",
-          name: "OpenCode",
+          name: "Flynncode",
           models: {
             "claude-opus-4-6": { id: "claude-opus-4-6", name: "Claude Opus 4.6", limit: { context: 200_000 } },
           },

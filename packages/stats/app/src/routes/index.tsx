@@ -111,7 +111,7 @@ export default function StatsHome() {
             <FormatLinks path="/data/" />
             <LastModified value={stats().updatedAt} />
             <Meta property="og:type" content="website" />
-            <Meta property="og:site_name" content="OpenCode" />
+            <Meta property="og:site_name" content="Flynncode" />
             <Meta property="og:title" content={i18n.t("app.title")} />
             <Meta property="og:description" content={i18n.t("app.description")} />
             <Meta property="og:url" content={statsHomeUrl} />

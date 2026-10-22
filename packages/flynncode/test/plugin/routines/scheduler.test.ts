@@ -40,7 +40,7 @@ function fakeClient() {
   return { created, statusCalls, client: client as unknown as PluginInput["client"] }
 }
 
-// A stand-in remote OpenCode server: records every request (with its auth
+// A stand-in remote Flynncode server: records every request (with its auth
 // header) so tests can pin which endpoint a targeted routine actually hit.
 function targetServer(statusBody: Record<string, unknown> = {}) {
   const requests: { method: string; pathname: string; authorization?: string }[] = []

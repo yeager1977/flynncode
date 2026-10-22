@@ -9,7 +9,7 @@ import {
   visualPlan,
 } from "../utils/visual-stability"
 
-const directory = "C:/OpenCode/ContextResizeRegression"
+const directory = "C:/Flynncode/ContextResizeRegression"
 const projectID = "proj_context_resize_regression"
 const sessionID = "ses_context_resize_regression"
 const title = "Context resize regression"
@@ -360,7 +360,7 @@ function provider() {
     all: [
       {
         id: "opencode",
-        name: "OpenCode",
+        name: "Flynncode",
         models: { "claude-opus-4-6": { id: "claude-opus-4-6", name: "Claude Opus 4.6", limit: { context: 200_000 } } },
       },
     ],

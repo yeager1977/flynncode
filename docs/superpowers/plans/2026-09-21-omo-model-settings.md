@@ -1,10 +1,10 @@
-# Oh My OpenCode Model Settings Implementation Plan
+# Oh My Flynncode Model Settings Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a Settings tab that pins Oh My OpenAgent agent and category models and bans providers globally or per project, and add an enable/disable switch on each configured provider row.
 
-**Architecture:** Pure payload helpers decide what to write. A new server handler reads and patches the real plugin files and OpenCode `disabled_providers`. The app never writes those files itself. The Providers switch uses the existing global config update and only adds or removes one id. `Config.update` is not used, because it writes `<directory>/config.json`.
+**Architecture:** Pure payload helpers decide what to write. A new server handler reads and patches the real plugin files and Flynncode `disabled_providers`. The app never writes those files itself. The Providers switch uses the existing global config update and only adds or removes one id. `Config.update` is not used, because it writes `<directory>/config.json`.
 
 **Tech Stack:** Bun, TypeScript, Effect HttpApi, SolidJS settings v2, jsonc-parser, existing i18n fallback modules.
 
@@ -12,13 +12,13 @@
 
 ## Global Constraints
 
-- Do not call `Config.update`. It writes `<directory>/config.json`, which is not project OpenCode config.
+- Do not call `Config.update`. It writes `<directory>/config.json`, which is not project Flynncode config.
 - Do not edit `packages/client/src/generated` or `src/generated-effect` by hand. After HttpApi changes, run `bun run generate` from `packages/client`.
 - Do not import `oh-my-openagent` into the app. The fallback catalog is a static snapshot.
 - Do not move the plugin on/off switch. It stays on the Model Router tab.
 - Do not edit `model_router`.
 - A project file cannot clear a global pin, and cannot un-ban a global provider.
-- A project OpenCode `disabled_providers` write is the global OpenCode bans plus the project extras. Never write only `["xai"]`.
+- A project Flynncode `disabled_providers` write is the global Flynncode bans plus the project extras. Never write only `["xai"]`.
 - JSONC edits use `jsonc-parser` `modify`. Unknown keys and comments stay. `disabled_providers` is replaced, not deep-merged.
 - Visible UI copy uses `language.t`. English is added in `en.ts` and spread through a fallback module. Do not invent translations.
 - Tests run from `packages/app` or `packages/flynncode`, never the repo root.
@@ -207,7 +207,7 @@ git commit -m "feat(app): toggle configured providers without disconnecting"
 
 ---
 
-### Task 3: Oh My OpenCode catalog and payload
+### Task 3: Oh My Flynncode catalog and payload
 
 **Files:**
 - Create: `packages/app/src/components/settings-v2/omo-catalog.ts`
@@ -324,7 +324,7 @@ Expected: PASS
 
 ```bash
 git add packages/app/src/components/settings-v2/omo-catalog.ts packages/app/src/components/settings-v2/omo-config-payload.ts packages/app/src/components/settings-v2/omo-config-payload.test.ts
-git commit -m "test(app): define Oh My OpenCode pin and ban payload"
+git commit -m "test(app): define Oh My Flynncode pin and ban payload"
 ```
 
 ---
@@ -431,7 +431,7 @@ Expected: PASS
 
 ```bash
 git add packages/flynncode/src/config/omo-files.ts packages/flynncode/test/config/omo-files.test.ts
-git commit -m "feat(opencode): patch Oh My OpenCode config files"
+git commit -m "feat(opencode): patch Oh My Flynncode config files"
 ```
 
 ---
@@ -494,14 +494,14 @@ PUT order:
 
 1. If the existing plugin file has `parseError`, fail before writing either file.
 2. Write the plugin file. Create `oh-my-openagent.jsonc` when none exists. If the patch is empty and this call created the file, delete it. If the file already had unrelated keys, do not delete it.
-3. Write OpenCode `disabled_providers` with `applyOpenCodeBans`. Create `.opencode/opencode.jsonc` only when `openCodeFile` says that path and it does not exist.
+3. Write Flynncode `disabled_providers` with `applyOpenCodeBans`. Create `.opencode/opencode.jsonc` only when `openCodeFile` says that path and it does not exist.
 4. If step 3 fails, return BadRequest naming that path. Do not roll back step 2. The message must say the plugin file was saved and the provider may still appear in the picker.
 
 Bind `FileSystem.FileSystem` and `Path.Path` once in the handler layer. Do not call `Config.update`.
 
 - [ ] **Step 3: Add a handler test**
 
-Extend `packages/flynncode/test/config/omo-files.test.ts` only if the write logic stays in `omo-files.ts`. Add one Effect test beside the existing config tests if the handler grows a branch the pure module cannot see. The required assertion is: a project save with global bans `["ollama-local"]` and extra `xai` writes both files, the OpenCode file contains both ids, and `<directory>/config.json` does not exist.
+Extend `packages/flynncode/test/config/omo-files.test.ts` only if the write logic stays in `omo-files.ts`. Add one Effect test beside the existing config tests if the handler grows a branch the pure module cannot see. The required assertion is: a project save with global bans `["ollama-local"]` and extra `xai` writes both files, the Flynncode file contains both ids, and `<directory>/config.json` does not exist.
 
 - [ ] **Step 4: Generate the client**
 
@@ -517,12 +517,12 @@ Expected: PASS, or only failures that already exist on `dev` and do not mention 
 
 ```bash
 git add packages/flynncode/src/server packages/flynncode/src/config/omo-files.ts packages/flynncode/test/config/omo-files.test.ts packages/client
-git commit -m "feat(opencode): expose Oh My OpenCode config endpoints"
+git commit -m "feat(opencode): expose Oh My Flynncode config endpoints"
 ```
 
 ---
 
-### Task 6: Oh My OpenCode settings tab
+### Task 6: Oh My Flynncode settings tab
 
 **Files:**
 - Create: `packages/app/src/components/settings-v2/omo-settings.tsx`
@@ -540,10 +540,10 @@ In `dialog-settings-v2.tsx`, add a Desktop trigger `value="omo"` beside `model-r
 - [ ] **Step 2: Add the remaining English keys**
 
 ```ts
-"settings.tab.omo": "Oh My OpenCode",
-"settings.omo.title": "Oh My OpenCode",
+"settings.tab.omo": "Oh My Flynncode",
+"settings.omo.title": "Oh My Flynncode",
 "settings.omo.description": "Pin agent and category models, or ban a provider. Applies after you quit and restart.",
-"settings.omo.pluginOff": "Oh My OpenCode is off. These settings apply after you turn it on from Model Router.",
+"settings.omo.pluginOff": "Oh My Flynncode is off. These settings apply after you turn it on from Model Router.",
 "settings.omo.scope.global": "Global",
 "settings.omo.scope.project": "This project",
 "settings.omo.bans": "Provider bans",
@@ -558,7 +558,7 @@ In `dialog-settings-v2.tsx`, add a Desktop trigger `value="omo"` beside `model-r
 "settings.omo.fallback.offline": "Known default: {{model}} (not connected)",
 "settings.omo.notConnected": "Not connected",
 "settings.omo.save": "Save",
-"settings.omo.saved": "Oh My OpenCode settings saved",
+"settings.omo.saved": "Oh My Flynncode settings saved",
 "settings.omo.restart": "Quit and restart. A model already selected in the picker still wins until the next session.",
 "settings.omo.unsaved": "Unsaved changes",
 "settings.omo.parseError": "This config file could not be read, so it was not changed.",
@@ -579,7 +579,7 @@ Global model menu: Automatic or a connected `provider/model`. Variant input only
 Project model menu: Inherit or a connected model. No Automatic.
 A saved pin missing from the catalog stays selected and shows `settings.omo.notConnected`.
 
-Bans: connected providers plus banned ids not connected. Seed checks from the union of OpenCode and plugin `disabledProviders` for that scope. Project scope locks ids banned in either global list. xAI's label includes `settings.omo.bans.grok`.
+Bans: connected providers plus banned ids not connected. Seed checks from the union of Flynncode and plugin `disabledProviders` for that scope. Project scope locks ids banned in either global list. xAI's label includes `settings.omo.bans.grok`.
 
 Save sends the PUT for the active scope only. The PUT body is `pluginPatch` plus `openCodeBans` from Task 3. The server writes both files; the client does not write files. On success, toast `settings.omo.saved` and description `settings.omo.restart`. On failure, keep the form dirty and show `settings.omo.saveFailed` with the path from the error.
 
@@ -594,7 +594,7 @@ Expected: PASS
 
 ```bash
 git add packages/app/src/components/settings-v2/omo-settings.tsx packages/app/src/components/settings-v2/dialog-settings-v2.tsx packages/app/src/i18n/en.ts
-git commit -m "feat(app): add Oh My OpenCode model settings"
+git commit -m "feat(app): add Oh My Flynncode model settings"
 ```
 
 ---
@@ -604,7 +604,7 @@ git commit -m "feat(app): add Oh My OpenCode model settings"
 - Provider switch, disabled rows stay visible, Edit stays, no credential removal: Task 2.
 - Global and project pins, inherit, automatic, variant: Tasks 3 and 6.
 - Known fallback line, including the `quick` Grok entry: Task 3.
-- Plugin file plus OpenCode ban, no `config.json`, no parent walk, no rollback: Tasks 4 and 5.
+- Plugin file plus Flynncode ban, no `config.json`, no parent walk, no rollback: Tasks 4 and 5.
 - Invalid JSONC blocks save: Tasks 4 and 6.
 - i18n fallback, no invented translations: Tasks 2 and 6.
 - Plugin off notice without a second switch: Task 6.

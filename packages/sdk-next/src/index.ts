@@ -1,4 +1,4 @@
-export * as OpenCode from "./opencode"
+export * as Flynncode from "./opencode"
 export * as Tool from "./tool"
 
 export { ClientError } from "@flynncode/client/effect"

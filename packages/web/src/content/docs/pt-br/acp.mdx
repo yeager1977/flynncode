@@ -25,14 +25,14 @@ Abaixo estão exemplos para editores populares que suportam ACP.
 
 ### Zed
 
-Instale o OpenCode pelo [Registro ACP do Zed](https://zed.dev/docs/ai/external-agents#registry) executando `zed: acp registry` na Paleta de Comandos.
+Instale o Flynncode pelo [Registro ACP do Zed](https://zed.dev/docs/ai/external-agents#registry) executando `zed: acp registry` na Paleta de Comandos.
 
-Para usar um executável personalizado do OpenCode, adicione-o à configuração do [Zed](https://zed.dev) (`~/.config/zed/settings.json`):
+Para usar um executável personalizado do Flynncode, adicione-o à configuração do [Zed](https://zed.dev) (`~/.config/zed/settings.json`):
 
 ```json title="~/.config/zed/settings.json"
 {
   "agent_servers": {
-    "OpenCode": {
+    "Flynncode": {
       "type": "custom",
       "command": "opencode",
       "args": ["acp"]
@@ -54,7 +54,7 @@ Você também pode vincular um atalho de teclado editando seu `keymap.json`:
         {
           "agent": {
             "custom": {
-              "name": "OpenCode",
+              "name": "Flynncode",
               "command": {
                 "command": "opencode",
                 "args": ["acp"]
@@ -77,7 +77,7 @@ Adicione ao seu acp.json do [JetBrains IDE](https://www.jetbrains.com/) de acord
 ```json title="acp.json"
 {
   "agent_servers": {
-    "OpenCode": {
+    "Flynncode": {
       "command": "/absolute/path/bin/opencode",
       "args": ["acp"]
     }

@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test"
 import { mockOpenCodeServer } from "../utils/mock-server"
 import { expectSessionTitle } from "../utils/waits"
 
-const directory = "C:/OpenCode/ReviewOpenFile"
+const directory = "C:/Flynncode/ReviewOpenFile"
 const projectID = "proj_review_open_file"
 const sessionID = "ses_review_open_file"
 const title = "Review open file"
@@ -27,7 +27,7 @@ test("opens and searches project files inline", async ({ page }) => {
       all: [
         {
           id: "opencode",
-          name: "OpenCode",
+          name: "Flynncode",
           models: { test: { id: "test", name: "Test", limit: { context: 200_000 } } },
         },
       ],

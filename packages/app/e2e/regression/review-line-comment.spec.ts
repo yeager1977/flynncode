@@ -3,7 +3,7 @@ import { base64Encode } from "@flynncode/core/util/encode"
 import { mockOpenCodeServer } from "../utils/mock-server"
 import { expectAppVisible, expectSessionTitle } from "../utils/waits"
 
-const directory = "C:/OpenCode/ReviewLineCommentRegression"
+const directory = "C:/Flynncode/ReviewLineCommentRegression"
 const sessionID = "ses_review_line_comment_regression"
 const title = "Review line comment regression"
 

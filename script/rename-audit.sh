@@ -7,7 +7,7 @@ EXCL=(--exclude-dir=node_modules --exclude-dir=.worktrees --exclude-dir=.turbo -
 
 label=${1:-baseline}
 echo "=== rename audit: $label ==="
-for pat in '@opencode-ai/' '^const app = "opencode"' 'packages/opencode' '\.opencode' 'opencode\.json' '~/.config/opencode' '~/.local/share/opencode' 'opencode\.ai' '"OpenCode"' 'ai\.opencode' 'OPENCODE_[A-Z]+' 'productName: "opencode"' 'schemes: \["opencode"\]'; do
+for pat in '@opencode-ai/' '^const app = "opencode"' 'packages/opencode' '\.opencode' 'opencode\.json' '~/.config/opencode' '~/.local/share/opencode' 'opencode\.ai' '"Flynncode"' 'ai\.opencode' 'OPENCODE_[A-Z]+' 'productName: "opencode"' 'schemes: \["opencode"\]'; do
   n=$(grep -rE --color=never "${pat}" . "${EXCL[@]}" -l 2>/dev/null | wc -l)
   printf '%-40s %s files\n' "$pat" "$n"
 done

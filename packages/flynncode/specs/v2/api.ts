@@ -1,9 +1,9 @@
 // @ts-nocheck
 
-import { OpenCode } from "@flynncode/core"
+import { Flynncode } from "@flynncode/core"
 import { ReadTool } from "@flynncode/core/tools"
 
-const opencode = OpenCode.make({})
+const opencode = Flynncode.make({})
 
 opencode.tool.add(ReadTool)
 

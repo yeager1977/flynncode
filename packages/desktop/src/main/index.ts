@@ -63,9 +63,9 @@ import { getStore } from "./store"
 import { createTray, destroyTray, trayActive } from "./tray"
 
 const APP_NAMES: Record<string, string> = {
-  dev: "OpenCode Dev",
-  beta: "OpenCode Beta",
-  prod: "OpenCode",
+  dev: "Flynncode Dev",
+  beta: "Flynncode Beta",
+  prod: "Flynncode",
 }
 const APP_IDS: Record<string, string> = {
   dev: "ai.opencode.desktop.dev",
@@ -150,7 +150,7 @@ const main = Effect.gen(function* () {
     process.env.XDG_STATE_HOME = join(root, "state")
     return root
   })()
-  app.setName(app.isPackaged ? APP_NAMES[CHANNEL] : "OpenCode Dev")
+  app.setName(app.isPackaged ? APP_NAMES[CHANNEL] : "Flynncode Dev")
   app.setAppUserModelId(appId)
   app.setPath(
     "userData",

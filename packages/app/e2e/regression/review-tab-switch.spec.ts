@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test"
 import { mockOpenCodeServer } from "../utils/mock-server"
 import { expectAppVisible, expectSessionTitle } from "../utils/waits"
 
-const directory = "C:/OpenCode/ReviewTabSwitch"
+const directory = "C:/Flynncode/ReviewTabSwitch"
 const projectID = "proj_review_tab_switch"
 const sessionA = "ses_review_tab_a"
 const sessionB = "ses_review_tab_b"
@@ -89,7 +89,7 @@ async function setup(page: Page) {
       all: [
         {
           id: "opencode",
-          name: "OpenCode",
+          name: "Flynncode",
           models: { test: { id: "test", name: "Test", limit: { context: 200_000 } } },
         },
       ],

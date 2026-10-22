@@ -160,7 +160,7 @@ const RECORDED_SCENARIOS = [
   },
   {
     id: "opencode-proxy",
-    name: "OpenCode proxy",
+    name: "Flynncode proxy",
     providerID: ProviderV2.ID.opencode,
     modelID: "gpt-5.2-codex",
     cassette: "session/native-zen-tool-loop",
@@ -170,7 +170,7 @@ const RECORDED_SCENARIOS = [
     config: (model) =>
       providerConfig({
         providerID: ProviderV2.ID.opencode,
-        name: "OpenCode Zen",
+        name: "Flynncode Zen",
         env: ["OPENCODE_CONSOLE_TOKEN"],
         npm: "@ai-sdk/openai-compatible",
         api: zenURL(process.env.OPENCODE_RECORD_ZEN_CONNECTION ?? "fixture"),

@@ -55,7 +55,7 @@ export function catalogIdentity(value: unknown): CatalogIdentity {
       })
     })
   })
-  if (offerings.size === 0) throw new Error("Model catalog has no canonical OpenCode offerings")
+  if (offerings.size === 0) throw new Error("Model catalog has no canonical Flynncode offerings")
 
   return {
     offerings,

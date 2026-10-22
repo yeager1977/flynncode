@@ -6,7 +6,7 @@ Status: Draft
 ## Problem
 
 The user asked for several independent Flynncode surfaces at once, plus Oh My
-OpenCode model defaults. Shipping them as one spec would mix UI, mobile, and
+Flynncode model defaults. Shipping them as one spec would mix UI, mobile, and
 config work and stall all of them.
 
 ## Goal
@@ -17,11 +17,11 @@ cycle's spec is written; they must not share one implementation plan.
 
 ## Cycles (build order)
 
-1. **OMO allowlist models** — pin Oh My OpenCode agents and categories to
+1. **OMO allowlist models** — pin Oh My Flynncode agents and categories to
    sensible models from the user's provider allowlist, Claude over ChatGPT,
    no xAI in defaults. Spec:
    `docs/superpowers/specs/2026-09-21-omo-allowlist-models-design.md`
-2. **OpenCode Mobile (doza62)** — this machine: `opencode-mobile@latest` in
+2. **Flynncode Mobile (doza62)** — this machine: `opencode-mobile@latest` in
    `plugin[]`, `/mobile` command present, Flynncode `mobile-gateway` removed
    from this machine's plugin list. Package stays in the repo.
 3. **Artifacts sidebar** — a desktop sidebar listing session artifacts.
@@ -30,11 +30,11 @@ cycle's spec is written; they must not share one implementation plan.
 
 ## Constraints that apply to every cycle
 
-- Do not vendor Oh My OpenCode into the Flynncode repo.
+- Do not vendor Oh My Flynncode into the Flynncode repo.
 - Third-party plugins must be checked against the Ollama model router.
   The router is off on this machine (`model_router.enabled: false`).
 - English UI copy is source; no hardcoded English in production UI.
-- Config is load-once; tell the user to restart OpenCode after config edits.
+- Config is load-once; tell the user to restart Flynncode after config edits.
 
 ## Out of scope for this document
 

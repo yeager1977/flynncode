@@ -255,5 +255,5 @@ export const dict = {
   "methodology.retention": "ある週にモデルを使用したユーザーのうち、翌週も使用したユーザーの割合。",
   "methodology.citeLabel": "引用",
   "methodology.cite":
-    "引用する際は、OpenCode Data（opencode.ai/data）とページ上部に表示されている更新日時を記載してください。",
+    "引用する際は、Flynncode Data（opencode.ai/data）とページ上部に表示されている更新日時を記載してください。",
 } satisfies Record<Key, string>

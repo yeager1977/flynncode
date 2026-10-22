@@ -1,3 +1,3 @@
-- Session usage indicators should show context for the current session plus used percentage of account usage (not the whole account).
-- Provide a page listing all enabled providers' current limits and usage.
-- Session model selector should also let me pick which server runs the job.
+- UI refreshes must not destroy in-progress edits (e.g., session rename edit being killed).
+- Right-click session menu should include archive and delete options; finished subtask items should be cleaned out of the right-hand view.
+- Session names should update once set, not stay stale timestamps.

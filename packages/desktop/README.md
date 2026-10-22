@@ -1,6 +1,6 @@
-# OpenCode Desktop
+# Flynncode Desktop
 
-The OpenCode Desktop app, built with Electron.
+The Flynncode Desktop app, built with Electron.
 
 ## Development
 

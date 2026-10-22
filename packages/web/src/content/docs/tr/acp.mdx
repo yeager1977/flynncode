@@ -25,14 +25,14 @@ Aşağıda ACP'yi destekleyen popüler düzenleyicilere ilişkin örnekler veril
 
 ### Zed
 
-Komut Paleti’nde `zed: acp registry` komutunu çalıştırarak OpenCode’u [Zed ACP Kayıt Defteri](https://zed.dev/docs/ai/external-agents#registry) üzerinden yükleyin.
+Komut Paleti’nde `zed: acp registry` komutunu çalıştırarak Flynncode’u [Zed ACP Kayıt Defteri](https://zed.dev/docs/ai/external-agents#registry) üzerinden yükleyin.
 
-Bunun yerine özel bir OpenCode çalıştırılabilir dosyası kullanmak için [Zed](https://zed.dev) yapılandırmanıza (`~/.config/zed/settings.json`) ekleyin:
+Bunun yerine özel bir Flynncode çalıştırılabilir dosyası kullanmak için [Zed](https://zed.dev) yapılandırmanıza (`~/.config/zed/settings.json`) ekleyin:
 
 ```json title="~/.config/zed/settings.json"
 {
   "agent_servers": {
-    "OpenCode": {
+    "Flynncode": {
       "type": "custom",
       "command": "opencode",
       "args": ["acp"]
@@ -54,7 +54,7 @@ Açmak için **Komut Paleti**'ndeki `agent: new thread` eylemini kullanın.
         {
           "agent": {
             "custom": {
-              "name": "OpenCode",
+              "name": "Flynncode",
               "command": {
                 "command": "opencode",
                 "args": ["acp"]
@@ -77,7 +77,7 @@ Açmak için **Komut Paleti**'ndeki `agent: new thread` eylemini kullanın.
 ```json title="acp.json"
 {
   "agent_servers": {
-    "OpenCode": {
+    "Flynncode": {
       "command": "/absolute/path/bin/opencode",
       "args": ["acp"]
     }
@@ -85,7 +85,7 @@ Açmak için **Komut Paleti**'ndeki `agent: new thread` eylemini kullanın.
 }
 ```
 
-Açmak için AI Chat agent seçicisindeki yeni 'OpenCode' ajanını kullanın.
+Açmak için AI Chat agent seçicisindeki yeni 'Flynncode' ajanını kullanın.
 
 ---
 

@@ -1,4 +1,4 @@
-# Oh My OpenCode Model Settings — Design
+# Oh My Flynncode Model Settings — Design
 
 Date: 2026-09-21
 Status: Draft, awaiting review
@@ -21,7 +21,7 @@ it cannot be turned back on.
 
 Two settings surfaces:
 
-1. A new Oh My OpenCode tab that pins built-in agent and category models, shows
+1. A new Oh My Flynncode tab that pins built-in agent and category models, shows
    the known fallback when a pin is empty, and bans providers globally or for
    the current project.
 2. A switch on each configured provider row in the existing Providers screen.
@@ -39,7 +39,7 @@ In scope:
 - Read and write of the Oh My OpenAgent config files through new server
   endpoints. The renderer does not write those files.
 - Global and current-project pins and provider bans.
-- Provider-ban writes to OpenCode `disabled_providers`, so the picker hides the
+- Provider-ban writes to Flynncode `disabled_providers`, so the picker hides the
   provider. An Oh My OpenAgent ban alone does not.
 - Enable/disable switch on the Providers screen, global only.
 - English i18n keys, spread into other locales through the existing
@@ -52,7 +52,7 @@ Out of scope:
 - A second on/off switch on the new tab.
 - Temperature, prompts, hooks, skills, or a `fallback_models` editor.
 - Clearing a global pin back to Automatic from the project file.
-- Un-banning a global OpenCode provider from the project scope.
+- Un-banning a global Flynncode provider from the project scope.
 - Project scope on the Providers screen.
 - Editing `model_router`.
 - Hot reload.
@@ -63,8 +63,8 @@ Out of scope:
 ## Approaches considered
 
 1. **New tab plus a Providers switch (chosen).** The tab edits the real plugin
-   files and the OpenCode ban list. The Providers switch edits only the global
-   OpenCode ban list. Edit stays beside the switch.
+   files and the Flynncode ban list. The Providers switch edits only the global
+   Flynncode ban list. Edit stays beside the switch.
 2. Section inside Model Router. Rejected. It mixes Flynncode routing with Oh
    My OpenAgent routing.
 3. Ban only, pins as a JSON snippet. Rejected. Pins would not be saved.
@@ -79,10 +79,10 @@ Oh My OpenAgent resolves in this order. First match wins.
 2. Explicit `agents.<name>.model` or `categories.<name>.model`.
 3. `fallback_models` on that agent or category.
 4. Built-in chain, first connected provider.
-5. OpenCode `model`.
+5. Flynncode `model`.
 
 An explicit pin skips the chain. UI selection skips the pin. Disabling the
-provider in OpenCode removes it from the available set, so neither the picker
+provider in Flynncode removes it from the available set, so neither the picker
 nor the chain can select it.
 
 ## Files
@@ -95,7 +95,7 @@ exists, create `oh-my-openagent.jsonc`.
 | Global | `~/.config/opencode/` | `oh-my-openagent.jsonc`, `oh-my-openagent.json`, `oh-my-opencode.jsonc`, `oh-my-opencode.json` |
 | This project | `<directory>/.opencode/` | same four names |
 
-OpenCode bans:
+Flynncode bans:
 
 - Global: the file `globalConfigFile()` already selects under
   `~/.config/opencode/` (`opencode.jsonc` on this machine).
@@ -109,9 +109,9 @@ OpenCode bans:
   `<directory>/.opencode/opencode.jsonc`.
   Do not edit a parent directory's config. Do not call `Config.update`.
   That method writes `<directory>/config.json`, which the loader does not
-  use as project OpenCode config.
+  use as project Flynncode config.
 
-A project OpenCode `disabled_providers` array replaces the global array. A
+A project Flynncode `disabled_providers` array replaces the global array. A
 project plugin `disabled_providers` array is unioned with the global plugin
 array.
 
@@ -129,20 +129,20 @@ Do not edit `src/generated` or `src/generated-effect` by hand.
 - `GET` and `PUT` `/config/omo` on the instance API. The directory is the one
   the settings dialog already sends.
 
-`GET` returns the parsed plugin document, the path, OpenCode
+`GET` returns the parsed plugin document, the path, Flynncode
 `disabled_providers` for that scope, and a parse error string when the file
 exists but does not parse. A missing file is an empty document and a null
 path, not an error.
 
 `PUT` accepts agents, categories, and `disabledProviders`. One handler writes
-the plugin file first, then the OpenCode ban. The response names the file
-that failed. There is no rollback. A failed OpenCode write can leave a pin
+the plugin file first, then the Flynncode ban. The response names the file
+that failed. There is no rollback. A failed Flynncode write can leave a pin
 saved while the provider remains in the picker. The error text says that.
 
 The Providers switch does not use these endpoints. It calls the existing
 global config update and changes one id in `disabled_providers`.
 
-## Oh My OpenCode tab
+## Oh My Flynncode tab
 
 The tab is in `dialog-settings-v2.tsx`, Desktop section, beside Model Router.
 If the plugin is absent from `plugin`, the tab shows that and still allows
@@ -152,23 +152,23 @@ editing. It does not add a second switch.
 
 A Global / This project control at the top.
 
-Global edits the user plugin file and global OpenCode `disabled_providers`.
-This project edits the project plugin file and the project OpenCode file.
+Global edits the user plugin file and global Flynncode `disabled_providers`.
+This project edits the project plugin file and the project Flynncode file.
 The project plugin file stores only differences.
 
 ### Provider bans
 
 A checkbox list of connected providers, plus any provider id already banned
 that is not connected. The checked set is seeded from the union of that
-scope's OpenCode `disabled_providers` and its plugin `disabled_providers`.
+scope's Flynncode `disabled_providers` and its plugin `disabled_providers`.
 xAI is labeled as the Grok provider. Ids that are not shown are left
 untouched in the file.
 
 Global: checked means banned everywhere. Unchecking removes that id.
 
-This project: providers banned in either global list, OpenCode or plugin,
-are checked and locked. Extra checks mean also banned here. Saving writes the global OpenCode
-bans plus those extras into the project OpenCode file, so `ollama-local`
+This project: providers banned in either global list, Flynncode or plugin,
+are checked and locked. Extra checks mean also banned here. Saving writes the global Flynncode
+bans plus those extras into the project Flynncode file, so `ollama-local`
 stays banned. The project plugin file gets only the extras. An empty extra
 list omits the plugin `disabled_providers` key.
 
@@ -242,7 +242,7 @@ The switch does not remove the API key, the auth record, or the
 `provider` config block. Disconnect remains that action and keeps its current
 rules, including the environment-provider hint.
 
-This screen has no project scope. A project ban on the Oh My OpenCode tab
+This screen has no project scope. A project ban on the Oh My Flynncode tab
 still applies in that project after a global re-enable.
 
 ## Testing
@@ -252,7 +252,7 @@ Payload function, same style as `model-router-payload.test.ts`:
 - Automatic omits `model` and `variant` and keeps other keys.
 - A pin writes `model`, and `variant` only when set.
 - Inherit omits the project key.
-- A project OpenCode ban is the global list plus extras, including
+- A project Flynncode ban is the global list plus extras, including
   `ollama-local`.
 - A project plugin ban is extras only.
 - An already-banned provider that is not connected stays in the saved set.
@@ -263,8 +263,8 @@ Server tests:
 - A missing plugin file reads as empty.
 - Invalid JSONC refuses the write.
 - A project save writes both files and does not drop `ollama-local`.
-- The project OpenCode write does not create `<directory>/config.json`.
-- A failed OpenCode write returns the failing path and does not claim both
+- The project Flynncode write does not create `<directory>/config.json`.
+- A failed Flynncode write returns the failing path and does not claim both
   writes succeeded.
 
 Providers switch:
@@ -284,7 +284,7 @@ No new Playwright spec.
   picker. The provider row remains, off, and Edit still opens.
 - Turn xAI back on from the Providers switch, restart: it returns. A project
   ban of xAI still hides it in that project.
-- Ban xAI for one project: that project's OpenCode file contains the previous
+- Ban xAI for one project: that project's Flynncode file contains the previous
   global bans plus `xai`. `ollama-local` stays banned. No `config.json` is
   created.
 
@@ -293,12 +293,12 @@ No new Playwright spec.
 - **Chain snapshot drift.** The fallback line can be wrong after an
   oh-my-openagent update. The label says it is a known default. Do not parse
   the plugin at runtime to fix this.
-- **Partial save.** A pin can land without the OpenCode ban. The error names
+- **Partial save.** A pin can land without the Flynncode ban. The error names
   the file. No rollback, by decision.
 - **Two editors, one array.** The Providers switch and the global Oh My
-  OpenCode ban list both write global `disabled_providers`. Each write
-  preserves ids it did not show. A stale Oh My OpenCode form can still
+  Flynncode ban list both write global `disabled_providers`. Each write
+  preserves ids it did not show. A stale Oh My Flynncode form can still
   overwrite a switch change for an id that form did show. Accept that. Do not
   add cross-tab locking.
-- **Project array replace.** Writing only `["xai"]` into a project OpenCode
+- **Project array replace.** Writing only `["xai"]` into a project Flynncode
   file would re-enable `ollama-local`. The handler writes the union.
