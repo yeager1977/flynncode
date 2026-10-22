@@ -41,7 +41,7 @@ const en = {
   "header.sectionNavLabel": "Data sections",
   "header.githubAria": "Star Flynncode on GitHub",
   "header.github": "GitHub",
-  "header.tryOpenCode": "Try Flynncode",
+  "header.tryFlynncode": "Try Flynncode",
   "header.openNav": "Open navigation",
   "header.closeNav": "Close navigation",
   "theme.groupLabel": "Theme",

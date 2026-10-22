@@ -3,7 +3,7 @@ import type { Key } from "../i18n"
 export const dict = {
   "app.title": "AI 모델 사용 순위 | Flynncode 데이터",
   "app.description":
-    "OpenCode에서 AI 모델이 어떻게 사용되는지 토큰 볼륨, 순위, 시장 점유율, 토큰 가격, 세션 비용, 캐시 비율, 지역별 분포까지 살펴보세요.",
+    "Flynncode에서 AI 모델이 어떻게 사용되는지 토큰 볼륨, 순위, 시장 점유율, 토큰 가격, 세션 비용, 캐시 비율, 지역별 분포까지 살펴보세요.",
   "app.unfurlAlt": "어두운 패턴 배경 위의 Flynncode Data 워드마크",
   "nav.dataHome": "데이터 홈",
   "nav.topModels": "상위 모델",
@@ -22,9 +22,9 @@ export const dict = {
   "nav.models": "모델",
   "header.brandLabel": "데이터 홈",
   "header.sectionNavLabel": "데이터 섹션",
-  "header.githubAria": "GitHub에서 OpenCode에 스타 주기",
+  "header.githubAria": "GitHub에서 Flynncode에 스타 주기",
   "header.github": "GitHub",
-  "header.tryOpenCode": "Flynncode 사용해 보기",
+  "header.tryFlynncode": "Flynncode 사용해 보기",
   "header.openNav": "내비게이션 열기",
   "header.closeNav": "내비게이션 닫기",
   "theme.groupLabel": "테마",
@@ -134,13 +134,13 @@ export const dict = {
   "home.costSession": "비용/세션",
   "lab.title": "{{lab}} AI 모델 사용량 및 순위 | Flynncode 데이터",
   "lab.description":
-    "OpenCode에서 사용되는 {{lab}} 모델을 토큰 사용량, 모델 순위, 컨텍스트 창, 출시일, 비용, 모델별 데이터까지 비교하세요.",
+    "Flynncode에서 사용되는 {{lab}} 모델을 토큰 사용량, 모델 순위, 컨텍스트 창, 출시일, 비용, 모델별 데이터까지 비교하세요.",
   "lab.summary":
     "지난 두 달 동안 {{lab}} 모델은 Flynncode 전반에서 {{tokens}} 토큰을 처리해 전체 사용량의 {{share}}를 차지했습니다. 가장 많이 사용된 {{lab}} 모델은 {{model}}입니다.",
   "lab.loadingTitle": "모델 랩",
   "lab.loadingDescription": "모델 가용성과 최근 Flynncode 사용량을 읽는 중입니다.",
   "lab.notFound": "이 랩과 일치하는 모델이 없습니다.",
-  "lab.heroPrefix": "OpenCode에서 사용된 {{count}}개의 {{lab}} 모델 살펴보기",
+  "lab.heroPrefix": "Flynncode에서 사용된 {{count}}개의 {{lab}} 모델 살펴보기",
   "lab.heroIncluding": "{{models}} 포함",
   "lab.heroSuffix": "최근 토큰 사용량, 컨텍스트 창, 출시일, 모델별 데이터를 비교하세요.",
   "lab.tokensProcessed": "처리된 토큰",

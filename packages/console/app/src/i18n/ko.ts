@@ -97,7 +97,7 @@ export const dict = {
   "temp.getStarted": "시작하기",
   "temp.feature.native.title": "네이티브 TUI",
   "temp.feature.native.body": "반응형, 네이티브, 테마 적용 가능한 터미널 UI",
-  "temp.feature.zen.beforeLink": "OpenCode가 제공하는",
+  "temp.feature.zen.beforeLink": "Flynncode가 제공하는",
   "temp.feature.zen.link": "엄선된 모델 목록",
   "temp.feature.zen.afterLink": "",
   "temp.feature.models.beforeLink": "로컬 모델을 포함하여",
@@ -123,9 +123,9 @@ export const dict = {
 
   "home.install.ariaLabel": "설치 옵션",
 
-  "home.what.title": "OpenCode란 무엇인가요?",
+  "home.what.title": "Flynncode란 무엇인가요?",
   "home.what.body":
-    "OpenCode는 터미널, IDE, 또는 데스크톱에서 코드를 작성할 수 있도록 도와주는 오픈 소스 에이전트입니다.",
+    "Flynncode는 터미널, IDE, 또는 데스크톱에서 코드를 작성할 수 있도록 도와주는 오픈 소스 에이전트입니다.",
   "home.what.lsp.title": "LSP 지원",
   "home.what.lsp.body": "LLM에 적합한 LSP를 자동으로 로드합니다",
   "home.what.multiSession.title": "멀티 세션",
@@ -144,49 +144,49 @@ export const dict = {
 
   "home.growth.title": "오픈 소스 AI 코딩 에이전트",
   "home.growth.body":
-    "<strong>{{stars}}</strong>개 이상의 GitHub 스타, <strong>{{contributors}}</strong>명의 기여자, <strong>{{commits}}</strong>개 이상의 커밋과 함께, OpenCode는 매달 <strong>{{monthlyUsers}}</strong>명 이상의 개발자가 사용하고 신뢰합니다.",
+    "<strong>{{stars}}</strong>개 이상의 GitHub 스타, <strong>{{contributors}}</strong>명의 기여자, <strong>{{commits}}</strong>개 이상의 커밋과 함께, Flynncode는 매달 <strong>{{monthlyUsers}}</strong>명 이상의 개발자가 사용하고 신뢰합니다.",
   "home.growth.githubStars": "GitHub 스타",
   "home.growth.contributors": "기여자",
   "home.growth.monthlyDevs": "월간 사용자",
 
   "home.privacy.title": "프라이버시를 최우선으로 설계",
   "home.privacy.body":
-    "OpenCode는 코드나 컨텍스트 데이터를 저장하지 않으므로, 프라이버시에 민감한 환경에서도 안전하게 작동합니다.",
+    "Flynncode는 코드나 컨텍스트 데이터를 저장하지 않으므로, 프라이버시에 민감한 환경에서도 안전하게 작동합니다.",
   "home.privacy.learnMore": "더 알아보기:",
   "home.privacy.link": "프라이버시",
 
-  "home.faq.q1": "OpenCode란 무엇인가요?",
+  "home.faq.q1": "Flynncode란 무엇인가요?",
   "home.faq.a1":
-    "OpenCode는 어떤 AI 모델로든 코드를 작성하고 실행할 수 있도록 도와주는 오픈 소스 에이전트입니다. 터미널 기반 인터페이스, 데스크톱 앱, 또는 IDE 확장 프로그램으로 사용할 수 있습니다.",
-  "home.faq.q2": "OpenCode는 어떻게 사용하나요?",
+    "Flynncode는 어떤 AI 모델로든 코드를 작성하고 실행할 수 있도록 도와주는 오픈 소스 에이전트입니다. 터미널 기반 인터페이스, 데스크톱 앱, 또는 IDE 확장 프로그램으로 사용할 수 있습니다.",
+  "home.faq.q2": "Flynncode는 어떻게 사용하나요?",
   "home.faq.a2.before": "가장 쉬운 시작 방법은",
   "home.faq.a2.link": "소개",
-  "home.faq.q3": "OpenCode를 사용하려면 별도의 AI 구독이 필요한가요?",
-  "home.faq.a3.p1": "꼭 그렇지는 않습니다. OpenCode에는 계정 없이도 사용할 수 있는 무료 모델 세트가 포함되어 있습니다.",
+  "home.faq.q3": "Flynncode를 사용하려면 별도의 AI 구독이 필요한가요?",
+  "home.faq.a3.p1": "꼭 그렇지는 않습니다. Flynncode에는 계정 없이도 사용할 수 있는 무료 모델 세트가 포함되어 있습니다.",
   "home.faq.a3.p2.beforeZen": "이 외에도,",
   "home.faq.a3.p2.afterZen": " 계정을 생성하여 인기 있는 코딩 모델들을 사용할 수 있습니다.",
-  "home.faq.a3.p3": "Zen 사용을 권장하지만, OpenCode는 OpenAI, Anthropic, xAI 등 모든 인기 제공자와도 작동합니다.",
+  "home.faq.a3.p3": "Zen 사용을 권장하지만, Flynncode는 OpenAI, Anthropic, xAI 등 모든 인기 제공자와도 작동합니다.",
   "home.faq.a3.p4.beforeLocal": "또한",
   "home.faq.a3.p4.localLink": "로컬 모델",
-  "home.faq.q4": "기존 AI 구독을 OpenCode에서 사용할 수 있나요?",
+  "home.faq.q4": "기존 AI 구독을 Flynncode에서 사용할 수 있나요?",
   "home.faq.a4.p1":
-    "네, OpenCode는 모든 주요 제공자의 구독 플랜을 지원합니다. Claude Pro/Max, ChatGPT Plus/Pro, 또는 GitHub Copilot 구독을 사용할 수 있습니다.",
-  "home.faq.q5": "OpenCode는 터미널에서만 사용할 수 있나요?",
-  "home.faq.a5.beforeDesktop": "이제 아닙니다! OpenCode는 이제",
+    "네, Flynncode는 모든 주요 제공자의 구독 플랜을 지원합니다. Claude Pro/Max, ChatGPT Plus/Pro, 또는 GitHub Copilot 구독을 사용할 수 있습니다.",
+  "home.faq.q5": "Flynncode는 터미널에서만 사용할 수 있나요?",
+  "home.faq.a5.beforeDesktop": "이제 아닙니다! Flynncode는 이제",
   "home.faq.a5.desktop": "데스크톱",
   "home.faq.a5.and": "및",
   "home.faq.a5.web": "웹",
   "home.faq.q6": "Flynncode 비용은 얼마인가요?",
   "home.faq.a6":
-    "OpenCode는 100% 무료로 사용할 수 있습니다. 무료 모델 세트도 포함되어 있습니다. 다른 제공자를 연결할 경우 추가 비용이 발생할 수 있습니다.",
+    "Flynncode는 100% 무료로 사용할 수 있습니다. 무료 모델 세트도 포함되어 있습니다. 다른 제공자를 연결할 경우 추가 비용이 발생할 수 있습니다.",
   "home.faq.q7": "데이터와 프라이버시는 어떤가요?",
   "home.faq.a7.p1": "데이터와 정보는 무료 모델을 사용하거나 공유 링크를 생성할 때만 저장됩니다.",
   "home.faq.a7.p2.beforeModels": "더 알아보기:",
   "home.faq.a7.p2.modelsLink": "모델",
   "home.faq.a7.p2.and": "및",
   "home.faq.a7.p2.shareLink": "공유 페이지",
-  "home.faq.q8": "OpenCode는 오픈 소스인가요?",
-  "home.faq.a8.p1": "네, OpenCode는 완전히 오픈 소스입니다. 소스 코드는",
+  "home.faq.q8": "Flynncode는 오픈 소스인가요?",
+  "home.faq.a8.p1": "네, Flynncode는 완전히 오픈 소스입니다. 소스 코드는",
   "home.faq.a8.p2": "에 공개되어 있으며,",
   "home.faq.a8.mitLicense": "MIT 라이선스",
   "home.faq.a8.p3":
@@ -194,13 +194,13 @@ export const dict = {
 
   "home.zenCta.title": "코딩 에이전트를 위한 신뢰할 수 있고 최적화된 모델",
   "home.zenCta.body":
-    "Zen은 OpenCode가 코딩 에이전트를 위해 특별히 테스트하고 벤치마킹한 엄선된 AI 모델 세트에 대한 액세스를 제공합니다. 제공자 간의 일관되지 않은 성능과 품질에 대해 걱정할 필요 없이, 검증된 모델을 사용하세요.",
+    "Zen은 Flynncode가 코딩 에이전트를 위해 특별히 테스트하고 벤치마킹한 엄선된 AI 모델 세트에 대한 액세스를 제공합니다. 제공자 간의 일관되지 않은 성능과 품질에 대해 걱정할 필요 없이, 검증된 모델을 사용하세요.",
   "home.zenCta.link": "Zen 알아보기",
 
   "zen.title": "Flynncode Zen | 코딩 에이전트를 위한 신뢰할 수 있고 최적화된 모델 세트",
   "zen.hero.title": "코딩 에이전트를 위한 신뢰할 수 있고 최적화된 모델",
   "zen.hero.body":
-    "Zen은 OpenCode가 코딩 에이전트를 위해 특별히 테스트하고 벤치마킹한 엄선된 AI 모델 세트에 대한 액세스를 제공합니다. 일관되지 않은 성능과 품질에 대해 걱정할 필요 없이, 검증된 모델을 사용하세요.",
+    "Zen은 Flynncode가 코딩 에이전트를 위해 특별히 테스트하고 벤치마킹한 엄선된 AI 모델 세트에 대한 액세스를 제공합니다. 일관되지 않은 성능과 품질에 대해 걱정할 필요 없이, 검증된 모델을 사용하세요.",
 
   "zen.faq.q1": "Flynncode Zen이란 무엇인가요?",
   "zen.faq.a1": "Zen은 Flynncode 팀이 코딩 에이전트를 위해 테스트하고 벤치마킹한 엄선된 AI 모델 세트입니다.",
@@ -209,14 +209,14 @@ export const dict = {
     "Zen은 코딩 에이전트를 위해 특별히 테스트되고 벤치마킹된 모델만 제공합니다. 스테이크를 버터 나이프로 자르지 않듯이, 코딩에 품질이 낮은 모델을 사용하지 마세요.",
   "zen.faq.q3": "Zen이 더 저렴한가요?",
   "zen.faq.a3":
-    "Zen은 영리를 목적으로 하지 않습니다. Zen은 모델 제공자의 비용을 사용자에게 그대로 전달합니다. Zen 사용량이 늘어날수록 OpenCode는 더 좋은 요율을 협상하여 그 혜택을 사용자에게 돌려드릴 수 있습니다.",
+    "Zen은 영리를 목적으로 하지 않습니다. Zen은 모델 제공자의 비용을 사용자에게 그대로 전달합니다. Zen 사용량이 늘어날수록 Flynncode는 더 좋은 요율을 협상하여 그 혜택을 사용자에게 돌려드릴 수 있습니다.",
   "zen.faq.q4": "Zen 비용은 얼마인가요?",
   "zen.faq.a4.p1.beforePricing": "Zen은",
   "zen.faq.a4.p1.pricingLink": "요청당 비용을 청구하며",
   "zen.faq.a4.p1.afterPricing": ", 마크업이 0이므로 모델 제공자가 청구하는 금액 그대로 지불하게 됩니다.",
   "zen.faq.a4.p2.beforeAccount": "총 비용은 사용량에 따라 달라지며, 월간 지출 한도를",
   "zen.faq.a4.p2.accountLink": "계정",
-  "zen.faq.a4.p3": "비용을 충당하기 위해 OpenCode는 $20 잔액 충전 시 $1.23의 소액 결제 처리 수수료만 추가합니다.",
+  "zen.faq.a4.p3": "비용을 충당하기 위해 Flynncode는 $20 잔액 충전 시 $1.23의 소액 결제 처리 수수료만 추가합니다.",
   "zen.faq.q5": "데이터와 프라이버시는 어떤가요?",
   "zen.faq.a5.beforeExceptions":
     "모든 Zen 모델은 미국에서 호스팅됩니다. 제공자들은 데이터 보존 금지(zero-retention) 정책을 따르며, 모델 학습에 귀하의 데이터를 사용하지 않습니다. 단,",
@@ -227,7 +227,7 @@ export const dict = {
   "zen.faq.a7": "네, 언제든지 결제를 비활성화하고 남은 잔액을 사용할 수 있습니다.",
   "zen.faq.q8": "다른 코딩 에이전트와 Zen을 사용할 수 있나요?",
   "zen.faq.a8":
-    "Zen은 OpenCode와 훌륭하게 작동하지만, 어떤 에이전트와도 Zen을 사용할 수 있습니다. 선호하는 코딩 에이전트의 설정 지침을 따르세요.",
+    "Zen은 Flynncode와 훌륭하게 작동하지만, 어떤 에이전트와도 Zen을 사용할 수 있습니다. 선호하는 코딩 에이전트의 설정 지침을 따르세요.",
   "zen.faq.q9": "환불받을 수 있나요?",
   "zen.faq.a9":
     "결제일로부터 14일 이내이며 해당 구매로 받은 크레딧을 전혀 사용하지 않은 경우 환불 대상이 될 수 있습니다. 환불을 요청하려면 {{contact}}를 선택해 주세요.",
@@ -244,7 +244,7 @@ export const dict = {
   "zen.problem.item2": "제공자와 협력하여 올바른 모델 전달 보장",
   "zen.problem.item3": "권장하는 모든 모델-제공자 조합 벤치마킹",
   "zen.how.title": "Zen 작동 방식",
-  "zen.how.body": "OpenCode와 함께 사용하는 것을 권장하지만, Zen은 어떤 에이전트와도 사용할 수 있습니다.",
+  "zen.how.body": "Flynncode와 함께 사용하는 것을 권장하지만, Zen은 어떤 에이전트와도 사용할 수 있습니다.",
   "zen.how.step1.title": "가입 및 $20 잔액 추가",
   "zen.how.step1.beforeLink": "",
   "zen.how.step1.link": "설정 지침",
@@ -494,7 +494,7 @@ export const dict = {
     "최적의 성능을 위해 구성된 모델에 액세스하세요 - 다운그레이드나 저렴한 제공자로 라우팅되지 않습니다.",
   "workspace.newUser.feature.lockin.title": "락인(Lock-in) 없음",
   "workspace.newUser.feature.lockin.body":
-    "Zen을 어떤 코딩 에이전트와도 함께 사용할 수 있으며, 원할 때 언제든지 OpenCode와 함께 다른 제공자를 계속 사용할 수 있습니다.",
+    "Zen을 어떤 코딩 에이전트와도 함께 사용할 수 있으며, 원할 때 언제든지 Flynncode와 함께 다른 제공자를 계속 사용할 수 있습니다.",
   "workspace.newUser.copyApiKey": "API 키 복사",
   "workspace.newUser.copyKey": "키 복사",
   "workspace.newUser.copied": "복사됨!",
@@ -502,7 +502,7 @@ export const dict = {
   "workspace.newUser.step.login.before": "실행",
   "workspace.newUser.step.login.after": "후 Flynncode 선택",
   "workspace.newUser.step.pasteKey": "API 키 붙여넣기",
-  "workspace.newUser.step.models.before": "OpenCode를 시작하고 실행",
+  "workspace.newUser.step.models.before": "Flynncode를 시작하고 실행",
   "workspace.newUser.step.models.after": "하여 모델 선택",
 
   "workspace.models.title": "모델",
@@ -779,17 +779,17 @@ export const dict = {
   "download.platform.linuxRpm": "Linux (.rpm)",
 
   "download.faq.a3.beforeLocal":
-    "꼭 그렇지는 않지만, 아마도 필요할 것입니다. OpenCode를 유료 제공자에 연결하려면 AI 구독이 필요할 수 있습니다. 하지만",
+    "꼭 그렇지는 않지만, 아마도 필요할 것입니다. Flynncode를 유료 제공자에 연결하려면 AI 구독이 필요할 수 있습니다. 하지만",
   "download.faq.a3.localLink": "로컬 모델",
   "download.faq.a3.afterLocal.beforeZen": "은 무료로 사용할 수 있습니다. 우리는",
-  "download.faq.a3.afterZen": " 사용을 권장하지만, OpenCode는 OpenAI, Anthropic, xAI 등 모든 인기 제공자와 작동합니다.",
+  "download.faq.a3.afterZen": " 사용을 권장하지만, Flynncode는 OpenAI, Anthropic, xAI 등 모든 인기 제공자와 작동합니다.",
 
-  "download.faq.a5.p1": "OpenCode는 100% 무료로 사용할 수 있습니다.",
+  "download.faq.a5.p1": "Flynncode는 100% 무료로 사용할 수 있습니다.",
   "download.faq.a5.p2.beforeZen":
-    "추가 비용은 모델 제공자 구독에서 발생합니다. OpenCode는 모든 모델 제공자와 작동하지만, 우리는",
+    "추가 비용은 모델 제공자 구독에서 발생합니다. Flynncode는 모든 모델 제공자와 작동하지만, 우리는",
   "download.faq.a5.p2.afterZen": " 사용을 권장합니다.",
 
-  "download.faq.a6.p1": "데이터와 정보는 OpenCode에서 공유 링크를 생성할 때만 저장됩니다.",
+  "download.faq.a6.p1": "데이터와 정보는 Flynncode에서 공유 링크를 생성할 때만 저장됩니다.",
   "download.faq.a6.p2.beforeShare": "더 알아보기:",
   "download.faq.a6.shareLink": "공유 페이지",
 
@@ -797,7 +797,7 @@ export const dict = {
   "enterprise.meta.description": "Flynncode 엔터프라이즈 솔루션 문의",
   "enterprise.hero.title": "여러분의 코드는 여러분의 것입니다",
   "enterprise.hero.body1":
-    "OpenCode는 조직 내부에서 안전하게 작동하며, 데이터나 컨텍스트를 저장하지 않고 라이선스 제한이나 소유권 주장도 없습니다. 팀과 함께 트라이얼을 시작한 후, SSO 및 내부 AI 게이트웨이와 통합하여 조직 전체에 배포하세요.",
+    "Flynncode는 조직 내부에서 안전하게 작동하며, 데이터나 컨텍스트를 저장하지 않고 라이선스 제한이나 소유권 주장도 없습니다. 팀과 함께 트라이얼을 시작한 후, SSO 및 내부 AI 게이트웨이와 통합하여 조직 전체에 배포하세요.",
   "enterprise.hero.body2": "어떻게 도와드릴 수 있는지 알려주세요.",
   "enterprise.form.name.label": "이름",
   "enterprise.form.name.placeholder": "홍길동",
@@ -824,13 +824,13 @@ export const dict = {
     "Flynncode 엔터프라이즈는 코드와 데이터가 인프라 외부로 유출되지 않도록 보장하려는 조직을 위한 솔루션입니다. SSO 및 내부 AI 게이트웨이와 통합되는 중앙 집중식 설정을 통해 이를 구현합니다.",
   "enterprise.faq.q2": "Flynncode 엔터프라이즈는 어떻게 시작하나요?",
   "enterprise.faq.a2":
-    "팀과 함께 내부 트라이얼로 간단히 시작해보세요. OpenCode는 기본적으로 코드나 컨텍스트 데이터를 저장하지 않아 시작하기 쉽습니다. 그 후 가격 및 구현 옵션에 대해 문의해주세요.",
+    "팀과 함께 내부 트라이얼로 간단히 시작해보세요. Flynncode는 기본적으로 코드나 컨텍스트 데이터를 저장하지 않아 시작하기 쉽습니다. 그 후 가격 및 구현 옵션에 대해 문의해주세요.",
   "enterprise.faq.q3": "엔터프라이즈 가격은 어떻게 되나요?",
   "enterprise.faq.a3":
     "좌석(seat) 당 엔터프라이즈 가격을 제공합니다. 자체 LLM 게이트웨이를 보유한 경우, 사용된 토큰에 대해 비용을 청구하지 않습니다. 자세한 내용은 조직의 요구사항에 따른 맞춤 견적을 위해 문의해주세요.",
   "enterprise.faq.q4": "Flynncode 엔터프라이즈에서 데이터는 안전한가요?",
   "enterprise.faq.a4":
-    "네. OpenCode는 코드나 컨텍스트 데이터를 저장하지 않습니다. 모든 처리는 로컬에서 이루어지거나 AI 제공자에 대한 직접 API 호출을 통해 이루어집니다. 중앙 설정 및 SSO 통합을 통해 데이터는 조직의 인프라 내에서 안전하게 유지됩니다.",
+    "네. Flynncode는 코드나 컨텍스트 데이터를 저장하지 않습니다. 모든 처리는 로컬에서 이루어지거나 AI 제공자에 대한 직접 API 호출을 통해 이루어집니다. 중앙 설정 및 SSO 통합을 통해 데이터는 조직의 인프라 내에서 안전하게 유지됩니다.",
 
   "brand.title": "Flynncode | 브랜드",
   "brand.meta.description": "Flynncode 브랜드 가이드라인",
@@ -841,7 +841,7 @@ export const dict = {
   "changelog.title": "Flynncode | 변경 내역",
   "changelog.meta.description": "Flynncode 릴리스 노트 및 변경 내역",
   "changelog.hero.title": "변경 내역",
-  "changelog.hero.subtitle": "OpenCode의 새로운 업데이트 및 개선 사항",
+  "changelog.hero.subtitle": "Flynncode의 새로운 업데이트 및 개선 사항",
   "changelog.empty": "변경 내역 항목을 찾을 수 없습니다.",
   "changelog.viewJson": "JSON 보기",
 

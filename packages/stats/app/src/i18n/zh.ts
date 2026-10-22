@@ -24,7 +24,7 @@ export const dict = {
   "header.sectionNavLabel": "数据分区",
   "header.githubAria": "在 GitHub 上为 Flynncode 加星",
   "header.github": "GitHub",
-  "header.tryOpenCode": "试用 Flynncode",
+  "header.tryFlynncode": "试用 Flynncode",
   "header.openNav": "打开导航",
   "header.closeNav": "关闭导航",
   "theme.groupLabel": "主题",

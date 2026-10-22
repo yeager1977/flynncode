@@ -24,7 +24,7 @@ export const dict = {
   "header.sectionNavLabel": "ส่วนข้อมูล",
   "header.githubAria": "กดดาว Flynncode บน GitHub",
   "header.github": "GitHub",
-  "header.tryOpenCode": "ลองใช้ Flynncode",
+  "header.tryFlynncode": "ลองใช้ Flynncode",
   "header.openNav": "เปิดการนำทาง",
   "header.closeNav": "ปิดการนำทาง",
   "theme.groupLabel": "ธีม",

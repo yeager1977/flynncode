@@ -97,7 +97,7 @@ export const dict = {
   "temp.getStarted": "はじめる",
   "temp.feature.native.title": "ネイティブ TUI",
   "temp.feature.native.body": "レスポンシブでネイティブ、テーマ変更可能なターミナルUI",
-  "temp.feature.zen.beforeLink": "OpenCodeが提供する",
+  "temp.feature.zen.beforeLink": "Flynncodeが提供する",
   "temp.feature.zen.link": "厳選されたモデルリスト",
   "temp.feature.zen.afterLink": "",
   "temp.feature.models.beforeLink": "ローカルモデルを含む、",
@@ -123,9 +123,9 @@ export const dict = {
 
   "home.install.ariaLabel": "インストールオプション",
 
-  "home.what.title": "OpenCodeとは？",
+  "home.what.title": "Flynncodeとは？",
   "home.what.body":
-    "OpenCodeは、ターミナル、IDE、またはデスクトップでのコード作成を支援するオープンソースのエージェントです。",
+    "Flynncodeは、ターミナル、IDE、またはデスクトップでのコード作成を支援するオープンソースのエージェントです。",
   "home.what.lsp.title": "LSP対応",
   "home.what.lsp.body": "LLMに適したLSPを自動的に読み込みます",
   "home.what.multiSession.title": "マルチセッション",
@@ -151,43 +151,43 @@ export const dict = {
 
   "home.privacy.title": "プライバシーを最優先に設計",
   "home.privacy.body":
-    "OpenCodeはコードやコンテキストデータを一切保存しないため、プライバシーが重視される環境でも利用できます。",
+    "Flynncodeはコードやコンテキストデータを一切保存しないため、プライバシーが重視される環境でも利用できます。",
   "home.privacy.learnMore": "詳しくは",
   "home.privacy.link": "プライバシー",
 
-  "home.faq.q1": "OpenCodeとは？",
+  "home.faq.q1": "Flynncodeとは？",
   "home.faq.a1":
-    "OpenCodeは、任意のAIモデルでコードの作成・実行を支援するオープンソースのエージェントです。ターミナルベースのインターフェース、デスクトップアプリ、IDE拡張として利用できます。",
-  "home.faq.q2": "OpenCodeの使い方は？",
+    "Flynncodeは、任意のAIモデルでコードの作成・実行を支援するオープンソースのエージェントです。ターミナルベースのインターフェース、デスクトップアプリ、IDE拡張として利用できます。",
+  "home.faq.q2": "Flynncodeの使い方は？",
   "home.faq.a2.before": "最も簡単な始め方は",
   "home.faq.a2.link": "イントロを読む",
-  "home.faq.q3": "OpenCodeには追加のAIサブスクリプションが必要ですか？",
-  "home.faq.a3.p1": "必ずしも必要ではありません。OpenCodeには、アカウント不要で使える無料モデルが含まれています。",
+  "home.faq.q3": "Flynncodeには追加のAIサブスクリプションが必要ですか？",
+  "home.faq.a3.p1": "必ずしも必要ではありません。Flynncodeには、アカウント不要で使える無料モデルが含まれています。",
   "home.faq.a3.p2.beforeZen": "これらに加えて、",
   "home.faq.a3.p2.afterZen": " アカウントを作成することで、人気のコーディングモデルを利用できます。",
   "home.faq.a3.p3":
-    "Zenの利用を推奨していますが、OpenCodeはOpenAI、Anthropic、xAIなどの主要プロバイダーにも対応しています。",
+    "Zenの利用を推奨していますが、FlynncodeはOpenAI、Anthropic、xAIなどの主要プロバイダーにも対応しています。",
   "home.faq.a3.p4.beforeLocal": "さらに、",
   "home.faq.a3.p4.localLink": "ローカルモデル",
-  "home.faq.q4": "既存のAIサブスクリプションをOpenCodeで使えますか？",
+  "home.faq.q4": "既存のAIサブスクリプションをFlynncodeで使えますか？",
   "home.faq.a4.p1":
-    "はい、OpenCodeは主要プロバイダーのサブスクリプションプランに対応しています。Claude Pro/Max、ChatGPT Plus/Pro、GitHub Copilotのサブスクリプションを利用できます。",
+    "はい、Flynncodeは主要プロバイダーのサブスクリプションプランに対応しています。Claude Pro/Max、ChatGPT Plus/Pro、GitHub Copilotのサブスクリプションを利用できます。",
   "home.faq.q5": "ターミナルだけで使えますか？",
-  "home.faq.a5.beforeDesktop": "もう違います！OpenCodeは今は",
+  "home.faq.a5.beforeDesktop": "もう違います！Flynncodeは今は",
   "home.faq.a5.desktop": "デスクトップ",
   "home.faq.a5.and": "と",
   "home.faq.a5.web": "ウェブ",
-  "home.faq.q6": "OpenCodeの価格は？",
+  "home.faq.q6": "Flynncodeの価格は？",
   "home.faq.a6":
-    "OpenCodeは100%無料で使えます。無料モデルも含まれています。他のプロバイダーに接続する場合は追加費用が発生することがあります。",
+    "Flynncodeは100%無料で使えます。無料モデルも含まれています。他のプロバイダーに接続する場合は追加費用が発生することがあります。",
   "home.faq.q7": "データとプライバシーは？",
   "home.faq.a7.p1": "無料モデルを使う場合や共有リンクを作成する場合にのみ、データが保存されます。",
   "home.faq.a7.p2.beforeModels": "詳しくは",
   "home.faq.a7.p2.modelsLink": "モデルのプライバシー",
   "home.faq.a7.p2.and": "と",
   "home.faq.a7.p2.shareLink": "共有ページのプライバシー",
-  "home.faq.q8": "OpenCodeはオープンソースですか？",
-  "home.faq.a8.p1": "はい、OpenCodeは完全にオープンソースです。ソースコードは",
+  "home.faq.q8": "Flynncodeはオープンソースですか？",
+  "home.faq.a8.p1": "はい、Flynncodeは完全にオープンソースです。ソースコードは",
   "home.faq.a8.p2": "の",
   "home.faq.a8.mitLicense": "MITライセンス",
   "home.faq.a8.p3":
@@ -195,30 +195,30 @@ export const dict = {
 
   "home.zenCta.title": "コーディングエージェント向けの信頼できる最適化モデル",
   "home.zenCta.body":
-    "Zenは、OpenCodeがコーディングエージェント向けにテスト・ベンチマーク済みのAIモデルを厳選して提供します。プロバイダー間の性能・品質のブレを気にせず、検証済みのモデルを利用できます。",
+    "Zenは、Flynncodeがコーディングエージェント向けにテスト・ベンチマーク済みのAIモデルを厳選して提供します。プロバイダー間の性能・品質のブレを気にせず、検証済みのモデルを利用できます。",
   "home.zenCta.link": "Zenについて知る",
 
   "zen.title": "Flynncode Zen | コーディングエージェント向けの信頼できる最適化モデル",
   "zen.hero.title": "コーディングエージェント向けの信頼できる最適化モデル",
   "zen.hero.body":
-    "Zenは、OpenCodeがコーディングエージェント向けにテスト・ベンチマーク済みのAIモデルを厳選して提供します。プロバイダー間の性能・品質のブレを気にせず、検証済みのモデルを利用できます。",
+    "Zenは、Flynncodeがコーディングエージェント向けにテスト・ベンチマーク済みのAIモデルを厳選して提供します。プロバイダー間の性能・品質のブレを気にせず、検証済みのモデルを利用できます。",
 
   "zen.faq.q1": "Flynncode Zenとは？",
   "zen.faq.a1":
-    "Zenは、OpenCodeのチームが作成した、コーディングエージェント向けにテスト・ベンチマークされたAIモデルの厳選セットです。",
+    "Zenは、Flynncodeのチームが作成した、コーディングエージェント向けにテスト・ベンチマークされたAIモデルの厳選セットです。",
   "zen.faq.q2": "Zenはなぜ精度が高いのですか？",
   "zen.faq.a2":
     "Zenはコーディングエージェント向けにテスト・ベンチマークされたモデルだけを提供します。ステーキを切るのにバターナイフを使わないように、コーディングには品質の低いモデルを使わないでください。",
   "zen.faq.q3": "Zenは安いですか？",
   "zen.faq.a3":
-    "Zenは営利目的ではありません。Zenはモデル提供元のコストをそのままあなたに渡します。Zenの利用が増えるほど、OpenCodeはより良いレートを交渉し、その分をあなたに還元できます。",
+    "Zenは営利目的ではありません。Zenはモデル提供元のコストをそのままあなたに渡します。Zenの利用が増えるほど、Flynncodeはより良いレートを交渉し、その分をあなたに還元できます。",
   "zen.faq.q4": "Zenの料金は？",
   "zen.faq.a4.p1.beforePricing": "Zenは",
   "zen.faq.a4.p1.pricingLink": "リクエスト単位で課金",
   "zen.faq.a4.p1.afterPricing": "し、マークアップはありません。つまり、モデル提供元の請求額をそのまま支払います。",
   "zen.faq.a4.p2.beforeAccount": "総コストは利用量に依存し、月次の支出上限を",
   "zen.faq.a4.p2.accountLink": "アカウント",
-  "zen.faq.a4.p3": "コストを賄うために、OpenCodeは$20の残高チャージあたり$1.23の小さな決済手数料のみを追加します。",
+  "zen.faq.a4.p3": "コストを賄うために、Flynncodeは$20の残高チャージあたり$1.23の小さな決済手数料のみを追加します。",
   "zen.faq.q5": "データとプライバシーは？",
   "zen.faq.a5.beforeExceptions":
     "Zenのモデルはすべて米国でホストされています。プロバイダーはゼロ保持ポリシーを守り、データをモデル学習に使用しません（",
@@ -229,7 +229,7 @@ export const dict = {
   "zen.faq.a7": "はい、いつでも請求を無効化し、残りの残高を利用できます。",
   "zen.faq.q8": "他のコーディングエージェントでもZenを使えますか？",
   "zen.faq.a8":
-    "ZenはOpenCodeとの相性が良いですが、どのエージェントでもZenを利用できます。お使いのコーディングエージェントのセットアップ手順に従ってください。",
+    "ZenはFlynncodeとの相性が良いですが、どのエージェントでもZenを利用できます。お使いのコーディングエージェントのセットアップ手順に従ってください。",
   "zen.faq.q9": "返金を受けられますか？",
   "zen.faq.a9":
     "請求から14日以内で、その購入分のクレジットを一切使用していない場合、返金の対象となる可能性があります。返金を希望する場合は、{{contact}}ください。",
@@ -242,12 +242,12 @@ export const dict = {
   "zen.problem.title": "Zenはどのような問題を解決していますか？",
   "zen.problem.body":
     "利用可能なモデルは非常に多くありますが、コーディングエージェントで適切に機能するモデルはほんのわずかです。ほとんどのプロバイダーは、それらを異なる設定で提供し、結果も異なります。",
-  "zen.problem.subtitle": "OpenCodeユーザーだけでなく、すべての人を対象にこの問題を修正しています。",
+  "zen.problem.subtitle": "Flynncodeユーザーだけでなく、すべての人を対象にこの問題を修正しています。",
   "zen.problem.item1": "選択したモデルをテストし、チームに相談する",
   "zen.problem.item2": "プロバイダーと連携して適切に提供されるようにする",
   "zen.problem.item3": "私たちが推奨するすべてのモデルとプロバイダーの組み合わせをベンチマークする",
   "zen.how.title": "Zenの仕組み",
-  "zen.how.body": "ZenをOpenCodeとともに使用することをお勧めしますが、Zenはどのエージェントでも使用できます。",
+  "zen.how.body": "ZenをFlynncodeとともに使用することをお勧めしますが、Zenはどのエージェントでも使用できます。",
   "zen.how.step1.title": "サインアップして$20の残高を追加",
   "zen.how.step1.beforeLink": "",
   "zen.how.step1.link": "セットアップ手順",
@@ -328,14 +328,14 @@ export const dict = {
   "go.testimonials.frank.quote": "まだNvidiaにいられたらよかったのに。",
   "go.problem.title": "Goはどのような問題を解決していますか？",
   "go.problem.body":
-    "私たちはOpenCodeの体験をできるだけ多くの人に届けることに注力しています。Flynncode Goは月額$10の低価格なサブスクリプションです。ゆとりある上限と、最も高性能なオープンソースモデルへの信頼できるアクセスを提供します。",
+    "私たちはFlynncodeの体験をできるだけ多くの人に届けることに注力しています。Flynncode Goは月額$10の低価格なサブスクリプションです。ゆとりある上限と、最も高性能なオープンソースモデルへの信頼できるアクセスを提供します。",
   "go.problem.subtitle": " ",
   "go.problem.item1": "低価格なサブスクリプション料金",
   "go.problem.item2": "十分な制限と安定したアクセス",
   "go.problem.item3": "できるだけ多くのプログラマーのために構築",
   "go.problem.item4": "エージェント型コーディング向けにテストされた厳選モデルラインナップ",
   "go.how.title": "Goの仕組み",
-  "go.how.body": "Goは月額$10です。OpenCodeまたは任意のエージェントで使えます。",
+  "go.how.body": "Goは月額$10です。Flynncodeまたは任意のエージェントで使えます。",
   "go.how.step1.title": "アカウントを作成",
   "go.how.step1.beforeLink": "",
   "go.how.step1.link": "セットアップ手順はこちら",
@@ -501,15 +501,15 @@ export const dict = {
     "最適なパフォーマンスを実現するように構成されたモデルにアクセスします。ダウングレードや安価なプロバイダーへのルーティングはありません。",
   "workspace.newUser.feature.lockin.title": "ロックインなし",
   "workspace.newUser.feature.lockin.body":
-    "任意のコーディングエージェントでZenを使用でき、必要に応じていつでもOpenCodeを備えた他のプロバイダーを使用し続けることができます。",
+    "任意のコーディングエージェントでZenを使用でき、必要に応じていつでもFlynncodeを備えた他のプロバイダーを使用し続けることができます。",
   "workspace.newUser.copyApiKey": "APIキーをコピー",
   "workspace.newUser.copyKey": "キーをコピー",
   "workspace.newUser.copied": "コピーしました！",
   "workspace.newUser.step.enableBilling": "課金を有効にする",
   "workspace.newUser.step.login.before": "実行",
-  "workspace.newUser.step.login.after": "してOpenCodeを選択",
+  "workspace.newUser.step.login.after": "してFlynncodeを選択",
   "workspace.newUser.step.pasteKey": "APIキーを貼り付け",
-  "workspace.newUser.step.models.before": "OpenCodeを起動し実行",
+  "workspace.newUser.step.models.before": "Flynncodeを起動し実行",
   "workspace.newUser.step.models.after": "してモデルを選択",
 
   "workspace.models.title": "モデル",
@@ -555,10 +555,10 @@ export const dict = {
   "workspace.cost.subscriptionShort": "サブ",
 
   "workspace.keys.title": "APIキー",
-  "workspace.keys.subtitle": "OpenCodeサービスにアクセスするためのAPIキーを管理します。",
+  "workspace.keys.subtitle": "FlynncodeサービスにアクセスするためのAPIキーを管理します。",
   "workspace.keys.create": "APIキーの作成",
   "workspace.keys.placeholder": "キー名を入力してください",
-  "workspace.keys.empty": "OpenCodeゲートウェイAPIキーを作成する",
+  "workspace.keys.empty": "FlynncodeゲートウェイAPIキーを作成する",
   "workspace.keys.table.name": "名前",
   "workspace.keys.table.key": "キー",
   "workspace.keys.table.createdBy": "作成者",
@@ -788,26 +788,26 @@ export const dict = {
   "download.platform.linuxRpm": "Linux (.rpm)",
 
   "download.faq.a3.beforeLocal":
-    "必ずしもそうではありませんが、おそらく必要です。OpenCodeを有料プロバイダーに接続したい場合はAIサブスクリプションが必要ですが、",
+    "必ずしもそうではありませんが、おそらく必要です。Flynncodeを有料プロバイダーに接続したい場合はAIサブスクリプションが必要ですが、",
   "download.faq.a3.localLink": "ローカルモデル",
   "download.faq.a3.afterLocal.beforeZen": "であれば無料で利用できます。ユーザーには",
   "download.faq.a3.afterZen":
-    "の利用をお勧めしていますが、OpenCodeはOpenAI、Anthropic、xAIなどの主要なプロバイダーに対応しています。",
+    "の利用をお勧めしていますが、FlynncodeはOpenAI、Anthropic、xAIなどの主要なプロバイダーに対応しています。",
 
-  "download.faq.a5.p1": "OpenCodeは100%無料で利用できます。",
+  "download.faq.a5.p1": "Flynncodeは100%無料で利用できます。",
   "download.faq.a5.p2.beforeZen":
-    "追加コストはモデルプロバイダーのサブスクリプションから発生します。OpenCodeはどのモデルプロバイダーでも利用できますが、",
+    "追加コストはモデルプロバイダーのサブスクリプションから発生します。Flynncodeはどのモデルプロバイダーでも利用できますが、",
   "download.faq.a5.p2.afterZen": "の利用をおすすめします。",
 
-  "download.faq.a6.p1": "あなたのデータと情報は、OpenCodeで共有リンクを作成したときにのみ保存されます。",
+  "download.faq.a6.p1": "あなたのデータと情報は、Flynncodeで共有リンクを作成したときにのみ保存されます。",
   "download.faq.a6.p2.beforeShare": "詳しくは",
   "download.faq.a6.shareLink": "共有ページ",
 
   "enterprise.title": "Flynncode | 組織向けエンタープライズソリューション",
-  "enterprise.meta.description": "エンタープライズソリューションについてOpenCodeに問い合わせる",
+  "enterprise.meta.description": "エンタープライズソリューションについてFlynncodeに問い合わせる",
   "enterprise.hero.title": "あなたのコードはあなたのもの",
   "enterprise.hero.body1":
-    "OpenCodeは、データやコンテキストを一切保存せず、ライセンス制限や所有権の主張もなく、組織内で安全に動作します。チームでのトライアルから始め、SSOや社内AIゲートウェイと統合して組織全体に展開できます。",
+    "Flynncodeは、データやコンテキストを一切保存せず、ライセンス制限や所有権の主張もなく、組織内で安全に動作します。チームでのトライアルから始め、SSOや社内AIゲートウェイと統合して組織全体に展開できます。",
   "enterprise.hero.body2": "どのような支援ができるか、お聞かせください。",
   "enterprise.form.name.label": "氏名",
   "enterprise.form.name.placeholder": "ジェフ・ベゾス",
@@ -834,24 +834,24 @@ export const dict = {
     "Flynncode Enterpriseは、コードとデータが決してインフラの外に出ないことを保証したい組織向けです。SSOや社内AIゲートウェイと統合する集中設定を使用することでこれを実現します。",
   "enterprise.faq.q2": "Flynncode Enterpriseを始めるには？",
   "enterprise.faq.a2":
-    "まずはチームでの社内トライアルから始めてください。OpenCodeはデフォルトでコードやコンテキストデータを保存しないため、簡単に始められます。その後、価格や導入オプションについてお問い合わせください。",
+    "まずはチームでの社内トライアルから始めてください。Flynncodeはデフォルトでコードやコンテキストデータを保存しないため、簡単に始められます。その後、価格や導入オプションについてお問い合わせください。",
   "enterprise.faq.q3": "エンタープライズ価格の仕組みは？",
   "enterprise.faq.a3":
     "シート単位（ユーザー数）でのエンタープライズ価格を提供します。独自のLLMゲートウェイをお持ちの場合、使用トークンに対する課金はありません。詳細は、組織の要件に基づいた見積もりのためにお問い合わせください。",
   "enterprise.faq.q4": "Flynncode Enterpriseでデータは安全ですか？",
   "enterprise.faq.a4":
-    "はい。OpenCodeはコードやコンテキストデータを保存しません。すべての処理はローカル、またはAIプロバイダーへの直接API呼び出しを通じて行われます。集中設定とSSO統合により、データは組織のインフラ内で安全に保たれます。",
+    "はい。Flynncodeはコードやコンテキストデータを保存しません。すべての処理はローカル、またはAIプロバイダーへの直接API呼び出しを通じて行われます。集中設定とSSO統合により、データは組織のインフラ内で安全に保たれます。",
 
   "brand.title": "Flynncode | ブランド",
   "brand.meta.description": "Flynncode ブランドガイドライン",
   "brand.heading": "ブランドガイドライン",
-  "brand.subtitle": "OpenCodeブランドを扱うためのリソースと素材です。",
+  "brand.subtitle": "Flynncodeブランドを扱うためのリソースと素材です。",
   "brand.downloadAll": "すべての素材をダウンロード",
 
   "changelog.title": "Flynncode | 変更履歴",
   "changelog.meta.description": "Flynncode リリースノートと変更履歴",
   "changelog.hero.title": "変更履歴",
-  "changelog.hero.subtitle": "OpenCodeの新しいアップデートと改善",
+  "changelog.hero.subtitle": "Flynncodeの新しいアップデートと改善",
   "changelog.empty": "変更履歴が見つかりませんでした。",
   "changelog.viewJson": "JSONを表示",
 

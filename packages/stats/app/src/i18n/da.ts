@@ -22,7 +22,7 @@ export const dict = {
   "header.sectionNavLabel": "Datasektioner",
   "header.githubAria": "Giv Flynncode en stjerne på GitHub",
   "header.github": "GitHub",
-  "header.tryOpenCode": "Prøv Flynncode",
+  "header.tryFlynncode": "Prøv Flynncode",
   "header.openNav": "Åbn navigation",
   "header.closeNav": "Luk navigation",
   "theme.groupLabel": "Tema",
