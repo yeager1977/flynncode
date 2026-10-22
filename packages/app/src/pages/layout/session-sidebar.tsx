@@ -16,7 +16,7 @@ import { useServerSync } from "@/context/server-sync"
 import { useSettingsDialog } from "@/components/settings-dialog"
 import { ProviderUsageMeters } from "@/components/provider-usage-meters"
 import { showToast } from "@/utils/toast"
-import { agentColor } from "@/utils/agent"
+import { agentColor, commonAgent } from "@/utils/agent"
 import type { LocalProject } from "@/context/layout"
 import { displayName } from "./helpers"
 import { dispatchContextMenu } from "./keyboard-menu"
@@ -110,6 +110,7 @@ export function SessionSidebar(props: {
                       onArchive={props.onArchive}
                       onDelete={confirmDelete}
                       rename={rename}
+                      commonAgent={commonAgent(group.sessions)}
                     />
                   )}
                 </For>
@@ -353,6 +354,9 @@ function SessionLink(props: {
   onArchive: (session: Session) => void
   onDelete: (session: Session) => void
   rename: RenameState
+  // The agent the project normally runs on; this row's agent is only shown
+  // when it differs.
+  commonAgent: string | undefined
 }) {
   const serverSync = useServerSync()
   const serverSDK = useServerSDK()
@@ -391,10 +395,11 @@ function SessionLink(props: {
   }
 
   // The session's main agent, shown under the title; the server keeps
-  // session.agent fresh on every prompt.
+  // session.agent fresh on every prompt. It is only worth a line when it
+  // differs from the agent the project normally runs on.
   const agentLabel = () => {
     const name = props.session.agent
-    if (!name) return undefined
+    if (!name || name === props.commonAgent) return undefined
     return { name, tint: agentColor(name) }
   }
 

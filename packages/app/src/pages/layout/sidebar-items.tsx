@@ -14,7 +14,7 @@ import { useLanguage } from "@/context/language"
 import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
 import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
-import { agentColor, messageAgentColor } from "@/utils/agent"
+import { agentColor, commonAgent, messageAgentColor } from "@/utils/agent"
 import { sessionTitle } from "@/utils/session-title"
 import { sessionPermissionRequest } from "../session/composer/session-request-tree"
 import { childSessionOnPath, getProjectAvatarSource, hasProjectPermissions } from "./helpers"
@@ -222,11 +222,14 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
     messageAgentColor(serverSync().session.data.message[props.session.id], sessionStore.agent),
   )
   // The session's main agent; the server keeps session.agent fresh on every
-  // prompt. Hidden on child rows (their titles already carry the agent name)
-  // and on the collapsed rail where titles are only slivers.
+  // prompt. It is only shown when it differs from the agent the project
+  // normally runs on, so the everyday agent does not repeat on every row.
+  // Child rows are left out (their titles already carry the agent name), as
+  // are the collapsed rail's rows, where titles are only slivers.
   const agentLabel = createMemo(() => {
     const name = props.session.agent
     if (!name || props.level || (!props.sidebarExpanded() && !props.mobile)) return undefined
+    if (name === commonAgent(props.list)) return undefined
     return { name, tint: agentColor(name, sessionStore.agent.find((agent) => agent.name === name)?.color) }
   })
   const tooltip = createMemo(() => props.showTooltip ?? (props.mobile || !props.sidebarExpanded()))
