@@ -42,6 +42,7 @@ import {
   setBackgroundColor,
   setDockIcon,
   restoreMainWindows,
+  showMainWindows,
 } from "./windows"
 import { createWslServersController } from "./wsl/servers"
 import { registerWslIpcHandlers } from "./wsl/ipc"
