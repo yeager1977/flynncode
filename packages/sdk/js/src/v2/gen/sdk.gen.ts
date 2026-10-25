@@ -446,6 +446,12 @@ import type {
   VcsGetResponses,
   VcsStatusErrors,
   VcsStatusResponses,
+  WorktreeCleanupRemoveErrors,
+  WorktreeCleanupRemoveResponses,
+  WorktreeCleanupReportErrors,
+  WorktreeCleanupReportResponses,
+  WorktreeCleanupScanErrors,
+  WorktreeCleanupScanResponses,
   WorktreeCreateErrors,
   WorktreeCreateInput,
   WorktreeCreateResponses,
@@ -1452,6 +1458,60 @@ export class Global extends HeyApiClient {
   private _config?: Config
   get config(): Config {
     return (this._config ??= new Config({ client: this.client }))
+  }
+}
+
+export class WorktreeCleanup extends HeyApiClient {
+  /**
+   * Get worktree cleanup report
+   *
+   * Get the worktrees and folders awaiting review, and what the janitor cleaned recently.
+   */
+  public report<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      WorktreeCleanupReportResponses,
+      WorktreeCleanupReportErrors,
+      ThrowOnError
+    >({ url: "/worktree/cleanup", ...options })
+  }
+
+  /**
+   * Scan for stale worktrees
+   *
+   * Scan all known projects for stale worktrees now and return the updated report.
+   */
+  public scan<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).post<WorktreeCleanupScanResponses, WorktreeCleanupScanErrors, ThrowOnError>(
+      { url: "/worktree/cleanup/scan", ...options },
+    )
+  }
+
+  /**
+   * Remove worktrees
+   *
+   * Remove worktrees or folders from the cleanup review list.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters?: {
+      paths?: Array<string>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "paths" }] }])
+    return (options?.client ?? this.client).post<
+      WorktreeCleanupRemoveResponses,
+      WorktreeCleanupRemoveErrors,
+      ThrowOnError
+    >({
+      url: "/worktree/cleanup/remove",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
   }
 }
 
@@ -6206,6 +6266,7 @@ export class Session3 extends HeyApiClient {
       workspace?: string
       limit?: number
       order?: "asc" | "desc"
+      roots?: boolean | "true" | "false"
       search?: string
       directory?: string
       project?: string
@@ -6222,6 +6283,7 @@ export class Session3 extends HeyApiClient {
             { in: "query", key: "workspace" },
             { in: "query", key: "limit" },
             { in: "query", key: "order" },
+            { in: "query", key: "roots" },
             { in: "query", key: "search" },
             { in: "query", key: "directory" },
             { in: "query", key: "project" },
@@ -8051,6 +8113,11 @@ export class OpencodeClient extends HeyApiClient {
   private _global?: Global
   get global(): Global {
     return (this._global ??= new Global({ client: this.client }))
+  }
+
+  private _worktreeCleanup?: WorktreeCleanup
+  get worktreeCleanup(): WorktreeCleanup {
+    return (this._worktreeCleanup ??= new WorktreeCleanup({ client: this.client }))
   }
 
   private _event?: Event

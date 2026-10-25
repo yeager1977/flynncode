@@ -2443,6 +2443,51 @@ export type RoutineRun = {
 
 export type RoutineRunHistory = Array<RoutineRun>
 
+export type WorktreeCleanupReviewItem = {
+  path: string
+  project: string
+  repo?: string
+  branch?: string
+  head?: string
+  detached?: boolean
+  dirty?: number
+  unpushed?: number
+  ignored?: number
+  ignoredExample?: string
+  nested?: Array<string>
+  bytes: number
+  capped: boolean
+  lastActivity: number
+  reason: "dirty" | "unpushed" | "scratch" | "recent" | "error"
+  detail?: string
+}
+
+export type WorktreeCleanupCleanedItem = {
+  path: string
+  bytes: number
+  time: number
+  kind: "worktree" | "junk" | "scratch"
+  rescued?: string
+}
+
+export type WorktreeCleanupReport = {
+  items: Array<WorktreeCleanupReviewItem>
+  cleaned: Array<WorktreeCleanupCleanedItem>
+  scanning: boolean
+  lastScan?: number
+}
+
+export type WorktreeCleanupRemoveResult = {
+  path: string
+  ok: boolean
+  error?: string
+  rescued?: string
+}
+
+export type WorktreeCleanupRemoveResponse = {
+  results: Array<WorktreeCleanupRemoveResult>
+}
+
 export type Model = {
   id: string
   providerID: string
@@ -8034,6 +8079,83 @@ export type GlobalUpgradeResponses = {
 
 export type GlobalUpgradeResponse = GlobalUpgradeResponses[keyof GlobalUpgradeResponses]
 
+export type WorktreeCleanupReportData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/worktree/cleanup"
+}
+
+export type WorktreeCleanupReportErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type WorktreeCleanupReportError = WorktreeCleanupReportErrors[keyof WorktreeCleanupReportErrors]
+
+export type WorktreeCleanupReportResponses = {
+  /**
+   * Worktree cleanup report
+   */
+  200: WorktreeCleanupReport
+}
+
+export type WorktreeCleanupReportResponse = WorktreeCleanupReportResponses[keyof WorktreeCleanupReportResponses]
+
+export type WorktreeCleanupScanData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/worktree/cleanup/scan"
+}
+
+export type WorktreeCleanupScanErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type WorktreeCleanupScanError = WorktreeCleanupScanErrors[keyof WorktreeCleanupScanErrors]
+
+export type WorktreeCleanupScanResponses = {
+  /**
+   * Worktree cleanup report
+   */
+  200: WorktreeCleanupReport
+}
+
+export type WorktreeCleanupScanResponse = WorktreeCleanupScanResponses[keyof WorktreeCleanupScanResponses]
+
+export type WorktreeCleanupRemoveData = {
+  body?: {
+    paths: Array<string>
+  }
+  path?: never
+  query?: never
+  url: "/worktree/cleanup/remove"
+}
+
+export type WorktreeCleanupRemoveErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type WorktreeCleanupRemoveError = WorktreeCleanupRemoveErrors[keyof WorktreeCleanupRemoveErrors]
+
+export type WorktreeCleanupRemoveResponses = {
+  /**
+   * Removal results
+   */
+  200: WorktreeCleanupRemoveResponse
+}
+
+export type WorktreeCleanupRemoveResponse2 = WorktreeCleanupRemoveResponses[keyof WorktreeCleanupRemoveResponses]
+
 export type EventSubscribeData = {
   body?: never
   path?: never
@@ -12489,6 +12611,7 @@ export type V2SessionListData = {
     workspace?: string
     limit?: number
     order?: "asc" | "desc"
+    roots?: boolean | "true" | "false"
     search?: string
     directory?: string
     project?: string

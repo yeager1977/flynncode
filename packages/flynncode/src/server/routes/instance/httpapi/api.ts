@@ -33,6 +33,7 @@ import { makeApi } from "@flynncode/protocol/api"
 import { LocationMiddleware } from "@flynncode/server/location"
 import { SessionLocationMiddleware } from "@flynncode/server/middleware/session-location"
 import { GlobalApi } from "./groups/global"
+import { WorktreeCleanupApi } from "./groups/worktree-cleanup"
 import { Authorization } from "./middleware/authorization"
 import { SchemaErrorMiddleware } from "./middleware/schema-error"
 
@@ -59,6 +60,7 @@ export const RootHttpApi = HttpApi.make("opencode-root")
   .addHttpApi(ControlApi)
   .addHttpApi(ControlPlaneApi)
   .addHttpApi(GlobalApi)
+  .addHttpApi(WorktreeCleanupApi)
   .middleware(SchemaErrorMiddleware)
   .middleware(Authorization)
 
