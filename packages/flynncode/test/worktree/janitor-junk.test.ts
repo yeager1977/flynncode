@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { lstat, mkdir, readdir, symlink, writeFile } from "node:fs/promises"
+import { chmod, lstat, mkdir, readdir, symlink, writeFile } from "node:fs/promises"
 import path from "path"
 import { JanitorJunk } from "../../src/worktree/janitor/junk"
 import { tmpdir } from "../fixture/fixture"
@@ -85,4 +85,46 @@ test("size sums file bytes without following symlinks and honors the budget", as
 
   expect(await JanitorJunk.size(tmp.path)).toEqual({ bytes: 60 + link, capped: false })
   expect((await JanitorJunk.size(tmp.path, { budgetMs: 0 })).capped).toBe(true)
+})
+
+test("removeJunk never deletes a junk path the skip predicate protects", async () => {
+  await using tmp = await tmpdir()
+  await put(tmp.path, "coverage/report.txt")
+  await put(tmp.path, "pkg/__pycache__/a.pyc")
+
+  const result = await JanitorJunk.removeJunk(tmp.path, {
+    skip: (target) => target === path.join(tmp.path, "coverage"),
+  })
+
+  expect(result.removed).toEqual([path.join(tmp.path, "pkg/__pycache__")])
+  expect(result.bytes).toBe(100)
+  expect(await exists(path.join(tmp.path, "coverage/report.txt"))).toBe(true)
+  expect(await exists(path.join(tmp.path, "pkg/__pycache__"))).toBe(false)
+})
+
+test("removeJunk does nothing when the root is a symlink", async () => {
+  await using outside = await tmpdir()
+  await using tmp = await tmpdir()
+  await put(outside.path, "__pycache__/a.pyc")
+  await symlink(outside.path, path.join(tmp.path, "link"))
+
+  expect(await JanitorJunk.removeJunk(path.join(tmp.path, "link"))).toEqual({ removed: [], bytes: 0, items: [] })
+  expect(await exists(path.join(outside.path, "__pycache__/a.pyc"))).toBe(true)
+})
+
+test("removeJunk skips a target it cannot delete and keeps going", async () => {
+  await using tmp = await tmpdir()
+  await put(tmp.path, "a/__pycache__/locked/x.pyc")
+  await put(tmp.path, "b/__pycache__/y.pyc")
+  const locked = path.join(tmp.path, "a/__pycache__/locked")
+  await chmod(locked, 0o555)
+  try {
+    const result = await JanitorJunk.removeJunk(tmp.path)
+    expect(result.removed).toEqual([path.join(tmp.path, "b/__pycache__")])
+    expect(result.bytes).toBe(100)
+    expect(result.items).toEqual([{ path: path.join(tmp.path, "b/__pycache__"), bytes: 100 }])
+    expect(await exists(path.join(locked, "x.pyc"))).toBe(true)
+  } finally {
+    await chmod(locked, 0o755)
+  }
 })

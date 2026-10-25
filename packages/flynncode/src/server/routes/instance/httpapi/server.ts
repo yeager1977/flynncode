@@ -59,6 +59,7 @@ import { SessionDiffSweep } from "@/storage/session-diff-sweep"
 import { ToolRegistry } from "@/tool/registry"
 import { Truncate } from "@/tool/truncate"
 import { Worktree } from "@/worktree"
+import { WorktreeJanitor } from "@/worktree/janitor/janitor"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { MoveSession } from "@flynncode/core/control-plane/move-session"
 import { Database } from "@flynncode/core/database/database"
@@ -250,6 +251,7 @@ export const app = LayerNode.group([
   Ripgrep.node,
   Storage.node,
   SessionDiffSweep.node,
+  WorktreeJanitor.node,
   Snapshot.node,
   Plugin.node,
   ModelsDev.node,

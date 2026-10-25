@@ -20,9 +20,10 @@ export function isJunk(name: string) {
   return JUNK.has(name) || name.startsWith(JUNK_PREFIX)
 }
 
-export async function removeJunk(root: string) {
-  const removed: string[] = []
-  let bytes = 0
+export async function removeJunk(root: string, options?: { skip?: (target: string) => boolean }) {
+  const items: { path: string; bytes: number }[] = []
+  // lstat the root first: walking a symlink root would delete junk in its target.
+  if (!(await lstat(root).catch(() => undefined))?.isDirectory()) return { removed: [], bytes: 0, items }
 
   // Returns whether anything under dir was removed, so only directories this pass
   // emptied are pruned; directories that were already empty are left alone.
@@ -33,9 +34,16 @@ export async function removeJunk(root: string) {
       const target = path.join(dir, entry.name)
       // Dirent never follows symlinks, so a junk-named link is removed as a link only.
       if ((entry.isDirectory() || entry.isSymbolicLink()) && isJunk(entry.name)) {
-        bytes += (await size(target, { budgetMs: Infinity })).bytes
-        await rm(target, { recursive: true, force: true })
-        removed.push(target)
+        if (options?.skip?.(target)) continue
+        const bytes = (await size(target, { budgetMs: Infinity })).bytes
+        // A target that cannot be deleted (permissions, busy) is skipped so the
+        // rest of the pass still runs; force already ignores ENOENT.
+        const ok = await rm(target, { recursive: true, force: true }).then(
+          () => true,
+          () => false,
+        )
+        if (!ok) continue
+        items.push({ path: target, bytes })
         results.push(true)
         continue
       }
@@ -49,7 +57,7 @@ export async function removeJunk(root: string) {
   }
 
   await walk(root)
-  return { removed, bytes }
+  return { removed: items.map((item) => item.path), bytes: items.reduce((sum, item) => sum + item.bytes, 0), items }
 }
 
 export async function size(root: string, input?: { budgetMs?: number }) {
