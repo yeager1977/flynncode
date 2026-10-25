@@ -54,9 +54,40 @@ export function SessionSidebar(props: {
   // A refresh of the session list re-creates the rows, so the rename state
   // lives above the list and is keyed by session id.
   const rename = createRenameState()
-  const [deleting, setDeleting] = createStore<{ session?: Session }>({})
 
-  const confirmDelete = (session: Session) => setDeleting("session", session)
+  // The ui Dialog renders Kobalte.Content only, so it must mount through
+  // dialog.show: the DialogProvider wraps it in a Kobalte.Dialog.Root. A Dialog
+  // rendered directly in the sidebar tree has no Root and throws
+  // "[kobalte]: `useDialogContext` must be used within a `Dialog` component".
+  const confirmDelete = (session: Session) =>
+    dialog.show(
+      () => (
+        <Dialog title={language.t("session.delete.title")} fit>
+          <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
+            <div class="flex flex-col gap-1">
+              <span class="text-14-regular text-text-strong">
+                {language.t("session.delete.confirm", { name: session.title })}
+              </span>
+            </div>
+            <div class="flex justify-end gap-2">
+              <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+                {language.t("common.cancel")}
+              </Button>
+              <Button
+                variant="primary"
+                size="large"
+                onClick={() => {
+                  dialog.close()
+                  props.onDelete(session)
+                }}
+              >
+                {language.t("session.delete.button")}
+              </Button>
+            </div>
+          </div>
+        </Dialog>
+      ),
+    )
 
   return (
     <div class="size-full flex flex-col bg-v2-background-bg-deep text-13-regular">
@@ -163,34 +194,6 @@ export function SessionSidebar(props: {
           onClick={() => settings()}
         />
       </div>
-      <Show when={deleting.session} keyed>
-        {(session) => (
-          <Dialog title={language.t("session.delete.title")} fit>
-            <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
-              <div class="flex flex-col gap-1">
-                <span class="text-14-regular text-text-strong">
-                  {language.t("session.delete.confirm", { name: session.title })}
-                </span>
-              </div>
-              <div class="flex justify-end gap-2">
-                <Button variant="ghost" size="large" onClick={() => dialog.close()}>
-                  {language.t("common.cancel")}
-                </Button>
-                <Button
-                  variant="primary"
-                  size="large"
-                  onClick={() => {
-                    dialog.close()
-                    props.onDelete(session)
-                  }}
-                >
-                  {language.t("session.delete.button")}
-                </Button>
-              </div>
-            </div>
-          </Dialog>
-        )}
-      </Show>
     </div>
   )
 }

@@ -20,6 +20,16 @@ test("deleting a session asks for confirmation first", async () => {
   expect(source).toContain("confirmDelete")
 })
 
+test("the sidebar mounts the delete confirmation through dialog.show", async () => {
+  const source = await read("session-sidebar.tsx")
+  // The ui Dialog renders Kobalte.Content only; it has to be mounted through
+  // the DialogProvider (dialog.show) so a Kobalte.Dialog.Root wrapper exists —
+  // a Dialog rendered directly in the sidebar tree throws
+  // "[kobalte]: `useDialogContext` must be used within a `Dialog` component".
+  expect(source).toContain("dialog.show(")
+  expect(source).not.toContain("<Show when={deleting.session}")
+})
+
 test("the sidebar deletes the session through the server", async () => {
   const source = await read(path.join("..", "layout-new-sidebar.tsx"))
   expect(source).toContain("client.session.delete(")
