@@ -20,7 +20,7 @@ import { agentColor, commonAgent } from "@/utils/agent"
 import type { LocalProject } from "@/context/layout"
 import { displayName } from "./helpers"
 import { dispatchContextMenu } from "./keyboard-menu"
-import type { SidebarGroup } from "./sidebar-sessions"
+import { groupsByWorktree, type SidebarGroup } from "./sidebar-sessions"
 import { createRenameState, type RenameState } from "./session-sidebar-rename"
 
 // Sessions a project shows before "Show more".
@@ -54,40 +54,39 @@ export function SessionSidebar(props: {
   // A refresh of the session list re-creates the rows, so the rename state
   // lives above the list and is keyed by session id.
   const rename = createRenameState()
+  const sections = groupsByWorktree(props.groups)
 
   // The ui Dialog renders Kobalte.Content only, so it must mount through
   // dialog.show: the DialogProvider wraps it in a Kobalte.Dialog.Root. A Dialog
   // rendered directly in the sidebar tree has no Root and throws
   // "[kobalte]: `useDialogContext` must be used within a `Dialog` component".
   const confirmDelete = (session: Session) =>
-    dialog.show(
-      () => (
-        <Dialog title={language.t("session.delete.title")} fit>
-          <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
-            <div class="flex flex-col gap-1">
-              <span class="text-14-regular text-text-strong">
-                {language.t("session.delete.confirm", { name: session.title })}
-              </span>
-            </div>
-            <div class="flex justify-end gap-2">
-              <Button variant="ghost" size="large" onClick={() => dialog.close()}>
-                {language.t("common.cancel")}
-              </Button>
-              <Button
-                variant="primary"
-                size="large"
-                onClick={() => {
-                  dialog.close()
-                  props.onDelete(session)
-                }}
-              >
-                {language.t("session.delete.button")}
-              </Button>
-            </div>
+    dialog.show(() => (
+      <Dialog title={language.t("session.delete.title")} fit>
+        <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
+          <div class="flex flex-col gap-1">
+            <span class="text-14-regular text-text-strong">
+              {language.t("session.delete.confirm", { name: session.title })}
+            </span>
           </div>
-        </Dialog>
-      ),
-    )
+          <div class="flex justify-end gap-2">
+            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+              {language.t("common.cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              size="large"
+              onClick={() => {
+                dialog.close()
+                props.onDelete(session)
+              }}
+            >
+              {language.t("session.delete.button")}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    ))
 
   return (
     <div class="size-full flex flex-col bg-v2-background-bg-deep text-13-regular">
@@ -122,44 +121,51 @@ export function SessionSidebar(props: {
             </div>
           }
         >
-          <For each={props.groups()}>
-            {(group) => (
-              <section class="flex flex-col gap-px" data-project={group.project.worktree}>
-                <ProjectHeader
-                  project={group.project}
-                  onNewSession={props.onNewSession}
-                  onEditProject={props.onEditProject}
-                  onHideProject={props.onHideProject}
-                  onForgetProject={props.onForgetProject}
-                />
-                <For each={props.shown(group)}>
-                  {(session) => (
-                    <SessionLink
-                      session={session}
-                      href={props.sessionHref(session)}
-                      active={props.activeSessionID() === session.id}
-                      onArchive={props.onArchive}
-                      onDelete={confirmDelete}
-                      rename={rename}
-                      commonAgent={commonAgent(group.sessions)}
+          <For each={sections.worktrees()}>
+            {(worktree) => (
+              <Show when={sections.group(worktree)}>
+                {(group) => (
+                  <section class="flex flex-col gap-px" data-project={group().project.worktree}>
+                    <ProjectHeader
+                      project={group().project}
+                      onNewSession={props.onNewSession}
+                      onEditProject={props.onEditProject}
+                      onHideProject={props.onHideProject}
+                      onForgetProject={props.onForgetProject}
                     />
-                  )}
-                </For>
-                <Show when={group.sessions.length > SIDEBAR_SESSION_PREVIEW}>
-                  <button
-                    type="button"
-                    data-action="sidebar-show-more"
-                    class="h-7 pl-[30px] pr-2.5 rounded-md text-left text-v2-text-text-faint hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-muted"
-                    onClick={() =>
-                      props.showAll(group.project.worktree, !props.showingAll(group.project.worktree))
-                    }
-                  >
-                    {props.showingAll(group.project.worktree)
-                      ? language.t("sidebar.sessions.showLess")
-                      : language.plural("sidebar.sessions.showMore", group.sessions.length - SIDEBAR_SESSION_PREVIEW)}
-                  </button>
-                </Show>
-              </section>
+                    <For each={props.shown(group())}>
+                      {(session) => (
+                        <SessionLink
+                          session={session}
+                          href={props.sessionHref(session)}
+                          active={props.activeSessionID() === session.id}
+                          onArchive={props.onArchive}
+                          onDelete={confirmDelete}
+                          rename={rename}
+                          commonAgent={commonAgent(group().sessions)}
+                        />
+                      )}
+                    </For>
+                    <Show when={group().sessions.length > SIDEBAR_SESSION_PREVIEW}>
+                      <button
+                        type="button"
+                        data-action="sidebar-show-more"
+                        class="h-7 pl-[30px] pr-2.5 rounded-md text-left text-v2-text-text-faint hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-muted"
+                        onClick={() =>
+                          props.showAll(group().project.worktree, !props.showingAll(group().project.worktree))
+                        }
+                      >
+                        {props.showingAll(group().project.worktree)
+                          ? language.t("sidebar.sessions.showLess")
+                          : language.plural(
+                              "sidebar.sessions.showMore",
+                              group().sessions.length - SIDEBAR_SESSION_PREVIEW,
+                            )}
+                      </button>
+                    </Show>
+                  </section>
+                )}
+              </Show>
             )}
           </For>
         </Show>
@@ -425,8 +431,14 @@ function SessionLink(props: {
             when={working() || unseen()}
             fallback={<span class="block rounded-full size-1.5 border border-v2-icon-icon-muted" />}
           >
-            <TooltipV2 placement="top" value={working() ? language.t("sidebar.dot.working") : language.t("sidebar.dot.unseen")}>
-              <span class="block rounded-full size-2 bg-v2-icon-icon-accent" classList={{ "animate-pulse": working() }} />
+            <TooltipV2
+              placement="top"
+              value={working() ? language.t("sidebar.dot.working") : language.t("sidebar.dot.unseen")}
+            >
+              <span
+                class="block rounded-full size-2 bg-v2-icon-icon-accent"
+                classList={{ "animate-pulse": working() }}
+              />
             </TooltipV2>
           </Show>
         </span>

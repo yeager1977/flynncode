@@ -1,4 +1,4 @@
-import { createMemo } from "solid-js"
+import { createMemo, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import type { Session } from "@flynncode/sdk/v2/client"
 import type { HomeSessionEvents } from "@/context/global-sync/home-session-index"
@@ -67,6 +67,19 @@ export function createSidebarSessions() {
   })
   const groups = createMemo(() => groupByProject(layout.projects.list(), stable(), sessions()))
   return { groups, loading: () => index.isLoading }
+}
+
+// Session events rebuild every group object, and <For> reuses an item only
+// when it is the same reference, so iterating the groups re-created every
+// project section on each update and closed any open row context menu before
+// its click landed. Iterate the worktree strings instead (keyed by value) and
+// look the current group up by worktree.
+export function groupsByWorktree(groups: Accessor<SidebarGroup[]>) {
+  const worktrees = createMemo(() => groups().map((group) => group.project.worktree), [], {
+    equals: (a, b) => a.length === b.length && a.every((worktree, i) => worktree === b[i]),
+  })
+  const lookup = createMemo(() => new Map(groups().map((group) => [group.project.worktree, group])))
+  return { worktrees, group: (worktree: string) => lookup().get(worktree) }
 }
 
 export function groupByProject(
