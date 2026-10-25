@@ -28,7 +28,13 @@ export const git = Effect.fnUntraced(function* (cwd: string, args: string[]) {
 
 export const defaultBranch = Effect.fnUntraced(function* (repo: string) {
   const origin = yield* git(repo, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
-  if (origin.code === 0 && origin.text) return origin.text
+  // A dangling origin/HEAD (target ref missing) must not be trusted as the base.
+  if (
+    origin.code === 0 &&
+    origin.text &&
+    (yield* git(repo, ["rev-parse", "--verify", "--quiet", origin.text])).code === 0
+  )
+    return origin.text
   for (const name of ["dev", "main", "master"]) {
     const local = yield* git(repo, ["rev-parse", "--verify", "--quiet", `refs/heads/${name}`])
     if (local.code === 0) return name
@@ -39,11 +45,25 @@ export const defaultBranch = Effect.fnUntraced(function* (repo: string) {
 })
 
 export const inspect = Effect.fn("JanitorInspect.inspect")(function* (target: string) {
-  const dir = yield* Effect.promise(() => realpath(target))
-  const dotGit = yield* Effect.promise(() => lstat(path.join(dir, ".git")).catch(() => undefined))
+  const dir = yield* Effect.tryPromise({
+    try: () => realpath(target),
+    catch: (cause) => new Error(`cannot resolve ${target}: ${String(cause)}`),
+  })
+  const dotGit = yield* Effect.tryPromise({
+    try: () =>
+      lstat(path.join(dir, ".git")).catch((cause: NodeJS.ErrnoException) => {
+        if (cause.code === "ENOENT") return undefined
+        throw cause
+      }),
+    catch: (cause) => new Error(`cannot inspect ${dir}/.git: ${String(cause)}`),
+  })
   if (!dotGit)
     return { path: dir, kind: "scratch" as const, lastActivity: yield* Effect.promise(() => folderActivity(dir)) }
   if (dotGit.isDirectory()) return { path: dir, kind: "main" as const }
+  if (dotGit.isSymbolicLink()) {
+    const resolved = yield* Effect.promise(() => stat(path.join(dir, ".git")).catch(() => undefined))
+    if (resolved?.isDirectory()) return { path: dir, kind: "main" as const }
+  }
 
   // A worktree's .git file points into <repo>/.git/worktrees/<name>; the owning
   // repo is the common dir's parent, which also covers nested repos whose
@@ -51,20 +71,28 @@ export const inspect = Effect.fn("JanitorInspect.inspect")(function* (target: st
   const common = yield* git(dir, ["rev-parse", "--path-format=absolute", "--git-common-dir"])
   const gitdir = yield* git(dir, ["rev-parse", "--absolute-git-dir"])
   if (common.code !== 0 || gitdir.code !== 0) return yield* Effect.fail(new Error(`not a git worktree: ${dir}`))
+  // A .git file can also belong to a main checkout (git init --separate-git-dir).
+  if (common.text === gitdir.text) return { path: dir, kind: "main" as const }
   const repo = path.dirname(common.text)
   const branch = (yield* git(dir, ["symbolic-ref", "--short", "-q", "HEAD"])).text || undefined
-  const status = yield* git(dir, ["status", "--porcelain"])
-  const dirty = status.text ? status.text.split("\n").length : 0
+  const status = yield* requireOk(yield* git(dir, ["status", "--porcelain"]), `git status in ${dir}`)
+  const dirty = status ? status.split("\n").length : 0
   const base = yield* defaultBranch(repo)
   const unpushed = Number(
-    (yield* git(dir, ["rev-list", "--count", "HEAD", "--not", "--remotes", ...(base ? [base] : [])])).text || "0",
+    yield* requireOk(
+      yield* git(dir, ["rev-list", "--count", "HEAD", "--not", "--remotes", ...(base ? [base] : [])]),
+      `git rev-list in ${dir}`,
+    ),
   )
+  if (!Number.isInteger(unpushed)) return yield* Effect.fail(new Error(`unreadable unpushed count in ${dir}`))
   const merged = base ? (yield* git(dir, ["merge-base", "--is-ancestor", "HEAD", base])).code === 0 : false
   const upstream = yield* git(dir, ["rev-list", "--count", "@{u}..HEAD"])
   const pushed =
     (upstream.code === 0 && upstream.text === "0") ||
     (yield* git(dir, ["branch", "-r", "--contains", "HEAD"])).text !== ""
-  const committed = Number((yield* git(dir, ["log", "-1", "--format=%ct"])).text || "0") * 1000
+  const committed = Number(yield* requireOk(yield* git(dir, ["log", "-1", "--format=%ct"]), `git log in ${dir}`)) * 1000
+  if (!Number.isFinite(committed) || committed <= 0)
+    return yield* Effect.fail(new Error(`unreadable HEAD time in ${dir}`))
   const metadata = yield* Effect.promise(() =>
     Promise.all(
       ["index", "logs/HEAD"].map((file) =>
@@ -86,6 +114,11 @@ export const inspect = Effect.fn("JanitorInspect.inspect")(function* (target: st
     lastActivity: Math.max(committed, ...metadata),
   }
 })
+
+// A failed command must fail the inspection, never read as an empty (clean/idle) result.
+function requireOk(result: { code: number; text: string }, what: string) {
+  return result.code === 0 ? Effect.succeed(result.text) : Effect.fail(new Error(`${what} failed`))
+}
 
 async function folderActivity(dir: string) {
   const entries = await readdir(dir).catch(() => [])

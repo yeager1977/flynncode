@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { mkdirSync, realpathSync, utimesSync, writeFileSync } from "node:fs"
+import { mkdirSync, realpathSync, symlinkSync, utimesSync, writeFileSync } from "node:fs"
 import path from "path"
 import { CrossSpawnSpawner } from "@flynncode/core/cross-spawn-spawner"
 import { AppNodeBuilder } from "@flynncode/core/effect/app-node-builder"
@@ -131,6 +131,72 @@ describe("JanitorInspect.inspect", () => {
       const dir = path.join(repo, ".worktrees", "inner-wt")
       run(inner, "worktree", "add", "-b", "inner-branch", dir)
       expect(yield* JanitorInspect.inspect(dir)).toMatchObject({ kind: "worktree", repo: realpathSync(inner) })
+    }),
+  )
+
+  it.effect("classifies a separate-git-dir checkout as main", () =>
+    Effect.gen(function* () {
+      const repo = yield* setupRepo
+      const dir = path.join(repo, "sep")
+      run(repo, "init", "-b", "main", "--separate-git-dir", path.join(repo, "sep.git"), dir)
+      expect(yield* JanitorInspect.inspect(dir)).toMatchObject({ kind: "main" })
+    }),
+  )
+
+  it.effect("classifies a checkout whose .git is a symlink to a directory as main", () =>
+    Effect.gen(function* () {
+      const repo = yield* setupRepo
+      const dir = path.join(repo, "linked")
+      mkdirSync(dir)
+      run(dir, "init", "-b", "main", path.join(repo, "linked.git"))
+      symlinkSync(path.join(repo, "linked.git"), path.join(dir, ".git"))
+      expect(yield* JanitorInspect.inspect(dir)).toMatchObject({ kind: "main" })
+    }),
+  )
+
+  it.effect("fails when git status fails", () =>
+    Effect.gen(function* () {
+      const repo = yield* setupRepo
+      const dir = addWorktree(repo, "corrupt", "corrupt-branch")
+      writeFileSync(path.join(run(dir, "rev-parse", "--absolute-git-dir"), "index"), "garbage")
+      expect((yield* JanitorInspect.inspect(dir).pipe(Effect.flip)).message).toContain("git status")
+    }),
+  )
+
+  it.effect("fails when the folder has vanished", () =>
+    Effect.gen(function* () {
+      const repo = yield* setupRepo
+      expect(yield* JanitorInspect.inspect(path.join(repo, ".worktrees", "gone")).pipe(Effect.flip)).toBeInstanceOf(
+        Error,
+      )
+    }),
+  )
+
+  it.effect("ignores a dangling origin/HEAD when counting unpushed commits", () =>
+    Effect.gen(function* () {
+      const repo = yield* setupRepo
+      run(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+      const dir = addWorktree(repo, "dangling", "dangling-branch")
+      commit(dir, "extra")
+      age(dir)
+      expect(yield* JanitorInspect.defaultBranch(repo)).toBe("main")
+      expect(yield* JanitorInspect.inspect(dir)).toMatchObject({ kind: "worktree", unpushed: 1, safe: false })
+    }),
+  )
+
+  it.effect("reports a detached unmerged commit with no remote as unsafe", () =>
+    Effect.gen(function* () {
+      const repo = yield* setupRepo
+      const dir = addWorktree(repo, "detached", "detached-branch")
+      commit(dir, "extra")
+      run(dir, "checkout", "--detach")
+      age(dir)
+      expect(yield* JanitorInspect.inspect(dir)).toMatchObject({
+        kind: "worktree",
+        branch: undefined,
+        unpushed: 1,
+        safe: false,
+      })
     }),
   )
 })
