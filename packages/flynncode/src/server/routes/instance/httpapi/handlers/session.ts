@@ -17,8 +17,7 @@ import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { Project } from "@/project/project"
 import { Worktree } from "@/worktree"
-import { shouldDispose } from "@/worktree/session-binding"
-import { boundSessions } from "@/worktree/bound-sessions"
+import { disposeSettledWorktree } from "@/worktree/dispose-bound"
 import { NamedError } from "@flynncode/core/util/error"
 import { FSUtil } from "@flynncode/core/fs-util"
 import { AbsolutePath } from "@flynncode/core/schema"
@@ -81,24 +80,16 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const liveFolders = yield* SessionFolders.Live
     const instances = yield* InstanceStore.Service
 
-    // Dispose-on-archive: a session carrying a disposable worktree binding in
-    // its metadata removes that worktree once every session bound to it is
-    // archived and no loaded instance runs there. Best-effort — archiving
-    // already succeeded, so failures here never fail the request.
-    const disposeArchivedWorktree = Effect.fn("SessionHttpApi.disposeArchivedWorktree")(function* (
-      sessionID: SessionID,
-    ) {
-      const info = yield* session.get(sessionID)
-      const meta = (info.metadata ?? {}) as Record<string, unknown>
-      if (meta.disposable !== true || typeof meta.worktree !== "string") return
-      const peers = yield* boundSessions(session, meta.worktree)
-      const archived = peers.every((peer) => peer.time.archived != null)
-      const binding = { sessionID: info.id, directory: meta.worktree, disposable: true }
-      if (!shouldDispose(binding, { archived, running: false })) return
-      const removed = yield* worktreeSvc.disposeIfIdle({ directory: meta.worktree })
-      if (!removed) return
+    // Dispose-on-archive/delete: a session carrying a disposable worktree
+    // binding in its metadata removes that worktree once every session bound
+    // to it is archived (or gone) and no loaded instance runs there.
+    // Best-effort — the archive/delete already succeeded, so failures here
+    // never fail the request.
+    const disposeWorktreeOf = Effect.fn("SessionHttpApi.disposeWorktreeOf")(function* (info: Session.Info) {
+      const removed = yield* disposeSettledWorktree({ sessions: session, worktrees: worktreeSvc, info })
+      if (removed === undefined) return
       const inst = yield* InstanceState.context
-      yield* project.removeSandbox(inst.project.id, meta.worktree).pipe(Effect.ignore)
+      yield* project.removeSandbox(inst.project.id, removed).pipe(Effect.ignore)
       // Keep-N retention also runs when sessions archive, not only on
       // worktree creation; best-effort like the dispose above.
       yield* worktreeSvc.retire.pipe(Effect.ignore)
@@ -224,7 +215,11 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     })
 
     const remove = Effect.fn("SessionHttpApi.remove")(function* (ctx: { params: { sessionID: SessionID } }) {
+      // Read before removal: the binding lives in the session's metadata.
+      // Tolerate unreadable (broken) sessions; remove must still work for them.
+      const info = yield* session.get(ctx.params.sessionID).pipe(Effect.option)
       yield* SessionError.mapStorageNotFound(session.remove(ctx.params.sessionID))
+      if (Option.isSome(info)) yield* disposeWorktreeOf(info.value).pipe(Effect.ignore)
       return true
     })
 
@@ -247,7 +242,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       }
       if (ctx.payload.time?.archived !== undefined) {
         yield* session.setArchived({ sessionID: ctx.params.sessionID, time: ctx.payload.time.archived })
-        yield* disposeArchivedWorktree(ctx.params.sessionID).pipe(Effect.ignore)
+        yield* session.get(ctx.params.sessionID).pipe(Effect.flatMap(disposeWorktreeOf), Effect.ignore)
         // Archived sessions drop out of the instance's attached-folder union.
         yield* liveFolders.refresh(current.directory)
       }
