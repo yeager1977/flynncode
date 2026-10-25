@@ -285,6 +285,7 @@ const keys = [
   "cleanup.confirm.ignored",
   "cleanup.confirm.rescued",
   "cleanup.confirm.scratch",
+  "cleanup.confirm.recent",
   "cleanup.confirm.manual",
   "cleanup.confirm.button",
   "cleanup.nested",

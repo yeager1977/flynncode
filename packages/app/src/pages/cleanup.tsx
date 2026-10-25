@@ -32,6 +32,7 @@ export function selectionWarnings(items: WorktreeCleanupReviewItem[], selected: 
     ignored: removable.reduce((sum, item) => sum + (item.ignored ?? 0), 0),
     ignoredExample: removable.find((item) => item.ignored && item.ignoredExample)?.ignoredExample,
     scratch: removable.filter((item) => item.reason === "scratch").length,
+    recent: removable.filter((item) => item.reason === "recent").length,
     rescued: removable.filter((item) => item.detached && item.unpushed).length,
   }
 }
@@ -95,8 +96,8 @@ export function CleanupPage() {
   const toggle = (path: string, value: boolean) =>
     setSelected((current) => {
       const next = new Set(current)
-      if (value) next.add(path)
-      else next.delete(path)
+      if (value) return next.add(path)
+      next.delete(path)
       return next
     })
 
@@ -144,6 +145,7 @@ export function CleanupPage() {
       current.unpushed > 0 && language.t("cleanup.confirm.unpushed", { count: current.unpushed }),
       current.rescued > 0 && language.t("cleanup.confirm.rescued"),
       current.scratch > 0 && language.t("cleanup.confirm.scratch", { count: current.scratch }),
+      current.recent > 0 && language.t("cleanup.confirm.recent", { count: current.recent }),
       current.manual.length > 0 && language.t("cleanup.confirm.manual", { count: current.manual.length }),
     ].filter((line): line is string => !!line)
     dialog.show(() => (

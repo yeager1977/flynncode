@@ -65,6 +65,15 @@ describe("selectionWarnings", () => {
     expect(warnings.dirty).toBe(3)
   })
 
+  test("counts recently used items, which may still be in use", () => {
+    const warnings = selectionWarnings(
+      [...items, item("/r/g"), item("/r/h", { nested: ["sub"] })],
+      new Set(["/r/a", "/r/g", "/r/h"]),
+    )
+    expect(warnings.recent).toBe(1)
+    expect(selectionWarnings(items, new Set(["/r/a"])).recent).toBe(0)
+  })
+
   test("ignores paths that are not selected or no longer listed", () => {
     expect(selectionWarnings(items, new Set(["/gone"])).removable).toEqual([])
   })
