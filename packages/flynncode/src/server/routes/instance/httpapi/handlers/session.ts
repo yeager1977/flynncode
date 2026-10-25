@@ -219,7 +219,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       // Tolerate unreadable (broken) sessions; remove must still work for them.
       const info = yield* session.get(ctx.params.sessionID).pipe(Effect.option)
       yield* SessionError.mapStorageNotFound(session.remove(ctx.params.sessionID))
-      if (Option.isSome(info)) yield* disposeWorktreeOf(info.value).pipe(Effect.ignore)
+      // catchCause, not ignore: a defect in disposal must not turn the completed delete into a 500.
+      if (Option.isSome(info)) yield* disposeWorktreeOf(info.value).pipe(Effect.catchCause(() => Effect.void))
       return true
     })
 
@@ -242,7 +243,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       }
       if (ctx.payload.time?.archived !== undefined) {
         yield* session.setArchived({ sessionID: ctx.params.sessionID, time: ctx.payload.time.archived })
-        yield* session.get(ctx.params.sessionID).pipe(Effect.flatMap(disposeWorktreeOf), Effect.ignore)
+        yield* session.get(ctx.params.sessionID).pipe(
+          Effect.flatMap(disposeWorktreeOf),
+          Effect.catchCause(() => Effect.void),
+        )
         // Archived sessions drop out of the instance's attached-folder union.
         yield* liveFolders.refresh(current.directory)
       }
