@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
 import type { WorktreeCleanupReviewItem } from "@flynncode/sdk/v2/client"
 import { Dialog } from "@flynncode/ui/dialog"
 import { Button } from "@flynncode/ui/button"
@@ -36,6 +36,28 @@ export function selectionWarnings(items: WorktreeCleanupReviewItem[], selected: 
   }
 }
 
+// Drops selected paths that are no longer listed so a stale path can never come
+// back pre-checked. Returns the same set when nothing changed.
+export function pruneSelection(items: WorktreeCleanupReviewItem[], selected: ReadonlySet<string>) {
+  const paths = new Set(items.map((item) => item.path))
+  const kept = [...selected].filter((path) => paths.has(path))
+  return kept.length === selected.size ? selected : new Set(kept)
+}
+
+// Identifies a warnings snapshot, to detect that the selection or the numbers
+// behind it changed while the confirm dialog was open.
+export function warningsKey(warnings: ReturnType<typeof selectionWarnings>) {
+  return JSON.stringify({ ...warnings, removable: warnings.removable.toSorted(), manual: warnings.manual.toSorted() })
+}
+
+// One "name: reason" line per failure, truncated so the toast stays readable.
+export function failureLines(failures: { path: string; error?: string }[], more: (count: number) => string, limit = 3) {
+  return [
+    ...failures.slice(0, limit).map((failure) => `${getFilename(failure.path)}: ${failure.error ?? ""}`),
+    ...(failures.length > limit ? [more(failures.length - limit)] : []),
+  ]
+}
+
 // Worktrees and folders the janitor will not delete on its own: select what to
 // remove, review exactly what is lost, then confirm.
 export function CleanupPage() {
@@ -44,10 +66,16 @@ export function CleanupPage() {
   const cleanup = useWorktreeCleanup()
   const [selected, setSelected] = createSignal<ReadonlySet<string>>(new Set<string>())
   const [scanning, setScanning] = createSignal(false)
+  const [removing, setRemoving] = createSignal(false)
 
   const report = () => cleanup.query.data
   const items = createMemo(() => report()?.items ?? [])
   const groups = createMemo(() => groupByProject(items()))
+  // Rows are keyed by project and path, not by object, so a refetch that only
+  // changes a size updates in place instead of remounting (and losing focus).
+  const projects = createMemo(() => groups().map((group) => group.project))
+  const groupByPath = createMemo(() => new Map(groups().map((group) => [group.project, group])))
+  const itemByPath = createMemo(() => new Map(items().map((item) => [item.path, item])))
   const warnings = createMemo(() => selectionWarnings(items(), selected()))
   const busy = () => scanning() || !!report()?.scanning
   const reclaimable = createMemo(() => {
@@ -58,6 +86,11 @@ export function CleanupPage() {
     )
   })
   const relative = (time: number) => getRelativeTime(new Date(time).toISOString(), language.t)
+
+  createEffect(() => {
+    const current = items()
+    setSelected((selection) => pruneSelection(current, selection))
+  })
 
   const toggle = (path: string, value: boolean) =>
     setSelected((current) => {
@@ -77,9 +110,11 @@ export function CleanupPage() {
     if (failed) showToast({ variant: "error", title: language.t("common.requestFailed") })
   }
 
-  const removeSelected = async () => {
-    const paths = warnings().removable
+  const removeSelected = async (paths: string[]) => {
+    if (removing()) return
+    setRemoving(true)
     const results = await cleanup.remove(paths).catch(() => undefined)
+    setRemoving(false)
     if (!results) return showToast({ variant: "error", title: language.t("common.requestFailed") })
     setSelected(new Set<string>())
     const failures = results.filter((result) => !result.ok)
@@ -94,16 +129,14 @@ export function CleanupPage() {
     if (failures.length > 0)
       showToast({
         variant: "error",
-        title: language.t("cleanup.failed", {
-          count: failures.length,
-          reason: failures.map((failure) => `${getFilename(failure.path)}: ${failure.error ?? ""}`).join("; "),
-        }),
+        title: language.t("cleanup.failed", { count: failures.length }),
+        description: failureLines(failures, (count) => language.t("cleanup.failed.more", { count })).join("\n"),
       })
   }
 
   const confirmRemove = () => {
     const current = warnings()
-    if (current.removable.length === 0) return
+    if (current.removable.length === 0 || removing()) return
     const lines = [
       current.dirty > 0 && language.t("cleanup.confirm.dirty", { count: current.dirty }),
       current.ignored > 0 &&
@@ -126,9 +159,13 @@ export function CleanupPage() {
             <Button
               variant="primary"
               size="large"
+              disabled={removing()}
               onClick={() => {
                 dialog.close()
-                void removeSelected()
+                // Remove exactly what this dialog warned about, never a re-derived set.
+                if (warningsKey(warnings()) !== warningsKey(current))
+                  return showToast({ variant: "error", title: language.t("cleanup.selectionChanged") })
+                void removeSelected(current.removable)
               }}
             >
               {language.t("cleanup.confirm.button")}
@@ -159,7 +196,7 @@ export function CleanupPage() {
           <ButtonV2
             data-action="cleanup-remove"
             variant="danger"
-            disabled={warnings().removable.length === 0}
+            disabled={warnings().removable.length === 0 || removing()}
             onClick={confirmRemove}
           >
             {language.t("cleanup.removeSelected")}
@@ -172,34 +209,42 @@ export function CleanupPage() {
           <span class="self-center py-6 text-12-regular text-v2-text-text-faint">{language.t("cleanup.empty")}</span>
         }
       >
-        <For each={groups()}>
-          {(group) => (
-            <section
-              data-component="cleanup-project"
-              class="flex flex-col gap-1.5 rounded-xl border border-v2-border-border-muted bg-v2-background-bg-base/40 p-3"
-            >
-              <div class="flex items-center justify-between gap-2">
-                <TooltipV2 placement="top" value={group.project}>
-                  <span class="text-13-medium text-v2-text-text-base">{getFilename(group.project)}</span>
-                </TooltipV2>
-                <span class="text-11-regular text-v2-text-text-faint">
-                  {formatBytes(
-                    group.bytes,
-                    group.items.some((item) => item.capped),
-                  )}
-                </span>
-              </div>
-              <For each={group.items}>
-                {(item) => (
-                  <CleanupRow
-                    item={item}
-                    checked={selected().has(item.path)}
-                    age={relative(item.lastActivity)}
-                    onToggle={(value) => toggle(item.path, value)}
-                  />
-                )}
-              </For>
-            </section>
+        <For each={projects()}>
+          {(project) => (
+            <Show when={groupByPath().get(project)}>
+              {(group) => (
+                <section
+                  data-component="cleanup-project"
+                  class="flex flex-col gap-1.5 rounded-xl border border-v2-border-border-muted bg-v2-background-bg-base/40 p-3"
+                >
+                  <div class="flex items-center justify-between gap-2">
+                    <TooltipV2 placement="top" value={project}>
+                      <span class="text-13-medium text-v2-text-text-base">{getFilename(project)}</span>
+                    </TooltipV2>
+                    <span class="text-11-regular text-v2-text-text-faint">
+                      {formatBytes(
+                        group().bytes,
+                        group().items.some((item) => item.capped),
+                      )}
+                    </span>
+                  </div>
+                  <For each={group().items.map((item) => item.path)}>
+                    {(path) => (
+                      <Show when={itemByPath().get(path)}>
+                        {(item) => (
+                          <CleanupRow
+                            item={item()}
+                            checked={selected().has(path)}
+                            age={relative(item().lastActivity)}
+                            onToggle={(value) => toggle(path, value)}
+                          />
+                        )}
+                      </Show>
+                    )}
+                  </For>
+                </section>
+              )}
+            </Show>
           )}
         </For>
       </Show>
@@ -217,6 +262,9 @@ export function CleanupPage() {
                   </TooltipV2>
                   <span class="shrink-0 text-v2-text-text-faint">
                     {formatBytes(entry.bytes, false)} · {relative(entry.time)}
+                    <Show when={entry.rescued}>
+                      {(branch) => <> · {language.t("cleanup.rescued", { branch: branch() })}</>}
+                    </Show>
                   </span>
                 </div>
               )}

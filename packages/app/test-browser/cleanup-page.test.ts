@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { WorktreeCleanupReviewItem } from "@flynncode/sdk/v2/client"
 import { formatBytes, groupByProject } from "@/hooks/use-worktree-cleanup"
-import { selectionWarnings, selectable } from "@/pages/cleanup"
+import { failureLines, pruneSelection, selectionWarnings, selectable, warningsKey } from "@/pages/cleanup"
 
 const item = (path: string, extra: Partial<WorktreeCleanupReviewItem> = {}): WorktreeCleanupReviewItem => ({
   path,
@@ -76,5 +76,52 @@ describe("selectable", () => {
     expect(selectable(item("/x", { reason: "error" }))).toBe(false)
     expect(selectable(item("/x", { nested: ["sub"] }))).toBe(false)
     expect(selectable(item("/x", { nested: [] }))).toBe(true)
+  })
+})
+
+describe("pruneSelection", () => {
+  const items = [item("/r/a"), item("/r/b")]
+
+  test("drops selected paths that are no longer listed", () => {
+    expect([...pruneSelection(items, new Set(["/r/a", "/gone"]))]).toEqual(["/r/a"])
+  })
+
+  test("returns the same set when every path is still listed", () => {
+    const selected = new Set(["/r/a", "/r/b"])
+    expect(pruneSelection(items, selected)).toBe(selected)
+  })
+})
+
+describe("warningsKey", () => {
+  const items = [item("/r/a", { dirty: 2 }), item("/r/b", { unpushed: 1 })]
+
+  test("is stable for the same selection regardless of order", () => {
+    expect(warningsKey(selectionWarnings(items, new Set(["/r/a", "/r/b"])))).toBe(
+      warningsKey(selectionWarnings([...items].reverse(), new Set(["/r/b", "/r/a"]))),
+    )
+  })
+
+  test("changes when the removable set or the counts behind it change", () => {
+    const confirmed = warningsKey(selectionWarnings(items, new Set(["/r/a"])))
+    expect(warningsKey(selectionWarnings(items, new Set(["/r/a", "/r/b"])))).not.toBe(confirmed)
+    expect(warningsKey(selectionWarnings([item("/r/a", { dirty: 5 })], new Set(["/r/a"])))).not.toBe(confirmed)
+  })
+})
+
+describe("failureLines", () => {
+  const more = (count: number) => `and ${count} more`
+  const failure = (name: string) => ({ path: `/r/${name}`, error: "busy" })
+
+  test("lists every failure when there are few", () => {
+    expect(failureLines([failure("a"), failure("b")], more)).toEqual(["a: busy", "b: busy"])
+  })
+
+  test("truncates to the first three and counts the rest", () => {
+    expect(failureLines(["a", "b", "c", "d", "e"].map(failure), more)).toEqual([
+      "a: busy",
+      "b: busy",
+      "c: busy",
+      "and 2 more",
+    ])
   })
 })

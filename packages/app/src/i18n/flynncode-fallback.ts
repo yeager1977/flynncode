@@ -290,6 +290,8 @@ const keys = [
   "cleanup.nested",
   "cleanup.removed",
   "cleanup.failed",
+  "cleanup.failed.more",
+  "cleanup.selectionChanged",
   "cleanup.rescued",
   "cleanup.reason.dirty",
   "cleanup.reason.unpushed",

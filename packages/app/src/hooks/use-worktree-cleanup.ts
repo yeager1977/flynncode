@@ -24,7 +24,6 @@ export function useWorktreeCleanup() {
   const scan = async () => {
     const result = await serverSDK().client.worktreeCleanup.scan()
     queryClient.setQueryData(key(), result.data ?? empty)
-    await queryClient.invalidateQueries({ queryKey: key() })
   }
 
   const remove = async (paths: string[]) => {
