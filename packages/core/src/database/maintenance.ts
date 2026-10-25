@@ -1,13 +1,32 @@
 export * as DatabaseMaintenance from "./maintenance"
 
+import { mkdir, rm, stat, statfs } from "node:fs/promises"
+import path from "path"
 import { sql, type SQL } from "drizzle-orm"
 import { Effect } from "effect"
+import { Flag } from "../flag/flag"
 import type { Interface } from "./database"
 
 type Db = Interface["db"]
 
 export const IDLE_MS = 7 * 24 * 60 * 60 * 1000
 const CHUNK = 2_000
+const RECLAIM_PAGES = 10_000
+const GIB = 1024 * 1024 * 1024
+
+export type Progress = { phase: "compact"; state: "started" | "finished" }
+
+// Set by the process entry (the desktop sidecar forwards it so its startup
+// stall timer does not kill the server mid-VACUUM). Without a listener the
+// CLI prints one line, since startup is slower that one time.
+let progressListener: ((progress: Progress) => void) | undefined
+export function onProgress(listener: ((progress: Progress) => void) | undefined) {
+  progressListener = listener
+}
+function report(progress: Progress) {
+  if (progressListener) return progressListener(progress)
+  if (progress.state === "started") process.stderr.write("Optimizing history database (one-time)…\n")
+}
 
 // Classic (v1) sessions keep their authoritative state in message/part rows;
 // their message.* events are a duplicate log that only sync and replay of
@@ -94,3 +113,81 @@ export const deleteChunked = Effect.fnUntraced(function* (db: Db, statement: (li
     yield* Effect.yieldNow
   }
 })
+
+export const reclaim = Effect.fn("DatabaseMaintenance.reclaim")(function* (db: Db, input?: { pages?: number }) {
+  const mode = yield* db.get<{ auto_vacuum: number }>(sql`PRAGMA auto_vacuum`)
+  if (mode?.auto_vacuum !== 2) return 0
+  const pages = input?.pages ?? RECLAIM_PAGES
+  let freed = 0
+  while (true) {
+    const free = (yield* db.get<{ freelist_count: number }>(sql`PRAGMA freelist_count`))?.freelist_count ?? 0
+    if (free === 0) return freed
+    // db.all steps the pragma to completion; incremental_vacuum frees pages per step.
+    yield* db.all(sql.raw(`PRAGMA incremental_vacuum(${pages})`))
+    freed += Math.min(free, pages)
+    yield* Effect.yieldNow
+  }
+})
+
+// auto_vacuum only takes effect on an existing database through one full
+// VACUUM, which rewrites the file. Prune first so the rewrite copies only what
+// is kept. VACUUM holds an exclusive lock and blocks the thread (both SQLite
+// drivers are synchronous), so it runs at startup, before the server is ready.
+export const compactOnce = Effect.fn("DatabaseMaintenance.compactOnce")(function* (
+  db: Db,
+  input: { filename: string; now: number; freeBytes?: (directory: string) => Promise<number> },
+) {
+  if (Flag.OPENCODE_DISABLE_DB_MAINTENANCE) return "disabled" as const
+  if (input.filename === ":memory:") return "memory" as const
+  const mode = yield* db.get<{ auto_vacuum: number }>(sql`PRAGMA auto_vacuum`).pipe(Effect.orDie)
+  if (mode?.auto_vacuum === 2) return "already" as const
+
+  yield* pruneIdleSessions(db, { now: input.now }).pipe(Effect.orDie)
+  yield* sweepOrphans(db).pipe(Effect.orDie)
+
+  const directory = path.dirname(input.filename)
+  const size = yield* Effect.promise(async () => {
+    const sizes = await Promise.all(
+      [input.filename, `${input.filename}-wal`].map((file) =>
+        stat(file).then(
+          (info) => info.size,
+          () => 0,
+        ),
+      ),
+    )
+    return sizes.reduce((sum, n) => sum + n, 0)
+  })
+  const free = yield* Effect.promise(() => (input.freeBytes ?? diskFree)(directory))
+  if (free < size + GIB) {
+    yield* Effect.logWarning("skipping one-time database compaction: not enough free disk", { size, free })
+    return "low-disk" as const
+  }
+
+  // VACUUM writes a temporary copy about the size of the database; keep it on
+  // the database's own disk, never /tmp (a quota-limited tmpfs on the owner's machine).
+  const temp = path.join(directory, ".vacuum-tmp")
+  yield* Effect.promise(() => mkdir(temp, { recursive: true }))
+  process.env.SQLITE_TMPDIR = temp
+  yield* db.run(sql.raw(`PRAGMA temp_store_directory = '${temp.replaceAll("'", "''")}'`)).pipe(Effect.ignore)
+
+  report({ phase: "compact", state: "started" })
+  const result = yield* db
+    .run(sql`PRAGMA auto_vacuum = INCREMENTAL`)
+    .pipe(Effect.andThen(db.run(sql`VACUUM`)), Effect.result)
+  report({ phase: "compact", state: "finished" })
+  yield* Effect.promise(() => rm(temp, { recursive: true, force: true }))
+  if (result._tag === "Failure") {
+    // Setting auto_vacuum without a completed VACUUM leaves the file unchanged;
+    // the next launch retries.
+    yield* db.run(sql`PRAGMA auto_vacuum = NONE`).pipe(Effect.ignore)
+    yield* Effect.logWarning("skipping one-time database compaction: VACUUM failed", { cause: String(result.failure) })
+    return "skipped" as const
+  }
+  yield* Effect.logInfo("compacted history database to incremental auto_vacuum")
+  return "compacted" as const
+})
+
+async function diskFree(directory: string) {
+  const info = await statfs(directory)
+  return info.bavail * info.bsize
+}

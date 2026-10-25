@@ -9,6 +9,7 @@ import { Global } from "../global"
 import { Flag } from "../flag/flag"
 import { isAbsolute, join } from "path"
 import { DatabaseMigration } from "./migration"
+import { DatabaseMaintenance } from "./maintenance"
 import { InstallationChannel } from "../installation/version"
 import { makeGlobalNode } from "../effect/app-node"
 
@@ -21,29 +22,38 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/v2/storage/Database") {}
 
-const layer = Layer.effect(
-  Service,
-  Effect.gen(function* () {
-    const db = yield* makeDatabase
+const layer = (filename: string) =>
+  Layer.effect(
+    Service,
+    Effect.gen(function* () {
+      const db = yield* makeDatabase
 
-    yield* db.run("PRAGMA journal_mode = WAL")
-    yield* db.run("PRAGMA synchronous = NORMAL")
-    yield* db.run("PRAGMA busy_timeout = 5000")
-    yield* db.run("PRAGMA cache_size = -64000")
-    yield* db.run("PRAGMA foreign_keys = ON")
-    yield* db.run("PRAGMA wal_checkpoint(PASSIVE)")
-    yield* DatabaseMigration.apply(db)
+      // Only takes effect on a new, empty file, and the switch to WAL writes the
+      // first page, so it must precede WAL (the driver's WAL switch is disabled
+      // below); existing files convert in compactOnce. It runs before busy_timeout
+      // and ignores SQLITE_BUSY because waiting blocks the thread and stalls a
+      // concurrent open in this process; a connection holding the write lock has
+      // already written the file, so the pragma would be a no-op anyway.
+      yield* db.run("PRAGMA auto_vacuum = INCREMENTAL").pipe(Effect.ignore)
+      yield* db.run("PRAGMA journal_mode = WAL")
+      yield* db.run("PRAGMA synchronous = NORMAL")
+      yield* db.run("PRAGMA busy_timeout = 5000")
+      yield* db.run("PRAGMA cache_size = -64000")
+      yield* db.run("PRAGMA foreign_keys = ON")
+      yield* db.run("PRAGMA wal_checkpoint(PASSIVE)")
+      yield* DatabaseMigration.apply(db)
+      yield* DatabaseMaintenance.compactOnce(db, { filename, now: Date.now() })
 
-    return { db }
-  }).pipe(Effect.orDie),
-)
+      return { db }
+    }).pipe(Effect.orDie),
+  )
 
 export function layerFromPath(filename: string) {
-  if (filename === ":memory:") return layer.pipe(Layer.provide(sqliteLayer({ filename })))
+  if (filename === ":memory:") return layer(filename).pipe(Layer.provide(sqliteLayer({ filename, disableWAL: true })))
   return Layer.unwrap(
     Effect.gen(function* () {
       yield* Effect.promise(() => restrictToOwner(filename))
-      return layer.pipe(Layer.provide(sqliteLayer({ filename })))
+      return layer(filename).pipe(Layer.provide(sqliteLayer({ filename, disableWAL: true })))
     }),
   )
 }

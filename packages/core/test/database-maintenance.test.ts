@@ -154,3 +154,90 @@ describe("DatabaseMaintenance.sweepOrphans", () => {
     expect(result.events).toEqual(["other.created.1"])
   })
 })
+
+const autoVacuum = (db: Db) =>
+  db.get<{ auto_vacuum: number }>(sql`PRAGMA auto_vacuum`).pipe(Effect.map((row) => row?.auto_vacuum))
+
+describe("DatabaseMaintenance compaction", () => {
+  test("a new database starts in incremental mode, so compaction is a no-op", async () => {
+    // Opening the database must not have compacted it: a VACUUM there would mean new files are not born incremental.
+    const progress: DatabaseMaintenance.Progress[] = []
+    DatabaseMaintenance.onProgress((event) => progress.push(event))
+    const result = await withDb((db, filename) =>
+      Effect.gen(function* () {
+        return {
+          mode: yield* autoVacuum(db),
+          compact: yield* DatabaseMaintenance.compactOnce(db, { filename, now: NOW }),
+        }
+      }),
+    ).finally(() => DatabaseMaintenance.onProgress(undefined))
+    expect(result).toEqual({ mode: 2, compact: "already" })
+    expect(progress).toEqual([])
+  })
+
+  test("converts a legacy database once and frees pruned pages", async () => {
+    const result = await withDb((db, filename) =>
+      Effect.gen(function* () {
+        // Simulate a pre-maintenance database: auto_vacuum NONE.
+        yield* db.run(sql`PRAGMA auto_vacuum = NONE`)
+        yield* db.run(sql`VACUUM`)
+        yield* seedSession(db, { id: "ses_big", updated: NOW - 8 * DAY, messages: 400 })
+        yield* db.run(sql`UPDATE event SET data = json_object('pad', hex(randomblob(2000)))`)
+        const before = yield* autoVacuum(db)
+        const first = yield* DatabaseMaintenance.compactOnce(db, { filename, now: NOW })
+        const second = yield* DatabaseMaintenance.compactOnce(db, { filename, now: NOW })
+        yield* seedSession(db, { id: "ses_more", updated: NOW - 8 * DAY, messages: 400 })
+        yield* db.run(
+          sql`UPDATE event SET data = json_object('pad', hex(randomblob(2000))) WHERE aggregate_id = 'ses_more'`,
+        )
+        yield* DatabaseMaintenance.pruneIdleSessions(db, { now: NOW })
+        const freeBefore = (yield* db.get<{ n: number }>(sql`SELECT freelist_count AS n FROM pragma_freelist_count`))?.n
+        const freed = yield* DatabaseMaintenance.reclaim(db)
+        const freeAfter = (yield* db.get<{ n: number }>(sql`SELECT freelist_count AS n FROM pragma_freelist_count`))?.n
+        return { before, after: yield* autoVacuum(db), first, second, freeBefore, freed, freeAfter }
+      }),
+    )
+    expect(result.before).toBe(0)
+    expect(result.after).toBe(2)
+    expect(result.first).toBe("compacted")
+    expect(result.second).toBe("already")
+    expect(result.freeBefore).toBeGreaterThan(0)
+    expect(result.freed).toBeGreaterThan(0)
+    expect(result.freeAfter).toBe(0)
+  })
+
+  test("skips compaction when the disk is too full", async () => {
+    const result = await withDb((db, filename) =>
+      Effect.gen(function* () {
+        yield* db.run(sql`PRAGMA auto_vacuum = NONE`)
+        yield* db.run(sql`VACUUM`)
+        const compact = yield* DatabaseMaintenance.compactOnce(db, {
+          filename,
+          now: NOW,
+          freeBytes: async () => 1024,
+        })
+        return { compact, mode: yield* autoVacuum(db) }
+      }),
+    )
+    expect(result).toEqual({ compact: "low-disk", mode: 0 })
+  })
+
+  test("skips compaction while another connection holds the database", async () => {
+    const { Database: BunDatabase } = await import("bun:sqlite")
+    const result = await withDb((db, filename) =>
+      Effect.gen(function* () {
+        yield* db.run(sql`PRAGMA auto_vacuum = NONE`)
+        yield* db.run(sql`VACUUM`)
+        yield* db.run(sql`PRAGMA busy_timeout = 100`)
+        const other = new BunDatabase(filename)
+        // WAL lets VACUUM run beside a reader, so the other connection must hold the write lock.
+        other.run("BEGIN IMMEDIATE")
+        const compact = yield* DatabaseMaintenance.compactOnce(db, { filename, now: NOW })
+        other.run("COMMIT")
+        other.close()
+        return { compact, mode: yield* autoVacuum(db) }
+      }),
+    )
+    expect(result).toEqual({ compact: "skipped", mode: 0 })
+  })
+})
