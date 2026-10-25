@@ -176,6 +176,8 @@ describe("DatabaseMaintenance compaction", () => {
   })
 
   test("converts a legacy database once and frees pruned pages", async () => {
+    const progress: DatabaseMaintenance.Progress["state"][] = []
+    DatabaseMaintenance.onProgress((event) => progress.push(event.state))
     const result = await withDb((db, filename) =>
       Effect.gen(function* () {
         // Simulate a pre-maintenance database: auto_vacuum NONE.
@@ -185,6 +187,8 @@ describe("DatabaseMaintenance compaction", () => {
         yield* db.run(sql`UPDATE event SET data = json_object('pad', hex(randomblob(2000)))`)
         const before = yield* autoVacuum(db)
         const first = yield* DatabaseMaintenance.compactOnce(db, { filename, now: NOW })
+        // The VACUUM rewrite goes through the WAL; it must be checkpointed away.
+        const wal = Bun.file(`${filename}-wal`).size
         const second = yield* DatabaseMaintenance.compactOnce(db, { filename, now: NOW })
         yield* seedSession(db, { id: "ses_more", updated: NOW - 8 * DAY, messages: 400 })
         yield* db.run(
@@ -194,9 +198,11 @@ describe("DatabaseMaintenance compaction", () => {
         const freeBefore = (yield* db.get<{ n: number }>(sql`SELECT freelist_count AS n FROM pragma_freelist_count`))?.n
         const freed = yield* DatabaseMaintenance.reclaim(db)
         const freeAfter = (yield* db.get<{ n: number }>(sql`SELECT freelist_count AS n FROM pragma_freelist_count`))?.n
-        return { before, after: yield* autoVacuum(db), first, second, freeBefore, freed, freeAfter }
+        return { before, after: yield* autoVacuum(db), first, wal, second, freeBefore, freed, freeAfter }
       }),
-    )
+    ).finally(() => DatabaseMaintenance.onProgress(undefined))
+    expect(progress).toEqual(["started", "finished"])
+    expect(result.wal).toBeLessThan(64 * 1024)
     expect(result.before).toBe(0)
     expect(result.after).toBe(2)
     expect(result.first).toBe("compacted")
@@ -207,6 +213,8 @@ describe("DatabaseMaintenance compaction", () => {
   })
 
   test("skips compaction when the disk is too full", async () => {
+    const progress: DatabaseMaintenance.Progress["state"][] = []
+    DatabaseMaintenance.onProgress((event) => progress.push(event.state))
     const result = await withDb((db, filename) =>
       Effect.gen(function* () {
         yield* db.run(sql`PRAGMA auto_vacuum = NONE`)
@@ -218,8 +226,31 @@ describe("DatabaseMaintenance compaction", () => {
         })
         return { compact, mode: yield* autoVacuum(db) }
       }),
-    )
+    ).finally(() => DatabaseMaintenance.onProgress(undefined))
     expect(result).toEqual({ compact: "low-disk", mode: 0 })
+    expect(progress).toEqual(["started", "finished"])
+  })
+
+  test("a failure before VACUUM skips compaction and leaves the database usable", async () => {
+    const result = await withDb((db, filename) =>
+      Effect.gen(function* () {
+        yield* db.run(sql`PRAGMA auto_vacuum = NONE`)
+        yield* db.run(sql`VACUUM`)
+        yield* seedSession(db, { id: "ses_live", updated: NOW, messages: 3 })
+        // A regular file where the temp directory goes makes its mkdir fail.
+        const blocker = path.join(path.dirname(filename), ".vacuum-tmp")
+        yield* Effect.promise(() => Bun.write(blocker, "keep"))
+        const compact = yield* DatabaseMaintenance.compactOnce(db, { filename, now: NOW })
+        return {
+          compact,
+          mode: yield* autoVacuum(db),
+          events: yield* eventTypes(db, "ses_live"),
+          blocker: yield* Effect.promise(() => Bun.file(blocker).text()),
+        }
+      }),
+    )
+    expect(result).toEqual({ compact: "skipped", mode: 0, events: expect.any(Array), blocker: "keep" })
+    expect(result.events).toHaveLength(4)
   })
 
   test("skips compaction while another connection holds the database", async () => {
