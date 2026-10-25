@@ -11,16 +11,20 @@ type Db = Database.Interface["db"]
 
 export const pass = Effect.fn("DatabaseMaintenance.pass")(function* (db: Db, now: number) {
   const started = Date.now()
-  const pruned = yield* step(
-    "prune idle sessions",
-    DatabaseMaintenance.pruneIdleSessions(db, { now }),
-    { candidates: 0, sessions: 0, events: 0 },
-  )
+  const pruned = yield* step("prune idle sessions", DatabaseMaintenance.pruneIdleSessions(db, { now }), {
+    candidates: 0,
+    sessions: 0,
+    events: 0,
+  })
   const orphans = yield* step("sweep orphans", DatabaseMaintenance.sweepOrphans(db), { aggregates: 0, events: 0 })
   const reclaimed = yield* step(
     "reclaim",
     Effect.gen(function* () {
       const freed = yield* DatabaseMaintenance.reclaim(db)
+      // incremental_vacuum writes through the WAL, which otherwise stays at its
+      // high-water mark until the next truncating checkpoint. Best effort: another
+      // process's open reader makes it busy, and the next pass tries again.
+      if (freed > 0) yield* db.run(sql`PRAGMA wal_checkpoint(TRUNCATE)`).pipe(Effect.ignoreCause)
       const row = yield* db.get<{ page_size: number }>(sql`PRAGMA page_size`)
       return { freed, pageSize: row?.page_size ?? 4096 }
     }),

@@ -1,6 +1,7 @@
 export * as DatabaseMaintenance from "./maintenance"
 
-import { mkdir, rm, statfs } from "node:fs/promises"
+import { existsSync } from "node:fs"
+import { mkdir, readFile, rm, statfs, writeFile } from "node:fs/promises"
 import path from "path"
 import { sql, type SQL } from "drizzle-orm"
 import { Cause, Effect, Exit } from "effect"
@@ -13,6 +14,9 @@ export const IDLE_MS = 7 * 24 * 60 * 60 * 1000
 const CHUNK = 2_000
 const RECLAIM_PAGES = 10_000
 const GIB = 1024 * 1024 * 1024
+const MAX_ATTEMPTS = 3
+// Another process (a CLI or TUI instance) holding the database; not a problem with the file.
+const BUSY = /SQLITE_BUSY|SQLITE_LOCKED|database is locked|database table is locked/i
 
 export type Progress = { phase: "compact"; state: "started" | "finished" }
 
@@ -25,7 +29,15 @@ export function onProgress(listener: ((progress: Progress) => void) | undefined)
 }
 function report(progress: Progress) {
   if (progressListener) return progressListener(progress)
-  if (progress.state === "started") process.stderr.write("Optimizing history database (one-time)…\n")
+  if (progress.state === "started") process.stderr.write("Optimizing history database…\n")
+}
+
+// compactOnce attempts the conversion at most once per process.
+let attempted = false
+
+// Test-only: lets one test process run the conversion more than once.
+export function resetForTests() {
+  attempted = false
 }
 
 // Classic (v1) sessions keep their authoritative state in message/part rows;
@@ -34,6 +46,9 @@ function report(progress: Progress) {
 // dead weight (they were 30GB of a 38GB database). v2 sessions build history
 // from events and are never pruned; event_sequence is kept so a resumed
 // session appends at seq + 1.
+// Message and part writes do not bump session.time_updated, so idleness also
+// requires no message or part updated since the cutoff (both are indexed on
+// session_id, time_updated).
 export const pruneIdleSessions = Effect.fn("DatabaseMaintenance.pruneIdleSessions")(function* (
   db: Db,
   input: { now: number; idleMs?: number; chunk?: number },
@@ -46,6 +61,8 @@ export const pruneIdleSessions = Effect.fn("DatabaseMaintenance.pruneIdleSession
       AND q.owner_id IS NULL
       AND NOT EXISTS (SELECT 1 FROM session_message m WHERE m.session_id = s.id)
       AND NOT EXISTS (SELECT 1 FROM session_input i WHERE i.session_id = s.id AND i.promoted_seq IS NULL)
+      AND NOT EXISTS (SELECT 1 FROM message m WHERE m.session_id = s.id AND m.time_updated >= ${cutoff})
+      AND NOT EXISTS (SELECT 1 FROM part p WHERE p.session_id = s.id AND p.time_updated >= ${cutoff})
       AND NOT EXISTS (SELECT 1 FROM event e WHERE e.aggregate_id = s.id AND e.type >= 'session.next.' AND e.type < 'session.next/')
       AND EXISTS (SELECT 1 FROM event e WHERE e.aggregate_id = s.id AND e.type >= 'message.' AND e.type < 'message/')
   `)
@@ -64,7 +81,9 @@ export const pruneIdleSessions = Effect.fn("DatabaseMaintenance.pruneIdleSession
             WHERE s.id = ${candidate.id}
               AND s.time_updated < ${cutoff}
               AND q.owner_id IS NULL
-              AND NOT EXISTS (SELECT 1 FROM session_input i WHERE i.session_id = s.id AND i.promoted_seq IS NULL))
+              AND NOT EXISTS (SELECT 1 FROM session_input i WHERE i.session_id = s.id AND i.promoted_seq IS NULL)
+              AND NOT EXISTS (SELECT 1 FROM message m WHERE m.session_id = s.id AND m.time_updated >= ${cutoff})
+              AND NOT EXISTS (SELECT 1 FROM part p WHERE p.session_id = s.id AND p.time_updated >= ${cutoff}))
         LIMIT ${limit})`,
       chunk,
     ),
@@ -93,10 +112,19 @@ export const sweepOrphans = Effect.fn("DatabaseMaintenance.sweepOrphans")(functi
   const events = yield* Effect.forEach(orphans, (orphan) =>
     deleteChunked(
       db,
+      // A session can be re-created with the same id (sync, import) while the
+      // sweep runs, so every delete re-checks that the session row is still absent.
       (limit) => sql`DELETE FROM event WHERE rowid IN (
-        SELECT rowid FROM event WHERE aggregate_id = ${orphan.id} LIMIT ${limit})`,
+        SELECT rowid FROM event WHERE aggregate_id = ${orphan.id}
+          AND NOT EXISTS (SELECT 1 FROM session WHERE id = ${orphan.id})
+        LIMIT ${limit})`,
       chunk,
-    ).pipe(Effect.tap(() => db.run(sql`DELETE FROM event_sequence WHERE aggregate_id = ${orphan.id}`))),
+    ).pipe(
+      Effect.tap(() =>
+        db.run(sql`DELETE FROM event_sequence WHERE aggregate_id = ${orphan.id}
+                     AND NOT EXISTS (SELECT 1 FROM session WHERE id = ${orphan.id})`),
+      ),
+    ),
   )
   return { aggregates: orphans.length, events: events.reduce((sum, n) => sum + n, 0) }
 })
@@ -155,28 +183,40 @@ export const compactOnce = Effect.fn("DatabaseMaintenance.compactOnce")(function
   return yield* Effect.gen(function* () {
     const mode = yield* db.get<{ auto_vacuum: number }>(sql`PRAGMA auto_vacuum`).pipe(step("read auto_vacuum"))
     if (mode?.auto_vacuum === 2) return "already" as const
+    // The database layer is built more than once per process (again lazily on
+    // desktop shutdown, where main kills the sidecar after 6s), so only the first
+    // build may attempt the conversion.
+    if (attempted) return "attempted" as const
+    attempted = true
+    const marker = `${input.filename}.compact-attempt`
+    const previous = yield* readAttempts(marker)
+    if (previous >= MAX_ATTEMPTS) {
+      yield* Effect.logWarning(
+        `skipping one-time database compaction: ${previous} earlier attempts did not finish. ` +
+          `Set OPENCODE_DISABLE_DB_MAINTENANCE=1 or report this; delete ${marker} to retry.`,
+      )
+      return "backoff" as const
+    }
+    // Written before the attempt, so a launch killed or crashed mid-VACUUM is
+    // counted by the next one.
+    yield* setAttempts(marker, previous + 1)
     // Prune over a large legacy event table is the slow part, so the desktop's
     // startup stall timer must be extended before it starts.
     yield* notify("started")
-    return yield* rewrite(db, input).pipe(
+    const outcome = yield* rewrite(db, input).pipe(
+      skipOnFailure,
       Effect.ensuring(
         // In WAL mode the rewritten database (and every pruned page) lands in the
         // WAL; truncate it so it does not stay on disk at full size.
         db.run(sql`PRAGMA wal_checkpoint(TRUNCATE)`).pipe(Effect.ignoreCause, Effect.andThen(notify("finished"))),
       ),
     )
-  }).pipe(
-    Effect.catch((failure) =>
-      Effect.logWarning(`skipping one-time database compaction: ${failure.step} failed`, {
-        cause: Cause.pretty(failure.cause),
-      }).pipe(Effect.as("skipped" as const)),
-    ),
-    Effect.catchCause((cause) =>
-      Effect.logWarning("skipping one-time database compaction: unexpected failure", {
-        cause: Cause.pretty(cause),
-      }).pipe(Effect.as("skipped" as const)),
-    ),
-  )
+    // A VACUUM that failed on its own (corruption, a full disk) keeps the counted
+    // attempt; another process holding the database is not the database's fault.
+    if (outcome === "failed") return outcome
+    yield* setAttempts(marker, outcome === "busy" ? previous : 0)
+    return outcome === "busy" ? ("skipped" as const) : outcome
+  }).pipe(skipOnFailure)
 })
 
 const rewrite = Effect.fnUntraced(function* (
@@ -222,10 +262,9 @@ const rewrite = Effect.fnUntraced(function* (
     // Setting auto_vacuum without a completed VACUUM leaves the file unchanged;
     // the next launch retries.
     yield* db.run(sql`PRAGMA auto_vacuum = NONE`).pipe(Effect.ignoreCause)
-    yield* Effect.logWarning("skipping one-time database compaction: VACUUM failed", {
-      cause: Cause.pretty(vacuum.cause),
-    })
-    return "skipped" as const
+    const cause = Cause.pretty(vacuum.cause)
+    yield* Effect.logWarning("skipping one-time database compaction: VACUUM failed", { cause })
+    return BUSY.test(cause) ? ("busy" as const) : ("failed" as const)
   }
   yield* Effect.logInfo("compacted history database to incremental auto_vacuum")
   return "compacted" as const
@@ -238,6 +277,49 @@ type StepFailure = { step: string; cause: Cause.Cause<unknown> }
 function step(name: string) {
   return <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(Effect.catchCause((cause) => Effect.fail<StepFailure>({ step: name, cause })))
+}
+
+function skipOnFailure<A, R>(effect: Effect.Effect<A, StepFailure, R>) {
+  return effect.pipe(
+    Effect.catch((failure) =>
+      Effect.logWarning(`skipping one-time database compaction: ${failure.step} failed`, {
+        cause: Cause.pretty(failure.cause),
+      }).pipe(Effect.as("skipped" as const)),
+    ),
+    Effect.catchCause((cause) =>
+      Effect.logWarning("skipping one-time database compaction: unexpected failure", {
+        cause: Cause.pretty(cause),
+      }).pipe(Effect.as("skipped" as const)),
+    ),
+  )
+}
+
+// The marker holds the number of conversion attempts that have not finished
+// cleanly. Reading or writing it never fails compaction: an unreadable marker
+// counts as no attempts.
+function readAttempts(marker: string) {
+  return Effect.tryPromise(() => readFile(marker, "utf8")).pipe(
+    Effect.map((text) => Math.max(1, Number.parseInt(text, 10) || 0)),
+    Effect.catchCause((cause) =>
+      existsSync(marker)
+        ? Effect.logWarning("one-time database compaction: reading attempt marker failed", {
+            cause: Cause.pretty(cause),
+          }).pipe(Effect.as(0))
+        : Effect.succeed(0),
+    ),
+  )
+}
+
+function setAttempts(marker: string, attempts: number) {
+  return Effect.tryPromise(() =>
+    attempts === 0 ? rm(marker, { force: true }) : writeFile(marker, `${attempts}\n`),
+  ).pipe(
+    Effect.catchCause((cause) =>
+      Effect.logWarning("one-time database compaction: updating attempt marker failed", {
+        cause: Cause.pretty(cause),
+      }),
+    ),
+  )
 }
 
 function notify(state: Progress["state"]) {
