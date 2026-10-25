@@ -70,22 +70,50 @@ const layer = Layer.effect(
       return (yield* all())[providerID]
     })
 
+    // Several writers share auth.json (token refreshes here, auth plugins, the
+    // Muse sync script). A write must start from the file's exact contents: a
+    // missing file is empty, but an unreadable one (another writer mid-write)
+    // fails the write instead of being treated as empty, and entries this
+    // build cannot decode are carried over untouched. Reading it leniently
+    // here replaced every stored credential with the one being saved.
+    const stored = Effect.fnUntraced(function* () {
+      const text = yield* fsys.readFileStringSafe(file).pipe(Effect.mapError(fail("Failed to read auth data")))
+      if (text === undefined) return {} as Record<string, unknown>
+      const parsed = yield* Effect.try({
+        try: () => JSON.parse(text) as unknown,
+        catch: fail("Auth data is not valid JSON; refusing to overwrite it"),
+      })
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+        return yield* new AuthError({ message: "Auth data is not a JSON object; refusing to overwrite it" })
+      return parsed as Record<string, unknown>
+    })
+
+    // Write a sibling temp file and rename it over auth.json, so concurrent
+    // readers see either the old or the new file, never a truncated one.
+    const persist = Effect.fnUntraced(function* (data: Record<string, unknown>) {
+      const temp = `${file}.${process.pid}.${Date.now()}.tmp`
+      yield* fsys.writeFileString(temp, JSON.stringify(data, null, 2), { mode: 0o600 }).pipe(
+        Effect.andThen(fsys.chmod(temp, 0o600)),
+        Effect.andThen(fsys.rename(temp, file)),
+        Effect.tapError(() => fsys.remove(temp).pipe(Effect.ignore)),
+        Effect.mapError(fail("Failed to write auth data")),
+      )
+    })
+
     const set = Effect.fn("Auth.set")(function* (key: string, info: Info) {
       const norm = key.replace(/\/+$/, "")
-      const data = yield* all()
+      const data = yield* stored()
       if (norm !== key) delete data[key]
       delete data[norm + "/"]
-      yield* fsys
-        .writeJson(file, { ...data, [norm]: info }, 0o600)
-        .pipe(Effect.mapError(fail("Failed to write auth data")))
+      yield* persist({ ...data, [norm]: info })
     })
 
     const remove = Effect.fn("Auth.remove")(function* (key: string) {
       const norm = key.replace(/\/+$/, "")
-      const data = yield* all()
+      const data = yield* stored()
       delete data[key]
       delete data[norm]
-      yield* fsys.writeJson(file, data, 0o600).pipe(Effect.mapError(fail("Failed to write auth data")))
+      yield* persist(data)
     })
 
     return Service.of({ get, all, set, remove })
