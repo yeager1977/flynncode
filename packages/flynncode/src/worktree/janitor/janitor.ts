@@ -223,20 +223,6 @@ const layer = Layer.effect(
       return review(target, found, "recent", detail)
     }
 
-    const settle = Effect.fnUntraced(function* (found: Worktree) {
-      const ignored = yield* ignoredLocalFiles(found.path)
-      const untracked = yield* JanitorInspect.git(found.path, ["ls-files", "--others", "--exclude-standard", "-z"])
-      if (untracked.code !== 0) return yield* Effect.fail(new Error(`git ls-files --others in ${found.path} failed`))
-      const nested = yield* Effect.promise(() =>
-        nestedRepos(found.path, [...untracked.text.split("\0"), ...ignored.listed, ...ignored.files]),
-      )
-      return {
-        ...found,
-        ignored: ignored.files,
-        nested: [...new Set([...nested, ...found.submodules])].sort(),
-      } satisfies Seen
-    })
-
     // The junk this pass may delete; removeJunk deletes exactly these. A
     // junk-named directory that git tracks (or that holds tracked files) is project
     // content. `coverage` is also a common source folder name, so it only counts as
@@ -364,46 +350,6 @@ const layer = Layer.effect(
         .split("\0")
         .filter(Boolean)
         .map((file) => path.join(dir, file))
-    })
-
-    const ignoredLocalFiles = Effect.fnUntraced(function* (dir: string) {
-      const result = yield* JanitorInspect.git(dir, [
-        "ls-files",
-        "--others",
-        "--ignored",
-        "--exclude-standard",
-        "--directory",
-        "-z",
-      ])
-      if (result.code !== 0) return yield* Effect.fail(new Error(`git ls-files --ignored in ${dir} failed`))
-      const listed = result.text.split("\0").filter(Boolean)
-      // --directory collapses a whole ignored folder into "name/"; list its files so
-      // the count is real and a file added inside it changes the fingerprint.
-      const expanded = yield* Effect.forEach(
-        listed.filter((file) => !JanitorJunk.isRegenerable(file)),
-        (entry) => (entry.endsWith("/") ? ignoredFolderFiles(dir, entry) : Effect.succeed([entry])),
-      )
-      // A folder holding only ignored files is listed both as "dir/" and as its
-      // files, so the expansion repeats them. `listed` keeps the regenerable
-      // folders too, which may still be repositories.
-      return { listed, files: [...new Set(expanded.flat())] }
-    })
-
-    const ignoredFolderFiles = Effect.fnUntraced(function* (dir: string, folder: string) {
-      const result = yield* JanitorInspect.git(dir, [
-        "--literal-pathspecs",
-        "ls-files",
-        "--others",
-        "--ignored",
-        "--exclude-standard",
-        "-z",
-        "--",
-        folder,
-      ])
-      if (result.code !== 0) return yield* Effect.fail(new Error(`git ls-files --ignored ${folder} in ${dir} failed`))
-      const files = result.text.split("\0").filter(Boolean)
-      // An ignored folder with no files in it is still shown, as itself.
-      return files.length > 0 ? files : [folder]
     })
 
     const activeDirectories = Effect.fnUntraced(function* (now: number) {
@@ -544,6 +490,63 @@ const layer = Layer.effect(
     return Service.of({ scan, report, remove })
   }),
 )
+
+// Completes an inspection into a `Seen`: the ignored local files and nested
+// repositories git status cannot see. Also used by session disposal, which
+// removes a task worktree only when none of these would be lost.
+export const settle = Effect.fnUntraced(function* (found: Worktree) {
+  const ignored = yield* ignoredLocalFiles(found.path)
+  const untracked = yield* JanitorInspect.git(found.path, ["ls-files", "--others", "--exclude-standard", "-z"])
+  if (untracked.code !== 0) return yield* Effect.fail(new Error(`git ls-files --others in ${found.path} failed`))
+  const nested = yield* Effect.promise(() =>
+    nestedRepos(found.path, [...untracked.text.split("\0"), ...ignored.listed, ...ignored.files]),
+  )
+  return {
+    ...found,
+    ignored: ignored.files,
+    nested: [...new Set([...nested, ...found.submodules])].sort(),
+  } satisfies Seen
+})
+
+const ignoredLocalFiles = Effect.fnUntraced(function* (dir: string) {
+  const result = yield* JanitorInspect.git(dir, [
+    "ls-files",
+    "--others",
+    "--ignored",
+    "--exclude-standard",
+    "--directory",
+    "-z",
+  ])
+  if (result.code !== 0) return yield* Effect.fail(new Error(`git ls-files --ignored in ${dir} failed`))
+  const listed = result.text.split("\0").filter(Boolean)
+  // --directory collapses a whole ignored folder into "name/"; list its files so
+  // the count is real and a file added inside it changes the fingerprint.
+  const expanded = yield* Effect.forEach(
+    listed.filter((file) => !JanitorJunk.isRegenerable(file)),
+    (entry) => (entry.endsWith("/") ? ignoredFolderFiles(dir, entry) : Effect.succeed([entry])),
+  )
+  // A folder holding only ignored files is listed both as "dir/" and as its
+  // files, so the expansion repeats them. `listed` keeps the regenerable
+  // folders too, which may still be repositories.
+  return { listed, files: [...new Set(expanded.flat())] }
+})
+
+const ignoredFolderFiles = Effect.fnUntraced(function* (dir: string, folder: string) {
+  const result = yield* JanitorInspect.git(dir, [
+    "--literal-pathspecs",
+    "ls-files",
+    "--others",
+    "--ignored",
+    "--exclude-standard",
+    "-z",
+    "--",
+    folder,
+  ])
+  if (result.code !== 0) return yield* Effect.fail(new Error(`git ls-files --ignored ${folder} in ${dir} failed`))
+  const files = result.text.split("\0").filter(Boolean)
+  // An ignored folder with no files in it is still shown, as itself.
+  return files.length > 0 ? files : [folder]
+})
 
 // The owner reviewed the item in its scanned state; a remove must not act on
 // anything new: another kind, repo or branch, or a different fingerprint.

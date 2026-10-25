@@ -91,7 +91,7 @@ Removal runs `git -C <repo> -c status.showUntrackedFiles=all worktree remove <pa
 
 Each worktree item also lists everything a forced removal would delete: `dirty` count, `ignored` count with an example path, `unpushed` count, `detached` (no branch), `head`, and any `nested` repos (nested repositories and initialized submodules); `detail` sums these up. Each item carries a private state fingerprint (HEAD, exact status text, skipped files with stat, ignored files, nested repos; for scratch folders the newest mtime in the whole tree, whether the walk was capped, and the nested repos).
 
-**Flynncode task worktrees on delete.** Deleting a session disposes of its disposable task worktree through the same shared `disposeSettledWorktree` helper that archiving uses (`Worktree.disposeIfIdle`). Archive behavior is unchanged.
+**Flynncode task worktrees on archive or delete.** Archiving or deleting a session disposes of its disposable task worktree through one shared helper, `disposeSettledWorktree`, once every session bound to it is archived or gone. It calls `Worktree.disposeIfSafe`, which never loses work. It skips the instance's own worktree and any loaded directory. It then runs the janitor's fail-closed inspection (`JanitorInspect.inspect` plus the janitor's ignored-file and nested-repo checks). The folder is removed only when the inspection succeeds and finds a linked worktree with no changed files, no non-regenerable ignored files, no nested repos or submodules, and every commit merged, pushed or reachable from another branch, remote-tracking ref or tag. Removal runs `git -c status.showUntrackedFiles=all worktree remove` without `--force`, and the task branch is always kept. Anything else keeps both the folder and the branch, and the worktree then shows on the Cleanup page. `Worktree.remove` (forced, deletes the branch) is unchanged for its explicit callers.
 
 ### API and Cleanup screen
 
@@ -138,7 +138,7 @@ These run in `packages/flynncode` against real temporary git repos and worktrees
 4. A `pytest-of-*` folder and caches in an idle worktree are deleted; the worktree then becomes clean and is removed. A `coverage` package inside an ignored `.venv` survives. A scratch folder is listed as `scratch` and kept.
 5. A nested repo's worktree inside the parent's `.worktrees/` is classified by its own repo. A worktree with an initialized submodule (a real superproject) is held with the submodule in `nested`. A cone sparse checkout with nothing changed is not dirty. Inspection never rewrites a worktree's index.
 6. The remove endpoint rejects a path that is not on the review list, refuses a changed, nested-repo (worktree or scratch folder), submodule or `error` item, and removes a listed dirty worktree with `--force` while keeping its branch (and rescues a detached unpushed HEAD). Neither auto nor manual removal drops the registration of a temporarily missing worktree.
-7. Deleting a session disposes of its disposable task worktree.
+7. Archiving or deleting a session removes its disposable task worktree when it is clean with no unique commits, and keeps the branch. A worktree with an uncommitted file, an unmerged commit or a non-regenerable ignored file is kept with its branch.
 8. The Cleanup page renders review items and sends exactly the confirmed paths (app browser test suite).
 
 ## Out of scope

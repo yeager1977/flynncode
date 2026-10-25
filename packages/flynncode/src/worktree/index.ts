@@ -22,6 +22,8 @@ import { InstanceState } from "@/effect/instance-state"
 import { WorktreeEvent } from "@flynncode/schema/worktree-event"
 import { worktreesToRemove } from "./retention"
 import { boundSessions } from "./bound-sessions"
+import { JanitorInspect } from "./janitor/inspect"
+import { WorktreeJanitor } from "./janitor/janitor"
 
 export const Event = WorktreeEvent
 
@@ -160,6 +162,9 @@ export interface Interface {
   readonly create: (input?: CreateInput) => Effect.Effect<Info, Error>
   readonly createDisposable: (input: { sessionID: string; name?: string }) => Effect.Effect<Info, Error>
   readonly disposeIfIdle: (input: { directory: string }) => Effect.Effect<boolean, Error>
+  // Session archive/delete disposal: removes an idle worktree folder only when
+  // nothing would be lost, and always keeps its branch.
+  readonly disposeIfSafe: (input: { directory: string }) => Effect.Effect<boolean, Error>
   readonly list: () => Effect.Effect<(Omit<Info, "branch"> & { branch?: string })[], Error>
   // Retention sweep: enumerates owned worktrees as enriched entries and
   // removes the keep-N losers through the non-destructive retire path.
@@ -922,6 +927,65 @@ const layer: Layer.Layer<
       return true
     })
 
+    // Archiving or deleting a session never loses work. Besides the idle
+    // checks of disposeIfIdle, the folder goes only when the janitor's
+    // fail-closed inspection finds it clean, without non-regenerable ignored
+    // files or nested repositories, and with every commit reachable elsewhere.
+    // The removal is unforced (git itself refuses a worktree that became dirty
+    // since the check) and the branch is kept. Returns true when the folder is gone.
+    const disposeIfSafe = Effect.fn("Worktree.disposeIfSafe")(function* (input: { directory: string }) {
+      const ctx = yield* InstanceState.context
+      const directory = yield* canonical(input.directory)
+      if (directory === (yield* canonical(ctx.worktree))) return false
+      if ((yield* loadedDirectoryKeys()).has(directory)) return false
+      // Nothing left on disk means nothing to lose; the caller still drops its sandbox entry.
+      if (!(yield* fs.exists(directory).pipe(Effect.orDie))) return true
+      const found = yield* lossless(directory).pipe(
+        Effect.provideService(AppProcess.Service, appProcess),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("worktree dispose skipped: inspection failed", { directory, cause }).pipe(
+            Effect.as(undefined),
+          ),
+        ),
+      )
+      if (!found) return false
+      yield* store.disposeDirectory(input.directory)
+      yield* stopFsmonitor(found.path)
+      // git's own clean check reads status.showUntrackedFiles; with "no" it
+      // would delete an untracked file that appeared after the inspection.
+      const removed = yield* git(["-c", "status.showUntrackedFiles=all", "worktree", "remove", found.path], {
+        cwd: found.repo,
+      })
+      if (removed.code === 0) return true
+      yield* Effect.logWarning("worktree dispose skipped: git refused the removal", {
+        directory,
+        error: removed.stderr || removed.text,
+      })
+      return false
+    })
+
+    // The inspection of a worktree whose removal would lose nothing, else undefined.
+    const lossless = Effect.fnUntraced(function* (directory: string) {
+      const inspected = yield* JanitorInspect.inspect(directory)
+      if (inspected.kind !== "worktree") return undefined
+      const found = yield* WorktreeJanitor.settle(inspected)
+      if (found.dirty > 0 || found.ignored.length > 0 || found.nested.length > 0) return undefined
+      if (found.safe) return found
+      // Not merged into the default branch nor pushed: still nothing is lost
+      // when another branch, remote-tracking ref or tag reaches every commit.
+      const unique = yield* JanitorInspect.git(found.path, [
+        "rev-list",
+        "--count",
+        "HEAD",
+        "--not",
+        ...(found.branch ? [`--exclude=${found.branch}`] : []),
+        "--branches",
+        "--remotes",
+        "--tags",
+      ])
+      return unique.code === 0 && unique.text === "0" ? found : undefined
+    })
+
     // Hand off a session between two existing worktrees. `from` must be a
     // known worktree of this project, `to` must exist on disk, and the paths
     // must differ. Session row rebinding happens at the HTTP handler
@@ -993,6 +1057,7 @@ const layer: Layer.Layer<
       create: createAndRetain,
       createDisposable,
       disposeIfIdle,
+      disposeIfSafe,
       list,
       remove,
       reset,

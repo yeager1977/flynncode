@@ -21,16 +21,35 @@ const it = testEffect(
   ),
 )
 
+// A checked-out task worktree on its own branch, like createDisposable makes.
 const createOwnedWorktree = (name: string) =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     const gitSvc = yield* Git.Service
     const directory = path.join(test.directory, ".opencode", "worktrees", name)
-    const created = yield* gitSvc.run(["worktree", "add", "--no-checkout", "-b", `opencode/${name}`, directory], {
+    const created = yield* gitSvc.run(["worktree", "add", "-b", `opencode/${name}`, directory], {
       cwd: test.directory,
     })
     if (created.exitCode !== 0) throw new Error(`git worktree add failed: ${created.stderr.toString("utf8")}`)
     return directory
+  })
+
+const git = (args: string[], cwd: string) =>
+  Effect.gen(function* () {
+    const gitSvc = yield* Git.Service
+    const result = yield* gitSvc.run(args, { cwd })
+    if (result.exitCode !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr.toString("utf8")}`)
+    return result.stdout.toString("utf8").trim()
+  })
+
+const branchExists = (name: string) =>
+  Effect.gen(function* () {
+    const test = yield* TestInstance
+    const gitSvc = yield* Git.Service
+    const result = yield* gitSvc.run(["rev-parse", "--verify", "--quiet", `refs/heads/opencode/${name}`], {
+      cwd: test.directory,
+    })
+    return result.exitCode === 0
   })
 
 const bindSession = (sessions: Session.Interface, directory: string, title: string) =>
@@ -60,6 +79,8 @@ describe("dispose a task worktree when its session is deleted", () => {
 
         expect(removed).toBe(directory)
         expect(yield* fs.exists(directory)).toBe(false)
+        // The task branch is never deleted by disposal.
+        expect(yield* branchExists("delete-sole")).toBe(true)
       }),
     { git: true },
     { timeout: 30000 },
@@ -103,6 +124,7 @@ describe("dispose a task worktree when its session is deleted", () => {
 
         expect(removed).toBe(directory)
         expect(yield* fs.exists(directory)).toBe(false)
+        expect(yield* branchExists("delete-archived-peer")).toBe(true)
       }),
     { git: true },
     { timeout: 30000 },
@@ -125,6 +147,147 @@ describe("dispose a task worktree when its session is deleted", () => {
 
         expect(removed).toBeUndefined()
         expect(yield* fs.exists(directory)).toBe(true)
+      }),
+    { git: true },
+    { timeout: 30000 },
+  )
+})
+
+// Disposal never loses work: the folder goes only when it is clean and every
+// commit on it is reachable elsewhere, and the branch always stays.
+describe("dispose a task worktree only when nothing is lost", () => {
+  afterEach(() => disposeAllInstances())
+
+  it.instance(
+    "archive removes a clean worktree with no unique commits and keeps its branch",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FSUtil.Service
+        const sessions = yield* Session.Service
+        const worktrees = yield* Worktree.Service
+        const directory = yield* createOwnedWorktree("archive-clean")
+        const info = yield* bindSession(sessions, directory, "clean")
+        yield* sessions.setArchived({ sessionID: info.id, time: Date.now() })
+
+        const removed = yield* disposeSettledWorktree({ sessions, worktrees, info: yield* sessions.get(info.id) })
+
+        expect(removed).toBe(directory)
+        expect(yield* fs.exists(directory)).toBe(false)
+        expect(yield* branchExists("archive-clean")).toBe(true)
+      }),
+    { git: true },
+    { timeout: 30000 },
+  )
+
+  it.instance(
+    "archive keeps a worktree with an uncommitted file and its branch",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FSUtil.Service
+        const sessions = yield* Session.Service
+        const worktrees = yield* Worktree.Service
+        const directory = yield* createOwnedWorktree("archive-dirty")
+        yield* Effect.promise(() => Bun.write(path.join(directory, "notes.txt"), "work in progress\n"))
+        const info = yield* bindSession(sessions, directory, "dirty")
+        yield* sessions.setArchived({ sessionID: info.id, time: Date.now() })
+
+        const removed = yield* disposeSettledWorktree({ sessions, worktrees, info: yield* sessions.get(info.id) })
+
+        expect(removed).toBeUndefined()
+        expect(yield* fs.exists(path.join(directory, "notes.txt"))).toBe(true)
+        expect(yield* branchExists("archive-dirty")).toBe(true)
+      }),
+    { git: true },
+    { timeout: 30000 },
+  )
+
+  it.instance(
+    "delete keeps a worktree with an uncommitted file and its branch",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FSUtil.Service
+        const sessions = yield* Session.Service
+        const worktrees = yield* Worktree.Service
+        const directory = yield* createOwnedWorktree("delete-dirty")
+        yield* Effect.promise(() => Bun.write(path.join(directory, "notes.txt"), "work in progress\n"))
+        const info = yield* bindSession(sessions, directory, "dirty")
+
+        yield* sessions.remove(info.id)
+        const removed = yield* disposeSettledWorktree({ sessions, worktrees, info })
+
+        expect(removed).toBeUndefined()
+        expect(yield* fs.exists(path.join(directory, "notes.txt"))).toBe(true)
+        expect(yield* branchExists("delete-dirty")).toBe(true)
+      }),
+    { git: true },
+    { timeout: 30000 },
+  )
+
+  it.instance(
+    "delete keeps a worktree whose branch holds an unmerged commit, and its branch",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FSUtil.Service
+        const sessions = yield* Session.Service
+        const worktrees = yield* Worktree.Service
+        const directory = yield* createOwnedWorktree("delete-unmerged")
+        yield* git(["commit", "--allow-empty", "-m", "unmerged task work"], directory)
+        const info = yield* bindSession(sessions, directory, "unmerged")
+
+        yield* sessions.remove(info.id)
+        const removed = yield* disposeSettledWorktree({ sessions, worktrees, info })
+
+        expect(removed).toBeUndefined()
+        expect(yield* fs.exists(directory)).toBe(true)
+        expect(yield* branchExists("delete-unmerged")).toBe(true)
+      }),
+    { git: true },
+    { timeout: 30000 },
+  )
+
+  it.instance(
+    "archive keeps a worktree whose branch holds an unmerged commit, and its branch",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FSUtil.Service
+        const sessions = yield* Session.Service
+        const worktrees = yield* Worktree.Service
+        const directory = yield* createOwnedWorktree("archive-unmerged")
+        yield* git(["commit", "--allow-empty", "-m", "unmerged task work"], directory)
+        const info = yield* bindSession(sessions, directory, "unmerged")
+        yield* sessions.setArchived({ sessionID: info.id, time: Date.now() })
+
+        const removed = yield* disposeSettledWorktree({ sessions, worktrees, info: yield* sessions.get(info.id) })
+
+        expect(removed).toBeUndefined()
+        expect(yield* fs.exists(directory)).toBe(true)
+        expect(yield* branchExists("archive-unmerged")).toBe(true)
+      }),
+    { git: true },
+    { timeout: 30000 },
+  )
+
+  it.instance(
+    "keeps a worktree holding an ignored local file that tooling cannot rebuild",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const fs = yield* FSUtil.Service
+        const sessions = yield* Session.Service
+        const worktrees = yield* Worktree.Service
+        yield* Effect.promise(() => Bun.write(path.join(test.directory, ".gitignore"), ".env\n.opencode/\n"))
+        yield* git(["add", ".gitignore"], test.directory)
+        yield* git(["commit", "-m", "ignore env"], test.directory)
+        const directory = yield* createOwnedWorktree("delete-ignored")
+        yield* Effect.promise(() => Bun.write(path.join(directory, ".env"), "SECRET=local\n"))
+        const info = yield* bindSession(sessions, directory, "ignored")
+
+        yield* sessions.remove(info.id)
+        const removed = yield* disposeSettledWorktree({ sessions, worktrees, info })
+
+        expect(removed).toBeUndefined()
+        expect(yield* fs.exists(path.join(directory, ".env"))).toBe(true)
+        expect(yield* branchExists("delete-ignored")).toBe(true)
       }),
     { git: true },
     { timeout: 30000 },

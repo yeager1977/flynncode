@@ -81,8 +81,11 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const instances = yield* InstanceStore.Service
 
     // Dispose-on-archive/delete: a session carrying a disposable worktree
-    // binding in its metadata removes that worktree once every session bound
-    // to it is archived (or gone) and no loaded instance runs there.
+    // binding in its metadata removes that worktree's folder once every
+    // session bound to it is archived (or gone), no loaded instance runs
+    // there, and nothing would be lost (clean, every commit reachable from
+    // another ref). The task branch is kept; a kept worktree shows on the
+    // Cleanup page.
     // Best-effort — the archive/delete already succeeded, so failures here
     // never fail the request.
     const disposeWorktreeOf = Effect.fn("SessionHttpApi.disposeWorktreeOf")(function* (info: Session.Info) {

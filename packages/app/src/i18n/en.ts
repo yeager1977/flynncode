@@ -921,7 +921,8 @@ export const dict = {
   "session.new.worktree.mainWithBranch": "Main branch ({{branch}})",
   "session.new.worktree.create": "Create new worktree",
   "session.worktree.disposable": "Disposable worktree (dispose on archive)",
-  "session.worktree.disposableDescription": "Create a temp worktree for this chat. It is removed when the session is archived.",
+  "session.worktree.disposableDescription":
+    "Create a temp worktree for this chat. When the session is archived or deleted, the worktree is removed only if it has no uncommitted work or unmerged commits.",
   "session.worktree.retainedCount": "{{count}} worktrees (keeps {{keep}})",
   "session.worktree.worktreeCount": "{{count}} worktrees",
   "session.worktree.remove": "Remove worktree",
