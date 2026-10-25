@@ -14,12 +14,19 @@ import { JanitorJunk } from "./junk"
 export const IDLE_MS = 3 * 24 * 60 * 60 * 1000
 const HISTORY_MS = 7 * 24 * 60 * 60 * 1000
 const ROOTS = [".worktrees", path.join(".opencode", "worktrees")]
+const LONG_LIVED = new Set(["dev", "main", "master"])
 
+// Reasons: `dirty` (changed or ignored local files), `unpushed`, `scratch` (no
+// .git), `error`, and `recent` for anything kept without risk — in active use, or
+// clean and safe but never auto-removed (outside the cleanup folders, or on the
+// default/long-lived branch), which `detail` then explains. `repo`, `branch` and
+// `dirty` record the scanned state so a manual remove can refuse a changed item.
 export type ReviewItem = {
   path: string
   project: string
   repo?: string
   branch?: string
+  dirty?: number
   bytes: number
   capped: boolean
   lastActivity: number
@@ -27,7 +34,7 @@ export type ReviewItem = {
   detail?: string
 }
 
-export type CleanedItem = { path: string; bytes: number; time: number; kind: "worktree" | "junk" }
+export type CleanedItem = { path: string; bytes: number; time: number; kind: "worktree" | "junk" | "scratch" }
 
 export type Report = { items: ReviewItem[]; cleaned: CleanedItem[]; scanning: boolean; lastScan?: number }
 
@@ -45,7 +52,11 @@ export class Service extends Context.Service<Service, Interface>()("@flynncode/W
 // linked worktree git lists for the project (`listed`). Paths are realpath-resolved.
 type Target = { path: string; project: string; rooted: boolean; listed: boolean }
 
-type Found = { path: string; lastActivity: number; repo?: string; branch?: string }
+type Found = { path: string; lastActivity: number; repo?: string; branch?: string; dirty?: number }
+
+type Checked = Exclude<JanitorInspect.Inspection, { kind: "main" }>
+
+type Worktree = Extract<JanitorInspect.Inspection, { kind: "worktree" }>
 
 // Worktrees are auto-removed only when idle, clean and merged/pushed, and never
 // with --force. Anything uncertain (inspection errors, dirty or unpushed work,
@@ -56,7 +67,11 @@ const layer = Layer.effect(
     const project = yield* Project.Service
     const database = yield* Database.Service
     const proc = yield* AppProcess.Service
+    // `lock` guards discovery and every delete (shared with remove); `single` keeps
+    // one scan at a time, including its size walks, which run outside `lock` so a
+    // slow first scan does not hold up a manual remove.
     const lock = yield* Semaphore.make(1)
+    const single = yield* Semaphore.make(1)
     const sizes = new Map<string, { lastActivity: number; bytes: number; capped: boolean }>()
     const state: Report = { items: [], cleaned: [], scanning: false }
 
@@ -81,14 +96,21 @@ const layer = Layer.effect(
       state.items = items
       state.cleaned = [...state.cleaned, ...cleaned].filter((entry) => entry.time >= now - HISTORY_MS)
       state.lastScan = now
-      state.scanning = false
       yield* Effect.logInfo("worktree janitor scan", {
         candidates: targets.length,
         removed: cleaned.filter((entry) => entry.kind === "worktree").length,
         junkBytes: cleaned.filter((entry) => entry.kind === "junk").reduce((sum, entry) => sum + entry.bytes, 0),
         review: items.length,
       })
-      return snapshot()
+    })
+
+    const measureItems = Effect.fnUntraced(function* () {
+      yield* Effect.forEach([...state.items], (item) => measure(item.path, item.lastActivity), { discard: true })
+      // A remove may have dropped items while sizes were measured; only update what is left.
+      state.items = state.items.map((item) => {
+        const cached = fresh(item.path, item.lastActivity)
+        return cached ? { ...item, bytes: cached.bytes, capped: cached.capped } : item
+      })
     })
 
     const visit = Effect.fnUntraced(function* (
@@ -101,18 +123,16 @@ const layer = Layer.effect(
         // Only folders in a cleanup root count as scratch; a git-listed worktree
         // without a .git file is broken, not disposable.
         if (!target.rooted) return yield* Effect.fail(new Error("git lists this worktree but it has no .git file"))
-        return yield* review(target, first, "scratch")
+        return review(target, first, "scratch")
       }
-      if (input.busy(first.path) || input.now - first.lastActivity < IDLE_MS)
-        return yield* review(target, first, "recent")
+      if (input.busy(first.path) || input.now - first.lastActivity < IDLE_MS) return review(target, first, "recent")
+      // Worktrees git lists elsewhere on disk (a parked dev checkout, Flynncode
+      // sandboxes) are only ever reported, never cleaned automatically.
+      if (!target.rooted) return held(target, first, "outside cleanup folders — remove manually")
 
       const tracked = yield* trackedFiles(first.path)
-      // A junk-named directory that git tracks (or that holds tracked files) is
-      // project content, not junk.
       const junk = yield* Effect.promise(() =>
-        JanitorJunk.removeJunk(first.path, {
-          skip: (dir) => tracked.some((file) => file === dir || file.startsWith(dir + path.sep)),
-        }),
+        JanitorJunk.removeJunk(first.path, { skip: (dir) => keepJunk(first.path, dir, tracked) }),
       )
       input.cleaned.push(
         ...junk.items.map((entry) => ({
@@ -125,37 +145,66 @@ const layer = Layer.effect(
 
       const second = yield* JanitorInspect.inspect(first.path)
       if (second.kind !== "worktree") return yield* Effect.fail(new Error("changed during the scan"))
-      if (!second.safe) {
-        if (second.dirty > 0) return yield* review(target, second, "dirty", `${second.dirty} changed files`)
-        return yield* review(target, second, "unpushed", `${second.unpushed} unpushed commits`)
+      const base = (yield* JanitorInspect.defaultBranch(second.repo))?.replace(/^origin\//, "")
+      const branch = second.branch
+      if (branch && (branch === base || LONG_LIVED.has(branch)))
+        return held(target, second, `checks out ${branch} — remove manually`)
+      if (!second.safe) return held(target, second)
+      // git status hides ignored files and `git worktree remove` deletes them, so
+      // anything ignored that tooling cannot rebuild (.env, local config) keeps it.
+      const ignored = yield* ignoredLocalFiles(second.path)
+      if (ignored.length > 0)
+        return review(target, second, "dirty", `${ignored.length} ignored local files, e.g. ${ignored[0]}`)
+
+      const bytes = (yield* measure(second.path, second.lastActivity)).bytes
+      const failure = yield* gitChecked(second.repo, ["worktree", "remove", second.path]).pipe(
+        Effect.as(undefined),
+        Effect.catch((error) => Effect.succeed(error.message)),
+      )
+      if (failure) {
+        yield* Effect.logWarning("worktree janitor could not remove", { path: second.path, error: failure })
+        return review(target, second, "error", failure)
       }
-      const bytes = (yield* Effect.promise(() => JanitorJunk.size(second.path))).bytes
-      yield* gitChecked(second.repo, ["worktree", "remove", second.path])
       yield* JanitorInspect.git(second.repo, ["worktree", "prune"])
       sizes.delete(second.path)
       input.cleaned.push({ path: second.path, bytes, time: Date.now(), kind: "worktree" })
       return undefined
     })
 
-    const review = Effect.fnUntraced(function* (
-      target: Target,
-      found: Found,
-      reason: ReviewItem["reason"],
-      detail?: string,
-    ) {
-      const measured = yield* measure(found.path, found.lastActivity)
+    // A worktree that is not auto-removed: report what is at risk, else why it was kept.
+    const held = (target: Target, found: Worktree, why?: string) => {
+      if (found.dirty > 0) return review(target, found, "dirty", `${found.dirty} changed files`)
+      if (!found.safe) return review(target, found, "unpushed", `${found.unpushed} unpushed commits`)
+      return review(target, found, "recent", why)
+    }
+
+    // A junk-named directory that git tracks (or that holds tracked files) is
+    // project content. `coverage` is also a common source folder name, so it only
+    // counts as junk when git ignores it.
+    const keepJunk = async (worktree: string, dir: string, tracked: string[]) => {
+      if (tracked.some((file) => file === dir || file.startsWith(dir + path.sep))) return true
+      if (path.basename(dir) !== "coverage") return false
+      const result = await Effect.runPromise(
+        JanitorInspect.git(worktree, ["check-ignore", "-q", dir]).pipe(Effect.provideService(AppProcess.Service, proc)),
+      )
+      return result.code !== 0
+    }
+
+    const review = (target: Target, found: Found, reason: ReviewItem["reason"], detail?: string) => {
+      const cached = fresh(found.path, found.lastActivity)
       return {
         path: found.path,
         project: target.project,
         repo: found.repo,
         branch: found.branch,
-        bytes: measured.bytes,
-        capped: measured.capped,
+        dirty: found.dirty,
+        bytes: cached?.bytes ?? 0,
+        capped: cached?.capped ?? false,
         lastActivity: found.lastActivity,
         reason,
         detail,
       } satisfies ReviewItem
-    })
+    }
 
     const failed = Effect.fnUntraced(function* (target: Target, cause: Cause.Cause<unknown>) {
       const lastActivity = yield* Effect.promise(() =>
@@ -164,25 +213,17 @@ const layer = Layer.effect(
           () => 0,
         ),
       )
-      const error = Cause.squash(cause)
-      return yield* review(target, { path: target.path, lastActivity }, "error", errorMessage(error)).pipe(
-        Effect.catchCause(() =>
-          Effect.succeed({
-            path: target.path,
-            project: target.project,
-            bytes: 0,
-            capped: false,
-            lastActivity,
-            reason: "error" as const,
-            detail: errorMessage(error),
-          }),
-        ),
-      )
+      return review(target, { path: target.path, lastActivity }, "error", errorMessage(Cause.squash(cause)))
     })
 
-    const measure = Effect.fnUntraced(function* (dir: string, lastActivity: number) {
+    const fresh = (dir: string, lastActivity: number) => {
       const cached = sizes.get(dir)
-      if (cached && cached.lastActivity === lastActivity) return cached
+      return cached?.lastActivity === lastActivity ? cached : undefined
+    }
+
+    const measure = Effect.fnUntraced(function* (dir: string, lastActivity: number) {
+      const cached = fresh(dir, lastActivity)
+      if (cached) return cached
       const measured = yield* Effect.promise(() => JanitorJunk.size(dir))
       sizes.set(dir, { lastActivity, ...measured })
       return measured
@@ -242,6 +283,22 @@ const layer = Layer.effect(
         .map((file) => path.join(dir, file))
     })
 
+    const ignoredLocalFiles = Effect.fnUntraced(function* (dir: string) {
+      const result = yield* JanitorInspect.git(dir, [
+        "ls-files",
+        "--others",
+        "--ignored",
+        "--exclude-standard",
+        "--directory",
+        "-z",
+      ])
+      if (result.code !== 0) return yield* Effect.fail(new Error(`git ls-files --ignored in ${dir} failed`))
+      return result.text
+        .split("\0")
+        .filter(Boolean)
+        .filter((file) => !JanitorJunk.isRegenerable(file))
+    })
+
     const activeDirectories = Effect.fnUntraced(function* (now: number) {
       const since = now - IDLE_MS
       const rows = yield* database.db
@@ -275,6 +332,7 @@ const layer = Layer.effect(
       if (!target) return yield* Effect.fail(new Error("no longer inside a cleanup root of its project"))
       const found = yield* JanitorInspect.inspect(resolved)
       if (found.kind === "main") return yield* Effect.fail(new Error("is a main checkout"))
+      if (changed(listed, found)) return yield* Effect.fail(new Error("changed since the last scan; rescan first"))
       if (found.kind === "scratch" && !target.rooted)
         return yield* Effect.fail(new Error("git lists this worktree but it has no .git file"))
       if (found.kind === "scratch") yield* Effect.promise(() => rm(resolved, { recursive: true, force: true }))
@@ -285,14 +343,21 @@ const layer = Layer.effect(
         yield* JanitorInspect.git(found.repo, ["worktree", "prune"])
       }
       state.items = state.items.filter((item) => item.path !== resolved)
-      state.cleaned.push({ path: resolved, bytes: listed.bytes, time: Date.now(), kind: "worktree" })
+      state.cleaned.push({ path: resolved, bytes: listed.bytes, time: Date.now(), kind: found.kind })
       sizes.delete(resolved)
       return { path: input, ok: true }
     })
 
     const scan = () =>
-      lock.withPermit(
-        runScan().pipe(
+      single.withPermit(
+        lock.withPermit(runScan()).pipe(
+          Effect.andThen(measureItems()),
+          Effect.andThen(
+            Effect.sync(() => {
+              state.scanning = false
+              return snapshot()
+            }),
+          ),
           Effect.ensuring(
             Effect.sync(() => {
               state.scanning = false
@@ -326,11 +391,23 @@ const layer = Layer.effect(
   }),
 )
 
+// The owner reviewed the item in its scanned state; a remove must not act on
+// anything new (another branch or repo, more local changes, a different kind).
+// Items whose inspection failed carry no scanned kind, so they need a rescan first.
+function changed(listed: ReviewItem, found: Checked) {
+  const scanned = listed.reason === "scratch" ? "scratch" : listed.repo ? "worktree" : undefined
+  if (found.kind !== scanned) return true
+  if (found.kind === "scratch") return false
+  return found.repo !== listed.repo || found.branch !== listed.branch || found.dirty > (listed.dirty ?? 0)
+}
+
 async function rootChildren(root: string) {
   const found = await Promise.all(
     ROOTS.map(async (name) => {
-      const dir = await realpath(path.join(root, name)).catch(() => undefined)
-      if (!dir) return []
+      const dir = path.join(root, name)
+      // root is already realpath-resolved, so a mismatch means the cleanup folder
+      // (or .opencode) is a symlink to somewhere else; never follow it.
+      if ((await realpath(dir).catch(() => undefined)) !== dir) return []
       // Dirent never follows symlinks, so linked children are skipped.
       const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
       return entries.filter((entry) => entry.isDirectory()).map((entry) => path.join(dir, entry.name))

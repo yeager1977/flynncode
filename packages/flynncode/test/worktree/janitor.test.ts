@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect } from "bun:test"
-import { existsSync, mkdirSync, utimesSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, symlinkSync, utimesSync, writeFileSync } from "node:fs"
 import path from "path"
 import { sql } from "drizzle-orm"
 import { Duration, Effect } from "effect"
@@ -73,6 +73,12 @@ const scan = Effect.gen(function* () {
 })
 
 const item = (report: WorktreeJanitor.Report, dir: string) => report.items.find((entry) => entry.path === dir)
+
+const ignore = (repo: string, patterns: string) => {
+  put(repo, ".gitignore", patterns)
+  run(repo, "add", ".gitignore")
+  run(repo, "commit", "-m", "ignore")
+}
 
 describe("WorktreeJanitor.scan", () => {
   it.effect("auto-removes a clean merged idle worktree and keeps its branch", () =>
@@ -210,6 +216,101 @@ describe("WorktreeJanitor.scan", () => {
     }),
   )
 
+  it.effect("keeps an idle clean merged worktree that holds ignored local files", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      ignore(repo, ".env\ndist/\n")
+      const dir = addWorktree(repo, "secrets", "secrets-branch")
+      put(dir, ".env", "TOKEN=local")
+      put(dir, "dist/bundle.js")
+      settle(dir)
+      const report = yield* scan
+      expect(existsSync(path.join(dir, ".env"))).toBe(true)
+      expect(item(report, dir)).toMatchObject({ reason: "dirty" })
+      expect(item(report, dir)?.detail).toContain("1 ignored local files, e.g. .env")
+    }),
+  )
+
+  it.effect("auto-removes an idle clean merged worktree whose ignored files are all regenerable", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      ignore(repo, ".env\ndist/\ncoverage/\n")
+      const dir = addWorktree(repo, "built", "built-branch")
+      put(dir, "dist/bundle.js")
+      put(dir, "coverage/lcov.info")
+      settle(dir)
+      const report = yield* scan
+      expect(existsSync(dir)).toBe(false)
+      expect(report.cleaned).toContainEqual(expect.objectContaining({ path: path.join(dir, "coverage"), kind: "junk" }))
+      expect(report.cleaned).toContainEqual(expect.objectContaining({ path: dir, kind: "worktree" }))
+    }),
+  )
+
+  it.effect("keeps an untracked coverage folder that git does not ignore", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      const dir = addWorktree(repo, "cov", "cov-branch")
+      put(dir, "coverage/index.ts")
+      age(dir)
+      const report = yield* scan
+      expect(existsSync(path.join(dir, "coverage/index.ts"))).toBe(true)
+      expect(item(report, dir)).toMatchObject({ reason: "dirty" })
+    }),
+  )
+
+  it.effect("never auto-removes an idle clean worktree git lists outside the cleanup folders", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      const outside = yield* tmpdirScoped()
+      const dir = path.join(outside, "parked")
+      run(repo, "worktree", "add", "-b", "parked-branch", dir)
+      age(dir)
+      const report = yield* scan
+      expect(existsSync(dir)).toBe(true)
+      expect(item(report, dir)).toMatchObject({ reason: "recent", branch: "parked-branch" })
+      expect(item(report, dir)?.detail).toContain("remove manually")
+      expect(report.cleaned).toEqual([])
+    }),
+  )
+
+  it.effect("never auto-removes a worktree on the default branch or on dev/main/master", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      const dev = addWorktree(repo, "dev", "dev")
+      run(repo, "branch", "trunk")
+      run(repo, "update-ref", "refs/remotes/origin/trunk", "HEAD")
+      run(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk")
+      const trunk = path.join(repo, ".worktrees", "trunk")
+      run(repo, "worktree", "add", trunk, "trunk")
+      age(dev)
+      age(trunk)
+      const report = yield* scan
+      expect(existsSync(dev)).toBe(true)
+      expect(existsSync(trunk)).toBe(true)
+      expect(item(report, dev)).toMatchObject({ reason: "recent", branch: "dev" })
+      expect(item(report, trunk)).toMatchObject({ reason: "recent", branch: "trunk" })
+      expect(item(report, trunk)?.detail).toContain("remove manually")
+      expect(report.cleaned).toEqual([])
+    }),
+  )
+
+  it.effect("never follows a symlinked cleanup folder", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      const elsewhere = yield* tmpdirScoped()
+      const linked = path.join(elsewhere, "linked")
+      run(repo, "worktree", "add", "-b", "linked-branch", linked)
+      age(linked)
+      put(elsewhere, "notes/todo.md")
+      symlinkSync(elsewhere, path.join(repo, ".worktrees"))
+      const report = yield* scan
+      expect(existsSync(linked)).toBe(true)
+      expect(item(report, linked)?.detail).toContain("remove manually")
+      expect(item(report, path.join(elsewhere, "notes"))).toBeUndefined()
+      expect(report.cleaned).toEqual([])
+    }),
+  )
+
   it.effect("lists a worktree it cannot inspect as an error and keeps it", () =>
     Effect.gen(function* () {
       const { repo } = yield* setupRepo
@@ -247,6 +348,22 @@ describe("WorktreeJanitor.remove", () => {
     }),
   )
 
+  it.effect("refuses a listed worktree that changed since the scan", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      const dir = addWorktree(repo, "ahead", "ahead-branch")
+      run(dir, "commit", "--allow-empty", "-m", "extra")
+      age(dir)
+      expect(item(yield* scan, dir)).toMatchObject({ reason: "unpushed" })
+      put(dir, "new-work.txt")
+      const janitor = yield* WorktreeJanitor.Service
+      const results = yield* janitor.remove([dir])
+      expect(results[0]).toMatchObject({ path: dir, ok: false })
+      expect(results[0].error).toContain("changed since the last scan; rescan first")
+      expect(existsSync(path.join(dir, "new-work.txt"))).toBe(true)
+    }),
+  )
+
   it.effect("deletes a listed scratch folder", () =>
     Effect.gen(function* () {
       const { repo } = yield* setupRepo
@@ -257,33 +374,32 @@ describe("WorktreeJanitor.remove", () => {
       expect(yield* janitor.remove([scratch])).toEqual([{ path: scratch, ok: true }])
       expect(existsSync(scratch)).toBe(false)
       expect(existsSync(repo)).toBe(true)
+      expect((yield* janitor.report()).cleaned).toContainEqual(
+        expect.objectContaining({ path: scratch, kind: "scratch" }),
+      )
     }),
   )
 })
 
 describe("WorktreeJanitor hourly loop", () => {
-  // Runs the loop's first scan (2 minutes after start) on the test clock, then
-  // waits in real time for the git work to finish.
+  // Moves the test clock past the loop's 2 minute start delay. remove() shares the
+  // scan's cleanup lock, so it returns once any scan the clock started has cleaned up.
   const firstScheduledScan = Effect.gen(function* () {
     const { repo } = yield* setupRepo
     const dir = addWorktree(repo, "scheduled", "scheduled-branch")
     age(dir)
     yield* TestClock.adjust(Duration.minutes(3))
     const janitor = yield* WorktreeJanitor.Service
-    for (let attempt = 0; attempt < 100; attempt++) {
-      if ((yield* janitor.report()).lastScan !== undefined) break
-      yield* Effect.promise(() => Bun.sleep(50))
-    }
-    return existsSync(dir)
+    yield* janitor.remove([])
+    return { exists: existsSync(dir), lastScan: (yield* janitor.report()).lastScan }
   })
 
-  it.effect(
-    "scans on its hourly schedule",
-    () =>
-      Effect.gen(function* () {
-        expect(yield* firstScheduledScan).toBe(false)
-      }),
-    15_000,
+  it.effect("scans on its hourly schedule", () =>
+    Effect.gen(function* () {
+      const result = yield* firstScheduledScan
+      expect(result.exists).toBe(false)
+      expect(result.lastScan).toBeNumber()
+    }),
   )
 
   describe("with OPENCODE_DISABLE_WORKTREE_CLEANUP", () => {
@@ -296,13 +412,12 @@ describe("WorktreeJanitor hourly loop", () => {
       Flag.OPENCODE_DISABLE_WORKTREE_CLEANUP = original
     })
 
-    it.effect(
-      "does not schedule the scan",
-      () =>
-        Effect.gen(function* () {
-          expect(yield* firstScheduledScan).toBe(true)
-        }),
-      15_000,
+    it.effect("does not schedule the scan", () =>
+      Effect.gen(function* () {
+        const result = yield* firstScheduledScan
+        expect(result.exists).toBe(true)
+        expect(result.lastScan).toBeUndefined()
+      }),
     )
   })
 })

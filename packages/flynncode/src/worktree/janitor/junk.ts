@@ -16,11 +16,46 @@ export const JUNK: ReadonlySet<string> = new Set([
 const JUNK_PREFIX = "pytest-of-"
 const SKIPPED = new Set([".git", "node_modules"])
 
+// Ignored files under these names are rebuilt by tooling, so they never hold a
+// worktree back from auto-removal; any other ignored file (.env, local config) does.
+const REGENERABLE = new Set([
+  "node_modules",
+  "dist",
+  "build",
+  "out",
+  ".venv",
+  "venv",
+  "target",
+  ".next",
+  ".nuxt",
+  ".svelte-kit",
+  ".turbo",
+  ".cache",
+  ".parcel-cache",
+  "coverage",
+  "__pycache__",
+  ".pytest_cache",
+  ".mypy_cache",
+  ".ruff_cache",
+])
+
 export function isJunk(name: string) {
   return JUNK.has(name) || name.startsWith(JUNK_PREFIX)
 }
 
-export async function removeJunk(root: string, options?: { skip?: (target: string) => boolean }) {
+// `file` is a path relative to the worktree as git prints it ("/"-separated).
+export function isRegenerable(file: string) {
+  const parts = file.split("/").filter(Boolean)
+  const name = parts.at(-1) ?? ""
+  return (
+    parts.some((part) => REGENERABLE.has(part) || part.startsWith(JUNK_PREFIX)) ||
+    name.endsWith(".pyc") ||
+    name.endsWith(".tsbuildinfo") ||
+    name === ".DS_Store"
+  )
+}
+
+export async function removeJunk(root: string, options?: { skip?: (target: string) => boolean | Promise<boolean> }) {
   const items: { path: string; bytes: number }[] = []
   // lstat the root first: walking a symlink root would delete junk in its target.
   if (!(await lstat(root).catch(() => undefined))?.isDirectory()) return { removed: [], bytes: 0, items }
@@ -34,7 +69,7 @@ export async function removeJunk(root: string, options?: { skip?: (target: strin
       const target = path.join(dir, entry.name)
       // Dirent never follows symlinks, so a junk-named link is removed as a link only.
       if ((entry.isDirectory() || entry.isSymbolicLink()) && isJunk(entry.name)) {
-        if (options?.skip?.(target)) continue
+        if (await options?.skip?.(target)) continue
         const bytes = (await size(target, { budgetMs: Infinity })).bytes
         // A target that cannot be deleted (permissions, busy) is skipped so the
         // rest of the pass still runs; force already ignores ENOENT.

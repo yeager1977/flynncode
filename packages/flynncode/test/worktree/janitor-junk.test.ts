@@ -128,3 +128,29 @@ test("removeJunk skips a target it cannot delete and keeps going", async () => {
     await chmod(locked, 0o755)
   }
 })
+
+test("isRegenerable accepts rebuildable output and rejects local files", () => {
+  const regenerable = [
+    "dist/",
+    "web/node_modules/",
+    "pkg/__pycache__/",
+    "pytest-of-me/",
+    "a/b.pyc",
+    "tsconfig.tsbuildinfo",
+    ".DS_Store",
+  ]
+  const local = [".env", "config/local.json", "notes/distribution.txt", ".env.local"]
+  expect(regenerable.filter((file) => !JanitorJunk.isRegenerable(file))).toEqual([])
+  expect(local.filter((file) => JanitorJunk.isRegenerable(file))).toEqual([])
+})
+
+test("removeJunk awaits an async skip", async () => {
+  await using tmp = await tmpdir()
+  await put(tmp.path, "coverage/index.ts")
+  await put(tmp.path, "pkg/__pycache__/a.pyc")
+  const result = await JanitorJunk.removeJunk(tmp.path, {
+    skip: async (target) => path.basename(target) === "coverage",
+  })
+  expect(result.removed).toEqual([path.join(tmp.path, "pkg/__pycache__")])
+  expect(await exists(path.join(tmp.path, "coverage/index.ts"))).toBe(true)
+})
