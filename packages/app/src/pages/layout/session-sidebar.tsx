@@ -46,6 +46,7 @@ export function SessionSidebar(props: {
   showAll: (worktree: string, value: boolean) => void
   showingAll: (worktree: string) => boolean
   onOpenUsage: () => void
+  onOpenCleanup: () => void
 }) {
   const command = useCommand()
   const language = useLanguage()
@@ -188,6 +189,12 @@ export function SessionSidebar(props: {
           onClick={() => props.onOpenUsage()}
         />
         <SidebarRow
+          icon="folder"
+          label={language.t("cleanup.page.title")}
+          action="sidebar-cleanup"
+          onClick={() => props.onOpenCleanup()}
+        />
+        <SidebarRow
           icon="folder-add-left"
           label={language.t("command.project.open")}
           action="sidebar-open-project"
@@ -205,7 +212,7 @@ export function SessionSidebar(props: {
 }
 
 function SidebarRow(props: {
-  icon: "plus" | "folder-add-left" | "settings-gear" | "status"
+  icon: "plus" | "folder-add-left" | "settings-gear" | "status" | "folder"
   label: string
   action: string
   disabled?: boolean

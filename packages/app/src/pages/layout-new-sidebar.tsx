@@ -322,6 +322,7 @@ export function ProjectSidebar() {
       onArchive={(session) => void archive(session)}
       onDelete={(session) => void remove(session)}
       onOpenUsage={() => navigate("/usage")}
+      onOpenCleanup={() => navigate("/cleanup")}
       onEditProject={showEditProjectDialog}
       onHideProject={hideProject}
       onUnhideProject={unhideProject}
