@@ -3,12 +3,9 @@ import * as tls from "node:tls"
 import { hostname } from "node:os"
 import { createSyncWorker, initialStatus, type SyncStatus, type SyncWorker } from "@flynncode/mobile-gateway/sync"
 import { createSyncGate, type SyncGate } from "@flynncode/mobile-gateway/sync-gate"
-import {
-  mobileGatewayUpstream,
-  startMobileGateway,
-  type MobileGatewayHandle,
-} from "./mobile-gateway-launch"
+import { mobileGatewayUpstream, startMobileGateway, type MobileGatewayHandle } from "./mobile-gateway-launch"
 import { startRelayPublisher, relayPublisherConfig } from "./relay-publisher"
+import type { MaintenanceMessage, MaintenanceProgress } from "./sidecar-maintenance"
 import {
   createReconciler,
   gatewayWanted,
@@ -54,7 +51,7 @@ type SidecarMessage =
   | { type: "ready" }
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
-  | { type: "maintenance"; phase: "compact"; state: "started" | "finished" }
+  | MaintenanceMessage
   | SidecarSyncMessage
 
 type ParentPort = {
@@ -119,7 +116,7 @@ async function start(command: StartCommand) {
       username: "opencode",
       password: command.password,
       cors: ["oc://renderer"],
-      onMaintenance: (progress: { phase: "compact"; state: "started" | "finished" }) => parentPort.postMessage({ type: "maintenance", ...progress }),
+      onMaintenance: (progress: MaintenanceProgress) => parentPort.postMessage({ ...progress, type: "maintenance" }),
     })
     const upstream = mobileGatewayUpstream(command.hostname, command.port)
     const gate = createSyncGate({
@@ -146,7 +143,10 @@ async function start(command: StartCommand) {
     gatewayConfig = { command, upstream }
     await reconcileGateway()
     syncWorker = createSyncWorker({
-      local: { url: upstream, authorization: `Basic ${Buffer.from(`opencode:${command.password}`).toString("base64")}` },
+      local: {
+        url: upstream,
+        authorization: `Basic ${Buffer.from(`opencode:${command.password}`).toString("base64")}`,
+      },
       peer: () => gate.peer(),
       paused: () => gate.paused(),
       prefs: {
@@ -191,7 +191,9 @@ async function stop() {
         { name: "listener", run: () => listener?.stop() },
       ],
       (name, error) =>
-        console.warn(`[sidecar] stopping the ${name} failed: ${error instanceof Error ? error.message : String(error)}`),
+        console.warn(
+          `[sidecar] stopping the ${name} failed: ${error instanceof Error ? error.message : String(error)}`,
+        ),
     )
   } finally {
     listener = undefined
@@ -294,7 +296,11 @@ async function applyGatewayState() {
   const gate = syncGate
   const config = gatewayConfig
   if (!gate || !config) return
-  const wanted = gatewayWanted({ phoneAccess: gate.phoneAccess(), peer: gate.peer(), pairingActive: gate.pairingActive() })
+  const wanted = gatewayWanted({
+    phoneAccess: gate.phoneAccess(),
+    peer: gate.peer(),
+    pairingActive: gate.pairingActive(),
+  })
   const failure = { message: undefined as string | undefined }
   if (wanted && !mobileGateway) {
     mobileGateway = await startMobileGateway({

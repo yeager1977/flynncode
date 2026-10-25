@@ -1,5 +1,6 @@
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { Database } from "@flynncode/core/database/database"
+import { Flag } from "@flynncode/core/flag/flag"
 import { sql } from "drizzle-orm"
 import { Cause, Context, Duration, Effect, Layer, Schedule } from "effect"
 import { Storage } from "./storage"
@@ -44,6 +45,7 @@ const layer = Layer.effect(
       if (removed > 0) yield* Effect.logInfo("session diff sweep", { removed })
       return removed
     })
+    if (Flag.OPENCODE_DISABLE_DB_MAINTENANCE) return Service.of({ sweep })
     yield* sweep().pipe(
       Effect.catchCause((cause) => Effect.logError("session diff sweep failed", { cause: Cause.pretty(cause) })),
       Effect.repeat(Schedule.spaced(Duration.hours(1))),

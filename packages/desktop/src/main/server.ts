@@ -8,7 +8,7 @@ import { getStore } from "./store"
 import { DEFAULT_SERVER_URL_KEY } from "./store-keys"
 import { MOBILE_GATEWAY_PORT } from "./mobile-gateway-launch"
 import { sidecarExecArgv } from "./sidecar-exec-args"
-import { SIDECAR_START_STALL_TIMEOUT, stallTimeoutFor } from "./sidecar-maintenance"
+import { SIDECAR_START_STALL_TIMEOUT, stallTimeoutFor, type MaintenanceMessage } from "./sidecar-maintenance"
 import { sidecarArguments, sidecarNodeFlags } from "./sidecar-args"
 import { isSyncMessage, type SidecarSyncCommand, type SidecarSyncMessage, type SidecarSyncStart } from "./sidecar-sync"
 
@@ -18,7 +18,7 @@ type SidecarMessage =
   | { type: "ready" }
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
-  | { type: "maintenance"; phase: "compact"; state: "started" | "finished" }
+  | MaintenanceMessage
 
 export type SidecarListener = { stop: () => Promise<void> }
 
@@ -70,26 +70,22 @@ export async function spawnLocalServer(
   options: SpawnLocalServerOptions,
 ) {
   const sidecar = join(dirname(fileURLToPath(import.meta.url)), "sidecar.js")
-  const child = utilityProcess.fork(
-    sidecar,
-    sidecarArguments(),
-    {
-      cwd: process.cwd(),
-      env: createSidecarEnv(),
-      // Dev builds get the near-heap-limit snapshot flag ahead of anything set
-      // for debugging via FLYNN_SIDECAR_EXEC_ARGS.
-      ...sidecarExecArgv(
-        [
-          ...sidecarNodeFlags(app.getVersion().includes("-dev-") ? "dev" : "other"),
-          process.env.FLYNN_SIDECAR_EXEC_ARGS ?? "",
-        ]
-          .filter(Boolean)
-          .join(","),
-      ),
-      serviceName: SIDECAR_SERVICE_NAME,
-      stdio: "pipe",
-    },
-  )
+  const child = utilityProcess.fork(sidecar, sidecarArguments(), {
+    cwd: process.cwd(),
+    env: createSidecarEnv(),
+    // Dev builds get the near-heap-limit snapshot flag ahead of anything set
+    // for debugging via FLYNN_SIDECAR_EXEC_ARGS.
+    ...sidecarExecArgv(
+      [
+        ...sidecarNodeFlags(app.getVersion().includes("-dev-") ? "dev" : "other"),
+        process.env.FLYNN_SIDECAR_EXEC_ARGS ?? "",
+      ]
+        .filter(Boolean)
+        .join(","),
+    ),
+    serviceName: SIDECAR_SERVICE_NAME,
+    stdio: "pipe",
+  })
   let exited = false
   const exit = defer<number>()
 

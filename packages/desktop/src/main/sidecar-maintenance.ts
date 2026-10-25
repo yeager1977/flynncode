@@ -1,4 +1,7 @@
 export const SIDECAR_START_STALL_TIMEOUT = 60_000
+// DatabaseMaintenance.Progress from @flynncode/core, which desktop cannot import.
+export type MaintenanceProgress = { phase: "compact"; state: "started" | "finished" }
+export type MaintenanceMessage = { type: "maintenance" } & MaintenanceProgress
 // The server converts a large history database once (a full VACUUM, minutes
 // on a 13GB file). It blocks the sidecar thread, so no heartbeat can arrive
 // until it finishes; allow it this long before treating startup as stalled.
