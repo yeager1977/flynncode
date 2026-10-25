@@ -53,6 +53,31 @@ export const pruneIdleSessions = Effect.fn("DatabaseMaintenance.pruneIdleSession
   return { sessions: deleted.filter((count) => count > 0).length, events: deleted.reduce((sum, n) => sum + n, 0) }
 })
 
+// Session.remove deletes the session row, then its events; if it dies in
+// between, the events stay forever. Session creation commits the event and
+// the session row in one transaction, so an aggregate without a session row
+// is never a session that is still being created.
+export const sweepOrphans = Effect.fn("DatabaseMaintenance.sweepOrphans")(function* (
+  db: Db,
+  input?: { chunk?: number },
+) {
+  const orphans = yield* db.all<{ id: string }>(sql`
+    SELECT q.aggregate_id AS id FROM event_sequence q
+    WHERE q.aggregate_id LIKE 'ses\\_%' ESCAPE '\\'
+      AND NOT EXISTS (SELECT 1 FROM session s WHERE s.id = q.aggregate_id)
+  `)
+  const chunk = input?.chunk ?? CHUNK
+  const events = yield* Effect.forEach(orphans, (orphan) =>
+    deleteChunked(
+      db,
+      (limit) => sql`DELETE FROM event WHERE rowid IN (
+        SELECT rowid FROM event WHERE aggregate_id = ${orphan.id} LIMIT ${limit})`,
+      chunk,
+    ).pipe(Effect.tap(() => db.run(sql`DELETE FROM event_sequence WHERE aggregate_id = ${orphan.id}`))),
+  )
+  return { aggregates: orphans.length, events: events.reduce((sum, n) => sum + n, 0) }
+})
+
 // One short transaction per chunk so the write lock is never held for long;
 // the app already sees "database is locked" under concurrent startup writes.
 export const deleteChunked = Effect.fnUntraced(function* (db: Db, statement: (limit: number) => SQL, chunk: number) {

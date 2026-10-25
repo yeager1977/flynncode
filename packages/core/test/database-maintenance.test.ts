@@ -116,3 +116,41 @@ describe("DatabaseMaintenance.pruneIdleSessions", () => {
     expect(result.types).toHaveLength(5)
   })
 })
+
+describe("DatabaseMaintenance.sweepOrphans", () => {
+  test("removes events of a session row that no longer exists and keeps live ones", async () => {
+    const result = await withDb((db) =>
+      Effect.gen(function* () {
+        yield* seedSession(db, { id: "ses_live", updated: NOW, messages: 3 })
+        yield* seedSession(db, { id: "ses_gone", updated: NOW, messages: 3 })
+        // A delete that died between the session row and its events.
+        yield* db.run(sql`DELETE FROM session WHERE id = 'ses_gone'`)
+        const swept = yield* DatabaseMaintenance.sweepOrphans(db, { chunk: 2 })
+        return {
+          swept,
+          live: yield* eventTypes(db, "ses_live"),
+          gone: yield* eventTypes(db, "ses_gone"),
+          sequences: yield* db.all<{ aggregate_id: string }>(sql`SELECT aggregate_id FROM event_sequence`),
+        }
+      }),
+    )
+    expect(result.swept).toEqual({ aggregates: 1, events: 4 })
+    expect(result.live).toHaveLength(4)
+    expect(result.gone).toEqual([])
+    expect(result.sequences).toEqual([{ aggregate_id: "ses_live" }])
+  })
+
+  test("only sweeps ses_ aggregates, so other aggregate kinds without a session row survive", async () => {
+    const result = await withDb((db) =>
+      Effect.gen(function* () {
+        yield* db.run(sql`INSERT INTO event_sequence (aggregate_id, seq) VALUES ('sesXfoo', 0)`)
+        yield* db.run(sql`INSERT INTO event (id, aggregate_id, seq, type, data)
+                          VALUES ('evt_sesXfoo_0', 'sesXfoo', 0, 'other.created.1', '{}')`)
+        const swept = yield* DatabaseMaintenance.sweepOrphans(db)
+        return { swept, events: yield* eventTypes(db, "sesXfoo") }
+      }),
+    )
+    expect(result.swept).toEqual({ aggregates: 0, events: 0 })
+    expect(result.events).toEqual(["other.created.1"])
+  })
+})
