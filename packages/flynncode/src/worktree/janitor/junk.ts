@@ -2,8 +2,9 @@ import { lstat, readdir, realpath, rm, rmdir } from "node:fs/promises"
 import path from "path"
 
 // Junk is only ever removed inside idle worktrees; the janitor caller enforces that.
-// node_modules and .git are never descended: node_modules is huge and needed to run
-// the project (not junk), and .git is repository state.
+// Dependency trees are never descended: node_modules, virtualenvs and site-packages
+// are needed to run the project and ship their own `coverage` and similar packages,
+// and .git is repository state.
 export const JUNK: ReadonlySet<string> = new Set([
   ".pytest_cache",
   "__pycache__",
@@ -14,7 +15,7 @@ export const JUNK: ReadonlySet<string> = new Set([
 ])
 
 const JUNK_PREFIX = "pytest-of-"
-const SKIPPED = new Set([".git", "node_modules"])
+const SKIPPED = new Set([".git", "node_modules", ".venv", "venv", "site-packages"])
 
 // Ignored files under these names are rebuilt by tooling, so they never hold a
 // worktree back from auto-removal; any other ignored file (.env, local config) does.
@@ -53,8 +54,8 @@ export function isRegenerable(file: string) {
 }
 
 // Junk directories (and junk-named links) under root. Never descends into junk,
-// .git, node_modules or a nested repository (its files belong to that repo);
-// empty when root is not a real directory.
+// a SKIPPED folder or a nested repository (its files belong to that repo); empty
+// when root is not a real directory.
 export async function findJunk(root: string) {
   // lstat the root first: walking a symlink root would find junk in its target.
   if (!(await lstat(root).catch(() => undefined))?.isDirectory()) return []
@@ -106,15 +107,17 @@ export async function removeJunk(root: string, targets: string[]) {
   return { removed: items.map((item) => item.path), bytes: items.reduce((sum, item) => sum + item.bytes, 0), items }
 }
 
-// Total file bytes and the newest mtime of any entry (lstat, links not followed).
-// `capped` means the walk ran out of time or could not read a folder, so both
-// are lower bounds.
+// Total file bytes, the newest mtime of any entry (lstat, links not followed) and
+// `repos`: every folder below root holding a `.git` entry (file or directory),
+// relative to root. `capped` means the walk ran out of time or could not read a
+// folder, so all of them are lower bounds.
 export async function size(root: string, input?: { budgetMs?: number }) {
   const deadline = Date.now() + (input?.budgetMs ?? 30_000)
   // lstat the root first: readdir on a symlink root would walk its target.
   const top = await lstat(root).catch(() => undefined)
-  if (!top?.isDirectory()) return { bytes: top?.size ?? 0, capped: false, mtime: top?.mtimeMs ?? 0 }
+  if (!top?.isDirectory()) return { bytes: top?.size ?? 0, capped: false, mtime: top?.mtimeMs ?? 0, repos: [] }
   const pending = [root]
+  const repos: string[] = []
   let bytes = 0
   let mtime = top.mtimeMs
   let capped = false
@@ -123,15 +126,16 @@ export async function size(root: string, input?: { budgetMs?: number }) {
     const entries = await readdir(dir, { withFileTypes: true }).catch(() => undefined)
     if (!entries) capped = true
     for (const entry of entries ?? []) {
-      if (Date.now() >= deadline) return { bytes, capped: true, mtime }
+      if (Date.now() >= deadline) return { bytes, capped: true, mtime, repos: repos.sort() }
       const target = path.join(dir, entry.name)
+      if (entry.name === ".git" && dir !== root) repos.push(path.relative(root, dir))
       const info = await lstat(target).catch(() => undefined)
       mtime = Math.max(mtime, info?.mtimeMs ?? 0)
       if (entry.isDirectory()) pending.push(target)
       else bytes += info?.size ?? 0
     }
   }
-  return { bytes, capped, mtime }
+  return { bytes, capped, mtime, repos: repos.sort() }
 }
 
 // Removes the directories a junk removal emptied, walking up to (never including)

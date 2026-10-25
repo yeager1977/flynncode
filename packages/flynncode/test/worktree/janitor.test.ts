@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, setDefaultTimeout } from "bun:test"
-import { chmodSync, existsSync, mkdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs"
 import path from "path"
 import { sql } from "drizzle-orm"
 import { Duration, Effect } from "effect"
@@ -92,6 +92,22 @@ const nestRepo = (dir: string) => {
 }
 
 const NESTED = (dir: string) => `contains a nested git repository (${dir}) — remove manually`
+
+// An idle, clean, merged worktree of `repo` with the submodule mods/sub (a repo
+// made in `scratch`) initialized and checked out.
+const submoduleWorktree = (repo: string, scratch: string) => {
+  const source = path.join(scratch, "sub")
+  nestRepo(source)
+  put(source, "a.txt")
+  run(source, "add", "a.txt")
+  run(source, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "file")
+  run(repo, "-c", "protocol.file.allow=always", "submodule", "add", "-q", source, "mods/sub")
+  run(repo, "commit", "-m", "submodule")
+  const dir = addWorktree(repo, "super", "super-branch")
+  run(dir, "-c", "protocol.file.allow=always", "submodule", "update", "--init", "-q")
+  settle(dir)
+  return dir
+}
 
 describe("WorktreeJanitor.scan", () => {
   it.effect("auto-removes a clean merged idle worktree and keeps its branch", () =>
@@ -480,6 +496,49 @@ describe("WorktreeJanitor.scan", () => {
       expect(item(report, broken)?.detail).toBeString()
     }),
   )
+  it.effect("never deletes coverage folders inside a virtualenv", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      ignore(repo, ".venv/\n")
+      const dir = addWorktree(repo, "venv", "venv-branch")
+      // An unpushed commit keeps the worktree itself, so the junk pass is what is tested.
+      run(dir, "commit", "--allow-empty", "-m", "extra")
+      put(dir, ".venv/lib/python3.12/site-packages/coverage/__init__.py")
+      settle(dir)
+      const report = yield* scan
+      expect(existsSync(path.join(dir, ".venv/lib/python3.12/site-packages/coverage/__init__.py"))).toBe(true)
+      expect(report.cleaned).toEqual([])
+      expect(item(report, dir)).toMatchObject({ reason: "unpushed" })
+    }),
+  )
+
+  it.effect("never auto-removes a worktree with an initialized submodule", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      const dir = submoduleWorktree(repo, yield* tmpdirScoped())
+      const report = yield* scan
+      expect(existsSync(path.join(dir, "mods/sub/a.txt"))).toBe(true)
+      expect(item(report, dir)).toMatchObject({ reason: "dirty", nested: ["mods/sub"], detail: NESTED("mods/sub") })
+      expect(report.cleaned).toEqual([])
+    }),
+  )
+
+  it.effect("keeps the registration of a worktree that is temporarily missing", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      const outside = yield* tmpdirScoped()
+      const parked = path.join(outside, "parked")
+      run(repo, "worktree", "add", "-b", "parked-branch", parked)
+      // An unmounted disk or a cleared tmpfs: the folder is gone for now, not for good.
+      renameSync(parked, path.join(outside, "away"))
+      const dir = addWorktree(repo, "merged", "merged-branch")
+      age(dir)
+      const report = yield* scan
+      expect(existsSync(dir)).toBe(false)
+      expect(report.cleaned).toContainEqual(expect.objectContaining({ path: dir, kind: "worktree" }))
+      expect(run(repo, "worktree", "list", "--porcelain")).toContain(`worktree ${parked}`)
+    }),
+  )
 })
 
 describe("WorktreeJanitor.remove", () => {
@@ -833,6 +892,67 @@ describe("WorktreeJanitor.remove", () => {
       expect((yield* janitor.report()).cleaned).toContainEqual(
         expect.objectContaining({ path: scratch, kind: "scratch" }),
       )
+    }),
+  )
+  it.effect("refuses a scratch folder holding a nested git repository", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      const scratch = path.join(repo, ".worktrees", "notes")
+      put(scratch, "todo.md")
+      const head = nestRepo(path.join(scratch, "sub"))
+      expect(item(yield* scan, scratch)).toMatchObject({ reason: "scratch", nested: ["sub"], detail: NESTED("sub") })
+      const janitor = yield* WorktreeJanitor.Service
+      expect(yield* janitor.remove([scratch])).toEqual([{ path: scratch, ok: false, error: NESTED("sub") }])
+      expect(existsSync(path.join(scratch, "todo.md"))).toBe(true)
+      expect(run(path.join(scratch, "sub"), "rev-parse", "HEAD")).toBe(head)
+    }),
+  )
+
+  it.effect("refuses a worktree with an initialized submodule", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      const dir = submoduleWorktree(repo, yield* tmpdirScoped())
+      const sub = path.join(dir, "mods/sub")
+      run(sub, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "local")
+      const head = run(sub, "rev-parse", "HEAD")
+      yield* scan
+      const janitor = yield* WorktreeJanitor.Service
+      expect(yield* janitor.remove([dir])).toEqual([{ path: dir, ok: false, error: NESTED("mods/sub") }])
+      expect(run(sub, "rev-parse", "HEAD")).toBe(head)
+    }),
+  )
+
+  it.effect("refuses an item the last scan listed as an error", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      const dir = addWorktree(repo, "locked", "locked-branch")
+      age(dir)
+      // git refuses to remove a locked worktree, so the auto-remove lists it as an error.
+      run(repo, "worktree", "lock", dir)
+      expect(item(yield* scan, dir)).toMatchObject({ reason: "error" })
+      run(repo, "worktree", "unlock", dir)
+      const janitor = yield* WorktreeJanitor.Service
+      expect(yield* janitor.remove([dir])).toEqual([
+        { path: dir, ok: false, error: "this item could not be inspected; fix or remove it manually" },
+      ])
+      expect(existsSync(dir)).toBe(true)
+    }),
+  )
+
+  it.effect("keeps the registration of a temporarily missing worktree on manual remove", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      const outside = yield* tmpdirScoped()
+      const parked = path.join(outside, "parked")
+      run(repo, "worktree", "add", "-b", "parked-branch", parked)
+      renameSync(parked, path.join(outside, "away"))
+      const dir = addWorktree(repo, "dirty", "dirty-branch")
+      put(dir, "notes.txt")
+      age(dir)
+      yield* scan
+      const janitor = yield* WorktreeJanitor.Service
+      expect(yield* janitor.remove([dir])).toEqual([{ path: dir, ok: true }])
+      expect(run(repo, "worktree", "list", "--porcelain")).toContain(`worktree ${parked}`)
     }),
   )
 })

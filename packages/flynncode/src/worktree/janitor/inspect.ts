@@ -14,21 +14,29 @@ export type Inspection =
       head: string
       status: string
       // Tracked files git is told to skip (assume-unchanged, skip-worktree), as
-      // "path\0mtime\0size"; status never shows edits to them.
+      // "path\0mtime\0size" or "path\0missing"; status never shows edits to them.
       hidden: string[]
+      // Initialized submodules (paths), or the worktree's git `modules` folder when
+      // one holds submodule repositories that are not checked out.
+      submodules: string[]
       dirty: number
       unpushed: number
       safe: boolean
       lastActivity: number
     }
   // `capped`: the walk ran out of time or hit an unreadable folder, so a newer
-  // file may be missing from lastActivity.
-  | { path: string; kind: "scratch"; lastActivity: number; capped: boolean }
+  // file (or a nested repo) may be missing. `nested`: folders holding a .git entry.
+  | { path: string; kind: "scratch"; lastActivity: number; capped: boolean; nested: string[] }
   | { path: string; kind: "main" }
+
+// GIT_OPTIONAL_LOCKS=0 keeps `git status` from refreshing the index, so the
+// hourly scan never takes index.lock in a worktree an agent is using (or bumps
+// the index mtime that the idle check reads).
+export const gitEnv = { GIT_OPTIONAL_LOCKS: "0" }
 
 export const git = Effect.fnUntraced(function* (cwd: string, args: string[]) {
   const proc = yield* AppProcess.Service
-  return yield* proc.run(ChildProcess.make("git", args, { cwd, extendEnv: true, stdin: "ignore" })).pipe(
+  return yield* proc.run(ChildProcess.make("git", args, { cwd, env: gitEnv, extendEnv: true, stdin: "ignore" })).pipe(
     Effect.map((result) => ({ code: result.exitCode, text: result.stdout.toString("utf8").trim() })),
     Effect.catchCause(() => Effect.succeed({ code: 1, text: "" })),
   )
@@ -67,7 +75,7 @@ export const inspect = Effect.fn("JanitorInspect.inspect")(function* (target: st
   })
   if (!dotGit) {
     const walk = yield* Effect.promise(() => JanitorJunk.size(dir))
-    return { path: dir, kind: "scratch" as const, lastActivity: walk.mtime, capped: walk.capped }
+    return { path: dir, kind: "scratch" as const, lastActivity: walk.mtime, capped: walk.capped, nested: walk.repos }
   }
   if (dotGit.isDirectory()) return { path: dir, kind: "main" as const }
   if (dotGit.isSymbolicLink()) {
@@ -103,18 +111,24 @@ export const inspect = Effect.fn("JanitorInspect.inspect")(function* (target: st
     .split("\0")
     // A lowercase tag marks assume-unchanged, `S` skip-worktree.
     .filter((entry) => /^([a-z]|S) /.test(entry))
-    .map((entry) => entry.slice(2))
-  const hidden = yield* Effect.promise(() =>
+  const skipped = yield* Effect.promise(() =>
     Promise.all(
-      flagged.map((file) =>
-        lstat(path.join(dir, file)).then(
-          (info) => `${file}\0${info.mtimeMs}\0${info.size}`,
-          () => `${file}\0missing`,
+      flagged.map((entry) =>
+        lstat(path.join(dir, entry.slice(2))).then(
+          (info) => ({ key: `${entry.slice(2)}\0${info.mtimeMs}\0${info.size}`, counts: true }),
+          (cause: NodeJS.ErrnoException) => ({
+            key: `${entry.slice(2)}\0missing`,
+            // A sparse checkout leaves files outside its cone out of the folder as
+            // skip-worktree entries; their content is in HEAD, so nothing is lost.
+            counts: !(entry.startsWith("S ") && (cause.code === "ENOENT" || cause.code === "ENOTDIR")),
+          }),
         ),
       ),
     ),
   )
-  const dirty = (status ? status.split("\n").length : 0) + hidden.length
+  const hidden = skipped.map((entry) => entry.key)
+  const dirty = (status ? status.split("\n").length : 0) + skipped.filter((entry) => entry.counts).length
+  const submodules = yield* initializedSubmodules(dir, gitdir.text)
   const base = yield* defaultBranch(repo)
   const unpushed = Number(
     yield* requireOk(
@@ -149,11 +163,35 @@ export const inspect = Effect.fn("JanitorInspect.inspect")(function* (target: st
     head,
     status,
     hidden,
+    submodules,
     dirty,
     unpushed,
     safe: dirty === 0 && (merged || pushed),
     lastActivity: Math.max(committed, ...metadata),
   }
+})
+
+// git status never looks inside a submodule's own repository, and a forced
+// `git worktree remove` deletes it with any local commits. Same test git uses to
+// refuse an unforced remove: a gitlink whose folder has a .git entry, or a
+// `modules` folder in the worktree's git dir. Unreadable entries count as present.
+const initializedSubmodules = Effect.fnUntraced(function* (dir: string, gitdir: string) {
+  const gitlinks = (yield* requireOk(yield* git(dir, ["ls-files", "--stage", "-z"]), `git ls-files --stage in ${dir}`))
+    .split("\0")
+    .filter((entry) => entry.startsWith("160000 "))
+    .map((entry) => entry.slice(entry.indexOf("\t") + 1))
+  const present = (target: string) =>
+    lstat(target).then(
+      () => true,
+      (cause: NodeJS.ErrnoException) => cause.code !== "ENOENT" && cause.code !== "ENOTDIR",
+    )
+  const checked = yield* Effect.promise(() =>
+    Promise.all(gitlinks.map(async (link) => ((await present(path.join(dir, link, ".git"))) ? link : undefined))),
+  )
+  const initialized = checked.filter((link) => link !== undefined)
+  if (initialized.length > 0) return initialized
+  const modules = path.join(gitdir, "modules")
+  return (yield* Effect.promise(() => present(modules))) ? [modules] : []
 })
 
 // A failed command must fail the inspection, never read as an empty (clean/idle) result.

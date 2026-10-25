@@ -203,3 +203,20 @@ test("findJunk never descends into or lists a nested repository", async () => {
 
   expect(await JanitorJunk.findJunk(tmp.path)).toEqual([path.join(tmp.path, "pkg/__pycache__")])
 })
+
+test("size lists every nested repository below the root", async () => {
+  await using tmp = await tmpdir()
+  await put(tmp.path, "notes.md")
+  await put(tmp.path, "sub/.git/HEAD", "ref: refs/heads/main\n")
+  await put(tmp.path, "a/b/.git", "gitdir: /elsewhere/.git/worktrees/b\n")
+  expect((await JanitorJunk.size(tmp.path)).repos).toEqual(["a/b", "sub"])
+})
+
+test("findJunk never descends into virtualenvs or site-packages", async () => {
+  await using tmp = await tmpdir()
+  await put(tmp.path, "pkg/__pycache__/a.pyc")
+  await put(tmp.path, ".venv/lib/python3.12/site-packages/coverage/__init__.py")
+  await put(tmp.path, "venv/lib/python3.12/site-packages/coverage/__init__.py")
+  await put(tmp.path, "vendor/site-packages/coverage/__init__.py")
+  expect(await JanitorJunk.findJunk(tmp.path)).toEqual([path.join(tmp.path, "pkg/__pycache__")])
+})

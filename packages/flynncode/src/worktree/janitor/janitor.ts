@@ -21,9 +21,10 @@ const LONG_LIVED = new Set(["dev", "main", "master"])
 // (outside the cleanup folders, or on the default/long-lived branch). Every
 // worktree item says what a manual (forced) remove would lose: `dirty` changed
 // paths, `unpushed` commits and `ignored` non-regenerable local files, all also
-// summed up in `detail`. `nested` lists repositories inside the worktree (git
-// cannot see their changes or commits), which block every removal. Items whose
-// inspection failed carry none of these.
+// summed up in `detail`. `nested` lists repositories inside a worktree or scratch
+// folder (nested repos, initialized submodules: git cannot see their changes or
+// commits), which block every removal. Items whose inspection failed carry none
+// of these, and neither they nor any other `error` item can be removed here.
 export type ReviewItem = {
   path: string
   project: string
@@ -150,7 +151,7 @@ const layer = Layer.effect(
         // Only folders in a cleanup root count as scratch; a git-listed worktree
         // without a .git file is broken, not disposable.
         if (!target.rooted) return yield* Effect.fail(new Error("git lists this worktree but it has no .git file"))
-        return review(target, first, "scratch")
+        return review(target, first, "scratch", nestedWarning(first))
       }
       if (input.busy(first.path) || input.now - first.lastActivity < IDLE_MS)
         return held(target, yield* settle(first), { recent: true })
@@ -199,7 +200,8 @@ const layer = Layer.effect(
         yield* Effect.logWarning("worktree janitor could not remove", { path: seen.path, error: failure })
         return review(target, seen, "error", failure)
       }
-      yield* JanitorInspect.git(seen.repo, ["worktree", "prune"])
+      // No `git worktree prune`: remove already dropped this registration, and a
+      // prune would also drop those of worktrees that are only missing for now.
       sizes.delete(seen.path)
       input.cleaned.push({ path: seen.path, bytes, time: Date.now(), kind: "worktree" })
       return undefined
@@ -228,7 +230,11 @@ const layer = Layer.effect(
       const nested = yield* Effect.promise(() =>
         nestedRepos(found.path, [...untracked.text.split("\0"), ...ignored.listed, ...ignored.files]),
       )
-      return { ...found, ignored: ignored.files, nested } satisfies Seen
+      return {
+        ...found,
+        ignored: ignored.files,
+        nested: [...new Set([...nested, ...found.submodules])].sort(),
+      } satisfies Seen
     })
 
     // The junk this pass may delete; removeJunk deletes exactly these. A
@@ -259,7 +265,7 @@ const layer = Layer.effect(
         detail,
         fingerprint: fingerprint(found),
       }
-      if (found.kind === "scratch") return base satisfies Listed
+      if (found.kind === "scratch") return { ...base, nested: found.nested } satisfies Listed
       return {
         ...base,
         repo: found.repo,
@@ -302,7 +308,7 @@ const layer = Layer.effect(
       const cached = fresh(dir, lastActivity)
       if (cached) return cached
       const measured = yield* Effect.promise(() => JanitorJunk.size(dir))
-      sizes.set(dir, { lastActivity, ...measured })
+      sizes.set(dir, { lastActivity, bytes: measured.bytes, capped: measured.capped })
       return measured
     })
 
@@ -416,7 +422,9 @@ const layer = Layer.effect(
     })
 
     const gitChecked = Effect.fnUntraced(function* (cwd: string, args: string[]) {
-      const result = yield* proc.run(ChildProcess.make("git", args, { cwd, extendEnv: true, stdin: "ignore" }))
+      const result = yield* proc.run(
+        ChildProcess.make("git", args, { cwd, env: JanitorInspect.gitEnv, extendEnv: true, stdin: "ignore" }),
+      )
       if (result.exitCode !== 0)
         return yield* Effect.fail(
           new Error(result.stderr.toString("utf8").trim() || `git ${args.join(" ")} exited ${result.exitCode}`),
@@ -427,7 +435,9 @@ const layer = Layer.effect(
       const resolved = yield* Effect.promise(() => realpath(input).catch(() => input))
       const listed = state.items.find((item) => item.path === resolved)
       if (!listed) return { path: input, ok: false, error: "not on the cleanup review list" }
-      if (!listed.fingerprint)
+      // An error item (failed inspection, or git refused the auto-remove) is never
+      // forced: whatever went wrong may be hiding work.
+      if (!listed.fingerprint || listed.reason === "error")
         return yield* Effect.fail(new Error("this item could not be inspected; fix or remove it manually"))
       const target = (yield* projectTargets(listed.project, yield* projectRoots())).find(
         (entry) => entry.path === resolved,
@@ -438,7 +448,7 @@ const layer = Layer.effect(
       if (found.kind === "scratch" && !target.rooted)
         return yield* Effect.fail(new Error("git lists this worktree but it has no .git file"))
       const current = found.kind === "worktree" ? yield* settle(found) : found
-      const nested = current.kind === "worktree" ? nestedWarning(current) : undefined
+      const nested = nestedWarning(current)
       if (nested) return yield* Effect.fail(new Error(nested))
       if (current.kind === "scratch" && current.capped)
         return yield* Effect.fail(new Error("too large or unreadable to verify; rescan first"))
@@ -458,7 +468,6 @@ const layer = Layer.effect(
         )
         // The rescue branch already exists, so the owner must still be told its name.
         if (failure) return { path: input, ok: false, error: failure, rescued }
-        yield* JanitorInspect.git(current.repo, ["worktree", "prune"])
       }
       state.items = state.items.filter((item) => item.path !== resolved)
       state.cleaned.push({ path: resolved, bytes: listed.bytes, time: Date.now(), kind: current.kind, rescued })
@@ -547,14 +556,14 @@ function changed(listed: Listed, found: Seen | Scratch) {
 // A worktree's HEAD, exact `git status --porcelain` text (every untracked file
 // listed), assume-unchanged/skip-worktree files with their stat, non-regenerable
 // ignored files (folders expanded to their files) and nested repositories; a
-// scratch folder's newest mtime anywhere in its tree and whether that walk was
-// capped, so a capped listing never matches a full one.
+// scratch folder's newest mtime anywhere in its tree, whether that walk was
+// capped (so a capped listing never matches a full one) and its nested repos.
 function fingerprint(found: Seen | Scratch) {
-  if (found.kind === "scratch") return `scratch\0${found.lastActivity}\0${found.capped}`
+  if (found.kind === "scratch") return JSON.stringify(["scratch", found.lastActivity, found.capped, found.nested])
   return JSON.stringify(["worktree", found.head, found.status, found.hidden, [...found.ignored].sort(), found.nested])
 }
 
-function nestedWarning(found: Seen) {
+function nestedWarning(found: { nested: string[] }) {
   if (found.nested.length === 0) return undefined
   return `contains a nested git repository (${found.nested[0]}) — remove manually`
 }

@@ -1,5 +1,5 @@
 import { describe, expect, setDefaultTimeout } from "bun:test"
-import { mkdirSync, realpathSync, symlinkSync, utimesSync, writeFileSync } from "node:fs"
+import { mkdirSync, realpathSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs"
 import path from "path"
 import { CrossSpawnSpawner } from "@flynncode/core/cross-spawn-spawner"
 import { AppNodeBuilder } from "@flynncode/core/effect/app-node-builder"
@@ -149,6 +149,42 @@ describe("JanitorInspect.inspect", () => {
       expect(result).toMatchObject({ kind: "worktree", status: "", dirty: 2, safe: false })
       if (result.kind !== "worktree") throw new Error("expected worktree")
       expect(result.hidden.map((entry) => entry.split("\0")[0])).toEqual(["a.txt", "b.txt"])
+    }),
+  )
+
+  it.effect("does not count files a sparse checkout leaves out as dirty", () =>
+    Effect.gen(function* () {
+      const repo = yield* setupRepo
+      mkdirSync(path.join(repo, "keep"))
+      mkdirSync(path.join(repo, "other"))
+      writeFileSync(path.join(repo, "keep/k.txt"), "k")
+      writeFileSync(path.join(repo, "other/o.txt"), "o")
+      run(repo, "add", "keep", "other")
+      commit(repo, "files")
+      const dir = addWorktree(repo, "sparse", "sparse-branch")
+      run(dir, "sparse-checkout", "set", "--cone", "keep")
+      const result = yield* JanitorInspect.inspect(dir)
+      expect(result).toMatchObject({ kind: "worktree", status: "", dirty: 0, safe: true })
+      if (result.kind !== "worktree") throw new Error("expected worktree")
+      // Still part of the fingerprint, so a file that reappears changes it.
+      expect(result.hidden).toEqual(["other/o.txt\0missing"])
+    }),
+  )
+
+  it.effect("never rewrites a worktree's index", () =>
+    Effect.gen(function* () {
+      const repo = yield* setupRepo
+      writeFileSync(path.join(repo, "a.txt"), "a")
+      run(repo, "add", "a.txt")
+      commit(repo, "file")
+      const dir = addWorktree(repo, "locks", "locks-branch")
+      // Tracked files newer than the index make a plain `git status` refresh and
+      // rewrite it, taking index.lock in a worktree an agent may be using.
+      age(dir)
+      const index = path.join(run(dir, "rev-parse", "--absolute-git-dir"), "index")
+      const before = statSync(index).mtimeMs
+      yield* JanitorInspect.inspect(dir)
+      expect(statSync(index).mtimeMs).toBe(before)
     }),
   )
 
