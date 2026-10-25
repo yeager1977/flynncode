@@ -69,7 +69,11 @@ export const pruneIdleSessions = Effect.fn("DatabaseMaintenance.pruneIdleSession
       chunk,
     ),
   )
-  return { sessions: deleted.filter((count) => count > 0).length, events: deleted.reduce((sum, n) => sum + n, 0) }
+  return {
+    candidates: candidates.length,
+    sessions: deleted.filter((count) => count > 0).length,
+    events: deleted.reduce((sum, n) => sum + n, 0),
+  }
 })
 
 // Session.remove deletes the session row, then its events; if it dies in

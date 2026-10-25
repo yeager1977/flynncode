@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import path from "path"
 import { sql } from "drizzle-orm"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Logger } from "effect"
 import { Database } from "@flynncode/core/database/database"
 import { DatabaseMaintenance } from "@flynncode/core/database/maintenance"
 import { DatabaseMaintenanceNode } from "@flynncode/core/database/maintenance-node"
@@ -63,7 +63,7 @@ describe("DatabaseMaintenance.pruneIdleSessions", () => {
         return { pruned, types: yield* eventTypes(db, "ses_idle"), sequence }
       }),
     )
-    expect(result.pruned).toEqual({ sessions: 1, events: 5 })
+    expect(result.pruned).toEqual({ candidates: 1, sessions: 1, events: 5 })
     expect(result.types).toEqual(["session.created.1"])
     // The counter survives, so a resumed session appends at seq + 1.
     expect(result.sequence?.seq).toBe(5)
@@ -92,7 +92,7 @@ describe("DatabaseMaintenance.pruneIdleSessions", () => {
         }
       }),
     )
-    expect(result.pruned).toEqual({ sessions: 0, events: 0 })
+    expect(result.pruned).toEqual({ candidates: 0, sessions: 0, events: 0 })
     expect(result.counts).toEqual([
       { aggregate_id: "ses_input", n: 3 },
       { aggregate_id: "ses_owned", n: 3 },
@@ -113,7 +113,7 @@ describe("DatabaseMaintenance.pruneIdleSessions", () => {
         return { pruned, types: yield* eventTypes(db, "ses_resumed") }
       }),
     )
-    expect(result.pruned).toEqual({ sessions: 1, events: 1 })
+    expect(result.pruned).toEqual({ candidates: 1, sessions: 1, events: 1 })
     expect(result.types).toHaveLength(5)
   })
 })
@@ -274,6 +274,8 @@ describe("DatabaseMaintenance compaction", () => {
   })
 })
 
+const silent = Effect.provide(Logger.layer([], { mergeWithExisting: false }))
+
 describe("DatabaseMaintenanceNode.pass", () => {
   test("prunes, sweeps and reclaims in one pass", async () => {
     const result = await withDb((db) =>
@@ -281,11 +283,32 @@ describe("DatabaseMaintenanceNode.pass", () => {
         yield* seedSession(db, { id: "ses_idle", updated: NOW - 8 * DAY, messages: 3 })
         yield* seedSession(db, { id: "ses_gone", updated: NOW, messages: 2 })
         yield* db.run(sql`DELETE FROM session WHERE id = 'ses_gone'`)
-        return yield* DatabaseMaintenanceNode.pass(db, NOW)
+        return yield* DatabaseMaintenanceNode.pass(db, NOW).pipe(silent)
       }),
     )
-    expect(result.pruned).toEqual({ sessions: 1, events: 3 })
+    expect(result.pruned).toEqual({ candidates: 1, sessions: 1, events: 3 })
     expect(result.orphans).toEqual({ aggregates: 1, events: 3 })
     expect(result.freed).toBeGreaterThanOrEqual(0)
+  })
+  test("a failing step is logged and does not stop the others", async () => {
+    const result = await withDb((db) =>
+      Effect.gen(function* () {
+        yield* seedSession(db, { id: "ses_gone", updated: NOW, messages: 2 })
+        yield* db.run(sql`DELETE FROM session WHERE id = 'ses_gone'`)
+        // The prune candidate query reads session_message, so this makes only that step fail.
+        yield* db.run(sql`DROP TABLE session_message`)
+        const messages: unknown[] = []
+        const capture = Logger.layer(
+          [Logger.make((options) => messages.push({ level: options.logLevel, message: options.message }))],
+          { mergeWithExisting: false },
+        )
+        const pass = yield* DatabaseMaintenanceNode.pass(db, NOW).pipe(Effect.provide(capture))
+        return { pass, messages }
+      }),
+    )
+    expect(result.pass.pruned).toEqual({ candidates: 0, sessions: 0, events: 0 })
+    expect(result.pass.orphans).toEqual({ aggregates: 1, events: 3 })
+    expect(JSON.stringify(result.messages)).toContain("database maintenance step failed")
+    expect(JSON.stringify(result.messages)).toContain("database maintenance pass")
   })
 })

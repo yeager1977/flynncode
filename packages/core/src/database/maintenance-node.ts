@@ -1,5 +1,6 @@
 export * as DatabaseMaintenanceNode from "./maintenance-node"
 
+import { sql } from "drizzle-orm"
 import { Cause, Duration, Effect, Layer, Schedule } from "effect"
 import { makeGlobalNode } from "../effect/app-node"
 import { Flag } from "../flag/flag"
@@ -10,19 +11,44 @@ type Db = Database.Interface["db"]
 
 export const pass = Effect.fn("DatabaseMaintenance.pass")(function* (db: Db, now: number) {
   const started = Date.now()
-  const pruned = yield* DatabaseMaintenance.pruneIdleSessions(db, { now })
-  const orphans = yield* DatabaseMaintenance.sweepOrphans(db)
-  const freed = yield* DatabaseMaintenance.reclaim(db)
+  const pruned = yield* step(
+    "prune idle sessions",
+    DatabaseMaintenance.pruneIdleSessions(db, { now }),
+    { candidates: 0, sessions: 0, events: 0 },
+  )
+  const orphans = yield* step("sweep orphans", DatabaseMaintenance.sweepOrphans(db), { aggregates: 0, events: 0 })
+  const reclaimed = yield* step(
+    "reclaim",
+    Effect.gen(function* () {
+      const freed = yield* DatabaseMaintenance.reclaim(db)
+      const row = yield* db.get<{ page_size: number }>(sql`PRAGMA page_size`)
+      return { freed, pageSize: row?.page_size ?? 4096 }
+    }),
+    { freed: 0, pageSize: 4096 },
+  )
   yield* Effect.logInfo("database maintenance pass", {
+    candidates: pruned.candidates,
     sessions: pruned.sessions,
     events: pruned.events,
     orphanAggregates: orphans.aggregates,
     orphanEvents: orphans.events,
-    reclaimedMB: Math.round((freed * 4096) / 1048576),
+    reclaimedMB: Math.round((reclaimed.freed * reclaimed.pageSize) / 1048576),
     ms: Date.now() - started,
   })
-  return { pruned, orphans, freed }
+  return { pruned, orphans, freed: reclaimed.freed }
 })
+
+// A failing step is logged with its name and replaced by a neutral result, so it
+// never skips the others; the next hourly pass retries it.
+function step<A, E, R>(name: string, effect: Effect.Effect<A, E, R>, fallback: A) {
+  return effect.pipe(
+    Effect.catchCause((cause) =>
+      Effect.logError("database maintenance step failed", { step: name, cause: Cause.pretty(cause) }).pipe(
+        Effect.as(fallback),
+      ),
+    ),
+  )
+}
 
 const layer = Layer.effectDiscard(
   Effect.gen(function* () {
