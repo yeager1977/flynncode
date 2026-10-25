@@ -356,6 +356,30 @@ describe("DatabaseMaintenance compaction", () => {
     expect(result.events).toHaveLength(4)
   })
 
+  test("a handled failure before VACUUM keeps the earlier attempt count", async () => {
+    const result = await withDb((db, filename) =>
+      Effect.gen(function* () {
+        yield* legacy(db)
+        yield* Effect.promise(() => Bun.write(`${filename}.compact-attempt`, "1\n"))
+        yield* Effect.promise(() => Bun.write(path.join(path.dirname(filename), ".vacuum-tmp"), "keep"))
+        const compact = yield* DatabaseMaintenance.compactOnce(db, { filename, now: NOW })
+        return { compact, mode: yield* autoVacuum(db), marker: yield* attempts(filename) }
+      }),
+    )
+    expect(result).toEqual({ compact: "skipped", mode: 0, marker: "1" })
+  })
+
+  test("removes a stale attempt marker from an already incremental database", async () => {
+    const result = await withDb((db, filename) =>
+      Effect.gen(function* () {
+        yield* Effect.promise(() => Bun.write(`${filename}.compact-attempt`, "2\n"))
+        const compact = yield* DatabaseMaintenance.compactOnce(db, { filename, now: NOW })
+        return { compact, marker: yield* attempts(filename) }
+      }),
+    )
+    expect(result).toEqual({ compact: "already", marker: undefined })
+  })
+
   test("skips compaction while another connection holds the database", async () => {
     const { Database: BunDatabase } = await import("bun:sqlite")
     const result = await withDb((db, filename) =>

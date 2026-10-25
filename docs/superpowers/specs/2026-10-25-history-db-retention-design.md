@@ -126,12 +126,15 @@ The diff sweep logs its own removal count.
   conversion; later calls return `"attempted"` without pruning or `VACUUM`.
 - **Attempt marker and backoff:** before the prune + `VACUUM` attempt,
   `<db>.compact-attempt` (beside the database) is written with the number of
-  unfinished attempts, including this one. A clean outcome (`compacted`,
-  `low-disk`, or `skipped` for a handled step failure) removes it. A launch
-  that was killed or crashed mid-attempt leaves it, and so does a `VACUUM`
-  failure that is not `SQLITE_BUSY`/locked (corruption, a full disk), which
-  returns `"failed"`. A busy database (another process holds it) restores the
-  previous count, so it never counts. When the marker already holds 3,
+  unfinished attempts, including this one. Only a clean outcome (`compacted`
+  or `low-disk`) removes it. A launch that was killed or crashed mid-attempt
+  leaves it, and so does a `VACUUM` failure that is not `SQLITE_BUSY`/locked
+  (corruption, a full disk), which returns `"failed"` with the incremented
+  count. A handled `skipped` outcome (a pre-`VACUUM` step failed) and a busy
+  database (another process holds it) restore the previous count, so they
+  never count and never clear it. A leftover marker is also removed when the
+  database is already incremental (the process died after `VACUUM` committed).
+  When the marker already holds 3,
   compaction returns `"backoff"` without pruning or `VACUUM` and logs a warning
   to set `OPENCODE_DISABLE_DB_MAINTENANCE=1` or report it (deleting the marker
   retries). Marker read/write failures are logged and never fatal.

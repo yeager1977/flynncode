@@ -182,13 +182,23 @@ export const compactOnce = Effect.fn("DatabaseMaintenance.compactOnce")(function
   if (input.filename === ":memory:") return "memory" as const
   return yield* Effect.gen(function* () {
     const mode = yield* db.get<{ auto_vacuum: number }>(sql`PRAGMA auto_vacuum`).pipe(step("read auto_vacuum"))
-    if (mode?.auto_vacuum === 2) return "already" as const
+    const marker = `${input.filename}.compact-attempt`
+    if (mode?.auto_vacuum === 2) {
+      // A process that died after VACUUM committed but before clearing the marker leaves it behind.
+      yield* Effect.tryPromise(() => rm(marker, { force: true })).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("one-time database compaction: removing stale attempt marker failed", {
+            cause: Cause.pretty(cause),
+          }),
+        ),
+      )
+      return "already" as const
+    }
     // The database layer is built more than once per process (again lazily on
     // desktop shutdown, where main kills the sidecar after 6s), so only the first
     // build may attempt the conversion.
     if (attempted) return "attempted" as const
     attempted = true
-    const marker = `${input.filename}.compact-attempt`
     const previous = yield* readAttempts(marker)
     if (previous >= MAX_ATTEMPTS) {
       yield* Effect.logWarning(
@@ -214,7 +224,9 @@ export const compactOnce = Effect.fn("DatabaseMaintenance.compactOnce")(function
     // A VACUUM that failed on its own (corruption, a full disk) keeps the counted
     // attempt; another process holding the database is not the database's fault.
     if (outcome === "failed") return outcome
-    yield* setAttempts(marker, outcome === "busy" ? previous : 0)
+    // Only a clean outcome clears the marker; a handled skip or a busy database
+    // is not progress, so it restores the count instead of incrementing it.
+    yield* setAttempts(marker, outcome === "compacted" || outcome === "low-disk" ? 0 : previous)
     return outcome === "busy" ? ("skipped" as const) : outcome
   }).pipe(skipOnFailure)
 })
