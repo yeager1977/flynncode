@@ -14,6 +14,7 @@ import { SessionV2 } from "@flynncode/core/session"
 import { SessionExecution } from "@flynncode/core/session/execution"
 import { LocationServiceMap } from "@flynncode/core/location-service-map"
 import { SessionExecutionLocal } from "@flynncode/core/session/execution/local"
+import { DatabaseMaintenanceNode } from "@flynncode/core/database/maintenance-node"
 import { ToolOutputStore } from "@flynncode/core/tool-output-store"
 import { HttpRouter, HttpServer } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
@@ -36,6 +37,7 @@ const applicationServices = LayerNode.group([
   EventV2.node,
   httpClient,
   ToolOutputStore.cleanupNode,
+  DatabaseMaintenanceNode.node,
   SessionV2.node,
   PermissionSaved.node,
   PtyTicket.node,

@@ -2,6 +2,7 @@ import { Config as EffectConfig, Context, Effect, Layer } from "effect"
 import { HttpApiBuilder, OpenApi } from "effect/unstable/httpapi"
 import { HttpClient, HttpMiddleware, HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
+import { DatabaseMaintenanceNode } from "@flynncode/core/database/maintenance-node"
 import { FSUtil } from "@flynncode/core/fs-util"
 import * as Observability from "@flynncode/core/observability"
 import { Account } from "@/account/account"
@@ -238,6 +239,7 @@ export const app = LayerNode.group([
   Npm.node,
   FSUtil.node,
   Database.node,
+  DatabaseMaintenanceNode.node,
   Auth.node,
   Account.node,
   Config.node,

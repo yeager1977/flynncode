@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm"
 import { Context, Effect, Layer } from "effect"
 import { Database } from "@flynncode/core/database/database"
 import { DatabaseMaintenance } from "@flynncode/core/database/maintenance"
+import { DatabaseMaintenanceNode } from "@flynncode/core/database/maintenance-node"
 import { tmpdir } from "./fixture/tmpdir"
 
 const DAY = 24 * 60 * 60 * 1000
@@ -270,5 +271,21 @@ describe("DatabaseMaintenance compaction", () => {
       }),
     )
     expect(result).toEqual({ compact: "skipped", mode: 0 })
+  })
+})
+
+describe("DatabaseMaintenanceNode.pass", () => {
+  test("prunes, sweeps and reclaims in one pass", async () => {
+    const result = await withDb((db) =>
+      Effect.gen(function* () {
+        yield* seedSession(db, { id: "ses_idle", updated: NOW - 8 * DAY, messages: 3 })
+        yield* seedSession(db, { id: "ses_gone", updated: NOW, messages: 2 })
+        yield* db.run(sql`DELETE FROM session WHERE id = 'ses_gone'`)
+        return yield* DatabaseMaintenanceNode.pass(db, NOW)
+      }),
+    )
+    expect(result.pruned).toEqual({ sessions: 1, events: 3 })
+    expect(result.orphans).toEqual({ aggregates: 1, events: 3 })
+    expect(result.freed).toBeGreaterThanOrEqual(0)
   })
 })
