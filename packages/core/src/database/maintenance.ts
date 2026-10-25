@@ -34,9 +34,18 @@ export const pruneIdleSessions = Effect.fn("DatabaseMaintenance.pruneIdleSession
   const deleted = yield* Effect.forEach(candidates, (candidate) =>
     deleteChunked(
       db,
+      // Eligibility is re-checked in every chunk: the hourly pass runs beside a live
+      // server, so a session can be resumed between selection and deletion.
       (limit) => sql`DELETE FROM event WHERE rowid IN (
         SELECT rowid FROM event
         WHERE aggregate_id = ${candidate.id} AND type >= 'message.' AND type < 'message/'
+          AND EXISTS (
+            SELECT 1 FROM session s
+            JOIN event_sequence q ON q.aggregate_id = s.id
+            WHERE s.id = ${candidate.id}
+              AND s.time_updated < ${cutoff}
+              AND q.owner_id IS NULL
+              AND NOT EXISTS (SELECT 1 FROM session_input i WHERE i.session_id = s.id AND i.promoted_seq IS NULL))
         LIMIT ${limit})`,
       chunk,
     ),

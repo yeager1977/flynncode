@@ -79,6 +79,9 @@ describe("DatabaseMaintenance.pruneIdleSessions", () => {
         yield* seedSession(db, { id: "ses_input", updated: NOW - 8 * DAY, messages: 2 })
         yield* db.run(sql`INSERT INTO session_input (id, session_id, prompt, delivery, admitted_seq, time_created)
                           VALUES ('msg_pending', 'ses_input', '{}', 'steer', 1, ${NOW})`)
+        yield* seedSession(db, { id: "ses_v2msg", updated: NOW - 8 * DAY, messages: 2 })
+        yield* db.run(sql`INSERT INTO session_message (id, session_id, type, seq, time_created, time_updated, data)
+                          VALUES ('msg_v2', 'ses_v2msg', 'user', 1, ${NOW}, ${NOW}, '{}')`)
         const pruned = yield* DatabaseMaintenance.pruneIdleSessions(db, { now: NOW })
         return {
           pruned,
@@ -94,6 +97,22 @@ describe("DatabaseMaintenance.pruneIdleSessions", () => {
       { aggregate_id: "ses_owned", n: 3 },
       { aggregate_id: "ses_recent", n: 3 },
       { aggregate_id: "ses_v2", n: 4 },
+      { aggregate_id: "ses_v2msg", n: 3 },
     ])
+  })
+
+  test("stops draining a session that becomes owned between chunks", async () => {
+    const result = await withDb((db) =>
+      Effect.gen(function* () {
+        yield* seedSession(db, { id: "ses_resumed", updated: NOW - 8 * DAY, messages: 5 })
+        // Simulates a live server claiming the session right after the first chunk commits.
+        yield* db.run(sql`CREATE TRIGGER claim_after_delete AFTER DELETE ON event
+                          BEGIN UPDATE event_sequence SET owner_id = 'proc_live' WHERE aggregate_id = OLD.aggregate_id; END`)
+        const pruned = yield* DatabaseMaintenance.pruneIdleSessions(db, { now: NOW, chunk: 1 })
+        return { pruned, types: yield* eventTypes(db, "ses_resumed") }
+      }),
+    )
+    expect(result.pruned).toEqual({ sessions: 1, events: 1 })
+    expect(result.types).toHaveLength(5)
   })
 })
