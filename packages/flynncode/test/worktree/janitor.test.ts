@@ -83,6 +83,16 @@ const ignore = (repo: string, patterns: string) => {
   run(repo, "commit", "-m", "ignore")
 }
 
+// A separate repository (with one commit) inside a worktree; returns its HEAD.
+const nestRepo = (dir: string) => {
+  mkdirSync(dir, { recursive: true })
+  run(dir, "init", "-q")
+  run(dir, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "nested work")
+  return run(dir, "rev-parse", "HEAD")
+}
+
+const NESTED = (dir: string) => `contains a nested git repository (${dir}) — remove manually`
+
 describe("WorktreeJanitor.scan", () => {
   it.effect("auto-removes a clean merged idle worktree and keeps its branch", () =>
     Effect.gen(function* () {
@@ -382,6 +392,82 @@ describe("WorktreeJanitor.scan", () => {
     }),
   )
 
+  it.effect("keeps an idle worktree whose untracked file appears only when git removes it", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      run(repo, "config", "status.showUntrackedFiles", "no")
+      // git status calls this fsmonitor hook. It drops a file into the worktree only
+      // when the status is the clean check run by `git worktree remove` itself, so
+      // the file exists after the janitor's last inspection but before git deletes.
+      const hook = path.join(repo, ".git", "late-file-hook.sh")
+      writeFileSync(
+        hook,
+        [
+          "#!/bin/sh",
+          'parent="$(ps -o args= -p $PPID)"',
+          'grand="$(ps -o args= -p "$(ps -o ppid= -p $PPID | tr -d \' \')")"',
+          'case "$parent" in *" status "*) case "$grand" in *"worktree remove"*) echo late > late.txt ;; esac ;; esac',
+          "exit 1",
+          "",
+        ].join("\n"),
+        { mode: 0o755 },
+      )
+      run(repo, "config", "core.fsmonitor", hook)
+      const dir = addWorktree(repo, "late", "late-branch")
+      age(dir)
+      const report = yield* scan
+      expect(existsSync(path.join(dir, "late.txt"))).toBe(true)
+      expect(item(report, dir)).toMatchObject({ reason: "error" })
+    }),
+  )
+
+  it.effect("keeps an idle clean merged worktree with an edited assume-unchanged file", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      put(repo, "config.json", "{}")
+      run(repo, "add", "config.json")
+      run(repo, "commit", "-m", "config")
+      const dir = addWorktree(repo, "hidden-edit", "hidden-edit-branch")
+      // Backdate first: an assume-unchanged entry keeps the stat data it had when marked.
+      settle(dir)
+      run(dir, "update-index", "--assume-unchanged", "config.json")
+      put(dir, "config.json", '{"token":"local"}')
+      age(dir)
+      const report = yield* scan
+      expect(existsSync(path.join(dir, "config.json"))).toBe(true)
+      expect(item(report, dir)).toMatchObject({ reason: "dirty", dirty: 1 })
+    }),
+  )
+
+  it.effect("counts an ignored file once when git lists its folder too", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      ignore(repo, "*.log\n")
+      const dir = addWorktree(repo, "logs", "logs-branch")
+      put(dir, "logs/a.log")
+      settle(dir)
+      expect(item(yield* scan, dir)).toMatchObject({ reason: "dirty", ignored: 1, ignoredExample: "logs/a.log" })
+    }),
+  )
+
+  it.effect("never auto-removes a worktree whose regenerable ignored folder is a repository", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      ignore(repo, "build/\n")
+      const dir = addWorktree(repo, "built", "built-branch")
+      const head = nestRepo(path.join(dir, "build"))
+      settle(dir)
+      const report = yield* scan
+      expect(run(path.join(dir, "build"), "rev-parse", "HEAD")).toBe(head)
+      expect(item(report, dir)).toMatchObject({
+        reason: "dirty",
+        ignored: 0,
+        nested: ["build"],
+        detail: NESTED("build"),
+      })
+    }),
+  )
+
   it.effect("lists a worktree it cannot inspect as an error and keeps it", () =>
     Effect.gen(function* () {
       const { repo } = yield* setupRepo
@@ -654,6 +740,83 @@ describe("WorktreeJanitor.remove", () => {
       ])
       expect(existsSync(path.join(dir, "notes.txt"))).toBe(true)
       expect(existsSync(scratch)).toBe(true)
+    }),
+  )
+
+  it.effect("refuses a worktree holding an untracked nested repository", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      const dir = addWorktree(repo, "nest", "nest-branch")
+      const head = nestRepo(path.join(dir, "vendor/lib"))
+      age(dir)
+      expect(item(yield* scan, dir)).toMatchObject({
+        reason: "dirty",
+        nested: ["vendor/lib"],
+        detail: `1 changed files; ${NESTED("vendor/lib")}`,
+      })
+      const janitor = yield* WorktreeJanitor.Service
+      expect(yield* janitor.remove([dir])).toEqual([{ path: dir, ok: false, error: NESTED("vendor/lib") }])
+      expect(run(path.join(dir, "vendor/lib"), "rev-parse", "HEAD")).toBe(head)
+    }),
+  )
+
+  it.effect("refuses a worktree whose ignored folder holds a repository", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      ignore(repo, ".secrets/\n")
+      const dir = addWorktree(repo, "vault", "vault-branch")
+      const head = nestRepo(path.join(dir, ".secrets/inner"))
+      settle(dir)
+      const listed = item(yield* scan, dir)
+      expect(listed).toMatchObject({ reason: "dirty", nested: [".secrets/inner"] })
+      expect(listed?.detail).toContain(NESTED(".secrets/inner"))
+      const janitor = yield* WorktreeJanitor.Service
+      expect(yield* janitor.remove([dir])).toEqual([{ path: dir, ok: false, error: NESTED(".secrets/inner") }])
+      expect(run(path.join(dir, ".secrets/inner"), "rev-parse", "HEAD")).toBe(head)
+    }),
+  )
+
+  it.effect("refuses a worktree whose assume-unchanged file changed since the scan", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      put(repo, "config.json", "{}")
+      run(repo, "add", "config.json")
+      run(repo, "commit", "-m", "config")
+      const dir = addWorktree(repo, "hidden-edit", "hidden-edit-branch")
+      // Backdate first: an assume-unchanged entry keeps the stat data it had when marked.
+      settle(dir)
+      run(dir, "update-index", "--assume-unchanged", "config.json")
+      put(dir, "config.json", '{"token":"one"}')
+      age(dir)
+      expect(item(yield* scan, dir)).toMatchObject({ reason: "dirty", dirty: 1 })
+      put(dir, "config.json", '{"token":"second"}')
+      const janitor = yield* WorktreeJanitor.Service
+      const results = yield* janitor.remove([dir])
+      expect(results[0]).toMatchObject({ path: dir, ok: false })
+      expect(results[0].error).toContain("changed since the last scan; rescan first")
+      expect(existsSync(path.join(dir, "config.json"))).toBe(true)
+    }),
+  )
+
+  it.effect("reuses the rescue branch when a failed remove is retried", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      const dir = path.join(repo, ".worktrees", "loose")
+      run(repo, "worktree", "add", "--detach", dir)
+      run(dir, "commit", "--allow-empty", "-m", "only here")
+      age(dir)
+      const name = `janitor/rescued-${run(dir, "rev-parse", "HEAD").slice(0, 7)}`
+      yield* scan
+      run(repo, "worktree", "lock", dir)
+      const janitor = yield* WorktreeJanitor.Service
+      const first = yield* janitor.remove([dir])
+      const second = yield* janitor.remove([dir])
+      run(repo, "worktree", "unlock", dir)
+      expect([first[0], second[0]]).toMatchObject([
+        { ok: false, rescued: name },
+        { ok: false, rescued: name },
+      ])
+      expect(run(repo, "for-each-ref", "--format=%(refname:short)", "refs/heads/janitor/")).toBe(name)
     }),
   )
 

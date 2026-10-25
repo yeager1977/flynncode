@@ -133,6 +133,25 @@ describe("JanitorInspect.inspect", () => {
     }),
   )
 
+  it.effect("counts assume-unchanged and skip-worktree files as dirty", () =>
+    Effect.gen(function* () {
+      const repo = yield* setupRepo
+      writeFileSync(path.join(repo, "a.txt"), "a")
+      writeFileSync(path.join(repo, "b.txt"), "b")
+      run(repo, "add", "a.txt", "b.txt")
+      commit(repo, "files")
+      const dir = addWorktree(repo, "flagged", "flagged-branch")
+      run(dir, "update-index", "--assume-unchanged", "a.txt")
+      run(dir, "update-index", "--skip-worktree", "b.txt")
+      writeFileSync(path.join(dir, "a.txt"), "edited")
+      writeFileSync(path.join(dir, "b.txt"), "edited")
+      const result = yield* JanitorInspect.inspect(dir)
+      expect(result).toMatchObject({ kind: "worktree", status: "", dirty: 2, safe: false })
+      if (result.kind !== "worktree") throw new Error("expected worktree")
+      expect(result.hidden.map((entry) => entry.split("\0")[0])).toEqual(["a.txt", "b.txt"])
+    }),
+  )
+
   it.effect("dates a scratch folder by its newest entry at any depth", () =>
     Effect.gen(function* () {
       const repo = yield* setupRepo

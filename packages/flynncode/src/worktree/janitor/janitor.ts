@@ -21,7 +21,9 @@ const LONG_LIVED = new Set(["dev", "main", "master"])
 // (outside the cleanup folders, or on the default/long-lived branch). Every
 // worktree item says what a manual (forced) remove would lose: `dirty` changed
 // paths, `unpushed` commits and `ignored` non-regenerable local files, all also
-// summed up in `detail`. Items whose inspection failed carry none of these.
+// summed up in `detail`. `nested` lists repositories inside the worktree (git
+// cannot see their changes or commits), which block every removal. Items whose
+// inspection failed carry none of these.
 export type ReviewItem = {
   path: string
   project: string
@@ -33,6 +35,7 @@ export type ReviewItem = {
   unpushed?: number
   ignored?: number
   ignoredExample?: string
+  nested?: string[]
   bytes: number
   capped: boolean
   lastActivity: number
@@ -70,8 +73,9 @@ type Worktree = Extract<JanitorInspect.Inspection, { kind: "worktree" }>
 
 type Scratch = Extract<JanitorInspect.Inspection, { kind: "scratch" }>
 
-// A worktree inspection plus its non-regenerable ignored files.
-type Seen = Worktree & { ignored: string[] }
+// A worktree inspection plus its non-regenerable ignored files and the
+// repositories nested inside it.
+type Seen = Worktree & { ignored: string[]; nested: string[] }
 
 // The scanned state a manual remove must find unchanged; missing when the
 // inspection failed, which makes the item unremovable from the list.
@@ -176,10 +180,18 @@ const layer = Layer.effect(
       const branch = seen.branch
       if (branch && (branch === base || LONG_LIVED.has(branch)))
         return held(target, seen, { why: `checks out ${branch} — remove manually` })
-      if (!seen.safe || seen.ignored.length > 0) return held(target, seen, {})
+      if (!seen.safe || seen.ignored.length > 0 || seen.nested.length > 0) return held(target, seen, {})
 
       const bytes = (yield* measure(seen.path, seen.lastActivity)).bytes
-      const failure = yield* gitChecked(seen.repo, ["worktree", "remove", seen.path]).pipe(
+      // git's own clean check reads status.showUntrackedFiles; with "no" it would
+      // delete an untracked file that appeared after the inspection.
+      const failure = yield* gitChecked(seen.repo, [
+        "-c",
+        "status.showUntrackedFiles=all",
+        "worktree",
+        "remove",
+        seen.path,
+      ]).pipe(
         Effect.as(undefined),
         Effect.catch((error) => Effect.succeed(error.message)),
       )
@@ -201,16 +213,22 @@ const layer = Layer.effect(
         found.unpushed > 0 ? `${found.unpushed} unpushed commits` : undefined,
         found.ignored.length > 0 ? `${found.ignored.length} ignored local files, e.g. ${found.ignored[0]}` : undefined,
       ].filter((loss) => loss !== undefined)
-      const detail = [losses.join(", "), options.why].filter(Boolean).join("; ") || undefined
+      const detail = [losses.join(", "), nestedWarning(found), options.why].filter(Boolean).join("; ") || undefined
       if (options.recent) return review(target, found, "recent", detail)
       if (found.dirty > 0) return review(target, found, "dirty", detail)
       if (!found.safe) return review(target, found, "unpushed", detail)
-      if (found.ignored.length > 0) return review(target, found, "dirty", detail)
+      if (found.ignored.length > 0 || found.nested.length > 0) return review(target, found, "dirty", detail)
       return review(target, found, "recent", detail)
     }
 
     const settle = Effect.fnUntraced(function* (found: Worktree) {
-      return { ...found, ignored: yield* ignoredLocalFiles(found.path) } satisfies Seen
+      const ignored = yield* ignoredLocalFiles(found.path)
+      const untracked = yield* JanitorInspect.git(found.path, ["ls-files", "--others", "--exclude-standard", "-z"])
+      if (untracked.code !== 0) return yield* Effect.fail(new Error(`git ls-files --others in ${found.path} failed`))
+      const nested = yield* Effect.promise(() =>
+        nestedRepos(found.path, [...untracked.text.split("\0"), ...ignored.listed, ...ignored.files]),
+      )
+      return { ...found, ignored: ignored.files, nested } satisfies Seen
     })
 
     // The junk this pass may delete; removeJunk deletes exactly these. A
@@ -252,6 +270,7 @@ const layer = Layer.effect(
         unpushed: found.unpushed,
         ignored: found.ignored.length,
         ignoredExample: found.ignored[0],
+        nested: found.nested,
       } satisfies Listed
     }
 
@@ -351,16 +370,17 @@ const layer = Layer.effect(
         "-z",
       ])
       if (result.code !== 0) return yield* Effect.fail(new Error(`git ls-files --ignored in ${dir} failed`))
-      const entries = result.text
-        .split("\0")
-        .filter(Boolean)
-        .filter((file) => !JanitorJunk.isRegenerable(file))
+      const listed = result.text.split("\0").filter(Boolean)
       // --directory collapses a whole ignored folder into "name/"; list its files so
       // the count is real and a file added inside it changes the fingerprint.
-      const expanded = yield* Effect.forEach(entries, (entry) =>
-        entry.endsWith("/") ? ignoredFolderFiles(dir, entry) : Effect.succeed([entry]),
+      const expanded = yield* Effect.forEach(
+        listed.filter((file) => !JanitorJunk.isRegenerable(file)),
+        (entry) => (entry.endsWith("/") ? ignoredFolderFiles(dir, entry) : Effect.succeed([entry])),
       )
-      return expanded.flat()
+      // A folder holding only ignored files is listed both as "dir/" and as its
+      // files, so the expansion repeats them. `listed` keeps the regenerable
+      // folders too, which may still be repositories.
+      return { listed, files: [...new Set(expanded.flat())] }
     })
 
     const ignoredFolderFiles = Effect.fnUntraced(function* (dir: string, folder: string) {
@@ -418,6 +438,8 @@ const layer = Layer.effect(
       if (found.kind === "scratch" && !target.rooted)
         return yield* Effect.fail(new Error("git lists this worktree but it has no .git file"))
       const current = found.kind === "worktree" ? yield* settle(found) : found
+      const nested = current.kind === "worktree" ? nestedWarning(current) : undefined
+      if (nested) return yield* Effect.fail(new Error(nested))
       if (current.kind === "scratch" && current.capped)
         return yield* Effect.fail(new Error("too large or unreadable to verify; rescan first"))
       if (changed(listed, current)) return yield* Effect.fail(new Error("changed since the last scan; rescan first"))
@@ -446,11 +468,21 @@ const layer = Layer.effect(
 
     const rescue = Effect.fnUntraced(function* (repo: string, head: string) {
       const base = `janitor/rescued-${head.slice(0, 7)}`
+      const patterns = [`refs/heads/${base}`, `refs/heads/${base}-*`]
+      // A retry after a failed remove reuses the branch the first attempt made.
+      const existing = (yield* JanitorInspect.git(repo, [
+        "for-each-ref",
+        "--format=%(refname:short)",
+        `--points-at=${head}`,
+        ...patterns,
+      ])).text
+        .split("\n")
+        .filter(Boolean)
+      if (existing.length > 0) return existing[0]
       const taken = (yield* JanitorInspect.git(repo, [
         "for-each-ref",
         "--format=%(refname:short)",
-        `refs/heads/${base}`,
-        `refs/heads/${base}-*`,
+        ...patterns,
       ])).text.split("\n")
       // One more candidate than taken names, so at least one is free.
       const name = Array.from({ length: taken.length + 1 }, (_, i) => (i === 0 ? base : `${base}-${i + 1}`)).find(
@@ -513,12 +545,34 @@ function changed(listed: Listed, found: Seen | Scratch) {
 }
 
 // A worktree's HEAD, exact `git status --porcelain` text (every untracked file
-// listed) and non-regenerable ignored files (folders expanded to their files); a
+// listed), assume-unchanged/skip-worktree files with their stat, non-regenerable
+// ignored files (folders expanded to their files) and nested repositories; a
 // scratch folder's newest mtime anywhere in its tree and whether that walk was
 // capped, so a capped listing never matches a full one.
 function fingerprint(found: Seen | Scratch) {
   if (found.kind === "scratch") return `scratch\0${found.lastActivity}\0${found.capped}`
-  return ["worktree", found.head, found.status, ...[...found.ignored].sort()].join("\0")
+  return JSON.stringify(["worktree", found.head, found.status, found.hidden, [...found.ignored].sort(), found.nested])
+}
+
+function nestedWarning(found: Seen) {
+  if (found.nested.length === 0) return undefined
+  return `contains a nested git repository (${found.nested[0]}) — remove manually`
+}
+
+// git never descends into a repository inside the worktree; it lists it as one
+// "dir/" entry (untracked or ignored), so its changes and commits are invisible
+// to every other check. Returns those folders, without the trailing "/".
+async function nestedRepos(dir: string, entries: string[]) {
+  const folders = [...new Set(entries.filter((entry) => entry.endsWith("/")))]
+  const found = await Promise.all(
+    folders.map((folder) =>
+      lstat(path.join(dir, folder, ".git")).then(
+        () => folder.slice(0, -1),
+        () => undefined,
+      ),
+    ),
+  )
+  return found.filter((folder) => folder !== undefined).sort()
 }
 
 async function rootChildren(root: string) {

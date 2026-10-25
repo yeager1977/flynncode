@@ -53,19 +53,23 @@ export function isRegenerable(file: string) {
 }
 
 // Junk directories (and junk-named links) under root. Never descends into junk,
-// .git or node_modules; empty when root is not a real directory.
+// .git, node_modules or a nested repository (its files belong to that repo);
+// empty when root is not a real directory.
 export async function findJunk(root: string) {
   // lstat the root first: walking a symlink root would find junk in its target.
   if (!(await lstat(root).catch(() => undefined))?.isDirectory()) return []
 
   async function walk(dir: string): Promise<string[]> {
     const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+    if (dir !== root && entries.some((entry) => entry.name === ".git")) return []
     const found: string[] = []
     for (const entry of entries) {
       const target = path.join(dir, entry.name)
       // Dirent never follows symlinks, so a junk-named link is listed as a link only.
       if ((entry.isDirectory() || entry.isSymbolicLink()) && isJunk(entry.name)) {
-        found.push(target)
+        // A junk-named folder that is itself a repository (a coverage-report repo) is not junk.
+        const repo = entry.isDirectory() && (await lstat(path.join(target, ".git")).catch(() => undefined))
+        if (!repo) found.push(target)
         continue
       }
       if (!entry.isDirectory() || SKIPPED.has(entry.name)) continue

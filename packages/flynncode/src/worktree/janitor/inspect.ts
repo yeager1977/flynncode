@@ -13,6 +13,9 @@ export type Inspection =
       branch?: string
       head: string
       status: string
+      // Tracked files git is told to skip (assume-unchanged, skip-worktree), as
+      // "path\0mtime\0size"; status never shows edits to them.
+      hidden: string[]
       dirty: number
       unpushed: number
       safe: boolean
@@ -96,7 +99,22 @@ export const inspect = Effect.fn("JanitorInspect.inspect")(function* (target: st
     ]),
     `git status in ${dir}`,
   )
-  const dirty = status ? status.split("\n").length : 0
+  const flagged = (yield* requireOk(yield* git(dir, ["ls-files", "-v", "-z"]), `git ls-files -v in ${dir}`))
+    .split("\0")
+    // A lowercase tag marks assume-unchanged, `S` skip-worktree.
+    .filter((entry) => /^([a-z]|S) /.test(entry))
+    .map((entry) => entry.slice(2))
+  const hidden = yield* Effect.promise(() =>
+    Promise.all(
+      flagged.map((file) =>
+        lstat(path.join(dir, file)).then(
+          (info) => `${file}\0${info.mtimeMs}\0${info.size}`,
+          () => `${file}\0missing`,
+        ),
+      ),
+    ),
+  )
+  const dirty = (status ? status.split("\n").length : 0) + hidden.length
   const base = yield* defaultBranch(repo)
   const unpushed = Number(
     yield* requireOk(
@@ -130,6 +148,7 @@ export const inspect = Effect.fn("JanitorInspect.inspect")(function* (target: st
     branch,
     head,
     status,
+    hidden,
     dirty,
     unpushed,
     safe: dirty === 0 && (merged || pushed),

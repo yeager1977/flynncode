@@ -193,3 +193,13 @@ test("size reports the newest mtime anywhere and caps on an unreadable folder", 
     await chmod(path.join(tmp.path, "a/b"), 0o755)
   }
 })
+
+test("findJunk never descends into or lists a nested repository", async () => {
+  await using tmp = await tmpdir()
+  await put(tmp.path, "pkg/__pycache__/a.pyc")
+  await put(tmp.path, "vendor/lib/.git/HEAD", "ref: refs/heads/main\n")
+  await put(tmp.path, "vendor/lib/__pycache__/b.pyc")
+  await put(tmp.path, "coverage/.git/HEAD", "ref: refs/heads/main\n")
+
+  expect(await JanitorJunk.findJunk(tmp.path)).toEqual([path.join(tmp.path, "pkg/__pycache__")])
+})
