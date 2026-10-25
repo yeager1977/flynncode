@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { chmod, lstat, mkdir, readdir, symlink, writeFile } from "node:fs/promises"
+import { chmod, lstat, mkdir, readdir, symlink, utimes, writeFile } from "node:fs/promises"
 import path from "path"
 import { JanitorJunk } from "../../src/worktree/janitor/junk"
 import { tmpdir } from "../fixture/fixture"
@@ -24,7 +24,7 @@ test("removeJunk deletes junk at any depth and keeps everything else", async () 
   await put(tmp.path, "node_modules/pkg/index.js")
   await put(tmp.path, ".git/coverage/keep")
 
-  const result = await JanitorJunk.removeJunk(tmp.path)
+  const result = await JanitorJunk.removeJunk(tmp.path, await JanitorJunk.findJunk(tmp.path))
 
   expect(result.removed.sort()).toEqual(
     [
@@ -48,7 +48,7 @@ test("removeJunk removes directories it leaves empty but never the root", async 
   await mkdir(path.join(tmp.path, "already-empty"))
   await put(tmp.path, "coverage/index.html")
 
-  await JanitorJunk.removeJunk(tmp.path)
+  await JanitorJunk.removeJunk(tmp.path, await JanitorJunk.findJunk(tmp.path))
 
   expect(await exists(path.join(tmp.path, "a"))).toBe(false)
   expect(await exists(path.join(tmp.path, "keep/real.txt"))).toBe(true)
@@ -65,7 +65,7 @@ test("removeJunk removes a junk-named symlink as a link only", async () => {
   await symlink(outside.path, path.join(tmp.path, "pkg/__pycache__"))
   await put(tmp.path, "pkg/code.py")
 
-  const result = await JanitorJunk.removeJunk(tmp.path)
+  const result = await JanitorJunk.removeJunk(tmp.path, await JanitorJunk.findJunk(tmp.path))
 
   expect(result.removed).toEqual([path.join(tmp.path, "pkg/__pycache__")])
   expect(result.bytes).toBeLessThan(100)
@@ -83,22 +83,32 @@ test("size sums file bytes without following symlinks and honors the budget", as
   await symlink(outside.path, path.join(tmp.path, "link"))
   const link = (await lstat(path.join(tmp.path, "link"))).size
 
-  expect(await JanitorJunk.size(tmp.path)).toEqual({ bytes: 60 + link, capped: false })
+  expect(await JanitorJunk.size(tmp.path)).toMatchObject({ bytes: 60 + link, capped: false })
   expect((await JanitorJunk.size(tmp.path, { budgetMs: 0 })).capped).toBe(true)
 })
 
-test("removeJunk never deletes a junk path the skip predicate protects", async () => {
+test("removeJunk deletes only the approved paths, never junk found later", async () => {
+  await using outside = await tmpdir()
   await using tmp = await tmpdir()
   await put(tmp.path, "coverage/report.txt")
   await put(tmp.path, "pkg/__pycache__/a.pyc")
+  await put(tmp.path, "src/main.py")
+  await put(outside.path, "__pycache__/b.pyc")
+  const approved = (await JanitorJunk.findJunk(tmp.path)).filter((target) => !target.endsWith("coverage"))
+  await put(tmp.path, "later/__pycache__/c.pyc")
 
-  const result = await JanitorJunk.removeJunk(tmp.path, {
-    skip: (target) => target === path.join(tmp.path, "coverage"),
-  })
+  const result = await JanitorJunk.removeJunk(tmp.path, [
+    ...approved,
+    path.join(tmp.path, "src"),
+    path.join(outside.path, "__pycache__"),
+  ])
 
   expect(result.removed).toEqual([path.join(tmp.path, "pkg/__pycache__")])
   expect(result.bytes).toBe(100)
   expect(await exists(path.join(tmp.path, "coverage/report.txt"))).toBe(true)
+  expect(await exists(path.join(tmp.path, "later/__pycache__/c.pyc"))).toBe(true)
+  expect(await exists(path.join(tmp.path, "src/main.py"))).toBe(true)
+  expect(await exists(path.join(outside.path, "__pycache__/b.pyc"))).toBe(true)
   expect(await exists(path.join(tmp.path, "pkg/__pycache__"))).toBe(false)
 })
 
@@ -108,7 +118,9 @@ test("removeJunk does nothing when the root is a symlink", async () => {
   await put(outside.path, "__pycache__/a.pyc")
   await symlink(outside.path, path.join(tmp.path, "link"))
 
-  expect(await JanitorJunk.removeJunk(path.join(tmp.path, "link"))).toEqual({ removed: [], bytes: 0, items: [] })
+  expect(
+    await JanitorJunk.removeJunk(path.join(tmp.path, "link"), [path.join(tmp.path, "link", "__pycache__")]),
+  ).toEqual({ removed: [], bytes: 0, items: [] })
   expect(await exists(path.join(outside.path, "__pycache__/a.pyc"))).toBe(true)
 })
 
@@ -119,7 +131,7 @@ test("removeJunk skips a target it cannot delete and keeps going", async () => {
   const locked = path.join(tmp.path, "a/__pycache__/locked")
   await chmod(locked, 0o555)
   try {
-    const result = await JanitorJunk.removeJunk(tmp.path)
+    const result = await JanitorJunk.removeJunk(tmp.path, await JanitorJunk.findJunk(tmp.path))
     expect(result.removed).toEqual([path.join(tmp.path, "b/__pycache__")])
     expect(result.bytes).toBe(100)
     expect(result.items).toEqual([{ path: path.join(tmp.path, "b/__pycache__"), bytes: 100 }])
@@ -165,4 +177,19 @@ test("findJunk lists junk targets without deleting them", async () => {
   ])
   expect(await exists(path.join(tmp.path, "coverage/index.ts"))).toBe(true)
   expect(await exists(path.join(tmp.path, "pkg/__pycache__/a.pyc"))).toBe(true)
+})
+
+test("size reports the newest mtime anywhere and caps on an unreadable folder", async () => {
+  await using tmp = await tmpdir()
+  await put(tmp.path, "a/b/new.txt")
+  const old = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000)
+  for (const entry of ["a/b", "a", "."]) await utimes(path.join(tmp.path, entry), old, old)
+  const newest = (await lstat(path.join(tmp.path, "a/b/new.txt"))).mtimeMs
+  expect(await JanitorJunk.size(tmp.path)).toMatchObject({ mtime: newest, capped: false })
+  await chmod(path.join(tmp.path, "a/b"), 0o000)
+  try {
+    expect((await JanitorJunk.size(tmp.path)).capped).toBe(true)
+  } finally {
+    await chmod(path.join(tmp.path, "a/b"), 0o755)
+  }
 })

@@ -1,8 +1,9 @@
 import { AppProcess } from "@flynncode/core/process"
 import { Effect } from "effect"
 import { ChildProcess } from "effect/unstable/process"
-import { lstat, readdir, realpath, stat } from "node:fs/promises"
+import { lstat, realpath, stat } from "node:fs/promises"
 import path from "path"
+import { JanitorJunk } from "./junk"
 
 export type Inspection =
   | {
@@ -17,7 +18,9 @@ export type Inspection =
       safe: boolean
       lastActivity: number
     }
-  | { path: string; kind: "scratch"; lastActivity: number }
+  // `capped`: the walk ran out of time or hit an unreadable folder, so a newer
+  // file may be missing from lastActivity.
+  | { path: string; kind: "scratch"; lastActivity: number; capped: boolean }
   | { path: string; kind: "main" }
 
 export const git = Effect.fnUntraced(function* (cwd: string, args: string[]) {
@@ -59,8 +62,10 @@ export const inspect = Effect.fn("JanitorInspect.inspect")(function* (target: st
       }),
     catch: (cause) => new Error(`cannot inspect ${dir}/.git: ${String(cause)}`),
   })
-  if (!dotGit)
-    return { path: dir, kind: "scratch" as const, lastActivity: yield* Effect.promise(() => folderActivity(dir)) }
+  if (!dotGit) {
+    const walk = yield* Effect.promise(() => JanitorJunk.size(dir))
+    return { path: dir, kind: "scratch" as const, lastActivity: walk.mtime, capped: walk.capped }
+  }
   if (dotGit.isDirectory()) return { path: dir, kind: "main" as const }
   if (dotGit.isSymbolicLink()) {
     const resolved = yield* Effect.promise(() => stat(path.join(dir, ".git")).catch(() => undefined))
@@ -78,7 +83,19 @@ export const inspect = Effect.fn("JanitorInspect.inspect")(function* (target: st
   const repo = path.dirname(common.text)
   const branch = (yield* git(dir, ["symbolic-ref", "--short", "-q", "HEAD"])).text || undefined
   const head = yield* requireOk(yield* git(dir, ["rev-parse", "HEAD"]), `git rev-parse in ${dir}`)
-  const status = yield* requireOk(yield* git(dir, ["status", "--porcelain"]), `git status in ${dir}`)
+  // Every untracked file is listed on its own, whatever the user's status config,
+  // so the count is real and a file added inside an untracked folder changes it.
+  const status = yield* requireOk(
+    yield* git(dir, [
+      "-c",
+      "status.showUntrackedFiles=all",
+      "status",
+      "--porcelain",
+      "--untracked-files=all",
+      "--ignore-submodules=none",
+    ]),
+    `git status in ${dir}`,
+  )
   const dirty = status ? status.split("\n").length : 0
   const base = yield* defaultBranch(repo)
   const unpushed = Number(
@@ -123,19 +140,6 @@ export const inspect = Effect.fn("JanitorInspect.inspect")(function* (target: st
 // A failed command must fail the inspection, never read as an empty (clean/idle) result.
 function requireOk(result: { code: number; text: string }, what: string) {
   return result.code === 0 ? Effect.succeed(result.text) : Effect.fail(new Error(`${what} failed`))
-}
-
-async function folderActivity(dir: string) {
-  const entries = await readdir(dir).catch(() => [])
-  const times = await Promise.all(
-    [dir, ...entries.map((entry) => path.join(dir, entry))].map((file) =>
-      lstat(file).then(
-        (info) => info.mtimeMs,
-        () => 0,
-      ),
-    ),
-  )
-  return Math.max(0, ...times)
 }
 
 export * as JanitorInspect from "./inspect"

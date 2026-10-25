@@ -156,8 +156,8 @@ const layer = Layer.effect(
         return held(target, yield* settle(first), { why: "outside cleanup folders — remove manually" })
 
       const tracked = yield* trackedFiles(first.path)
-      const keep = yield* keptJunk(first.path, tracked)
-      const junk = yield* Effect.promise(() => JanitorJunk.removeJunk(first.path, { skip: (dir) => keep.has(dir) }))
+      const approved = yield* approvedJunk(first.path, tracked)
+      const junk = yield* Effect.promise(() => JanitorJunk.removeJunk(first.path, approved))
       input.cleaned.push(
         ...junk.items.map((entry) => ({
           path: entry.path,
@@ -213,19 +213,20 @@ const layer = Layer.effect(
       return { ...found, ignored: yield* ignoredLocalFiles(found.path) } satisfies Seen
     })
 
-    // Junk the pass must keep. A junk-named directory that git tracks (or that
-    // holds tracked files) is project content. `coverage` is also a common source
-    // folder name, so it only counts as junk when git ignores it (kept if git fails).
-    const keptJunk = Effect.fnUntraced(function* (worktree: string, tracked: string[]) {
+    // The junk this pass may delete; removeJunk deletes exactly these. A
+    // junk-named directory that git tracks (or that holds tracked files) is project
+    // content. `coverage` is also a common source folder name, so it only counts as
+    // junk when git ignores it (kept if git fails).
+    const approvedJunk = Effect.fnUntraced(function* (worktree: string, tracked: string[]) {
       const candidates = yield* Effect.promise(() => JanitorJunk.findJunk(worktree))
-      const kept = yield* Effect.forEach(candidates, (dir) =>
+      const approved = yield* Effect.forEach(candidates, (dir) =>
         Effect.gen(function* () {
-          if (tracked.some((file) => file === dir || file.startsWith(dir + path.sep))) return dir
-          if (path.basename(dir) !== "coverage") return undefined
-          return (yield* JanitorInspect.git(worktree, ["check-ignore", "-q", dir])).code === 0 ? undefined : dir
+          if (tracked.some((file) => file === dir || file.startsWith(dir + path.sep))) return undefined
+          if (path.basename(dir) !== "coverage") return dir
+          return (yield* JanitorInspect.git(worktree, ["check-ignore", "-q", dir])).code === 0 ? dir : undefined
         }),
       )
-      return new Set(kept.filter((dir) => dir !== undefined))
+      return approved.filter((dir) => dir !== undefined)
     })
 
     const review = (target: Target, found: Seen | Scratch, reason: ReviewItem["reason"], detail?: string) => {
@@ -350,10 +351,33 @@ const layer = Layer.effect(
         "-z",
       ])
       if (result.code !== 0) return yield* Effect.fail(new Error(`git ls-files --ignored in ${dir} failed`))
-      return result.text
+      const entries = result.text
         .split("\0")
         .filter(Boolean)
         .filter((file) => !JanitorJunk.isRegenerable(file))
+      // --directory collapses a whole ignored folder into "name/"; list its files so
+      // the count is real and a file added inside it changes the fingerprint.
+      const expanded = yield* Effect.forEach(entries, (entry) =>
+        entry.endsWith("/") ? ignoredFolderFiles(dir, entry) : Effect.succeed([entry]),
+      )
+      return expanded.flat()
+    })
+
+    const ignoredFolderFiles = Effect.fnUntraced(function* (dir: string, folder: string) {
+      const result = yield* JanitorInspect.git(dir, [
+        "--literal-pathspecs",
+        "ls-files",
+        "--others",
+        "--ignored",
+        "--exclude-standard",
+        "-z",
+        "--",
+        folder,
+      ])
+      if (result.code !== 0) return yield* Effect.fail(new Error(`git ls-files --ignored ${folder} in ${dir} failed`))
+      const files = result.text.split("\0").filter(Boolean)
+      // An ignored folder with no files in it is still shown, as itself.
+      return files.length > 0 ? files : [folder]
     })
 
     const activeDirectories = Effect.fnUntraced(function* (now: number) {
@@ -394,6 +418,8 @@ const layer = Layer.effect(
       if (found.kind === "scratch" && !target.rooted)
         return yield* Effect.fail(new Error("git lists this worktree but it has no .git file"))
       const current = found.kind === "worktree" ? yield* settle(found) : found
+      if (current.kind === "scratch" && current.capped)
+        return yield* Effect.fail(new Error("too large or unreadable to verify; rescan first"))
       if (changed(listed, current)) return yield* Effect.fail(new Error("changed since the last scan; rescan first"))
       if (current.kind === "scratch") yield* Effect.promise(() => rm(resolved, { recursive: true, force: true }))
       // The owner saw everything this deletes (local changes, ignored files) on the
@@ -404,7 +430,12 @@ const layer = Layer.effect(
           ? yield* rescue(current.repo, current.head)
           : undefined
       if (current.kind === "worktree") {
-        yield* gitChecked(current.repo, ["worktree", "remove", "--force", resolved])
+        const failure = yield* gitChecked(current.repo, ["worktree", "remove", "--force", resolved]).pipe(
+          Effect.as(undefined),
+          Effect.catch((error) => Effect.succeed(error.message)),
+        )
+        // The rescue branch already exists, so the owner must still be told its name.
+        if (failure) return { path: input, ok: false, error: failure, rescued }
         yield* JanitorInspect.git(current.repo, ["worktree", "prune"])
       }
       state.items = state.items.filter((item) => item.path !== resolved)
@@ -481,11 +512,12 @@ function changed(listed: Listed, found: Seen | Scratch) {
   return fingerprint(found) !== listed.fingerprint
 }
 
-// A worktree's HEAD, exact `git status --porcelain` text and non-regenerable
-// ignored files; a scratch folder's latest activity (its own and its direct
-// children's mtimes).
+// A worktree's HEAD, exact `git status --porcelain` text (every untracked file
+// listed) and non-regenerable ignored files (folders expanded to their files); a
+// scratch folder's newest mtime anywhere in its tree and whether that walk was
+// capped, so a capped listing never matches a full one.
 function fingerprint(found: Seen | Scratch) {
-  if (found.kind === "scratch") return `scratch\0${found.lastActivity}`
+  if (found.kind === "scratch") return `scratch\0${found.lastActivity}\0${found.capped}`
   return ["worktree", found.head, found.status, ...[...found.ignored].sort()].join("\0")
 }
 

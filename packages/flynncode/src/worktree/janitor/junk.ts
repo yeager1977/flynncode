@@ -1,4 +1,4 @@
-import { lstat, readdir, rm, rmdir } from "node:fs/promises"
+import { lstat, readdir, realpath, rm, rmdir } from "node:fs/promises"
 import path from "path"
 
 // Junk is only ever removed inside idle worktrees; the janitor caller enforces that.
@@ -77,9 +77,17 @@ export async function findJunk(root: string) {
   return walk(root)
 }
 
-export async function removeJunk(root: string, options?: { skip?: (target: string) => boolean }) {
+// Deletes exactly the approved targets (a filtered findJunk result), never
+// anything a fresh walk would find. A target that is not a junk-named entry
+// inside root, or whose parent no longer resolves to itself (swapped for a
+// symlink since the walk), is left alone.
+export async function removeJunk(root: string, targets: string[]) {
   const items: { path: string; bytes: number }[] = []
-  for (const target of (await findJunk(root)).filter((target) => !options?.skip?.(target))) {
+  // lstat the root first: a symlink root would point the deletes at its target.
+  if (!(await lstat(root).catch(() => undefined))?.isDirectory()) return { removed: [], bytes: 0, items }
+  for (const target of targets) {
+    if (!target.startsWith(root + path.sep) || !isJunk(path.basename(target))) continue
+    if ((await realpath(path.dirname(target)).catch(() => undefined)) !== path.dirname(target)) continue
     const bytes = (await size(target, { budgetMs: Infinity })).bytes
     // A target that cannot be deleted (permissions, busy) is skipped so the rest
     // of the pass still runs; force already ignores ENOENT.
@@ -94,24 +102,32 @@ export async function removeJunk(root: string, options?: { skip?: (target: strin
   return { removed: items.map((item) => item.path), bytes: items.reduce((sum, item) => sum + item.bytes, 0), items }
 }
 
+// Total file bytes and the newest mtime of any entry (lstat, links not followed).
+// `capped` means the walk ran out of time or could not read a folder, so both
+// are lower bounds.
 export async function size(root: string, input?: { budgetMs?: number }) {
   const deadline = Date.now() + (input?.budgetMs ?? 30_000)
   // lstat the root first: readdir on a symlink root would walk its target.
   const top = await lstat(root).catch(() => undefined)
-  if (!top?.isDirectory()) return { bytes: top?.size ?? 0, capped: false }
+  if (!top?.isDirectory()) return { bytes: top?.size ?? 0, capped: false, mtime: top?.mtimeMs ?? 0 }
   const pending = [root]
   let bytes = 0
+  let mtime = top.mtimeMs
+  let capped = false
   while (pending.length > 0) {
     const dir = pending.pop()!
-    const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
-    for (const entry of entries) {
-      if (Date.now() >= deadline) return { bytes, capped: true }
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => undefined)
+    if (!entries) capped = true
+    for (const entry of entries ?? []) {
+      if (Date.now() >= deadline) return { bytes, capped: true, mtime }
       const target = path.join(dir, entry.name)
+      const info = await lstat(target).catch(() => undefined)
+      mtime = Math.max(mtime, info?.mtimeMs ?? 0)
       if (entry.isDirectory()) pending.push(target)
-      else bytes += (await lstat(target).catch(() => undefined))?.size ?? 0
+      else bytes += info?.size ?? 0
     }
   }
-  return { bytes, capped: false }
+  return { bytes, capped, mtime }
 }
 
 // Removes the directories a junk removal emptied, walking up to (never including)

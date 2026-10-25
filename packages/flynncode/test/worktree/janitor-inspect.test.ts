@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, setDefaultTimeout } from "bun:test"
 import { mkdirSync, realpathSync, symlinkSync, utimesSync, writeFileSync } from "node:fs"
 import path from "path"
 import { CrossSpawnSpawner } from "@flynncode/core/cross-spawn-spawner"
@@ -9,6 +9,9 @@ import { Effect } from "effect"
 import { JanitorInspect } from "../../src/worktree/janitor/inspect"
 import { tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
+
+// Each test drives several real git processes; under load they can outlast bun's 5s default.
+setDefaultTimeout(30_000)
 
 const it = testEffect(AppNodeBuilder.build(LayerNode.group([CrossSpawnSpawner.node, AppProcess.node])))
 
@@ -111,6 +114,36 @@ describe("JanitorInspect.inspect", () => {
         head: run(dir, "rev-parse", "HEAD"),
         status: "?? note.txt",
       })
+    }),
+  )
+
+  it.effect("lists every untracked file whatever the status config says", () =>
+    Effect.gen(function* () {
+      const repo = yield* setupRepo
+      run(repo, "config", "status.showUntrackedFiles", "no")
+      const dir = addWorktree(repo, "hidden", "hidden-branch")
+      mkdirSync(path.join(dir, "drafts"))
+      writeFileSync(path.join(dir, "drafts/a.txt"), "x")
+      writeFileSync(path.join(dir, "drafts/b.txt"), "x")
+      expect(yield* JanitorInspect.inspect(dir)).toMatchObject({
+        kind: "worktree",
+        dirty: 2,
+        status: "?? drafts/a.txt\n?? drafts/b.txt",
+      })
+    }),
+  )
+
+  it.effect("dates a scratch folder by its newest entry at any depth", () =>
+    Effect.gen(function* () {
+      const repo = yield* setupRepo
+      const dir = path.join(repo, ".worktrees", "deep")
+      mkdirSync(path.join(dir, "a/b"), { recursive: true })
+      writeFileSync(path.join(dir, "a/b/new.txt"), "x")
+      for (const entry of ["a/b", "a", "."]) utimesSync(path.join(dir, entry), OLD_MS / 1000, OLD_MS / 1000)
+      const result = yield* JanitorInspect.inspect(dir)
+      if (result.kind !== "scratch") throw new Error("expected scratch")
+      expect(result.lastActivity).toBeGreaterThan(OLD_MS + 1000)
+      expect(result.capped).toBe(false)
     }),
   )
 
