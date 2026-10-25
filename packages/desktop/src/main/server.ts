@@ -8,6 +8,7 @@ import { getStore } from "./store"
 import { DEFAULT_SERVER_URL_KEY } from "./store-keys"
 import { MOBILE_GATEWAY_PORT } from "./mobile-gateway-launch"
 import { sidecarExecArgv } from "./sidecar-exec-args"
+import { SIDECAR_START_STALL_TIMEOUT, stallTimeoutFor } from "./sidecar-maintenance"
 import { sidecarArguments, sidecarNodeFlags } from "./sidecar-args"
 import { isSyncMessage, type SidecarSyncCommand, type SidecarSyncMessage, type SidecarSyncStart } from "./sidecar-sync"
 
@@ -17,11 +18,11 @@ type SidecarMessage =
   | { type: "ready" }
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
+  | { type: "maintenance"; phase: "compact"; state: "started" | "finished" }
 
 export type SidecarListener = { stop: () => Promise<void> }
 
 const SIDECAR_SERVICE_NAME = "opencode server"
-const SIDECAR_START_STALL_TIMEOUT = 60_000
 const SIDECAR_STOP_TIMEOUT = 6_000
 
 type SpawnLocalServerOptions = {
@@ -126,14 +127,19 @@ export async function spawnLocalServer(
       reject(error)
     }
 
-    const refreshTimeout = () => {
+    const refreshTimeout = (ms = SIDECAR_START_STALL_TIMEOUT) => {
       clearTimeout(timeout)
       timeout = setTimeout(() => {
-        fail(new Error(`Sidecar did not become ready within ${SIDECAR_START_STALL_TIMEOUT}ms: ${sidecar}`))
-      }, SIDECAR_START_STALL_TIMEOUT)
+        fail(new Error(`Sidecar did not become ready within ${ms}ms: ${sidecar}`))
+      }, ms)
     }
 
     const onMessage = (message: SidecarMessage) => {
+      if (message.type === "maintenance") {
+        getLogger().log("sidecar database maintenance", { phase: message.phase, state: message.state })
+        refreshTimeout(stallTimeoutFor(message))
+        return
+      }
       if (message.type === "ready") {
         if (done) return
         done = true

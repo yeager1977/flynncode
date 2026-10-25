@@ -2,6 +2,7 @@ import "./init-projectors"
 
 import { NodeHttpServer } from "@effect/platform-node"
 import { AppNodeBuilder } from "@flynncode/core/effect/app-node-builder"
+import { DatabaseMaintenance } from "@flynncode/core/database/maintenance"
 import { ConfigProvider, Context, Effect, Exit, Layer, Scope } from "effect"
 import { HttpRouter, HttpServer } from "effect/unstable/http"
 import { OpenApi } from "effect/unstable/httpapi"
@@ -34,6 +35,7 @@ type ListenOptions = CorsOptions & {
   hostname: string
   mdns?: boolean
   mdnsDomain?: string
+  onMaintenance?: (progress: DatabaseMaintenance.Progress) => void
 }
 type ListenerState = {
   scope: Scope.Scope
@@ -71,6 +73,7 @@ export async function openapi() {
 export let url: URL | undefined
 
 export async function listen(opts: ListenOptions): Promise<Listener> {
+  if (opts.onMaintenance) DatabaseMaintenance.onProgress(opts.onMaintenance)
   const listener = await Effect.runPromise(listenEffect(opts))
   return {
     hostname: listener.hostname,

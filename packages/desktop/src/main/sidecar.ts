@@ -54,6 +54,7 @@ type SidecarMessage =
   | { type: "ready" }
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
+  | { type: "maintenance"; phase: "compact"; state: "started" | "finished" }
   | SidecarSyncMessage
 
 type ParentPort = {
@@ -118,6 +119,7 @@ async function start(command: StartCommand) {
       username: "opencode",
       password: command.password,
       cors: ["oc://renderer"],
+      onMaintenance: (progress: { phase: "compact"; state: "started" | "finished" }) => parentPort.postMessage({ type: "maintenance", ...progress }),
     })
     const upstream = mobileGatewayUpstream(command.hostname, command.port)
     const gate = createSyncGate({
