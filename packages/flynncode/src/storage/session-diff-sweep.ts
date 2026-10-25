@@ -13,6 +13,12 @@ export class Service extends Context.Service<Service, Interface>()("@flynncode/S
 // session/revert.ts writes storage/session_diff/<sessionID>.json and nothing
 // removes it when the session is deleted. Core's database maintenance cannot
 // see this server-owned storage, so it gets its own hourly sweep.
+//
+// storage/ is shared by every channel's database (opencode-<channel>.db) but
+// each database only knows its own sessions, so "absent from session" does not
+// mean deleted: it may be another channel's live session. Only ids this
+// database positively deleted (session_tombstone, written by the session
+// projector) and has not re-created are swept.
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -21,13 +27,22 @@ const layer = Layer.effect(
     const sweep = Effect.fn("SessionDiffSweep.sweep")(function* () {
       const keys = yield* storage.list(["session_diff"]).pipe(Effect.orElseSucceed(() => []))
       if (keys.length === 0) return 0
-      const live = new Set(
-        (yield* database.db.all<{ id: string }>(sql`SELECT id FROM session`).pipe(Effect.orDie)).map((row) => row.id),
+      const deleted = new Set(
+        (yield* database.db
+          .all<{ id: string }>(sql`SELECT id FROM session_tombstone WHERE id NOT IN (SELECT id FROM session)`)
+          .pipe(Effect.orDie)).map((row) => row.id),
       )
-      const stale = keys.filter((key) => !live.has(key.at(-1) ?? ""))
-      yield* Effect.forEach(stale, (key) => storage.remove(key).pipe(Effect.ignore), { discard: true })
-      if (stale.length > 0) yield* Effect.logInfo("session diff sweep", { removed: stale.length })
-      return stale.length
+      const results = yield* Effect.forEach(
+        keys.filter((key) => deleted.has(key.at(-1) ?? "")),
+        (key) =>
+          storage.remove(key).pipe(
+            Effect.as(true),
+            Effect.orElseSucceed(() => false),
+          ),
+      )
+      const removed = results.filter(Boolean).length
+      if (removed > 0) yield* Effect.logInfo("session diff sweep", { removed })
+      return removed
     })
     yield* sweep().pipe(
       Effect.catchCause((cause) => Effect.logError("session diff sweep failed", { cause: Cause.pretty(cause) })),
