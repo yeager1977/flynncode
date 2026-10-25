@@ -101,6 +101,19 @@ describe("JanitorInspect.inspect", () => {
     }),
   )
 
+  it.effect("reports HEAD and the exact status text", () =>
+    Effect.gen(function* () {
+      const repo = yield* setupRepo
+      const dir = addWorktree(repo, "head", "head-branch")
+      writeFileSync(path.join(dir, "note.txt"), "x")
+      expect(yield* JanitorInspect.inspect(dir)).toMatchObject({
+        kind: "worktree",
+        head: run(dir, "rev-parse", "HEAD"),
+        status: "?? note.txt",
+      })
+    }),
+  )
+
   it.effect("classifies a folder without .git as scratch", () =>
     Effect.gen(function* () {
       const repo = yield* setupRepo

@@ -43,55 +43,54 @@ export function isJunk(name: string) {
   return JUNK.has(name) || name.startsWith(JUNK_PREFIX)
 }
 
-// `file` is a path relative to the worktree as git prints it ("/"-separated).
+// `file` is a path relative to the worktree as git prints it ("/"-separated, a
+// whole ignored directory ends in "/"). Only the entry itself counts: an ignored
+// file inside a tracked `out/` or `dist/` folder is still local data.
 export function isRegenerable(file: string) {
-  const parts = file.split("/").filter(Boolean)
-  const name = parts.at(-1) ?? ""
-  return (
-    parts.some((part) => REGENERABLE.has(part) || part.startsWith(JUNK_PREFIX)) ||
-    name.endsWith(".pyc") ||
-    name.endsWith(".tsbuildinfo") ||
-    name === ".DS_Store"
-  )
+  const name = file.split("/").filter(Boolean).at(-1) ?? ""
+  if (file.endsWith("/")) return REGENERABLE.has(name) || name.startsWith(JUNK_PREFIX)
+  return name.endsWith(".pyc") || name.endsWith(".tsbuildinfo") || name === ".DS_Store"
 }
 
-export async function removeJunk(root: string, options?: { skip?: (target: string) => boolean | Promise<boolean> }) {
-  const items: { path: string; bytes: number }[] = []
-  // lstat the root first: walking a symlink root would delete junk in its target.
-  if (!(await lstat(root).catch(() => undefined))?.isDirectory()) return { removed: [], bytes: 0, items }
+// Junk directories (and junk-named links) under root. Never descends into junk,
+// .git or node_modules; empty when root is not a real directory.
+export async function findJunk(root: string) {
+  // lstat the root first: walking a symlink root would find junk in its target.
+  if (!(await lstat(root).catch(() => undefined))?.isDirectory()) return []
 
-  // Returns whether anything under dir was removed, so only directories this pass
-  // emptied are pruned; directories that were already empty are left alone.
-  async function walk(dir: string): Promise<boolean> {
+  async function walk(dir: string): Promise<string[]> {
     const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
-    const results = []
+    const found: string[] = []
     for (const entry of entries) {
       const target = path.join(dir, entry.name)
-      // Dirent never follows symlinks, so a junk-named link is removed as a link only.
+      // Dirent never follows symlinks, so a junk-named link is listed as a link only.
       if ((entry.isDirectory() || entry.isSymbolicLink()) && isJunk(entry.name)) {
-        if (await options?.skip?.(target)) continue
-        const bytes = (await size(target, { budgetMs: Infinity })).bytes
-        // A target that cannot be deleted (permissions, busy) is skipped so the
-        // rest of the pass still runs; force already ignores ENOENT.
-        const ok = await rm(target, { recursive: true, force: true }).then(
-          () => true,
-          () => false,
-        )
-        if (!ok) continue
-        items.push({ path: target, bytes })
-        results.push(true)
+        found.push(target)
         continue
       }
       if (!entry.isDirectory() || SKIPPED.has(entry.name)) continue
-      const changed = await walk(target)
-      if (changed && (await readdir(target).catch(() => [undefined])).length === 0)
-        await rmdir(target).catch(() => undefined)
-      results.push(changed)
+      found.push(...(await walk(target)))
     }
-    return results.some(Boolean)
+    return found
   }
 
-  await walk(root)
+  return walk(root)
+}
+
+export async function removeJunk(root: string, options?: { skip?: (target: string) => boolean }) {
+  const items: { path: string; bytes: number }[] = []
+  for (const target of (await findJunk(root)).filter((target) => !options?.skip?.(target))) {
+    const bytes = (await size(target, { budgetMs: Infinity })).bytes
+    // A target that cannot be deleted (permissions, busy) is skipped so the rest
+    // of the pass still runs; force already ignores ENOENT.
+    const ok = await rm(target, { recursive: true, force: true }).then(
+      () => true,
+      () => false,
+    )
+    if (!ok) continue
+    items.push({ path: target, bytes })
+    await prune(root, path.dirname(target))
+  }
   return { removed: items.map((item) => item.path), bytes: items.reduce((sum, item) => sum + item.bytes, 0), items }
 }
 
@@ -113,6 +112,18 @@ export async function size(root: string, input?: { budgetMs?: number }) {
     }
   }
   return { bytes, capped: false }
+}
+
+// Removes the directories a junk removal emptied, walking up to (never including)
+// root. Directories that were already empty elsewhere are left alone.
+async function prune(root: string, dir: string): Promise<void> {
+  if (!dir.startsWith(root + path.sep)) return
+  if ((await readdir(dir).catch(() => [undefined])).length !== 0) return
+  const ok = await rmdir(dir).then(
+    () => true,
+    () => false,
+  )
+  if (ok) return prune(root, path.dirname(dir))
 }
 
 export * as JanitorJunk from "./junk"

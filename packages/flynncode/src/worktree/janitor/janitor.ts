@@ -17,16 +17,22 @@ const ROOTS = [".worktrees", path.join(".opencode", "worktrees")]
 const LONG_LIVED = new Set(["dev", "main", "master"])
 
 // Reasons: `dirty` (changed or ignored local files), `unpushed`, `scratch` (no
-// .git), `error`, and `recent` for anything kept without risk — in active use, or
-// clean and safe but never auto-removed (outside the cleanup folders, or on the
-// default/long-lived branch), which `detail` then explains. `repo`, `branch` and
-// `dirty` record the scanned state so a manual remove can refuse a changed item.
+// .git), `error`, and `recent` for anything in active use or kept without risk
+// (outside the cleanup folders, or on the default/long-lived branch). Every
+// worktree item says what a manual (forced) remove would lose: `dirty` changed
+// paths, `unpushed` commits and `ignored` non-regenerable local files, all also
+// summed up in `detail`. Items whose inspection failed carry none of these.
 export type ReviewItem = {
   path: string
   project: string
   repo?: string
   branch?: string
+  head?: string
+  detached?: boolean
   dirty?: number
+  unpushed?: number
+  ignored?: number
+  ignoredExample?: string
   bytes: number
   capped: boolean
   lastActivity: number
@@ -34,11 +40,19 @@ export type ReviewItem = {
   detail?: string
 }
 
-export type CleanedItem = { path: string; bytes: number; time: number; kind: "worktree" | "junk" | "scratch" }
+// `rescued` names the branch a manual remove created to keep a detached HEAD's
+// unpushed commits reachable.
+export type CleanedItem = {
+  path: string
+  bytes: number
+  time: number
+  kind: "worktree" | "junk" | "scratch"
+  rescued?: string
+}
 
 export type Report = { items: ReviewItem[]; cleaned: CleanedItem[]; scanning: boolean; lastScan?: number }
 
-export type RemoveResult = { path: string; ok: boolean; error?: string }
+export type RemoveResult = { path: string; ok: boolean; error?: string; rescued?: string }
 
 export interface Interface {
   readonly scan: () => Effect.Effect<Report>
@@ -52,11 +66,16 @@ export class Service extends Context.Service<Service, Interface>()("@flynncode/W
 // linked worktree git lists for the project (`listed`). Paths are realpath-resolved.
 type Target = { path: string; project: string; rooted: boolean; listed: boolean }
 
-type Found = { path: string; lastActivity: number; repo?: string; branch?: string; dirty?: number }
-
-type Checked = Exclude<JanitorInspect.Inspection, { kind: "main" }>
-
 type Worktree = Extract<JanitorInspect.Inspection, { kind: "worktree" }>
+
+type Scratch = Extract<JanitorInspect.Inspection, { kind: "scratch" }>
+
+// A worktree inspection plus its non-regenerable ignored files.
+type Seen = Worktree & { ignored: string[] }
+
+// The scanned state a manual remove must find unchanged; missing when the
+// inspection failed, which makes the item unremovable from the list.
+type Listed = ReviewItem & { fingerprint?: string }
 
 // Worktrees are auto-removed only when idle, clean and merged/pushed, and never
 // with --force. Anything uncertain (inspection errors, dirty or unpushed work,
@@ -73,9 +92,13 @@ const layer = Layer.effect(
     const lock = yield* Semaphore.make(1)
     const single = yield* Semaphore.make(1)
     const sizes = new Map<string, { lastActivity: number; bytes: number; capped: boolean }>()
-    const state: Report = { items: [], cleaned: [], scanning: false }
+    const state: Omit<Report, "items"> & { items: Listed[] } = { items: [], cleaned: [], scanning: false }
 
-    const snapshot = () => ({ ...state, items: [...state.items], cleaned: [...state.cleaned] })
+    const snapshot = (): Report => ({
+      ...state,
+      items: state.items.map(({ fingerprint, ...item }) => item),
+      cleaned: [...state.cleaned],
+    })
 
     const runScan = Effect.fn("WorktreeJanitor.scan")(function* () {
       state.scanning = true
@@ -125,15 +148,16 @@ const layer = Layer.effect(
         if (!target.rooted) return yield* Effect.fail(new Error("git lists this worktree but it has no .git file"))
         return review(target, first, "scratch")
       }
-      if (input.busy(first.path) || input.now - first.lastActivity < IDLE_MS) return review(target, first, "recent")
+      if (input.busy(first.path) || input.now - first.lastActivity < IDLE_MS)
+        return held(target, yield* settle(first), { recent: true })
       // Worktrees git lists elsewhere on disk (a parked dev checkout, Flynncode
       // sandboxes) are only ever reported, never cleaned automatically.
-      if (!target.rooted) return held(target, first, "outside cleanup folders — remove manually")
+      if (!target.rooted)
+        return held(target, yield* settle(first), { why: "outside cleanup folders — remove manually" })
 
       const tracked = yield* trackedFiles(first.path)
-      const junk = yield* Effect.promise(() =>
-        JanitorJunk.removeJunk(first.path, { skip: (dir) => keepJunk(first.path, dir, tracked) }),
-      )
+      const keep = yield* keptJunk(first.path, tracked)
+      const junk = yield* Effect.promise(() => JanitorJunk.removeJunk(first.path, { skip: (dir) => keep.has(dir) }))
       input.cleaned.push(
         ...junk.items.map((entry) => ({
           path: entry.path,
@@ -145,65 +169,89 @@ const layer = Layer.effect(
 
       const second = yield* JanitorInspect.inspect(first.path)
       if (second.kind !== "worktree") return yield* Effect.fail(new Error("changed during the scan"))
-      const base = (yield* JanitorInspect.defaultBranch(second.repo))?.replace(/^origin\//, "")
-      const branch = second.branch
-      if (branch && (branch === base || LONG_LIVED.has(branch)))
-        return held(target, second, `checks out ${branch} — remove manually`)
-      if (!second.safe) return held(target, second)
       // git status hides ignored files and `git worktree remove` deletes them, so
       // anything ignored that tooling cannot rebuild (.env, local config) keeps it.
-      const ignored = yield* ignoredLocalFiles(second.path)
-      if (ignored.length > 0)
-        return review(target, second, "dirty", `${ignored.length} ignored local files, e.g. ${ignored[0]}`)
+      const seen = yield* settle(second)
+      const base = (yield* JanitorInspect.defaultBranch(seen.repo))?.replace(/^origin\//, "")
+      const branch = seen.branch
+      if (branch && (branch === base || LONG_LIVED.has(branch)))
+        return held(target, seen, { why: `checks out ${branch} — remove manually` })
+      if (!seen.safe || seen.ignored.length > 0) return held(target, seen, {})
 
-      const bytes = (yield* measure(second.path, second.lastActivity)).bytes
-      const failure = yield* gitChecked(second.repo, ["worktree", "remove", second.path]).pipe(
+      const bytes = (yield* measure(seen.path, seen.lastActivity)).bytes
+      const failure = yield* gitChecked(seen.repo, ["worktree", "remove", seen.path]).pipe(
         Effect.as(undefined),
         Effect.catch((error) => Effect.succeed(error.message)),
       )
       if (failure) {
-        yield* Effect.logWarning("worktree janitor could not remove", { path: second.path, error: failure })
-        return review(target, second, "error", failure)
+        yield* Effect.logWarning("worktree janitor could not remove", { path: seen.path, error: failure })
+        return review(target, seen, "error", failure)
       }
-      yield* JanitorInspect.git(second.repo, ["worktree", "prune"])
-      sizes.delete(second.path)
-      input.cleaned.push({ path: second.path, bytes, time: Date.now(), kind: "worktree" })
+      yield* JanitorInspect.git(seen.repo, ["worktree", "prune"])
+      sizes.delete(seen.path)
+      input.cleaned.push({ path: seen.path, bytes, time: Date.now(), kind: "worktree" })
       return undefined
     })
 
-    // A worktree that is not auto-removed: report what is at risk, else why it was kept.
-    const held = (target: Target, found: Worktree, why?: string) => {
-      if (found.dirty > 0) return review(target, found, "dirty", `${found.dirty} changed files`)
-      if (!found.safe) return review(target, found, "unpushed", `${found.unpushed} unpushed commits`)
-      return review(target, found, "recent", why)
+    // A worktree that is not auto-removed: the reason names the biggest risk (or
+    // `recent` when in use), and `detail` lists everything a forced remove would lose.
+    const held = (target: Target, found: Seen, options: { recent?: boolean; why?: string }) => {
+      const losses = [
+        found.dirty > 0 ? `${found.dirty} changed files` : undefined,
+        found.unpushed > 0 ? `${found.unpushed} unpushed commits` : undefined,
+        found.ignored.length > 0 ? `${found.ignored.length} ignored local files, e.g. ${found.ignored[0]}` : undefined,
+      ].filter((loss) => loss !== undefined)
+      const detail = [losses.join(", "), options.why].filter(Boolean).join("; ") || undefined
+      if (options.recent) return review(target, found, "recent", detail)
+      if (found.dirty > 0) return review(target, found, "dirty", detail)
+      if (!found.safe) return review(target, found, "unpushed", detail)
+      if (found.ignored.length > 0) return review(target, found, "dirty", detail)
+      return review(target, found, "recent", detail)
     }
 
-    // A junk-named directory that git tracks (or that holds tracked files) is
-    // project content. `coverage` is also a common source folder name, so it only
-    // counts as junk when git ignores it.
-    const keepJunk = async (worktree: string, dir: string, tracked: string[]) => {
-      if (tracked.some((file) => file === dir || file.startsWith(dir + path.sep))) return true
-      if (path.basename(dir) !== "coverage") return false
-      const result = await Effect.runPromise(
-        JanitorInspect.git(worktree, ["check-ignore", "-q", dir]).pipe(Effect.provideService(AppProcess.Service, proc)),
+    const settle = Effect.fnUntraced(function* (found: Worktree) {
+      return { ...found, ignored: yield* ignoredLocalFiles(found.path) } satisfies Seen
+    })
+
+    // Junk the pass must keep. A junk-named directory that git tracks (or that
+    // holds tracked files) is project content. `coverage` is also a common source
+    // folder name, so it only counts as junk when git ignores it (kept if git fails).
+    const keptJunk = Effect.fnUntraced(function* (worktree: string, tracked: string[]) {
+      const candidates = yield* Effect.promise(() => JanitorJunk.findJunk(worktree))
+      const kept = yield* Effect.forEach(candidates, (dir) =>
+        Effect.gen(function* () {
+          if (tracked.some((file) => file === dir || file.startsWith(dir + path.sep))) return dir
+          if (path.basename(dir) !== "coverage") return undefined
+          return (yield* JanitorInspect.git(worktree, ["check-ignore", "-q", dir])).code === 0 ? undefined : dir
+        }),
       )
-      return result.code !== 0
-    }
+      return new Set(kept.filter((dir) => dir !== undefined))
+    })
 
-    const review = (target: Target, found: Found, reason: ReviewItem["reason"], detail?: string) => {
+    const review = (target: Target, found: Seen | Scratch, reason: ReviewItem["reason"], detail?: string) => {
       const cached = fresh(found.path, found.lastActivity)
-      return {
+      const base = {
         path: found.path,
         project: target.project,
-        repo: found.repo,
-        branch: found.branch,
-        dirty: found.dirty,
         bytes: cached?.bytes ?? 0,
         capped: cached?.capped ?? false,
         lastActivity: found.lastActivity,
         reason,
         detail,
-      } satisfies ReviewItem
+        fingerprint: fingerprint(found),
+      }
+      if (found.kind === "scratch") return base satisfies Listed
+      return {
+        ...base,
+        repo: found.repo,
+        branch: found.branch,
+        head: found.head,
+        detached: found.branch === undefined,
+        dirty: found.dirty,
+        unpushed: found.unpushed,
+        ignored: found.ignored.length,
+        ignoredExample: found.ignored[0],
+      } satisfies Listed
     }
 
     const failed = Effect.fnUntraced(function* (target: Target, cause: Cause.Cause<unknown>) {
@@ -213,7 +261,16 @@ const layer = Layer.effect(
           () => 0,
         ),
       )
-      return review(target, { path: target.path, lastActivity }, "error", errorMessage(Cause.squash(cause)))
+      const cached = fresh(target.path, lastActivity)
+      return {
+        path: target.path,
+        project: target.project,
+        bytes: cached?.bytes ?? 0,
+        capped: cached?.capped ?? false,
+        lastActivity,
+        reason: "error",
+        detail: errorMessage(Cause.squash(cause)),
+      } satisfies Listed
     })
 
     const fresh = (dir: string, lastActivity: number) => {
@@ -326,26 +383,51 @@ const layer = Layer.effect(
       const resolved = yield* Effect.promise(() => realpath(input).catch(() => input))
       const listed = state.items.find((item) => item.path === resolved)
       if (!listed) return { path: input, ok: false, error: "not on the cleanup review list" }
+      if (!listed.fingerprint)
+        return yield* Effect.fail(new Error("this item could not be inspected; fix or remove it manually"))
       const target = (yield* projectTargets(listed.project, yield* projectRoots())).find(
         (entry) => entry.path === resolved,
       )
       if (!target) return yield* Effect.fail(new Error("no longer inside a cleanup root of its project"))
       const found = yield* JanitorInspect.inspect(resolved)
       if (found.kind === "main") return yield* Effect.fail(new Error("is a main checkout"))
-      if (changed(listed, found)) return yield* Effect.fail(new Error("changed since the last scan; rescan first"))
       if (found.kind === "scratch" && !target.rooted)
         return yield* Effect.fail(new Error("git lists this worktree but it has no .git file"))
-      if (found.kind === "scratch") yield* Effect.promise(() => rm(resolved, { recursive: true, force: true }))
-      if (found.kind === "worktree") {
-        // The owner chose this item from the review list, so local changes go too;
-        // the branch and its commits are kept.
-        yield* gitChecked(found.repo, ["worktree", "remove", "--force", resolved])
-        yield* JanitorInspect.git(found.repo, ["worktree", "prune"])
+      const current = found.kind === "worktree" ? yield* settle(found) : found
+      if (changed(listed, current)) return yield* Effect.fail(new Error("changed since the last scan; rescan first"))
+      if (current.kind === "scratch") yield* Effect.promise(() => rm(resolved, { recursive: true, force: true }))
+      // The owner saw everything this deletes (local changes, ignored files) on the
+      // review list. A branch keeps its commits; a detached HEAD's unpushed commits
+      // get a janitor/rescued-* branch first so they stay reachable.
+      const rescued =
+        current.kind === "worktree" && current.branch === undefined && current.unpushed > 0
+          ? yield* rescue(current.repo, current.head)
+          : undefined
+      if (current.kind === "worktree") {
+        yield* gitChecked(current.repo, ["worktree", "remove", "--force", resolved])
+        yield* JanitorInspect.git(current.repo, ["worktree", "prune"])
       }
       state.items = state.items.filter((item) => item.path !== resolved)
-      state.cleaned.push({ path: resolved, bytes: listed.bytes, time: Date.now(), kind: found.kind })
+      state.cleaned.push({ path: resolved, bytes: listed.bytes, time: Date.now(), kind: current.kind, rescued })
       sizes.delete(resolved)
-      return { path: input, ok: true }
+      return { path: input, ok: true, rescued }
+    })
+
+    const rescue = Effect.fnUntraced(function* (repo: string, head: string) {
+      const base = `janitor/rescued-${head.slice(0, 7)}`
+      const taken = (yield* JanitorInspect.git(repo, [
+        "for-each-ref",
+        "--format=%(refname:short)",
+        `refs/heads/${base}`,
+        `refs/heads/${base}-*`,
+      ])).text.split("\n")
+      // One more candidate than taken names, so at least one is free.
+      const name = Array.from({ length: taken.length + 1 }, (_, i) => (i === 0 ? base : `${base}-${i + 1}`)).find(
+        (candidate) => !taken.includes(candidate),
+      )
+      if (!name) return yield* Effect.fail(new Error("no free rescue branch name"))
+      yield* gitChecked(repo, ["branch", name, head])
+      return name
     })
 
     const scan = () =>
@@ -392,13 +474,19 @@ const layer = Layer.effect(
 )
 
 // The owner reviewed the item in its scanned state; a remove must not act on
-// anything new (another branch or repo, more local changes, a different kind).
-// Items whose inspection failed carry no scanned kind, so they need a rescan first.
-function changed(listed: ReviewItem, found: Checked) {
-  const scanned = listed.reason === "scratch" ? "scratch" : listed.repo ? "worktree" : undefined
-  if (found.kind !== scanned) return true
-  if (found.kind === "scratch") return false
-  return found.repo !== listed.repo || found.branch !== listed.branch || found.dirty > (listed.dirty ?? 0)
+// anything new: another kind, repo or branch, or a different fingerprint.
+function changed(listed: Listed, found: Seen | Scratch) {
+  if (found.kind !== (listed.repo ? "worktree" : "scratch")) return true
+  if (found.kind === "worktree" && (found.repo !== listed.repo || found.branch !== listed.branch)) return true
+  return fingerprint(found) !== listed.fingerprint
+}
+
+// A worktree's HEAD, exact `git status --porcelain` text and non-regenerable
+// ignored files; a scratch folder's latest activity (its own and its direct
+// children's mtimes).
+function fingerprint(found: Seen | Scratch) {
+  if (found.kind === "scratch") return `scratch\0${found.lastActivity}`
+  return ["worktree", found.head, found.status, ...[...found.ignored].sort()].join("\0")
 }
 
 async function rootChildren(root: string) {

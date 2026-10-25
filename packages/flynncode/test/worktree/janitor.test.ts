@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect } from "bun:test"
-import { existsSync, mkdirSync, symlinkSync, utimesSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs"
 import path from "path"
 import { sql } from "drizzle-orm"
 import { Duration, Effect } from "effect"
@@ -311,6 +311,60 @@ describe("WorktreeJanitor.scan", () => {
     }),
   )
 
+  it.effect("shows what removal would lose on a recent worktree", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      ignore(repo, ".env\n")
+      const dir = addWorktree(repo, "busy", "busy-branch")
+      run(dir, "commit", "--allow-empty", "-m", "extra")
+      put(dir, "notes.txt")
+      put(dir, ".env", "TOKEN=local")
+      const listed = item(yield* scan, dir)
+      expect(listed).toMatchObject({
+        reason: "recent",
+        dirty: 1,
+        unpushed: 1,
+        ignored: 1,
+        ignoredExample: ".env",
+        detached: false,
+        head: run(dir, "rev-parse", "HEAD"),
+      })
+      expect(listed?.detail).toContain("1 changed files")
+      expect(listed?.detail).toContain("1 unpushed commits")
+      expect(listed?.detail).toContain("1 ignored local files, e.g. .env")
+      expect(listed).not.toHaveProperty("fingerprint")
+    }),
+  )
+
+  it.effect("marks a detached worktree as detached", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      const dir = path.join(repo, ".worktrees", "loose")
+      run(repo, "worktree", "add", "--detach", dir)
+      expect(item(yield* scan, dir)).toMatchObject({ detached: true, branch: undefined })
+    }),
+  )
+
+  it.effect("keeps an ignored file inside a tracked out/ folder", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      put(repo, "tools/out/keep.txt")
+      run(repo, "add", "tools/out/keep.txt")
+      ignore(repo, "secrets.json\ndist/\n")
+      const dir = addWorktree(repo, "tools", "tools-branch")
+      put(dir, "tools/out/secrets.json", "{}")
+      put(dir, "dist/bundle.js")
+      settle(dir)
+      const report = yield* scan
+      expect(existsSync(path.join(dir, "tools/out/secrets.json"))).toBe(true)
+      expect(item(report, dir)).toMatchObject({
+        reason: "dirty",
+        ignored: 1,
+        ignoredExample: "tools/out/secrets.json",
+      })
+    }),
+  )
+
   it.effect("lists a worktree it cannot inspect as an error and keeps it", () =>
     Effect.gen(function* () {
       const { repo } = yield* setupRepo
@@ -361,6 +415,136 @@ describe("WorktreeJanitor.remove", () => {
       expect(results[0]).toMatchObject({ path: dir, ok: false })
       expect(results[0].error).toContain("changed since the last scan; rescan first")
       expect(existsSync(path.join(dir, "new-work.txt"))).toBe(true)
+    }),
+  )
+
+  it.effect("refuses a worktree whose changes were swapped since the scan", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      const dir = addWorktree(repo, "swap", "swap-branch")
+      put(dir, "first.txt")
+      age(dir)
+      expect(item(yield* scan, dir)).toMatchObject({ reason: "dirty", dirty: 1 })
+      run(dir, "add", "first.txt")
+      run(dir, "commit", "-m", "first")
+      put(dir, "second.txt")
+      const janitor = yield* WorktreeJanitor.Service
+      const results = yield* janitor.remove([dir])
+      expect(results[0]).toMatchObject({ path: dir, ok: false })
+      expect(results[0].error).toContain("changed since the last scan; rescan first")
+      expect(existsSync(path.join(dir, "second.txt"))).toBe(true)
+    }),
+  )
+
+  it.effect("refuses a scratch folder that gained a file since the scan", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      const scratch = path.join(repo, ".worktrees", "notes")
+      put(scratch, "todo.md")
+      utimesSync(path.join(scratch, "todo.md"), OLD_MS / 1000, OLD_MS / 1000)
+      utimesSync(scratch, OLD_MS / 1000, OLD_MS / 1000)
+      expect(item(yield* scan, scratch)).toMatchObject({ reason: "scratch" })
+      put(scratch, "later.md")
+      const janitor = yield* WorktreeJanitor.Service
+      const results = yield* janitor.remove([scratch])
+      expect(results[0]).toMatchObject({ path: scratch, ok: false })
+      expect(results[0].error).toContain("changed since the last scan; rescan first")
+      expect(existsSync(path.join(scratch, "later.md"))).toBe(true)
+    }),
+  )
+
+  it.effect("refuses a detached worktree that gained a commit since the scan", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      const dir = path.join(repo, ".worktrees", "loose")
+      run(repo, "worktree", "add", "--detach", dir)
+      run(dir, "commit", "--allow-empty", "-m", "one")
+      age(dir)
+      expect(item(yield* scan, dir)).toMatchObject({ reason: "unpushed", detached: true })
+      run(dir, "commit", "--allow-empty", "-m", "two")
+      const janitor = yield* WorktreeJanitor.Service
+      const results = yield* janitor.remove([dir])
+      expect(results[0]).toMatchObject({ path: dir, ok: false })
+      expect(results[0].error).toContain("changed since the last scan; rescan first")
+      expect(existsSync(dir)).toBe(true)
+    }),
+  )
+
+  it.effect("rescues unpushed commits of a detached worktree onto a branch before removing it", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      const dir = path.join(repo, ".worktrees", "loose")
+      run(repo, "worktree", "add", "--detach", dir)
+      run(dir, "commit", "--allow-empty", "-m", "only here")
+      age(dir)
+      const head = run(dir, "rev-parse", "HEAD")
+      const name = `janitor/rescued-${head.slice(0, 7)}`
+      // An earlier rescue already took the plain name.
+      run(repo, "branch", name, "main")
+      yield* scan
+      const janitor = yield* WorktreeJanitor.Service
+      const results = yield* janitor.remove([dir])
+      expect(results).toEqual([{ path: dir, ok: true, rescued: `${name}-2` }])
+      expect(existsSync(dir)).toBe(false)
+      expect(run(repo, "rev-parse", `refs/heads/${name}-2`)).toBe(head)
+      expect((yield* janitor.report()).cleaned).toContainEqual(
+        expect.objectContaining({ path: dir, kind: "worktree", rescued: `${name}-2` }),
+      )
+    }),
+  )
+
+  it.effect("refuses an item whose inspection failed with a manual-fix message", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      const broken = path.join(repo, ".worktrees", "broken")
+      put(broken, ".git", "gitdir: /nonexistent/worktrees/broken\n")
+      put(broken, "work.txt")
+      expect(item(yield* scan, broken)).toMatchObject({ reason: "error" })
+      const janitor = yield* WorktreeJanitor.Service
+      const results = yield* janitor.remove([broken])
+      expect(results[0]).toMatchObject({ path: broken, ok: false })
+      expect(results[0].error).toBe("this item could not be inspected; fix or remove it manually")
+      expect(existsSync(path.join(broken, "work.txt"))).toBe(true)
+    }),
+  )
+
+  it.effect("refuses a worktree that switched branch since the scan", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      const dir = addWorktree(repo, "switch", "switch-branch")
+      put(dir, "notes.txt")
+      age(dir)
+      yield* scan
+      run(dir, "checkout", "-q", "-b", "other-branch")
+      const janitor = yield* WorktreeJanitor.Service
+      const results = yield* janitor.remove([dir])
+      expect(results[0]).toMatchObject({ path: dir, ok: false })
+      expect(results[0].error).toContain("changed since the last scan; rescan first")
+      expect(existsSync(path.join(dir, "notes.txt"))).toBe(true)
+    }),
+  )
+
+  it.effect("refuses an item that turned from worktree into scratch or back", () =>
+    Effect.gen(function* () {
+      const { repo } = yield* setupRepo
+      const dir = addWorktree(repo, "was-worktree", "was-branch")
+      put(dir, "notes.txt")
+      age(dir)
+      const scratch = path.join(repo, ".worktrees", "was-scratch")
+      put(scratch, "todo.md")
+      yield* scan
+      rmSync(path.join(dir, ".git"))
+      rmSync(scratch, { recursive: true })
+      run(repo, "worktree", "add", "-b", "now-branch", scratch)
+      const janitor = yield* WorktreeJanitor.Service
+      const results = yield* janitor.remove([dir, scratch])
+      expect(results.map((result) => result.ok)).toEqual([false, false])
+      expect(results.map((result) => result.error)).toEqual([
+        "changed since the last scan; rescan first",
+        "changed since the last scan; rescan first",
+      ])
+      expect(existsSync(path.join(dir, "notes.txt"))).toBe(true)
+      expect(existsSync(scratch)).toBe(true)
     }),
   )
 

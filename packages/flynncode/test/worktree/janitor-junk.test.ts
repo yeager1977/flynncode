@@ -139,18 +139,30 @@ test("isRegenerable accepts rebuildable output and rejects local files", () => {
     "tsconfig.tsbuildinfo",
     ".DS_Store",
   ]
-  const local = [".env", "config/local.json", "notes/distribution.txt", ".env.local"]
+  // Only the entry itself counts: an ignored file inside a tracked out/ or dist/
+  // folder is still local data.
+  const local = [
+    ".env",
+    "config/local.json",
+    "notes/distribution.txt",
+    ".env.local",
+    "tools/out/secrets.json",
+    "dist/local.env",
+    "build/notes/",
+  ]
   expect(regenerable.filter((file) => !JanitorJunk.isRegenerable(file))).toEqual([])
   expect(local.filter((file) => JanitorJunk.isRegenerable(file))).toEqual([])
 })
 
-test("removeJunk awaits an async skip", async () => {
+test("findJunk lists junk targets without deleting them", async () => {
   await using tmp = await tmpdir()
   await put(tmp.path, "coverage/index.ts")
   await put(tmp.path, "pkg/__pycache__/a.pyc")
-  const result = await JanitorJunk.removeJunk(tmp.path, {
-    skip: async (target) => path.basename(target) === "coverage",
-  })
-  expect(result.removed).toEqual([path.join(tmp.path, "pkg/__pycache__")])
+  await put(tmp.path, "node_modules/x/__pycache__/b.pyc")
+  expect((await JanitorJunk.findJunk(tmp.path)).sort()).toEqual([
+    path.join(tmp.path, "coverage"),
+    path.join(tmp.path, "pkg/__pycache__"),
+  ])
   expect(await exists(path.join(tmp.path, "coverage/index.ts"))).toBe(true)
+  expect(await exists(path.join(tmp.path, "pkg/__pycache__/a.pyc"))).toBe(true)
 })

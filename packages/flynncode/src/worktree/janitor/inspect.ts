@@ -10,6 +10,8 @@ export type Inspection =
       kind: "worktree"
       repo: string
       branch?: string
+      head: string
+      status: string
       dirty: number
       unpushed: number
       safe: boolean
@@ -75,6 +77,7 @@ export const inspect = Effect.fn("JanitorInspect.inspect")(function* (target: st
   if (common.text === gitdir.text) return { path: dir, kind: "main" as const }
   const repo = path.dirname(common.text)
   const branch = (yield* git(dir, ["symbolic-ref", "--short", "-q", "HEAD"])).text || undefined
+  const head = yield* requireOk(yield* git(dir, ["rev-parse", "HEAD"]), `git rev-parse in ${dir}`)
   const status = yield* requireOk(yield* git(dir, ["status", "--porcelain"]), `git status in ${dir}`)
   const dirty = status ? status.split("\n").length : 0
   const base = yield* defaultBranch(repo)
@@ -108,6 +111,8 @@ export const inspect = Effect.fn("JanitorInspect.inspect")(function* (target: st
     kind: "worktree" as const,
     repo,
     branch,
+    head,
+    status,
     dirty,
     unpushed,
     safe: dirty === 0 && (merged || pushed),
