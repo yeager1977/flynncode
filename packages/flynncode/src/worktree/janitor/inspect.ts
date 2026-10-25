@@ -92,7 +92,9 @@ export const inspect = Effect.fn("JanitorInspect.inspect")(function* (target: st
   // A .git file can also belong to a main checkout (git init --separate-git-dir).
   if (common.text === gitdir.text) return { path: dir, kind: "main" as const }
   const repo = path.dirname(common.text)
-  const branch = (yield* git(dir, ["symbolic-ref", "--short", "-q", "HEAD"])).text || undefined
+  // The full ref, not --short: a tag of the same name shortens the branch to
+  // "heads/<name>", which would not match the branch in an --exclude.
+  const branch = (yield* git(dir, ["symbolic-ref", "-q", "HEAD"])).text.replace(/^refs\/heads\//, "") || undefined
   const head = yield* requireOk(yield* git(dir, ["rev-parse", "HEAD"]), `git rev-parse in ${dir}`)
   // Every untracked file is listed on its own, whatever the user's status config,
   // so the count is real and a file added inside an untracked folder changes it.

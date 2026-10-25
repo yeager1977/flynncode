@@ -223,7 +223,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       const info = yield* session.get(ctx.params.sessionID).pipe(Effect.option)
       yield* SessionError.mapStorageNotFound(session.remove(ctx.params.sessionID))
       // catchCause, not ignore: a defect in disposal must not turn the completed delete into a 500.
-      if (Option.isSome(info)) yield* disposeWorktreeOf(info.value).pipe(Effect.catchCause(() => Effect.void))
+      if (Option.isSome(info))
+        yield* disposeWorktreeOf(info.value).pipe(
+          Effect.catchCause((cause) => Effect.logWarning("worktree disposal failed", { cause: Cause.pretty(cause) })),
+        )
       return true
     })
 
@@ -248,7 +251,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         yield* session.setArchived({ sessionID: ctx.params.sessionID, time: ctx.payload.time.archived })
         yield* session.get(ctx.params.sessionID).pipe(
           Effect.flatMap(disposeWorktreeOf),
-          Effect.catchCause(() => Effect.void),
+          Effect.catchCause((cause) => Effect.logWarning("worktree disposal failed", { cause: Cause.pretty(cause) })),
         )
         // Archived sessions drop out of the instance's attached-folder union.
         yield* liveFolders.refresh(current.directory)

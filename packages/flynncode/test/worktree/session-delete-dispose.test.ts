@@ -292,4 +292,52 @@ describe("dispose a task worktree only when nothing is lost", () => {
     { git: true },
     { timeout: 30000 },
   )
+
+  it.instance(
+    "archive removes a worktree whose commit another local branch reaches, and keeps its branch",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const fs = yield* FSUtil.Service
+        const sessions = yield* Session.Service
+        const worktrees = yield* Worktree.Service
+        const directory = yield* createOwnedWorktree("archive-reachable")
+        // Neither merged into the default branch nor pushed, so only the
+        // rev-list fallback can find the commit on another branch.
+        yield* git(["commit", "--allow-empty", "-m", "task work"], directory)
+        yield* git(["branch", "keeper", "opencode/archive-reachable"], test.directory)
+        const info = yield* bindSession(sessions, directory, "reachable")
+        yield* sessions.setArchived({ sessionID: info.id, time: Date.now() })
+
+        const removed = yield* disposeSettledWorktree({ sessions, worktrees, info: yield* sessions.get(info.id) })
+
+        expect(removed).toBe(directory)
+        expect(yield* fs.exists(directory)).toBe(false)
+        expect(yield* branchExists("archive-reachable")).toBe(true)
+      }),
+    { git: true },
+    { timeout: 30000 },
+  )
+
+  it.instance(
+    "keeps a worktree with an unmerged commit when a tag shares its branch name",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const fs = yield* FSUtil.Service
+        const worktrees = yield* Worktree.Service
+        const directory = yield* createOwnedWorktree("tag-shadow")
+        // The tag sits on the base commit, so only the branch reaches the new
+        // commit; an ambiguous short name (heads/...) must not exclude the
+        // wrong ref and count the branch itself as "elsewhere".
+        yield* git(["tag", "opencode/tag-shadow", "HEAD"], test.directory)
+        yield* git(["commit", "--allow-empty", "-m", "unmerged task work"], directory)
+
+        expect(yield* worktrees.disposeIfSafe({ directory })).toBe(false)
+        expect(yield* fs.exists(directory)).toBe(true)
+        expect(yield* branchExists("tag-shadow")).toBe(true)
+      }),
+    { git: true },
+    { timeout: 30000 },
+  )
 })

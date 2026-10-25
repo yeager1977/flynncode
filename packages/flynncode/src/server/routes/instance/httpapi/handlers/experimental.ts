@@ -159,7 +159,8 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
 
     // Session row rebinding happens at this HTTP boundary: sessions bound to
     // the source worktree move to the destination, and a disposable source is
-    // removed once every session bound to it is archived and idle.
+    // removed once every session bound to it is archived and idle, and only
+    // when nothing would be lost (Worktree.disposeIfSafe; the branch is kept).
     // Best-effort — handoff already succeeded, so failures never fail it.
     const rebindHandoffSessions = Effect.fn("ExperimentalHttpApi.rebindHandoffSessions")(function* (
       input: Worktree.HandoffInput,
@@ -211,7 +212,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       const archived = bound.every((item) => item.time.archived != null)
       const binding = { sessionID: bound[0]?.id ?? "", directory: input.from, disposable }
       if (!shouldDispose(binding, { archived, running: false })) return
-      const removed = yield* worktreeSvc.disposeIfIdle({ directory: input.from })
+      const removed = yield* worktreeSvc.disposeIfSafe({ directory: input.from })
       if (removed) yield* project.removeSandbox(inst.project.id, input.from).pipe(Effect.ignore)
     })
 

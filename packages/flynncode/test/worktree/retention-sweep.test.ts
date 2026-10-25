@@ -26,15 +26,18 @@ const it = testEffect(
 // under the configured location on a prefixed branch; `createDisposable` is
 // covered by the live tests in subagent-isolation.test.ts (it forks an
 // instance bootstrap, which would add boot timing to these assertions).
-const createOwnedWorktree = (input: { name: string }) =>
+const createOwnedWorktree = (input: { name: string; checkout?: boolean }) =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     const gitSvc = yield* Git.Service
     const directory = path.join(test.directory, ".opencode", "worktrees", input.name)
     const branch = `opencode/${input.name}`
-    const created = yield* gitSvc.run(["worktree", "add", "--no-checkout", "-b", branch, directory], {
-      cwd: test.directory,
-    })
+    const created = yield* gitSvc.run(
+      ["worktree", "add", ...(input.checkout ? [] : ["--no-checkout"]), "-b", branch, directory],
+      {
+        cwd: test.directory,
+      },
+    )
     if (created.exitCode !== 0) {
       throw new Error(`git worktree add failed: ${created.stderr.toString("utf8")}`)
     }
@@ -153,6 +156,42 @@ describe("Worktree.retention sweep", () => {
         expect(remaining.map((entry) => entry.name)).toContain(worktree.name)
       }),
     { git: true },
+    { timeout: 30000 },
+  )
+
+  it.instance(
+    "retire keeps a keep-N loser holding an ignored local file that tooling cannot rebuild",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const fs = yield* FSUtil.Service
+        const svc = yield* Worktree.Service
+        const sessions = yield* Session.Service
+        const gitSvc = yield* Git.Service
+        yield* Effect.promise(() => Bun.write(path.join(test.directory, ".gitignore"), ".env\n.opencode/\n"))
+        yield* gitSvc.run(["add", ".gitignore"], { cwd: test.directory })
+        yield* gitSvc.run(["commit", "-m", "ignore env"], { cwd: test.directory })
+
+        // Checked out, so the worktree is clean apart from the ignored file.
+        const ignored = yield* createOwnedWorktree({ name: "retention-ignored", checkout: true })
+        const newest = yield* createOwnedWorktree({ name: "retention-fresh", checkout: true })
+        yield* Effect.promise(() => Bun.write(path.join(ignored.directory, ".env"), "SECRET=local\n"))
+        const ignoredSession = yield* bindSession({ sessions, directory: ignored.directory, title: "ignored" })
+        const newestSession = yield* bindSession({ sessions, directory: newest.directory, title: "fresh" })
+        const now = Date.now()
+        yield* ageFromPin({ sessionID: ignoredSession.id, pin: "ignored", time: now - 10_000_000 })
+        yield* ageFromPin({ sessionID: newestSession.id, pin: "fresh", time: now - 1_000 })
+
+        yield* svc.retire
+
+        expect(yield* fs.exists(path.join(ignored.directory, ".env"))).toBe(true)
+        expect(
+          (yield* gitSvc.run(["rev-parse", "--verify", "--quiet", "refs/heads/opencode/retention-ignored"], {
+            cwd: test.directory,
+          })).exitCode,
+        ).toBe(0)
+      }),
+    { git: true, config: { worktree: { keep: 1 } } },
     { timeout: 30000 },
   )
 })

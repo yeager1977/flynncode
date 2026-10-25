@@ -1,4 +1,6 @@
+import { $ } from "bun"
 import { afterEach, describe, expect, test } from "bun:test"
+import path from "path"
 import { Effect, Layer } from "effect"
 import { AppNodeBuilder } from "@flynncode/core/effect/app-node-builder"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
@@ -189,5 +191,40 @@ describe("handoff rebind over HttpApi", () => {
         )
       }),
     { git: true, config: { formatter: false, lsp: false, worktree: { allow_primary_rebind: true } } },
+  )
+
+  // A disposable source whose sessions are all archived is removed after the
+  // handoff only under the lossless rule: an uncommitted file keeps the folder
+  // and its branch (the old idle-only path force-removed both).
+  itHttp.instance(
+    "keeps a disposable source worktree holding an uncommitted file, and its branch",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const sessions = yield* SessionNs.Service
+        const dir = test.directory
+        const source = path.join(dir, ".opencode", "worktrees", "handoff-dirty-src")
+        const target = path.join(dir, ".opencode", "worktrees", "handoff-dirty-dst")
+        yield* Effect.promise(async () => {
+          await $`git worktree add -b opencode/handoff-dirty-src ${source}`.cwd(dir).quiet()
+          await $`git worktree add -b opencode/handoff-dirty-dst ${target}`.cwd(dir).quiet()
+          await Bun.write(path.join(source, "notes.txt"), "work in progress\n")
+        })
+        const created = yield* sessions.create({ title: "disposable-bound" })
+        yield* sessions.setDirectory({ sessionID: created.id, directory: source })
+        yield* sessions.setMetadata({ sessionID: created.id, metadata: { disposable: true, worktree: source } })
+        yield* sessions.setArchived({ sessionID: created.id, time: Date.now() })
+
+        const handoff = yield* postHandoff(dir, source, target)
+        expect(handoff.status).toBe(200)
+
+        expect((yield* sessions.get(created.id)).directory).toBe(target)
+        expect(yield* Effect.promise(() => Bun.file(path.join(source, "notes.txt")).exists())).toBe(true)
+        const branch = yield* Effect.promise(() =>
+          $`git rev-parse --verify --quiet refs/heads/opencode/handoff-dirty-src`.cwd(dir).quiet().nothrow(),
+        )
+        expect(branch.exitCode).toBe(0)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
   )
 })

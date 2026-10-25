@@ -776,27 +776,49 @@ const layer: Layer.Layer<
       )
     })
 
-    // Retention removal never forces: a worktree with uncommitted or untracked
-    // changes, or whose branch holds commits that no other branch,
-    // remote-tracking ref or tag reaches (so its upstream/base has not merged
-    // them), is kept so automatic cleanup cannot lose work.
+    // Retention removal never loses work: the folder goes only under the same
+    // lossless rule as disposeIfSafe (fail-closed janitor inspection finds it
+    // clean, without non-regenerable ignored files or nested repositories, and
+    // with every commit reachable elsewhere). The removal is unforced, so git
+    // itself refuses a worktree that became dirty since the check.
     const retireDirectory = Effect.fnUntraced(function* (directory: string, branch: string) {
       const ctx = yield* InstanceState.context
       if (!branch) return false
-      const status = yield* git(["-c", "core.fsmonitor=false", "status", "--porcelain=v1"], { cwd: directory })
-      if (status.code !== 0 || status.text.trim()) return false
+      const found = yield* lossless(directory).pipe(
+        Effect.provideService(AppProcess.Service, appProcess),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("worktree retention skipped: inspection failed", { directory, cause }).pipe(
+            Effect.as(undefined),
+          ),
+        ),
+      )
+      // The listed branch must still be the one checked out there, or the
+      // inspection vouched for different commits than the branch dropped below.
+      if (!found || found.branch !== branch) return false
+      yield* store.disposeDirectory(directory)
+      yield* stopFsmonitor(found.path)
+      // git's own clean check reads status.showUntrackedFiles; with "no" it
+      // would delete an untracked file that appeared after the inspection.
+      const removed = yield* git(["-c", "status.showUntrackedFiles=all", "worktree", "remove", found.path], {
+        cwd: found.repo,
+      })
+      if (removed.code !== 0) return false
+      // Drop the branch name only when no commit on it is unique: re-checked
+      // after the removal, so a commit made since the inspection keeps it.
       const unique = yield* git(
-        ["rev-list", "--count", `refs/heads/${branch}`, "--not", `--exclude=${branch}`, "--branches", "--remotes", "--tags"],
+        [
+          "rev-list",
+          "--count",
+          `refs/heads/${branch}`,
+          "--not",
+          `--exclude=${branch}`,
+          "--branches",
+          "--remotes",
+          "--tags",
+        ],
         { cwd: ctx.worktree },
       )
-      if (unique.code !== 0 || unique.text.trim() !== "0") return false
-      yield* store.disposeDirectory(directory)
-      yield* stopFsmonitor(directory)
-      // No --force: git itself refuses a worktree that became dirty since the check.
-      const removed = yield* git(["worktree", "remove", directory], { cwd: ctx.worktree })
-      if (removed.code !== 0) return false
-      // Every commit on the branch is reachable from another ref (checked
-      // above), so dropping the branch name cannot lose history.
+      if (unique.code !== 0 || unique.text.trim() !== "0") return true
       yield* git(["branch", "-D", branch], { cwd: ctx.worktree })
       return true
     })
