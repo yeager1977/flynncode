@@ -115,6 +115,38 @@ const scenarios: Scenario[] = [
       },
       "status",
     ),
+  http.protected
+    .get("/worktree/cleanup", "worktreeCleanup.report")
+    .global()
+    .json(200, (body) => {
+      object(body)
+      array(body.items)
+      array(body.cleaned)
+      check(typeof body.scanning === "boolean", "worktree cleanup report should include scanning flag")
+    }),
+  // The harness runs against an isolated database and XDG dirs, so a scan only sees the exercise's own projects.
+  http.protected
+    .post("/worktree/cleanup/scan", "worktreeCleanup.scan")
+    .global()
+    .mutating()
+    .json(200, (body) => {
+      object(body)
+      array(body.items)
+      array(body.cleaned)
+      check(body.scanning === false, "worktree cleanup scan should finish before responding")
+    }),
+  // Destructive route: an empty path list cannot remove anything, and the auth probe must be rejected before it runs.
+  http.protected
+    .post("/worktree/cleanup/remove", "worktreeCleanup.remove")
+    .global()
+    .mutating()
+    .probe({ path: "/worktree/cleanup/remove", body: { paths: [] } })
+    .at(() => ({ path: "/worktree/cleanup/remove", body: { paths: [] } }))
+    .json(200, (body) => {
+      object(body)
+      array(body.results)
+      check(body.results.length === 0, "worktree cleanup remove with no paths should remove nothing")
+    }),
   http.protected.get("/path", "path.get").json(200, (body, ctx) => {
     object(body)
     check(body.directory === ctx.directory, "directory should resolve from x-opencode-directory")
