@@ -1,7 +1,7 @@
 # History DB Retention Design
 
 Date: 2026-10-25
-Status: approved design, pending implementation plan
+Status: implemented
 
 ## Problem
 
@@ -64,7 +64,9 @@ hour. Each pass runs three steps in order.
 - Deletes use the existing `event_aggregate_type_seq_idx` index, in chunks of
   about 2,000 rows (`DELETE ... WHERE rowid IN (SELECT rowid ... LIMIT 2000)`).
   Each chunk is its own short transaction, with a yield between chunks, so the
-  write lock is never held for long. The logs already show
+  write lock is never held for long. Eligibility (idle, unowned, no pending
+  input) is re-checked inside every chunk, because the pass runs beside a live
+  server and a session can resume between selection and deletion. The logs already show
   `database is locked` errors, so this matters.
 - `event_sequence` rows are never touched, so a pruned session that resumes
   appends at `seq + 1` as normal.
@@ -74,50 +76,76 @@ hour. Each pass runs three steps in order.
   no matching `session` row. Events cascade from `event_sequence`. Session
   creation commits the event and the session row in one transaction, so this
   cannot race a new session.
-- Delete `Global.Path.data/storage/session_diff/<sessionID>.json` files whose
-  session no longer exists. `session_diff` is written by
+- Delete `Global.Path.data/storage/session_diff/<sessionID>.json` files of
+  deleted sessions. `session_diff` is written by
   `packages/flynncode/src/session/revert.ts`, and core must not depend on the
   server package, so this is a separate hourly sweep in
-  `packages/flynncode/src/storage/`, not part of `DatabaseMaintenance`.
+  `packages/flynncode/src/storage/session-diff-sweep.ts`, not part of
+  `DatabaseMaintenance`. `storage/` is shared by every channel's database, so
+  "no session row" does not mean deleted (it may be another channel's live
+  session). A file is removed only when this database has a `session_tombstone`
+  for the session and no live `session` row. The sweep logs its own removal
+  count.
 
 **3. Reclaim space.**
 - Only once `auto_vacuum = INCREMENTAL` is active.
 - Run `PRAGMA incremental_vacuum(10000)` (10,000 pages ≈ 40 MB at the 4 KB
   page size) repeatedly, yielding between steps, until `freelist_count` is 0.
 
+Each step is isolated: a failing step logs its name and falls back to an empty
+result, and the others still run.
+
 **Logging.** One INFO line per pass: candidate sessions, sessions pruned, event
-rows deleted, orphan aggregates removed, diff files removed, MB reclaimed,
-duration.
+rows deleted, orphan aggregates and events removed, MB reclaimed, duration.
+The diff sweep logs its own removal count.
 
 ### One-time switch to incremental mode
 
-- **When:** during server startup, after `DatabaseMigration.apply` and before
-  the server reports ready, if `PRAGMA auto_vacuum` is not `2` (INCREMENTAL).
-  This happens once per database file.
-- **Order:** run step 1 (prune) and step 2 (orphan sweep) first, so the
-  rewrite copies only kept data. Then `PRAGMA auto_vacuum = INCREMENTAL;
-  VACUUM;`.
+- **New databases:** `PRAGMA auto_vacuum = INCREMENTAL` is the first pragma,
+  and the driver's own WAL switch is deferred (`disableWAL`) so it cannot write
+  the first page first. A new database is therefore born incremental and never
+  needs the conversion. A busy result on that pragma is ignored.
+- **Existing databases:** `compactOnce` runs inside the database layer, after
+  `DatabaseMigration.apply` and before the server is ready, if `PRAGMA
+  auto_vacuum` is not `2` (INCREMENTAL). This happens once per database file.
+- **Order:** `started` is reported, then step 1 (prune) and step 2 (orphan
+  sweep) run first, so the rewrite copies only kept data. Then `PRAGMA
+  auto_vacuum = INCREMENTAL; VACUUM;`. After the attempt (success or not) the
+  WAL is truncated with `wal_checkpoint(TRUNCATE)` so the rewritten database
+  does not linger in the WAL at full size, and `finished` is reported.
 - **Temp location:** `VACUUM` writes a temporary copy about the size of the
   database. It must go on the data directory's disk, never `/tmp` (the owner's
-  `/tmp` is a quota-limited tmpfs). Set `PRAGMA temp_store_directory` to a
-  directory under `Global.Path.data`; if the driver rejects the pragma, set
-  `SQLITE_TMPDIR` before the database is opened.
+  `/tmp` is a quota-limited tmpfs). `PRAGMA temp_store_directory` points at a
+  `.vacuum-tmp` directory beside the database file, removed afterwards. No
+  `SQLITE_TMPDIR`.
+- **Never fails:** `compactOnce` cannot take down the server. Any failing or
+  dying step logs its name and returns `"skipped"`; the next launch retries. If
+  `VACUUM` fails, `auto_vacuum` is set back to `NONE`; `VACUUM` is atomic, so a
+  crash or kill midway leaves the old database intact.
 - **Skip conditions:** free space on the data directory's filesystem is less
-  than the database size plus 1 GB, or the `VACUUM` reports `SQLITE_BUSY`
-  (another process, such as a CLI or TUI instance, has the database open). In
-  both cases log the reason, leave the database unchanged, and retry on the
-  next launch. `VACUUM` is atomic, so a crash or kill midway leaves the old
-  database intact.
-- **Progress reporting:** core does not know about the desktop sidecar. The
-  compaction reports `{ phase, progress }` through an optional callback that
-  the process entry point supplies; the sidecar entry forwards it to the
-  desktop main process, and the CLI entry prints it.
+  than `2 * kept + 1 GiB`, where `kept` is the database size excluding free
+  pages, measured after the prune (in WAL mode the rewrite also passes through
+  the WAL, hence the factor of two). Or `VACUUM` fails, for instance with
+  `SQLITE_BUSY` because another process (a CLI or TUI instance) has the
+  database open. The reason is logged, the database is left unchanged, and the
+  next launch retries.
+- **Progress reporting:** core does not know about the desktop sidecar.
+  `compactOnce` reports `{ phase: "compact", state: "started" | "finished" }`
+  through an optional listener (`DatabaseMaintenance.onProgress`) that the
+  process entry point supplies. `started` fires before the prune phase and
+  `finished` on every exit after it. There are no periodic heartbeats: both
+  SQLite drivers run `VACUUM` synchronously, so nothing can be posted during
+  it. Without a listener (CLI/TUI) one line is printed to stderr on `started`.
 - **Desktop app:**
-  - While compaction runs, the sidecar posts
-    `{ type: "maintenance", phase, progress }` every few seconds.
-  - Each message resets `SIDECAR_START_STALL_TIMEOUT` (60s) in
-    `packages/desktop/src/main/server.ts`, so the sidecar is not killed.
-  - The loading screen shows "Optimizing history database (one-time)…".
+  - The sidecar forwards each message to the main process as
+    `{ type: "maintenance", phase, state }`.
+  - On `started`, `packages/desktop/src/main/server.ts` switches the startup
+    stall timeout from `SIDECAR_START_STALL_TIMEOUT` (60s) to
+    `SIDECAR_MAINTENANCE_TIMEOUT` (30 minutes), so the sidecar is not killed
+    mid-`VACUUM`. On `finished` it goes back to 60s.
+  - The loading screen has no status-text channel, so it shows its normal
+    loading state. The reason is logged in the desktop `main.log` and the
+    server log.
 - **CLI/TUI:** print the same line once; startup is slower that one time only.
 
 ### Opt-out
@@ -128,16 +156,20 @@ pass and the one-time compaction.
 
 ## Error handling
 
-- A failing step never takes down the server. Each step logs its error with
-  the step name and the next hourly pass retries; every step is safe to repeat.
-- If a delete chunk hits `SQLITE_BUSY` after the normal 5s `busy_timeout`, the
-  pass stops and resumes next hour instead of retrying in a tight loop.
+- A failing step never takes down the server. The hourly pass isolates each
+  step (it logs the step name and falls back; the next pass retries, and every
+  step is safe to repeat). `compactOnce` never fails: any step failure logs and
+  returns `"skipped"`.
+- If a delete chunk hits `SQLITE_BUSY` after the normal 5s `busy_timeout`, that
+  step fails, is logged, and resumes next hour instead of retrying in a tight
+  loop.
 - The candidate rules exclude live work: recent activity, pending input, an
-  owner claim, or any v2 data.
+  owner claim, or any v2 data, and are re-checked inside every delete chunk.
 
 ## Testing
 
-All in `packages/core` against real temporary SQLite databases, no mocks.
+Items 1-7 are in `packages/core` against real temporary SQLite databases, no
+mocks.
 
 1. Pruning a classic session idle for 7 days removes its `message.*` events
    and keeps `session.created`, `event_sequence.seq`, messages and parts; a
@@ -147,14 +179,16 @@ All in `packages/core` against real temporary SQLite databases, no mocks.
 3. The orphan sweep removes events for a deleted session and keeps every live
    session's events.
 4. First-run compaction switches `auto_vacuum` to incremental and the file
-   shrinks after pruning; a second startup is a no-op.
-5. Insufficient free disk or a busy database makes compaction skip cleanly and
-   leaves the database unchanged.
+   shrinks after pruning; a second startup is a no-op. New databases are
+   created incremental.
+5. Insufficient free disk, a failing step, or a failing `VACUUM` makes
+   compaction skip cleanly (never fail) and leaves the database unchanged.
 6. Incremental reclaim lowers `freelist_count` after a prune.
-7. The desktop startup stall timer resets on `maintenance` messages
-   (`packages/desktop`).
-8. The `session_diff` sweep removes files for deleted sessions only
-   (`packages/flynncode`).
+7. A failing step in the hourly pass is isolated; the others still run.
+8. The desktop stall timeout switches to 30 minutes on `started` and back to
+   60s on `finished` (`packages/desktop`).
+9. The `session_diff` sweep removes files only for sessions this database has
+   a tombstone for and no live row (`packages/flynncode`).
 
 ## Out of scope
 
