@@ -19,8 +19,9 @@ export type ShellEvent =
 export function useBackgroundShells(sessionID: () => string | undefined) {
   const sdk = useSDK()
   const [shells, setShells] = createSignal<ShellEntry[]>([])
-  // Any event or newer request invalidates in-flight list responses, so a slow
-  // list that predates an `exited` event cannot flip the shell back to running.
+  // A membership or status event, or a newer request, invalidates in-flight list
+  // responses, so a slow list that predates an `exited` event cannot flip the
+  // shell back to running. Output events do not (see invalidatesList).
   let generation = 0
 
   const refresh = async () => {
@@ -67,7 +68,7 @@ export function useBackgroundShells(sessionID: () => string | undefined) {
     const events = sdk().event
     const apply = (event: ShellEvent) => {
       if (event.properties.sessionID !== sessionID()) return false
-      generation++
+      if (invalidatesList(event)) generation++
       setShells((current) => applyShellEvent(event.properties.sessionID, current, event))
       return true
     }
@@ -126,6 +127,13 @@ export function applyShellEvent(
       ? { ...item, status: event.properties.status, exitCode: event.properties.exitCode, endedAt: item.endedAt ?? now }
       : item,
   )
+}
+
+// Output arrives up to once a second per running shell; if it discarded
+// in-flight list responses, a busy shell could keep the list from ever landing.
+// The list carries no output, so only started and exited events make it stale.
+export function invalidatesList(event: ShellEvent) {
+  return event.type !== "shell.background.output"
 }
 
 // The server list is authoritative for membership and status. Tails only come

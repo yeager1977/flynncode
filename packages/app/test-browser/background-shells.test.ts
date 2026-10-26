@@ -6,6 +6,7 @@ import {
   applyShellEvent,
   clipTail,
   formatElapsed,
+  invalidatesList,
   mergeShellList,
   runningCount,
   shellElapsed,
@@ -105,6 +106,30 @@ describe("applyShellEvent", () => {
       properties: { sessionID: "ses_2", id: "bash_1", status: "killed" },
     })
     expect(next).toBe(list)
+  })
+})
+
+describe("invalidatesList", () => {
+  test("only membership and status changes discard an in-flight list response", () => {
+    expect(
+      invalidatesList({
+        type: "shell.background.started",
+        properties: { sessionID: "ses_1", id: "bash_1", command: "x", pid: 1, startedAt: 1 },
+      }),
+    ).toBe(true)
+    expect(
+      invalidatesList({
+        type: "shell.background.exited",
+        properties: { sessionID: "ses_1", id: "bash_1", status: "exited", exitCode: 0 },
+      }),
+    ).toBe(true)
+    // Output arrives every second while a shell runs; it must not keep a slow list from ever landing.
+    expect(
+      invalidatesList({
+        type: "shell.background.output",
+        properties: { sessionID: "ses_1", id: "bash_1", bytes: 3, tail: "hi\n" },
+      }),
+    ).toBe(false)
   })
 })
 
