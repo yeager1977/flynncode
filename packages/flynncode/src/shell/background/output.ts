@@ -37,6 +37,7 @@ export function open(
   let recentLength = 0
   let head: Buffer[] = []
   let headLength = 0
+  let headFull = false
 
   // Bytes accepted but not yet handed to the disk: the contiguous range [pendingStart, total).
   let pending: Buffer[] = []
@@ -119,9 +120,8 @@ export function open(
     if (!dirty) return
     dirty = false
     lastRewrite = Date.now()
-    const all = Buffer.concat(head)
+    const headKept = Buffer.concat(head)
     const kept = Buffer.concat(tail)
-    const headKept = all.subarray(0, headEnd(all, headBytes))
     const tailKept = kept.subarray(charStart(kept, 0))
     const marker = Buffer.from(`\n...[output truncated: ${tailEnd - headKept.length - tailKept.length} bytes dropped]...\n`)
     // Write a sibling file and rename it over the original so readers never see a partial file.
@@ -131,6 +131,7 @@ export function open(
       .catch(async () => {
         dirty = true
         await fs.rm(temp, { force: true }).catch(() => undefined)
+        arm()
       })
   }
 
@@ -158,10 +159,13 @@ export function open(
       const data = Buffer.from(chunk)
       if (closed || data.length === 0) return
       total += data.length
-      if (headLength < headBytes) {
-        const take = Math.min(headBytes - headLength, data.length)
+      if (!headFull) {
+        const room = headBytes - headLength
+        // Cut on a character boundary so the file head never ends mid-character; the tail starts at headLength.
+        const take = data.length <= room ? data.length : characterEnd(data, room)
         head.push(take === data.length ? data : Buffer.from(data.subarray(0, take)))
         headLength += take
+        headFull = take < data.length || headLength >= headBytes
       }
       recent.push(data)
       recentLength = keepNewest(recent, recentLength + data.length, windowBytes)
@@ -171,15 +175,24 @@ export function open(
       schedule()
     },
     readSince(offset, options) {
+      const maxBytes = options?.maxBytes !== undefined && options.maxBytes > 0 ? Math.floor(options.maxBytes) : DEFAULT_READ_BYTES
       const recentStart = total - recentLength
-      const requested = Math.min(Math.max(0, offset), total)
+      const requested = offset > 0 ? Math.min(Math.floor(offset), total) : 0
       const from = Math.max(requested, recentStart)
-      const data = Buffer.concat(recent).subarray(from - recentStart)
-      const start = charStart(data, Math.max(0, data.length - (options?.maxBytes ?? DEFAULT_READ_BYTES)))
-      const skipped = from - requested + start
-      const text = filterLines(data.subarray(start).toString("utf8"), options?.filter)
+      const window = Buffer.concat(recent).subarray(from - recentStart)
+      // A filtered read stops after the last complete line so a match split across reads is found next time;
+      // once the writer is closed nothing more will arrive, so the partial last line is included.
+      const end = options?.filter && !closed ? window.lastIndexOf(10) + 1 : window.length
+      const range = window.subarray(0, end)
+      const first = charStart(range, 0)
+      const filtered = Buffer.from(filterLines(range.subarray(first).toString("utf8"), options?.filter))
+      const start = charStart(filtered, Math.max(0, filtered.length - maxBytes))
+      // `skipped` counts bytes of [requested, offset) that were dropped without being returned: bytes that fell out
+      // of the window, a partial leading character, and bytes clipped by maxBytes. Lines removed by the filter are not counted.
+      const skipped = from - requested + first + start
+      const text = filtered.subarray(start).toString("utf8")
       const prefix = skipped > 0 && (!options?.filter || text) ? `...[${skipped} bytes skipped]...\n` : ""
-      return { text: prefix + text, offset: total, skipped }
+      return { text: prefix + text, offset: from + end, skipped }
     },
     lastLines(count) {
       if (count <= 0) return ""
@@ -242,9 +255,10 @@ function isContinuation(byte: number) {
   return (byte & 0xc0) === 0x80
 }
 
-function headEnd(buffer: Buffer, limit: number) {
-  let end = Math.min(limit, buffer.length)
-  while (end > 0 && end < buffer.length && isContinuation(buffer[end])) end--
+// The largest end <= limit that does not split a character of `buffer`.
+function characterEnd(buffer: Buffer, limit: number) {
+  let end = limit
+  while (end > 0 && isContinuation(buffer[end])) end--
   return end
 }
 

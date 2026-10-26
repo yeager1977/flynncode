@@ -99,6 +99,76 @@ describe("BackgroundOutput", () => {
     await writer.close()
   })
 
+  test("a filtered read never loses a match split across reads", async () => {
+    await using tmp = await tmpdir()
+    const writer = BackgroundOutput.open(path.join(tmp.path, "out.txt"))
+    writer.write("ERR")
+    const first = writer.readSince(0, { filter: /ERROR/ })
+    expect(first).toEqual({ text: "", offset: 0, skipped: 0 })
+    writer.write("OR boom\nnext ERR")
+    const second = writer.readSince(first.offset, { filter: /ERROR/ })
+    expect(second).toEqual({ text: "ERROR boom\n", offset: 11, skipped: 0 })
+    // Unfiltered reads always consume everything.
+    expect(writer.readSince(11).offset).toBe(writer.total())
+    await writer.close()
+    // Once the writer is closed the partial last line is final and is included.
+    expect(writer.readSince(11, { filter: /ERR/ })).toEqual({ text: "next ERR", offset: writer.total(), skipped: 0 })
+  })
+
+  test("the filter applies to the whole range before maxBytes clips it", async () => {
+    await using tmp = await tmpdir()
+    const writer = BackgroundOutput.open(path.join(tmp.path, "out.txt"))
+    writer.write("ERROR keep\n" + "noise noise noise\n".repeat(20))
+    expect(writer.readSince(0, { filter: /ERROR/, maxBytes: 12 })).toEqual({ text: "ERROR keep\n", offset: writer.total(), skipped: 0 })
+    await writer.close()
+  })
+
+  test("readSince ignores invalid offsets and byte limits", async () => {
+    await using tmp = await tmpdir()
+    const writer = BackgroundOutput.open(path.join(tmp.path, "out.txt"))
+    writer.write("hello\n")
+    const expected = { text: "hello\n", offset: 6, skipped: 0 }
+    expect(writer.readSince(-5)).toEqual(expected)
+    expect(writer.readSince(Number.NaN)).toEqual(expected)
+    expect(writer.readSince(0, { maxBytes: 0 })).toEqual(expected)
+    expect(writer.readSince(0, { maxBytes: -1 })).toEqual(expected)
+    expect(writer.readSince(0, { maxBytes: Number.NaN })).toEqual(expected)
+    await writer.close()
+  })
+
+  test("the file head ends on a character boundary", async () => {
+    await using tmp = await tmpdir()
+    const file = path.join(tmp.path, "out.txt")
+    const writer = BackgroundOutput.open(file, { capBytes: 1000, headBytes: 200 })
+    Array.from({ length: 700 }, () => writer.write("€"))
+    await writer.close()
+    const content = await Bun.file(file).arrayBuffer().then((buffer) => Buffer.from(buffer))
+    const text = content.toString()
+    expect(text).not.toContain("�")
+    const [head, tail] = text.split(/\n\.\.\.\[output truncated[^\n]*\n/)
+    expect(Buffer.byteLength(head)).toBe(198)
+    const dropped = Number(text.match(/truncated: (\d+) bytes/)?.[1])
+    expect(Buffer.byteLength(head) + dropped + Buffer.byteLength(tail)).toBe(writer.total())
+    expect(writer.total()).toBe(2100)
+  })
+
+  test("a failed rewrite is retried by the trailing timer", async () => {
+    await using tmp = await tmpdir()
+    const file = path.join(tmp.path, "out.txt")
+    // A non-empty directory in place of the temp file makes the first rewrite fail.
+    await fs.mkdir(`${file}.tmp`)
+    await fs.writeFile(path.join(`${file}.tmp`, "block"), "x")
+    const writer = BackgroundOutput.open(file, { capBytes: 1000, headBytes: 200, flushMs: 100 })
+    writer.write("x".repeat(2000))
+    await Bun.sleep(30)
+    expect(await Bun.file(file).text()).not.toContain("output truncated")
+    await fs.rm(`${file}.tmp`, { recursive: true })
+    const deadline = Date.now() + 2000
+    while (Date.now() < deadline && !(await Bun.file(file).text()).includes("output truncated")) await Bun.sleep(25)
+    expect(await Bun.file(file).text()).toContain("output truncated")
+    await writer.close()
+  })
+
   test("lastLines returns the final lines from the window", async () => {
     await using tmp = await tmpdir()
     const writer = BackgroundOutput.open(path.join(tmp.path, "out.txt"))
