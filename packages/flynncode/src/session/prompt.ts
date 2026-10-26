@@ -1647,7 +1647,14 @@ const layer = Layer.effect(
               })
             }).pipe(Effect.orDie),
         },
-        { command: input.line, cwd: input.ctx.directory, shell: input.shell, instance: input.ctx },
+        // An untrusted line asks even when the scan finds nothing to ask about.
+        {
+          command: input.line,
+          cwd: input.ctx.directory,
+          shell: input.shell,
+          instance: input.ctx,
+          strict: input.untrusted,
+        },
       ).pipe(
         Effect.provideService(FSUtil.Service, fsys),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),

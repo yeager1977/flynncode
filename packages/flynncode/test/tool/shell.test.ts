@@ -8,7 +8,7 @@ import os from "os"
 import path from "path"
 import { Config } from "@/config/config"
 import { Shell } from "@flynncode/core/shell"
-import { ShellTool } from "../../src/tool/shell"
+import { ShellTool, askPermission } from "../../src/tool/shell"
 import { Filesystem } from "@/util/filesystem"
 import { provideInstance, testInstanceStoreLayer, tmpdirScoped } from "../fixture/fixture"
 import type { Permission } from "../../src/permission"
@@ -1084,6 +1084,170 @@ describe("tool.shell permissions", () => {
           const bashReq = requests.find((r) => r.permission === "bash")
           expect(bashReq).toBeDefined()
           expect(bashReq!.always[0]).toBe("ls *")
+        }),
+      )
+    }),
+  )
+})
+
+// A statement can write a file with nothing but a redirect (`> file`), so a
+// file redirect must reach the bash and external_directory checks even
+// without a command node. Bash-grammar shells only: PowerShell parses its own way.
+describe("tool.shell redirect permissions", () => {
+  const posix = shells.filter((item) => !PS.has(item.label) && item.label !== "cmd")
+  const eachPosix = (
+    name: string,
+    fn: (item: { label: string; shell: string }) => Effect.Effect<void, unknown, ShellTestServices>,
+  ) => {
+    for (const item of posix) it.live(`${name} [${item.label}]`, () => withShell(item, fn(item)))
+  }
+  type Request = Omit<PermissionV1.Request, "id" | "sessionID" | "tool">
+  // Records every request and rejects the ones for `kind`, so the command never runs.
+  const reject = (requests: Request[], kind: string) => ({
+    ...ctx,
+    ask: (req: Request) =>
+      Effect.sync(() => {
+        requests.push(req)
+        if (req.permission === kind) throw new Error(`rejected ${kind}`)
+      }),
+  })
+  const exists = (file: string) => Effect.promise(() => Bun.file(file).exists())
+
+  eachPosix("asks bash for a redirect-only command and a rejection leaves the file untouched", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          for (const command of ["> made.txt", ">> made.txt", "2> made.txt", ": > made.txt", "echo a; > made.txt"]) {
+            const requests: Request[] = []
+            expect(yield* fail({ command }, reject(requests, "bash"))).toMatchObject({ message: "rejected bash" })
+            const bashReq = requests.find((r) => r.permission === "bash")
+            expect(bashReq).toBeDefined()
+            expect(bashReq!.patterns.some((item) => item.includes("made.txt"))).toBe(true)
+            expect(requests.find((r) => r.permission === "external_directory")).toBeUndefined()
+            expect(yield* exists(path.join(tmp, "made.txt"))).toBe(false)
+          }
+          const requests: Request[] = []
+          yield* fail({ command: "> made.txt" }, reject(requests, "bash"))
+          expect(requests.find((r) => r.permission === "bash")!.patterns).toEqual(["> made.txt"])
+          expect(requests.find((r) => r.permission === "bash")!.always).toEqual(["> made.txt"])
+        }),
+      )
+    }),
+  )
+
+  eachPosix("asks external_directory for redirect targets outside the project", () =>
+    Effect.gen(function* () {
+      const outer = yield* tmpdirScoped()
+      const tmp = yield* tmpdirScoped()
+      const target = path.join(outer, "out.txt")
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          for (const command of [
+            `> ${target}`,
+            `>> ${target}`,
+            `echo hi > ${target}`,
+            `echo hi &> ${target}`,
+            `echo hi 2> ${target}`,
+            `echo hi >| ${target}`,
+            `cd . > ${target}`,
+            `{ echo hi; } > ${target}`,
+            `echo $(> ${target})`,
+          ]) {
+            const requests: Request[] = []
+            expect(yield* fail({ command }, reject(requests, "external_directory"))).toMatchObject({
+              message: "rejected external_directory",
+            })
+            const extDirReq = requests.find((r) => r.permission === "external_directory")
+            expect(extDirReq).toBeDefined()
+            expect(extDirReq!.patterns).toEqual([glob(path.join(outer, "*"))])
+            expect(yield* exists(target)).toBe(false)
+          }
+        }),
+      )
+      expect(yield* Effect.promise(() => fs.readdir(outer))).toEqual([])
+    }),
+  )
+
+  eachPosix("asks bash for a cd whose output is redirected to a file", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const requests: Request[] = []
+          yield* fail({ command: "cd . > made.txt" }, reject(requests, "bash"))
+          expect(requests.find((r) => r.permission === "bash")!.patterns).toEqual(["cd . > made.txt"])
+          expect(yield* exists(path.join(tmp, "made.txt"))).toBe(false)
+        }),
+      )
+    }),
+  )
+
+  eachPosix("keeps fd duplications and /dev/null out of the external_directory check", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const requests: Request[] = []
+          yield* run({ command: "echo hi > /dev/null 2>&1; echo there >&2" }, capture(requests))
+          expect(requests.map((r) => r.permission)).toEqual(["bash"])
+          expect(requests[0].patterns).toEqual(["echo hi > /dev/null 2>&1", "echo there >&2"])
+          expect(requests[0].always).toEqual(["echo *"])
+        }),
+      )
+    }),
+  )
+
+  eachPosix("a redirect inside the project under allow behaves as before", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const requests: Request[] = []
+          const result = yield* run({ command: "echo hi > out.txt" }, capture(requests))
+          expect(result.metadata.exit).toBe(0)
+          expect(requests).toHaveLength(1)
+          expect(requests[0].permission).toBe("bash")
+          expect(requests[0].patterns).toEqual(["echo hi > out.txt"])
+          expect(requests[0].always).toEqual(["echo *"])
+          expect((yield* Effect.promise(() => Bun.file(path.join(tmp, "out.txt")).text())).trim()).toBe("hi")
+        }),
+      )
+    }),
+  )
+
+  eachPosix("asks with the whole command when the parser finds no command", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const requests: Request[] = []
+          yield* fail({ command: "FOO=bar" }, reject(requests, "bash"))
+          expect(requests.find((r) => r.permission === "bash")!.patterns).toEqual(["FOO=bar"])
+        }),
+      )
+    }),
+  )
+
+  eachPosix("asks nothing for an empty or comment-only command", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          // The tool itself cannot spawn an empty command, so check the scan directly.
+          const instance = yield* InstanceState.context
+          for (const command of ["", "   ", "# just a comment", "  # one\n# two\n"]) {
+            const requests: Request[] = []
+            yield* askPermission(capture(requests), { command, cwd: tmp, shell: Shell.acceptable(), instance })
+            expect(requests).toEqual([])
+          }
         }),
       )
     }),

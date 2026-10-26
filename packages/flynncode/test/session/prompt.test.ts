@@ -3003,6 +3003,54 @@ unix(
 )
 
 unix(
+  "a .claude command's redirect-only ! line asks and a rejection leaves the file untouched",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig((url) => ({ ...providerCfg(url), permission: { bash: "ask" } }))
+      yield* writeClaudeCommand(dir, "truncate", "Run: !`> redirect-marker`")
+      const { prompt, chat } = yield* boot()
+
+      const running = yield* prompt
+        .command({ sessionID: chat.id, command: "truncate", arguments: "" })
+        .pipe(Effect.forkChild)
+      const request = yield* pendingBash(chat.id)
+      expect(request.patterns).toEqual(["> redirect-marker"])
+      const permission = yield* Permission.Service
+      yield* permission.reply({ requestID: request.id, reply: "reject" })
+
+      expect(Exit.isFailure(yield* Fiber.await(running))).toBe(true)
+      expect(yield* llm.hits).toHaveLength(0)
+      const afs = yield* FSUtil.Service
+      expect(yield* afs.existsSafe(path.join(dir, "redirect-marker"))).toBe(false)
+      expect(yield* afs.existsSafe(path.join(process.cwd(), "redirect-marker"))).toBe(false)
+    }),
+  { git: true },
+  30_000,
+)
+
+unix(
+  "a .claude command's ! line asks even when the scan finds no bash pattern",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig((url) => ({ ...providerCfg(url), permission: { bash: "allow" } }))
+      yield* writeClaudeCommand(dir, "move", "Run: !`cd .`")
+      const { prompt, chat } = yield* boot()
+
+      const running = yield* prompt
+        .command({ sessionID: chat.id, command: "move", arguments: "" })
+        .pipe(Effect.forkChild)
+      const request = yield* pendingBash(chat.id)
+      expect(request.patterns).toEqual(["cd ."])
+      const permission = yield* Permission.Service
+      yield* permission.reply({ requestID: request.id, reply: "reject" })
+      expect(Exit.isFailure(yield* Fiber.await(running))).toBe(true)
+      expect(yield* llm.hits).toHaveLength(0)
+    }),
+  { git: true },
+  30_000,
+)
+
+unix(
   "a command template's @.env reference asks for the read permission",
   () =>
     Effect.gen(function* () {

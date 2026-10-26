@@ -149,3 +149,35 @@ it.instance(
     }),
   { git: true, config: { permission: { edit: "ask" } } },
 )
+
+it.instance(
+  "malformed claudeTools entries are ignored instead of crashing Agent.get",
+  () =>
+    Effect.gen(function* () {
+      const agent = yield* getAgent("odd")
+      expect(agent).toBeDefined()
+      expect(action(agent, "read", "src/index.ts")).toBe("allow")
+      expect(action(agent, "bash", "ls")).toBe("deny")
+      expect(action(agent, "edit", "src/index.ts")).toBe("deny")
+      expect(agent?.options.claudeTools).toBeUndefined()
+    }),
+  {
+    git: true,
+    config: {
+      agent: {
+        odd: {
+          description: "odd",
+          options: {
+            claudeTools: [
+              { permission: "bash" },
+              "bash",
+              null,
+              { permission: 1, pattern: "*" },
+              { permission: "read", pattern: "*" },
+            ],
+          },
+        },
+      },
+    },
+  },
+)

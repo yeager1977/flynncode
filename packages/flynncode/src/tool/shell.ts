@@ -71,6 +71,8 @@ const CMD_FILES = new Set([
   "rmdir",
   "type",
 ])
+// Redirecting to these never touches a file worth an external_directory prompt.
+const DEVICES = new Set(["/dev/null", "/dev/stdin", "/dev/stdout", "/dev/stderr", "/dev/tty"])
 const FLAGS = new Set(["-destination", "-literalpath", "-path"])
 const SWITCHES = new Set(["-confirm", "-debug", "-force", "-nonewline", "-recurse", "-verbose", "-whatif"])
 
@@ -152,6 +154,34 @@ function source(node: Node) {
 
 function commands(node: Node) {
   return node.descendantsOfType("command").filter((child): child is Node => Boolean(child))
+}
+
+// Bash `file_redirect` and PowerShell `redirection` nodes, wherever they sit:
+// a statement can write a file with nothing but a redirect (`> file`).
+function redirects(node: Node, ps: boolean) {
+  return node.descendantsOfType(ps ? "redirection" : "file_redirect").filter((child): child is Node => Boolean(child))
+}
+
+// The files a redirect reads or writes. An fd duplication (`2>&1`, `>&-`) has none.
+function targets(node: Node, ps: boolean) {
+  if (ps) return node.children.flatMap((child) => (child?.type === "redirected_file_name" ? [child.text.trim()] : []))
+  const dests = node.childrenForFieldName("destination").filter((child): child is Node => Boolean(child))
+  const op = node.children.find((child) => child && child.isNamed === false)?.type ?? ""
+  if (op.includes("&") && !op.startsWith("&") && dests.every((dest) => dest.type === "number" || dest.text === "-"))
+    return []
+  return dests.map((dest) => dest.text)
+}
+
+// The statement a redirect belongs to, which is what the bash rules match.
+function statement(node: Node): Node {
+  const parent = node.parent
+  if (!parent || parent.type === "redirected_statement" || parent.type === "command") return parent ?? node
+  return statement(parent)
+}
+
+// Comments and whitespace run nothing, so they never need a prompt.
+function blank(root: Node) {
+  return root.namedChildren.every((child) => !child || child.type === "comment")
 }
 
 function unquote(text: string) {
@@ -360,6 +390,7 @@ const collect = Effect.fn("ShellTool.collect")(function* (
   ps: boolean,
   shell: string,
   instance: InstanceContext,
+  strict: boolean,
 ) {
   const fs = yield* FSUtil.Service
   const scan: Scan = {
@@ -368,8 +399,9 @@ const collect = Effect.fn("ShellTool.collect")(function* (
     always: new Set<string>(),
   }
   const shellKind = ShellID.toKind(Shell.name(shell))
+  const found = commands(root)
 
-  for (const node of commands(root)) {
+  for (const node of found) {
     const command = parts(node)
     const tokens = command.map((item) => item.text)
     const cmd = ps || shellKind === "cmd" ? tokens[0]?.toLowerCase() : tokens[0]
@@ -390,6 +422,31 @@ const collect = Effect.fn("ShellTool.collect")(function* (
     }
   }
 
+  // A redirect's target is a path argument like any other, and a statement
+  // that redirects to a file is asked for even when it has no command node
+  // (`> file`) or only a cd (`cd . > file`).
+  for (const node of redirects(root, ps)) {
+    const files = targets(node, ps)
+    if (files.length === 0) continue
+    for (const arg of files) {
+      const resolved = yield* argPath(arg, cwd, ps, shell)
+      if (!resolved || DEVICES.has(resolved) || containsPath(resolved, instance)) continue
+      scan.dirs.add((yield* fs.isDir(resolved)) ? resolved : path.dirname(resolved))
+    }
+    const text = statement(node).text.trim()
+    if (scan.patterns.has(text)) continue
+    scan.patterns.add(text)
+    scan.always.add(text)
+  }
+
+  // Never let a non-empty command through silently because the scan found
+  // nothing to ask about: only a parsed cd-only command skips the prompt, and
+  // a strict (untrusted) caller does not even allow that.
+  if (scan.patterns.size === 0 && (strict || found.length === 0 || root.hasError) && !blank(root)) {
+    scan.patterns.add(root.text.trim())
+    scan.always.add(root.text.trim())
+  }
+
   return scan
 })
 
@@ -399,15 +456,16 @@ const collect = Effect.fn("ShellTool.collect")(function* (
 // It does not apply the session sandbox: callers must deny bash under a
 // readonly sandbox in their `ask` themselves (as session/tools.ts and
 // SessionPrompt.command do), or the command runs unsandboxed once approved.
+// `strict` asks for every non-blank command, cd-only ones included.
 export const askPermission = Effect.fn("ShellTool.askPermission")(function* (
   ctx: Pick<Tool.Context, "ask">,
-  input: { command: string; cwd: string; shell: string; instance: InstanceContext },
+  input: { command: string; cwd: string; shell: string; instance: InstanceContext; strict?: boolean },
 ) {
   const ps = Shell.ps(input.shell)
   yield* Effect.scoped(
     Effect.gen(function* () {
       const tree = yield* Effect.acquireRelease(parse(input.command, ps), (tree) => Effect.sync(() => tree.delete()))
-      const scan = yield* collect(tree.rootNode, input.cwd, ps, input.shell, input.instance)
+      const scan = yield* collect(tree.rootNode, input.cwd, ps, input.shell, input.instance, input.strict ?? false)
       if (!containsPath(input.cwd, input.instance)) scan.dirs.add(input.cwd)
       yield* ask(ctx, scan, input)
     }),

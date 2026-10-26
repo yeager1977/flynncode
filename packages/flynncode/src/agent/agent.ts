@@ -393,8 +393,17 @@ const layer = Layer.effect(
           item.permission = Permission.merge(item.permission, Permission.fromConfig(value.permission ?? {}))
           // A Claude Code agent's `tools` list (see ConfigClaude) only narrows
           // the standing rules; it never grants a tool.
+          // Options are free-form config, so drop entries that are not scopes
+          // rather than crash the agent list; dropping one only narrows further.
           const claudeTools = item.options.claudeTools
-          if (Array.isArray(claudeTools)) item.permission = Permission.restrict(item.permission, claudeTools)
+          if (Array.isArray(claudeTools)) {
+            const scopes = claudeTools.filter(isScope)
+            if (scopes.length < claudeTools.length)
+              yield* Effect.logWarning(`agent ${key}: ignored malformed claudeTools entries`, {
+                ignored: claudeTools.filter((entry) => !isScope(entry)),
+              })
+            item.permission = Permission.restrict(item.permission, scopes)
+          }
           delete item.options.claudeTools
           // Agent options reach the provider request, so the Claude Code model
           // alias is kept aside instead of being sent as a provider option.
@@ -563,6 +572,16 @@ const layer = Layer.effect(
     })
   }),
 )
+
+function isScope(entry: unknown): entry is { permission: string; pattern: string } {
+  if (typeof entry !== "object" || entry === null) return false
+  return (
+    "permission" in entry &&
+    typeof entry.permission === "string" &&
+    "pattern" in entry &&
+    typeof entry.pattern === "string"
+  )
+}
 
 const locationServiceMapNode = LayerNode.make({
   service: LocationServiceMap.Service,
