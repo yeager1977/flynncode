@@ -7,6 +7,6 @@ Query forms:
 - Any other query is a keyword search over tool names, descriptions and parameters, e.g. "github issues" or "navigate browser".
 
 Usage notes:
-- max_results limits keyword search results (default 5, maximum 20). It does not limit select: queries.
+- max_results limits keyword search results (default 5, maximum 20). select: loads at most 20 names per call.
 - Prefer select: when you already know the names from the deferred tools list.
 - If nothing matches, the closest tool names are suggested instead.

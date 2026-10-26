@@ -223,7 +223,7 @@ const MULTIPLE_CANDIDATES_SIMILARITY_THRESHOLD = 0.65
 /**
  * Levenshtein distance algorithm implementation
  */
-function levenshtein(a: string, b: string): number {
+export function levenshtein(a: string, b: string): number {
   // Handle empty strings
   if (a === "" || b === "") {
     return Math.max(a.length, b.length)

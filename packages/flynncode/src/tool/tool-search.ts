@@ -4,6 +4,7 @@ import { PositiveInt } from "@flynncode/core/schema"
 import { McpLoaded } from "@/mcp/loaded"
 import { Session } from "@/session/session"
 import { isRecord } from "@/util/record"
+import { levenshtein } from "./edit"
 import { Tool } from "./tool"
 import DESCRIPTION from "./tool-search.txt"
 
@@ -31,6 +32,7 @@ type Metadata = {
 const SELECT = "select:"
 const DEFAULT_RESULTS = 5
 const MAX_RESULTS = 20
+// Bytes, not characters: Tool.wrap truncates by bytes and its notice would replace our message.
 const OUTPUT_CAP = 25_000
 const SUGGESTIONS = 5
 
@@ -50,17 +52,20 @@ export function make(input: { deferred: ReadonlyArray<Entry> }) {
         execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context<Metadata>) =>
           Effect.gen(function* () {
             const found = find(index, params)
-            const missing = found.missing.map(
-              (name) => `no such tool: ${name} (closest: ${closest(index, name).slice(0, 3).join(", ")})`,
-            )
+            const missing = [
+              ...found.missing.map((name) => {
+                const near = closest(index, name).slice(0, 3)
+                return near.length === 0 ? `no such tool: ${name}` : `no such tool: ${name} (closest: ${near.join(", ")})`
+              }),
+              ...(found.skipped > 0
+                ? [`select: loads at most ${MAX_RESULTS} tools per call; ${found.skipped} extra name(s) were ignored`]
+                : []),
+            ]
             if (found.matched.length === 0) {
               return {
                 title: "No MCP tools matched",
                 metadata: { query: params.query, loaded: [] },
-                output:
-                  missing.length > 0
-                    ? missing.join("\n")
-                    : `No deferred tools matched "${params.query}". Closest names: ${closest(index, params.query).join(", ")}`,
+                output: missing.length > 0 ? missing.join("\n") : noMatch(index, params.query),
               }
             }
             const ids = found.matched.map((item) => item.entry.id)
@@ -106,8 +111,8 @@ function indexEntry(entry: Entry) {
 
 function find(index: ReadonlyArray<Indexed>, params: Schema.Schema.Type<typeof Parameters>) {
   const query = params.query.trim()
-  if (query.startsWith(SELECT)) {
-    const names = [
+  if (query.slice(0, SELECT.length).toLowerCase() === SELECT) {
+    const requested = [
       ...new Set(
         query
           .slice(SELECT.length)
@@ -116,9 +121,11 @@ function find(index: ReadonlyArray<Indexed>, params: Schema.Schema.Type<typeof P
           .filter((name) => name !== ""),
       ),
     ]
+    const names = requested.slice(0, MAX_RESULTS)
     return {
       matched: names.flatMap((name) => index.filter((item) => item.entry.id === name)),
       missing: names.filter((name) => !index.some((item) => item.entry.id === name)),
+      skipped: requested.length - names.length,
     }
   }
   const terms = Search.terms(query)
@@ -130,7 +137,15 @@ function find(index: ReadonlyArray<Indexed>, params: Schema.Schema.Type<typeof P
       .slice(0, Math.min(params.max_results ?? DEFAULT_RESULTS, MAX_RESULTS))
       .map((ranked) => ranked.item),
     missing: [],
+    skipped: 0,
   }
+}
+
+function noMatch(index: ReadonlyArray<Indexed>, query: string) {
+  const near = closest(index, query)
+  return near.length === 0
+    ? `No deferred tools matched "${query}".`
+    : `No deferred tools matched "${query}". Closest names: ${near.join(", ")}`
 }
 
 function render(matched: ReadonlyArray<Indexed>, missing: ReadonlyArray<string>) {
@@ -143,7 +158,7 @@ function render(matched: ReadonlyArray<Indexed>, missing: ReadonlyArray<string>)
     ),
     `Loaded: ${ids.join(", ")}. Call them directly; they stay loaded for this session.`,
   ].join("\n\n")
-  if (full.length <= OUTPUT_CAP) return full
+  if (Buffer.byteLength(full) <= OUTPUT_CAP) return full
   return [
     ...missing,
     `Loaded ${ids.length} tools: ${ids.join(", ")}.`,
@@ -159,29 +174,13 @@ function closest(index: ReadonlyArray<Indexed>, query: string) {
     .map((item) => ({
       id: item.entry.id,
       score: Search.score(terms, item.fields),
-      distance: editDistance(target, item.fields.path),
+      distance: levenshtein(target, item.fields.path),
     }))
     .toSorted(
       (left, right) => right.score - left.score || left.distance - right.distance || left.id.localeCompare(right.id),
     )
     .slice(0, SUGGESTIONS)
     .map((item) => item.id)
-}
-
-function editDistance(left: string, right: string) {
-  const matrix = Array.from({ length: left.length + 1 }, (_, i) =>
-    Array.from({ length: right.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)),
-  )
-  for (let i = 1; i <= left.length; i++) {
-    for (let j = 1; j <= right.length; j++) {
-      matrix[i]![j] = Math.min(
-        matrix[i - 1]![j]! + 1,
-        matrix[i]![j - 1]! + 1,
-        matrix[i - 1]![j - 1]! + (left[i - 1] === right[j - 1] ? 0 : 1),
-      )
-    }
-  }
-  return matrix[left.length]![right.length]!
 }
 
 export * as ToolSearch from "./tool-search"
