@@ -129,6 +129,7 @@ export const dict = {
   "ui.tool.websearch": "Websøgning",
   "ui.tool.websearch.provider": "{{provider}} Websøgning",
   "ui.tool.shell": "Shell",
+  "ui.tool.shell.backgroundStarted": "Started in background",
   "ui.tool.patch": "Patch",
   "ui.tool.todos": "Opgaver",
   "ui.tool.todos.read": "Læs opgaver",

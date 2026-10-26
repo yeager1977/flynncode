@@ -159,6 +159,7 @@ export const dict = {
   "ui.tool.websearch": "Pretraga weba",
   "ui.tool.websearch.provider": "{{provider}} Pretraga weba",
   "ui.tool.shell": "Shell",
+  "ui.tool.shell.backgroundStarted": "Started in background",
   "ui.tool.patch": "Patch",
   "ui.tool.todos": "Lista zadataka",
   "ui.tool.todos.read": "Čitanje liste zadataka",

@@ -143,6 +143,7 @@ export const dict = {
   "ui.tool.websearch": "Търсене в мрежата",
   "ui.tool.websearch.provider": "{{provider}} Търсене в мрежата",
   "ui.tool.shell": "Shell",
+  "ui.tool.shell.backgroundStarted": "Started in background",
   "ui.tool.patch": "Patch",
   "ui.tool.todos": "Задачи",
   "ui.tool.todos.read": "Прочетете задачи",

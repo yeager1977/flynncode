@@ -153,6 +153,7 @@ export const dict = {
   "ui.tool.websearch": "网页搜索",
   "ui.tool.websearch.provider": "{{provider}} 网页搜索",
   "ui.tool.shell": "Shell",
+  "ui.tool.shell.backgroundStarted": "Started in background",
   "ui.tool.patch": "补丁",
   "ui.tool.todos": "待办",
   "ui.tool.todos.read": "读取待办",

@@ -944,6 +944,12 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           },
           tasks: {
             opened: () => s().tasksOpened ?? false,
+            open() {
+              const session = key()
+              const current = store.sessionView[session]
+              if (!current) setStore("sessionView", session, { scroll: {}, tasksOpened: true })
+              else setStore("sessionView", session, "tasksOpened", true)
+            },
             toggle() {
               const session = key()
               const current = store.sessionView[session]

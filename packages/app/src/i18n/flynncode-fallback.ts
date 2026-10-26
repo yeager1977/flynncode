@@ -5,6 +5,23 @@ import { dict } from "./en"
 // before their own entries, so a real translation always wins and English shows
 // otherwise. Remove a key here once every locale translates it.
 const keys = [
+  "session.shells.title",
+  "session.shells.chip",
+  "session.shells.chip.label",
+  "session.shells.chip.tooltip",
+  "session.shells.status.running",
+  "session.shells.status.exited",
+  "session.shells.status.exitedCode",
+  "session.shells.status.killed",
+  "session.shells.status.timedOut",
+  "session.shells.output.show",
+  "session.shells.output.hide",
+  "session.shells.output.empty",
+  "session.shells.stop",
+  "session.shells.stopping",
+  "session.shells.stop.failed",
+  "session.shells.openOutput",
+  "session.shells.open.failed",
   "sidebar.dot.unseen",
   "sidebar.dot.working",
   "sidebar.sessions.showLess",

@@ -151,6 +151,7 @@ export const dict: Record<string, string> = {
   "ui.tool.websearch": "Interneto paieška",
   "ui.tool.websearch.provider": "{{provider}} žiniatinklio paieška",
   "ui.tool.shell": "Apvalkalas",
+  "ui.tool.shell.backgroundStarted": "Started in background",
   "ui.tool.patch": "Pataisa",
   "ui.tool.todos": "Užduotis",
   "ui.tool.todos.read": "Skaityti užduotis",

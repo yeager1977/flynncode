@@ -2110,50 +2110,76 @@ ToolRegistry.register({
       }
     }
 
+    const backgroundId = () => (typeof props.metadata.shellId === "string" ? props.metadata.shellId : "")
+
+    // A background call returns immediately with only the shell id, so its details pane would be empty;
+    // output lives in the Background shells panel.
     return (
-      <BasicTool
-        {...props}
-        icon="console"
-        allowOpenWhilePending
-        trigger={(open) => (
-          <div data-slot="basic-tool-tool-info-structured">
-            <div data-slot="basic-tool-tool-info-main">
-              <span data-slot="basic-tool-tool-title">
-                <TextShimmer text={i18n.t("ui.tool.shell")} active={pending()} />
-              </span>
-              <Show when={!open() && props.input.command}>
-                <ShellSubmessage text={props.input.command} animate={sawPending} />
-              </Show>
+      <Show
+        when={props.metadata.background !== true}
+        fallback={
+          <BasicTool
+            {...props}
+            icon="console"
+            hideDetails
+            trigger={
+              <div data-slot="basic-tool-tool-info-structured">
+                <div data-slot="basic-tool-tool-info-main">
+                  <span data-slot="basic-tool-tool-title">{i18n.t("ui.tool.shell.backgroundStarted")}</span>
+                  <span data-slot="basic-tool-tool-subtitle" dir="ltr">
+                    <code>{props.input.command ?? props.metadata.command ?? ""}</code>
+                    <Show when={backgroundId()}>{` · ${backgroundId()}`}</Show>
+                  </span>
+                </div>
+              </div>
+            }
+          />
+        }
+      >
+        <BasicTool
+          {...props}
+          icon="console"
+          allowOpenWhilePending
+          trigger={(open) => (
+            <div data-slot="basic-tool-tool-info-structured">
+              <div data-slot="basic-tool-tool-info-main">
+                <span data-slot="basic-tool-tool-title">
+                  <TextShimmer text={i18n.t("ui.tool.shell")} active={pending()} />
+                </span>
+                <Show when={!open() && props.input.command}>
+                  <ShellSubmessage text={props.input.command} animate={sawPending} />
+                </Show>
+              </div>
+            </div>
+          )}
+        >
+          <div data-component="bash-output" dir="ltr">
+            <div data-slot="bash-copy">
+              <TooltipV2 value={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")} placement="top">
+                <IconButtonV2
+                  icon={<IconV2 name={copied() ? "check" : "outline-copy"} size="small" />}
+                  size="normal"
+                  variant="ghost-muted"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={handleCopy}
+                  aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
+                />
+              </TooltipV2>
+            </div>
+            <div
+              data-slot="bash-scroll"
+              data-scrollable
+              tabIndex={0}
+              role="region"
+              aria-label={i18n.t("ui.scrollView.ariaLabel")}
+            >
+              <pre data-slot="bash-pre">
+                <code>{text()}</code>
+              </pre>
             </div>
           </div>
-        )}
-      >
-        <div data-component="bash-output" dir="ltr">
-          <div data-slot="bash-copy">
-            <TooltipV2 value={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")} placement="top">
-              <IconButtonV2
-                icon={<IconV2 name={copied() ? "check" : "outline-copy"} size="small" />}
-                size="normal"
-                variant="ghost-muted"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={handleCopy}
-                aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
-              />
-            </TooltipV2>
-          </div>
-          <div
-            data-slot="bash-scroll"
-            data-scrollable
-            tabIndex={0}
-            role="region"
-            aria-label={i18n.t("ui.scrollView.ariaLabel")}
-          >
-            <pre data-slot="bash-pre">
-              <code>{text()}</code>
-            </pre>
-          </div>
-        </div>
-      </BasicTool>
+        </BasicTool>
+      </Show>
     )
   },
 })

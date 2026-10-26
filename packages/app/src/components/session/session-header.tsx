@@ -43,6 +43,7 @@ import { ComputerUseMenu } from "./computer-use-menu"
 import { SessionFoldersMenu } from "./session-folders-menu"
 import { SessionWorktreeMenu } from "./session-worktree-menu"
 import { CiStatusStrip } from "./ci-status"
+import { BackgroundShellsChip } from "./background-shells-chip"
 import { IconButtonV2 } from "@flynncode/ui/v2/icon-button-v2"
 import { Icon as IconV2 } from "@flynncode/ui/v2/icon"
 import { KeybindV2 } from "@flynncode/ui/v2/keybind-v2"
@@ -445,6 +446,7 @@ export function SessionHeader() {
     tasksLabel: language.t("session.subagents.tasks"),
     tasksOpened: view().tasks.opened(),
     onTasksToggle: () => view().tasks.toggle(),
+    onShellsOpen: () => view().tasks.open(),
     handoffLabel: language.t(onPrimary() ? "session.handoff.toWorktree" : "session.handoff.toMain"),
     onHandoff: () => void handoff(),
     sessionID: params.id,
@@ -716,6 +718,7 @@ export function SessionHeader() {
                       <Show when={platform.platform === "desktop"}>
                         <ComputerUseMenu />
                       </Show>
+                      <BackgroundShellsChip sessionID={params.id} onOpen={() => view().tasks.open()} />
                       <Tooltip placement="bottom" value={language.t("session.subagents.tasks")}>
                         <Button
                           variant="ghost"
@@ -777,6 +780,7 @@ type SessionHeaderV2ActionsState = {
   tasksLabel: string
   tasksOpened: boolean
   onTasksToggle: () => void
+  onShellsOpen: () => void
   handoffLabel: string
   onHandoff: () => void
   sessionID: string | undefined
@@ -851,6 +855,7 @@ function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
         <Show when={props.state.computerUseVisible}>
           <ComputerUseMenu variant="v2" />
         </Show>
+        <BackgroundShellsChip sessionID={props.state.sessionID} onOpen={props.state.onShellsOpen} />
         <TooltipV2 class="shrink-0" placement="bottom" value={props.state.tasksLabel}>
           <IconButtonV2
             type="button"

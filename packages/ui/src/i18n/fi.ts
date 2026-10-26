@@ -124,6 +124,7 @@ export const dict: Record<string, string> = {
   "ui.tool.websearch": "Verkkohaku",
   "ui.tool.websearch.provider": "{{provider}} Verkkohaku",
   "ui.tool.shell": "Shell",
+  "ui.tool.shell.backgroundStarted": "Started in background",
   "ui.tool.patch": "Patch",
   "ui.tool.todos": "Tehtävät",
   "ui.tool.todos.read": "Lue tehtävät",

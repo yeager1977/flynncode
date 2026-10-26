@@ -143,6 +143,7 @@ export const dict: Record<string, string> = {
   "ui.tool.websearch": "Վեբ որոնում",
   "ui.tool.websearch.provider": "{{provider}} Վեբ որոնում",
   "ui.tool.shell": "Shell",
+  "ui.tool.shell.backgroundStarted": "Started in background",
   "ui.tool.patch": "Patch",
   "ui.tool.todos": "Անելիքներ",
   "ui.tool.todos.read": "Կարդացեք անելիքները",

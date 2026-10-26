@@ -144,6 +144,7 @@ export const dict: Record<string, string> = {
   "ui.tool.websearch": "ވެބް ސަރޗް",
   "ui.tool.websearch.provider": "{{provider}} ވެބް ސަރޗް",
   "ui.tool.shell": "ޝެލް",
+  "ui.tool.shell.backgroundStarted": "Started in background",
   "ui.tool.patch": "ޕެޗް",
   "ui.tool.todos": "ޓޫ-ޑޯސް",
   "ui.tool.todos.read": "ޓޫ-ޑޯސް ކިޔާށެވެ",
