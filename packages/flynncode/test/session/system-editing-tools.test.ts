@@ -16,6 +16,16 @@ describe("SystemPrompt.editingTools", () => {
     expect(statement).not.toContain("`edit`")
   })
 
+  test("names multiedit and notebook_edit when the model has them", () => {
+    expect(SystemPrompt.editingTools(["edit", "multiedit", "notebook_edit", "write"])).toContain(
+      "File editing tools available in this session: edit, multiedit, notebook_edit, write.",
+    )
+    // GPT-family models get apply_patch plus notebook_edit.
+    expect(SystemPrompt.editingTools(["apply_patch", "notebook_edit"])).toContain(
+      "File editing tools available in this session: apply_patch, notebook_edit.",
+    )
+  })
+
   test("says nothing when no editing tool is available", () => {
     expect(SystemPrompt.editingTools(["read", "grep"])).toBeUndefined()
   })

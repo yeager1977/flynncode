@@ -28,6 +28,9 @@ function toolFile(input: unknown): string | undefined {
   if (typeof file === "string" && file.length > 0) return file
   const path = record.path
   if (typeof path === "string" && path.length > 0) return path
+  // multiedit and notebook_edit take Claude-style snake_case paths.
+  const claudePath = record.file_path ?? record.notebook_path
+  if (typeof claudePath === "string" && claudePath.length > 0) return claudePath
   return undefined
 }
 
@@ -69,7 +72,7 @@ export function deriveSessionHistory(input: HistoryInput): HistoryEntry[] {
           sessionID: input.sessionID,
         })
       }
-      if (tool === "edit" || tool === "write" || tool === "apply_patch") {
+      if (["edit", "multiedit", "notebook_edit", "write", "apply_patch"].includes(tool)) {
         const file = toolFile(state.input) ?? "unknown file"
         changed.add(file)
         entries.push({

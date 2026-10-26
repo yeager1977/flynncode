@@ -41,6 +41,14 @@ describe("partDefaultOpen", () => {
     ).toBe(true)
   })
 
+  test("treats multiedit and notebook_edit like edit", () => {
+    for (const name of ["multiedit", "notebook_edit"]) {
+      expect(partDefaultOpen(tool(name, { filediff: { additions: 2, deletions: 1 } }), false, true)).toBe(true)
+      expect(partDefaultOpen(tool(name, { filediff: { additions: 0, deletions: 3 } }), false, true)).toBe(false)
+      expect(partDefaultOpen(tool(name, { filediff: { additions: 2, deletions: 1 } }), false, false)).toBe(false)
+    }
+  })
+
   test("preserves shell defaults", () => {
     expect(partDefaultOpen(tool("shell", {}), true, false)).toBe(true)
   })

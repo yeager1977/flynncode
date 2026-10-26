@@ -12,6 +12,7 @@ import {
   Index,
   type JSX,
   type ComponentProps,
+  mergeProps,
 } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
@@ -534,6 +535,15 @@ export function getToolInfo(
         title: i18n.t("ui.messagePart.title.edit"),
         subtitle: input.filePath ? getFilename(input.filePath) : undefined,
       }
+    case "multiedit":
+    case "notebook_edit": {
+      const file = input.file_path ?? input.notebook_path
+      return {
+        icon: "code-lines",
+        title: i18n.t("ui.messagePart.title.edit"),
+        subtitle: file ? getFilename(file) : undefined,
+      }
+    }
     case "write":
       return {
         icon: "code-lines",
@@ -2308,111 +2318,128 @@ ToolRegistry.register({
   },
 })
 
-ToolRegistry.register({
-  name: "edit",
-  render(props) {
-    const i18n = useI18n()
-    const fileComponent = useFileComponent()
-    const diagnostics = createMemo(() => getDiagnostics(props.metadata.diagnostics, props.input.filePath))
-    const path = createMemo(() => props.metadata?.filediff?.file || props.input.filePath || "")
-    const filename = () => getFilename(props.input.filePath ?? "")
-    const pending = () => props.status === "pending" || props.status === "running"
-    const diffSource = createMemo(
-      () => {
-        const filediff = props.metadata?.filediff
-        if (!filediff) return
-        return {
-          file: filediff.file || props.input.filePath || "",
-          patch: typeof filediff.patch === "string" ? filediff.patch : undefined,
-          before: typeof filediff.before === "string" ? filediff.before : undefined,
-          after: typeof filediff.after === "string" ? filediff.after : undefined,
-        }
-      },
-      undefined,
-      {
-        equals: (a, b) =>
-          a?.file === b?.file && a?.patch === b?.patch && a?.before === b?.before && a?.after === b?.after,
-      },
-    )
-
-    const fileCompProps = createMemo(() => {
-      try {
-        const source = diffSource()
-        if (source) {
-          const fileDiff = resolveFileDiff(source)
-          if (fileDiff) return { fileDiff, hunkSeparators: fileDiff.isPartial ? "simple" : "line-info-basic" }
-        }
-      } catch {}
-
+function EditTool(props: ToolProps) {
+  const i18n = useI18n()
+  const fileComponent = useFileComponent()
+  const diagnostics = createMemo(() => getDiagnostics(props.metadata.diagnostics, props.input.filePath))
+  const path = createMemo(() => props.metadata?.filediff?.file || props.input.filePath || "")
+  const filename = () => getFilename(props.input.filePath ?? "")
+  const pending = () => props.status === "pending" || props.status === "running"
+  const diffSource = createMemo(
+    () => {
+      const filediff = props.metadata?.filediff
+      if (!filediff) return
       return {
-        before: {
-          name: props.metadata?.filediff?.file || props.input.filePath,
-          contents: props.metadata?.filediff?.before || props.input.oldString || "",
-        },
-        after: {
-          name: props.metadata?.filediff?.file || props.input.filePath,
-          contents: props.metadata?.filediff?.after || props.input.newString || "",
-        },
+        file: filediff.file || props.input.filePath || "",
+        patch: typeof filediff.patch === "string" ? filediff.patch : undefined,
+        before: typeof filediff.before === "string" ? filediff.before : undefined,
+        after: typeof filediff.after === "string" ? filediff.after : undefined,
       }
-    })
+    },
+    undefined,
+    {
+      equals: (a, b) =>
+        a?.file === b?.file && a?.patch === b?.patch && a?.before === b?.before && a?.after === b?.after,
+    },
+  )
 
-    return (
-      <div data-component="edit-tool">
-        <BasicTool
-          {...props}
-          icon="code-lines"
-          defer={props.deferContent !== false}
-          trigger={
-            <div data-component="edit-trigger">
-              <div data-slot="message-part-title-area">
-                <div data-slot="message-part-title">
-                  <span data-slot="message-part-title-text">
-                    <TextShimmer text={i18n.t("ui.messagePart.title.edit")} active={pending()} />
-                  </span>
-                  <Show when={!pending()}>
-                    <span data-slot="message-part-title-filename">{filename()}</span>
-                  </Show>
+  const fileCompProps = createMemo(() => {
+    try {
+      const source = diffSource()
+      if (source) {
+        const fileDiff = resolveFileDiff(source)
+        if (fileDiff) return { fileDiff, hunkSeparators: fileDiff.isPartial ? "simple" : "line-info-basic" }
+      }
+    } catch {}
+
+    return {
+      before: {
+        name: props.metadata?.filediff?.file || props.input.filePath,
+        contents: props.metadata?.filediff?.before || props.input.oldString || "",
+      },
+      after: {
+        name: props.metadata?.filediff?.file || props.input.filePath,
+        contents: props.metadata?.filediff?.after || props.input.newString || "",
+      },
+    }
+  })
+
+  return (
+    <div data-component="edit-tool">
+      <BasicTool
+        {...props}
+        icon="code-lines"
+        defer={props.deferContent !== false}
+        trigger={
+          <div data-component="edit-trigger">
+            <div data-slot="message-part-title-area">
+              <div data-slot="message-part-title">
+                <span data-slot="message-part-title-text">
+                  <TextShimmer text={i18n.t("ui.messagePart.title.edit")} active={pending()} />
+                </span>
+                <Show when={!pending()}>
+                  <span data-slot="message-part-title-filename">{filename()}</span>
+                </Show>
+              </div>
+              <Show when={!pending() && props.input.filePath?.includes("/")}>
+                <div data-slot="message-part-path">
+                  <span data-slot="message-part-directory">{getDirectory(props.input.filePath!)}</span>
                 </div>
-                <Show when={!pending() && props.input.filePath?.includes("/")}>
-                  <div data-slot="message-part-path">
-                    <span data-slot="message-part-directory">{getDirectory(props.input.filePath!)}</span>
-                  </div>
-                </Show>
-              </div>
-              <div data-slot="message-part-actions">
-                <Show when={!pending() && props.metadata.filediff}>
-                  <DiffChanges changes={props.metadata.filediff} />
-                </Show>
-              </div>
+              </Show>
             </div>
-          }
-        >
-          <Show when={path()}>
-            <ToolFileAccordion
-              path={path()}
-              actions={
-                <Show when={!pending() && props.metadata.filediff}>
-                  <DiffChanges changes={props.metadata.filediff!} />
-                </Show>
-              }
-            >
-              <div data-component="edit-content">
-                <Dynamic
-                  component={fileComponent}
-                  mode="diff"
-                  virtualize={props.virtualizeDiff}
-                  onRendered={props.onContentRendered}
-                  {...fileCompProps()}
-                />
-              </div>
-            </ToolFileAccordion>
-          </Show>
-          <DiagnosticsDisplay diagnostics={diagnostics()} />
-        </BasicTool>
-      </div>
-    )
-  },
-})
+            <div data-slot="message-part-actions">
+              <Show when={!pending() && props.metadata.filediff}>
+                <DiffChanges changes={props.metadata.filediff} />
+              </Show>
+            </div>
+          </div>
+        }
+      >
+        <Show when={path()}>
+          <ToolFileAccordion
+            path={path()}
+            actions={
+              <Show when={!pending() && props.metadata.filediff}>
+                <DiffChanges changes={props.metadata.filediff!} />
+              </Show>
+            }
+          >
+            <div data-component="edit-content">
+              <Dynamic
+                component={fileComponent}
+                mode="diff"
+                virtualize={props.virtualizeDiff}
+                onRendered={props.onContentRendered}
+                {...fileCompProps()}
+              />
+            </div>
+          </ToolFileAccordion>
+        </Show>
+        <DiagnosticsDisplay diagnostics={diagnostics()} />
+      </BasicTool>
+    </div>
+  )
+}
+
+ToolRegistry.register({ name: "edit", render: EditTool })
+
+// multiedit and notebook_edit report the same filediff metadata as edit but
+// take Claude-style snake_case paths, so they render as an edit of that file.
+// Their per-call edits have no single old/new string, so the diff comes only
+// from the metadata.
+for (const name of ["multiedit", "notebook_edit"]) {
+  ToolRegistry.register({
+    name,
+    render: (props) =>
+      EditTool(
+        mergeProps(props, {
+          get input() {
+            return { filePath: props.input.file_path ?? props.input.notebook_path }
+          },
+        }),
+      ),
+  })
+}
 
 ToolRegistry.register({
   name: "write",

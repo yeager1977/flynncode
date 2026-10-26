@@ -61,6 +61,22 @@ describe("deriveSessionHistory", () => {
     expect(entries[1].file).toBe("src/a.ts")
   })
 
+  test("records multiedit and notebook_edit calls as file changes", () => {
+    const entries = deriveSessionHistory({
+      sessionID: "ses_1",
+      messages: [
+        toolMessage("m5", "multiedit", { file_path: "src/a.ts", edits: [] }, "completed", 10),
+        toolMessage("m6", "notebook_edit", { notebook_path: "lab.ipynb", new_source: "x" }, "completed", 20),
+      ],
+      diffs: [{ file: "src/a.ts", patch: "", additions: 1, deletions: 1, status: "modified" }],
+      stored: [],
+    })
+    expect(entries.map((entry) => [entry.kind, entry.file])).toEqual([
+      ["change", "src/a.ts"],
+      ["change", "lab.ipynb"],
+    ])
+  })
+
   test("counts permission prompts as approvals", () => {
     const entries = deriveSessionHistory({
       sessionID: "ses_1",

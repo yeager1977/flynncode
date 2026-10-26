@@ -21,6 +21,8 @@ describe("acp tool conversion", () => {
     expect(toToolKind("apply_patch")).toBe("edit")
     expect(toToolKind("patch")).toBe("edit")
     expect(toToolKind("write")).toBe("edit")
+    expect(toToolKind("multiedit")).toBe("edit")
+    expect(toToolKind("notebook_edit")).toBe("edit")
     expect(toToolKind("grep")).toBe("search")
     expect(toToolKind("glob")).toBe("search")
     expect(toToolKind("context7_resolve_library_id")).toBe("search")
@@ -34,6 +36,10 @@ describe("acp tool conversion", () => {
     expect(toLocations("read", { filePath: "/tmp/a.ts" })).toEqual([{ path: "/tmp/a.ts" }])
     expect(toLocations("edit", { filePath: "/tmp/b.ts" })).toEqual([{ path: "/tmp/b.ts" }])
     expect(toLocations("write", { filePath: "/tmp/c.ts" })).toEqual([{ path: "/tmp/c.ts" }])
+    expect(toLocations("multiedit", { file_path: "/tmp/d.ts", edits: [] })).toEqual([{ path: "/tmp/d.ts" }])
+    expect(toLocations("notebook_edit", { notebook_path: "/tmp/e.ipynb", new_source: "x" })).toEqual([
+      { path: "/tmp/e.ipynb" },
+    ])
     expect(toLocations("grep", { path: "/repo/src" })).toEqual([{ path: "/repo/src" }])
     expect(toLocations("glob", { path: "/repo/test" })).toEqual([{ path: "/repo/test" }])
     expect(toLocations("context7_get_library_docs", { path: "/docs" })).toEqual([{ path: "/docs" }])
@@ -48,6 +54,33 @@ describe("acp tool conversion", () => {
     expect(toLocations("bash", { command: "pwd", workdir: "/abs/dir" }, "/workspace")).toEqual([{ path: "/abs/dir" }])
     expect(toLocations("bash", { command: "printf hello" })).toEqual([])
     expect(toLocations("read", { path: "/tmp/missing-file-path.ts" })).toEqual([])
+  })
+
+  test("builds one diff per multiedit edit and none for notebook_edit", () => {
+    expect(
+      completedToolContent("multiedit", {
+        status: "completed",
+        input: {
+          file_path: "/tmp/file.ts",
+          edits: [
+            { old_string: "a", new_string: "b" },
+            { old_string: "c", new_string: "d", replace_all: true },
+          ],
+        },
+        output: "Applied 2 edits successfully.",
+      }),
+    ).toEqual([
+      { type: "content", content: { type: "text", text: "Applied 2 edits successfully." } },
+      { type: "diff", path: "/tmp/file.ts", oldText: "a", newText: "b" },
+      { type: "diff", path: "/tmp/file.ts", oldText: "c", newText: "d" },
+    ])
+    expect(
+      completedToolContent("notebook_edit", {
+        status: "completed",
+        input: { notebook_path: "/tmp/n.ipynb", new_source: "print(1)", edit_mode: "replace" },
+        output: "Replaced cell",
+      }),
+    ).toEqual([{ type: "content", content: { type: "text", text: "Replaced cell" } }])
   })
 
   test("builds completed content with text, edit diffs, and image attachments", () => {

@@ -47,6 +47,8 @@ export function toToolKind(toolName: string): ToolKind {
       return "fetch"
 
     case "edit":
+    case "multiedit":
+    case "notebook_edit":
     case "apply_patch":
     case "patch":
     case "write":
@@ -85,6 +87,13 @@ export function toLocations(toolName: string, input: ToolInput, cwd?: string): T
     case "write":
       return locationFrom(input.filePath ?? input.filepath)
 
+    // Claude-style tools take snake_case paths.
+    case "multiedit":
+      return locationFrom(input.file_path)
+
+    case "notebook_edit":
+      return locationFrom(input.notebook_path)
+
     case "external_directory":
       return locationFrom(input.filePath ?? input.filepath, input.parentDir, input.directories)
 
@@ -114,7 +123,9 @@ export function completedToolContent(toolName: string, state: CompletedToolState
   ]
 
   if (toToolKind(toolName) === "edit") {
-    content.push(...diffContent(state.input))
+    content.push(
+      ...(toolName.toLocaleLowerCase() === "multiedit" ? multieditDiffs(state.input) : diffContent(state.input)),
+    )
   }
 
   content.push(...imageContents(state.attachments ?? []))
@@ -335,6 +346,19 @@ function diffContent(input: ToolInput): ToolCallContent[] {
       newText,
     },
   ]
+}
+
+// A multiedit call applies its edits in order to one file; show each one.
+function multieditDiffs(input: ToolInput): ToolCallContent[] {
+  const path = stringValue(input.file_path) ?? ""
+  if (!Array.isArray(input.edits)) return []
+  return input.edits.flatMap((edit): ToolCallContent[] => {
+    if (!edit || typeof edit !== "object") return []
+    const oldText = stringValue(edit.old_string)
+    const newText = stringValue(edit.new_string)
+    if (oldText === undefined || newText === undefined) return []
+    return [{ type: "diff", path, oldText, newText }]
+  })
 }
 
 function readDisplayText(metadata: unknown) {

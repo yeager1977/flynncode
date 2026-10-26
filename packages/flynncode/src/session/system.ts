@@ -58,7 +58,7 @@ export function provider(model: Provider.Model) {
 // The registry only offers apply_patch to some models, so a model told to use
 // a tool it was not given reports a missing tool instead of editing. State
 // the editing tools this request actually has.
-const EDITING_TOOLS = ["apply_patch", "edit", "write"] as const
+const EDITING_TOOLS = ["apply_patch", "edit", "multiedit", "notebook_edit", "write"] as const
 
 export function editingTools(toolIDs: Iterable<string>) {
   const ids = new Set(toolIDs)

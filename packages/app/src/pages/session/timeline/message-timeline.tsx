@@ -1437,7 +1437,7 @@ export function MessageTimeline(props: {
       const part = getMsgPart(value.group.ref.messageID, value.group.ref.partID)
       if (part?.type === "tool") return part
     }
-    const asyncFile = () => ["edit", "write", "apply_patch"].includes(tool()?.tool ?? "")
+    const asyncFile = () => ["edit", "multiedit", "notebook_edit", "write", "apply_patch"].includes(tool()?.tool ?? "")
     const [ready, setReady] = createSignal(initialItem.size <= timelineFallbackItemSize || !asyncFile())
     let contentMeasureFrame: number | undefined
 
