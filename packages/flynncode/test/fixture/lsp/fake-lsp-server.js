@@ -1,5 +1,18 @@
 // Simple JSON-RPC 2.0 LSP-like fake server over stdio
 
+const fs = require("fs")
+const { spawn } = require("child_process")
+
+// Lifecycle tests locate this process (and an optional helper child, like the
+// helpers real servers start) through pid files instead of scanning `ps`.
+if (process.env.FAKE_LSP_PID_FILE) {
+  fs.writeFileSync(process.env.FAKE_LSP_PID_FILE, String(process.pid))
+  if (process.env.FAKE_LSP_CHILD) {
+    const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" })
+    fs.writeFileSync(process.env.FAKE_LSP_PID_FILE + ".child", String(child.pid))
+  }
+}
+
 let nextId = 1
 let readBuffer = Buffer.alloc(0)
 let lastChange = null
@@ -95,6 +108,12 @@ function workspaceDelayForIdentifier(identifier) {
   return pullConfig.workspaceDelayMsByIdentifier[identifier] ?? pullConfig.delayMs
 }
 
+// Lets callers that wait for diagnostics after opening a document return promptly.
+function publishEmpty(params) {
+  if (!process.env.FAKE_LSP_PUBLISH) return
+  sendNotification("textDocument/publishDiagnostics", { uri: params.textDocument.uri, diagnostics: [] })
+}
+
 function handle(raw) {
   let data
   try {
@@ -138,14 +157,30 @@ function handle(raw) {
     return
   }
 
+  if (data.method === "exit") {
+    process.exit(0)
+  }
+
+  if (data.method === "textDocument/definition") {
+    sendResponse(data.id, [
+      {
+        uri: data.params.textDocument.uri,
+        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+      },
+    ])
+    return
+  }
+
   if (data.method === "textDocument/didOpen") {
     maybeRegister("didOpen")
+    publishEmpty(data.params)
     return
   }
 
   if (data.method === "textDocument/didChange") {
     lastChange = data.params
     maybeRegister("didChange")
+    publishEmpty(data.params)
     return
   }
 

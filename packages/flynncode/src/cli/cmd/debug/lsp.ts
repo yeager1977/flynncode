@@ -19,7 +19,7 @@ const DiagnosticsCommand = effectCmd({
   handler: Effect.fn("Cli.debug.lsp.diagnostics")(function* (args) {
     const out = yield* LSP.Service.use((lsp) =>
       Effect.gen(function* () {
-        yield* lsp.touchFile(args.file, "full")
+        yield* lsp.start(args.file, "full")
         return yield* lsp.diagnostics()
       }),
     )

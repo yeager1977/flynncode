@@ -109,6 +109,19 @@ const withEmptyCodeMode = testEffect(
   ]),
 )
 const withBrokenPlugin = testEffect(LayerNode.compile(root, [...replacements, [Plugin.node, brokenPluginLayer]]))
+const withLspOff = testEffect(
+  LayerNode.compile(root, [
+    bootstrap,
+    [
+      Config.node,
+      TestConfig.layer({
+        get: () => Effect.succeed({ lsp: false }),
+        directories: () => InstanceState.directory.pipe(Effect.map((dir) => [path.join(dir, ".opencode")])),
+      }),
+    ],
+    [RuntimeFlags.node, RuntimeFlags.layer()],
+  ]),
+)
 
 afterEach(async () => {
   await disposeAllInstances()
@@ -180,6 +193,20 @@ describe("tool.registry", () => {
       const ids = yield* registry.ids()
 
       expect(ids).not.toContain("task_status")
+    }),
+  )
+
+  it.instance("exposes lsp without an experimental flag", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      expect(yield* registry.ids()).toContain("lsp")
+    }),
+  )
+
+  withLspOff.instance("hides lsp when the config sets lsp: false", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      expect(yield* registry.ids()).not.toContain("lsp")
     }),
   )
 

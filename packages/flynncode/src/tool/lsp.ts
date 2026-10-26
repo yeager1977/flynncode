@@ -74,10 +74,16 @@ export const LspTool = Tool.define(
           const exists = yield* fs.existsSafe(file)
           if (!exists) throw new Error(`File not found: ${file}`)
 
-          const available = yield* lsp.hasClients(file)
-          if (!available) throw new Error("No LSP server available for this file type.")
-
-          yield* lsp.touchFile(file, "document")
+          const started = yield* lsp.start(file, "document")
+          if (started !== "ready")
+            return {
+              title,
+              metadata: { result: [] as unknown[] },
+              output:
+                started === "disabled"
+                  ? "LSP is disabled in config (lsp: false)"
+                  : `no language server for ${path.extname(file) || path.basename(file)}`,
+            }
 
           const result: unknown[] = yield* (() => {
             switch (args.operation) {

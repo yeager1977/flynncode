@@ -290,7 +290,7 @@ const layer = Layer.effect(
             tool.patch,
             ...(tool.execute ? [tool.execute] : []),
             ...(tool.computer_use ? [tool.computer_use] : []),
-            ...(flags.experimentalLspTool ? [tool.lsp] : []),
+            ...(cfg.lsp === false ? [] : [tool.lsp]),
             ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
           ],
           task: tool.task,

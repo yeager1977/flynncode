@@ -6,11 +6,11 @@ import path from "path"
 import { pathToFileURL, fileURLToPath } from "url"
 import * as LSPServer from "./server"
 import { Config } from "@/config/config"
-import { Process } from "@/util/process"
-import { spawn as lspspawn } from "./launch"
-import { Effect, Layer, Context, Schema } from "effect"
+import { LSPLaunch } from "./launch"
+import { Clock, Duration, Effect, Layer, Context, Schema } from "effect"
 import { InstanceState } from "@/effect/instance-state"
-import { containsPath } from "@/project/instance-context"
+import { InstanceRef } from "@/effect/instance-ref"
+import { containsPath, type InstanceContext } from "@/project/instance-context"
 import { NonNegativeInt } from "@flynncode/core/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { LspEvent } from "@flynncode/schema/lsp-event"
@@ -109,18 +109,36 @@ const filterExperimentalServers = (servers: Record<string, LSPServer.Info>, flag
 
 type LocInput = { file: string; line: number; character: number }
 
+// `lsp` absent → "lazy": built-ins start only for an explicit `start` (the lsp tool), never
+// from read/edit warm-ups, and are never downloaded. `true`/object → "eager" (warm-ups start
+// servers). `false` → "off".
+type Mode = "off" | "lazy" | "eager"
+
+export type StartResult = "disabled" | "unavailable" | "ready"
+
+const IDLE_TIMEOUT = Duration.minutes(10)
+const IDLE_SWEEP_INTERVAL = Duration.minutes(1)
+// Process-wide, across every open instance: language servers are memory-heavy and
+// runaway children have swap-thrashed the owner's machine.
+const MAX_RUNNING = 3
+
 interface State {
+  mode: Mode
+  closed: boolean
   clients: LSPClient.Info[]
   servers: Record<string, LSPServer.Info>
   broken: Set<string>
   spawning: Map<string, Promise<LSPClient.Info | undefined>>
 }
 
+type Running = { state: State; ctx: InstanceContext; pid: number | undefined; used: number }
+
 export interface Interface {
   readonly init: () => Effect.Effect<void>
   readonly status: () => Effect.Effect<Status[]>
   readonly hasClients: (file: string) => Effect.Effect<boolean>
   readonly touchFile: (input: string, diagnostics?: "document" | "full") => Effect.Effect<void>
+  readonly start: (input: string, diagnostics?: "document" | "full") => Effect.Effect<StartResult>
   readonly diagnostics: () => Effect.Effect<Record<string, LSPClient.Diagnostic[]>>
   readonly hover: (input: LocInput) => Effect.Effect<any>
   readonly definition: (input: LocInput) => Effect.Effect<any[]>
@@ -142,22 +160,85 @@ const layer = Layer.effect(
     const flags = yield* RuntimeFlags.Service
     const events = yield* EventV2Bridge.Service
 
+    // Least recently used first: `touch` re-inserts a client on every use.
+    const running = new Map<LSPClient.Info, Running>()
+    const starting = { count: 0 }
+
+    const release = (client: LSPClient.Info) => {
+      const entry = running.get(client)
+      running.delete(client)
+      if (entry) entry.state.clients = entry.state.clients.filter((item) => item !== client)
+      return entry
+    }
+
+    const stopClient = async (client: LSPClient.Info) => {
+      const entry = release(client)
+      await client.shutdown().catch(() => {})
+      return entry
+    }
+
+    const touch = (clients: LSPClient.Info[], now: number) =>
+      clients.forEach((client) => {
+        const entry = running.get(client)
+        if (!entry) return
+        running.delete(client)
+        running.set(client, { ...entry, used: now })
+      })
+
+    // Reserves a slot for one more server, stopping least recently used clients outside `keep`.
+    // The slot is taken synchronously after the last check so concurrent spawns cannot overshoot.
+    const reserve = async (keep: LSPClient.Info[], evicted: InstanceContext[]) => {
+      while (running.size + starting.count >= MAX_RUNNING) {
+        const victim = [...running.keys()].find((client) => !keep.includes(client))
+        if (!victim) return false
+        const entry = await stopClient(victim)
+        if (entry) evicted.push(entry.ctx)
+      }
+      starting.count++
+      return true
+    }
+
+    const announce = (ctx: InstanceContext) =>
+      events.publish(Event.Updated, {}).pipe(Effect.provideService(InstanceRef, ctx))
+
+    const sweep = Effect.gen(function* () {
+      const now = yield* Clock.currentTimeMillis
+      const idle = [...running].filter(([, entry]) => now - entry.used >= Duration.toMillis(IDLE_TIMEOUT))
+      yield* Effect.forEach(
+        idle,
+        ([client, entry]) => Effect.promise(() => stopClient(client)).pipe(Effect.andThen(announce(entry.ctx))),
+        { discard: true },
+      )
+    })
+    yield* Effect.forever(Effect.sleep(IDLE_SWEEP_INTERVAL).pipe(Effect.andThen(sweep))).pipe(
+      Effect.forkScoped({ startImmediately: true }),
+    )
+
+    // A process that exits without running finalizers still signals every server group;
+    // "exit" listeners must be synchronous, so there is no SIGKILL follow-up here.
+    const onExit = () =>
+      running.forEach((entry) => {
+        if (entry.pid) LSPLaunch.signal(entry.pid, "SIGTERM")
+      })
+    process.on("exit", onExit)
+    yield* Effect.addFinalizer(() => Effect.sync(() => void process.off("exit", onExit)))
+
     const state = yield* InstanceState.make<State>(
       Effect.fn("LSP.state")(function* (ctx) {
         const cfg = yield* config.get()
 
         const servers: Record<string, LSPServer.Info> = {}
+        const mode: Mode = cfg.lsp === false ? "off" : cfg.lsp === undefined ? "lazy" : "eager"
 
-        if (!cfg.lsp) {
-          yield* Effect.logInfo("all LSPs are disabled")
-        } else {
+        if (mode === "off") yield* Effect.logInfo("all LSPs are disabled")
+        if (mode !== "off") {
           for (const server of Object.values(LSPServer)) {
             servers[server.id] = server
           }
 
           filterExperimentalServers(servers, flags)
 
-          if (cfg.lsp !== true) {
+          if (typeof cfg.lsp === "object") {
             for (const [name, item] of Object.entries(cfg.lsp)) {
               const existing = servers[name]
               if (item.disabled) {
@@ -171,7 +252,7 @@ const layer = Layer.effect(
                 root: existing?.root ?? (async (_file, ctx) => ctx.directory),
                 extensions: item.extensions ?? existing?.extensions ?? [],
                 spawn: async (root) => ({
-                  process: lspspawn(item.command[0], item.command.slice(1), {
+                  process: LSPLaunch.spawn(item.command[0], item.command.slice(1), {
                     cwd: root,
                     env: { ...process.env, ...item.env },
                   }),
@@ -182,6 +263,7 @@ const layer = Layer.effect(
           }
 
           yield* Effect.logInfo("enabled LSP servers", {
+            mode,
             serverIds: Object.values(servers)
               .map((server) => server.id)
               .join(", "),
@@ -189,6 +271,8 @@ const layer = Layer.effect(
         }
 
         const s: State = {
+          mode,
+          closed: false,
           clients: [],
           servers,
           broken: new Set(),
@@ -197,7 +281,8 @@ const layer = Layer.effect(
 
         yield* Effect.addFinalizer(() =>
           Effect.promise(async () => {
-            await Promise.all(s.clients.map((client) => client.shutdown()))
+            s.closed = true
+            await Promise.all([...s.clients].map(stopClient))
           }),
         )
 
@@ -205,18 +290,24 @@ const layer = Layer.effect(
       }),
     )
 
-    const getClients = Effect.fnUntraced(function* (file: string) {
+    // `explicit` callers (the lsp tool) may start servers in lazy mode; everyone else only
+    // reaches servers that are already running unless the config asked for eager warm-ups.
+    const getClients = Effect.fnUntraced(function* (file: string, explicit: boolean) {
       const ctx = yield* InstanceState.context
       if (!containsPath(file, ctx)) return [] as LSPClient.Info[]
       const s = yield* InstanceState.get(state)
+      const spawn = explicit || s.mode === "eager"
+      const now = yield* Clock.currentTimeMillis
       const clients = yield* Effect.promise(async () => {
         const extension = path.parse(file).ext || file
         const result: LSPClient.Info[] = []
+        const evicted: InstanceContext[] = []
         let updated = 0
 
         async function schedule(server: LSPServer.Info, root: string, key: string) {
+          // Lazy mode only uses servers that are already installed; downloads need an explicit `lsp` config.
           const handle = await server
-            .spawn(root, ctx, flags)
+            .spawn(root, ctx, s.mode === "lazy" ? { ...flags, disableLspDownload: true } : flags)
             .then((value) => {
               if (!value) s.broken.add(key)
               return value
@@ -235,19 +326,29 @@ const layer = Layer.effect(
             instance: ctx,
           }).catch(async () => {
             s.broken.add(key)
-            await Process.stop(handle.process)
+            await LSPLaunch.stop(handle.process)
             return undefined
           })
 
           if (!client) return undefined
 
           const existing = s.clients.find((x) => x.root === root && x.serverID === server.id)
-          if (existing) {
-            await Process.stop(handle.process)
+          if (existing || s.closed) {
+            await client.shutdown()
             return existing
           }
 
           s.clients.push(client)
+          running.set(client, { state: s, ctx, pid: handle.process.pid, used: now })
+          // A server that dies on its own is reaped and marked broken so warm-ups cannot respawn it in a loop.
+          const onExit = () => {
+            if (!running.has(client)) return
+            release(client)
+            s.broken.add(key)
+            if (handle.process.pid) LSPLaunch.signal(handle.process.pid, "SIGTERM")
+          }
+          handle.process.once("exit", onExit)
+          if (handle.process.exitCode !== null || handle.process.signalCode !== null) onExit()
           return client
         }
 
@@ -272,10 +373,14 @@ const layer = Layer.effect(
             continue
           }
 
+          if (!spawn) continue
+          if (!(await reserve(result, evicted))) continue
+
           const task = schedule(server, root, root + server.id)
           s.spawning.set(root + server.id, task)
 
           task.finally(() => {
+            starting.count--
             if (s.spawning.get(root + server.id) === task) {
               s.spawning.delete(root + server.id)
             }
@@ -288,18 +393,37 @@ const layer = Layer.effect(
           updated++
         }
 
-        return { result, updated }
+        return { result, updated, evicted }
       })
+      touch(clients.result, now)
       yield* Effect.forEach(Array.from({ length: clients.updated }), () => events.publish(Event.Updated, {}), {
         discard: true,
       })
+      yield* Effect.forEach(clients.evicted, announce, { discard: true })
       return clients.result
     })
 
     const run = Effect.fnUntraced(function* <T>(file: string, fn: (client: LSPClient.Info) => Promise<T>) {
-      const clients = yield* getClients(file)
+      const clients = yield* getClients(file, false)
       return yield* Effect.promise(() => Promise.all(clients.map((x) => fn(x))))
     })
+
+    const open = (clients: LSPClient.Info[], input: string, diagnostics?: "document" | "full") =>
+      Effect.promise(() =>
+        Promise.all(
+          clients.map(async (client) => {
+            const after = Date.now()
+            const version = await client.notify.open({ path: input })
+            if (!diagnostics) return
+            return client.waitForDiagnostics({
+              path: input,
+              version,
+              mode: diagnostics,
+              after,
+            })
+          }),
+        ).catch(() => {}),
+      )
 
     const runAll = Effect.fnUntraced(function* <T>(fn: (client: LSPClient.Info) => Promise<T>) {
       const s = yield* InstanceState.get(state)
@@ -343,22 +467,16 @@ const layer = Layer.effect(
 
     const touchFile = Effect.fn("LSP.touchFile")(function* (input: string, diagnostics?: "document" | "full") {
       yield* Effect.logInfo("touching file", { file: input })
-      const clients = yield* getClients(input)
-      yield* Effect.promise(() =>
-        Promise.all(
-          clients.map(async (client) => {
-            const after = Date.now()
-            const version = await client.notify.open({ path: input })
-            if (!diagnostics) return
-            return client.waitForDiagnostics({
-              path: input,
-              version,
-              mode: diagnostics,
-              after,
-            })
-          }),
-        ).catch(() => {}),
-      )
+      yield* open(yield* getClients(input, false), input, diagnostics)
+    })
+
+    const start = Effect.fn("LSP.start")(function* (input: string, diagnostics?: "document" | "full") {
+      const s = yield* InstanceState.get(state)
+      if (s.mode === "off") return "disabled" satisfies StartResult
+      const clients = yield* getClients(input, true)
+      if (!clients.length) return "unavailable" satisfies StartResult
+      yield* open(clients, input, diagnostics)
+      return "ready" satisfies StartResult
     })
 
     const diagnostics = Effect.fn("LSP.diagnostics")(function* () {
@@ -431,6 +549,7 @@ const layer = Layer.effect(
     })
 
     const workspaceSymbol = Effect.fn("LSP.workspaceSymbol")(function* (query: string) {
+      touch((yield* InstanceState.get(state)).clients, yield* Clock.currentTimeMillis)
       const results = yield* runAll((client) =>
         client.connection
           .sendRequest<Symbol[]>("workspace/symbol", { query })
@@ -482,6 +601,7 @@ const layer = Layer.effect(
       status,
       hasClients,
       touchFile,
+      start,
       diagnostics,
       hover,
       definition,

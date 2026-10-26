@@ -42,13 +42,25 @@ describe("LSP service lifecycle", () => {
     ),
   )
 
-  it.instance("hasClients() returns false for .ts files in instance when LSP is unset", () =>
+  it.instance("hasClients() returns true for .ts files in instance when LSP is unset (lazy built-ins)", () =>
     LSP.Service.use((lsp) =>
       Effect.gen(function* () {
         const result = yield* lsp.hasClients(path.join((yield* TestInstance).directory, "test.ts"))
-        expect(result).toBe(false)
+        expect(result).toBe(true)
       }),
     ),
+  )
+
+  it.instance(
+    "hasClients() returns false when lsp is false",
+    () =>
+      LSP.Service.use((lsp) =>
+        Effect.gen(function* () {
+          const result = yield* lsp.hasClients(path.join((yield* TestInstance).directory, "test.ts"))
+          expect(result).toBe(false)
+        }),
+      ),
+    { config: { lsp: false } },
   )
 
   it.instance(

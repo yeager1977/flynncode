@@ -39,6 +39,7 @@ const lsp = Layer.succeed(
     status: () => Effect.succeed([]),
     hasClients: () => Effect.succeed(true),
     touchFile: () => Effect.void,
+    start: () => Effect.succeed("ready"),
     diagnostics: () => Effect.succeed({}),
     hover: () => Effect.succeed([]),
     definition: () => Effect.succeed([]),

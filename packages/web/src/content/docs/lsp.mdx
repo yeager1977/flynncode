@@ -160,7 +160,7 @@ Initialization options vary by LSP server. Check your LSP server's documentation
 
 ### Disabling LSP servers
 
-If `lsp` is omitted, all LSP servers are disabled. To disable all LSP servers after another config enabled them, set `lsp` to `false`:
+If `lsp` is omitted, built-in servers start lazily: only the `lsp` tool starts them, and reads and edits do not. Setting `lsp` to `true` or an object also starts servers when files are read or edited. In every mode a server stops after 10 minutes idle and at most 3 run at once. To disable all LSP servers, set `lsp` to `false`:
 
 ```json title="opencode.json" {3}
 {

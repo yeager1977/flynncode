@@ -2,13 +2,13 @@ import path from "path"
 import { pathToFileURL, fileURLToPath } from "url"
 import { createMessageConnection, StreamMessageReader, StreamMessageWriter } from "vscode-jsonrpc/node"
 import type { Diagnostic as VSCodeDiagnostic } from "vscode-languageserver-types"
-import { Process } from "@/util/process"
 import { LANGUAGE_EXTENSIONS } from "./language"
 import { Effect, Schema } from "effect"
 import type * as LSPServer from "./server"
 import { withTimeout } from "../util/timeout"
 import { Filesystem } from "@/util/filesystem"
 import type { InstanceContext } from "@/project/instance-context"
+import { LSPLaunch } from "./launch"
 
 const DIAGNOSTICS_DEBOUNCE_MS = 150
 const DIAGNOSTICS_DOCUMENT_WAIT_TIMEOUT_MS = 5_000
@@ -16,6 +16,7 @@ const DIAGNOSTICS_FULL_WAIT_TIMEOUT_MS = 10_000
 const DIAGNOSTICS_REQUEST_TIMEOUT_MS = 3_000
 
 const INITIALIZE_TIMEOUT_MS = 45_000
+const SHUTDOWN_TIMEOUT_MS = 1_000
 
 // LSP spec constants
 const FILE_CHANGE_CREATED = 1
@@ -211,7 +212,8 @@ export async function create(input: {
   const initialized = await withTimeout(
     connection.sendRequest<{ capabilities?: ServerCapabilities }>("initialize", {
       rootUri: pathToFileURL(input.root).href,
-      processId: input.server.process.pid,
+      // The client's pid, per spec: servers watch it and exit if Flynncode dies without stopping them.
+      processId: process.pid,
       workspaceFolders: [
         {
           name: "workspace",
@@ -638,9 +640,15 @@ export async function create(input: {
       await waitForFullDiagnostics({ path: normalizedPath, version: request.version, after: request.after })
     },
     async shutdown() {
+      const proc = input.server.process
+      if (proc.exitCode === null && proc.signalCode === null) {
+        await withTimeout(connection.sendRequest("shutdown"), SHUTDOWN_TIMEOUT_MS)
+          .then(() => connection.sendNotification("exit"))
+          .catch(() => {})
+      }
       connection.end()
       connection.dispose()
-      await Process.stop(input.server.process)
+      await LSPLaunch.stop(proc)
     },
   }
 
