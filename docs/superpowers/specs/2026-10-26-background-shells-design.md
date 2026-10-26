@@ -25,7 +25,8 @@ first-class requirement.
 - Match Claude Code's tool names and semantics where they exist.
 - Every background shell belongs to its session and is stopped automatically:
   - when the session is deleted or archived;
-  - when the Flynncode server stops;
+  - when the session is a sub-agent's (it has a parent) and its run ends;
+  - when the Flynncode server stops, or its process exits or receives SIGINT/SIGTERM;
   - when its time cap is reached. The default and maximum is 2 hours; the cap can be lowered with the config key `background_shells.max_ms`.
 - At most 8 running background shells per session.
 
@@ -65,6 +66,8 @@ first-class requirement.
 - the exit status;
 - the last 20 lines of output.
 
+**Sub-agents.** A background shell started (or moved to the background) in a child session — a sub-agent's session, which has a parent — is killed when that session's run ends, i.e. when its `session.status` turns `idle`. Nobody watches the shell after the sub-agent has answered, and its exit notification would wake the finished sub-agent. The kill is explicit, so no notification is sent. The shell tool looks up the session's parent through the Session service and passes `child` to the service; root sessions keep the normal lifetime.
+
 **Promote.** A running foreground `bash` call can be moved to the background without restarting it. A foreground `bash` call spawns its process into a scope it owns; promotion hands the live process to the service (`BackgroundShells.adopt`), which takes over the group, keeps the output printed so far readable through `bash_output`, and counts the time cap from the real start. The foreground call returns at once with the new shell id. Promotion is refused (409) at the session's limit of 8 running shells, and fails (404) when no such call is running. Interactive commands and calls without a call id cannot be promoted.
 
 **Permissions.**
@@ -96,7 +99,7 @@ They reuse the existing compact "Background activity" divider for synthetic mess
 
 **Transcript.** A background `bash` call renders as a compact card, e.g. "started in background: `bun dev` · bash_3f2a".
 
-**Events.** State reaches the app through new events on the v1 global event stream: `shell.background.started { sessionID, id, command, pid, startedAt }`, `shell.background.output { sessionID, id, bytes, tail }` (at most one per second per shell; `tail` is the last 4 KiB) and `shell.background.exited { sessionID, id, status, exitCode? }`. Nothing polls; the app lists shells once when a session opens and then follows events.
+**Events.** State reaches the app through new events on the v1 global event stream: `shell.background.started { sessionID, id, command, pid, startedAt }`, `shell.background.output { sessionID, id, bytes, tail }` (at most one per second per shell; `tail` is the last 4 KiB) and `shell.background.exited { sessionID, id, status, exitCode? }`. Output that arrives inside the one-second window schedules a single trailing output event at the end of the window, so the last lines before a quiet spell still reach the app; output not yet announced when a shell finishes goes out (still throttled) just before its exit event. Nothing polls; the app lists shells once when a session opens and then follows events. Only `started` and `exited` events make an in-flight list response stale; output events do not, so a busy shell cannot keep the list from landing.
 
 **Routes** (all under the session, with the usual workspace routing):
 - `GET /session/{id}/shells` lists the session's shells, running and recently finished.
@@ -111,12 +114,14 @@ They reuse the existing compact "Background activity" divider for synthetic mess
 **Never orphaned.**
 - Each background shell's process-group id is registered with its session and recorded in the registry under `Global.Path.state/background-shells/`: one file per server process, named `<pid>-<starttime>.json`. Several servers (desktop sidecar, CLI/TUI, dev servers) share that directory, so a server only writes its own file; the start time in the name makes a recycled server pid a different owner.
 - A server-stop finalizer kills every registered group.
+- A synchronous process `exit` hook sends SIGTERM to the group of every running shell, for exits that skip finalizers (`process.exit`, a forced quit). `flynncode serve` handles SIGINT/SIGTERM by stopping the server normally (so the finalizer runs) and then exiting; a second signal forces the exit, which still runs the hook. Without a handler Node would end the process on these signals without running even the `exit` hook.
+- The desktop sidecar's `stop()` disposes instances and then closes the listener, whose finalizer kills the shells. The server bundle exposes no handle to the service, so the shells cannot be killed before instance disposal; the `exit` hook covers anything left when the sidecar calls `process.exit`.
 - Each group is recorded by its id (the leader's pid, since it is spawned detached) and its leader's start time (`/proc/<pid>/stat` field 22), read the moment it is spawned. If the leader has already exited by then, the earliest surviving member's start time is used. Command lines are not used: a dev server started with `cmd >log 2>&1 &` has a leader that exits at once while the server lives on. Without `/proc` nothing is recorded.
 - On startup, files of dead owners are read and their groups are killed only if they are still the same group: either the leader is running with the recorded start time, or the leader is gone but processes in that group started no earlier than it exist (leaderless groups are reaped as a whole). A leader pid with a different start time and no matching members was recycled and is skipped. Without `/proc` nothing can be verified, so nothing is killed.
 - A shell keeps being tracked until every member of its group has exited, so a daemon that outlives the leader is still killed by `kill_shell`, the cap, session deletion or server stop. Processes that leave the group (`setsid`) are not tracked.
 - Finished shells are kept for listing (50 per session, 200 overall) and then dropped.
 
-**Output safety.** Output files live under `Global.Path.data/tool-output/` (`tool_<id>`) and are covered by the existing 7-day retention. The service caps each file at 8 MiB (the writer's own default is 50 MiB): the first 1 MiB (head) stays in the file and only a rolling tail (about 7 MiB, held in memory per running shell) follows it. Reads report `truncated: true` once the cap is hit. Filtered reads stop at the last complete line so a match split across chunks is not lost.
+**Output safety.** Output files live under `Global.Path.data/tool-output/` (`tool_<id>`) and are covered by the existing 7-day retention. The service caps each file at 8 MiB (the writer's own default is 50 MiB): the first 1 MiB (head) stays in the file and only a rolling tail (about 7 MiB, held in memory per running shell) follows it. Reads report `truncated: true` once the cap is hit. Filtered reads stop at the last complete line so a match split across chunks is not lost. When a shell finishes, its read window is trimmed to the newest 64 KiB (enough for the exit summary and late reads); a read from an older offset reports the dropped bytes as skipped.
 
 **Unknown ids.**
 - `bash_output`, `kill_shell` and `monitor` on an unknown id return "no such background shell" instead of throwing.
@@ -138,13 +143,15 @@ All tests live in `packages/flynncode`, use real processes and use no mocks.
    - times out when nothing matches;
    - rejects an invalid regex.
 5. A 9th concurrent shell is refused.
-6. Deleting the session and stopping the server each leave no processes behind.
+6. Deleting the session, stopping the server, the process exit hook and the end of a sub-agent's run each leave no processes behind; a root session's shell survives its session going idle.
 7. Recorded leftovers are killed on startup only when the recorded (group id, leader start time) identity still matches, including groups whose leader is gone; recycled pids are skipped.
 8. The output cap keeps the head plus a rolling tail.
 9. A command pattern denied for `bash` is also denied with `run_in_background`.
 10. App: the chip and panel helpers render running shells and send stop requests (browser suite).
-11. HTTP routes (list, output, stop, promote) and CORS for the new methods.
-12. Promote: a foreground command moved to the background keeps running, its earlier output is readable, and abort, timeout and limit paths leave no process behind.
+11. HTTP routes (list, output, stop, promote — including a real promotion, 409 at the shell limit and 404 for an unknown call) and CORS for the new methods.
+12. Promote: a foreground command moved to the background keeps running, its earlier output is readable, and abort, timeout and limit paths leave no process behind (aborting the original call after promotion does not kill the shell; its cap still does).
+13. Events: a throttled chunk followed by silence arrives in a trailing output event within the window.
+14. `flynncode serve` turns SIGINT/SIGTERM into a normal shutdown.
 
 ## Out of scope
 
