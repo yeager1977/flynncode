@@ -7,6 +7,8 @@ const DEFAULT_HEAD_BYTES = 1024 * 1024
 const DEFAULT_WINDOW_BYTES = 1024 * 1024
 const DEFAULT_READ_BYTES = 50 * 1024
 const DEFAULT_FLUSH_MS = 5_000
+// Kept after close(): enough for the exit summary's last lines and a late read; older offsets report `skipped`.
+const CLOSED_WINDOW_BYTES = 64 * 1024
 
 export type Writer = {
   write(chunk: string): void
@@ -217,7 +219,8 @@ export function open(
         .then(() => (rolling ? rewrite() : undefined))
         .catch(() => undefined)
       await chain
-      // Only the read window outlives close().
+      // Only the newest part of the read window outlives close(); finished shells are listed for a while.
+      recentLength = keepNewest(recent, recentLength, CLOSED_WINDOW_BYTES)
       pending = []
       pendingLength = 0
       head = []

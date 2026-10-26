@@ -28,6 +28,8 @@ import { ShellPrompt, needsInteractiveTerminal, type Parameters } from "./shell/
 import { ShellBackground } from "./shell/background"
 import { BashArity } from "@/permission/arity"
 import { BackgroundShells } from "@/shell/background/service"
+import { Session } from "@/session/session"
+import type { SessionID } from "@/session/schema"
 
 export { Parameters } from "./shell/prompt"
 
@@ -390,6 +392,7 @@ export const ShellTool = Tool.define(
     const locations = yield* LocationServiceMap.Service
     const flags = yield* RuntimeFlags.Service
     const shells = yield* BackgroundShells.Service
+    const sessions = yield* Session.Service
     const scope = yield* Scope.Scope
     const defaultTimeoutMs = flags.bashDefaultTimeoutMs ?? 2 * 60 * 1000
 
@@ -460,6 +463,14 @@ export const ShellTool = Tool.define(
       return scan
     })
 
+    // A sub-agent's session has a parent; its background shells end with its run. An unknown session counts as a
+    // root session, which only keeps the shell's normal lifetime.
+    const isChild = (sessionID: SessionID) =>
+      sessions.get(sessionID).pipe(
+        Effect.map((info) => info.parentID !== undefined),
+        Effect.catchCause(() => Effect.succeed(false)),
+      )
+
     const shellEnv = Effect.fn("ShellTool.shellEnv")(function* (ctx: Tool.Context, cwd: string) {
       const extra = yield* plugin.trigger(
         "shell.env",
@@ -495,6 +506,8 @@ export const ShellTool = Tool.define(
       let cut = false
       let expired = false
       let aborted = false
+      // Set once the call releases its resources: a chunk still in flight must not open a new full-output sink.
+      let closed = false
 
       const closeSink = Effect.fnUntraced(function* () {
         const stream = sink
@@ -537,16 +550,18 @@ export const ShellTool = Tool.define(
       }
       const promoted = yield* Deferred.make<BackgroundShells.Shell>()
       const notify = yield* ShellBackground.notifier(ctx, scope)
+      // Only a call the app can name (by its call id) can be promoted.
+      const offer = ctx.callID ? { sessionID: ctx.sessionID, callID: ctx.callID } : undefined
+      const child = offer ? yield* isChild(ctx.sessionID) : false
       const startedAt = Date.now()
-      const settle = Effect.suspend(() =>
-        handover.phase === "promoting" && handover.settled ? Deferred.await(handover.settled) : Effect.void,
-      ).pipe(
-        Effect.andThen(
-          Effect.sync(() => {
-            if (handover.phase !== "promoted") handover.phase = "finished"
-          }),
-        ),
-      )
+      // Checking the phase and finishing happen in one synchronous step, so a promotion cannot start in between;
+      // after waiting for a promotion in flight the phase is checked again.
+      const settle: Effect.Effect<void> = Effect.suspend(() => {
+        if (handover.phase === "promoting" && handover.settled)
+          return Deferred.await(handover.settled).pipe(Effect.andThen(settle))
+        if (handover.phase !== "promoted") handover.phase = "finished"
+        return Effect.void
+      })
 
       const exit = yield* Effect.acquireUseRelease(
         Scope.make(),
@@ -579,7 +594,7 @@ export const ShellTool = Tool.define(
                       Effect.sync(() => {
                         file = next
                         cut = true
-                        sink = createWriteStream(next, { flags: "a" })
+                        if (!closed) sink = createWriteStream(next, { flags: "a" })
                         full = ""
                       }),
                     ),
@@ -626,6 +641,7 @@ export const ShellTool = Tool.define(
                   startedAt,
                   initial,
                   capMs: input.capMs,
+                  child,
                   notify,
                 })
                 .pipe(
@@ -648,9 +664,6 @@ export const ShellTool = Tool.define(
               yield* Deferred.succeed(settled, undefined)
               return adopted.shell
             }).pipe(Effect.uninterruptible)
-            // Only a call the app can name (by its call id) can be promoted.
-            const offer = ctx.callID ? { sessionID: ctx.sessionID, callID: ctx.callID } : undefined
-            if (offer) yield* shells.offer({ ...offer, promote })
 
             const abort = Effect.callback<void>((resume) => {
               if (ctx.abort.aborted) return resume(Effect.void)
@@ -661,12 +674,18 @@ export const ShellTool = Tool.define(
 
             const timeout = Effect.sleep(`${input.timeout + 100} millis`)
 
-            const exit = yield* Effect.raceAll([
-              handle.exitCode.pipe(Effect.map((code) => ({ kind: "exit" as const, code }))),
-              abort.pipe(Effect.map(() => ({ kind: "abort" as const, code: null }))),
-              timeout.pipe(Effect.map(() => ({ kind: "timeout" as const, code: null }))),
-              Deferred.await(promoted).pipe(Effect.map((shell) => ({ kind: "background" as const, shell }))),
-            ]).pipe(Effect.ensuring(offer ? shells.withdraw(offer) : Effect.void), Effect.ensuring(settle))
+            // Registered and withdrawn as one resource, so an interruption cannot leave a stale offer behind.
+            const exit = yield* Effect.acquireUseRelease(
+              offer ? shells.offer({ ...offer, promote }) : Effect.void,
+              () =>
+                Effect.raceAll([
+                  handle.exitCode.pipe(Effect.map((code) => ({ kind: "exit" as const, code }))),
+                  abort.pipe(Effect.map(() => ({ kind: "abort" as const, code: null }))),
+                  timeout.pipe(Effect.map(() => ({ kind: "timeout" as const, code: null }))),
+                  Deferred.await(promoted).pipe(Effect.map((shell) => ({ kind: "background" as const, shell }))),
+                ]),
+              () => (offer ? shells.withdraw(offer) : Effect.void),
+            ).pipe(Effect.ensuring(settle))
 
             // A promotion that completed while another arm won still hands the process over.
             if (handover.phase === "promoted")
@@ -681,12 +700,16 @@ export const ShellTool = Tool.define(
             }
             return exit
           }),
+        // The process scope closes first (it stops the pump), then the sink, so no chunk can write after it closed.
         (owned, result) =>
           settle.pipe(
-            Effect.andThen(closeSink()),
             Effect.andThen(
-              Effect.suspend(() => (handover.phase === "promoted" ? Effect.void : Scope.close(owned, result))),
+              Effect.suspend(() => {
+                closed = true
+                return handover.phase === "promoted" ? Effect.void : Scope.close(owned, result)
+              }),
             ),
+            Effect.andThen(closeSink()),
           ),
       ).pipe(Effect.orDie)
 
@@ -832,11 +855,16 @@ export const ShellTool = Tool.define(
     })
 
     const runBackground = Effect.fn("ShellTool.runBackground")(function* (
-      input: Omit<BackgroundShells.StartInput, "sessionID" | "notify">,
+      input: Omit<BackgroundShells.StartInput, "sessionID" | "notify" | "child">,
       ctx: Tool.Context,
     ) {
       const started = yield* shells
-        .start({ ...input, sessionID: ctx.sessionID, notify: yield* ShellBackground.notifier(ctx, scope) })
+        .start({
+          ...input,
+          sessionID: ctx.sessionID,
+          child: yield* isChild(ctx.sessionID),
+          notify: yield* ShellBackground.notifier(ctx, scope),
+        })
         .pipe(Effect.orDie)
       const output = [
         `${started.id} started (pid ${started.pid}). Output: ${started.outputPath}.`,

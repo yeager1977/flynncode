@@ -79,6 +79,8 @@ export type StartInput = {
   timeoutMs?: number
   // `shell.backgroundMaxMs` from the caller's instance config; config is instance-scoped and this service is not.
   capMs?: number
+  // The session is a sub-agent's (it has a parent): its shells die when its run ends, see `onEvent`.
+  child?: boolean
   notify?: Notify
 }
 
@@ -95,6 +97,7 @@ export type AdoptInput = {
   // Output the caller already received; it starts the shell's stream so bash_output returns it.
   initial: string
   capMs?: number
+  child?: boolean
   notify?: Notify
 }
 
@@ -147,6 +150,9 @@ type Entry = {
   natural: boolean
   recorded: boolean
   emittedAt: number
+  // writer.total() when the last output event went out, and whether a trailing event is already scheduled.
+  emittedBytes: number
+  trailing: boolean
   watchers: Set<Watcher>
   stopped: Deferred.Deferred<void>
   finished: Deferred.Deferred<void>
@@ -167,6 +173,8 @@ const layer = Layer.effect(
     const state = { closing: false }
 
     const offers = new Map<string, Promotion>()
+    // Sub-agent sessions that started a shell; their shells are killed when the session goes idle.
+    const children = new Set<string>()
 
     const find = (sessionID: string, id: string) => sessions.get(sessionID)?.get(id)
 
@@ -241,6 +249,7 @@ const layer = Layer.effect(
       handle: ChildProcessHandle
       startedAt: number
       initial: string
+      child?: boolean
     }) {
       const outputPath = path.join(TRUNCATION_DIR, ToolID.ascending())
       const entry: Entry = {
@@ -261,11 +270,14 @@ const layer = Layer.effect(
         natural: false,
         recorded: false,
         emittedAt: 0,
+        emittedBytes: 0,
+        trailing: false,
         watchers: new Set(),
         stopped: yield* Deferred.make<void>(),
         finished: yield* Deferred.make<void>(),
       }
       if (input.initial) entry.writer.write(input.initial)
+      if (input.child) children.add(input.sessionID)
       // Re-read at insert time: a killSession that ran meanwhile dropped the map this call started with. Listed and
       // announced before output is pumped, so `started` precedes every output and exit event of the shell.
       sessions.set(
@@ -282,14 +294,35 @@ const layer = Layer.effect(
       return entry
     })
 
+    // At most one output event per second; a chunk that arrives inside the window schedules one trailing event at
+    // its end, so the last output before a quiet spell still reaches the app.
     const ingest = (entry: Entry, chunk: string) =>
       Effect.suspend(() => {
         entry.writer.write(chunk)
         entry.watchers.forEach((watcher) => scan(entry, watcher, chunk))
-        const now = Date.now()
-        if (now - entry.emittedAt < OUTPUT_EVENT_MS) return Effect.void
-        entry.emittedAt = now
+        const wait = entry.emittedAt + OUTPUT_EVENT_MS - Date.now()
+        if (wait <= 0) return publishOutput(entry)
+        if (entry.trailing) return Effect.void
+        entry.trailing = true
+        return Effect.sleep(wait).pipe(
+          Effect.andThen(
+            Effect.suspend(() => {
+              entry.trailing = false
+              // A finished shell's last output goes out from `life`, before its exit event.
+              return entry.shell.status === "running" ? publishOutput(entry) : Effect.void
+            }),
+          ),
+          Effect.forkIn(fibers),
+          Effect.asVoid,
+        )
+      })
+
+    const publishOutput = (entry: Entry) =>
+      Effect.suspend(() => {
         const total = entry.writer.total()
+        if (total === entry.emittedBytes) return Effect.void
+        entry.emittedAt = Date.now()
+        entry.emittedBytes = total
         return emit(entry, ShellBackground.Event.Output, {
           sessionID: entry.shell.sessionID,
           id: entry.shell.id,
@@ -374,6 +407,11 @@ const layer = Layer.effect(
         Deferred.doneUnsafe(watcher.wake, Exit.void)
       })
       yield* Deferred.succeed(entry.finished, undefined)
+      // Output not yet announced goes out before the exit, still at most one output event per second.
+      if (entry.writer.total() !== entry.emittedBytes) {
+        yield* Effect.sleep(Math.max(0, entry.emittedAt + OUTPUT_EVENT_MS - Date.now()))
+        yield* publishOutput(entry)
+      }
       yield* emit(entry, ShellBackground.Event.Exited, {
         sessionID: entry.shell.sessionID,
         id: entry.shell.id,
@@ -521,6 +559,7 @@ const layer = Layer.effect(
           const entries = Array.from(sessions.get(sessionID)?.values() ?? [])
           const stopped = yield* Effect.forEach(entries, stop, { concurrency: "unbounded" })
           sessions.delete(sessionID)
+          children.delete(sessionID)
           return stopped.filter(Boolean).length
         }),
       )
@@ -538,6 +577,18 @@ const layer = Layer.effect(
       )
     })
 
+    // A process that exits without running finalizers (process.exit, an uncaught error, a forced quit) still
+    // signals every running group; "exit" listeners must be synchronous, so there is no SIGKILL follow-up here.
+    // Added before the finalizer below so it is removed only after that finalizer killed everything.
+    const onExit = () =>
+      terminateGroups(
+        Array.from(sessions.values()).flatMap((session) =>
+          Array.from(session.values()).flatMap((entry) => (entry.shell.status === "running" ? [entry.shell.pid] : [])),
+        ),
+      )
+    process.on("exit", onExit)
+    yield* Effect.addFinalizer(() => Effect.sync(() => void process.off("exit", onExit)))
+
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => (state.closing = true)).pipe(
         Effect.andThen(killAll()),
@@ -547,13 +598,21 @@ const layer = Layer.effect(
 
     // Deleted and archived sessions stop their shells. This service is global, so it listens on the process-wide
     // GlobalBus, which also carries events machine sync writes directly (it bypasses the session service). Child
-    // sessions are deleted with their own event; unarchiving restarts nothing.
+    // sessions are deleted with their own event; unarchiving restarts nothing. A sub-agent's session also stops
+    // its shells when its run ends (`session.status` idle): nobody watches them afterwards, and an exit
+    // notification would wake the finished sub-agent. That kill is explicit, so it notifies nobody.
     const runFork = Effect.runForkWith(yield* Effect.context<never>())
     const onEvent = (event: GlobalEvent) => {
       const payload: unknown = event.payload
       if (!isRecord(payload) || !isRecord(payload.properties)) return
       const sessionID = payload.properties.sessionID
       if (typeof sessionID !== "string") return
+      if (payload.type === "session.status") {
+        const status = payload.properties.status
+        if (!children.has(sessionID) || !isRecord(status) || status.type !== "idle") return
+        children.delete(sessionID)
+        return void runFork(killSession(sessionID))
+      }
       if (payload.type === "session.deleted") return void runFork(killSession(sessionID))
       if (payload.type !== "session.updated") return
       const info = payload.properties.info
@@ -715,6 +774,12 @@ function groupAlive(pgid: number) {
   } catch (error) {
     return (error as NodeJS.ErrnoException).code !== "ESRCH"
   }
+}
+
+// Synchronous so it can run from a process "exit" listener. A group that is already gone (ESRCH) is skipped.
+export function terminateGroups(pgids: number[]) {
+  if (process.platform === "win32") return
+  pgids.forEach((pgid) => signalGroup(pgid, "SIGTERM"))
 }
 
 function signalGroup(pgid: number, signal: NodeJS.Signals) {

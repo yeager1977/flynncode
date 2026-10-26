@@ -3,6 +3,7 @@ import { describe, expect } from "bun:test"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { Cause, Effect, Exit, Layer } from "effect"
 import type * as Scope from "effect/Scope"
+import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { Config } from "@/config/config"
@@ -29,6 +30,9 @@ import { PtyID } from "@flynncode/core/pty/schema"
 import { AbsolutePath } from "@flynncode/core/schema"
 import { AppProcess } from "@flynncode/core/process"
 import { BackgroundShells } from "@/shell/background/service"
+import { Session } from "@/session/session"
+import { SessionProjector } from "@flynncode/core/session/projector"
+import { Database } from "@flynncode/core/database/database"
 
 const shellLayer = Layer.mergeAll(
   LayerNode.compile(
@@ -42,6 +46,9 @@ const shellLayer = Layer.mergeAll(
       RuntimeFlags.node,
       AppProcess.node,
       BackgroundShells.node,
+      Session.node,
+      SessionProjector.node,
+      Database.node,
     ]),
   ),
   testInstanceStoreLayer,
@@ -1248,6 +1255,31 @@ describe("tool.shell truncation", () => {
         })
         expect((result.metadata as { truncated?: boolean }).truncated).toBe(false)
         expect(result.output).toContain("1")
+      }),
+    ),
+  )
+
+  it.live("leaves no descriptor open on the full-output file once the call returns", () =>
+    runIn(
+      projectRoot,
+      Effect.gen(function* () {
+        if (process.platform !== "linux") return
+        const openFiles = () =>
+          Effect.promise(async () =>
+            Promise.all(
+              (await fs.readdir("/proc/self/fd")).map((fd) => fs.readlink(`/proc/self/fd/${fd}`).catch(() => "")),
+            ),
+          )
+        // Output that crosses the byte limit at the very end, while the process exits, is the case that opened a
+        // new sink after the old one was closed.
+        const paths = yield* Effect.forEach(Array.from({ length: 5 }), () =>
+          run({ command: `${fill("bytes", Truncate.MAX_BYTES + 5000)}; exit 0` }).pipe(
+            Effect.map((result) => (result.metadata as { outputPath?: string }).outputPath),
+          ),
+        )
+        expect(paths.every(Boolean)).toBe(true)
+        const open = yield* openFiles()
+        expect(open.filter((link) => paths.includes(link))).toEqual([])
       }),
     ),
   )

@@ -27,6 +27,7 @@ const start = (
     command: string
     sessionID?: string
     timeoutMs?: number
+    child?: boolean
     notify?: (text: string) => Effect.Effect<void>
   },
 ) =>
@@ -499,7 +500,14 @@ describe("BackgroundShells", () => {
           command: "for i in 1 2 3 4 5 6 7 8; do echo line$i; sleep 0.3; done",
         })
         started.add(shell.pid)
-        yield* statusOf(service, "ses_events", shell.id, "exited")
+        // The exit event follows the last output event, which waits out the one-second throttle.
+        yield* pollWithTimeout(
+          Effect.sync(() =>
+            events.find((event) => event.properties.id === shell.id && event.type === "shell.background.exited"),
+          ),
+          "no exited event",
+          "8 seconds",
+        )
         const own = events.filter((event) => event.properties.id === shell.id)
         expect(own.every((event) => event.directory === "/workspace/events")).toBe(true)
         expect(own[0]).toMatchObject({
@@ -517,9 +525,10 @@ describe("BackgroundShells", () => {
           properties: { sessionID: "ses_events", id: shell.id, status: "exited", exitCode: 0 },
         })
         const output = own.filter((event) => event.type === "shell.background.output")
-        // About 2.4 s of output at one event per second at most.
-        expect(output.length).toBeGreaterThanOrEqual(2)
-        expect(output.length).toBeLessThanOrEqual(3)
+        // About 2.4 s of output at one event per second at most, plus the trailing event that carries the last line.
+        expect(output.length).toBeGreaterThanOrEqual(3)
+        expect(output.length).toBeLessThanOrEqual(4)
+        expect(output.at(-1)?.properties.tail).toEndWith("line8\n")
         output.slice(1).forEach((event, index) => expect(event.at - output[index].at).toBeGreaterThanOrEqual(950))
         output.forEach((event) => {
           expect(event.properties.sessionID).toBe("ses_events")
@@ -540,7 +549,13 @@ describe("BackgroundShells", () => {
         const shell = yield* start(service, {
           command: "head -c 10000 /dev/zero | tr '\\0' a; sleep 1.2; echo end",
         })
-        yield* statusOf(service, "ses_a", shell.id, "exited")
+        yield* pollWithTimeout(
+          Effect.sync(() =>
+            events.find((event) => event.properties.id === shell.id && event.type === "shell.background.exited"),
+          ),
+          "no exited event",
+          "8 seconds",
+        )
         const last = events
           .filter((event) => event.properties.id === shell.id && event.type === "shell.background.output")
           .at(-1)
@@ -550,6 +565,98 @@ describe("BackgroundShells", () => {
       }),
     15_000,
   )
+
+  it.live(
+    "a throttled chunk followed by silence still reaches the app in a trailing output event",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* BackgroundShells.Service
+        const events = yield* shellEvents
+        const shell = yield* start(service, { command: "echo first; sleep 0.3; echo second; sleep 30" })
+        const begin = Date.now()
+        const trailing = yield* pollWithTimeout(
+          Effect.sync(() =>
+            events.find(
+              (event) =>
+                event.properties.id === shell.id &&
+                event.type === "shell.background.output" &&
+                String(event.properties.tail).includes("second"),
+            ),
+          ),
+          "the quiet window's last output never reached an output event",
+          "3 seconds",
+        )
+        expect(trailing.at - begin).toBeLessThanOrEqual(1_500)
+        const own = events.filter((event) => event.properties.id === shell.id && event.type === "shell.background.output")
+        own.slice(1).forEach((event, index) => expect(event.at - own[index].at).toBeGreaterThanOrEqual(950))
+        yield* service.kill({ sessionID: "ses_a", id: shell.id })
+      }),
+    15_000,
+  )
+
+  it.live(
+    "a child session's shells are killed, without a notification, when that session goes idle",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* BackgroundShells.Service
+        const sink = collector()
+        const child = yield* start(service, {
+          command: "sh -c 'sleep 60 & sleep 60'",
+          sessionID: "ses_child_run",
+          child: true,
+          notify: sink.notify,
+        })
+        const root = yield* start(service, { command: "sleep 60", sessionID: "ses_root_run" })
+        // The shape SessionStatus publishes through the EventV2 bridge.
+        const status = (sessionID: string, type: "busy" | "idle") =>
+          GlobalBus.emit("event", {
+            directory: process.cwd(),
+            payload: { id: "evt_status", type: "session.status", properties: { sessionID, status: { type } } },
+          })
+        status("ses_child_run", "busy")
+        status("ses_root_run", "idle")
+        yield* Effect.sleep("500 millis")
+        expect(groupAlive(child.pid)).toBe(true)
+        expect(groupAlive(root.pid)).toBe(true)
+
+        status("ses_child_run", "idle")
+        yield* groupGone(child.pid)
+        yield* Effect.sleep("300 millis")
+        expect(sink.texts).toEqual([])
+        expect(groupAlive(root.pid)).toBe(true)
+        expect((yield* service.list("ses_root_run")).map((shell) => shell.status)).toEqual(["running"])
+      }),
+    15_000,
+  )
+
+  test("a process exit hook sends SIGTERM to every running group and is removed with the layer", async () => {
+    const before = new Set(process.listeners("exit"))
+    const result = await Effect.gen(function* () {
+      const scope = yield* Scope.make()
+      const context = yield* Layer.buildWithScope(layer, scope)
+      const service = Context.get(context, BackgroundShells.Service)
+      const hooks = process.listeners("exit").filter((listener) => !before.has(listener))
+      const shells = yield* Effect.all([
+        start(service, { command: "sh -c 'sleep 60 & sleep 60'" }),
+        start(service, { command: "sleep 60", sessionID: "ses_b" }),
+        start(service, { command: LINGER, sessionID: "ses_c" }),
+      ])
+      yield* Effect.sleep("300 millis")
+      // Synchronous, as process "exit" listeners must be: no finalizer gets to run when the process exits.
+      hooks.forEach((hook) => hook(0))
+      const pids = shells.map((shell) => shell.pid)
+      yield* pollWithTimeout(
+        Effect.sync(() => (pids.some(groupAlive) ? undefined : true)),
+        "a group survived the exit hook",
+        "3 seconds",
+      )
+      yield* Scope.close(scope, Exit.void)
+      return { hooks: hooks.length, pids, after: process.listeners("exit").filter((listener) => !before.has(listener)) }
+    }).pipe(Effect.runPromise)
+    expect(result.hooks).toBe(1)
+    expect(result.pids.filter(groupAlive)).toEqual([])
+    expect(result.after).toEqual([])
+  }, 15_000)
 
   test("closing the layer kills every shell", async () => {
     const pids = await Effect.gen(function* () {

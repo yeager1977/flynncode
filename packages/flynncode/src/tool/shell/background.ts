@@ -6,18 +6,21 @@ import type { BackgroundShells } from "@/shell/background/service"
 // Builds the `notify` handed to BackgroundShells: each notification is a queued synthetic prompt in the calling
 // session. The service delivers it from its own fibers, so the prompt runs with the context captured at the tool
 // call (the session's instance) and is forked into the tool layer's scope so the service never waits for the turn
-// it starts. Undefined when the caller has no promptOps (nothing to notify).
+// it starts. Undefined when the caller has no promptOps (nothing to notify). Only what the prompt needs is captured:
+// the closure lives as long as the shell (up to its time cap), and holding `ctx` would keep the call's whole message
+// history alive. Without an agent, a queued prompt keeps the conversation's current agent.
 export const notifier = Effect.fnUntraced(function* (ctx: Tool.Context, scope: Scope.Scope) {
   const ops = ctx.extra?.promptOps as TaskPromptOps | undefined
   if (!ops) return undefined
   const context = yield* Effect.context()
+  const sessionID = ctx.sessionID
   const user = ctx.messages.findLast((message) => message.info.role === "user")?.info
   // Without a variant the queued prompt would reset the session to the agent's default variant.
   const variant = user?.role === "user" ? user.model.variant : undefined
   return (text: string) =>
     ops
       .prompt({
-        sessionID: ctx.sessionID,
+        sessionID,
         variant,
         delivery: "queue",
         parts: [{ type: "text", synthetic: true, text }],

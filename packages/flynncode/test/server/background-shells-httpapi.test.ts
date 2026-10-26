@@ -1,11 +1,23 @@
 import { afterEach, describe, expect } from "bun:test"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Fiber, Layer, Schema } from "effect"
 import { HttpClientResponse } from "effect/unstable/http"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { AppProcess } from "@flynncode/core/process"
+import { CrossSpawnSpawner } from "@flynncode/core/cross-spawn-spawner"
+import { FSUtil } from "@flynncode/core/fs-util"
+import { locationServiceMapLayer } from "@flynncode/core/location-services"
 import { ShellBackground } from "@flynncode/schema/shell-background"
 import { BackgroundShellsPaths } from "../../src/server/routes/instance/httpapi/groups/background-shells"
 import { BackgroundShells } from "../../src/shell/background/service"
+import { Agent } from "../../src/agent/agent"
+import { Config } from "../../src/config/config"
+import { RuntimeFlags } from "../../src/effect/runtime-flags"
+import { Plugin } from "../../src/plugin"
+import { Session } from "../../src/session/session"
+import { MessageID, SessionID } from "../../src/session/schema"
+import { ShellTool } from "../../src/tool/shell"
+import type { Tool } from "../../src/tool/tool"
+import { Truncate } from "../../src/tool/truncate"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { pollWithTimeout, testEffectShared } from "../lib/effect"
@@ -14,7 +26,24 @@ import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
 // Built through the shared memoMap so the test and the served routes see the same global BackgroundShells service.
 const it = testEffectShared(
-  Layer.mergeAll(httpApiLayer, LayerNode.compile(LayerNode.group([AppProcess.node, BackgroundShells.node]))),
+  Layer.mergeAll(
+    httpApiLayer,
+    LayerNode.compile(
+      LayerNode.group([
+        AppProcess.node,
+        BackgroundShells.node,
+        CrossSpawnSpawner.node,
+        FSUtil.node,
+        Plugin.node,
+        Truncate.node,
+        Config.node,
+        Agent.node,
+        RuntimeFlags.node,
+        Session.node,
+      ]),
+    ),
+    locationServiceMapLayer,
+  ),
 )
 
 // Safety net: every started group is SIGKILLed even when a test fails before the layer finalizer runs.
@@ -53,6 +82,45 @@ const decode =
 
 const outputPath = (sessionID: string, id: string, offset?: string) =>
   route(BackgroundShellsPaths.output, { sessionID, id }) + (offset === undefined ? "" : `?offset=${offset}`)
+
+const groupAlive = (pgid: number) => {
+  try {
+    process.kill(-pgid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== "ESRCH"
+  }
+}
+
+// A real foreground bash call with a call id the app can name; resolves once it printed `marker`.
+const foreground = (sessionID: string, callID: string, command: string, marker: RegExp) =>
+  Effect.gen(function* () {
+    const seen = { output: "" }
+    const controller = new AbortController()
+    const ctx: Tool.Context = {
+      sessionID: SessionID.make(sessionID),
+      messageID: MessageID.make("msg_promote_route"),
+      callID,
+      agent: "build",
+      abort: controller.signal,
+      messages: [],
+      extra: {},
+      metadata: (value) =>
+        Effect.sync(() => {
+          const output = value.metadata?.output
+          if (typeof output === "string") seen.output = output
+        }),
+      ask: () => Effect.void,
+    }
+    const tool = yield* (yield* ShellTool).init()
+    const fiber = yield* tool.execute({ command }, ctx).pipe(Effect.forkChild)
+    const match = yield* pollWithTimeout(
+      Effect.sync(() => seen.output.match(marker) ?? undefined),
+      `foreground call never printed ${marker}`,
+      "8 seconds",
+    )
+    return { fiber, controller, match }
+  })
 
 const outputOf = (directory: string, sessionID: string, id: string, offset?: string) =>
   requestInDirectory(outputPath(sessionID, id, offset), directory).pipe(Effect.flatMap(decode(ShellBackground.Chunk)))
@@ -162,6 +230,49 @@ describe("background shells HttpApi", () => {
         expect(body.endedAt).toBeNumber()
       }),
     15_000,
+  )
+
+  it.instance(
+    "promote moves a real running call to the background, answers 409 at the shell limit and 404 for an unknown call",
+    () =>
+      Effect.gen(function* () {
+        const tmp = yield* TestInstance
+        const shells = yield* BackgroundShells.Service
+        const sessionID = "ses_shells_promote_real"
+        const post = (callID: string) =>
+          requestInDirectory(route(BackgroundShellsPaths.promote, { sessionID }), tmp.directory, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ callID }),
+          })
+        expect((yield* post("call_unknown")).status).toBe(404)
+
+        const moved = yield* foreground(sessionID, "call_real", "echo up; sleep 60", /up/)
+        const response = yield* post("call_real")
+        expect(response.status).toBe(200)
+        const shell = yield* decode(ShellBackground.Info)(response)
+        started.add(shell.pid)
+        expect(shell.status).toBe("running")
+        const result = yield* Fiber.join(moved.fiber)
+        expect(result.metadata.background).toBe(true)
+        expect(groupAlive(shell.pid)).toBe(true)
+
+        yield* Effect.forEach(Array.from({ length: 7 }), () => start(sessionID, "sleep 60", tmp.directory))
+        const blocked = yield* foreground(sessionID, "call_full", "echo pid=$$; sleep 60", /pid=(\d+)/)
+        const pid = Number(blocked.match[1])
+        expect((yield* post("call_full")).status).toBe(409)
+        // A refused promotion leaves the call in the foreground, where its abort still ends the process.
+        expect(groupAlive(pid)).toBe(true)
+        blocked.controller.abort()
+        const aborted = yield* Fiber.join(blocked.fiber)
+        expect(aborted.metadata.background).not.toBe(true)
+        expect(aborted.output).toContain("User aborted the command")
+        expect(groupAlive(pid)).toBe(false)
+        expect((yield* shells.list(sessionID)).filter((item) => item.status === "running")).toHaveLength(8)
+        yield* shells.killSession(sessionID)
+        expect(groupAlive(shell.pid)).toBe(false)
+      }),
+    30_000,
   )
 
   it.instance(

@@ -169,6 +169,23 @@ describe("BackgroundOutput", () => {
     await writer.close()
   })
 
+  test("close trims the retained window to the newest 64 KiB; older reads report what was skipped", async () => {
+    await using tmp = await tmpdir()
+    const writer = BackgroundOutput.open(path.join(tmp.path, "out.txt"))
+    const all = lines(0, 20_000).join("")
+    writer.write(all)
+    expect(writer.readSince(0, { maxBytes: all.length }).skipped).toBe(0)
+    await writer.close()
+    const kept = 64 * 1024
+    const late = writer.readSince(0, { maxBytes: all.length })
+    expect(late.skipped).toBe(all.length - kept)
+    expect(late.text).toBe(`...[${all.length - kept} bytes skipped]...\n${all.slice(-kept)}`)
+    expect(late.offset).toBe(all.length)
+    expect(writer.readSince(all.length - 100).text).toBe(all.slice(-100))
+    expect(writer.lastLines(2)).toBe(lines(19_998, 2).join("").replace(/\n$/, ""))
+    expect(writer.total()).toBe(all.length)
+  })
+
   test("lastLines returns the final lines from the window", async () => {
     await using tmp = await tmpdir()
     const writer = BackgroundOutput.open(path.join(tmp.path, "out.txt"))

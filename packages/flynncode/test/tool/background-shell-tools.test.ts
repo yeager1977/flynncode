@@ -18,6 +18,10 @@ import { InstanceStore } from "@/project/instance-store"
 import { InstanceBootstrap } from "@/project/bootstrap-service"
 import { BackgroundShells } from "@/shell/background/service"
 import { BackgroundRegistry } from "@/shell/background/registry"
+import { GlobalBus } from "@/bus/global"
+import { Session } from "@/session/session"
+import { SessionProjector } from "@flynncode/core/session/projector"
+import { Database } from "@flynncode/core/database/database"
 import { Truncate } from "@/tool/truncate"
 import { Tool } from "@/tool/tool"
 import { ToolRegistry } from "@/tool/registry"
@@ -46,6 +50,9 @@ const it = testEffect(
         RuntimeFlags.node,
         AppProcess.node,
         BackgroundShells.node,
+        Session.node,
+        SessionProjector.node,
+        Database.node,
       ]),
     ),
     testInstanceStoreLayer,
@@ -88,12 +95,13 @@ const context = (input: {
   ask?: Tool.Context["ask"]
   callID?: string
   metadata?: Tool.Context["metadata"]
+  abort?: AbortSignal
 }): Tool.Context => ({
   sessionID: SessionID.make(input.sessionID ?? "ses_bg_a"),
   messageID: MessageID.make("msg_bg"),
   callID: input.callID ?? "",
   agent: "build",
-  abort: AbortSignal.any([]),
+  abort: input.abort ?? AbortSignal.any([]),
   messages: [],
   extra: input.ops ? { promptOps: input.ops } : {},
   metadata: input.metadata ?? (() => Effect.void),
@@ -385,7 +393,11 @@ describe("background shell tools", () => {
   )
 
   // Starts a foreground call and waits until it printed `marker`, so promotion happens mid-run.
-  const foreground = (command: string, marker: string, input: { ops?: TaskPromptOps; sessionID?: string }) =>
+  const foreground = (
+    command: string,
+    marker: string,
+    input: { ops?: TaskPromptOps; sessionID?: string; abort?: AbortSignal },
+  ) =>
     Effect.gen(function* () {
       const seen = { output: "" }
       const ctx = context({
@@ -470,6 +482,145 @@ describe("background shell tools", () => {
         expect(yield* service.list(call.ctx.sessionID)).toHaveLength(0)
       }),
     20_000,
+  )
+
+  // The shape SessionStatus publishes through the EventV2 bridge when a run ends.
+  const idle = (sessionID: string) =>
+    GlobalBus.emit("event", {
+      directory: process.cwd(),
+      payload: { id: "evt_idle", type: "session.status", properties: { sessionID, status: { type: "idle" } } },
+    })
+
+  it.instance(
+    "a sub-agent's background shell is killed when its run ends; a root session's shell survives",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const parent = yield* sessions.create({ title: "parent" })
+        const child = yield* sessions.create({ title: "child", parentID: parent.id })
+        const sink = recorder()
+        const fromChild = yield* background({ command: "sleep 60" }, context({ sessionID: child.id, ops: sink.ops }))
+        const fromRoot = yield* background({ command: "sleep 60" }, context({ sessionID: parent.id }))
+        idle(parent.id)
+        idle(child.id)
+        yield* pollWithTimeout(
+          Effect.sync(() => (groupAlive(fromChild.pid) ? undefined : true)),
+          "the child session's shell survived the end of its run",
+          "8 seconds",
+        )
+        yield* Effect.sleep("300 millis")
+        expect(groupAlive(fromRoot.pid)).toBe(true)
+        // An explicit kill: the finished sub-agent is not woken by an exit notification.
+        expect(sink.prompts).toHaveLength(0)
+      }),
+    20_000,
+  )
+
+  it.instance(
+    "a shell moved to the background in a sub-agent's session is killed when its run ends",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const service = yield* BackgroundShells.Service
+        const parent = yield* sessions.create({ title: "parent" })
+        const child = yield* sessions.create({ title: "child", parentID: parent.id })
+        const call = yield* foreground("echo up; sleep 60", "up", { sessionID: child.id })
+        const shell = yield* service.promote({ sessionID: child.id, callID: "call_promote" })
+        if (!shell) throw new Error("expected the running call to be promoted")
+        started.add(shell.pid)
+        yield* Fiber.join(call.fiber)
+        idle(child.id)
+        yield* pollWithTimeout(
+          Effect.sync(() => (groupAlive(shell.pid) ? undefined : true)),
+          "the promoted shell survived the end of the sub-agent's run",
+          "8 seconds",
+        )
+      }),
+    20_000,
+  )
+
+  it.instance("the notifier keeps the session it was created for, not a reference to the whole call context", () =>
+    Effect.gen(function* () {
+      const sink = recorder()
+      const ctx = context({ sessionID: "ses_bg_notify_own", ops: sink.ops })
+      const notify = yield* ShellBackground.notifier(ctx, yield* Scope.Scope)
+      if (!notify) throw new Error("expected a notifier")
+      // A context object reused or changed after the call must not redirect a later notification.
+      Object.assign(ctx, { sessionID: SessionID.make("ses_bg_notify_other") })
+      yield* notify("later")
+      const prompts = yield* prompted(sink.prompts)
+      expect(prompts[0].input.sessionID).toBe(SessionID.make("ses_bg_notify_own"))
+    }),
+  )
+
+  it.instance(
+    "aborting the call after promotion leaves the shell running until kill_shell removes every process",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* BackgroundShells.Service
+        const controller = new AbortController()
+        const call = yield* foreground("sh -c 'sleep 60 & echo up; sleep 60'", "up", {
+          sessionID: "ses_bg_promote_abort",
+          abort: controller.signal,
+        })
+        const shell = yield* service.promote({ sessionID: call.ctx.sessionID, callID: "call_promote" })
+        if (!shell) throw new Error("expected the running call to be promoted")
+        started.add(shell.pid)
+        const result = yield* Fiber.join(call.fiber)
+        expect(result.metadata.background).toBe(true)
+        controller.abort()
+        yield* Effect.sleep("500 millis")
+        expect(groupAlive(shell.pid)).toBe(true)
+        expect((yield* service.list(call.ctx.sessionID))[0]?.status).toBe("running")
+        const killed = yield* kill({ id: shell.id }, call.ctx)
+        expect(killed.metadata.status).toBe("killed")
+        expect(groupAlive(shell.pid)).toBe(false)
+      }),
+    20_000,
+  )
+
+  it.instance(
+    "a promoted shell outlives the foreground timeout and its time cap removes every process",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* BackgroundShells.Service
+        const seen = { output: "" }
+        const ctx = context({
+          sessionID: "ses_bg_promote_cap",
+          callID: "call_promote",
+          metadata: (value) =>
+            Effect.sync(() => {
+              const output = value.metadata?.output
+              if (typeof output === "string") seen.output = output
+            }),
+        })
+        const fiber = yield* bash({ command: "sh -c 'sleep 60 & echo up; sleep 60'", timeout: 1_500 }, ctx).pipe(
+          Effect.forkChild,
+        )
+        yield* pollWithTimeout(
+          Effect.sync(() => (seen.output.includes("up") ? true : undefined)),
+          "foreground call never printed up",
+          "8 seconds",
+        )
+        const shell = yield* service.promote({ sessionID: ctx.sessionID, callID: "call_promote" })
+        if (!shell) throw new Error("expected the running call to be promoted")
+        started.add(shell.pid)
+        yield* Fiber.join(fiber)
+        // Past the foreground call's own timeout, the shell is still the service's and still running.
+        yield* Effect.sleep("2 seconds")
+        expect(groupAlive(shell.pid)).toBe(true)
+        // The cap counts from the real start (config max_ms 4000).
+        yield* pollWithTimeout(
+          service
+            .list(ctx.sessionID)
+            .pipe(Effect.map((list) => (list[0]?.status === "timed_out" ? true : undefined))),
+          "the promoted shell never hit its time cap",
+          "10 seconds",
+        )
+        expect(groupAlive(shell.pid)).toBe(false)
+      }),
+    { config: { background_shells: { max_ms: 4_000 } } },
+    25_000,
   )
 
   test("Permission.disabled hides the background shell tools when bash is denied", () => {
