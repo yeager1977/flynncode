@@ -249,7 +249,13 @@ describe("BackgroundOutput", () => {
     // Multi-megabyte rewrites make a truncate-then-write window wide enough to observe.
     const writer = BackgroundOutput.open(file, { capBytes: 8 * 1024 * 1024, headBytes: 1000, flushMs: 0 })
     writer.write("h".repeat(1000) + "x".repeat(8 * 1024 * 1024))
-    await Bun.sleep(50)
+    // The first rolling rewrite runs on the writer's disk chain; wait for it rather than for a fixed time.
+    const ready = Date.now() + 5000
+    while (
+      Date.now() < ready &&
+      (writer.pendingBytes() > 0 || !(await Bun.file(file).text()).includes("output truncated"))
+    )
+      await Bun.sleep(10)
     expect(await Bun.file(file).text()).toContain("output truncated")
 
     const deadline = Date.now() + 1000

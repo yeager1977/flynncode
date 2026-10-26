@@ -22,6 +22,8 @@ export const MONITOR_DEFAULT_MS = 600_000
 export const MONITOR_MAX_MS = 1_800_000
 
 const KEEP_FINISHED = 50
+const KEEP_FINISHED_TOTAL = 200
+const GROUP_POLL_MS = 1_000
 const KILL_GRACE_MS = 5_000
 const CAP_BYTES = 8 * 1024 * 1024
 const HEAD_BYTES = 1024 * 1024
@@ -119,6 +121,8 @@ type Entry = {
   writer: BackgroundOutput.Writer
   readOffset: number
   killed: boolean
+  // The whole group exited on its own before any stop; a later stop must not relabel it as killed.
+  natural: boolean
   recorded: boolean
   emittedAt: number
   watchers: Set<Watcher>
@@ -145,8 +149,9 @@ const layer = Layer.effect(
 
     const launch = Effect.fnUntraced(function* (input: StartInput) {
       if (state.closing) return yield* new SpawnError({ message: "background shells are shutting down" })
-      const session = sessions.get(input.sessionID)
-      const running = Array.from(session?.values() ?? []).filter((entry) => entry.shell.status === "running")
+      const running = Array.from(sessions.get(input.sessionID)?.values() ?? []).filter(
+        (entry) => entry.shell.status === "running",
+      )
       if (running.length >= MAX_RUNNING)
         return yield* new ShellLimitError({
           message: `This session already has ${MAX_RUNNING} running background shells; kill one with kill_shell first.`,
@@ -178,6 +183,11 @@ const layer = Layer.effect(
             ),
           ),
         )
+      if (state.closing) {
+        yield* terminate(handle, handle.pid)
+        yield* release(handle, scope)
+        return yield* new SpawnError({ message: "background shells are shutting down" })
+      }
       const outputPath = path.join(TRUNCATION_DIR, ToolID.ascending())
       const entry: Entry = {
         shell: {
@@ -194,6 +204,7 @@ const layer = Layer.effect(
         writer: BackgroundOutput.open(outputPath, { capBytes: CAP_BYTES, headBytes: HEAD_BYTES }),
         readOffset: 0,
         killed: false,
+        natural: false,
         recorded: false,
         emittedAt: 0,
         watchers: new Set(),
@@ -219,7 +230,11 @@ const layer = Layer.effect(
       ).pipe(Effect.ignore, Effect.forkIn(fibers))
       yield* record(entry)
       yield* life(entry, scope, pump, limit, input.notify).pipe(Effect.forkIn(fibers))
-      sessions.set(input.sessionID, (session ?? new Map<string, Entry>()).set(entry.shell.id, entry))
+      // Re-read at insert time: a killSession that ran meanwhile dropped the map this call started with.
+      sessions.set(
+        input.sessionID,
+        (sessions.get(input.sessionID) ?? new Map<string, Entry>()).set(entry.shell.id, entry),
+      )
       yield* emit(entry, {
         type: "shell.background.started",
         sessionID: entry.shell.sessionID,
@@ -234,12 +249,12 @@ const layer = Layer.effect(
     // The spawn event can fire before exec completes, when /proc/<pid>/cmdline is still empty or the parent's.
     // A wrong cmdline would make crash cleanup skip (or misjudge) the entry, and the command string is not what
     // /proc reports, so without a real cmdline nothing is recorded; the finalizer and killSession still cover it.
+    // A leader that already exited needs no record: crash cleanup only acts on a live leader's cmdline.
     const record = Effect.fnUntraced(function* (entry: Entry) {
       if (process.platform !== "linux") return
-      const deadline = Date.now() + CMDLINE_WAIT_MS
-      const read = () =>
-        BackgroundRegistry.cmdline(entry.shell.pid).then((value) => (value === self ? undefined : value))
-      const cmdline = yield* Effect.promise(() => poll(read, deadline))
+      const result = yield* stableCmdline(entry.handle, self, Date.now() + CMDLINE_WAIT_MS)
+      if (result.exited) return
+      const cmdline = result.cmdline
       if (!cmdline) {
         yield* Effect.logWarning("background shell not recorded for crash cleanup: cmdline unavailable", {
           id: entry.shell.id,
@@ -270,7 +285,8 @@ const layer = Layer.effect(
       limit: number,
       notify: Notify | undefined,
     ) {
-      const outcome = yield* Effect.raceAll([
+      const deadline = entry.shell.startedAt + limit
+      const leader = yield* Effect.raceAll([
         entry.handle.exitCode.pipe(
           Effect.map((code) => ({ kind: "exit" as const, code: Number(code) })),
           Effect.catch(() => Effect.succeed({ kind: "signal" as const })),
@@ -278,15 +294,20 @@ const layer = Layer.effect(
         Effect.sleep(limit).pipe(Effect.as({ kind: "timeout" as const })),
         Deferred.await(entry.stopped).pipe(Effect.as({ kind: "stopped" as const })),
       ])
-      if (outcome.kind === "timeout") yield* terminate(entry)
+      // Members the leader left behind (`server >log 2>&1 &`) keep the shell running until the group is gone.
+      const outcome =
+        leader.kind === "exit" || leader.kind === "signal"
+          ? yield* Effect.raceAll([
+              groupExit(entry).pipe(Effect.as(leader)),
+              Effect.sleep(Math.max(0, deadline - Date.now())).pipe(Effect.as({ kind: "timeout" as const })),
+              Deferred.await(entry.stopped).pipe(Effect.as({ kind: "stopped" as const })),
+            ])
+          : leader
+      if (outcome.kind === "timeout") yield* terminate(entry.handle, entry.shell.pid)
       // Output still buffered when the pipes close is drained before the shell is reported finished.
       yield* Fiber.join(pump).pipe(Effect.timeout("1 second"), Effect.ignore)
       yield* Fiber.interrupt(pump)
-      // Closing a scope whose process is still attached waits for it forever (a process that left the group can
-      // hold the pipes open), so that close is detached instead of blocking this service.
-      const attached = yield* entry.handle.isRunning
-      if (attached) yield* Scope.close(scope, Exit.void).pipe(Effect.forkDetach)
-      if (!attached) yield* Scope.close(scope, Exit.void)
+      yield* release(entry.handle, scope)
       if (entry.recorded)
         yield* Effect.tryPromise(() => BackgroundRegistry.remove(REGISTRY_DIR, entry.shell.id)).pipe(
           Effect.catch((error) =>
@@ -314,19 +335,35 @@ const layer = Layer.effect(
       yield* deliver(notify, exitSummary(entry, limit)).pipe(Effect.forkIn(fibers))
     })
 
+    // Finished shells stay readable until their session is dropped, within a per-session and a global cap.
     const prune = (sessionID: string) => {
-      const session = sessions.get(sessionID)
-      if (!session) return
-      const finished = Array.from(session.values())
-        .filter((entry) => entry.shell.status !== "running")
-        .sort((a, b) => (a.shell.endedAt ?? 0) - (b.shell.endedAt ?? 0))
-      finished.slice(0, Math.max(0, finished.length - KEEP_FINISHED)).forEach((entry) => session.delete(entry.shell.id))
+      const drop = (entry: Entry) => {
+        const session = sessions.get(entry.shell.sessionID)
+        session?.delete(entry.shell.id)
+        if (session?.size === 0) sessions.delete(entry.shell.sessionID)
+      }
+      const own = finished(Array.from(sessions.get(sessionID)?.values() ?? []))
+      own.slice(0, Math.max(0, own.length - KEEP_FINISHED)).forEach(drop)
+      const all = finished(Array.from(sessions.values()).flatMap((session) => Array.from(session.values())))
+      all.slice(0, Math.max(0, all.length - KEEP_FINISHED_TOTAL)).forEach(drop)
     }
+
+    // Waits for the last member of the leader's group; only a group that ends before any stop is a natural exit.
+    const groupExit = Effect.fnUntraced(function* (entry: Entry) {
+      while (!groupGone(entry.shell.pid)) yield* Effect.sleep(GROUP_POLL_MS)
+      if (!entry.killed) entry.natural = true
+    })
 
     const stop = Effect.fnUntraced(function* (entry: Entry) {
       if (entry.shell.status !== "running") return false
+      const leaderRunning = yield* alive(entry.handle)
+      // The group already ended on its own and only the bookkeeping is pending: report that, not a kill.
+      if (entry.natural || (!leaderRunning && groupGone(entry.shell.pid))) {
+        yield* Deferred.await(entry.finished).pipe(Effect.timeout("5 seconds"), Effect.ignore)
+        return false
+      }
       entry.killed = true
-      yield* terminate(entry)
+      yield* terminate(entry.handle, entry.shell.pid)
       yield* Deferred.succeed(entry.stopped, undefined)
       yield* Deferred.await(entry.finished).pipe(Effect.timeout("5 seconds"), Effect.ignore)
       return true
@@ -414,7 +451,9 @@ const layer = Layer.effect(
         Effect.ensuring(
           Effect.sync(() => {
             entry.watchers.delete(watcher)
-            monitors.set(input.sessionID, (monitors.get(input.sessionID) ?? 1) - 1)
+            const count = (monitors.get(input.sessionID) ?? 1) - 1
+            if (count > 0) return void monitors.set(input.sessionID, count)
+            monitors.delete(input.sessionID)
           }),
         ),
         Effect.forkIn(fibers),
@@ -425,16 +464,28 @@ const layer = Layer.effect(
       return Array.from(sessions.get(sessionID)?.values() ?? []).map((entry) => ({ ...entry.shell }))
     })
 
+    // Both take the start lock so a start in flight either finishes first (and is killed) or starts afterwards.
     const killSession = Effect.fn("BackgroundShells.killSession")(function* (sessionID: string) {
-      const entries = Array.from(sessions.get(sessionID)?.values() ?? [])
-      const stopped = yield* Effect.forEach(entries, stop, { concurrency: "unbounded" })
-      sessions.delete(sessionID)
-      return stopped.filter(Boolean).length
+      return yield* lock.withPermit(
+        Effect.gen(function* () {
+          const entries = Array.from(sessions.get(sessionID)?.values() ?? [])
+          const stopped = yield* Effect.forEach(entries, stop, { concurrency: "unbounded" })
+          sessions.delete(sessionID)
+          return stopped.filter(Boolean).length
+        }),
+      )
     })
 
     const killAll = Effect.fn("BackgroundShells.killAll")(function* () {
-      const entries = Array.from(sessions.values()).flatMap((session) => Array.from(session.values()))
-      yield* Effect.forEach(entries, stop, { concurrency: "unbounded", discard: true })
+      yield* lock.withPermit(
+        Effect.suspend(() =>
+          Effect.forEach(
+            Array.from(sessions.values()).flatMap((session) => Array.from(session.values())),
+            stop,
+            { concurrency: "unbounded", discard: true },
+          ),
+        ),
+      )
     })
 
     yield* Effect.addFinalizer(() =>
@@ -495,17 +546,31 @@ function scan(entry: Entry, watcher: Watcher, chunk: string) {
 
 // SIGTERM to the group, SIGKILL after the grace period. The leader can exit (closing the pipes, which ends
 // handle.kill early) while group members that ignore SIGTERM live on, so the group itself is checked too.
-function terminate(entry: Entry) {
+function terminate(handle: ChildProcessHandle, pgid: number) {
   return Effect.gen(function* () {
     const deadline = Date.now() + KILL_GRACE_MS
-    yield* entry.handle
+    yield* handle
       .kill({ forceKillAfter: `${KILL_GRACE_MS} millis` })
       .pipe(Effect.timeout(KILL_GRACE_MS + 2_000), Effect.ignore)
     if (process.platform === "win32") return
-    const pgid = entry.shell.pid
     while (groupAlive(pgid) && Date.now() < deadline) yield* Effect.sleep("50 millis")
     if (groupAlive(pgid)) signalGroup(pgid, "SIGKILL")
   })
+}
+
+// Closing a scope whose process is still attached waits for it forever (a process that left the group can hold
+// the pipes open), so that close is detached instead of blocking this service.
+function release(handle: ChildProcessHandle, scope: Scope.Closeable) {
+  return Effect.gen(function* () {
+    if (yield* alive(handle)) return yield* Scope.close(scope, Exit.void).pipe(Effect.forkDetach, Effect.asVoid)
+    yield* Scope.close(scope, Exit.void)
+  })
+}
+
+function finished(entries: Entry[]) {
+  return entries
+    .filter((entry) => entry.shell.status !== "running")
+    .sort((a, b) => (a.shell.endedAt ?? 0) - (b.shell.endedAt ?? 0))
 }
 
 function finalStatus(entry: Entry, outcome: "exit" | "signal" | "timeout" | "stopped"): Status {
@@ -521,12 +586,20 @@ function outcomeText(shell: Shell, limit: number) {
   return `exited with code ${shell.exitCode ?? "unknown"}`
 }
 
+// The first line carries the literal status so the model can match it against bash_output's status field.
 function exitSummary(entry: Entry, limit: number) {
   const tail = entry.writer.lastLines(EXIT_LINES)
   return [
-    `Background shell ${entry.shell.id} (${entry.shell.command}) ${outcomeText(entry.shell, limit)}.`,
+    `[background shell ${entry.shell.id} ${entry.shell.status} (${statusDetail(entry.shell, limit)})]`,
+    `Command: ${entry.shell.command}`,
     tail ? `Last ${EXIT_LINES} lines:\n${tail}` : "No output.",
   ].join("\n")
+}
+
+function statusDetail(shell: Shell, limit: number) {
+  if (shell.status === "timed_out") return `after ${limit} ms; the process group was killed`
+  if (shell.status === "killed") return "by a signal"
+  return `code ${shell.exitCode ?? "unknown"}`
 }
 
 // A failed notification must never affect the shell.
@@ -538,11 +611,31 @@ function deliver(notify: Notify, text: string) {
   )
 }
 
-async function poll(read: () => Promise<string | undefined>, deadline: number): Promise<string | undefined> {
-  const value = await read()
-  if (value || Date.now() >= deadline) return value
-  await Bun.sleep(CMDLINE_POLL_MS)
-  return poll(read, deadline)
+// Two equal non-empty reads that are not this server's own cmdline mean exec has completed.
+function stableCmdline(
+  handle: ChildProcessHandle,
+  self: string | undefined,
+  deadline: number,
+  previous?: string,
+): Effect.Effect<{ exited: boolean; cmdline?: string }> {
+  return Effect.gen(function* () {
+    if (!(yield* alive(handle))) return { exited: true }
+    const value = yield* Effect.promise(() => BackgroundRegistry.cmdline(handle.pid))
+    const current = value === self ? undefined : value
+    if (current && current === previous) return { exited: false, cmdline: current }
+    if (Date.now() >= deadline) return { exited: false }
+    yield* Effect.sleep(CMDLINE_POLL_MS)
+    return yield* stableCmdline(handle, self, deadline, current)
+  })
+}
+
+// The handle reports an unknown state as a failure; treating it as still running errs toward killing.
+function alive(handle: ChildProcessHandle) {
+  return handle.isRunning.pipe(Effect.orElseSucceed(() => true))
+}
+
+function groupGone(pgid: number) {
+  return process.platform === "win32" || !groupAlive(pgid)
 }
 
 function groupAlive(pgid: number) {

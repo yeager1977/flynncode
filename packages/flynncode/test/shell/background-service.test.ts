@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { Context, Effect, Exit, Layer, Scope } from "effect"
+import { Context, Effect, Exit, Layer, Logger, Scope } from "effect"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { AppProcess } from "@flynncode/core/process"
 import { BackgroundShells } from "../../src/shell/background/service"
@@ -75,6 +75,9 @@ const groupAlive = (pgid: number) => {
   }
 }
 
+// The leader exits at once while a redirected background member keeps the process group alive.
+const LINGER = "sleep 300 >/dev/null 2>&1 & echo started"
+
 const groupGone = (pgid: number) =>
   pollWithTimeout(
     Effect.sync(() => (groupAlive(pgid) ? undefined : true)),
@@ -101,7 +104,8 @@ describe("BackgroundShells", () => {
         const texts = yield* notified(sink.texts)
         yield* Effect.sleep("200 millis")
         expect(texts).toHaveLength(1)
-        expect(texts[0]).toContain(shell.id)
+        expect(texts[0].split("\n")[0]).toBe(`[background shell ${shell.id} exited (code 0)]`)
+        expect(texts[0]).toContain("sleep 0.2; echo done")
         expect(texts[0]).toContain("done")
       }),
     15_000,
@@ -134,8 +138,7 @@ describe("BackgroundShells", () => {
         const shell = yield* start(service, { command: "sleep 30", timeoutMs: 300, notify: sink.notify })
         yield* statusOf(service, "ses_a", shell.id, "timed_out")
         const texts = yield* notified(sink.texts)
-        expect(texts[0]).toContain(shell.id)
-        expect(texts[0]).toContain("timed out")
+        expect(texts[0].split("\n")[0]).toStartWith(`[background shell ${shell.id} timed_out`)
         yield* groupGone(shell.pid)
       }),
     15_000,
@@ -280,6 +283,154 @@ describe("BackgroundShells", () => {
     15_000,
   )
 
+  it.live(
+    "stays running while any group member lives after the leader exits, and kill reaches the group",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* BackgroundShells.Service
+        const sink = collector()
+        const shell = yield* start(service, { command: LINGER, notify: sink.notify })
+        yield* pollWithTimeout(
+          service
+            .output({ sessionID: "ses_a", id: shell.id, offset: 0 })
+            .pipe(Effect.map((result) => (result?.text.includes("started") ? true : undefined))),
+          "never saw started",
+        )
+        // Long enough for the leader to exit and for at least one group check to run.
+        yield* Effect.sleep("1500 millis")
+        expect(groupAlive(shell.pid)).toBe(true)
+        expect((yield* service.list("ses_a")).find((item) => item.id === shell.id)?.status).toBe("running")
+        const killed = yield* service.kill({ sessionID: "ses_a", id: shell.id })
+        expect(killed?.status).toBe("killed")
+        yield* groupGone(shell.pid)
+        expect(sink.texts).toHaveLength(0)
+      }),
+    15_000,
+  )
+
+  it.live(
+    "finishes once leftover group members exit on their own and notifies once",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* BackgroundShells.Service
+        const sink = collector()
+        const shell = yield* start(service, {
+          command: "sleep 1 >/dev/null 2>&1 & echo started; exit 3",
+          notify: sink.notify,
+        })
+        yield* Effect.sleep("500 millis")
+        expect((yield* service.list("ses_a")).find((item) => item.id === shell.id)?.status).toBe("running")
+        const texts = yield* notified(sink.texts)
+        expect(groupAlive(shell.pid)).toBe(false)
+        const finished = (yield* service.list("ses_a")).find((item) => item.id === shell.id)
+        expect(finished?.status).toBe("exited")
+        expect(finished?.exitCode).toBe(3)
+        yield* Effect.sleep("300 millis")
+        expect(texts).toHaveLength(1)
+        expect(texts[0].split("\n")[0]).toBe(`[background shell ${shell.id} exited (code 3)]`)
+        expect(texts[0]).toContain("started")
+      }),
+    15_000,
+  )
+
+  it.live(
+    "the time cap reaches a group whose leader already exited",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* BackgroundShells.Service
+        const sink = collector()
+        const shell = yield* start(service, { command: LINGER, timeoutMs: 1_200, notify: sink.notify })
+        yield* statusOf(service, "ses_a", shell.id, "timed_out")
+        yield* groupGone(shell.pid)
+        const texts = yield* notified(sink.texts)
+        expect(texts[0].split("\n")[0]).toStartWith(`[background shell ${shell.id} timed_out`)
+      }),
+    15_000,
+  )
+
+  it.live(
+    "kill after the whole group exited on its own reports the natural status",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* BackgroundShells.Service
+        const shell = yield* start(service, { command: "sleep 0.3 >/dev/null 2>&1 & exit 3" })
+        yield* groupGone(shell.pid)
+        const result = yield* service.kill({ sessionID: "ses_a", id: shell.id })
+        expect(result?.status).toBe("exited")
+        expect(result?.exitCode).toBe(3)
+      }),
+    15_000,
+  )
+
+  it.live(
+    "killSession racing a start neither resurrects killed shells nor orphans the new one",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* BackgroundShells.Service
+        const first = yield* start(service, { command: "sleep 60" })
+        const [second] = yield* Effect.all([start(service, { command: "sleep 60" }), service.killSession("ses_a")], {
+          concurrency: "unbounded",
+        })
+        yield* groupGone(first.pid)
+        const shells = yield* service.list("ses_a")
+        expect(shells.map((shell) => shell.id)).not.toContain(first.id)
+        const tracked = shells.some((shell) => shell.id === second.id && shell.status === "running")
+        expect(tracked || !groupAlive(second.pid)).toBe(true)
+      }),
+    15_000,
+  )
+
+  it.live(
+    "keeps at most 200 finished shells across all sessions, dropping the oldest",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* BackgroundShells.Service
+        const batch = (sessionID: string) =>
+          Effect.forEach(Array.from({ length: 41 }), () => start(service, { command: "true", sessionID }))
+        const finished = (sessionIDs: string[], count: number) =>
+          pollWithTimeout(
+            Effect.forEach(sessionIDs, (sessionID) => service.list(sessionID)).pipe(
+              Effect.map((lists) =>
+                lists.flat().filter((shell) => shell.status === "exited").length >= count ? true : undefined,
+              ),
+            ),
+            `expected ${count} finished shells`,
+            "15 seconds",
+          )
+        yield* batch("ses_g0")
+        yield* finished(["ses_g0"], 41)
+        const rest = ["ses_g1", "ses_g2", "ses_g3", "ses_g4"]
+        yield* Effect.forEach(rest, batch)
+        yield* finished(rest, 164)
+        const counts = yield* Effect.forEach(["ses_g0", ...rest], (sessionID) =>
+          service.list(sessionID).pipe(Effect.map((shells) => shells.length)),
+        )
+        expect(counts).toEqual([36, 41, 41, 41, 41])
+      }),
+    40_000,
+  )
+
+  it.live(
+    "a shell that exits before its cmdline is read logs no warning",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* BackgroundShells.Service
+        const warnings: unknown[] = []
+        const shell = yield* start(service, { command: "true" }).pipe(
+          Effect.provide(
+            Logger.layer([
+              Logger.make<unknown, void>((options) => {
+                if (options.logLevel === "Warn") warnings.push(options.message)
+              }),
+            ]),
+          ),
+        )
+        yield* statusOf(service, "ses_a", shell.id, "exited")
+        expect(warnings).toEqual([])
+      }),
+    15_000,
+  )
+
   test("closing the layer kills every shell", async () => {
     const pids = await Effect.gen(function* () {
       const scope = yield* Scope.make()
@@ -288,8 +439,10 @@ describe("BackgroundShells", () => {
       const shells = yield* Effect.all([
         start(service, { command: "sh -c 'sleep 60 & sleep 60'" }),
         start(service, { command: "sleep 60", sessionID: "ses_b" }),
+        start(service, { command: LINGER, sessionID: "ses_c" }),
       ])
-      yield* Effect.sleep("300 millis")
+      // The third shell's leader has exited by now; only its redirected background member is left.
+      yield* Effect.sleep("600 millis")
       yield* Scope.close(scope, Exit.void)
       return shells.map((shell) => shell.pid)
     }).pipe(Effect.runPromise)
