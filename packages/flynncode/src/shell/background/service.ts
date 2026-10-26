@@ -8,9 +8,11 @@ import type { ChildProcessHandle } from "effect/unstable/process/ChildProcessSpa
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { Global } from "@flynncode/core/global"
 import { AppProcess } from "@flynncode/core/process"
+import { GlobalBus, type GlobalEvent } from "@/bus/global"
 import { Identifier } from "@/id/id"
 import { ToolID } from "@/tool/schema"
 import { TRUNCATION_DIR } from "@/tool/truncation-dir"
+import { isRecord } from "@/util/record"
 import { BackgroundOutput } from "./output"
 import { BackgroundRegistry } from "./registry"
 
@@ -489,6 +491,24 @@ const layer = Layer.effect(
         Effect.andThen(Scope.close(fibers, Exit.void)),
       ),
     )
+
+    // Deleted and archived sessions stop their shells. This service is global, so it listens on the process-wide
+    // GlobalBus, which also carries events machine sync writes directly (it bypasses the session service). Child
+    // sessions are deleted with their own event; unarchiving restarts nothing.
+    const runFork = Effect.runForkWith(yield* Effect.context<never>())
+    const onEvent = (event: GlobalEvent) => {
+      const payload: unknown = event.payload
+      if (!isRecord(payload) || !isRecord(payload.properties)) return
+      const sessionID = payload.properties.sessionID
+      if (typeof sessionID !== "string") return
+      if (payload.type === "session.deleted") return void runFork(killSession(sessionID))
+      if (payload.type !== "session.updated") return
+      const info = payload.properties.info
+      if (isRecord(info) && isRecord(info.time) && typeof info.time.archived === "number")
+        runFork(killSession(sessionID))
+    }
+    GlobalBus.on("event", onEvent)
+    yield* Effect.addFinalizer(() => Effect.sync(() => GlobalBus.off("event", onEvent)))
 
     // Background shells of servers that died without running finalizers.
     yield* Effect.tryPromise(() => BackgroundRegistry.reap(REGISTRY_DIR)).pipe(
