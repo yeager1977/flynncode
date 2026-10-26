@@ -1,8 +1,8 @@
-Use this tool to suggest switching to plan agent when the user's request would benefit from planning before implementation.
+Use this tool to switch to plan mode when the user's request would benefit from planning before implementation.
 
-If they explicitly mention wanting to create a plan ALWAYS call this tool first.
+If the user explicitly asks for a plan, ALWAYS call this tool first.
 
-This tool will ask the user if they want to switch to plan agent.
+In plan mode you explore and design without editing files (except the plan file). When the plan is ready, call exit_plan_mode with it so the user can approve it.
 
 Call this tool when:
 - The user's request is complex and would benefit from planning first

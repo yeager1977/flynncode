@@ -1,7 +1,7 @@
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { httpClient } from "@flynncode/core/effect/app-node-platform"
 import { Ripgrep } from "@flynncode/core/ripgrep"
-import { PlanExitTool } from "./plan"
+import { EnterPlanModeTool, ExitPlanModeTool } from "./plan"
 import { Session } from "@/session/session"
 import { SessionRunState } from "@/session/run-state"
 import { QuestionTool } from "./question"
@@ -124,7 +124,8 @@ const layer = Layer.effect(
     const question = yield* QuestionTool
     const todo = yield* TodoWriteTool
     const lsptool = yield* LspTool
-    const plan = yield* PlanExitTool
+    const enterPlan = yield* EnterPlanModeTool
+    const exitPlan = yield* ExitPlanModeTool
     const webfetch = yield* WebFetchTool
     const websearch = yield* WebSearchTool
     const shell = yield* ShellTool
@@ -258,7 +259,8 @@ const layer = Layer.effect(
           patch: Tool.init(patchtool),
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
-          plan: Tool.init(plan),
+          enter_plan_mode: Tool.init(enterPlan),
+          exit_plan_mode: Tool.init(exitPlan),
           ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),
           ...(computerUseEnabled ? { computer_use: Tool.init(computerUse) } : {}),
         })
@@ -291,7 +293,8 @@ const layer = Layer.effect(
             ...(tool.execute ? [tool.execute] : []),
             ...(tool.computer_use ? [tool.computer_use] : []),
             ...(cfg.lsp === false ? [] : [tool.lsp]),
-            ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
+            tool.enter_plan_mode,
+            tool.exit_plan_mode,
           ],
           task: tool.task,
           read: tool.read,
@@ -343,6 +346,10 @@ const layer = Layer.effect(
         const usePatch =
           input.modelID.includes("gpt-") && !input.modelID.includes("oss") && !input.modelID.includes("gpt-4")
         if (tool.id === ApplyPatchTool.id) return usePatch
+        // Plan mode switches between primary agents: sub-agents never enter
+        // it and only the plan agent can leave it.
+        if (tool.id === EnterPlanModeTool.id) return input.agent.mode !== "subagent" && input.agent.name !== "plan"
+        if (tool.id === ExitPlanModeTool.id) return input.agent.name === "plan"
         if (tool.id === EditTool.id || tool.id === MultiEditTool.id || tool.id === WriteTool.id) return !usePatch
 
         return true

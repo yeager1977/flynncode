@@ -24,7 +24,7 @@ import type { GlobTool } from "@/tool/glob"
 import type { GrepTool } from "@/tool/grep"
 import type { InvalidTool } from "@/tool/invalid"
 import type { LspTool } from "@/tool/lsp"
-import type { PlanExitTool } from "@/tool/plan"
+import type { EnterPlanModeTool, ExitPlanModeTool } from "@/tool/plan"
 import type { QuestionTool } from "@/tool/question"
 import type { ReadTool } from "@/tool/read"
 import type { SkillTool } from "@/tool/skill"
@@ -109,7 +109,8 @@ type ToolDefs = {
   webfetch: typeof WebFetchTool
   websearch: typeof WebSearchTool
   skill: typeof SkillTool
-  plan_exit: typeof PlanExitTool
+  enter_plan_mode: typeof EnterPlanModeTool
+  exit_plan_mode: typeof ExitPlanModeTool
 }
 
 type ToolName = keyof ToolDefs
@@ -470,10 +471,19 @@ function runLsp(p: ToolProps<typeof LspTool>): ToolInline {
   }
 }
 
-function runPlanExit(p: ToolProps<typeof PlanExitTool>): ToolInline {
+function runEnterPlanMode(p: ToolProps<typeof EnterPlanModeTool>): ToolInline {
   return {
     icon: "→",
-    title: text(p.frame.state.title) || "Switching to build agent",
+    title: text(p.frame.state.title) || "Switching to plan mode",
+    mode: "block",
+    body: p.frame.status === "completed" ? text(p.frame.state.output) : undefined,
+  }
+}
+
+function runExitPlanMode(p: ToolProps<typeof ExitPlanModeTool>): ToolInline {
+  return {
+    icon: "→",
+    title: text(p.frame.state.title) || "Plan ready",
     mode: "block",
     body: p.frame.status === "completed" ? text(p.frame.state.output) : undefined,
   }
@@ -1219,12 +1229,22 @@ const TOOL_RULES = {
       start: scrollSkillStart,
     },
   },
-  plan_exit: {
+  enter_plan_mode: {
     view: {
       output: true,
       final: false,
     },
-    run: runPlanExit,
+    run: runEnterPlanMode,
+    scroll: {
+      start: () => "",
+    },
+  },
+  exit_plan_mode: {
+    view: {
+      output: true,
+      final: false,
+    },
+    run: runExitPlanMode,
     scroll: {
       start: () => "",
     },

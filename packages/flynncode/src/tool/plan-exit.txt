@@ -1,9 +1,11 @@
-Use this tool when you have completed the planning phase and are ready to exit plan agent.
+Use this tool when you have finished planning and the plan is ready for the user to approve.
 
-This tool will ask the user if they want to switch to build agent to start implementing the plan.
+Pass the complete plan as markdown in `plan`. It is saved to the session's plan file and shown to the user, who can:
+- approve it, switching to the build agent to implement it (with edits auto-accepted or asked one by one), or
+- keep planning, optionally with feedback that this tool returns to you. Revise the plan and call this tool again.
 
 Call this tool:
-- After you have written a complete plan to the plan file
+- After the plan is complete
 - After you have clarified any questions with the user
 - When you are confident the plan is ready for implementation
 
@@ -11,3 +13,4 @@ Do NOT call this tool:
 - Before you have created or finalized the plan
 - If you still have unanswered questions about the implementation
 - If the user has indicated they want to continue planning
+- To ask "Is this plan okay?" with the question tool instead - this tool is that question

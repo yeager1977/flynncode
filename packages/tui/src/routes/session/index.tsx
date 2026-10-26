@@ -331,10 +331,10 @@ export function Session() {
     if (part.state.status !== "completed") return
     if (part.id === lastSwitch) return
 
-    if (part.tool === "plan_exit") {
+    if (part.tool === "exit_plan_mode" && part.state.metadata?.approved === true) {
       local.agent.set("build")
       lastSwitch = part.id
-    } else if (part.tool === "plan_enter") {
+    } else if (part.tool === "enter_plan_mode") {
       local.agent.set("plan")
       lastSwitch = part.id
     }

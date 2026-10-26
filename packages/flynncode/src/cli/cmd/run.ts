@@ -176,7 +176,8 @@ export const RunCommand = effectCmd({
         type: "string",
         choices: ["default", "json"],
         default: "default",
-        describe: "format: default (final text on stdout, progress on stderr) or json (JSONL events framed by session_start/session_end)",
+        describe:
+          "format: default (final text on stdout, progress on stderr) or json (JSONL events framed by session_start/session_end)",
       })
       .option("json", {
         type: "boolean",
@@ -185,7 +186,8 @@ export const RunCommand = effectCmd({
       })
       .option("output-schema", {
         type: "string",
-        describe: 'JSON schema (inline JSON or @path/to/schema.json) for structured prompt output, not commands (CI: opencode run --json --output-schema schema.json "prompt" | jq)',
+        describe:
+          'JSON schema (inline JSON or @path/to/schema.json) for structured prompt output, not commands (CI: opencode run --json --output-schema schema.json "prompt" | jq)',
       })
       .option("file", {
         alias: ["f"],
@@ -471,12 +473,12 @@ export const RunCommand = effectCmd({
               pattern: "*",
             },
             {
-              permission: "plan_enter",
+              permission: "enter_plan_mode",
               action: "deny",
               pattern: "*",
             },
             {
-              permission: "plan_exit",
+              permission: "exit_plan_mode",
               action: "deny",
               pattern: "*",
             },

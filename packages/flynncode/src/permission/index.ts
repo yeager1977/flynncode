@@ -289,9 +289,17 @@ function expand(pattern: string): string {
   return pattern
 }
 
+// Plan mode tools were renamed from `plan_enter`/`plan_exit`; configs written
+// for the old ids keep applying to the new ones.
+const LEGACY_PERMISSIONS: Record<string, string> = {
+  plan_enter: "enter_plan_mode",
+  plan_exit: "exit_plan_mode",
+}
+
 export function fromConfig(permission: ConfigPermissionV1.Info) {
   const ruleset: PermissionV1.Rule[] = []
-  for (const [key, value] of Object.entries(ConfigPermissionV1.stripPolicyKeys(permission))) {
+  for (const [name, value] of Object.entries(ConfigPermissionV1.stripPolicyKeys(permission))) {
+    const key = LEGACY_PERMISSIONS[name] ?? name
     if (typeof value === "string") {
       ruleset.push({ permission: key, action: value, pattern: "*" })
       continue

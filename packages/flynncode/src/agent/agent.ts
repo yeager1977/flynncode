@@ -133,8 +133,8 @@ const layer = Layer.effect(
             ...Object.fromEntries(whitelistedDirs.map((dir) => [dir, "allow"])),
           },
           question: "deny",
-          plan_enter: "deny",
-          plan_exit: "deny",
+          enter_plan_mode: "deny",
+          exit_plan_mode: "deny",
           // Archiving hides a session from everyone, so it prompts unless the
           // user explicitly allows it (approval modes never auto-approve it).
           archive: "ask",
@@ -158,7 +158,7 @@ const layer = Layer.effect(
               defaults,
               Permission.fromConfig({
                 question: "allow",
-                plan_enter: "allow",
+                enter_plan_mode: "allow",
               }),
               user,
             ),
@@ -173,7 +173,7 @@ const layer = Layer.effect(
               defaults,
               Permission.fromConfig({
                 question: "allow",
-                plan_exit: "allow",
+                exit_plan_mode: "allow",
                 task: {
                   general: "deny",
                 },
@@ -270,7 +270,8 @@ const layer = Layer.effect(
           },
           review: {
             name: "review",
-            description: "Dedicated read-only code reviewer. Reviews changes and reports findings as a severity-tagged list without modifying files.",
+            description:
+              "Dedicated read-only code reviewer. Reviews changes and reports findings as a severity-tagged list without modifying files.",
             options: {},
             permission: Permission.merge(
               defaults,
@@ -365,9 +366,7 @@ const layer = Layer.effect(
           // native config agents are not Claude-sourced and still override it.
           const claudeSource = value.options?.claudeSource
           if (typeof claudeSource === "string" && agents[key]?.native) {
-            yield* Effect.logWarning(
-              `Claude agent ${key} from ${claudeSource} ignored: a built-in agent has that name`,
-            )
+            yield* Effect.logWarning(`Claude agent ${key} from ${claudeSource} ignored: a built-in agent has that name`)
             continue
           }
           let item = agents[key]

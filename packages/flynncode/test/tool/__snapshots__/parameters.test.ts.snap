@@ -237,14 +237,6 @@ exports[`tool parameters JSON Schema (wire shape) multiedit 1`] = `
 }
 `;
 
-exports[`tool parameters JSON Schema (wire shape) plan 1`] = `
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "properties": {},
-  "type": "object",
-}
-`;
-
 exports[`tool parameters JSON Schema (wire shape) question 1`] = `
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -573,6 +565,35 @@ exports[`tool parameters JSON Schema (wire shape) notebook_edit 1`] = `
   },
   "required": [
     "notebook_path",
+  ],
+  "type": "object",
+}
+`;
+
+exports[`tool parameters JSON Schema (wire shape) enter_plan_mode 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "reason": {
+      "description": "One sentence on why this task needs a plan before implementation",
+      "type": "string",
+    },
+  },
+  "type": "object",
+}
+`;
+
+exports[`tool parameters JSON Schema (wire shape) exit_plan_mode 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "plan": {
+      "description": "The complete plan in markdown. It is saved to the session's plan file and shown to the user.",
+      "type": "string",
+    },
+  },
+  "required": [
+    "plan",
   ],
   "type": "object",
 }

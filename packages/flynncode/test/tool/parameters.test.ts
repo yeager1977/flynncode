@@ -17,7 +17,7 @@ import { Parameters as Invalid } from "../../src/tool/invalid"
 import { Parameters as Lsp } from "../../src/tool/lsp"
 import { Parameters as MultiEdit } from "../../src/tool/multiedit"
 import { Parameters as NotebookEdit } from "../../src/tool/notebook-edit"
-import { Parameters as Plan } from "../../src/tool/plan"
+import { EnterParameters, ExitParameters } from "../../src/tool/plan"
 import { Parameters as Question } from "../../src/tool/question"
 import { Parameters as Read } from "../../src/tool/read"
 import { Parameters as Shell } from "../../src/tool/shell"
@@ -47,7 +47,8 @@ describe("tool parameters", () => {
     test("lsp", () => expect(toJsonSchema(Lsp)).toMatchSnapshot())
     test("multiedit", () => expect(toJsonSchema(MultiEdit)).toMatchSnapshot())
     test("notebook_edit", () => expect(toJsonSchema(NotebookEdit)).toMatchSnapshot())
-    test("plan", () => expect(toJsonSchema(Plan)).toMatchSnapshot())
+    test("enter_plan_mode", () => expect(toJsonSchema(EnterParameters)).toMatchSnapshot())
+    test("exit_plan_mode", () => expect(toJsonSchema(ExitParameters)).toMatchSnapshot())
     test("question", () => expect(toJsonSchema(Question)).toMatchSnapshot())
     test("read", () => expect(toJsonSchema(Read)).toMatchSnapshot())
     test("skill", () => expect(toJsonSchema(Skill)).toMatchSnapshot())
@@ -225,8 +226,13 @@ describe("tool parameters", () => {
   })
 
   describe("plan", () => {
-    test("accepts empty object", () => {
-      expect(parse(Plan, {})).toEqual({})
+    test("enter_plan_mode accepts an empty object or a reason", () => {
+      expect(parse(EnterParameters, {})).toEqual({})
+      expect(parse(EnterParameters, { reason: "risky" })).toEqual({ reason: "risky" })
+    })
+    test("exit_plan_mode requires the plan", () => {
+      expect(accepts(ExitParameters, {})).toBe(false)
+      expect(parse(ExitParameters, { plan: "# Plan" })).toEqual({ plan: "# Plan" })
     })
   })
 
