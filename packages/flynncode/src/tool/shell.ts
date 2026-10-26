@@ -1,4 +1,4 @@
-import { Effect, Deferred, Stream } from "effect"
+import { Effect, Deferred, Scope, Stream } from "effect"
 import os from "os"
 import { createWriteStream } from "node:fs"
 import * as Tool from "./tool"
@@ -25,7 +25,9 @@ import { Plugin } from "@/plugin"
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { ShellPrompt, needsInteractiveTerminal, type Parameters } from "./shell/prompt"
+import { ShellBackground } from "./shell/background"
 import { BashArity } from "@/permission/arity"
+import { BackgroundShells } from "@/shell/background/service"
 
 export { Parameters } from "./shell/prompt"
 
@@ -74,6 +76,27 @@ type Part = {
   type: string
   text: string
 }
+
+// `background` is declared on every variant so callers can narrow on it.
+type Metadata =
+  | {
+      background?: false
+      output: string
+      exit: number | null
+      truncated: boolean
+      outputPath?: string
+      ptyID?: string
+      interactive?: boolean
+    }
+  | {
+      background: true
+      shellId: string
+      pid: number
+      outputPath: string
+      output: string
+      exit: null
+      truncated: false
+    }
 
 type Scan = {
   dirs: Set<string>
@@ -295,6 +318,12 @@ const ask = Effect.fn("ShellTool.ask")(function* (ctx: Tool.Context, scan: Scan,
   })
 })
 
+function stringEnv(env: NodeJS.ProcessEnv) {
+  return Object.fromEntries(
+    Object.entries(env).flatMap(([key, value]) => (typeof value === "string" ? [[key, value]] : [])),
+  )
+}
+
 function cmd(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv) {
   if (process.platform === "win32" && Shell.ps(shell)) {
     return ChildProcess.make(shell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command], {
@@ -350,6 +379,8 @@ export const ShellTool = Tool.define(
     const plugin = yield* Plugin.Service
     const locations = yield* LocationServiceMap.Service
     const flags = yield* RuntimeFlags.Service
+    const shells = yield* BackgroundShells.Service
+    const scope = yield* Scope.Scope
     const defaultTimeoutMs = flags.bashDefaultTimeoutMs ?? 2 * 60 * 1000
 
     const cygpath = Effect.fn("ShellTool.cygpath")(function* (shell: string, text: string) {
@@ -683,6 +714,34 @@ export const ShellTool = Tool.define(
       }
     })
 
+    const runBackground = Effect.fn("ShellTool.runBackground")(function* (
+      input: Omit<BackgroundShells.StartInput, "sessionID" | "notify">,
+      ctx: Tool.Context,
+    ) {
+      const started = yield* shells
+        .start({ ...input, sessionID: ctx.sessionID, notify: yield* ShellBackground.notifier(ctx, scope) })
+        .pipe(Effect.orDie)
+      const output = [
+        `${started.id} started (pid ${started.pid}). Output: ${started.outputPath}.`,
+        `Use bash_output with this id to read new output, monitor to be notified when a line matches a pattern, and kill_shell to stop it.`,
+        `You will be notified automatically when it exits, so do not sleep or poll for it.`,
+      ].join("\n")
+      return {
+        title: "started in background",
+        metadata: {
+          background: true as const,
+          shellId: started.id,
+          pid: started.pid,
+          outputPath: started.outputPath,
+          output,
+          exit: null,
+          // Set so the tool wrapper does not treat outputPath as a truncated result.
+          truncated: false as const,
+        },
+        output,
+      }
+    })
+
     return () =>
       Effect.gen(function* () {
         const cfg = yield* config.get()
@@ -695,7 +754,7 @@ export const ShellTool = Tool.define(
         return {
           description: prompt.description,
           parameters: prompt.parameters,
-          execute: (params: Parameters, ctx: Tool.Context) =>
+          execute: (params: Parameters, ctx: Tool.Context): Effect.Effect<Tool.ExecuteResult<Metadata>> =>
             Effect.gen(function* () {
               const instanceCtx = yield* SessionWorkspace.context
               const cwd = params.workdir
@@ -706,6 +765,13 @@ export const ShellTool = Tool.define(
               }
               const timeout = params.timeout ?? defaultTimeoutMs
               const ps = Shell.ps(shell)
+              if (params.run_in_background && needsInteractiveTerminal(params.command, params.interactive)) {
+                return yield* Effect.die(
+                  new Error(
+                    "run_in_background cannot be combined with an interactive command (interactive: true, sudo without -n, ssh -t, su, passwd). Run it in the foreground, or make it non-interactive (for example sudo -n).",
+                  ),
+                )
+              }
               yield* Effect.scoped(
                 Effect.gen(function* () {
                   const tree = yield* Effect.acquireRelease(parse(params.command, ps), (tree) =>
@@ -717,18 +783,28 @@ export const ShellTool = Tool.define(
                 }),
               )
 
-              if (needsInteractiveTerminal(params.command, params.interactive)) {
-                const env = Object.fromEntries(
-                  Object.entries(yield* shellEnv(ctx, cwd)).flatMap(([key, value]) =>
-                    typeof value === "string" ? [[key, value]] : [],
-                  ),
+              if (params.run_in_background) {
+                return yield* runBackground(
+                  {
+                    shell,
+                    command: params.command,
+                    cwd,
+                    env: stringEnv(yield* shellEnv(ctx, cwd)),
+                    directory: instanceCtx.directory,
+                    timeoutMs: params.timeout,
+                    capMs: cfg.background_shells?.max_ms,
+                  },
+                  ctx,
                 )
+              }
+
+              if (needsInteractiveTerminal(params.command, params.interactive)) {
                 return yield* runInteractive(
                   {
                     shell,
                     command: params.command,
                     cwd,
-                    env,
+                    env: stringEnv(yield* shellEnv(ctx, cwd)),
                     timeout,
                   },
                   ctx,

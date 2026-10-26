@@ -6,6 +6,9 @@ import { Session } from "@/session/session"
 import { SessionRunState } from "@/session/run-state"
 import { QuestionTool } from "./question"
 import { ShellTool } from "./shell"
+import { BashOutputTool } from "./bash-output"
+import { KillShellTool } from "./kill-shell"
+import { MonitorTool } from "./monitor"
 import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
@@ -64,6 +67,7 @@ import { Worktree } from "@/worktree"
 import { InstanceStore } from "@/project/instance-store"
 import { PermissionV1 } from "@flynncode/core/v1/permission"
 import { McpCatalog } from "@/mcp/catalog"
+import { BackgroundShells } from "@/shell/background/service"
 
 export function webSearchEnabled(providerID: ProviderV2.ID, flags = { exa: false, parallel: false }) {
   return (
@@ -122,6 +126,9 @@ const layer = Layer.effect(
     const webfetch = yield* WebFetchTool
     const websearch = yield* WebSearchTool
     const shell = yield* ShellTool
+    const bashOutput = yield* BashOutputTool
+    const killShell = yield* KillShellTool
+    const monitor = yield* MonitorTool
     const globtool = yield* GlobTool
     const writetool = yield* WriteTool
     const edit = yield* EditTool
@@ -226,6 +233,9 @@ const layer = Layer.effect(
         const tool = yield* Effect.all({
           invalid: Tool.init(invalid),
           shell: Tool.init(shell),
+          bash_output: Tool.init(bashOutput),
+          kill_shell: Tool.init(killShell),
+          monitor: Tool.init(monitor),
           read: Tool.init(read),
           glob: Tool.init(globtool),
           grep: Tool.init(greptool),
@@ -253,6 +263,9 @@ const layer = Layer.effect(
             tool.invalid,
             ...(questionEnabled ? [tool.question] : []),
             tool.shell,
+            tool.bash_output,
+            tool.kill_shell,
+            tool.monitor,
             tool.read,
             tool.glob,
             tool.grep,
@@ -486,6 +499,7 @@ export const node = LayerNode.make({
     Database.node,
     locationServiceMapNode,
     Ripgrep.node,
+    BackgroundShells.node,
   ],
 })
 

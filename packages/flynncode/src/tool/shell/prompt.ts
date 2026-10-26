@@ -23,6 +23,10 @@ export function parameterSchema() {
       description:
         "Open the command in the session terminal so the user can type, including passwords and Enter. Use this for prompts. sudo (without -n), ssh -t, su, and passwd do this automatically.",
     }),
+    run_in_background: Schema.optional(Schema.Boolean).annotate({
+      description:
+        "Run the command in the background and return immediately with a shell id. Use it for dev servers, watchers and long builds. The process is stopped when the session ends or when its time cap is reached (timeout; default and maximum 2 hours). Use bash_output with the id to read new output, monitor to be notified when a line matches a pattern, and kill_shell to stop it. You are notified when it exits. Cannot be combined with interactive.",
+    }),
   })
 }
 

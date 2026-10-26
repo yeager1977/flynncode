@@ -1,0 +1,7 @@
+Watches a background shell started with the bash tool's run_in_background option and notifies you once when a new output line matches a regular expression.
+
+Usage:
+- Pass the shell id returned by bash and a pattern (JavaScript regular expression, matched line by line against output printed after this call).
+- Returns immediately. You get exactly one notification: the first matching line, or that the shell exited before the pattern appeared, or that the pattern was not seen within the timeout.
+- Use it to wait for a dev server's "ready" line or a test watcher's result instead of polling bash_output.
+- At most 4 monitors can be active per session. Only shells started in this session can be watched.

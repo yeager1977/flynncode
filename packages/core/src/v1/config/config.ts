@@ -36,6 +36,14 @@ export const Info = Schema.Struct({
     description: "JSON schema reference for configuration validation",
   }),
   shell: Schema.optional(Schema.String).annotate({ description: "Default shell to use for terminal and bash tool" }),
+  background_shells: Schema.optional(
+    Schema.Struct({
+      max_ms: Schema.optional(PositiveInt).annotate({
+        description:
+          "Time cap in milliseconds for a command the bash tool runs in the background; its process group is killed when it is reached (default and maximum: 7200000, 2 hours)",
+      }),
+    }),
+  ).annotate({ description: "Background shells started by the bash tool with run_in_background" }),
   logLevel: Schema.optional(LogLevelRef).annotate({ description: "Log level" }),
   server: Schema.optional(ConfigServerV1.Server).annotate({
     description: "Server configuration for opencode serve and web commands",

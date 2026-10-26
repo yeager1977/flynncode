@@ -1,0 +1,8 @@
+Reads new output from a background shell started with the bash tool's run_in_background option.
+
+Usage:
+- Pass the shell id returned by bash (for example bash_01J...).
+- Each call returns only the output printed since the previous bash_output call for that shell, after a status line (running, exited with its exit code, killed, or timed_out).
+- Use filter (a regular expression) to return only matching lines; non-matching lines are consumed and not shown again.
+- Only shells started in this session are visible.
+- Do not call this in a tight loop to wait for something. Use monitor to be notified when a line matches, and rely on the automatic notification when the shell exits.

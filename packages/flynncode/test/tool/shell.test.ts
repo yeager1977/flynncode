@@ -27,6 +27,8 @@ import { LocationServiceMap, locationServiceMapLayer } from "@flynncode/core/loc
 import { Pty } from "@flynncode/core/pty"
 import { PtyID } from "@flynncode/core/pty/schema"
 import { AbsolutePath } from "@flynncode/core/schema"
+import { AppProcess } from "@flynncode/core/process"
+import { BackgroundShells } from "@/shell/background/service"
 
 const shellLayer = Layer.mergeAll(
   LayerNode.compile(
@@ -38,6 +40,8 @@ const shellLayer = Layer.mergeAll(
       Config.node,
       Agent.node,
       RuntimeFlags.node,
+      AppProcess.node,
+      BackgroundShells.node,
     ]),
   ),
   testInstanceStoreLayer,

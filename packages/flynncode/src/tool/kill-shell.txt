@@ -1,0 +1,6 @@
+Stops a background shell started with the bash tool's run_in_background option.
+
+Usage:
+- Pass the shell id returned by bash.
+- The whole process group is sent SIGTERM, then SIGKILL after 5 seconds if anything is still running.
+- Only shells started in this session can be stopped. Its output stays readable with bash_output.
