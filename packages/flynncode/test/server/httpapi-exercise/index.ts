@@ -664,6 +664,16 @@ const scenarios: Scenario[] = [
       headers: ctx.headers(),
     }))
     .json(404, object, "status"),
+  http.protected
+    .post("/session/{sessionID}/shells/promote", "session.shells.promote")
+    .mutating()
+    .probe({ path: "/session/ses_httpapi_probe/shells/promote", body: { callID: "call_httpapi_missing" } })
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/shells/promote", { sessionID: "ses_httpapi_shells" }),
+      headers: ctx.headers(),
+      body: { callID: "call_httpapi_missing" },
+    }))
+    .json(404, object, "status"),
   http.protected.get("/experimental/resource", "experimental.resource.list").json(),
   http.protected
     .post("/sync/history", "sync.history.list")

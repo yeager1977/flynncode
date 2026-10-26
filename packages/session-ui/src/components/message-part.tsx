@@ -1462,6 +1462,9 @@ export interface ToolProps {
   metadata: Record<string, any>
   tool: string
   sessionID?: string
+  callID?: string
+  // When the call started running; set only while it runs.
+  startedAt?: number
   output?: string
   status?: string
   hideDetails?: boolean
@@ -1568,6 +1571,10 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   })
 
   const render = createMemo(() => ToolRegistry.render(part().tool) ?? GenericTool)
+  const startedAt = () => {
+    const state = part().state
+    return state.status === "running" ? state.time.start : undefined
+  }
   const controlledOpen = () => (props.onToolOpenChange ? (props.toolOpen ?? props.defaultOpen) : undefined)
   const handleToolOpenChange = (open: boolean) => props.onToolOpenChange?.(open)
 
@@ -1617,6 +1624,8 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               input={input()}
               tool={part().tool}
               sessionID={part().sessionID}
+              callID={part().callID}
+              startedAt={startedAt()}
               metadata={partMetadata()}
               // @ts-expect-error
               output={part().state.output}
@@ -2088,6 +2097,8 @@ ToolRegistry.register({
   },
 })
 
+const SHELL_PROMOTE_AFTER_MS = 10_000
+
 ToolRegistry.register({
   name: "shell",
   render(props) {
@@ -2111,6 +2122,34 @@ ToolRegistry.register({
     }
 
     const backgroundId = () => (typeof props.metadata.shellId === "string" ? props.metadata.shellId : "")
+
+    // A foreground command that has run for a while can be handed to the background shells without stopping it.
+    const data = useData()
+    const [due, setDue] = createSignal(false)
+    const [moving, setMoving] = createSignal(false)
+    createEffect(() => {
+      const start = props.startedAt
+      setDue(false)
+      if (start === undefined || props.status !== "running") return
+      const timer = setTimeout(() => setDue(true), Math.max(0, start + SHELL_PROMOTE_AFTER_MS - Date.now()))
+      onCleanup(() => clearTimeout(timer))
+    })
+    const promotable = () =>
+      due() &&
+      props.status === "running" &&
+      props.metadata.interactive !== true &&
+      !!props.sessionID &&
+      !!props.callID &&
+      !!data.promoteShell
+    const promote = (event: MouseEvent) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const sessionID = props.sessionID
+      const callID = props.callID
+      if (!sessionID || !callID || !data.promoteShell || moving()) return
+      setMoving(true)
+      void data.promoteShell({ sessionID, callID }).finally(() => setMoving(false))
+    }
 
     // A background call returns immediately with only the shell id, so its details pane would be empty;
     // output lives in the Background shells panel.
@@ -2150,6 +2189,19 @@ ToolRegistry.register({
                   <ShellSubmessage text={props.input.command} animate={sawPending} />
                 </Show>
               </div>
+              <Show when={promotable()}>
+                <span data-slot="basic-tool-tool-action">
+                  <ButtonV2
+                    size="small"
+                    variant="ghost-muted"
+                    disabled={moving()}
+                    onMouseDown={(event: MouseEvent) => event.preventDefault()}
+                    onClick={promote}
+                  >
+                    {i18n.t("ui.tool.shell.moveToBackground")}
+                  </ButtonV2>
+                </span>
+              </Show>
             </div>
           )}
         >

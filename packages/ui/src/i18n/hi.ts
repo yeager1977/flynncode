@@ -146,6 +146,7 @@ export const dict: Record<string, string> = {
   "ui.tool.websearch.provider": "{{provider}} वेब खोज",
   "ui.tool.shell": "शेल",
   "ui.tool.shell.backgroundStarted": "Started in background",
+  "ui.tool.shell.moveToBackground": "Move to background",
   "ui.tool.patch": "पैच",
   "ui.tool.todos": "कार्य सूची",
   "ui.tool.todos.read": "कार्य सूची पढ़ें",

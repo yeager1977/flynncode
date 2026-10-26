@@ -152,6 +152,7 @@ export const dict = {
   "ui.tool.websearch.provider": "{{provider}} ค้นหาเว็บ",
   "ui.tool.shell": "เชลล์",
   "ui.tool.shell.backgroundStarted": "Started in background",
+  "ui.tool.shell.moveToBackground": "Move to background",
   "ui.tool.patch": "แพตช์",
   "ui.tool.todos": "รายการงาน",
   "ui.tool.todos.read": "อ่านรายการงาน",

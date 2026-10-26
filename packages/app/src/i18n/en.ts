@@ -824,6 +824,7 @@ export const dict = {
   "session.shells.stop.failed": "Could not stop this background shell.",
   "session.shells.openOutput": "Open full output",
   "session.shells.open.failed": "Could not open the output file.",
+  "session.shells.promote.failed": "Could not move this command to the background.",
   "session.usageLimit.label": "Usage limit",
   "session.usageLimit.title": "Usage limit reached on {{model}}",
   "session.usageLimit.resets": "Resets around {{time}}",

@@ -2,7 +2,7 @@ import { ShellBackground } from "@flynncode/schema/shell-background"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { SessionID } from "@/session/schema"
-import { ApiNotFoundError } from "../errors"
+import { ApiNotFoundError, ConflictError } from "../errors"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
 import {
@@ -23,7 +23,12 @@ export const BackgroundShellsPaths = {
   list: root,
   output: `${root}/:id/output`,
   stop: `${root}/:id/stop`,
+  promote: `${root}/promote`,
 } as const
+
+export const PromotePayload = Schema.Struct({
+  callID: Schema.String.annotate({ description: "Call id of the running foreground bash tool call" }),
+})
 
 export const BackgroundShellsApi = HttpApi.make("background-shells")
   .add(
@@ -64,6 +69,20 @@ export const BackgroundShellsApi = HttpApi.make("background-shells")
             summary: "Stop background shell",
             description:
               "Kill a background shell's process group (SIGTERM, then SIGKILL after 5 seconds) and return the shell. A shell that already finished is returned unchanged.",
+          }),
+        ),
+        HttpApiEndpoint.post("promote", BackgroundShellsPaths.promote, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          payload: PromotePayload,
+          success: described(ShellBackground.Info, "The background shell the call became"),
+          error: [ApiNotFoundError, ConflictError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.shells.promote",
+            summary: "Move a running shell to the background",
+            description:
+              "Hand a running foreground bash tool call over to the session's background shells without stopping it. The call returns at once with the new shell id; output printed so far stays readable. 404 when no such call is running, 409 when the session is at its background shell limit.",
           }),
         ),
       )

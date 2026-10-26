@@ -254,6 +254,8 @@ import type {
   SessionShellsListResponses,
   SessionShellsOutputErrors,
   SessionShellsOutputResponses,
+  SessionShellsPromoteErrors,
+  SessionShellsPromoteResponses,
   SessionShellsStopErrors,
   SessionShellsStopResponses,
   SessionStatusErrors,
@@ -4209,6 +4211,49 @@ export class Shells extends HeyApiClient {
       url: "/session/{sessionID}/shells/{id}/stop",
       ...options,
       ...params,
+    })
+  }
+
+  /**
+   * Move a running shell to the background
+   *
+   * Hand a running foreground bash tool call over to the session's background shells without stopping it. The call returns at once with the new shell id; output printed so far stays readable. 404 when no such call is running, 409 when the session is at its background shell limit.
+   */
+  public promote<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      callID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "callID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionShellsPromoteResponses,
+      SessionShellsPromoteErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/shells/promote",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 }

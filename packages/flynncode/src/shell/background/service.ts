@@ -82,8 +82,33 @@ export type StartInput = {
   notify?: Notify
 }
 
+// A foreground process handed over while it runs. The caller spawned it into `scope` and keeps pumping its output
+// through `pump`; after adoption it sends every chunk to the returned `write` instead of its own buffers.
+export type AdoptInput = {
+  sessionID: string
+  command: string
+  directory: string
+  handle: ChildProcessHandle
+  scope: Scope.Closeable
+  pump: Fiber.Fiber<unknown, unknown>
+  startedAt: number
+  // Output the caller already received; it starts the shell's stream so bash_output returns it.
+  initial: string
+  capMs?: number
+  notify?: Notify
+}
+
+export type Promotion = Effect.Effect<Shell | undefined, ShellLimitError | SpawnError>
+
 export interface Interface {
   readonly start: (input: StartInput) => Effect.Effect<Shell, ShellLimitError | SpawnError>
+  readonly adopt: (
+    input: AdoptInput,
+  ) => Effect.Effect<{ shell: Shell; write: (chunk: string) => Effect.Effect<void> }, ShellLimitError | SpawnError>
+  // A running foreground call registers how to promote it; `promote` runs that for a user's request.
+  readonly offer: (input: { sessionID: string; callID: string; promote: Promotion }) => Effect.Effect<void>
+  readonly withdraw: (input: { sessionID: string; callID: string }) => Effect.Effect<void>
+  readonly promote: (input: { sessionID: string; callID: string }) => Promotion
   readonly read: (input: {
     sessionID: string
     id: string
@@ -141,23 +166,29 @@ const layer = Layer.effect(
     const fibers = yield* Scope.make()
     const state = { closing: false }
 
+    const offers = new Map<string, Promotion>()
+
     const find = (sessionID: string, id: string) => sessions.get(sessionID)?.get(id)
 
-    const launch = Effect.fnUntraced(function* (input: StartInput) {
+    const admit = Effect.fnUntraced(function* (sessionID: string) {
       if (state.closing) return yield* new SpawnError({ message: "background shells are shutting down" })
-      const running = Array.from(sessions.get(input.sessionID)?.values() ?? []).filter(
+      const running = Array.from(sessions.get(sessionID)?.values() ?? []).filter(
         (entry) => entry.shell.status === "running",
       )
       if (running.length >= MAX_RUNNING)
         return yield* new ShellLimitError({
           message: `This session already has ${MAX_RUNNING} running background shells; kill one with kill_shell first.`,
         })
-      const cap = Math.min(input.capMs ?? MAX_MS, MAX_MS)
-      const limit = Math.min(input.timeoutMs ?? cap, cap)
       yield* Effect.tryPromise({
         try: () => fs.mkdir(TRUNCATION_DIR, { recursive: true }),
         catch: (error) => new SpawnError({ message: `cannot create ${TRUNCATION_DIR}: ${String(error)}` }),
       })
+    })
+
+    const launch = Effect.fnUntraced(function* (input: StartInput) {
+      yield* admit(input.sessionID)
+      const cap = Math.min(input.capMs ?? MAX_MS, MAX_MS)
+      const limit = Math.min(input.timeoutMs ?? cap, cap)
       const scope = yield* Scope.make()
       const handle = yield* appProcess
         .spawn(
@@ -184,19 +215,46 @@ const layer = Layer.effect(
         yield* release(handle, scope)
         return yield* new SpawnError({ message: "background shells are shutting down" })
       }
+      const entry = yield* track({ ...input, handle, startedAt: Date.now(), initial: "" })
+      const pump = yield* Stream.runForEach(Stream.decodeText(handle.all), (chunk) => ingest(entry, chunk)).pipe(
+        Effect.ignore,
+        Effect.forkIn(fibers),
+      )
+      yield* record(entry)
+      yield* life(entry, scope, pump, limit, input.notify).pipe(Effect.forkIn(fibers))
+      return { ...entry.shell }
+    })
+
+    const adopt = Effect.fnUntraced(function* (input: AdoptInput) {
+      yield* admit(input.sessionID)
+      const limit = Math.min(input.capMs ?? MAX_MS, MAX_MS)
+      const entry = yield* track(input)
+      yield* record(entry)
+      yield* life(entry, input.scope, input.pump, limit, input.notify).pipe(Effect.forkIn(fibers))
+      return { shell: { ...entry.shell }, write: (chunk: string) => ingest(entry, chunk) }
+    })
+
+    const track = Effect.fnUntraced(function* (input: {
+      sessionID: string
+      command: string
+      directory: string
+      handle: ChildProcessHandle
+      startedAt: number
+      initial: string
+    }) {
       const outputPath = path.join(TRUNCATION_DIR, ToolID.ascending())
       const entry: Entry = {
         shell: {
           id: Identifier.create("bash", "ascending"),
           sessionID: input.sessionID,
           command: input.command,
-          pid: handle.pid,
+          pid: input.handle.pid,
           outputPath,
-          startedAt: Date.now(),
+          startedAt: input.startedAt,
           status: "running",
         },
         directory: input.directory,
-        handle,
+        handle: input.handle,
         writer: BackgroundOutput.open(outputPath, { capBytes: CAP_BYTES, headBytes: HEAD_BYTES }),
         readOffset: 0,
         killed: false,
@@ -207,6 +265,7 @@ const layer = Layer.effect(
         stopped: yield* Deferred.make<void>(),
         finished: yield* Deferred.make<void>(),
       }
+      if (input.initial) entry.writer.write(input.initial)
       // Re-read at insert time: a killSession that ran meanwhile dropped the map this call started with. Listed and
       // announced before output is pumped, so `started` precedes every output and exit event of the shell.
       sessions.set(
@@ -220,26 +279,24 @@ const layer = Layer.effect(
         pid: entry.shell.pid,
         startedAt: entry.shell.startedAt,
       })
-      const pump = yield* Stream.runForEach(Stream.decodeText(handle.all), (chunk) =>
-        Effect.suspend(() => {
-          entry.writer.write(chunk)
-          entry.watchers.forEach((watcher) => scan(entry, watcher, chunk))
-          const now = Date.now()
-          if (now - entry.emittedAt < OUTPUT_EVENT_MS) return Effect.void
-          entry.emittedAt = now
-          const total = entry.writer.total()
-          return emit(entry, ShellBackground.Event.Output, {
-            sessionID: entry.shell.sessionID,
-            id: entry.shell.id,
-            bytes: total,
-            tail: entry.writer.readSince(total - TAIL_BYTES, { maxBytes: TAIL_BYTES }).text,
-          })
-        }),
-      ).pipe(Effect.ignore, Effect.forkIn(fibers))
-      yield* record(entry)
-      yield* life(entry, scope, pump, limit, input.notify).pipe(Effect.forkIn(fibers))
-      return { ...entry.shell }
+      return entry
     })
+
+    const ingest = (entry: Entry, chunk: string) =>
+      Effect.suspend(() => {
+        entry.writer.write(chunk)
+        entry.watchers.forEach((watcher) => scan(entry, watcher, chunk))
+        const now = Date.now()
+        if (now - entry.emittedAt < OUTPUT_EVENT_MS) return Effect.void
+        entry.emittedAt = now
+        const total = entry.writer.total()
+        return emit(entry, ShellBackground.Event.Output, {
+          sessionID: entry.shell.sessionID,
+          id: entry.shell.id,
+          bytes: total,
+          tail: entry.writer.readSince(total - TAIL_BYTES, { maxBytes: TAIL_BYTES }).text,
+        })
+      })
 
     // Crash cleanup identifies the group by its start time, which /proc has as soon as the process exists, so the
     // record is written at once, even for a leader that exits immediately and leaves members behind
@@ -274,17 +331,18 @@ const layer = Layer.effect(
     const life = Effect.fnUntraced(function* (
       entry: Entry,
       scope: Scope.Closeable,
-      pump: Fiber.Fiber<void>,
+      pump: Fiber.Fiber<unknown, unknown>,
       limit: number,
       notify: Notify | undefined,
     ) {
+      // An adopted shell started before it was handed over; the cap counts from its real start.
       const deadline = entry.shell.startedAt + limit
       const leader = yield* Effect.raceAll([
         entry.handle.exitCode.pipe(
           Effect.map((code) => ({ kind: "exit" as const, code: Number(code) })),
           Effect.catch(() => Effect.succeed({ kind: "signal" as const })),
         ),
-        Effect.sleep(limit).pipe(Effect.as({ kind: "timeout" as const })),
+        Effect.sleep(Math.max(0, deadline - Date.now())).pipe(Effect.as({ kind: "timeout" as const })),
         Deferred.await(entry.stopped).pipe(Effect.as({ kind: "stopped" as const })),
       ])
       // Members the leader left behind (`server >log 2>&1 &`) keep the shell running until the group is gone.
@@ -522,6 +580,14 @@ const layer = Layer.effect(
     return Service.of({
       start: (input) =>
         lock.withPermit(Effect.uninterruptible(launch(input))).pipe(Effect.withSpan("BackgroundShells.start")),
+      adopt: (input) =>
+        lock.withPermit(Effect.uninterruptible(adopt(input))).pipe(Effect.withSpan("BackgroundShells.adopt")),
+      offer: (input) => Effect.sync(() => void offers.set(offerKey(input), input.promote)),
+      withdraw: (input) => Effect.sync(() => void offers.delete(offerKey(input))),
+      promote: (input) =>
+        Effect.suspend(() => offers.get(offerKey(input)) ?? Effect.succeed(undefined)).pipe(
+          Effect.withSpan("BackgroundShells.promote"),
+        ),
       read,
       output,
       kill,
@@ -546,6 +612,10 @@ function emit<D extends Event.Definition>(entry: Entry, definition: D, propertie
       Effect.logWarning("background shell event failed", { type: definition.type, cause: Cause.pretty(cause) }),
     ),
   )
+}
+
+function offerKey(input: { sessionID: string; callID: string }) {
+  return `${input.sessionID}\u0000${input.callID}`
 }
 
 function scan(entry: Entry, watcher: Watcher, chunk: string) {

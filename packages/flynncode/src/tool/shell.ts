@@ -1,4 +1,4 @@
-import { Effect, Deferred, Scope, Stream } from "effect"
+import { Effect, Deferred, Exit, Scope, Stream } from "effect"
 import os from "os"
 import { createWriteStream } from "node:fs"
 import * as Tool from "./tool"
@@ -342,6 +342,16 @@ function cmd(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv
     detached: process.platform !== "win32",
   })
 }
+// Checking the queue and switching over happen in one step, so no chunk slips in between.
+function drain(queue: string[], write: (chunk: string) => Effect.Effect<void>, done: () => void): Effect.Effect<void> {
+  return Effect.suspend(() => {
+    const chunk = queue.shift()
+    if (chunk !== undefined) return write(chunk).pipe(Effect.andThen(drain(queue, write, done)))
+    done()
+    return Effect.void
+  })
+}
+
 const parser = lazy(async () => {
   const { Parser } = await import("web-tree-sitter")
   const { default: treeWasm } = await import("web-tree-sitter/tree-sitter.wasm" as string, {
@@ -469,6 +479,8 @@ export const ShellTool = Tool.define(
         cwd: string
         env: NodeJS.ProcessEnv
         timeout: number
+        directory: string
+        capMs?: number
       },
       ctx: Tool.Context,
     ) {
@@ -515,13 +527,36 @@ export const ShellTool = Tool.define(
         },
       })
 
-      const code: number | null = yield* Effect.scoped(
-        Effect.gen(function* () {
-          yield* Effect.addFinalizer(closeSink)
-          const handle = yield* spawner.spawn(cmd(input.shell, input.command, input.cwd, input.env))
+      // The process lives in its own scope rather than this call's, so a user can move it to the background while it
+      // runs: BackgroundShells then owns the scope and this pump forwards to it. Otherwise the scope closes here.
+      const handover = {
+        phase: "running" as "running" | "promoting" | "promoted" | "finished",
+        forward: undefined as ((chunk: string) => Effect.Effect<void>) | undefined,
+        // Completes when the promotion in flight succeeded or failed.
+        settled: undefined as Deferred.Deferred<void> | undefined,
+      }
+      const promoted = yield* Deferred.make<BackgroundShells.Shell>()
+      const notify = yield* ShellBackground.notifier(ctx, scope)
+      const startedAt = Date.now()
+      const settle = Effect.suspend(() =>
+        handover.phase === "promoting" && handover.settled ? Deferred.await(handover.settled) : Effect.void,
+      ).pipe(
+        Effect.andThen(
+          Effect.sync(() => {
+            if (handover.phase !== "promoted") handover.phase = "finished"
+          }),
+        ),
+      )
 
-          yield* Effect.forkScoped(
-            Stream.runForEach(Stream.decodeText(handle.all), (chunk) => {
+      const exit = yield* Effect.acquireUseRelease(
+        Scope.make(),
+        (owned) =>
+          Effect.gen(function* () {
+            const handle = yield* spawner
+              .spawn(cmd(input.shell, input.command, input.cwd, input.env))
+              .pipe(Scope.provide(owned))
+
+            const local = (chunk: string) => {
               const size = Buffer.byteLength(chunk, "utf-8")
               list.push({ text: chunk, size })
               used += size
@@ -564,36 +599,118 @@ export const ShellTool = Tool.define(
                   output: last,
                 },
               })
-            }),
-          )
+            }
 
-          const abort = Effect.callback<void>((resume) => {
-            if (ctx.abort.aborted) return resume(Effect.void)
-            const handler = () => resume(Effect.void)
-            ctx.abort.addEventListener("abort", handler, { once: true })
-            return Effect.sync(() => ctx.abort.removeEventListener("abort", handler))
-          })
+            const pump = yield* Stream.runForEach(Stream.decodeText(handle.all), (chunk) =>
+              handover.forward ? handover.forward(chunk) : local(chunk),
+            ).pipe(Effect.ignore, Effect.forkIn(owned))
 
-          const timeout = Effect.sleep(`${input.timeout + 100} millis`)
+            const promote = Effect.gen(function* () {
+              if (handover.phase !== "running") return undefined
+              // Same synchronous step as the snapshot: later chunks queue until the service's writer takes over.
+              handover.phase = "promoting"
+              const settled = Deferred.makeUnsafe<void>()
+              handover.settled = settled
+              const queue: string[] = []
+              handover.forward = (chunk) => Effect.sync(() => void queue.push(chunk))
+              const raw = list.map((item) => item.text).join("")
+              const initial = cut && file ? `[earlier output: ${file}]\n${raw}` : raw
+              const adopted = yield* shells
+                .adopt({
+                  sessionID: ctx.sessionID,
+                  command: input.command,
+                  directory: input.directory,
+                  handle,
+                  scope: owned,
+                  pump,
+                  startedAt,
+                  initial,
+                  capMs: input.capMs,
+                  notify,
+                })
+                .pipe(
+                  // The call stays in the foreground and takes back what queued meanwhile.
+                  Effect.tapError(() =>
+                    drain(
+                      queue,
+                      (chunk) => local(chunk).pipe(Effect.ignore),
+                      () => {
+                        handover.forward = undefined
+                        handover.phase = "running"
+                        Deferred.doneUnsafe(settled, Exit.void)
+                      },
+                    ),
+                  ),
+                )
+              yield* drain(queue, adopted.write, () => (handover.forward = adopted.write))
+              handover.phase = "promoted"
+              yield* Deferred.succeed(promoted, adopted.shell)
+              yield* Deferred.succeed(settled, undefined)
+              return adopted.shell
+            }).pipe(Effect.uninterruptible)
+            // Only a call the app can name (by its call id) can be promoted.
+            const offer = ctx.callID ? { sessionID: ctx.sessionID, callID: ctx.callID } : undefined
+            if (offer) yield* shells.offer({ ...offer, promote })
 
-          const exit = yield* Effect.raceAll([
-            handle.exitCode.pipe(Effect.map((code) => ({ kind: "exit" as const, code }))),
-            abort.pipe(Effect.map(() => ({ kind: "abort" as const, code: null }))),
-            timeout.pipe(Effect.map(() => ({ kind: "timeout" as const, code: null }))),
-          ])
+            const abort = Effect.callback<void>((resume) => {
+              if (ctx.abort.aborted) return resume(Effect.void)
+              const handler = () => resume(Effect.void)
+              ctx.abort.addEventListener("abort", handler, { once: true })
+              return Effect.sync(() => ctx.abort.removeEventListener("abort", handler))
+            })
 
-          if (exit.kind === "abort") {
-            aborted = true
-            yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
-          }
-          if (exit.kind === "timeout") {
-            expired = true
-            yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
-          }
+            const timeout = Effect.sleep(`${input.timeout + 100} millis`)
 
-          return exit.kind === "exit" ? exit.code : null
-        }),
+            const exit = yield* Effect.raceAll([
+              handle.exitCode.pipe(Effect.map((code) => ({ kind: "exit" as const, code }))),
+              abort.pipe(Effect.map(() => ({ kind: "abort" as const, code: null }))),
+              timeout.pipe(Effect.map(() => ({ kind: "timeout" as const, code: null }))),
+              Deferred.await(promoted).pipe(Effect.map((shell) => ({ kind: "background" as const, shell }))),
+            ]).pipe(Effect.ensuring(offer ? shells.withdraw(offer) : Effect.void), Effect.ensuring(settle))
+
+            // A promotion that completed while another arm won still hands the process over.
+            if (handover.phase === "promoted")
+              return { kind: "background" as const, shell: yield* Deferred.await(promoted) }
+            if (exit.kind === "abort") {
+              aborted = true
+              yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
+            }
+            if (exit.kind === "timeout") {
+              expired = true
+              yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
+            }
+            return exit
+          }),
+        (owned, result) =>
+          settle.pipe(
+            Effect.andThen(closeSink()),
+            Effect.andThen(
+              Effect.suspend(() => (handover.phase === "promoted" ? Effect.void : Scope.close(owned, result))),
+            ),
+          ),
       ).pipe(Effect.orDie)
+
+      if (exit.kind === "background") {
+        const output = [
+          `Moved to the background as ${exit.shell.id} (pid ${exit.shell.pid}). Output: ${exit.shell.outputPath}.`,
+          `bash_output with this id returns everything it printed so far, then new output; use monitor to be notified when a line matches a pattern, and kill_shell to stop it.`,
+          `You will be notified automatically when it exits, so do not sleep or poll for it.`,
+        ].join("\n")
+        return {
+          title: input.command,
+          metadata: {
+            background: true as const,
+            shellId: exit.shell.id,
+            pid: exit.shell.pid,
+            outputPath: exit.shell.outputPath,
+            output,
+            exit: null,
+            truncated: false as const,
+          },
+          output,
+        }
+      }
+      const code = exit.kind === "exit" ? exit.code : null
 
       const meta: string[] = []
       if (expired) {
@@ -825,6 +942,8 @@ export const ShellTool = Tool.define(
                   cwd,
                   env: yield* shellEnv(ctx, cwd),
                   timeout,
+                  directory: instanceCtx.directory,
+                  capMs: cfg.background_shells?.max_ms,
                 },
                 ctx,
               )

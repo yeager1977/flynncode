@@ -3300,6 +3300,12 @@ export type BackgroundShellOutput = {
   truncated: boolean
 }
 
+export type ConflictError = {
+  _tag: "ConflictError"
+  message: string
+  resource?: string
+}
+
 export type UnauthorizedError = {
   _tag: "UnauthorizedError"
   message: string
@@ -3332,12 +3338,6 @@ export type PromptInput = {
   text: string
   files?: Array<PromptInputFileAttachment>
   agents?: Array<PromptAgentAttachment>
-}
-
-export type ConflictError = {
-  _tag: "ConflictError"
-  message: string
-  resource?: string
 }
 
 export type ServiceUnavailableError = {
@@ -12758,6 +12758,49 @@ export type SessionShellsStopResponses = {
 }
 
 export type SessionShellsStopResponse = SessionShellsStopResponses[keyof SessionShellsStopResponses]
+
+export type SessionShellsPromoteData = {
+  body?: {
+    /**
+     * Call id of the running foreground bash tool call
+     */
+    callID: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/shells/promote"
+}
+
+export type SessionShellsPromoteErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type SessionShellsPromoteError = SessionShellsPromoteErrors[keyof SessionShellsPromoteErrors]
+
+export type SessionShellsPromoteResponses = {
+  /**
+   * The background shell the call became
+   */
+  200: BackgroundShell
+}
+
+export type SessionShellsPromoteResponse = SessionShellsPromoteResponses[keyof SessionShellsPromoteResponses]
 
 export type V2HealthGetData = {
   body?: never

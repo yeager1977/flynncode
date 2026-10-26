@@ -5,7 +5,7 @@ import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { type Accessor, createEffect, createMemo, createResource, onCleanup, type ParentProps, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { LocalProvider } from "@/context/local"
-import { SDKProvider } from "@/context/sdk"
+import { SDKProvider, useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { decode64 } from "@/utils/base64"
 import { Schema } from "effect"
@@ -24,6 +24,8 @@ export function DirectoryDataProvider(
   const navigate = useNavigate()
   const params = useParams()
   const sync = useSync()
+  const sdk = useSDK()
+  const language = useLanguage()
   const serverSync = useServerSync()
   const directory = () => (typeof props.directory === "function" ? props.directory() : props.directory)
   const slug = createMemo(() => base64Encode(directory()))
@@ -31,6 +33,19 @@ export function DirectoryDataProvider(
     const server = props.server?.()
     if (server) return sessionHref(server, sessionID)
     return `/${slug()}/session/${sessionID}`
+  }
+
+  const promoteShell = async (input: { sessionID: string; callID: string }) => {
+    const result = await sdk()
+      .client.session.shells.promote(input)
+      .catch(() => undefined)
+    if (result?.data) return
+    const error: unknown = result?.error
+    showToast({
+      variant: "error",
+      title: language.t("session.shells.promote.failed"),
+      description: errorMessage(error),
+    })
   }
 
   createEffect(() => {
@@ -66,12 +81,22 @@ export function DirectoryDataProvider(
           sessionID={params.id}
           onNavigateToSession={(sessionID: string) => navigate(href(sessionID))}
           onSessionHref={href}
+          onShellPromote={promoteShell}
         >
           <LocalProvider>{props.children}</LocalProvider>
         </DataProvider>
       )}
     </Show>
   )
+}
+
+// Promotion fails with a ConflictError ({ message }) or a NotFoundError ({ data: { message } }).
+function errorMessage(error: unknown) {
+  if (typeof error !== "object" || error === null) return undefined
+  if ("message" in error && typeof error.message === "string") return error.message
+  if ("data" in error && typeof error.data === "object" && error.data !== null && "message" in error.data)
+    return typeof error.data.message === "string" ? error.data.message : undefined
+  return undefined
 }
 
 export const ProjectDirString = Schema.String.pipe(Schema.brand("ProjectDirString"))

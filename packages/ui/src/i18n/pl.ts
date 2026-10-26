@@ -160,6 +160,7 @@ export const dict = {
   "ui.tool.websearch.provider": "{{provider}} Wyszukiwanie w sieci",
   "ui.tool.shell": "Terminal",
   "ui.tool.shell.backgroundStarted": "Started in background",
+  "ui.tool.shell.moveToBackground": "Move to background",
   "ui.tool.patch": "Patch",
   "ui.tool.todos": "Zadania",
   "ui.tool.todos.read": "Czytaj zadania",

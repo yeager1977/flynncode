@@ -163,4 +163,35 @@ describe("background shells HttpApi", () => {
       }),
     15_000,
   )
+
+  it.instance(
+    "promote runs the offered promotion of a running call and maps its failures",
+    () =>
+      Effect.gen(function* () {
+        const tmp = yield* TestInstance
+        const shells = yield* BackgroundShells.Service
+        const shell = yield* start("ses_shells_promote", "sleep 30", tmp.directory)
+        const post = (callID: string) =>
+          requestInDirectory(route(BackgroundShellsPaths.promote, { sessionID: "ses_shells_promote" }), tmp.directory, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ callID }),
+          })
+        expect((yield* post("call_missing")).status).toBe(404)
+        yield* shells.offer({ sessionID: "ses_shells_promote", callID: "call_ok", promote: Effect.succeed(shell) })
+        const response = yield* post("call_ok")
+        expect(response.status).toBe(200)
+        expect((yield* decode(ShellBackground.Info)(response)).id).toBe(shell.id)
+        yield* shells.offer({
+          sessionID: "ses_shells_promote",
+          callID: "call_full",
+          promote: Effect.fail(new BackgroundShells.ShellLimitError({ message: "too many" })),
+        })
+        expect((yield* post("call_full")).status).toBe(409)
+        // A withdrawn offer is gone.
+        yield* shells.withdraw({ sessionID: "ses_shells_promote", callID: "call_ok" })
+        expect((yield* post("call_ok")).status).toBe(404)
+      }),
+    15_000,
+  )
 })

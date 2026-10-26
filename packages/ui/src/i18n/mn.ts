@@ -144,6 +144,7 @@ export const dict = {
   "ui.tool.websearch.provider": "{{provider}} Вэб хайлт",
   "ui.tool.shell": "Shell",
   "ui.tool.shell.backgroundStarted": "Started in background",
+  "ui.tool.shell.moveToBackground": "Move to background",
   "ui.tool.patch": "Patch",
   "ui.tool.todos": "Хийх ажил",
   "ui.tool.todos.read": "Хийх зүйлсийг унш",

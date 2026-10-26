@@ -154,6 +154,7 @@ export const dict = {
   "ui.tool.websearch.provider": "{{provider}} 網頁搜尋",
   "ui.tool.shell": "Shell",
   "ui.tool.shell.backgroundStarted": "Started in background",
+  "ui.tool.shell.moveToBackground": "Move to background",
   "ui.tool.patch": "修補",
   "ui.tool.todos": "待辦",
   "ui.tool.todos.read": "讀取待辦",

@@ -22,6 +22,7 @@ const keys = [
   "session.shells.stop.failed",
   "session.shells.openOutput",
   "session.shells.open.failed",
+  "session.shells.promote.failed",
   "sidebar.dot.unseen",
   "sidebar.dot.working",
   "sidebar.sessions.showLess",

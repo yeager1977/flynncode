@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import path from "path"
-import { Cause, Effect, Exit, Layer, Scope } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer, Scope } from "effect"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { AppProcess } from "@flynncode/core/process"
 import { CrossSpawnSpawner } from "@flynncode/core/cross-spawn-spawner"
@@ -17,6 +17,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { InstanceStore } from "@/project/instance-store"
 import { InstanceBootstrap } from "@/project/bootstrap-service"
 import { BackgroundShells } from "@/shell/background/service"
+import { BackgroundRegistry } from "@/shell/background/registry"
 import { Truncate } from "@/tool/truncate"
 import { Tool } from "@/tool/tool"
 import { ToolRegistry } from "@/tool/registry"
@@ -81,15 +82,21 @@ const recorder = () => {
   return { prompts, ops }
 }
 
-const context = (input: { sessionID?: string; ops?: TaskPromptOps; ask?: Tool.Context["ask"] }): Tool.Context => ({
+const context = (input: {
+  sessionID?: string
+  ops?: TaskPromptOps
+  ask?: Tool.Context["ask"]
+  callID?: string
+  metadata?: Tool.Context["metadata"]
+}): Tool.Context => ({
   sessionID: SessionID.make(input.sessionID ?? "ses_bg_a"),
   messageID: MessageID.make("msg_bg"),
-  callID: "",
+  callID: input.callID ?? "",
   agent: "build",
   abort: AbortSignal.any([]),
   messages: [],
   extra: input.ops ? { promptOps: input.ops } : {},
-  metadata: () => Effect.void,
+  metadata: input.metadata ?? (() => Effect.void),
   ask: input.ask ?? (() => Effect.void),
 })
 
@@ -374,6 +381,94 @@ describe("background shell tools", () => {
         expect(groupAlive(meta.pid)).toBe(false)
       }),
     { config: { background_shells: { max_ms: 400 } } },
+    20_000,
+  )
+
+  // Starts a foreground call and waits until it printed `marker`, so promotion happens mid-run.
+  const foreground = (command: string, marker: string, input: { ops?: TaskPromptOps; sessionID?: string }) =>
+    Effect.gen(function* () {
+      const seen = { output: "" }
+      const ctx = context({
+        ...input,
+        callID: "call_promote",
+        metadata: (value) =>
+          Effect.sync(() => {
+            const output = value.metadata?.output
+            if (typeof output === "string") seen.output = output
+          }),
+      })
+      const fiber = yield* bash({ command }, ctx).pipe(Effect.forkChild)
+      yield* pollWithTimeout(
+        Effect.sync(() => (seen.output.includes(marker) ? true : undefined)),
+        `foreground call never printed ${marker}`,
+        "8 seconds",
+      )
+      return { ctx, fiber }
+    })
+
+  it.instance(
+    "moves a running foreground call to the background without killing it",
+    () =>
+      Effect.gen(function* () {
+        const sink = recorder()
+        const service = yield* BackgroundShells.Service
+        const call = yield* foreground("echo before; sleep 1; echo done", "before", { ops: sink.ops })
+        const shell = yield* service.promote({ sessionID: call.ctx.sessionID, callID: "call_promote" })
+        if (!shell) throw new Error("expected the running call to be promoted")
+        const result = yield* Fiber.join(call.fiber)
+        if (result.metadata.background !== true) throw new Error("expected a background result")
+        started.add(result.metadata.pid)
+        expect(result.metadata.shellId).toBe(shell.id)
+        expect(result.output).toContain(`Moved to the background as ${shell.id}`)
+        expect(groupAlive(shell.pid)).toBe(true)
+        expect((yield* service.list(call.ctx.sessionID)).map((item) => item.id)).toEqual([shell.id])
+        // A finished call is no longer offered.
+        expect(yield* service.promote({ sessionID: call.ctx.sessionID, callID: "call_promote" })).toBeUndefined()
+
+        const prompts = yield* prompted(sink.prompts)
+        const part = prompts[0].input.parts[0]
+        if (part.type !== "text") throw new Error("expected a text part")
+        expect(part.text).toContain(`[background shell ${shell.id} exited (code 0)]`)
+        expect(part.text).toContain("before\ndone")
+        const read = yield* output({ id: shell.id }, call.ctx)
+        expect(read.output.split("\n")[0]).toContain(`${shell.id} exited (code 0)`)
+        expect(body(read.output).trim().split("\n")).toEqual(["before", "done"])
+      }),
+    20_000,
+  )
+
+  it.instance(
+    "records a promoted shell for crash cleanup and stops it with its session",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* BackgroundShells.Service
+        const call = yield* foreground("echo up; sleep 30", "up", { sessionID: "ses_bg_promote_kill" })
+        const shell = yield* service.promote({ sessionID: call.ctx.sessionID, callID: "call_promote" })
+        if (!shell) throw new Error("expected the running call to be promoted")
+        started.add(shell.pid)
+        yield* Fiber.join(call.fiber)
+        const recorded = yield* Effect.promise(() => BackgroundRegistry.list(BackgroundShells.REGISTRY_DIR))
+        expect(recorded.map((entry) => entry.id)).toContain(shell.id)
+        expect(yield* service.killSession(call.ctx.sessionID)).toBe(1)
+        expect(groupAlive(shell.pid)).toBe(false)
+        const after = yield* Effect.promise(() => BackgroundRegistry.list(BackgroundShells.REGISTRY_DIR))
+        expect(after.map((entry) => entry.id)).not.toContain(shell.id)
+      }),
+    20_000,
+  )
+
+  it.instance(
+    "a foreground call that finishes on its own cannot be promoted afterwards",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* BackgroundShells.Service
+        const call = yield* foreground("echo quick", "quick", { sessionID: "ses_bg_promote_late" })
+        const result = yield* Fiber.join(call.fiber)
+        expect(result.metadata.background).not.toBe(true)
+        expect(result.output).toContain("quick")
+        expect(yield* service.promote({ sessionID: call.ctx.sessionID, callID: "call_promote" })).toBeUndefined()
+        expect(yield* service.list(call.ctx.sessionID)).toHaveLength(0)
+      }),
     20_000,
   )
 

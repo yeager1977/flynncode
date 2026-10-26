@@ -159,6 +159,7 @@ export const dict: Record<string, string> = {
   "ui.tool.websearch.provider": "{{provider}} Pencarian Web",
   "ui.tool.shell": "Shell",
   "ui.tool.shell.backgroundStarted": "Started in background",
+  "ui.tool.shell.moveToBackground": "Move to background",
   "ui.tool.patch": "Patch",
   "ui.tool.todos": "Tugas",
   "ui.tool.todos.read": "Baca tugas",

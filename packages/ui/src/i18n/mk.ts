@@ -144,6 +144,7 @@ export const dict = {
   "ui.tool.websearch.provider": "{{provider}} Пребарување на Интернет",
   "ui.tool.shell": "Школка",
   "ui.tool.shell.backgroundStarted": "Started in background",
+  "ui.tool.shell.moveToBackground": "Move to background",
   "ui.tool.patch": "Patch",
   "ui.tool.todos": "Задачи",
   "ui.tool.todos.read": "Читајте задачи",
