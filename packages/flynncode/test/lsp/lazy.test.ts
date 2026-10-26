@@ -147,6 +147,20 @@ describe("lsp lazy mode (lsp key absent)", () => {
     }),
   )
 
+  it.instance("concurrent first calls for one server spawn it once", () =>
+    Effect.gen(function* () {
+      const dir = (yield* TestInstance).directory
+      const spawn = fakeBuiltin(LSPServer.Gleam, path.join(dir, "gleam.pid"))
+      const file = path.join(dir, "main.gleam")
+      yield* write(file)
+
+      yield* Effect.all([definition(file), definition(file), definition(file)], { concurrency: "unbounded" })
+      expect(spawn).toHaveBeenCalledTimes(1)
+      expect((yield* (yield* LSP.Service).status()).map((item) => item.id)).toEqual(["gleam"])
+      yield* disposeAllInstancesEffect
+    }),
+  )
+
   it.instance("missing server binary yields a tool message without retrying the spawn", () =>
     Effect.gen(function* () {
       const dir = (yield* TestInstance).directory

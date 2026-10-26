@@ -151,6 +151,26 @@ describe("tool.notebook_edit", () => {
     }),
   )
 
+  // nbformat 4 allows `attachments` on markdown and raw cells only.
+  it.instance("drops attachments when a markdown cell becomes a code cell", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const filepath = path.join(test.directory, "nb.ipynb")
+      const nb = sample()
+      nb.cells[0] = {
+        ...markdown("aaaa1111", ["![x](attachment:x.png)"]),
+        attachments: { "x.png": { "image/png": "AAAA" } },
+      }
+      yield* put(filepath, dump(nb))
+
+      yield* run({ notebook_path: filepath, cell_id: "aaaa1111", new_source: "x = 1", cell_type: "code" })
+
+      const expected = sample()
+      expected.cells[0] = code("aaaa1111", ["x = 1"], [], null)
+      expect(yield* load(filepath)).toBe(dump(expected))
+    }),
+  )
+
   it.instance("inserts after the given cell with a generated id", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance

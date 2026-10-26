@@ -691,6 +691,29 @@ describe("tool.read notebooks", () => {
     }),
   )
 
+  it.live("caps the rendered notebook at the normal byte limit", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      const file = path.join(dir, "big.ipynb")
+      yield* put(
+        file,
+        nb(
+          Array.from({ length: 200 }, (_, i) => ({
+            cell_type: "markdown",
+            id: `id${i}`,
+            metadata: {},
+            source: Array.from({ length: 10 }, () => `${"x".repeat(100)}\n`),
+          })),
+        ),
+      )
+
+      const result = yield* exec(dir, { filePath: file })
+
+      expect(result.output).toContain("Output capped at 50 KB")
+      expect(Buffer.byteLength(result.output)).toBeLessThan(60 * 1024)
+    }),
+  )
+
   it.live("falls back to raw text when the notebook is not valid JSON", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped()

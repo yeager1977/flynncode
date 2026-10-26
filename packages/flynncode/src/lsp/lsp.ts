@@ -374,13 +374,18 @@ const layer = Layer.effect(
           }
 
           if (!spawn) continue
-          if (!(await reserve(result, evicted))) continue
 
-          const task = schedule(server, root, root + server.id)
+          // Claim the slot before awaiting `reserve`, so a concurrent caller for
+          // the same server joins this spawn instead of starting another one.
+          const task = (async () => {
+            if (!(await reserve(result, evicted))) return undefined
+            return schedule(server, root, root + server.id).finally(() => {
+              starting.count--
+            })
+          })()
           s.spawning.set(root + server.id, task)
 
           task.finally(() => {
-            starting.count--
             if (s.spawning.get(root + server.id) === task) {
               s.spawning.delete(root + server.id)
             }

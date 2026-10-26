@@ -34,6 +34,7 @@ import {
   QuestionInfo,
 } from "@flynncode/sdk/v2"
 import { useData } from "../context"
+import { latestToolCall } from "./latest-tool-call"
 import { useFileComponent } from "@flynncode/ui/context/file"
 import { useDialog } from "@flynncode/ui/context/dialog"
 import { type UiI18n, useI18n } from "@flynncode/ui/context/i18n"
@@ -2114,7 +2115,19 @@ ToolRegistry.register({
     const data = useData()
     const [undone, setUndone] = createSignal(false)
     const previous = () => (typeof props.metadata.previousAgent === "string" ? props.metadata.previousAgent : undefined)
-    const undoable = () => props.status === "completed" && !undone() && !!previous() && !!data.planMode?.active()
+    // Undo restores the agent this call switched away from, which is only
+    // right for the most recent switch into plan mode.
+    const latest = createMemo(() => {
+      const sessionID = props.sessionID ?? data.sessionID
+      if (!sessionID) return undefined
+      return latestToolCall(data.store.message[sessionID] ?? [], data.store.part, "enter_plan_mode")
+    })
+    const undoable = () =>
+      props.status === "completed" &&
+      !undone() &&
+      !!previous() &&
+      !!data.planMode?.active() &&
+      latest() === props.callID
     const undo = (event: MouseEvent) => {
       event.preventDefault()
       event.stopPropagation()

@@ -115,6 +115,8 @@ export function apply(nb: Notebook, change: Change) {
   if (type === "code") {
     cell.outputs = []
     cell.execution_count = null
+    // nbformat 4 allows attachments on markdown and raw cells only.
+    delete cell.attachments
   }
   if (type !== "code") {
     delete cell.outputs
