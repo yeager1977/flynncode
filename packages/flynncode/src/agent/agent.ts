@@ -3,6 +3,7 @@ import { PermissionV1 } from "@flynncode/core/v1/permission"
 import { Config } from "@/config/config"
 import { serviceUse } from "@flynncode/core/effect/service-use"
 import { Provider } from "@/provider/provider"
+import { ClaudeAlias } from "@/provider/claude-alias"
 
 import { generateObject, streamObject, type ModelMessage } from "ai"
 import { Truncate } from "@/tool/truncate"
@@ -353,6 +354,7 @@ const layer = Layer.effect(
           },
         }
 
+        const claudeModels: Record<string, string> = {}
         for (const [key, value] of Object.entries(cfg.agent ?? {})) {
           if (value.disable) {
             delete agents[key]
@@ -380,6 +382,11 @@ const layer = Layer.effect(
           item.steps = value.steps ?? item.steps
           item.options = mergeDeep(item.options, value.options ?? {})
           item.permission = Permission.merge(item.permission, Permission.fromConfig(value.permission ?? {}))
+          // Agent options reach the provider request, so the Claude Code model
+          // alias is kept aside instead of being sent as a provider option.
+          const alias = item.options.claudeModel
+          if (typeof alias === "string") claudeModels[key] = alias
+          delete item.options.claudeModel
         }
 
         // Ensure Truncate.GLOB is allowed unless explicitly configured
@@ -398,8 +405,21 @@ const layer = Layer.effect(
           )
         }
 
+        // Claude Code agents may name a model alias (`opus`, ...) instead of a
+        // provider/model. Resolve it on every read so it follows the providers
+        // connected right now; unresolved aliases run on the session model.
         const get = Effect.fnUntraced(function* (agent: string) {
-          return agents[agent]
+          const info = agents[agent]
+          const alias = claudeModels[agent]
+          if (!info || info.model || !alias) return info
+          const model = ClaudeAlias.resolve(alias, yield* provider.list())
+          if (model) return { ...info, model }
+          if (alias !== "inherit")
+            yield* Effect.logWarning("Claude model alias has no connected Anthropic model; using the session model", {
+              agent,
+              alias,
+            })
+          return info
         })
 
         const list = Effect.fnUntraced(function* () {

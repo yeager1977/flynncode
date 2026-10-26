@@ -28,6 +28,7 @@ import { RemoteAuthError } from "@flynncode/core/v1/config/error"
 import { ConfigPermissionV1 } from "@flynncode/core/v1/config/permission"
 import { ConfigPluginV1 } from "@flynncode/core/v1/config/plugin"
 import { ConfigAgent } from "./agent"
+import { ConfigClaude } from "./claude"
 import { ConfigCommand } from "./command"
 import { ConfigManaged } from "./managed"
 import { ConfigParse } from "./parse"
@@ -495,6 +496,27 @@ const layer = Layer.effect(
       }
     })
 
+    // `~/.claude` first, then `.claude` directories from the worktree root down
+    // to the instance directory, so the closest definition of a name wins.
+    const loadClaudeAgents = Effect.fnUntraced(function* (ctx: InstanceContext) {
+      if (Flag.OPENCODE_DISABLE_CLAUDE_CODE_AGENTS) return {}
+      const global = path.join(Global.Path.home, ".claude")
+      const project = Flag.OPENCODE_DISABLE_PROJECT_CONFIG
+        ? []
+        : yield* fs
+            .up({ targets: [".claude"], start: ctx.directory, stop: ctx.worktree })
+            .pipe(Effect.catch(() => Effect.succeed([] as string[])))
+      const dirs = yield* Effect.filter([global, ...project.toReversed().filter((dir) => dir !== global)], (dir) =>
+        fs.isDir(dir),
+      )
+      const loaded = yield* Effect.forEach(dirs, (dir) => Effect.promise(() => ConfigClaude.loadAgents(dir)))
+      yield* Effect.forEach(
+        loaded.flatMap((item) => item.warnings),
+        (warning) => Effect.logWarning(warning),
+      )
+      return Object.fromEntries(loaded.flatMap((item) => Object.entries(item.agents)))
+    })
+
     const loadInstanceState = Effect.fn("Config.loadInstanceState")(
       function* (ctx: InstanceContext) {
         const auth = yield* authSvc.all().pipe(Effect.orDie)
@@ -644,6 +666,15 @@ const layer = Layer.effect(
           const list = yield* Effect.promise(() => ConfigPlugin.load(dir))
           yield* mergePluginOrigins(dir, list)
         }
+
+        // Claude Code agents sit beneath every native agent source. A native
+        // definition with the same name replaces the Claude one wholesale, so
+        // a Claude tools allowlist never leaks into the native agent.
+        const claudeAgents = yield* loadClaudeAgents(ctx)
+        for (const name of Object.keys(claudeAgents).filter((name) => result.agent?.[name])) {
+          yield* Effect.logWarning("native agent overrides Claude Code agent with the same name", { name })
+        }
+        result.agent = { ...claudeAgents, ...result.agent }
 
         // Plugin-bundled hooks (<plugin-root>/hooks/hooks.json) apply after
         // project hooks. Only path-like specs resolve to a readable root.
