@@ -75,6 +75,16 @@ const groupAlive = (pgid: number) => {
   }
 }
 
+const startOf = async (pid: number) => {
+  const text = await Bun.file(`/proc/${pid}/stat`)
+    .text()
+    .catch(() => undefined)
+  return text
+    ?.slice(text.lastIndexOf(")") + 1)
+    .trim()
+    .split(" ")[19]
+}
+
 // The leader exits at once while a redirected background member keeps the process group alive.
 const LINGER = "sleep 300 >/dev/null 2>&1 & echo started"
 
@@ -273,10 +283,33 @@ describe("BackgroundShells", () => {
         const shell = yield* start(service, { command: "sleep 0.5" })
         const recorded = yield* Effect.promise(() => BackgroundRegistry.list(BackgroundShells.REGISTRY_DIR))
         const entry = recorded.find((item) => item.id === shell.id)
-        expect(entry?.pid).toBe(shell.pid)
+        expect(entry?.pgid).toBe(shell.pid)
+        expect(entry?.start).toBe(yield* Effect.promise(() => startOf(shell.pid)))
         expect(entry?.sessionID).toBe("ses_a")
-        expect(entry?.cmdline).toContain("sleep 0.5")
+        expect(entry?.command).toBe("sleep 0.5")
         yield* statusOf(service, "ses_a", shell.id, "exited")
+        const after = yield* Effect.promise(() => BackgroundRegistry.list(BackgroundShells.REGISTRY_DIR))
+        expect(after.find((item) => item.id === shell.id)).toBeUndefined()
+      }),
+    15_000,
+  )
+
+  it.live(
+    "records a shell whose leader exits at once and keeps the record until the group is gone",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* BackgroundShells.Service
+        const shell = yield* start(service, { command: "sleep 2 >/dev/null 2>&1 & echo started" })
+        yield* pollWithTimeout(
+          Effect.promise(async () => ((await startOf(shell.pid)) === undefined ? true : undefined)),
+          "leader never exited",
+          "5 seconds",
+        )
+        expect(groupAlive(shell.pid)).toBe(true)
+        const recorded = yield* Effect.promise(() => BackgroundRegistry.list(BackgroundShells.REGISTRY_DIR))
+        expect(recorded.find((item) => item.id === shell.id)?.pgid).toBe(shell.pid)
+        yield* statusOf(service, "ses_a", shell.id, "exited")
+        expect(groupAlive(shell.pid)).toBe(false)
         const after = yield* Effect.promise(() => BackgroundRegistry.list(BackgroundShells.REGISTRY_DIR))
         expect(after.find((item) => item.id === shell.id)).toBeUndefined()
       }),
@@ -411,7 +444,7 @@ describe("BackgroundShells", () => {
   )
 
   it.live(
-    "a shell that exits before its cmdline is read logs no warning",
+    "a shell that exits at once logs no warning",
     () =>
       Effect.gen(function* () {
         const service = yield* BackgroundShells.Service

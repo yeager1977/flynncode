@@ -101,7 +101,8 @@ They render as compact system lines in the transcript, not as full user messages
 **Never orphaned.**
 - Each background shell's process-group id is registered with its session and recorded in a small registry file under the data dir.
 - A server-stop finalizer kills every registered group.
-- On startup, recorded groups left by a crash are killed only if the process's command line still matches the recorded one. This prevents killing an unrelated process that reused the PID.
+- Each group is recorded by its id and its leader's start time, read the moment it is spawned. Command lines are not used: a dev server started with `cmd >log 2>&1 &` has a leader that exits at once while the server lives on.
+- On startup, recorded groups left by a crash are killed only if they are still the same group: either the leader is running with the recorded start time, or the leader is gone but processes in that group started no earlier than it. This prevents killing an unrelated process that reused the PID.
 
 **Output safety.** Output files live under `tool-output/` and are covered by the existing 7-day retention. Each file is capped at 50 MB: past the cap, the head is kept and only a rolling tail is stored.
 

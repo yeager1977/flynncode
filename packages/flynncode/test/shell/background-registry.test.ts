@@ -25,14 +25,26 @@ const launch = async (command: string, args: string[], detached: boolean) => {
   const child = spawn(command, args, { detached, stdio: "ignore" })
   spawned.push(child)
   await new Promise((resolve) => child.once("spawn", resolve))
-  // The spawn event can fire before exec completes, while /proc/<pid>/cmdline still reads empty.
-  while ((await BackgroundRegistry.cmdline(child.pid!)) === undefined) await Bun.sleep(10)
   return child
 }
 
 const sleeper = (detached: boolean) => launch("sleep", ["60"], detached)
 
-const alive = async (pid: number, cmdline: string) => (await BackgroundRegistry.cmdline(pid)) === cmdline
+const procStat = async (pid: number) => {
+  const text = await fs.readFile(`/proc/${pid}/stat`, "utf8").catch(() => undefined)
+  return text
+    ?.slice(text.lastIndexOf(")") + 1)
+    .trim()
+    .split(" ")
+}
+
+const startOf = async (pid: number) => (await procStat(pid))?.[19]
+
+// Running and not a zombie: a killed child of this runner may linger as a zombie until the runner reaps it.
+const alive = async (pid: number) => {
+  const state = (await procStat(pid))?.[0]
+  return state !== undefined && state !== "Z"
+}
 
 const groupGone = async (pgid: number) => {
   const deadline = Date.now() + 1_000
@@ -48,17 +60,33 @@ const groupGone = async (pgid: number) => {
   return probe()
 }
 
+const leaderGone = async (pid: number) => {
+  while ((await procStat(pid)) !== undefined) await Bun.sleep(10)
+}
+
+// The surviving member of a group whose leader has exited.
+const groupMember = async (pgid: number) => {
+  const names = (await fs.readdir("/proc")).filter((name) => /^\d+$/.test(name))
+  const stats = await Promise.all(
+    names.map(async (name) => ({ pid: Number(name), stat: await procStat(Number(name)) })),
+  )
+  const found = stats.find((item) => item.stat !== undefined && Number(item.stat[2]) === pgid)
+  if (!found) throw new Error(`no member left in group ${pgid}`)
+  return found.pid
+}
+
 const entry = (id: string, input?: Partial<BackgroundRegistry.Entry>): BackgroundRegistry.Entry => ({
   id,
   sessionID: "ses_1",
-  pid: 999_999,
-  cmdline: "x",
+  pgid: 999_999,
+  start: "1",
   startedAt: 1,
+  command: "x",
   ...input,
 })
 
-const recorded = async (pid: number, id = "bash_1") =>
-  entry(id, { pid, cmdline: (await BackgroundRegistry.cmdline(pid)) ?? "n/a" })
+const recorded = async (pgid: number, id = "bash_1") =>
+  entry(id, { pgid, start: (await BackgroundRegistry.groupStart(pgid)) ?? "0" })
 
 // A file left by a server that is gone: pid above pid_max, so nothing can be running under it.
 const deadOwner = async (dir: string, entries: BackgroundRegistry.Entry[], name = "999999999-1.json") => {
@@ -80,13 +108,7 @@ describe("BackgroundRegistry", () => {
   test("the owner is this process, identified by its /proc start time", async () => {
     const owner = await BackgroundRegistry.owner()
     expect(owner.pid).toBe(process.pid)
-    const stat = await fs.readFile(`/proc/${process.pid}/stat`, "utf8")
-    expect(owner.start).toBe(
-      stat
-        .slice(stat.lastIndexOf(")") + 1)
-        .trim()
-        .split(" ")[19],
-    )
+    expect(owner.start).toBe((await startOf(process.pid))!)
     expect(await BackgroundRegistry.owner()).toEqual(owner)
   })
 
@@ -95,12 +117,12 @@ describe("BackgroundRegistry", () => {
     const dir = path.join(tmp.path, "state", "background-shells")
     expect(await BackgroundRegistry.list(dir)).toEqual([])
     await BackgroundRegistry.add(dir, entry("bash_1"))
-    await BackgroundRegistry.add(dir, entry("bash_2", { pid: 5 }))
+    await BackgroundRegistry.add(dir, entry("bash_2", { pgid: 5 }))
     expect((await BackgroundRegistry.list(dir)).map((item) => item.id)).toEqual(["bash_1", "bash_2"])
     expect(await fs.readdir(dir)).toEqual([path.basename(await ownFile(dir))])
     expect(await readJson(await ownFile(dir))).toHaveLength(2)
     await BackgroundRegistry.remove(dir, "bash_1")
-    expect(await BackgroundRegistry.list(dir)).toEqual([entry("bash_2", { pid: 5 })])
+    expect(await BackgroundRegistry.list(dir)).toEqual([entry("bash_2", { pgid: 5 })])
     await BackgroundRegistry.remove(dir, "missing")
     expect((await BackgroundRegistry.list(dir)).length).toBe(1)
   })
@@ -150,11 +172,14 @@ describe("BackgroundRegistry", () => {
     expect((await fs.stat(file)).isDirectory()).toBe(true)
   })
 
-  test("cmdline reads /proc with NULs as spaces", async () => {
-    expect(await BackgroundRegistry.cmdline(process.pid)).toContain("bun")
-    expect(await BackgroundRegistry.cmdline(999_999_999)).toBeUndefined()
+  test("groupStart is the leader's /proc start time, or the earliest member's once the leader is gone", async () => {
+    expect(await BackgroundRegistry.groupStart(999_999_999)).toBeUndefined()
     const child = await sleeper(true)
-    expect(await BackgroundRegistry.cmdline(child.pid!)).toBe("sleep 60")
+    expect(await BackgroundRegistry.groupStart(child.pid!)).toBe((await startOf(child.pid!))!)
+    const leaderless = await launch("sh", ["-c", "sleep 300 >/dev/null 2>&1 &"], true)
+    await leaderGone(leaderless.pid!)
+    const member = await groupMember(leaderless.pid!)
+    expect(await BackgroundRegistry.groupStart(leaderless.pid!)).toBe((await startOf(member))!)
   })
 
   test("reap kills groups recorded by dead servers and deletes their files", async () => {
@@ -168,8 +193,8 @@ describe("BackgroundRegistry", () => {
     const result = await BackgroundRegistry.reap(dir)
     expect(result.killed.map((item) => item.id).sort()).toEqual(["bash_1", "bash_2"])
     expect(result.skipped).toEqual([])
-    expect(await alive(first.pid!, "sleep 60")).toBe(false)
-    expect(await alive(second.pid!, "sleep 60")).toBe(false)
+    expect(await alive(first.pid!)).toBe(false)
+    expect(await alive(second.pid!)).toBe(false)
     expect(await exists(gone)).toBe(false)
     expect(await exists(recycled)).toBe(false)
   })
@@ -181,33 +206,62 @@ describe("BackgroundRegistry", () => {
     await BackgroundRegistry.add(dir, await recorded(mine.pid!))
     // Another running server, named with its real start time.
     const server = await sleeper(true)
-    const stat = await fs.readFile(`/proc/${server.pid}/stat`, "utf8")
-    const start = stat
-      .slice(stat.lastIndexOf(")") + 1)
-      .trim()
-      .split(" ")[19]
+    const start = await startOf(server.pid!)
     const theirs = await sleeper(true)
     const other = await deadOwner(dir, [await recorded(theirs.pid!, "bash_2")], `${server.pid}-${start}.json`)
     const result = await BackgroundRegistry.reap(dir)
     expect(result).toEqual({ killed: [], skipped: [] })
-    expect(await alive(mine.pid!, "sleep 60")).toBe(true)
-    expect(await alive(theirs.pid!, "sleep 60")).toBe(true)
+    expect(await alive(mine.pid!)).toBe(true)
+    expect(await alive(theirs.pid!)).toBe(true)
     expect(await BackgroundRegistry.list(dir)).toHaveLength(1)
     expect(await readJson(other)).toHaveLength(1)
   })
 
-  test("reap skips an entry whose cmdline does not match and leaves the process alone", async () => {
+  test("reap skips a recycled pgid whose leader has another start time and leaves it alone", async () => {
     await using tmp = await tmpdir()
     const dir = path.join(tmp.path, "background-shells")
-    const cmdline = (await BackgroundRegistry.cmdline(process.pid))!
+    // An unrelated group leader now holds the recorded pid.
+    const child = await sleeper(true)
+    const start = Number(await startOf(child.pid!))
     const calls: number[] = []
-    const file = await deadOwner(dir, [entry("bash_1", { pid: process.pid, cmdline: "something else" })])
+    const file = await deadOwner(dir, [entry("bash_1", { pgid: child.pid!, start: String(start - 1) })])
     const result = await BackgroundRegistry.reap(dir, { kill: (pgid) => void calls.push(pgid) })
     expect(result.killed).toEqual([])
     expect(result.skipped.map((item) => [item.id, item.reason])).toEqual([["bash_1", "not running"]])
     expect(calls).toEqual([])
-    expect(await alive(process.pid, cmdline)).toBe(true)
+    expect(await alive(child.pid!)).toBe(true)
     expect(await exists(file)).toBe(false)
+  })
+
+  test("reap kills a group whose leader has exited while a member lives on", async () => {
+    await using tmp = await tmpdir()
+    const dir = path.join(tmp.path, "background-shells")
+    const child = await launch("sh", ["-c", "sleep 300 >/dev/null 2>&1 &"], true)
+    // Read at once, as the service does, while the leader is normally still running.
+    const item = await recorded(child.pid!)
+    await leaderGone(child.pid!)
+    const member = await groupMember(child.pid!)
+    const file = await deadOwner(dir, [item])
+    const result = await BackgroundRegistry.reap(dir)
+    expect(result.killed.map((killed) => killed.id)).toEqual(["bash_1"])
+    expect(await groupGone(child.pid!)).toBe(true)
+    expect(await alive(member)).toBe(false)
+    expect(await exists(file)).toBe(false)
+  })
+
+  test("reap skips a leaderless group whose members all predate the recorded start", async () => {
+    await using tmp = await tmpdir()
+    const dir = path.join(tmp.path, "background-shells")
+    const child = await launch("sh", ["-c", "sleep 300 >/dev/null 2>&1 &"], true)
+    await leaderGone(child.pid!)
+    const member = await groupMember(child.pid!)
+    const calls: number[] = []
+    const later = String(Number(await startOf(member)) + 1)
+    await deadOwner(dir, [entry("bash_1", { pgid: child.pid!, start: later })])
+    const result = await BackgroundRegistry.reap(dir, { kill: (pgid) => void calls.push(pgid) })
+    expect(result.skipped.map((item) => item.reason)).toEqual(["not running"])
+    expect(calls).toEqual([])
+    expect(await alive(member)).toBe(true)
   })
 
   test("reap never kills the current process or its parent and keeps their records", async () => {
@@ -220,10 +274,7 @@ describe("BackgroundRegistry", () => {
     ])
     const invalid = await deadOwner(
       dir,
-      [
-        entry("bash_2", { pid: 1, cmdline: (await BackgroundRegistry.cmdline(1)) ?? "n/a" }),
-        entry("bash_3", { pid: 0 }),
-      ],
+      [entry("bash_2", { pgid: 1, start: (await startOf(1)) ?? "0" }), entry("bash_3", { pgid: 0 })],
       "999999998-1.json",
     )
     const result = await BackgroundRegistry.reap(dir, { kill: (pgid) => void calls.push(pgid) })
@@ -250,8 +301,8 @@ describe("BackgroundRegistry", () => {
       const dir = process.env.REAP_DIR
       const file = dir + "/999999999-1.json"
       await fs.mkdir(dir, { recursive: true })
-      const cmdline = await BackgroundRegistry.cmdline(pgid)
-      await fs.writeFile(file, JSON.stringify([{ id: "bash_1", sessionID: "ses_1", pid: pgid, cmdline, startedAt: 1 }]))
+      const start = await BackgroundRegistry.groupStart(pgid)
+      await fs.writeFile(file, JSON.stringify([{ id: "bash_1", sessionID: "ses_1", pgid, start, startedAt: 1, command: "sh" }]))
       const calls = []
       const result = await BackgroundRegistry.reap(dir, { kill: (group, signal) => calls.push([group, signal]) })
       console.log(JSON.stringify({ pgid, pid: process.pid, ppid: process.ppid, calls, result, kept: await Bun.file(file).exists() }))
@@ -275,18 +326,19 @@ describe("BackgroundRegistry", () => {
     expect(output.kept).toBe(true)
   })
 
-  test("reap kills only the pid, never a group, when the pid is not a group leader", async () => {
+  test("reap signals nothing when the recorded pid does not lead a process group", async () => {
     await using tmp = await tmpdir()
     const dir = path.join(tmp.path, "background-shells")
-    // Not detached: shares this test runner's process group, so a group kill would hit the runner.
+    // Not detached: shares this test runner's process group, so no group has its pid as id.
     const child = await sleeper(false)
     const pid = child.pid!
     const calls: number[] = []
     await deadOwner(dir, [await recorded(pid)])
     const result = await BackgroundRegistry.reap(dir, { kill: (pgid) => void calls.push(pgid) })
-    expect(result.killed.map((item) => item.id)).toEqual(["bash_1"])
+    expect(result.killed).toEqual([])
+    expect(result.skipped.map((item) => item.reason)).toEqual(["not running"])
     expect(calls).toEqual([])
-    expect(await alive(pid, "sleep 60")).toBe(false)
+    expect(await alive(pid)).toBe(true)
   })
 
   test("reap escalates to SIGKILL when the group ignores SIGTERM", async () => {
@@ -296,11 +348,10 @@ describe("BackgroundRegistry", () => {
     const pid = child.pid!
     // Let the shell install its trap before the first signal arrives.
     await Bun.sleep(300)
-    const item = await recorded(pid)
-    await deadOwner(dir, [item])
+    await deadOwner(dir, [await recorded(pid)])
     const result = await BackgroundRegistry.reap(dir)
     expect(result.killed).toHaveLength(1)
-    expect(await alive(pid, item.cmdline)).toBe(false)
+    expect(await alive(pid)).toBe(false)
     expect(await groupGone(pid)).toBe(true)
   })
 
@@ -331,8 +382,8 @@ describe("BackgroundRegistry", () => {
     expect(result.killed.map((item) => item.id)).toEqual(["bash_2"])
     expect(result.skipped.map((item) => item.id)).toEqual(["bash_1"])
     expect(result.skipped[0].reason).toContain("EPERM")
-    expect(await alive(other.pid!, "sleep 60")).toBe(false)
-    expect(await alive(denied.pid!, "sleep 60")).toBe(true)
+    expect(await alive(other.pid!)).toBe(false)
+    expect(await alive(denied.pid!)).toBe(true)
     expect((await readJson(file)).map((item: BackgroundRegistry.Entry) => item.id)).toEqual(["bash_1"])
   })
 })

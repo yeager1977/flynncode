@@ -3,7 +3,9 @@ export * as BackgroundRegistry from "./registry"
 import fs from "fs/promises"
 import path from "path"
 
-export type Entry = { id: string; sessionID: string; pid: number; cmdline: string; startedAt: number }
+// `pgid` is the leader's pid (it leads its own group because it is spawned detached); `start` is the group's start
+// time from `groupStart`; `command` is informational only.
+export type Entry = { id: string; sessionID: string; pgid: number; start: string; startedAt: number; command: string }
 export type Owner = { pid: number; start: string }
 export type Skipped = Entry & { reason: string }
 type Kill = (pgid: number, signal: NodeJS.Signals) => void
@@ -54,18 +56,20 @@ export function list(dir: string) {
   return serialize(async () => load(await ownFile(dir)).catch(() => [] as Entry[]))
 }
 
-export async function cmdline(pid: number) {
-  if (process.platform !== "linux") return undefined
-  const raw = await Bun.file(`/proc/${pid}/cmdline`)
-    .text()
-    .catch(() => undefined)
-  // Empty for zombies and for children that have not exec'd yet: nothing to match against.
-  return raw?.replaceAll("\0", " ").trim() || undefined
+// The group's identity is the leader's start time, read right after spawn while the leader is still a process.
+// A leader that already exited is identified by its earliest surviving member: no later process can predate the
+// group. Undefined where /proc is unavailable or the whole group is gone.
+export async function groupStart(pgid: number) {
+  const leader = await stat(pgid, 22)
+  if (leader !== undefined) return leader
+  const starts = await memberStarts(pgid)
+  if (starts.length === 0) return undefined
+  return String(Math.min(...starts))
 }
 
-// Cleans up after servers that died: live servers' files are never read or written. A recorded pid may have been
-// recycled by an unrelated process, so a process is signalled only when its live cmdline still matches; where
-// /proc is unavailable nothing can be verified, so nothing is killed. A dead server's file is deleted once every
+// Cleans up after servers that died: live servers' files are never read or written. A recorded pgid may have been
+// recycled by an unrelated process, so a group is signalled only when its start time still matches; where /proc is
+// unavailable nothing can be verified, so nothing is killed. A dead server's file is deleted once every
 // entry is resolved, otherwise it keeps the unresolved entries for the next start.
 export async function reap(dir: string, input?: { kill?: Kill }) {
   const kill = input?.kill ?? signalGroup
@@ -102,26 +106,38 @@ export async function reap(dir: string, input?: { kill?: Kill }) {
 }
 
 async function terminate(entry: Entry, kill: Kill): Promise<Outcome> {
-  if (entry.pid <= 1) return { status: "skipped", reason: "invalid pid", resolved: true }
-  if ((await cmdline(entry.pid)) !== entry.cmdline) return { status: "skipped", reason: "not running", resolved: true }
-  // Still running with the recorded cmdline, so the record stays for a later server that may reap it.
-  if (entry.pid === process.pid || entry.pid === process.ppid)
+  if (entry.pgid <= 1) return { status: "skipped", reason: "invalid pid", resolved: true }
+  if (!(await ours(entry))) return { status: "skipped", reason: "not running", resolved: true }
+  // Still running, so the record stays for a later server that may reap it.
+  if (entry.pgid === process.pid || entry.pgid === process.ppid)
     return { status: "skipped", reason: "protected process", resolved: false }
-  // Signalling a group is only safe when the pid leads its own; otherwise -pid would target a different group.
-  if (Number(await stat(entry.pid, 5)) !== entry.pid) {
-    signalPid(entry.pid, "SIGTERM")
-    await waitWhile(async () => (await cmdline(entry.pid)) === entry.cmdline)
-    if ((await cmdline(entry.pid)) === entry.cmdline) signalPid(entry.pid, "SIGKILL")
-    return { status: "killed" }
-  }
-  if (entry.pid === Number(await stat(process.pid, 5)))
+  if (entry.pgid === Number(await stat(process.pid, 5)))
     return { status: "skipped", reason: "own process group", resolved: false }
-  kill(entry.pid, "SIGTERM")
+  // A matching pid that does not lead a group (never true for a detached spawn) has nothing to signal as -pgid.
+  if (!exists(-entry.pgid)) return { status: "skipped", reason: "not running", resolved: true }
+  kill(entry.pgid, "SIGTERM")
   // The leader may exit while members that ignore SIGTERM live on, so wait on the whole group. Linux does not
-  // hand out a pid that is still in use as a pgid, so a live -pid is still the same group.
-  await waitWhile(async () => exists(-entry.pid))
-  if (exists(-entry.pid)) kill(entry.pid, "SIGKILL")
+  // hand out a pid that is still in use as a pgid, so a live -pgid is still the same group.
+  await waitWhile(async () => exists(-entry.pgid))
+  if (exists(-entry.pgid)) kill(entry.pgid, "SIGKILL")
   return { status: "killed" }
+}
+
+// A live leader must still have the recorded start time; a different one means the pid was recycled. A dead
+// leader's group lives on in its members, and a pgid cannot be reused while any member exists, so members that
+// started no earlier than the group belong to it.
+async function ours(entry: Entry) {
+  const leader = await stat(entry.pgid, 22)
+  if (leader !== undefined) return leader === entry.start
+  return (await memberStarts(entry.pgid)).some((start) => start >= Number(entry.start))
+}
+
+async function memberStarts(pgid: number) {
+  const names = await fs.readdir("/proc").catch(() => [] as string[])
+  const stats = await Promise.all(names.filter((name) => /^\d+$/.test(name)).map((name) => fields(Number(name))))
+  return stats
+    .filter((item): item is string[] => item !== undefined && Number(item[2]) === pgid)
+    .map((item) => Number(item[19]))
 }
 
 async function waitWhile(condition: () => Promise<boolean>) {
@@ -137,9 +153,13 @@ async function ownerAlive(pid: number, start: string) {
   return live === undefined || live === start
 }
 
-// Field numbers follow proc(5). The comm field may contain spaces and parens, so fields are split after the last
-// ")", where field 3 begins.
+// Field numbers follow proc(5).
 async function stat(pid: number, field: number) {
+  return (await fields(pid))?.[field - 3]
+}
+
+// The comm field may contain spaces and parens, so fields are split after the last ")", where field 3 begins.
+async function fields(pid: number) {
   const text = await Bun.file(`/proc/${pid}/stat`)
     .text()
     .catch(() => undefined)
@@ -147,7 +167,7 @@ async function stat(pid: number, field: number) {
   return text
     .slice(text.lastIndexOf(")") + 1)
     .trim()
-    .split(" ")[field - 3]
+    .split(" ")
 }
 
 // Signal 0 probe: EPERM still means something is running under that pid or pgid.
@@ -161,16 +181,8 @@ function exists(target: number) {
 }
 
 function signalGroup(pgid: number, signal: NodeJS.Signals) {
-  ignoreGone(() => process.kill(-pgid, signal))
-}
-
-function signalPid(pid: number, signal: NodeJS.Signals) {
-  ignoreGone(() => process.kill(pid, signal))
-}
-
-function ignoreGone(fn: () => void) {
   try {
-    fn()
+    process.kill(-pgid, signal)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error
   }
@@ -198,9 +210,11 @@ function isEntry(value: unknown): value is Entry {
   return (
     typeof item.id === "string" &&
     typeof item.sessionID === "string" &&
-    typeof item.pid === "number" &&
-    typeof item.cmdline === "string" &&
-    typeof item.startedAt === "number"
+    typeof item.pgid === "number" &&
+    typeof item.start === "string" &&
+    /^\d+$/.test(item.start) &&
+    typeof item.startedAt === "number" &&
+    typeof item.command === "string"
   )
 }
 

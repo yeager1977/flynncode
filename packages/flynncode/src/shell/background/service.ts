@@ -31,8 +31,6 @@ const EXIT_LINES = 20
 const OUTPUT_EVENT_MS = 1_000
 const TAIL_BYTES = 4 * 1024
 const PARTIAL_LINE_BYTES = 64 * 1024
-const CMDLINE_WAIT_MS = 500
-const CMDLINE_POLL_MS = 20
 
 export type Status = "running" | "exited" | "killed" | "timed_out"
 
@@ -142,7 +140,6 @@ const layer = Layer.effect(
     // Lifecycle and monitor fibers live here rather than in the layer scope so the finalizer can kill and
     // drain every shell before they are interrupted.
     const fibers = yield* Scope.make()
-    const self = yield* Effect.promise(() => BackgroundRegistry.cmdline(process.pid))
     const state = { closing: false }
 
     const find = (sessionID: string, id: string) => sessions.get(sessionID)?.get(id)
@@ -246,17 +243,14 @@ const layer = Layer.effect(
       return { ...entry.shell }
     })
 
-    // The spawn event can fire before exec completes, when /proc/<pid>/cmdline is still empty or the parent's.
-    // A wrong cmdline would make crash cleanup skip (or misjudge) the entry, and the command string is not what
-    // /proc reports, so without a real cmdline nothing is recorded; the finalizer and killSession still cover it.
-    // A leader that already exited needs no record: crash cleanup only acts on a live leader's cmdline.
+    // Crash cleanup identifies the group by its start time, which /proc has as soon as the process exists, so the
+    // record is written at once, even for a leader that exits immediately and leaves members behind
+    // (`server >log 2>&1 &`). Without /proc (or once the whole group is gone) nothing is recorded; the finalizer and
+    // killSession still cover the shell.
     const record = Effect.fnUntraced(function* (entry: Entry) {
-      if (process.platform !== "linux") return
-      const result = yield* stableCmdline(entry.handle, self, Date.now() + CMDLINE_WAIT_MS)
-      if (result.exited) return
-      const cmdline = result.cmdline
-      if (!cmdline) {
-        yield* Effect.logWarning("background shell not recorded for crash cleanup: cmdline unavailable", {
+      const start = yield* Effect.promise(() => BackgroundRegistry.groupStart(entry.shell.pid))
+      if (start === undefined) {
+        yield* Effect.logDebug("background shell not recorded for crash cleanup: no process start time", {
           id: entry.shell.id,
           pid: entry.shell.pid,
         })
@@ -266,9 +260,10 @@ const layer = Layer.effect(
         BackgroundRegistry.add(REGISTRY_DIR, {
           id: entry.shell.id,
           sessionID: entry.shell.sessionID,
-          pid: entry.shell.pid,
-          cmdline,
+          pgid: entry.shell.pid,
+          start,
           startedAt: entry.shell.startedAt,
+          command: entry.shell.command,
         }),
       ).pipe(
         Effect.tap(() => Effect.sync(() => (entry.recorded = true))),
@@ -609,24 +604,6 @@ function deliver(notify: Notify, text: string) {
       Effect.logWarning("background shell notification failed", { cause: Cause.pretty(cause) }),
     ),
   )
-}
-
-// Two equal non-empty reads that are not this server's own cmdline mean exec has completed.
-function stableCmdline(
-  handle: ChildProcessHandle,
-  self: string | undefined,
-  deadline: number,
-  previous?: string,
-): Effect.Effect<{ exited: boolean; cmdline?: string }> {
-  return Effect.gen(function* () {
-    if (!(yield* alive(handle))) return { exited: true }
-    const value = yield* Effect.promise(() => BackgroundRegistry.cmdline(handle.pid))
-    const current = value === self ? undefined : value
-    if (current && current === previous) return { exited: false, cmdline: current }
-    if (Date.now() >= deadline) return { exited: false }
-    yield* Effect.sleep(CMDLINE_POLL_MS)
-    return yield* stableCmdline(handle, self, deadline, current)
-  })
 }
 
 // The handle reports an unknown state as a failure; treating it as still running errs toward killing.
