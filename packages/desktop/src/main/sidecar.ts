@@ -175,6 +175,11 @@ async function stop() {
     // Each step runs even if an earlier one fails: disposing instances shuts down MCP
     // servers (with their process trees), LSPs and shells, and closing the listener
     // alone would leave them orphaned when this process exits.
+    // Background shells (bash run_in_background) are not instance-scoped: closing the
+    // listener runs their service's finalizer, which kills every group (SIGTERM, SIGKILL
+    // after 5 s). The server bundle exposes no handle to kill them before instance
+    // disposal, so a shell may outlive that step briefly; the service's process "exit"
+    // hook still SIGTERMs any group left when process.exit() below runs.
     await shutdown(
       [
         { name: "sync worker", run: stopSyncWorker },
