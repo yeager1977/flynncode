@@ -15,6 +15,8 @@ import { MessageID, SessionID } from "../../src/session/schema"
 import { Tool } from "@/tool/tool"
 import { Truncate } from "@/tool/truncate"
 import { LspTool } from "../../src/tool/lsp"
+import { Global } from "@flynncode/core/global"
+import { InstanceState } from "@/effect/instance-state"
 import { disposeAllInstancesEffect, provideTmpdirInstance, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
@@ -169,6 +171,66 @@ describe("lsp lazy mode (lsp key absent)", () => {
 
       expect((yield* definition(file)).output).toBe("no language server for .gleam")
       expect(spawn.mock.calls[0]?.[2]).toMatchObject({ disableLspDownload: true })
+    }),
+  )
+
+  // Typescript and Biome resolve their server through the Npm cache, which
+  // installs a missing package. With downloads off (lazy mode always turns
+  // them off) only a project-local or PATH binary may be used.
+  it.instance("never installs typescript-language-server or biome when downloads are off", () =>
+    Effect.gen(function* () {
+      const dir = (yield* TestInstance).directory
+      const ctx = yield* InstanceState.context
+      const flags = yield* RuntimeFlags.Service.pipe(Effect.provide(RuntimeFlags.layer({ disableLspDownload: true })))
+      const empty = path.join(dir, "empty-path")
+      yield* Effect.promise(async () => {
+        await fs.mkdir(empty, { recursive: true })
+        await Bun.write(path.join(dir, "node_modules", "typescript", "lib", "tsserver.js"), "")
+        await Bun.write(
+          path.join(dir, "node_modules", "typescript", "package.json"),
+          JSON.stringify({ name: "typescript", version: "5.0.0" }),
+        )
+        await Bun.write(path.join(dir, "node_modules", "biome", "index.js"), "")
+        await Bun.write(
+          path.join(dir, "node_modules", "biome", "package.json"),
+          JSON.stringify({ name: "biome", version: "1.0.0", main: "index.js" }),
+        )
+      })
+      const original = process.env.PATH
+      process.env.PATH = empty
+      const handles = yield* Effect.promise(() =>
+        Promise.all([LSPServer.Typescript.spawn(dir, ctx, flags), LSPServer.Biome.spawn(dir, ctx, flags)]),
+      ).pipe(Effect.ensuring(Effect.sync(() => (process.env.PATH = original))))
+      expect(handles).toEqual([undefined, undefined])
+      const cached = yield* Effect.promise(() =>
+        fs.readdir(path.join(Global.Path.cache, "packages")).catch(() => [] as string[]),
+      )
+      expect(cached.filter((name) => name.includes("typescript-language-server") || name.includes("biome"))).toEqual(
+        [],
+      )
+    }),
+    30_000,
+  )
+
+  it.instance("uses a project-local typescript-language-server when downloads are off", () =>
+    Effect.gen(function* () {
+      if (process.platform === "win32") return
+      const dir = (yield* TestInstance).directory
+      const ctx = yield* InstanceState.context
+      const flags = yield* RuntimeFlags.Service.pipe(Effect.provide(RuntimeFlags.layer({ disableLspDownload: true })))
+      const bin = path.join(dir, "node_modules", ".bin", "typescript-language-server")
+      yield* Effect.promise(async () => {
+        await Bun.write(path.join(dir, "node_modules", "typescript", "lib", "tsserver.js"), "")
+        await Bun.write(
+          path.join(dir, "node_modules", "typescript", "package.json"),
+          JSON.stringify({ name: "typescript", version: "5.0.0" }),
+        )
+        await Bun.write(bin, "#!/bin/sh\nexit 0\n")
+        await fs.chmod(bin, 0o755)
+      })
+      const handle = yield* Effect.promise(() => LSPServer.Typescript.spawn(dir, ctx, flags))
+      expect(handle?.process.spawnfile).toBe(bin)
+      handle?.process.kill()
     }),
   )
 

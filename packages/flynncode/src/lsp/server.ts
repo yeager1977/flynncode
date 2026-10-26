@@ -119,10 +119,17 @@ export const Typescript: Info = {
     ["deno.json", "deno.jsonc"],
   ),
   extensions: [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"],
-  async spawn(root, ctx) {
+  async spawn(root, ctx, flags) {
     const tsserver = Module.resolve("typescript/lib/tsserver.js", ctx.directory)
     if (!tsserver) return
-    const bin = await Npm.which("typescript-language-server")
+    // Npm.which installs a missing package, so with downloads off (always the
+    // case in lazy mode) only a project-local or PATH binary is used.
+    const local = path.join(root, "node_modules", ".bin", "typescript-language-server")
+    const bin = flags.disableLspDownload
+      ? (await Filesystem.exists(local))
+        ? local
+        : (which("typescript-language-server") ?? undefined)
+      : await Npm.which("typescript-language-server")
     if (!bin) return
     const proc = spawn(bin, ["--stdio"], {
       cwd: root,
@@ -323,7 +330,7 @@ export const Biome: Info = {
     ".gql",
     ".html",
   ],
-  async spawn(root) {
+  async spawn(root, _ctx, flags) {
     const localBin = path.join(root, "node_modules", ".bin", "biome")
     let bin: string | undefined
     if (await Filesystem.exists(localBin)) bin = localBin
@@ -335,6 +342,7 @@ export const Biome: Info = {
     let args = ["lsp-proxy", "--stdio"]
 
     if (!bin) {
+      if (flags.disableLspDownload) return
       const resolved = Module.resolve("biome", root)
       if (!resolved) return
       bin = await Npm.which("biome")
