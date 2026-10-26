@@ -323,7 +323,7 @@ export function withTurn(
 }
 
 export function disabled(tools: string[], ruleset: PermissionV1.Ruleset): Set<string> {
-  const edits = ["edit", "multiedit", "write", "apply_patch"]
+  const edits = ["edit", "multiedit", "notebook_edit", "write", "apply_patch"]
   const reads = ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"]
   const shells = ["bash_output", "kill_shell", "monitor"]
   return new Set(

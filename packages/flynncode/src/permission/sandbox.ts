@@ -14,7 +14,7 @@ export class SandboxViolationError extends Schema.TaggedErrorClass<SandboxViolat
   }
 }
 
-const WRITE_TOOLS = ["edit", "multiedit", "write", "apply_patch"]
+const WRITE_TOOLS = ["edit", "multiedit", "notebook_edit", "write", "apply_patch"]
 
 // The sandbox contains writes only. `edit` requests always come from a write
 // tool; `external_directory` is raised by readers too (read/glob/grep/list/lsp/

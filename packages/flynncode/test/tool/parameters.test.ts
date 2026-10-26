@@ -16,6 +16,7 @@ import { Parameters as Grep } from "../../src/tool/grep"
 import { Parameters as Invalid } from "../../src/tool/invalid"
 import { Parameters as Lsp } from "../../src/tool/lsp"
 import { Parameters as MultiEdit } from "../../src/tool/multiedit"
+import { Parameters as NotebookEdit } from "../../src/tool/notebook-edit"
 import { Parameters as Plan } from "../../src/tool/plan"
 import { Parameters as Question } from "../../src/tool/question"
 import { Parameters as Read } from "../../src/tool/read"
@@ -45,6 +46,7 @@ describe("tool parameters", () => {
     test("invalid", () => expect(toJsonSchema(Invalid)).toMatchSnapshot())
     test("lsp", () => expect(toJsonSchema(Lsp)).toMatchSnapshot())
     test("multiedit", () => expect(toJsonSchema(MultiEdit)).toMatchSnapshot())
+    test("notebook_edit", () => expect(toJsonSchema(NotebookEdit)).toMatchSnapshot())
     test("plan", () => expect(toJsonSchema(Plan)).toMatchSnapshot())
     test("question", () => expect(toJsonSchema(Question)).toMatchSnapshot())
     test("read", () => expect(toJsonSchema(Read)).toMatchSnapshot())
@@ -150,6 +152,23 @@ describe("tool parameters", () => {
     })
     test("rejects missing file_path", () => {
       expect(accepts(MultiEdit, { edits: [{ old_string: "x", new_string: "y" }] })).toBe(false)
+    })
+  })
+
+  describe("notebook_edit", () => {
+    test("accepts a replace with only the required fields", () => {
+      expect(parse(NotebookEdit, { notebook_path: "/a.ipynb", cell_id: "c", new_source: "x" })).toEqual({
+        notebook_path: "/a.ipynb",
+        cell_id: "c",
+        new_source: "x",
+      })
+    })
+    test("rejects unknown cell types and edit modes", () => {
+      expect(accepts(NotebookEdit, { notebook_path: "/a.ipynb", cell_type: "html" })).toBe(false)
+      expect(accepts(NotebookEdit, { notebook_path: "/a.ipynb", edit_mode: "move" })).toBe(false)
+    })
+    test("rejects missing notebook_path", () => {
+      expect(accepts(NotebookEdit, { cell_id: "c" })).toBe(false)
     })
   })
 

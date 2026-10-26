@@ -11,6 +11,7 @@ import { KillShellTool } from "./kill-shell"
 import { MonitorTool } from "./monitor"
 import { EditTool } from "./edit"
 import { MultiEditTool } from "./multiedit"
+import { NotebookEditTool } from "./notebook-edit"
 import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
 import { ReadTool } from "./read"
@@ -134,6 +135,7 @@ const layer = Layer.effect(
     const writetool = yield* WriteTool
     const edit = yield* EditTool
     const multiedit = yield* MultiEditTool
+    const notebookEdit = yield* NotebookEditTool
     const greptool = yield* GrepTool
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
@@ -243,6 +245,7 @@ const layer = Layer.effect(
           grep: Tool.init(greptool),
           edit: Tool.init(edit),
           multiedit: Tool.init(multiedit),
+          notebook_edit: Tool.init(notebookEdit),
           write: Tool.init(writetool),
           task: Tool.init(task),
           message: Tool.init(message),
@@ -274,6 +277,7 @@ const layer = Layer.effect(
             tool.grep,
             tool.edit,
             tool.multiedit,
+            tool.notebook_edit,
             tool.write,
             tool.task,
             tool.message,

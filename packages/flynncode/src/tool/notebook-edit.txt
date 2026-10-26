@@ -1,0 +1,10 @@
+Replaces, inserts or deletes a cell in a Jupyter notebook (.ipynb, nbformat 4). Use this instead of `edit` or `write`, which would operate on the raw JSON.
+
+Usage:
+- `notebook_path` is the absolute path of an existing notebook.
+- `edit_mode` is `replace` (default), `insert` or `delete`.
+- `replace` needs `cell_id` and `new_source`. A code cell loses its outputs and execution count, since they no longer match. Pass `cell_type` to change the type of the cell.
+- `insert` needs `cell_type` and `new_source`. The cell goes after the cell named by `cell_id`, or at the start of the notebook when `cell_id` is omitted. New cells get a generated id when the notebook uses ids.
+- `delete` needs `cell_id`.
+- The `read` tool shows each cell's id and type. Notebooks without cell ids are addressed as `cell-<index>` (0-based); after an insert or delete the indices of later cells shift.
+- Other cells, their outputs, the JSON indentation and the key order are left as they were. An unknown `cell_id` is an error and nothing is written.

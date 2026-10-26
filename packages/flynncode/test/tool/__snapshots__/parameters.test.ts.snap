@@ -535,3 +535,45 @@ exports[`tool parameters JSON Schema (wire shape) write 1`] = `
   "type": "object",
 }
 `;
+
+exports[`tool parameters JSON Schema (wire shape) notebook_edit 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "cell_id": {
+      "description": "The id of the cell to edit (\`cell-<index>\`, 0-based, for cells without ids). For insert, the new cell goes after this cell; omit it to insert at the start",
+      "type": "string",
+    },
+    "cell_type": {
+      "description": "The cell type (required for insert; on replace it changes the type of the cell)",
+      "enum": [
+        "code",
+        "markdown",
+        "raw",
+      ],
+      "type": "string",
+    },
+    "edit_mode": {
+      "description": "The kind of edit (default replace)",
+      "enum": [
+        "replace",
+        "insert",
+        "delete",
+      ],
+      "type": "string",
+    },
+    "new_source": {
+      "description": "The new source of the cell (required for replace and insert)",
+      "type": "string",
+    },
+    "notebook_path": {
+      "description": "The absolute path to the Jupyter notebook (.ipynb) to modify",
+      "type": "string",
+    },
+  },
+  "required": [
+    "notebook_path",
+  ],
+  "type": "object",
+}
+`;

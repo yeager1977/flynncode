@@ -606,3 +606,101 @@ describe("tool.read binary detection", () => {
     }),
   )
 })
+
+describe("tool.read notebooks", () => {
+  const nb = (cells: unknown[]) =>
+    JSON.stringify({ cells, metadata: {}, nbformat: 4, nbformat_minor: 5 }, null, 1) + "\n"
+  const outputs = [
+    { name: "stdout", output_type: "stream", text: ["hi\n"] },
+    {
+      data: { "text/plain": ["3"], "image/png": "AAAA" },
+      execution_count: 2,
+      metadata: {},
+      output_type: "execute_result",
+    },
+  ]
+
+  it.live("renders cells with ids, types, sources and an outputs summary", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      const file = path.join(dir, "demo.ipynb")
+      yield* put(
+        file,
+        nb([
+          { cell_type: "markdown", id: "aaaa1111", metadata: {}, source: ["# Title\n", "text"] },
+          { cell_type: "code", id: "bbbb2222", execution_count: 2, metadata: {}, outputs, source: ["1 + 2"] },
+          { cell_type: "code", id: "cccc3333", execution_count: null, metadata: {}, outputs: [], source: [] },
+        ]),
+      )
+
+      const result = yield* exec(dir, { filePath: file })
+
+      expect(result.output).toContain('<cell id="aaaa1111" type="markdown">')
+      expect(result.output).toContain("# Title")
+      expect(result.output).toContain('<cell id="bbbb2222" type="code">')
+      expect(result.output).toContain("1 + 2")
+      expect(result.output).toContain("[outputs: 2 — stdout, text/plain, image/png]")
+      expect(result.output).toContain('<cell id="cccc3333" type="code">')
+      expect(result.output).not.toContain("outputs: 0")
+      expect(result.output).not.toContain('"cell_type"')
+      expect(result.output).toMatch(/\n\d+: <cell id="aaaa1111" type="markdown">/)
+      expect(result.output).toContain("(End of file")
+    }),
+  )
+
+  it.live("addresses cells of notebooks without ids as cell-<index> and says so", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      const file = path.join(dir, "plain.ipynb")
+      yield* put(
+        file,
+        nb([
+          { cell_type: "code", execution_count: null, metadata: {}, outputs: [], source: ["a"] },
+          { cell_type: "markdown", metadata: {}, source: ["b"] },
+        ]),
+      )
+
+      const result = yield* exec(dir, { filePath: file })
+
+      expect(result.output).toContain('<cell id="cell-0" type="code">')
+      expect(result.output).toContain('<cell id="cell-1" type="markdown">')
+      expect(result.output).toContain("no cell ids")
+    }),
+  )
+
+  it.live("honors offset and limit over the rendered lines", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      const file = path.join(dir, "demo.ipynb")
+      yield* put(
+        file,
+        nb(
+          Array.from({ length: 5 }, (_, i) => ({
+            cell_type: "markdown",
+            id: `id${i}`,
+            metadata: {},
+            source: [`line ${i}`],
+          })),
+        ),
+      )
+
+      const result = yield* exec(dir, { filePath: file, limit: 3 })
+
+      expect(result.output).toContain("Use offset=")
+      expect(result.output).not.toContain('id="id4"')
+    }),
+  )
+
+  it.live("falls back to raw text when the notebook is not valid JSON", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      const file = path.join(dir, "broken.ipynb")
+      yield* put(file, '{"cells": [\n')
+
+      const result = yield* exec(dir, { filePath: file })
+
+      expect(result.output).toContain('1: {"cells": [')
+      expect(result.output).not.toContain("<cell")
+    }),
+  )
+})
