@@ -55,6 +55,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   bypassAgentCheck: boolean
   messages: SessionV1.WithParts[]
   promptOps: TaskPromptOps
+  // Rules the user message being answered grants to this turn only.
+  turnPermission?: PermissionV1.Ruleset
 }) {
   const tools: Record<string, AITool> = {}
   const run = yield* EffectBridge.make()
@@ -128,7 +130,11 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       }),
     ask: (req) =>
       Effect.gen(function* () {
-        const ruleset = Permission.merge(input.agent.permission, input.session.permission ?? [])
+        const ruleset = Permission.withTurn(
+          Permission.merge(input.agent.permission, input.session.permission ?? []),
+          input.turnPermission,
+          req,
+        )
         // Bash patterns are command globs, not paths; the shell tool raises external_directory
         // for paths it touches, so bash itself is only gated by readonly.
         if (req.permission === "bash" && policy.sandbox === "readonly") {

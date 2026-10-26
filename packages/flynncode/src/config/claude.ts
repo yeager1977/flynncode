@@ -5,6 +5,7 @@ import { Exit, Schema } from "effect"
 import { Glob } from "@flynncode/core/util/glob"
 import { ConfigAgentV1 } from "@flynncode/core/v1/config/agent"
 import { ConfigCommandV1 } from "@flynncode/core/v1/config/command"
+import type { PermissionV1 } from "@flynncode/core/v1/permission"
 import { configEntryNameFromPath } from "./entry-name"
 import { ConfigMarkdown } from "./markdown"
 
@@ -134,6 +135,29 @@ export async function loadCommands(dir: string) {
     commands[configEntryNameFromPath(path.relative(dir, file), ["commands/"]).replaceAll("/", ":")] = decoded.value
   }
   return { commands, warnings }
+}
+
+// Converts a Claude command's `allowed-tools` into allow rules for the turn
+// that answers the command. `Bash(git add:*)` allows the `git add` prefix and
+// `Bash(npm test)` that exact command. Other tools are granted whole; their
+// specifiers have no Flynncode equivalent, so those entries are ignored.
+export function allowedToolRules(tools: readonly string[]) {
+  const converted = tools.map((item) => ({ item, rule: allowedToolRule(item.trim()) }))
+  return {
+    rules: converted.flatMap((entry) => (entry.rule ? [entry.rule] : [])),
+    ignored: converted.filter((entry) => !entry.rule).map((entry) => entry.item),
+  }
+}
+
+function allowedToolRule(item: string): PermissionV1.Rule | undefined {
+  if (item.startsWith("mcp__")) return { permission: mcpPermission(item), pattern: "*", action: "allow" }
+  const match = item.match(/^(\w+)(?:\((.*)\))?$/)
+  const permission = match && Object.hasOwn(TOOLS, match[1]) ? TOOLS[match[1]] : undefined
+  if (!match || !permission) return undefined
+  const specifier = match[2]?.trim()
+  if (!specifier || specifier === "*") return { permission, pattern: "*", action: "allow" }
+  if (match[1] !== "Bash") return undefined
+  return { permission, pattern: specifier.endsWith(":*") ? `${specifier.slice(0, -2)} *` : specifier, action: "allow" }
 }
 
 function booleanField(input: unknown) {

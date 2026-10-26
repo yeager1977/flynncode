@@ -291,6 +291,7 @@ export type UserMessage = {
   tools?: {
     [key: string]: boolean
   }
+  permission?: PermissionRuleset
 }
 
 export type ProviderAuthError = {

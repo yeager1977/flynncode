@@ -351,6 +351,9 @@ export const User = Schema.Struct({
   }),
   system: Schema.optional(Schema.String),
   tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
+  // Rules granted only to the turns answering this message, such as a Claude
+  // command's `allowed-tools`. They are never copied onto the session.
+  permission: Schema.optional(PermissionV1.Ruleset),
 }).annotate({ identifier: "UserMessage" })
 export type User = Types.DeepMutable<Schema.Schema.Type<typeof User>>
 

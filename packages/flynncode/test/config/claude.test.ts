@@ -335,6 +335,29 @@ describe("ConfigClaude.loadCommands", () => {
     expect(result.commands.list.claudeModel).toBeUndefined()
   })
 
+  test("reads Claude frontmatter that is invalid YAML", async () => {
+    await using tmp = await tmpdir()
+    await writeCommands(tmp.path, {
+      "review.md": [
+        "---",
+        "argument-hint: [pr-number] [priority]",
+        "allowed-tools: Bash(git add:*), Bash(git status:*)",
+        "description: Review a pull request",
+        "disable-model-invocation: true",
+        "---",
+        "Review PR $1",
+      ].join("\n"),
+    })
+    const result = await ConfigClaude.loadCommands(path.join(tmp.path, ".claude"))
+    expect(result.warnings).toEqual([])
+    expect(result.commands.review).toMatchObject({
+      argumentHint: "[pr-number] [priority]",
+      allowedTools: ["Bash(git add:*)", "Bash(git status:*)"],
+      disableModelInvocation: true,
+      description: "Review a pull request",
+    })
+  })
+
   test("leaves optional fields unset when absent", async () => {
     await using tmp = await tmpdir()
     await writeCommands(tmp.path, { "bare.md": "Just a body" })
@@ -485,4 +508,30 @@ describe("Config with .claude/commands", () => {
       }),
     { git: true },
   )
+})
+
+describe("ConfigClaude.allowedToolRules", () => {
+  test("converts Claude allowed-tools into allow rules", () => {
+    const result = ConfigClaude.allowedToolRules([
+      "Read",
+      "Bash(git add:*)",
+      "Bash(npm test)",
+      "Bash",
+      "mcp__github__create_issue",
+      "mcp__linear",
+      "Write",
+      "Frobnicate",
+      "Read(./secrets/**)",
+    ])
+    expect(result.rules).toEqual([
+      { permission: "read", pattern: "*", action: "allow" },
+      { permission: "bash", pattern: "git add *", action: "allow" },
+      { permission: "bash", pattern: "npm test", action: "allow" },
+      { permission: "bash", pattern: "*", action: "allow" },
+      { permission: "github_create_issue", pattern: "*", action: "allow" },
+      { permission: "linear_*", pattern: "*", action: "allow" },
+      { permission: "edit", pattern: "*", action: "allow" },
+    ])
+    expect(result.ignored).toEqual(["Frobnicate", "Read(./secrets/**)"])
+  })
 })

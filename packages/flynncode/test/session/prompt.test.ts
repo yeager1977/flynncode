@@ -2745,3 +2745,200 @@ it.instance("title generation falls back to the session model when the small tit
     expect((yield* llm.hits).filter(isTitleHit).map((hit) => hit.body.model)).toEqual(["test-small", "test-model"])
   }),
 )
+
+// Claude Code slash commands: `!` expansion is permission-checked and
+// `allowed-tools` grants rules to the turn that answers the command only.
+
+const writeClaudeCommand = Effect.fn("test.writeClaudeCommand")(function* (dir: string, name: string, text: string) {
+  yield* writeText(path.join(dir, ".claude", "commands", `${name}.md`), text)
+})
+
+const pendingBash = (sessionID: SessionID) =>
+  pollWithTimeout(
+    Effect.gen(function* () {
+      const permission = yield* Permission.Service
+      return (yield* permission.list()).find((item) => item.sessionID === sessionID && item.permission === "bash")
+    }),
+    "no bash permission request for the session",
+  )
+
+unix(
+  "Claude command inlines allowed ! output and @file references",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      yield* writeText(path.join(dir, "notes.txt"), "remember the milk")
+      yield* writeClaudeCommand(
+        dir,
+        "probe",
+        ["---", "description: Probe", "---", "Output: !`printf inlined-$((1 + 1))` and @notes.txt"].join("\n"),
+      )
+      const { prompt, sessions, chat } = yield* boot()
+      yield* llm.text("done")
+
+      const result = yield* prompt.command({ sessionID: chat.id, command: "probe", arguments: "" })
+
+      expect(result.info.role).toBe("assistant")
+      expect(JSON.stringify((yield* llm.inputs).at(-1)?.messages)).toContain("inlined-2")
+      const userMessage = (yield* sessions.messages({ sessionID: chat.id })).find((item) => item.info.role === "user")
+      expect(userMessage?.parts.some((part) => part.type === "file" && part.filename === "notes.txt")).toBe(true)
+    }),
+  { git: true },
+  30_000,
+)
+
+unix(
+  "command ! expansion denied by the bash permission aborts without a model call",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        permission: { bash: { "*": "allow", "touch *": "deny" } },
+      }))
+      yield* writeClaudeCommand(dir, "mark", "Mark: !`touch ran-marker`")
+      const { prompt, sessions, chat } = yield* boot()
+
+      const exit = yield* prompt.command({ sessionID: chat.id, command: "mark", arguments: "" }).pipe(Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        const err = Cause.squash(exit.cause)
+        expect(NamedError.Unknown.isInstance(err)).toBe(true)
+        if (NamedError.Unknown.isInstance(err)) expect(err.data.message).toContain("touch ran-marker")
+      }
+      expect(yield* llm.hits).toHaveLength(0)
+      expect(yield* sessions.messages({ sessionID: chat.id })).toHaveLength(0)
+      const afs = yield* FSUtil.Service
+      expect(yield* afs.existsSafe(path.join(dir, "ran-marker"))).toBe(false)
+    }),
+  { git: true },
+  30_000,
+)
+
+unix(
+  "command ! expansion asks the session for bash and a rejection aborts the command",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig((url) => ({ ...providerCfg(url), permission: { bash: "ask" } }))
+      yield* writeClaudeCommand(dir, "asked", "Asked: !`printf asked-output`")
+      const { prompt, chat } = yield* boot()
+
+      const running = yield* prompt
+        .command({ sessionID: chat.id, command: "asked", arguments: "" })
+        .pipe(Effect.forkChild)
+      const request = yield* pendingBash(chat.id)
+      expect(request.patterns).toEqual(["printf asked-output"])
+      expect(request.metadata.command).toBe("printf asked-output")
+      const permission = yield* Permission.Service
+      yield* permission.reply({ requestID: request.id, reply: "reject" })
+
+      const exit = yield* Fiber.await(running)
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(yield* llm.hits).toHaveLength(0)
+    }),
+  { git: true },
+  30_000,
+)
+
+unix(
+  "command allowed-tools grants Bash(git status:*) to its turn only",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig((url) => ({ ...providerCfg(url), permission: { bash: "ask" } }))
+      yield* writeClaudeCommand(
+        dir,
+        "status",
+        ["---", "allowed-tools: Bash(git status:*)", "---", "Status: !`git status --short`"].join("\n"),
+      )
+      const { prompt, sessions, chat } = yield* boot()
+      yield* llm.tool("bash", { command: "git status", description: "Show status" })
+      yield* llm.text("first done")
+
+      const first = yield* prompt.command({ sessionID: chat.id, command: "status", arguments: "" })
+      expect(first.info.role).toBe("assistant")
+      const afterFirst = yield* sessions.messages({ sessionID: chat.id })
+      const commandUser = afterFirst.find((item) => item.info.role === "user")
+      expect(commandUser?.info.role === "user" && commandUser.info.permission).toEqual([
+        { permission: "bash", pattern: "git status *", action: "allow" },
+      ])
+      const ran = afterFirst.flatMap((item) => item.parts).find((part) => part.type === "tool")
+      expect(ran?.type === "tool" && ran.state.status).toBe("completed")
+
+      yield* llm.tool("bash", { command: "git status", description: "Show status" })
+      yield* llm.text("second done")
+      const second = yield* prompt
+        .prompt({ sessionID: chat.id, agent: "build", parts: [{ type: "text", text: "again" }] })
+        .pipe(Effect.forkChild)
+      const request = yield* pendingBash(chat.id)
+      expect(request.patterns).toEqual(["git status"])
+      const permission = yield* Permission.Service
+      yield* permission.reply({ requestID: request.id, reply: "reject" })
+      yield* Fiber.await(second)
+
+      const users = (yield* sessions.messages({ sessionID: chat.id })).filter((item) => item.info.role === "user")
+      expect(users).toHaveLength(2)
+      expect(users[1].info.role === "user" && users[1].info.permission).toBeUndefined()
+      const reloaded = yield* sessions.get(chat.id)
+      expect(reloaded.permission ?? []).toEqual([])
+    }),
+  { git: true },
+  60_000,
+)
+
+const anthropicCfg = (url: string) => ({
+  ...providerCfg(url),
+  model: "test/test-model",
+  provider: {
+    ...providerCfg(url).provider,
+    anthropic: {
+      npm: "@ai-sdk/openai-compatible",
+      options: { apiKey: "test-key", baseURL: url },
+      models: {
+        "claude-opus-99": {
+          id: "claude-opus-99",
+          name: "Claude Opus 99",
+          family: "claude-opus",
+          release_date: "2099-01-01",
+          tool_call: true,
+          limit: { context: 100000, output: 10000 },
+        },
+      },
+    },
+  },
+})
+
+it.instance(
+  "command model alias resolves to the newest connected Anthropic model",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(anthropicCfg)
+      yield* writeClaudeCommand(dir, "deep", ["---", "model: opus", "---", "Think hard"].join("\n"))
+      const { prompt, chat } = yield* boot()
+      yield* llm.text("done")
+
+      const result = yield* prompt.command({ sessionID: chat.id, command: "deep", arguments: "" })
+
+      expect(result.info.role === "assistant" ? String(result.info.providerID) : undefined).toBe("anthropic")
+      expect(result.info.role === "assistant" ? String(result.info.modelID) : undefined).toBe("claude-opus-99")
+      expect((yield* llm.hits).at(-1)?.body.model).toBe("claude-opus-99")
+    }),
+  { git: true },
+  30_000,
+)
+
+it.instance(
+  "command model alias without a connected Anthropic model uses the current model",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig((url) => ({ ...providerCfg(url), model: "test/test-model" }))
+      yield* writeClaudeCommand(dir, "deep", ["---", "model: opus", "---", "Think hard"].join("\n"))
+      const { prompt, chat } = yield* boot()
+      yield* llm.text("done")
+
+      const result = yield* prompt.command({ sessionID: chat.id, command: "deep", arguments: "" })
+
+      expect(result.info.role === "assistant" ? String(result.info.modelID) : undefined).toBe("test-model")
+    }),
+  { git: true },
+  30_000,
+)

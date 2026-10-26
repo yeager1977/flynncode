@@ -31,6 +31,12 @@ import { Command } from "../command"
 import { pathToFileURL, fileURLToPath } from "url"
 import { Config } from "@/config/config"
 import { ConfigMarkdown } from "@/config/markdown"
+import { ConfigClaude } from "@/config/claude"
+import { ConfigPermissionV1 } from "@flynncode/core/v1/config/permission"
+import { ClaudeAlias } from "@/provider/claude-alias"
+import { Sandbox } from "@/permission/sandbox"
+import type { InstanceContext } from "@/project/instance-context"
+import { askPermission } from "@/tool/shell"
 import { Project } from "@/project/project"
 import { SessionSummary } from "./summary"
 import { NamedError } from "@flynncode/core/util/error"
@@ -690,7 +696,7 @@ const layer = Layer.effect(
       return yield* provider.defaultModel().pipe(Effect.orDie)
     })
 
-    const createUserMessage = Effect.fn("SessionPrompt.createUserMessage")(function* (input: PromptInput) {
+    const createUserMessage = Effect.fn("SessionPrompt.createUserMessage")(function* (input: AdmitInput) {
       // A steer/queue prompt joins the conversation already running, so it
       // keeps that conversation's agent instead of switching a steered
       // subagent to the default agent.
@@ -734,6 +740,7 @@ const layer = Layer.effect(
         },
         system: input.system,
         format: input.format,
+        ...(input.permission?.length ? { permission: [...input.permission] } : {}),
       }
 
       const current = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
@@ -1139,9 +1146,9 @@ const layer = Layer.effect(
       return hookExit.value.additionalContext
     })
 
-    const prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error> = Effect.fn(
+    const prompt: (input: AdmitInput) => Effect.Effect<SessionV1.WithParts, Image.Error> = Effect.fn(
       "SessionPrompt.prompt",
-    )(function* (input: PromptInput) {
+    )(function* (input: AdmitInput) {
       const promptContext = yield* runPromptSubmitHook(input)
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       yield* revert.cleanup(session)
@@ -1423,6 +1430,7 @@ const layer = Layer.effect(
               bypassAgentCheck,
               messages: msgs,
               promptOps,
+              turnPermission: lastUser.permission,
             }).pipe(
               Effect.provideService(Plugin.Service, plugin),
               Effect.provideService(HooksRunner.Service, hooksRunner),
@@ -1583,6 +1591,64 @@ const layer = Layer.effect(
       return yield* state.startShell(input.sessionID, lastAssistant(input.sessionID), shellImpl(input, ready), ready)
     })
 
+    // A command's `!` line asks the bash permission exactly like the shell tool,
+    // under the command's agent, the session rules and the command's
+    // `allowed-tools`. Anything but approval aborts the whole command.
+    const askShell = Effect.fn("SessionPrompt.askShell")(function* (input: {
+      sessionID: SessionID
+      command: string
+      line: string
+      shell: string
+      agent: Agent.Info
+      allowed: PermissionV1.Ruleset
+      ctx: InstanceContext
+    }) {
+      const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+      const cfg = yield* config.get()
+      const policy = ConfigPermissionV1.resolveSessionPolicy(cfg.permission ?? {})
+      const sandbox =
+        [session.metadata?.sandbox, cfg.agent?.[input.agent.name]?.sandbox].find(ConfigPermissionV1.isSandboxMode) ??
+        policy.sandbox
+      const ruleset = Permission.merge(input.agent.permission, session.permission ?? [])
+      const exit = yield* askPermission(
+        {
+          ask: (req) =>
+            Effect.gen(function* () {
+              if (req.permission === ShellID.ToolID && sandbox === "readonly")
+                return yield* new Sandbox.SandboxViolationError({ path: session.directory, level: sandbox })
+              return yield* permission.ask({
+                ...req,
+                sessionID: input.sessionID,
+                ruleset: Permission.withTurn(ruleset, input.allowed, req),
+                approval: policy.approval,
+              })
+            }).pipe(Effect.orDie),
+        },
+        { command: input.line, cwd: input.ctx.directory, shell: input.shell, instance: input.ctx },
+      ).pipe(
+        Effect.provideService(FSUtil.Service, fsys),
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        Effect.exit,
+      )
+      if (Exit.isSuccess(exit)) return
+      const cause = Cause.squash(exit.cause)
+      const reason =
+        cause instanceof PermissionV1.RejectedError || cause instanceof PermissionV1.CorrectedError
+          ? "the permission request was rejected"
+          : cause instanceof PermissionV1.DeniedError
+            ? "a permission rule denies it"
+            : cause instanceof Sandbox.SandboxViolationError
+              ? "the session sandbox is read-only"
+              : undefined
+      // Anything else is a defect (for example a parse failure): keep it.
+      if (!reason) return yield* Effect.failCause(exit.cause)
+      const error = new NamedError.Unknown({
+        message: `Command "${input.command}" stopped: running \`${input.line}\` is not allowed because ${reason}.`,
+      })
+      yield* events.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
+      throw error
+    })
+
     const command = Effect.fn("SessionPrompt.command")(function* (input: CommandInput) {
       yield* Effect.logInfo("command", {
         "session.id": input.sessionID,
@@ -1624,22 +1690,10 @@ const layer = Layer.effect(
         template = template + "\n\n" + input.arguments
       }
 
-      const shellMatches = ConfigMarkdown.shell(template)
-      if (shellMatches.length > 0) {
-        const cfg = yield* config.get()
-        const sh = Shell.preferred(cfg.shell)
-        const results = yield* Effect.promise(() =>
-          Promise.all(
-            shellMatches.map(async ([, cmd]) => (await Process.text([cmd], { shell: sh, nothrow: true })).text),
-          ),
-        )
-        let index = 0
-        template = template.replace(bashRegex, () => results[index++])
-      }
-      template = template.trim()
-
       const taskModel = yield* Effect.gen(function* () {
         if (cmd.model) return Provider.parseModel(cmd.model)
+        const aliased = cmd.claudeModel ? ClaudeAlias.resolve(cmd.claudeModel, yield* provider.list()) : undefined
+        if (aliased) return aliased
         if (cmd.agent) {
           const cmdAgent = yield* agents.get(cmd.agent)
           if (cmdAgent?.model) return cmdAgent.model
@@ -1658,6 +1712,35 @@ const layer = Layer.effect(
         yield* events.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
         throw error
       }
+
+      const allowed = ConfigClaude.allowedToolRules(cmd.allowedTools ?? [])
+      if (allowed.ignored.length)
+        yield* Effect.logWarning("command allowed-tools entries ignored", {
+          command: input.command,
+          tools: allowed.ignored,
+        })
+
+      const shellMatches = ConfigMarkdown.shell(template)
+      if (shellMatches.length > 0) {
+        const cfg = yield* config.get()
+        const sh = Shell.preferred(cfg.shell)
+        const ctx = yield* InstanceState.context
+        yield* Effect.forEach(
+          shellMatches,
+          ([, line]) => askShell({ ...input, line, shell: sh, agent, allowed: allowed.rules, ctx }),
+          { discard: true },
+        )
+        const results = yield* Effect.promise(() =>
+          Promise.all(
+            shellMatches.map(
+              async ([, line]) => (await Process.text([line], { shell: sh, cwd: ctx.directory, nothrow: true })).text,
+            ),
+          ),
+        )
+        let index = 0
+        template = template.replace(bashRegex, () => results[index++])
+      }
+      template = template.trim()
 
       const templateParts = yield* resolvePromptParts(template)
       const inputFiles = new Set(
@@ -1700,6 +1783,7 @@ const layer = Layer.effect(
         agent: userAgent,
         parts,
         variant: input.variant,
+        permission: allowed.rules,
       })
       yield* events.publish(Command.Event.Executed, {
         name: input.command,
@@ -1750,6 +1834,9 @@ export const PromptInput = Schema.Struct({
   ),
 })
 export type PromptInput = Schema.Schema.Type<typeof PromptInput>
+// Internal admission input: `permission` is granted to the turns answering the
+// admitted message only. It is not part of the public PromptInput schema.
+type AdmitInput = PromptInput & { readonly permission?: PermissionV1.Ruleset }
 
 export class LoopInput extends Schema.Class<LoopInput>("SessionPrompt.LoopInput")({
   sessionID: SessionID,

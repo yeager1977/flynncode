@@ -307,6 +307,20 @@ export function merge(...rulesets: PermissionV1.Ruleset[]): PermissionV1.Rule[] 
   return rulesets.flat()
 }
 
+// Adds rules granted to a single turn, such as a Claude command's
+// `allowed-tools`. They can turn an ask into an allow for this request, but a
+// request the standing rules deny stays denied.
+export function withTurn(
+  ruleset: PermissionV1.Ruleset,
+  turn: PermissionV1.Ruleset | undefined,
+  request: { permission: string; patterns: readonly string[] },
+): PermissionV1.Ruleset {
+  if (!turn?.length) return ruleset
+  if (request.patterns.some((pattern) => evaluate(request.permission, pattern, ruleset).action === "deny"))
+    return ruleset
+  return merge(ruleset, turn)
+}
+
 export function disabled(tools: string[], ruleset: PermissionV1.Ruleset): Set<string> {
   const edits = ["edit", "write", "apply_patch"]
   const reads = ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"]

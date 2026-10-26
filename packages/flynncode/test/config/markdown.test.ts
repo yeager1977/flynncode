@@ -246,3 +246,16 @@ describe("ConfigAgent: agent markdown frontmatter isolation keys", () => {
     expect(info?.prompt).toBe("Run the task in an isolated worktree.")
   })
 })
+
+describe("ConfigMarkdown: Claude command frontmatter with invalid YAML", async () => {
+  const result = await ConfigMarkdown.parse(import.meta.dir + "/fixtures/claude-command.md")
+
+  test("keeps hyphenated keys and reads invalid flow values as plain strings", () => {
+    expect(result.data["argument-hint"]).toBe("[pr-number] [priority]")
+    expect(result.data["allowed-tools"]).toBe("Bash(git add:*), Bash(git status:*)")
+    expect(result.data["disable-model-invocation"]).toBe(true)
+    expect(result.data.description).toBe("Review a pull request")
+    expect(result.data.tools).toEqual(["Read", "Grep"])
+    expect(result.content.trim()).toBe("Review PR $1 with priority $2.")
+  })
+})
