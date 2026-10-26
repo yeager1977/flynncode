@@ -40,14 +40,17 @@ const SCOPES: Record<string, string> = {
 const ALWAYS_SCOPED = ["external_directory", "doom_loop"]
 
 // Permission keys Flynncode's own tools and checks ask for: the built-in tool
-// ids from ToolRegistry plus keys asked outside a tool. There is no static
-// registry of them (tools register at runtime), so keep this list in step.
+// ids from ToolRegistry, the tools of Flynncode's internal plugins (preview,
+// Ollama model router) and keys asked outside a tool. There is no static
+// registry of them (tools register at runtime), so keep this list in step; a
+// registry test checks the built-in tool ids against it.
 // Flynncode names MCP tools `<server>_<tool>`, which can collide with these,
 // e.g. `mcp__external__directory` -> `external_directory`.
-const BUILTIN_PERMISSIONS = new Set([
+export const BUILTIN_PERMISSIONS = new Set([
   ...Object.values(TOOLS),
   "apply_patch",
   "archive",
+  "auth_status",
   "bash_output",
   "computer_use",
   "doom_loop",
@@ -68,10 +71,13 @@ const BUILTIN_PERMISSIONS = new Set([
   "notebook_edit",
   "plan_enter",
   "plan_exit",
+  "rank_models",
   "read_mcp_resource",
+  "route_task",
   "session_manage",
   "skill",
   "todoread",
+  "verify_page",
   "workflow_tool_approval",
   "write",
 ])

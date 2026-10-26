@@ -10,6 +10,7 @@ import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { TestConfig } from "../fixture/config"
 import { Config } from "@/config/config"
+import { ConfigClaude } from "@/config/claude"
 import { Plugin } from "@/plugin"
 import { Agent } from "@/agent/agent"
 import { InstanceState } from "@/effect/instance-state"
@@ -123,6 +124,17 @@ const withLspOff = testEffect(
   ]),
 )
 
+const withClient = (client: string) =>
+  testEffect(
+    LayerNode.compile(root, [
+      bootstrap,
+      [Config.node, configLayer],
+      [RuntimeFlags.node, RuntimeFlags.layer({ client })],
+    ]),
+  )
+const withAcp = withClient("acp")
+const withApp = withClient("app")
+
 afterEach(async () => {
   await disposeAllInstances()
 })
@@ -184,6 +196,36 @@ describe("tool.registry", () => {
         })).map((tool) => tool.id)
         expect(ids).toContain("notebook_edit")
       }
+    }),
+  )
+
+  // The plan tools block on a question card, which only question-capable
+  // clients can answer.
+  withAcp.instance("offers no plan mode tools to a client without the question tool", () =>
+    Effect.gen(function* () {
+      const ids = yield* (yield* ToolRegistry.Service).ids()
+      expect(ids).not.toContain("question")
+      expect(ids).not.toContain("enter_plan_mode")
+      expect(ids).not.toContain("exit_plan_mode")
+    }),
+  )
+
+  withApp.instance("offers the plan mode tools to a client with the question tool", () =>
+    Effect.gen(function* () {
+      const ids = yield* (yield* ToolRegistry.Service).ids()
+      expect(ids).toContain("question")
+      expect(ids).toContain("enter_plan_mode")
+      expect(ids).toContain("exit_plan_mode")
+    }),
+  )
+
+  // ConfigClaude keeps a static list of built-in permission keys so an MCP
+  // name cannot alias one; every built-in tool id must be on it.
+  withApp.instance("lists every built-in tool id among the built-in permissions", () =>
+    Effect.gen(function* () {
+      const ids = yield* (yield* ToolRegistry.Service).ids()
+      const missing = ids.filter((id) => !ConfigClaude.BUILTIN_PERMISSIONS.has(id))
+      expect(missing).toEqual([])
     }),
   )
 

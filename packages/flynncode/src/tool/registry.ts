@@ -293,8 +293,10 @@ const layer = Layer.effect(
             ...(tool.execute ? [tool.execute] : []),
             ...(tool.computer_use ? [tool.computer_use] : []),
             ...(cfg.lsp === false ? [] : [tool.lsp]),
-            tool.enter_plan_mode,
-            tool.exit_plan_mode,
+            // exit_plan_mode waits on a question card, so plan mode is only
+            // offered to clients that can answer one; without it the agent
+            // could enter plan mode and never leave.
+            ...(questionEnabled ? [tool.enter_plan_mode, tool.exit_plan_mode] : []),
           ],
           task: tool.task,
           read: tool.read,
