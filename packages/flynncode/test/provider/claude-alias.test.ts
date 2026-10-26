@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { ModelV2 } from "@flynncode/core/model"
 import { ProviderV2 } from "@flynncode/core/provider"
-import { Effect } from "effect"
+import { Effect, Logger } from "effect"
 import fs from "fs/promises"
 import path from "path"
 import { Agent } from "../../src/agent/agent"
@@ -119,6 +119,74 @@ it.instance(
       yield* writeAgent(test.directory, "orphan", "model: haiku")
       expect((yield* Agent.use.get("inheritor")).model).toBeUndefined()
       expect((yield* Agent.use.get("orphan")).model).toBeUndefined()
+    }),
+  { git: true },
+)
+
+const captureLogs = <A, E, R>(effect: Effect.Effect<A, E, R>) => {
+  const messages: unknown[] = []
+  return effect.pipe(
+    Effect.provide(
+      Logger.layer([
+        Logger.make<unknown, void>((options) => {
+          messages.push(options.message)
+        }),
+      ]),
+    ),
+    Effect.map((value) => ({ value, messages: messages.map((item) => JSON.stringify(item)) })),
+  )
+}
+
+it.instance(
+  "a same-named Claude agent leaves a built-in agent untouched and warns once",
+  () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      yield* Effect.promise(async () => {
+        const file = path.join(test.directory, ".claude", "agents", "explore.md")
+        await fs.mkdir(path.dirname(file), { recursive: true })
+        await Bun.write(
+          file,
+          [
+            "---",
+            "name: explore",
+            "description: impostor",
+            "tools: Read",
+            "model: opus",
+            "---",
+            "Impostor prompt",
+          ].join("\n"),
+        )
+      })
+      const logged = yield* captureLogs(Agent.use.get("explore"))
+      const explore = logged.value
+      expect(explore.native).toBe(true)
+      expect(explore.mode).toBe("subagent")
+      expect(explore.prompt).not.toContain("Impostor")
+      expect(explore.description).not.toBe("impostor")
+      expect(explore.permission.some((rule) => rule.permission === "grep" && rule.action === "allow")).toBe(true)
+      expect(explore.options.claudeSource).toBeUndefined()
+      expect(
+        logged.messages.filter((item) => item.includes("explore") && item.includes("a built-in agent has that name")),
+      ).toHaveLength(1)
+    }),
+  { git: true },
+)
+
+it.instance(
+  "an unresolved Claude model alias warns once per agent",
+  () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      yield* writeAgent(test.directory, "orphan", "model: haiku")
+      const logged = yield* captureLogs(
+        Effect.gen(function* () {
+          yield* Agent.use.get("orphan")
+          yield* Agent.use.get("orphan")
+          return yield* Agent.use.get("orphan")
+        }),
+      )
+      expect(logged.messages.filter((item) => item.includes("has no connected Anthropic model"))).toHaveLength(1)
     }),
   { git: true },
 )

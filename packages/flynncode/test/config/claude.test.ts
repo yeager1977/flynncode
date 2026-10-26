@@ -146,6 +146,19 @@ describe("ConfigClaude.loadAgents", () => {
     expect(result.agents.odd.color).toBeUndefined()
   })
 
+  test("maps orange, cyan and pink color names", async () => {
+    await using tmp = await tmpdir()
+    await writeAgents(tmp.path, {
+      "orange.md": agentFile({ name: "orange", description: "Orange", color: "orange" }),
+      "cyan.md": agentFile({ name: "cyan", description: "Cyan", color: "cyan" }),
+      "pink.md": agentFile({ name: "pink", description: "Pink", color: "pink" }),
+    })
+    const result = await ConfigClaude.loadAgents(path.join(tmp.path, ".claude"))
+    expect(result.agents.orange.color).toBe("warning")
+    expect(result.agents.cyan.color).toBe("info")
+    expect(result.agents.pink.color).toBe("secondary")
+  })
+
   test("keeps provider/model ids and stores aliases separately", async () => {
     await using tmp = await tmpdir()
     await writeAgents(tmp.path, {

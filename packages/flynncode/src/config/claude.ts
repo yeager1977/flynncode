@@ -67,7 +67,7 @@ export async function loadAgents(dir: string) {
       description: data.description.replaceAll("\\n", "\n"),
       prompt: md.content.trim(),
       mode: "subagent",
-      ...model(data.model),
+      ...model(data.model, file),
       ...(tools.permission ? { permission: tools.permission } : {}),
       ...color(data.color),
     })
@@ -114,12 +114,13 @@ function mcpPermission(item: string) {
   return `${sanitize(server)}_${sanitize(tool.join("__"))}`
 }
 
-function model(input: unknown) {
-  if (typeof input !== "string" || !input.trim()) return {}
-  const value = input.trim()
-  if (ALIASES.has(value)) return { options: { claudeModel: value } }
-  if (value.includes("/")) return { model: value }
-  return {}
+// `claudeSource` marks the entry as Claude-sourced for Agent, which strips it
+// before options reach a provider. Agent uses it to keep built-in agents safe.
+function model(input: unknown, file: string) {
+  const value = typeof input === "string" ? input.trim() : ""
+  if (ALIASES.has(value)) return { options: { claudeSource: file, claudeModel: value } }
+  if (value.includes("/")) return { model: value, options: { claudeSource: file } }
+  return { options: { claudeSource: file } }
 }
 
 function modelWarnings(input: unknown, file: string) {

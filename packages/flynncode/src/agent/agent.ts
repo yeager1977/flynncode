@@ -355,9 +355,19 @@ const layer = Layer.effect(
         }
 
         const claudeModels: Record<string, string> = {}
+        const warnedAliases = new Set<string>()
         for (const [key, value] of Object.entries(cfg.agent ?? {})) {
           if (value.disable) {
             delete agents[key]
+            continue
+          }
+          // Claude Code agents never touch a built-in agent that has their name;
+          // native config agents are not Claude-sourced and still override it.
+          const claudeSource = value.options?.claudeSource
+          if (typeof claudeSource === "string" && agents[key]?.native) {
+            yield* Effect.logWarning(
+              `Claude agent ${key} from ${claudeSource} ignored: a built-in agent has that name`,
+            )
             continue
           }
           let item = agents[key]
@@ -387,6 +397,7 @@ const layer = Layer.effect(
           const alias = item.options.claudeModel
           if (typeof alias === "string") claudeModels[key] = alias
           delete item.options.claudeModel
+          delete item.options.claudeSource
         }
 
         // Ensure Truncate.GLOB is allowed unless explicitly configured
@@ -414,11 +425,13 @@ const layer = Layer.effect(
           if (!info || info.model || !alias) return info
           const model = ClaudeAlias.resolve(alias, yield* provider.list())
           if (model) return { ...info, model }
-          if (alias !== "inherit")
+          if (alias !== "inherit" && !warnedAliases.has(agent)) {
+            warnedAliases.add(agent)
             yield* Effect.logWarning("Claude model alias has no connected Anthropic model; using the session model", {
               agent,
               alias,
             })
+          }
           return info
         })
 
