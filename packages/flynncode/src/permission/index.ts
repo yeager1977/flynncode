@@ -308,16 +308,17 @@ export function merge(...rulesets: PermissionV1.Ruleset[]): PermissionV1.Rule[] 
 }
 
 // Adds rules granted to a single turn, such as a Claude command's
-// `allowed-tools`. They can turn an ask into an allow for this request, but a
-// request the standing rules deny stays denied.
+// `allowed-tools`. Like Claude (deny, then ask, then allow) they only widen a
+// blanket ask: a request the standing rules deny, or ask for through a specific
+// pattern such as `*.env` or `git push *`, keeps the standing result.
 export function withTurn(
   ruleset: PermissionV1.Ruleset,
   turn: PermissionV1.Ruleset | undefined,
   request: { permission: string; patterns: readonly string[] },
 ): PermissionV1.Ruleset {
   if (!turn?.length) return ruleset
-  if (request.patterns.some((pattern) => evaluate(request.permission, pattern, ruleset).action === "deny"))
-    return ruleset
+  const standing = request.patterns.map((pattern) => evaluate(request.permission, pattern, ruleset))
+  if (standing.some((rule) => rule.action === "deny" || (rule.action === "ask" && rule.pattern !== "*"))) return ruleset
   return merge(ruleset, turn)
 }
 

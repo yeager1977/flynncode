@@ -396,6 +396,9 @@ const collect = Effect.fn("ShellTool.collect")(function* (
 // Asks the permissions the shell tool asks before it runs `command` in `cwd`:
 // external_directory for paths outside the project, then bash for the command
 // patterns. Slash command `!` expansion reuses it so both are gated alike.
+// It does not apply the session sandbox: callers must deny bash under a
+// readonly sandbox in their `ask` themselves (as session/tools.ts and
+// SessionPrompt.command do), or the command runs unsandboxed once approved.
 export const askPermission = Effect.fn("ShellTool.askPermission")(function* (
   ctx: Pick<Tool.Context, "ask">,
   input: { command: string; cwd: string; shell: string; instance: InstanceContext },

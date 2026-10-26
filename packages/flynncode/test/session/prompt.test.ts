@@ -2848,7 +2848,7 @@ unix(
       yield* writeClaudeCommand(
         dir,
         "status",
-        ["---", "allowed-tools: Bash(git status:*)", "---", "Status: !`git status --short`"].join("\n"),
+        ["---", "allowed-tools: Bash(git status:*)", "---", "Show the repository status"].join("\n"),
       )
       const { prompt, sessions, chat } = yield* boot()
       yield* llm.tool("bash", { command: "git status", description: "Show status" })
@@ -2883,6 +2883,60 @@ unix(
     }),
   { git: true },
   60_000,
+)
+
+unix(
+  "command allowed-tools never pre-authorize the command's own ! lines",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig((url) => ({ ...providerCfg(url), permission: { bash: "ask" } }))
+      yield* writeClaudeCommand(dir, "greet", ["---", "allowed-tools: Bash", "---", "Say: !`echo hi`"].join("\n"))
+      const { prompt, chat } = yield* boot()
+
+      const running = yield* prompt
+        .command({ sessionID: chat.id, command: "greet", arguments: "" })
+        .pipe(Effect.forkChild)
+      const request = yield* pendingBash(chat.id)
+      expect(request.patterns).toEqual(["echo hi"])
+      const permission = yield* Permission.Service
+      yield* permission.reply({ requestID: request.id, reply: "reject" })
+
+      const exit = yield* Fiber.await(running)
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(yield* llm.hits).toHaveLength(0)
+    }),
+  { git: true },
+  30_000,
+)
+
+unix(
+  "command allowed-tools Read still asks before reading a .env file",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      yield* writeText(path.join(dir, ".env"), "SECRET=1")
+      yield* writeClaudeCommand(dir, "peek", ["---", "allowed-tools: Read", "---", "Read the env file"].join("\n"))
+      const { prompt, chat } = yield* boot()
+      yield* llm.tool("read", { filePath: path.join(dir, ".env") })
+      yield* llm.text("done")
+
+      const running = yield* prompt
+        .command({ sessionID: chat.id, command: "peek", arguments: "" })
+        .pipe(Effect.forkChild)
+      const request = yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const permission = yield* Permission.Service
+          return (yield* permission.list()).find((item) => item.sessionID === chat.id && item.permission === "read")
+        }),
+        "no read permission request for the session",
+      )
+      expect(request.patterns).toEqual([".env"])
+      const permission = yield* Permission.Service
+      yield* permission.reply({ requestID: request.id, reply: "reject" })
+      yield* Fiber.await(running)
+    }),
+  { git: true },
+  30_000,
 )
 
 const anthropicCfg = (url: string) => ({

@@ -34,21 +34,36 @@ export function sanitize(content: string) {
     const flow = flowEnd(value)
     if (flow === value.length - 1) return [line]
     if (flow === undefined && !value.includes(":")) return [line]
-    // An unterminated flow collection stays invalid so the file is reported.
-    if (flow === -1) return [line]
+    // An unterminated flow collection stays invalid so the file is reported,
+    // unless a colon makes it one of the strings this fallback always rescued.
+    if (flow === -1 && !value.includes(":")) return [line]
     return [`${entry[1]}: |-`, `  ${value}`]
   })
   return content.replace(frontmatter, () => result.join("\n"))
 }
 
 // Index where a value's leading `[...]` or `{...}` closes, -1 when it never
-// closes, undefined when the value is not a flow collection.
+// closes, undefined when the value is not a flow collection. Brackets inside
+// quoted scalars do not count. A quote opens a scalar only at the start of a
+// node, so the apostrophe in `[it's]` is plain text.
 function flowEnd(value: string) {
   if (!value.startsWith("[") && !value.startsWith("{")) return undefined
   let depth = 0
+  let quote = ""
   for (let index = 0; index < value.length; index++) {
-    if (value[index] === "[" || value[index] === "{") depth++
-    if (value[index] === "]" || value[index] === "}") depth--
+    const char = value[index]
+    if (quote) {
+      // `\"` and `''` are escaped quotes inside the scalar.
+      if ((char === "\\" && quote === '"') || (char === "'" && quote === "'" && value[index + 1] === "'")) {
+        index++
+        continue
+      }
+      if (char === quote) quote = ""
+      continue
+    }
+    if ((char === '"' || char === "'") && /[[{,:]$/.test(value.slice(0, index).trimEnd())) quote = char
+    if (char === "[" || char === "{") depth++
+    if (char === "]" || char === "}") depth--
     if (depth === 0) return index
   }
   return -1

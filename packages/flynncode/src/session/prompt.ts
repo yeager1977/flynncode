@@ -1592,15 +1592,16 @@ const layer = Layer.effect(
     })
 
     // A command's `!` line asks the bash permission exactly like the shell tool,
-    // under the command's agent, the session rules and the command's
-    // `allowed-tools`. Anything but approval aborts the whole command.
+    // under the command's agent and the session rules only. The command's own
+    // `allowed-tools` apply to the model's turn, never to its `!` lines, so a
+    // command file cannot pre-authorize what it runs before anyone sees it.
+    // Anything but approval aborts the whole command.
     const askShell = Effect.fn("SessionPrompt.askShell")(function* (input: {
       sessionID: SessionID
       command: string
       line: string
       shell: string
       agent: Agent.Info
-      allowed: PermissionV1.Ruleset
       ctx: InstanceContext
     }) {
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
@@ -1619,7 +1620,7 @@ const layer = Layer.effect(
               return yield* permission.ask({
                 ...req,
                 sessionID: input.sessionID,
-                ruleset: Permission.withTurn(ruleset, input.allowed, req),
+                ruleset,
                 approval: policy.approval,
               })
             }).pipe(Effect.orDie),
@@ -1727,7 +1728,7 @@ const layer = Layer.effect(
         const ctx = yield* InstanceState.context
         yield* Effect.forEach(
           shellMatches,
-          ([, line]) => askShell({ ...input, line, shell: sh, agent, allowed: allowed.rules, ctx }),
+          ([, line]) => askShell({ ...input, line, shell: sh, agent, ctx }),
           { discard: true },
         )
         const results = yield* Effect.promise(() =>

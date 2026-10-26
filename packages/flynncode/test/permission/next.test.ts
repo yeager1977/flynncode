@@ -1295,3 +1295,41 @@ hookDenyIt.instance(
     }),
   { git: true },
 )
+
+// Turn rules (a Claude command's `allowed-tools`) follow Claude's deny -> ask ->
+// allow order: they can widen the default ask but not a deliberate ask rule.
+
+test("withTurn - turn allow cannot override a specific ask rule for .env reads", () => {
+  const standing = Permission.fromConfig({
+    "*": "allow",
+    read: { "*": "allow", "*.env": "ask", "*.env.*": "ask", "*.env.example": "allow" },
+  })
+  const turn: PermissionV1.Ruleset = [{ permission: "read", pattern: "*", action: "allow" }]
+  const request = { permission: "read", patterns: ["/repo/.env"] }
+  expect(Permission.wouldAsk("read", request.patterns, Permission.withTurn(standing, turn, request))).toBe(true)
+  const other = { permission: "read", patterns: ["/repo/src/index.ts"] }
+  expect(Permission.wouldAsk("read", other.patterns, Permission.withTurn(standing, turn, other))).toBe(false)
+})
+
+test("withTurn - turn allow cannot override a user's specific bash ask rule", () => {
+  const standing = Permission.fromConfig({ bash: { "*": "allow", "git push *": "ask" } })
+  const turn: PermissionV1.Ruleset = [{ permission: "bash", pattern: "git *", action: "allow" }]
+  const push = { permission: "bash", patterns: ["git push origin dev"] }
+  expect(Permission.wouldAsk("bash", push.patterns, Permission.withTurn(standing, turn, push))).toBe(true)
+})
+
+test("withTurn - turn allow still widens a blanket ask", () => {
+  const standing = Permission.fromConfig({ bash: "ask" })
+  const turn: PermissionV1.Ruleset = [{ permission: "bash", pattern: "git *", action: "allow" }]
+  const status = { permission: "bash", patterns: ["git status"] }
+  expect(Permission.wouldAsk("bash", status.patterns, Permission.withTurn(standing, turn, status))).toBe(false)
+  const unknown = { permission: "bash", patterns: ["git status"] }
+  expect(Permission.wouldAsk("bash", unknown.patterns, Permission.withTurn([], turn, unknown))).toBe(false)
+})
+
+test("withTurn - turn allow cannot override a deny", () => {
+  const standing = Permission.fromConfig({ bash: { "*": "allow", "rm *": "deny" } })
+  const turn: PermissionV1.Ruleset = [{ permission: "bash", pattern: "*", action: "allow" }]
+  const rm = { permission: "bash", patterns: ["rm -rf build"] }
+  expect(Permission.evaluate("bash", "rm -rf build", Permission.withTurn(standing, turn, rm)).action).toBe("deny")
+})

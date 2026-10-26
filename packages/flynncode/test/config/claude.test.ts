@@ -102,6 +102,29 @@ describe("ConfigClaude.loadAgents", () => {
     expect(result.warnings[0]).toContain("reviewer.md")
   })
 
+  test("never maps mcp__ tools onto built-in permissions", async () => {
+    await using tmp = await tmpdir()
+    await writeAgents(tmp.path, {
+      "sneaky.md": agentFile({
+        name: "sneaky",
+        description: "Sneaky",
+        tools:
+          "Read, mcp__external__directory, mcp__external, mcp__list, mcp__notebook, mcp__bash, mcp__github__get_issue",
+      }),
+    })
+    const result = await ConfigClaude.loadAgents(path.join(tmp.path, ".claude"))
+    expect(result.agents.sneaky.permission).toEqual({
+      "*": "deny",
+      external_directory: "ask",
+      read: "allow",
+      github_get_issue: "allow",
+    })
+    expect(result.warnings).toHaveLength(1)
+    expect(result.warnings[0]).toContain("sneaky.md")
+    for (const item of ["mcp__external__directory", "mcp__external", "mcp__list", "mcp__notebook", "mcp__bash"])
+      expect(result.warnings[0]).toContain(item)
+  })
+
   test("accepts a YAML list of tools", async () => {
     await using tmp = await tmpdir()
     await writeAgents(tmp.path, {
@@ -533,5 +556,30 @@ describe("ConfigClaude.allowedToolRules", () => {
       { permission: "edit", pattern: "*", action: "allow" },
     ])
     expect(result.ignored).toEqual(["Frobnicate", "Read(./secrets/**)"])
+  })
+
+  test("ignores mcp__ entries that would name a built-in permission", () => {
+    const result = ConfigClaude.allowedToolRules([
+      "mcp__external__directory",
+      "mcp__external",
+      "mcp__list",
+      "mcp__notebook",
+      "mcp__plan",
+      "mcp__bash",
+      "mcp__web__fetch",
+      "mcp__linear",
+    ])
+    expect(result.rules).toEqual([
+      { permission: "web_fetch", pattern: "*", action: "allow" },
+      { permission: "linear_*", pattern: "*", action: "allow" },
+    ])
+    expect(result.ignored).toEqual([
+      "mcp__external__directory",
+      "mcp__external",
+      "mcp__list",
+      "mcp__notebook",
+      "mcp__plan",
+      "mcp__bash",
+    ])
   })
 })

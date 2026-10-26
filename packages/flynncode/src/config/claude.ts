@@ -3,6 +3,7 @@ export * as ConfigClaude from "./claude"
 import path from "path"
 import { Exit, Schema } from "effect"
 import { Glob } from "@flynncode/core/util/glob"
+import { Wildcard } from "@flynncode/core/util/wildcard"
 import { ConfigAgentV1 } from "@flynncode/core/v1/config/agent"
 import { ConfigCommandV1 } from "@flynncode/core/v1/config/command"
 import type { PermissionV1 } from "@flynncode/core/v1/permission"
@@ -26,6 +27,42 @@ const TOOLS: Record<string, string> = {
   NotebookEdit: "notebook_edit",
   AskUserQuestion: "question",
 }
+
+// Permission keys Flynncode's own tools and checks ask for: the built-in tool
+// ids from ToolRegistry plus keys asked outside a tool. There is no static
+// registry of them (tools register at runtime), so keep this list in step.
+// Flynncode names MCP tools `<server>_<tool>`, which can collide with these,
+// e.g. `mcp__external__directory` -> `external_directory`.
+const BUILTIN_PERMISSIONS = new Set([
+  ...Object.values(TOOLS),
+  "apply_patch",
+  "archive",
+  "bash_output",
+  "computer_use",
+  "doom_loop",
+  "enter_plan_mode",
+  "execute",
+  "exit_plan_mode",
+  "external_directory",
+  "invalid",
+  "kill_shell",
+  "list",
+  "list_mcp_resource_templates",
+  "list_mcp_resources",
+  "lsp",
+  "memory",
+  "message",
+  "monitor",
+  "multiedit",
+  "plan_enter",
+  "plan_exit",
+  "read_mcp_resource",
+  "session_manage",
+  "skill",
+  "todoread",
+  "workflow_tool_approval",
+  "write",
+])
 
 const COLORS: Record<string, ConfigAgentV1.Info["color"]> = {
   red: "error",
@@ -150,7 +187,10 @@ export function allowedToolRules(tools: readonly string[]) {
 }
 
 function allowedToolRule(item: string): PermissionV1.Rule | undefined {
-  if (item.startsWith("mcp__")) return { permission: mcpPermission(item), pattern: "*", action: "allow" }
+  if (item.startsWith("mcp__")) {
+    const permission = mcpPermission(item)
+    return permission ? { permission, pattern: "*", action: "allow" } : undefined
+  }
   const match = item.match(/^(\w+)(?:\((.*)\))?$/)
   const permission = match && Object.hasOwn(TOOLS, match[1]) ? TOOLS[match[1]] : undefined
   if (!match || !permission) return undefined
@@ -194,31 +234,37 @@ function toolPermissions(input: unknown, file: string) {
   const names = (Array.isArray(input) ? input : String(input).split(","))
     .map((item) => String(item).trim())
     .filter(Boolean)
-  const unknown = names.filter((item) => !TOOLS[item] && !item.startsWith("mcp__"))
-  const allowed = names.flatMap((item) => {
-    if (TOOLS[item]) return [TOOLS[item]]
-    if (item.startsWith("mcp__")) return [mcpPermission(item)]
-    return []
-  })
+  const allowed = names.map((item) => ({
+    item,
+    permission: Object.hasOwn(TOOLS, item) ? TOOLS[item] : item.startsWith("mcp__") ? mcpPermission(item) : undefined,
+  }))
+  const unknown = allowed.filter((entry) => !entry.permission).map((entry) => entry.item)
   return {
     // `*: deny` also covers external_directory; restore the default prompt so
     // allowed file tools can still ask to reach outside the project.
     permission: {
       "*": "deny" as const,
       external_directory: "ask" as const,
-      ...Object.fromEntries(allowed.map((item) => [item, "allow" as const])),
+      ...Object.fromEntries(
+        allowed.flatMap((entry) => (entry.permission ? [[entry.permission, "allow" as const]] : [])),
+      ),
     },
-    warnings: unknown.length ? [`Claude agent ${file}: ignored unknown tools ${unknown.join(", ")}`] : [],
+    warnings: unknown.length
+      ? [`Claude agent ${file}: ignored unknown tools or MCP names of built-in permissions ${unknown.join(", ")}`]
+      : [],
   }
 }
 
 // Claude names MCP tools `mcp__<server>__<tool>` (or `mcp__<server>` for the
-// whole server); Flynncode registers them as `<server>_<tool>`.
+// whole server); Flynncode registers them as `<server>_<tool>`. A name that is,
+// or whose `<server>_*` covers, a built-in permission is undefined: granting it
+// would grant that built-in instead.
 function mcpPermission(item: string) {
   const [server, ...tool] = item.slice("mcp__".length).split("__")
   const sanitize = (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, "_")
-  if (!tool.length) return `${sanitize(server)}_*`
-  return `${sanitize(server)}_${sanitize(tool.join("__"))}`
+  const permission = tool.length ? `${sanitize(server)}_${sanitize(tool.join("__"))}` : `${sanitize(server)}_*`
+  if (BUILTIN_PERMISSIONS.values().some((key) => Wildcard.match(key, permission))) return undefined
+  return permission
 }
 
 // `claudeSource` marks the entry as Claude-sourced for Agent, which strips it
