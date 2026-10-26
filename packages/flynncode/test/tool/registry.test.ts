@@ -139,6 +139,24 @@ describe("tool.registry", () => {
     }),
   )
 
+  it.instance("offers multiedit wherever edit is offered and hides it for gpt models", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agents = yield* Agent.Service
+      const agent = yield* agents.defaultInfo()
+
+      for (const modelID of ["glm-5.3-flash", "claude-sonnet-4", "gpt-5"]) {
+        const ids = (yield* registry.tools({
+          providerID: ProviderV2.ID.opencode,
+          modelID: ModelV2.ID.make(modelID),
+          agent,
+        })).map((tool) => tool.id)
+        expect(ids.includes("multiedit")).toBe(ids.includes("edit"))
+        expect(ids.includes("multiedit")).toBe(modelID !== "gpt-5")
+      }
+    }),
+  )
+
   it.instance("does not expose task_status", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service

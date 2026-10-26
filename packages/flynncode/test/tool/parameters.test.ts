@@ -15,6 +15,7 @@ import { Parameters as Glob } from "../../src/tool/glob"
 import { Parameters as Grep } from "../../src/tool/grep"
 import { Parameters as Invalid } from "../../src/tool/invalid"
 import { Parameters as Lsp } from "../../src/tool/lsp"
+import { Parameters as MultiEdit } from "../../src/tool/multiedit"
 import { Parameters as Plan } from "../../src/tool/plan"
 import { Parameters as Question } from "../../src/tool/question"
 import { Parameters as Read } from "../../src/tool/read"
@@ -43,6 +44,7 @@ describe("tool parameters", () => {
     test("grep", () => expect(toJsonSchema(Grep)).toMatchSnapshot())
     test("invalid", () => expect(toJsonSchema(Invalid)).toMatchSnapshot())
     test("lsp", () => expect(toJsonSchema(Lsp)).toMatchSnapshot())
+    test("multiedit", () => expect(toJsonSchema(MultiEdit)).toMatchSnapshot())
     test("plan", () => expect(toJsonSchema(Plan)).toMatchSnapshot())
     test("question", () => expect(toJsonSchema(Question)).toMatchSnapshot())
     test("read", () => expect(toJsonSchema(Read)).toMatchSnapshot())
@@ -134,6 +136,20 @@ describe("tool parameters", () => {
     })
     test("rejects missing filePath", () => {
       expect(accepts(Edit, { oldString: "x", newString: "y" })).toBe(false)
+    })
+  })
+
+  describe("multiedit", () => {
+    test("accepts an ordered list of edits", () => {
+      expect(
+        parse(MultiEdit, { file_path: "/a", edits: [{ old_string: "x", new_string: "y", replace_all: true }] }),
+      ).toEqual({ file_path: "/a", edits: [{ old_string: "x", new_string: "y", replace_all: true }] })
+    })
+    test("rejects an empty edits list", () => {
+      expect(accepts(MultiEdit, { file_path: "/a", edits: [] })).toBe(false)
+    })
+    test("rejects missing file_path", () => {
+      expect(accepts(MultiEdit, { edits: [{ old_string: "x", new_string: "y" }] })).toBe(false)
     })
   })
 

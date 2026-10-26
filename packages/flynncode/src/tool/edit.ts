@@ -19,22 +19,22 @@ import { assertExternalDirectoryEffect } from "./external-directory"
 import { FSUtil } from "@flynncode/core/fs-util"
 import * as Bom from "@/util/bom"
 
-function normalizeLineEndings(text: string): string {
+export function normalizeLineEndings(text: string): string {
   return text.replaceAll("\r\n", "\n")
 }
 
-function detectLineEnding(text: string): "\n" | "\r\n" {
+export function detectLineEnding(text: string): "\n" | "\r\n" {
   return text.includes("\r\n") ? "\r\n" : "\n"
 }
 
-function convertToLineEnding(text: string, ending: "\n" | "\r\n"): string {
+export function convertToLineEnding(text: string, ending: "\n" | "\r\n"): string {
   if (ending === "\n") return text
   return text.replaceAll("\n", "\r\n")
 }
 
 const locks = new Map<string, Semaphore.Semaphore>()
 
-function lock(filePath: string) {
+export function lock(filePath: string) {
   const resolvedFilePath = FSUtil.resolve(filePath)
   const hit = locks.get(resolvedFilePath)
   if (hit) return hit
