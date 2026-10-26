@@ -1,0 +1,12 @@
+Load deferred MCP tools so you can call them.
+
+Some MCP tools are deferred: only their names are listed in the system prompt, and calling one before it is loaded fails. Use this tool to fetch their full descriptions and parameter schemas; every tool it returns is loaded and can be called directly afterwards.
+
+Query forms:
+- "select:server_tool_a,server_tool_b" loads those exact tool names.
+- Any other query is a keyword search over tool names, descriptions and parameters, e.g. "github issues" or "navigate browser".
+
+Usage notes:
+- max_results limits keyword search results (default 5, maximum 20). It does not limit select: queries.
+- Prefer select: when you already know the names from the deferred tools list.
+- If nothing matches, the closest tool names are suggested instead.

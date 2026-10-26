@@ -1,4 +1,5 @@
 import { Cause, Effect, Schema } from "effect"
+import { Search } from "./search.js"
 import { ToolError, toolError } from "./tool-error.js"
 import {
   decodeInput as decodeToolInput,
@@ -356,33 +357,6 @@ export type SearchEntry = {
   readonly searchText: string
 }
 
-/**
- * Split a query into lowercased search terms. camelCase boundaries are split
- * (`resolveLibrary` -> `resolve library`) and every non-alphanumeric character is a
- * separator, so `resolve-library-id`, `resolveLibraryId`, and `resolve library id` all
- * tokenize alike. Empties and the `*` wildcard are dropped.
- */
-const tokenize = (query: string): Array<string> =>
-  query
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((term) => term.length > 0 && term !== "*")
-
-/**
- * A term plus its naive singular variants (trailing "s"/"es" stripped), so a plural
- * query term ("issues") still matches indexed text that only carries the singular
- * ("issue"). Matching is one-directional substring containment, so the variants are
- * needed only on the query side; scoring weights are unchanged - each field check
- * passes when ANY form matches.
- */
-const termForms = (term: string): Array<string> => {
-  const forms = [term]
-  if (term.endsWith("es") && term.length > 3) forms.push(term.slice(0, -2))
-  if (term.endsWith("s") && term.length > 2) forms.push(term.slice(0, -1))
-  return forms
-}
-
 const makeSearchTool = (searchIndex: ReadonlyArray<SearchEntry>): Definition => ({
   _tag: "CodeModeTool",
   description: "Search available Code Mode tools",
@@ -407,26 +381,21 @@ const makeSearchTool = (searchIndex: ReadonlyArray<SearchEntry>): Definition => 
           : scoped.find(
               (entry) => entry.description.path === pathQuery || toolExpression(entry.description.path) === trimmed,
             )
-      const terms = tokenize(query).map(termForms)
-      // Additive field-weighted scoring, summed across terms: exact path or path segment
-      // (20) > path substring (8) > description substring (4) > any searchable text,
-      // including input parameter names and descriptions (2).
+      const terms = Search.terms(query)
       const ranked =
         exact !== undefined
           ? [exact]
           : scoped
               .map((entry) => {
                 const path = entry.description.path.toLowerCase()
-                const description = entry.description.description.toLowerCase()
-                const score = terms.reduce(
-                  (total, forms) =>
-                    total +
-                    (forms.some((form) => path === form || path.endsWith(`.${form}`)) ? 20 : 0) +
-                    (forms.some((form) => path.includes(form)) ? 8 : 0) +
-                    (forms.some((form) => description.includes(form)) ? 4 : 0) +
-                    (forms.some((form) => entry.searchText.includes(form)) ? 2 : 0),
-                  0,
-                )
+                // Search terms never contain ".", so the final segment stands in for
+                // "the path ends with .<term>".
+                const score = Search.score(terms, {
+                  names: [path, path.slice(path.lastIndexOf(".") + 1)],
+                  path,
+                  description: entry.description.description.toLowerCase(),
+                  searchText: entry.searchText,
+                })
                 return { entry, score }
               })
               .filter(({ score }) => terms.length === 0 || score > 0)
