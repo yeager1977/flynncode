@@ -350,7 +350,9 @@ export function restrict(
         overlaps: mayOverlap(rule.permission, scope.permission) && mayOverlap(rule.pattern, scope.pattern),
       }))
       const exact = parts.flatMap((part) =>
-        part.permission && part.pattern ? [{ permission: part.permission, pattern: part.pattern, action: rule.action }] : [],
+        part.permission && part.pattern
+          ? [{ permission: part.permission, pattern: part.pattern, action: rule.action }]
+          : [],
       )
       const unknown = parts.some((part) => part.overlaps && !(part.permission && part.pattern))
       return unknown && rule.action !== "allow" ? [{ ...rule, action: "deny" as const }, ...exact] : exact

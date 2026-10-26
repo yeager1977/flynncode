@@ -29,7 +29,10 @@ const writeAgent = (root: string, name: string, tools: string) =>
   Effect.promise(async () => {
     const file = path.join(root, ".claude", "agents", `${name}.md`)
     await fs.mkdir(path.dirname(file), { recursive: true })
-    await Bun.write(file, ["---", `name: ${name}`, `description: ${name}`, `tools: ${tools}`, "---", "Prompt"].join("\n"))
+    await Bun.write(
+      file,
+      ["---", `name: ${name}`, `description: ${name}`, `tools: ${tools}`, "---", "Prompt"].join("\n"),
+    )
   })
 
 const getAgent = (name: string) => Agent.Service.use((svc) => svc.get(name))
@@ -101,7 +104,16 @@ it.instance(
         agent?.permission ?? [],
       )
       expect([...hidden].toSorted()).toEqual(
-        ["edit", "github_create_issue", "multiedit", "skill", "slack_send_message", "task", "webfetch", "write"].toSorted(),
+        [
+          "edit",
+          "github_create_issue",
+          "multiedit",
+          "skill",
+          "slack_send_message",
+          "task",
+          "webfetch",
+          "write",
+        ].toSorted(),
       )
       expect(action(agent, "github_get_issue")).toBe("allow")
       expect(action(agent, "linear_create_issue")).toBe("allow")

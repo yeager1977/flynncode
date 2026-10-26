@@ -1641,7 +1641,8 @@ const layer = Layer.effect(
               return yield* permission.ask({
                 ...req,
                 sessionID: input.sessionID,
-                ruleset: input.untrusted && req.permission === ShellID.ToolID ? specificAllowOnly(ruleset, req) : ruleset,
+                ruleset:
+                  input.untrusted && req.permission === ShellID.ToolID ? specificAllowOnly(ruleset, req) : ruleset,
                 approval: policy.approval,
               })
             }).pipe(Effect.orDie),
@@ -1871,7 +1872,10 @@ type AdmitInput = PromptInput & {
 // Forces an ask for bash patterns that only a blanket `*` allow rule permits,
 // leaving denies and specific allow rules (such as `git status *`) in force.
 function specificAllowOnly(ruleset: PermissionV1.Ruleset, req: { permission: string; patterns: readonly string[] }) {
-  const standing = req.patterns.map((pattern) => ({ pattern, rule: Permission.evaluate(req.permission, pattern, ruleset) }))
+  const standing = req.patterns.map((pattern) => ({
+    pattern,
+    rule: Permission.evaluate(req.permission, pattern, ruleset),
+  }))
   // An added ask rule is a glob and may cover other patterns; with a deny in
   // play, leave the ruleset alone so the deny is what the user sees.
   if (standing.some((item) => item.rule.action === "deny")) return ruleset
