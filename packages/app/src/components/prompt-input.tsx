@@ -714,6 +714,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       trigger: cmd.name,
       title: cmd.name,
       description: cmd.description,
+      argumentHint: cmd.argumentHint,
       type: "custom" as const,
       // source: cmd.source,
     }))

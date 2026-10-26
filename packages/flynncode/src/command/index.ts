@@ -29,9 +29,19 @@ export const Info = Schema.Struct({
   template: Schema.Unknown,
   subtask: Schema.optional(Schema.Boolean),
   hints: Schema.Array(Schema.String),
+  // Claude Code slash command frontmatter (`argument-hint`, `allowed-tools`,
+  // `disable-model-invocation`).
+  argumentHint: Schema.optional(Schema.String),
+  allowedTools: Schema.optional(Schema.Array(Schema.String)),
+  disableModelInvocation: Schema.optional(Schema.Boolean),
 }).annotate({ identifier: "Command" })
 
-export type Info = Omit<Schema.Schema.Type<typeof Info>, "template"> & { template: Promise<string> | string }
+export type Info = Omit<Schema.Schema.Type<typeof Info>, "template"> & {
+  template: Promise<string> | string
+  // Claude model alias, resolved when the command runs. Kept off the public
+  // schema so it is never serialized to clients.
+  claudeModel?: string
+}
 
 export function hints(template: string) {
   const result: string[] = []
@@ -91,6 +101,10 @@ const layer = Layer.effect(
       }
 
       for (const [name, command] of Object.entries(cfg.command ?? {})) {
+        if (command.claudeSource && commands[name]) {
+          yield* Effect.logWarning("Claude Code command ignored: it would override a built-in command", { name })
+          continue
+        }
         commands[name] = {
           name,
           agent: command.agent,
@@ -102,6 +116,10 @@ const layer = Layer.effect(
           },
           subtask: command.subtask,
           hints: hints(command.template),
+          argumentHint: command.argumentHint,
+          allowedTools: command.allowedTools,
+          disableModelInvocation: command.disableModelInvocation,
+          claudeModel: command.claudeModel,
         }
       }
 

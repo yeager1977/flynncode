@@ -359,6 +359,7 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
       trigger: item.name,
       title: item.name,
       description: item.description,
+      argumentHint: item.argumentHint,
       type: "custom" as const,
     })),
     ...command.options

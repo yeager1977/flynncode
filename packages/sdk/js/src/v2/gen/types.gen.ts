@@ -2014,6 +2014,11 @@ export type Config = {
       model?: string
       variant?: string
       subtask?: boolean
+      argumentHint?: string
+      allowedTools?: Array<string>
+      disableModelInvocation?: boolean
+      claudeModel?: string
+      claudeSource?: string
     }
   }
   skills?: {
@@ -2879,6 +2884,9 @@ export type Command = {
   template: string
   subtask?: boolean
   hints: Array<string>
+  argumentHint?: string
+  allowedTools?: Array<string>
+  disableModelInvocation?: boolean
 }
 
 export type Agent = {

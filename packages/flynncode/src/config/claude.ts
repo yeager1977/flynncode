@@ -4,6 +4,7 @@ import path from "path"
 import { Exit, Schema } from "effect"
 import { Glob } from "@flynncode/core/util/glob"
 import { ConfigAgentV1 } from "@flynncode/core/v1/config/agent"
+import { ConfigCommandV1 } from "@flynncode/core/v1/config/command"
 import { configEntryNameFromPath } from "./entry-name"
 import { ConfigMarkdown } from "./markdown"
 
@@ -61,7 +62,7 @@ export async function loadAgents(dir: string) {
         ? data.name.trim()
         : configEntryNameFromPath(path.relative(dir, file), ["agents/"])
     const tools = toolPermissions(data.tools, file)
-    warnings.push(...tools.warnings, ...modelWarnings(data.model, file))
+    warnings.push(...tools.warnings, ...modelWarnings(data.model, `Claude agent ${file}`))
     const decoded = Schema.decodeUnknownExit(ConfigAgentV1.Info)({
       name,
       description: data.description.replaceAll("\\n", "\n"),
@@ -78,6 +79,88 @@ export async function loadAgents(dir: string) {
     agents[name] = decoded.value
   }
   return { agents, warnings }
+}
+
+// Loads Claude Code slash commands from `<dir>/commands/**/*.md`. Nested
+// directories namespace the name (`git/pr.md` -> `git:pr`). Malformed files are
+// skipped and reported as warnings. `allowed-tools` is carried verbatim: the
+// runner interprets the Claude tool patterns when the command executes.
+export async function loadCommands(dir: string) {
+  const commands: Record<string, ConfigCommandV1.Info> = {}
+  const warnings: string[] = []
+  const files = await Glob.scan("commands/**/*.md", { cwd: dir, absolute: true, dot: true, symlink: true })
+  for (const file of files.toSorted()) {
+    const md = await ConfigMarkdown.parse(file).catch(() => undefined)
+    if (!md) {
+      warnings.push(`skipped Claude command ${file}: invalid frontmatter`)
+      continue
+    }
+    const template = md.content.trim()
+    // Unparseable YAML falls through as body text with the fence still in it.
+    if (Object.keys(md.data).length === 0 && /^---\r?\n[\s\S]*?\r?\n---/.test(template)) {
+      warnings.push(`skipped Claude command ${file}: invalid frontmatter`)
+      continue
+    }
+    if (!template) {
+      warnings.push(`skipped Claude command ${file}: empty body`)
+      continue
+    }
+    const data = md.data
+    const disableModelInvocation = booleanField(data["disable-model-invocation"])
+    if (disableModelInvocation === "invalid") {
+      warnings.push(`skipped Claude command ${file}: disable-model-invocation must be true or false`)
+      continue
+    }
+    const hint = argumentHint(data["argument-hint"])
+    const tools = commandTools(data["allowed-tools"])
+    const modelInfo = model(data.model, file)
+    warnings.push(...modelWarnings(data.model, `Claude command ${file}`))
+    const decoded = Schema.decodeUnknownExit(ConfigCommandV1.Info)({
+      template,
+      ...(typeof data.description === "string" && data.description.trim()
+        ? { description: data.description.trim() }
+        : {}),
+      ...(hint ? { argumentHint: hint } : {}),
+      ...(tools ? { allowedTools: tools } : {}),
+      ...(disableModelInvocation === undefined ? {} : { disableModelInvocation }),
+      ...(modelInfo.model ? { model: modelInfo.model } : {}),
+      ...(modelInfo.options.claudeModel ? { claudeModel: modelInfo.options.claudeModel } : {}),
+      claudeSource: file,
+    })
+    if (Exit.isFailure(decoded)) {
+      warnings.push(`skipped Claude command ${file}: ${String(decoded.cause)}`)
+      continue
+    }
+    commands[configEntryNameFromPath(path.relative(dir, file), ["commands/"]).replaceAll("/", ":")] = decoded.value
+  }
+  return { commands, warnings }
+}
+
+function booleanField(input: unknown) {
+  if (input === undefined || input === null) return undefined
+  if (typeof input === "boolean") return input
+  if (input === "true") return true
+  if (input === "false") return false
+  return "invalid" as const
+}
+
+// YAML reads an unquoted `[message]` as a one-item list; show it back the way
+// it was written.
+function argumentHint(input: unknown) {
+  if (typeof input === "string") return input.trim()
+  if (Array.isArray(input)) return input.map((item) => `[${String(item)}]`).join(" ")
+  return undefined
+}
+
+// Entries are comma separated, but a comma inside parentheses belongs to the
+// tool pattern, e.g. `Bash(git add:*)`.
+function commandTools(input: unknown) {
+  if (input === undefined || input === null) return undefined
+  if (Array.isArray(input)) return input.map((item) => String(item).trim()).filter(Boolean)
+  return String(input)
+    .split(/,(?![^()]*\))/)
+    .map((item) => item.trim())
+    .filter(Boolean)
 }
 
 // A `tools` list is an allowlist: everything else is denied. Without one the
@@ -123,11 +206,11 @@ function model(input: unknown, file: string) {
   return { options: { claudeSource: file } }
 }
 
-function modelWarnings(input: unknown, file: string) {
+function modelWarnings(input: unknown, label: string) {
   if (typeof input !== "string" || !input.trim()) return []
   const value = input.trim()
   if (ALIASES.has(value) || value.includes("/")) return []
-  return [`Claude agent ${file}: model "${value}" is not provider/model; using the session model`]
+  return [`${label}: model "${value}" is not provider/model; using the session model`]
 }
 
 function color(input: unknown) {

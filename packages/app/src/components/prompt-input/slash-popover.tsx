@@ -24,6 +24,7 @@ export interface SlashCommand {
   trigger: string
   title: string
   description?: string
+  argumentHint?: string
   keybind?: string
   type: "builtin" | "custom"
   source?: "command" | "mcp" | "skill"
@@ -316,6 +317,9 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                         >
                           /{cmd.trigger}
                         </span>
+                        <Show when={cmd.argumentHint}>
+                          <span class="whitespace-nowrap text-text-weak">{cmd.argumentHint}</span>
+                        </Show>
                         <Show when={cmd.description}>
                           <span
                             class="truncate"

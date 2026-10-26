@@ -265,3 +265,224 @@ describe("Config with .claude/agents", () => {
     { git: true },
   )
 })
+
+const commandFile = (fields: Record<string, string>, body = "Do the thing.") =>
+  ["---", ...Object.entries(fields).map(([key, value]) => `${key}: ${value}`), "---", "", body, ""].join("\n")
+
+async function writeCommands(root: string, files: Record<string, string>) {
+  for (const [name, content] of Object.entries(files)) {
+    const file = path.join(root, ".claude", "commands", name)
+    await fs.mkdir(path.dirname(file), { recursive: true })
+    await Bun.write(file, content)
+  }
+}
+
+describe("ConfigClaude.loadCommands", () => {
+  test("namespaces nested directories with colons", async () => {
+    await using tmp = await tmpdir()
+    await writeCommands(tmp.path, {
+      "plain.md": commandFile({ description: "Plain" }, "Plain body"),
+      "git/pr.md": commandFile({ description: "Open a PR" }, "Open it"),
+      "a/b/deep.md": commandFile({ description: "Deep" }, "Deep body"),
+    })
+    const result = await ConfigClaude.loadCommands(path.join(tmp.path, ".claude"))
+    expect(Object.keys(result.commands).toSorted()).toEqual(["a:b:deep", "git:pr", "plain"])
+    expect(result.commands["git:pr"].template).toBe("Open it")
+    expect(result.warnings).toEqual([])
+  })
+
+  test("carries frontmatter fields", async () => {
+    await using tmp = await tmpdir()
+    await writeCommands(tmp.path, {
+      "commit.md": [
+        "---",
+        "description: Create a commit",
+        "argument-hint: [message]",
+        "allowed-tools: Bash(git add:*), Bash(git status:*), Read",
+        "model: haiku",
+        "disable-model-invocation: true",
+        "---",
+        "Commit with $ARGUMENTS",
+      ].join("\n"),
+      "list.md": [
+        "---",
+        "description: List",
+        "allowed-tools:",
+        "  - Read",
+        "  - Grep",
+        "model: anthropic/claude-sonnet-4-5",
+        "argument-hint: <name> [flags]",
+        "---",
+        "List",
+      ].join("\n"),
+    })
+    const result = await ConfigClaude.loadCommands(path.join(tmp.path, ".claude"))
+    expect(result.warnings).toEqual([])
+    expect(result.commands.commit).toMatchObject({
+      description: "Create a commit",
+      template: "Commit with $ARGUMENTS",
+      argumentHint: "[message]",
+      allowedTools: ["Bash(git add:*)", "Bash(git status:*)", "Read"],
+      disableModelInvocation: true,
+      claudeModel: "haiku",
+    })
+    expect(result.commands.commit.model).toBeUndefined()
+    expect(result.commands.list).toMatchObject({
+      allowedTools: ["Read", "Grep"],
+      model: "anthropic/claude-sonnet-4-5",
+      argumentHint: "<name> [flags]",
+    })
+    expect(result.commands.list.claudeModel).toBeUndefined()
+  })
+
+  test("leaves optional fields unset when absent", async () => {
+    await using tmp = await tmpdir()
+    await writeCommands(tmp.path, { "bare.md": "Just a body" })
+    const result = await ConfigClaude.loadCommands(path.join(tmp.path, ".claude"))
+    expect(result.commands.bare.template).toBe("Just a body")
+    expect(result.commands.bare.allowedTools).toBeUndefined()
+    expect(result.commands.bare.argumentHint).toBeUndefined()
+    expect(result.commands.bare.disableModelInvocation).toBeUndefined()
+  })
+
+  test("skips malformed files with a warning naming the file", async () => {
+    await using tmp = await tmpdir()
+    await writeCommands(tmp.path, {
+      "broken.md": ["---", "description: Broken", "allowed-tools: [Read", "---", "Body"].join("\n"),
+      "empty.md": commandFile({ description: "Empty" }, ""),
+      "badflag.md": commandFile({ description: "Bad", "disable-model-invocation": "maybe" }),
+      "good.md": commandFile({ description: "Good" }),
+    })
+    const result = await ConfigClaude.loadCommands(path.join(tmp.path, ".claude"))
+    expect(Object.keys(result.commands)).toEqual(["good"])
+    for (const name of ["broken.md", "empty.md", "badflag.md"])
+      expect(result.warnings.some((warning) => warning.includes(name))).toBe(true)
+  })
+
+  test("warns on non-provider model ids and uses the session model", async () => {
+    await using tmp = await tmpdir()
+    await writeCommands(tmp.path, {
+      "old.md": commandFile({ description: "Old", model: "claude-3-5-haiku-20241022" }),
+    })
+    const result = await ConfigClaude.loadCommands(path.join(tmp.path, ".claude"))
+    expect(result.commands.old.model).toBeUndefined()
+    expect(result.commands.old.claudeModel).toBeUndefined()
+    expect(result.warnings.some((warning) => warning.includes("old.md") && warning.includes("claude-3-5-haiku"))).toBe(
+      true,
+    )
+  })
+})
+
+describe("Config with .claude/commands", () => {
+  it.instance(
+    "loads user and project Claude commands, project overriding user",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const home = yield* tmpdirScoped()
+        process.env.OPENCODE_TEST_HOME = home
+        yield* Effect.promise(() =>
+          writeCommands(home, {
+            "shared.md": commandFile({ description: "From user" }, "user body"),
+            "ns/user-only.md": commandFile({ description: "User only" }),
+          }),
+        )
+        yield* Effect.promise(() =>
+          writeCommands(test.directory, { "shared.md": commandFile({ description: "From project" }, "project body") }),
+        )
+        const config = yield* Config.use.get()
+        expect(config.command?.shared?.description).toBe("From project")
+        expect(config.command?.shared?.template).toBe("project body")
+        expect(config.command?.["ns:user-only"]?.description).toBe("User only")
+        expect(config.command?.shared?.claudeSource).toContain("shared.md")
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "native .opencode commands win over Claude commands with the same name",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* Effect.promise(() =>
+          writeCommands(test.directory, {
+            "helper.md": commandFile({ description: "Claude helper", "allowed-tools": "Read" }, "claude body"),
+          }),
+        )
+        yield* FSUtil.use.writeWithDirs(
+          path.join(test.directory, ".opencode", "commands", "helper.md"),
+          ["---", "description: Native helper", "---", "native body"].join("\n"),
+        )
+        const config = yield* Config.use.get()
+        expect(config.command?.helper?.description).toBe("Native helper")
+        expect(config.command?.helper?.template).toBe("native body")
+        expect(config.command?.helper?.allowedTools).toBeUndefined()
+        expect(config.command?.helper?.claudeSource).toBeUndefined()
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "malformed Claude commands never fail config loading",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* Effect.promise(() =>
+          writeCommands(test.directory, {
+            "broken.md": ["---", "description: Broken", "allowed-tools: [Read", "---", "Body"].join("\n"),
+            "fine.md": commandFile({ description: "Fine" }),
+          }),
+        )
+        const config = yield* Config.use.get()
+        expect(config.command?.fine?.description).toBe("Fine")
+        expect(config.command?.broken).toBeUndefined()
+      }),
+    { git: true },
+  )
+
+  for (const flag of ["OPENCODE_DISABLE_CLAUDE_CODE", "OPENCODE_DISABLE_CLAUDE_CODE_COMMANDS"]) {
+    it.instance(
+      `${flag} turns the command loader off`,
+      () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const original = process.env[flag]
+          process.env[flag] = "1"
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => {
+              if (original === undefined) delete process.env[flag]
+              else process.env[flag] = original
+            }),
+          )
+          yield* Effect.promise(() =>
+            writeCommands(test.directory, { "off.md": commandFile({ description: "Off" }) }),
+          )
+          const config = yield* Config.use.get()
+          expect(config.command?.off).toBeUndefined()
+        }),
+      { git: true },
+    )
+  }
+
+  it.instance(
+    "OPENCODE_DISABLE_CLAUDE_CODE_COMMANDS keeps Claude agents loading",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const original = process.env.OPENCODE_DISABLE_CLAUDE_CODE_COMMANDS
+        process.env.OPENCODE_DISABLE_CLAUDE_CODE_COMMANDS = "1"
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            if (original === undefined) delete process.env.OPENCODE_DISABLE_CLAUDE_CODE_COMMANDS
+            else process.env.OPENCODE_DISABLE_CLAUDE_CODE_COMMANDS = original
+          }),
+        )
+        yield* Effect.promise(() =>
+          writeAgents(test.directory, { "kept.md": agentFile({ name: "kept", description: "Kept" }) }),
+        )
+        const config = yield* Config.use.get()
+        expect(config.agent?.kept).toBeDefined()
+      }),
+    { git: true },
+  )
+})

@@ -19,6 +19,10 @@ import type { CommandInfo, McpResource, McpServer, SessionMessageInfo } from "@o
 import type { Accessor } from "solid-js"
 import type { SetStoreFunction, Store } from "solid-js/store"
 
+// Local servers also report the Claude Code `argument-hint`, which the v2
+// protocol command schema does not carry yet.
+export type SyncedCommand = CommandInfo & { argumentHint?: string }
+
 export type ProjectMeta = {
   name?: string
   icon?: {
@@ -33,7 +37,7 @@ export type ProjectMeta = {
 export type State = {
   status: "loading" | "partial" | "complete"
   agent: Agent[]
-  command: CommandInfo[]
+  command: SyncedCommand[]
   reference: ReferenceInfo[]
   project: string
   projectMeta: ProjectMeta | undefined

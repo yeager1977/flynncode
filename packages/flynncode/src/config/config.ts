@@ -498,23 +498,38 @@ const layer = Layer.effect(
 
     // `~/.claude` first, then `.claude` directories from the worktree root down
     // to the instance directory, so the closest definition of a name wins.
-    const loadClaudeAgents = Effect.fnUntraced(function* (ctx: InstanceContext) {
-      if (Flag.OPENCODE_DISABLE_CLAUDE_CODE_AGENTS) return {}
+    const claudeDirs = Effect.fnUntraced(function* (ctx: InstanceContext) {
       const global = path.join(Global.Path.home, ".claude")
       const project = Flag.OPENCODE_DISABLE_PROJECT_CONFIG
         ? []
         : yield* fs
             .up({ targets: [".claude"], start: ctx.directory, stop: ctx.worktree })
             .pipe(Effect.catch(() => Effect.succeed([] as string[])))
-      const dirs = yield* Effect.filter([global, ...project.toReversed().filter((dir) => dir !== global)], (dir) =>
+      return yield* Effect.filter([global, ...project.toReversed().filter((dir) => dir !== global)], (dir) =>
         fs.isDir(dir),
       )
+    })
+
+    const loadClaudeAgents = Effect.fnUntraced(function* (ctx: InstanceContext) {
+      if (Flag.OPENCODE_DISABLE_CLAUDE_CODE_AGENTS) return {}
+      const dirs = yield* claudeDirs(ctx)
       const loaded = yield* Effect.forEach(dirs, (dir) => Effect.promise(() => ConfigClaude.loadAgents(dir)))
       yield* Effect.forEach(
         loaded.flatMap((item) => item.warnings),
         (warning) => Effect.logWarning(warning),
       )
       return Object.fromEntries(loaded.flatMap((item) => Object.entries(item.agents)))
+    })
+
+    const loadClaudeCommands = Effect.fnUntraced(function* (ctx: InstanceContext) {
+      if (Flag.OPENCODE_DISABLE_CLAUDE_CODE_COMMANDS) return {}
+      const dirs = yield* claudeDirs(ctx)
+      const loaded = yield* Effect.forEach(dirs, (dir) => Effect.promise(() => ConfigClaude.loadCommands(dir)))
+      yield* Effect.forEach(
+        loaded.flatMap((item) => item.warnings),
+        (warning) => Effect.logWarning(warning),
+      )
+      return Object.fromEntries(loaded.flatMap((item) => Object.entries(item.commands)))
     })
 
     const loadInstanceState = Effect.fn("Config.loadInstanceState")(
@@ -675,6 +690,14 @@ const layer = Layer.effect(
           yield* Effect.logWarning("native agent overrides Claude Code agent with the same name", { name })
         }
         result.agent = { ...claudeAgents, ...result.agent }
+
+        // Same layering for Claude Code slash commands: any native command of
+        // the same name (config or `.opencode/commands`) replaces the Claude one.
+        const claudeCommands = yield* loadClaudeCommands(ctx)
+        for (const name of Object.keys(claudeCommands).filter((name) => result.command?.[name])) {
+          yield* Effect.logWarning("native command overrides Claude Code command with the same name", { name })
+        }
+        result.command = { ...claudeCommands, ...result.command }
 
         // Plugin-bundled hooks (<plugin-root>/hooks/hooks.json) apply after
         // project hooks. Only path-like specs resolve to a readable root.
