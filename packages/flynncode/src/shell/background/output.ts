@@ -4,143 +4,227 @@ import fs from "fs/promises"
 
 const DEFAULT_CAP_BYTES = 50 * 1024 * 1024
 const DEFAULT_HEAD_BYTES = 1024 * 1024
+const DEFAULT_WINDOW_BYTES = 1024 * 1024
 const DEFAULT_READ_BYTES = 50 * 1024
-const REWRITE_INTERVAL_MS = 5_000
-const SKIPPED_MARKER = "...[earlier output skipped]..."
+const DEFAULT_FLUSH_MS = 5_000
 
 export type Writer = {
   write(chunk: string): void
-  close(): Promise<void>
-  bytes(): number
+  readSince(offset: number, input?: { filter?: RegExp; maxBytes?: number }): { text: string; offset: number; skipped: number }
+  lastLines(count: number): string
+  total(): number
   truncated(): boolean
+  pendingBytes(): number
+  close(): Promise<void>
 }
 
-export function open(file: string, input?: { capBytes?: number; headBytes?: number }): Writer {
+// Readers use logical stream positions (bytes ever written) against an in-memory window of the newest
+// output; the file is only persistence, so rewriting it after the cap never invalidates a reader's offset.
+export function open(
+  file: string,
+  input?: { capBytes?: number; headBytes?: number; windowBytes?: number; flushMs?: number },
+): Writer {
   const capBytes = input?.capBytes ?? DEFAULT_CAP_BYTES
   const headBytes = Math.min(input?.headBytes ?? DEFAULT_HEAD_BYTES, capBytes)
+  const windowBytes = input?.windowBytes ?? DEFAULT_WINDOW_BYTES
+  const flushMs = input?.flushMs ?? DEFAULT_FLUSH_MS
   const tailCap = capBytes - headBytes
+  const temp = `${file}.tmp`
 
-  // `total` counts every byte accepted (readable synchronously); `processed` counts only what the
-  // chain has handled, so the marker's dropped count always matches what was written to the file.
   let total = 0
-  let processed = 0
-  let pending: Buffer[] = []
-  let scheduled = false
-  let chain = Promise.resolve()
+  let closed = false
+  let recent: Buffer[] = []
+  let recentLength = 0
+  let head: Buffer[] = []
+  let headLength = 0
 
+  // Bytes accepted but not yet handed to the disk: the contiguous range [pendingStart, total).
+  let pending: Buffer[] = []
+  let pendingLength = 0
+  let pendingStart = 0
+  let scheduled = false
+
+  // File state, touched only inside the serialized chain.
   let onDisk = 0
   let rolling = false
-  let head = Buffer.alloc(0)
   let tail: Buffer[] = []
-  let tailBytes = 0
+  let tailLength = 0
+  let tailEnd = 0
+  let dirty = false
   let lastRewrite = 0
+  let timer: ReturnType<typeof setTimeout> | undefined
+
+  // open() starts a fresh file; every later disk operation queues behind this one.
+  let chain = fs.writeFile(file, "").catch(() => undefined)
+
+  function schedule() {
+    if (scheduled) return
+    scheduled = true
+    // A failed disk operation must never break the shell producing the output.
+    chain = chain.then(flush).catch(() => undefined)
+  }
 
   async function flush() {
     scheduled = false
-    const data = Buffer.concat(pending)
+    if (pendingLength === 0) return
+    const batch = Buffer.concat(pending)
+    const start = pendingStart
     pending = []
-    processed += data.length
-    if (!rolling) {
-      if (onDisk + data.length <= capBytes) {
-        await fs.appendFile(file, data)
-        onDisk += data.length
+    pendingLength = 0
+    pendingStart = start + batch.length
+    if (!rolling && start === onDisk && start + batch.length <= capBytes) {
+      const appended = await fs.appendFile(file, batch).then(
+        () => true,
+        () => false,
+      )
+      if (appended) {
+        onDisk += batch.length
         return
       }
-      // Crossing the cap: everything so far is on disk, so split it into head and tail now.
-      const all = Buffer.concat([onDisk === 0 ? Buffer.alloc(0) : await fs.readFile(file), data])
-      head = all.subarray(0, headEnd(all, headBytes))
-      tail = [all.subarray(head.length)]
-      tailBytes = tail[0].length
-      rolling = true
-      trimTail()
-      await rewrite()
+      // Retry with the next flush unless newer bytes were dropped meanwhile (the batch would no longer be contiguous).
+      if (pendingStart !== start + batch.length) return
+      pending.unshift(batch)
+      pendingLength += batch.length
+      pendingStart = start
+      boundPending()
       return
     }
-    tail.push(data)
-    tailBytes += data.length
-    trimTail()
-    if (Date.now() - lastRewrite >= REWRITE_INTERVAL_MS) await rewrite()
+    if (!rolling) {
+      rolling = true
+      tailEnd = headLength
+      const disk = onDisk > 0 ? await fs.readFile(file).catch(() => Buffer.alloc(0)) : Buffer.alloc(0)
+      appendTail(disk.subarray(0, Math.min(onDisk, disk.length)), 0)
+    }
+    appendTail(batch, start)
+    dirty = true
+    if (Date.now() - lastRewrite >= flushMs) return rewrite()
+    arm()
   }
 
-  function trimTail() {
-    while (tail.length > 1 && tailBytes - tail[0].length >= tailCap) tailBytes -= tail.shift()!.length
-    if (tailBytes <= tailCap * 2) return
-    tail = [tailOf(Buffer.concat(tail), tailCap)]
-    tailBytes = tail[0].length
+  // Keeps the newest contiguous run of bytes after the head; a gap (dropped pending bytes) restarts it.
+  function appendTail(data: Buffer, start: number) {
+    const end = start + data.length
+    if (end <= tailEnd) return
+    if (start > tailEnd) {
+      tail = []
+      tailLength = 0
+    }
+    const piece = data.subarray(Math.max(0, tailEnd - start))
+    tail.push(piece)
+    tailLength = keepNewest(tail, tailLength + piece.length, tailCap)
+    tailEnd = end
   }
 
   async function rewrite() {
-    const kept = tailOf(Buffer.concat(tail), tailCap)
-    const marker = Buffer.from(`\n...[output truncated: ${processed - head.length - kept.length} bytes dropped]...\n`)
-    await fs.writeFile(file, Buffer.concat([head, marker, kept]))
+    if (!dirty) return
+    dirty = false
     lastRewrite = Date.now()
+    const all = Buffer.concat(head)
+    const kept = Buffer.concat(tail)
+    const headKept = all.subarray(0, headEnd(all, headBytes))
+    const tailKept = kept.subarray(charStart(kept, 0))
+    const marker = Buffer.from(`\n...[output truncated: ${tailEnd - headKept.length - tailKept.length} bytes dropped]...\n`)
+    // Write a sibling file and rename it over the original so readers never see a partial file.
+    await fs
+      .writeFile(temp, Buffer.concat([headKept, marker, tailKept]))
+      .then(() => fs.rename(temp, file))
+      .catch(async () => {
+        dirty = true
+        await fs.rm(temp, { force: true }).catch(() => undefined)
+      })
+  }
+
+  function arm() {
+    if (timer || closed) return
+    timer = setTimeout(
+      () => {
+        timer = undefined
+        chain = chain.then(rewrite).catch(() => undefined)
+      },
+      Math.max(0, lastRewrite + flushMs - Date.now()),
+    )
+    timer.unref()
+  }
+
+  // A stalled disk must not grow memory without bound: drop the oldest queued bytes beyond the cap.
+  function boundPending() {
+    const before = pendingLength
+    pendingLength = keepNewest(pending, pendingLength, capBytes)
+    pendingStart += before - pendingLength
   }
 
   return {
     write(chunk) {
       const data = Buffer.from(chunk)
-      if (data.length === 0) return
+      if (closed || data.length === 0) return
       total += data.length
+      if (headLength < headBytes) {
+        const take = Math.min(headBytes - headLength, data.length)
+        head.push(take === data.length ? data : Buffer.from(data.subarray(0, take)))
+        headLength += take
+      }
+      recent.push(data)
+      recentLength = keepNewest(recent, recentLength + data.length, windowBytes)
       pending.push(data)
-      if (scheduled) return
-      scheduled = true
-      // A failed disk write must never break the shell producing the output.
-      chain = chain.then(flush).catch(() => undefined)
+      pendingLength += data.length
+      boundPending()
+      schedule()
     },
-    async close() {
-      await chain
-      if (rolling) await rewrite().catch(() => undefined)
+    readSince(offset, options) {
+      const recentStart = total - recentLength
+      const requested = Math.min(Math.max(0, offset), total)
+      const from = Math.max(requested, recentStart)
+      const data = Buffer.concat(recent).subarray(from - recentStart)
+      const start = charStart(data, Math.max(0, data.length - (options?.maxBytes ?? DEFAULT_READ_BYTES)))
+      const skipped = from - requested + start
+      const text = filterLines(data.subarray(start).toString("utf8"), options?.filter)
+      const prefix = skipped > 0 && (!options?.filter || text) ? `...[${skipped} bytes skipped]...\n` : ""
+      return { text: prefix + text, offset: total, skipped }
     },
-    bytes: () => total,
+    lastLines(count) {
+      if (count <= 0) return ""
+      const data = Buffer.concat(recent)
+      return data
+        .subarray(charStart(data, 0))
+        .toString("utf8")
+        .replace(/\n$/, "")
+        .split("\n")
+        .slice(-count)
+        .join("\n")
+    },
+    total: () => total,
     truncated: () => total > capBytes,
+    pendingBytes: () => pendingLength,
+    async close() {
+      closed = true
+      clearTimeout(timer)
+      timer = undefined
+      chain = chain
+        .then(flush)
+        .then(() => (rolling ? rewrite() : undefined))
+        .catch(() => undefined)
+      await chain
+      // Only the read window outlives close().
+      pending = []
+      pendingLength = 0
+      head = []
+      tail = []
+      tailLength = 0
+    },
   }
 }
 
-export async function readSince(
-  file: string,
-  offset: number,
-  input?: { filter?: RegExp; maxBytes?: number },
-): Promise<{ text: string; offset: number }> {
-  const maxBytes = input?.maxBytes ?? DEFAULT_READ_BYTES
-  const handle = await fs.open(file, "r").catch(() => undefined)
-  if (!handle) return { text: "", offset }
-  try {
-    const size = (await handle.stat()).size
-    // The file shrinks when a capped writer rewrites it, so older offsets no longer apply.
-    const from = size < offset ? 0 : offset
-    const clipped = size - from > maxBytes
-    const start = clipped ? size - maxBytes : from
-    const buffer = Buffer.alloc(size - start)
-    const read = (await handle.read(buffer, 0, buffer.length, start)).bytesRead
-    // Leave a partially written trailing character for the next read.
-    const usable = completeEnd(buffer.subarray(0, read))
-    const text = filterLines(buffer.subarray(0, usable).toString("utf8"), input?.filter)
-    return { text: clipped ? `${SKIPPED_MARKER}\n${text}` : text, offset: start + usable }
-  } finally {
-    await handle.close()
-  }
-}
-
-export async function lastLines(file: string, count: number): Promise<string> {
-  const handle = await fs.open(file, "r").catch(() => undefined)
-  if (!handle) return ""
-  try {
-    const size = (await handle.stat()).size
-    const block = 64 * 1024
-    const chunks: Buffer[] = []
-    const newlines = () => chunks.reduce((sum, chunk) => sum + chunk.filter((byte) => byte === 10).length, 0)
-    // Walk backwards until there are enough line breaks (count lines plus the trailing one).
-    for (let end = size; end > 0 && newlines() <= count; end -= block) {
-      const start = Math.max(0, end - block)
-      const buffer = Buffer.alloc(end - start)
-      await handle.read(buffer, 0, buffer.length, start)
-      chunks.unshift(buffer)
-    }
-    const lines = Buffer.concat(chunks).toString("utf8").replace(/\n$/, "").split("\n")
-    return lines.slice(-count).join("\n")
-  } finally {
-    await handle.close()
-  }
+// Mutates `chunks` to hold only the newest `limit` bytes and returns the new length.
+function keepNewest(chunks: Buffer[], length: number, limit: number) {
+  if (length <= limit) return length
+  let size = length
+  let count = 0
+  while (count < chunks.length && size - chunks[count].length >= limit) size -= chunks[count++].length
+  chunks.splice(0, count)
+  if (size <= limit) return size
+  // Copy the kept part so a huge chunk is not retained through a view.
+  chunks[0] = Buffer.from(chunks[0].subarray(size - limit))
+  return limit
 }
 
 function filterLines(text: string, filter?: RegExp) {
@@ -153,7 +237,7 @@ function filterLines(text: string, filter?: RegExp) {
     .join("")
 }
 
-// Cutting bytes mid-character would corrupt the file, so move boundaries off UTF-8 continuation bytes.
+// Cutting bytes mid-character would corrupt text, so move boundaries off UTF-8 continuation bytes.
 function isContinuation(byte: number) {
   return (byte & 0xc0) === 0x80
 }
@@ -164,18 +248,8 @@ function headEnd(buffer: Buffer, limit: number) {
   return end
 }
 
-function tailOf(buffer: Buffer, cap: number) {
-  let start = Math.max(0, buffer.length - cap)
+function charStart(buffer: Buffer, from: number) {
+  let start = from
   while (start < buffer.length && isContinuation(buffer[start])) start++
-  return buffer.subarray(start)
-}
-
-function completeEnd(buffer: Buffer) {
-  const length = buffer.length
-  const lead = Array.from({ length: Math.min(4, length) }, (_, i) => length - 1 - i).find(
-    (i) => !isContinuation(buffer[i]),
-  )
-  if (lead === undefined) return length
-  const need = buffer[lead] >= 0xf0 ? 4 : buffer[lead] >= 0xe0 ? 3 : buffer[lead] >= 0xc0 ? 2 : 1
-  return length - lead < need ? lead : length
+  return start
 }

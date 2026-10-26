@@ -1,78 +1,159 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "fs"
 import fs from "fs/promises"
 import path from "path"
 import { BackgroundOutput } from "../../src/shell/background/output"
 import { tmpdir } from "../fixture/fixture"
 
+const lines = (from: number, count: number) =>
+  Array.from({ length: count }, (_, i) => `l${String(from + i).padStart(4, "0")}....\n`)
+
 describe("BackgroundOutput", () => {
-  test("round-trips writes with offsets", async () => {
+  test("reads from logical offsets and persists to the file", async () => {
     await using tmp = await tmpdir()
     const file = path.join(tmp.path, "out.txt")
+    await fs.writeFile(file, "stale content from an earlier shell\n")
     const writer = BackgroundOutput.open(file)
     writer.write("hello\n")
     writer.write("wörld\n")
+    const size = Buffer.byteLength("hello\nwörld\n")
+    expect(writer.total()).toBe(size)
+    expect(writer.readSince(0)).toEqual({ text: "hello\nwörld\n", offset: size, skipped: 0 })
+    expect(writer.readSince(size)).toEqual({ text: "", offset: size, skipped: 0 })
+    writer.write("next\n")
+    expect(writer.readSince(size).text).toBe("next\n")
     await writer.close()
-    expect(writer.bytes()).toBe(Buffer.byteLength("hello\nwörld\n"))
     expect(writer.truncated()).toBe(false)
-
-    const first = await BackgroundOutput.readSince(file, 0)
-    expect(first.text).toBe("hello\nwörld\n")
-    expect(first.offset).toBe(Buffer.byteLength("hello\nwörld\n"))
-
-    const again = await BackgroundOutput.readSince(file, first.offset)
-    expect(again).toEqual({ text: "", offset: first.offset })
-
-    const more = BackgroundOutput.open(file)
-    more.write("next\n")
-    await more.close()
-    const next = await BackgroundOutput.readSince(file, first.offset)
-    expect(next.text).toBe("next\n")
+    expect(await Bun.file(file).text()).toBe("hello\nwörld\nnext\n")
+    // The window stays readable after close.
+    expect(writer.readSince(0).text).toBe("hello\nwörld\nnext\n")
   })
 
-  test("filter returns matching lines but advances the offset fully", async () => {
+  test("logical offsets keep working after the file cap is hit", async () => {
     await using tmp = await tmpdir()
-    const file = path.join(tmp.path, "out.txt")
-    const writer = BackgroundOutput.open(file)
+    const writer = BackgroundOutput.open(path.join(tmp.path, "out.txt"), {
+      capBytes: 1000,
+      headBytes: 200,
+      windowBytes: 500,
+    })
+    lines(0, 50).forEach((line) => writer.write(line))
+    const first = writer.readSince(0)
+    expect(first).toEqual({ text: lines(0, 50).join(""), offset: 500, skipped: 0 })
+
+    lines(50, 20).forEach((line) => writer.write(line))
+    const caught = writer.readSince(first.offset)
+    expect(caught).toEqual({ text: lines(50, 20).join(""), offset: 700, skipped: 0 })
+
+    lines(70, 300).forEach((line) => writer.write(line))
+    expect(writer.truncated()).toBe(true)
+    const behind = writer.readSince(caught.offset)
+    expect(behind.skipped).toBe(3700 - 500 - 700)
+    expect(behind.text).toBe(`...[2500 bytes skipped]...\n${lines(320, 50).join("")}`)
+    expect(behind.offset).toBe(3700)
+
+    lines(370, 3).forEach((line) => writer.write(line))
+    expect(writer.readSince(behind.offset)).toEqual({ text: lines(370, 3).join(""), offset: 3730, skipped: 0 })
+    await writer.close()
+  })
+
+  test("filter keeps matching lines, advances the offset, and prefixes skips only with text", async () => {
+    await using tmp = await tmpdir()
+    const writer = BackgroundOutput.open(path.join(tmp.path, "out.txt"), { windowBytes: 40 })
     writer.write("alpha\nERROR one\nbeta\nERROR two\n")
+    const read = writer.readSince(0, { filter: /ERROR/g })
+    expect(read).toEqual({ text: "ERROR one\nERROR two\n", offset: 31, skipped: 0 })
+
+    writer.write("x".repeat(40) + "\n" + "quiet\n")
+    const none = writer.readSince(read.offset, { filter: /ERROR/ })
+    expect(none.text).toBe("")
+    expect(none.skipped).toBeGreaterThan(0)
+    expect(none.offset).toBe(writer.total())
+
+    writer.write("y".repeat(40) + "\n" + "ERROR three\n")
+    const some = writer.readSince(none.offset, { filter: /ERROR/ })
+    expect(some.text).toMatch(/^\.\.\.\[\d+ bytes skipped\]\.\.\.\nERROR three\n$/)
     await writer.close()
-    const read = await BackgroundOutput.readSince(file, 0, { filter: /ERROR/g })
-    expect(read.text).toBe("ERROR one\nERROR two\n")
-    expect(read.offset).toBe(Buffer.byteLength("alpha\nERROR one\nbeta\nERROR two\n"))
   })
 
-  test("clips to the newest bytes when over maxBytes", async () => {
+  test("maxBytes keeps the newest bytes and counts the rest as skipped", async () => {
     await using tmp = await tmpdir()
-    const file = path.join(tmp.path, "out.txt")
-    const writer = BackgroundOutput.open(file)
+    const writer = BackgroundOutput.open(path.join(tmp.path, "out.txt"))
     writer.write("a".repeat(100) + "TAIL")
+    const read = writer.readSince(0, { maxBytes: 10 })
+    expect(read).toEqual({ text: "...[94 bytes skipped]...\naaaaaaTAIL", offset: 104, skipped: 94 })
     await writer.close()
-    const read = await BackgroundOutput.readSince(file, 0, { maxBytes: 10 })
-    expect(read.text.startsWith("...[earlier output skipped]...")).toBe(true)
-    expect(read.text.endsWith("aaaaaaTAIL")).toBe(true)
-    expect(read.offset).toBe(104)
+  })
+
+  test("a clipped read never starts mid-character", async () => {
+    await using tmp = await tmpdir()
+    const writer = BackgroundOutput.open(path.join(tmp.path, "out.txt"), { windowBytes: 31 })
+    writer.write("€€€€€")
+    const clipped = writer.readSince(0, { maxBytes: 10 })
+    expect(clipped).toEqual({ text: "...[6 bytes skipped]...\n€€€", offset: 15, skipped: 6 })
+
+    Array.from({ length: 20 }, () => writer.write("€"))
+    const windowed = writer.readSince(0)
+    expect(windowed.text).not.toContain("�")
+    expect(windowed.skipped + Buffer.byteLength(windowed.text.split("\n")[1])).toBe(writer.total())
+    expect(writer.lastLines(1)).not.toContain("�")
+    await writer.close()
+  })
+
+  test("lastLines returns the final lines from the window", async () => {
+    await using tmp = await tmpdir()
+    const writer = BackgroundOutput.open(path.join(tmp.path, "out.txt"))
+    Array.from({ length: 100 }, (_, i) => writer.write(`line ${i}\n`))
+    expect(writer.lastLines(20).split("\n")).toEqual(Array.from({ length: 20 }, (_, i) => `line ${80 + i}`))
+    expect(writer.lastLines(500)).toContain("line 0\n")
+    expect(writer.lastLines(0)).toBe("")
+    expect(writer.lastLines(-3)).toBe("")
+    await writer.close()
   })
 
   test("caps the file at head + marker + tail", async () => {
     await using tmp = await tmpdir()
     const file = path.join(tmp.path, "out.txt")
     const writer = BackgroundOutput.open(file, { capBytes: 1000, headBytes: 200 })
-    const lines = Array.from({ length: 500 }, (_, i) => `l${String(i).padStart(3, "0")}.....\n`)
-    lines.forEach((line) => writer.write(line))
+    const written = lines(0, 500)
+    written.forEach((line) => writer.write(line))
     expect(writer.truncated()).toBe(true)
+    // Synchronous writes never queue more than the cap for the disk.
+    expect(writer.pendingBytes()).toBeLessThanOrEqual(1000)
     await writer.close()
-    expect(writer.bytes()).toBe(5000)
+    expect(writer.total()).toBe(5000)
 
     const text = await Bun.file(file).text()
-    const all = lines.join("")
+    const all = written.join("")
     expect(Buffer.byteLength(text)).toBeLessThanOrEqual(1100)
     expect(text.startsWith(all.slice(0, 200))).toBe(true)
     expect(text).toMatch(/\n\.\.\.\[output truncated: \d+ bytes dropped\]\.\.\.\n/)
-    expect(text.endsWith(all.slice(-100))).toBe(true)
-    const dropped = Number(text.match(/truncated: (\d+) bytes/)?.[1])
-    expect(dropped).toBe(5000 - 200 - Buffer.byteLength(text.split(/\.\.\.\[output truncated[^\n]*\n/)[1]))
+    const tail = text.split(/\.\.\.\[output truncated[^\n]*\n/)[1]
+    expect(all.endsWith(tail)).toBe(true)
+    expect(tail.length).toBeGreaterThan(700)
+    expect(Number(text.match(/truncated: (\d+) bytes/)?.[1])).toBe(5000 - 200 - Buffer.byteLength(tail))
   })
 
-  test("caps a single oversized write", async () => {
+  test("caps a file whose output crossed the cap after it was on disk", async () => {
+    await using tmp = await tmpdir()
+    const file = path.join(tmp.path, "out.txt")
+    const writer = BackgroundOutput.open(file, { capBytes: 1000, headBytes: 200 })
+    const written = lines(0, 300)
+    await written.reduce(async (previous, line) => {
+      await previous
+      writer.write(line)
+      await Bun.sleep(0)
+    }, Promise.resolve())
+    await writer.close()
+    const text = await Bun.file(file).text()
+    const all = written.join("")
+    const tail = text.split(/\.\.\.\[output truncated[^\n]*\n/)[1]
+    expect(text.startsWith(all.slice(0, 200))).toBe(true)
+    expect(all.endsWith(tail)).toBe(true)
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(1100)
+    expect(Number(text.match(/truncated: (\d+) bytes/)?.[1])).toBe(3000 - 200 - Buffer.byteLength(tail))
+  })
+
+  test("caps a single oversized write without splitting characters", async () => {
     await using tmp = await tmpdir()
     const file = path.join(tmp.path, "out.txt")
     const writer = BackgroundOutput.open(file, { capBytes: 1000, headBytes: 200 })
@@ -82,43 +163,87 @@ describe("BackgroundOutput", () => {
     expect(Buffer.byteLength(text)).toBeLessThanOrEqual(1100)
     expect(text.startsWith("h".repeat(200))).toBe(true)
     expect(text.endsWith("t".repeat(200))).toBe(true)
+
+    const euro = path.join(tmp.path, "euro.txt")
+    const other = BackgroundOutput.open(euro, { capBytes: 1000, headBytes: 201 })
+    Array.from({ length: 600 }, () => other.write("€€€"))
+    await other.close()
+    const content = await Bun.file(euro).text()
+    expect(content).not.toContain("�")
+    expect(Buffer.byteLength(content)).toBeLessThanOrEqual(1100)
   })
 
-  test("truncation never splits a multi-byte character", async () => {
+  test("rewrites are atomic: readers never see an empty or partial file", async () => {
     await using tmp = await tmpdir()
     const file = path.join(tmp.path, "out.txt")
-    const writer = BackgroundOutput.open(file, { capBytes: 1000, headBytes: 201 })
-    Array.from({ length: 600 }, () => writer.write("€€€"))
+    // Multi-megabyte rewrites make a truncate-then-write window wide enough to observe.
+    const writer = BackgroundOutput.open(file, { capBytes: 8 * 1024 * 1024, headBytes: 1000, flushMs: 0 })
+    writer.write("h".repeat(1000) + "x".repeat(8 * 1024 * 1024))
+    await Bun.sleep(50)
+    expect(await Bun.file(file).text()).toContain("output truncated")
+
+    const deadline = Date.now() + 1000
+    const producer = (async () => {
+      for (let i = 0; Date.now() < deadline; i++) {
+        writer.write(`row ${i} ${"y".repeat(64 * 1024)}\n`)
+        await Bun.sleep(1)
+      }
+    })()
+    const observed: number[] = []
+    while (Date.now() < deadline) {
+      // A synchronous read runs on this thread while the rewrite runs on a worker thread.
+      const content = readFileSync(file)
+      observed.push(content.length)
+      expect(content.subarray(0, 1000).toString()).toBe("h".repeat(1000))
+      expect(content.subarray(1000, 1100).toString()).toContain("output truncated")
+      // A full rewrite is head + marker + a full tail, so anything shorter is a partial file.
+      expect(content.length).toBeGreaterThan(8 * 1024 * 1024)
+      // An in-place rewrite would mix old and new bytes, breaking the run of consecutive rows.
+      const rows = Array.from(content.toString().matchAll(/row (\d+) /g), (match) => Number(match[1]))
+      expect(rows.every((row, i) => i === 0 || row === rows[i - 1] + 1)).toBe(true)
+      await Bun.sleep(0)
+    }
+    await producer
     await writer.close()
-    const text = await Bun.file(file).text()
-    expect(text).not.toContain("\uFFFD")
-    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(1100)
+    expect(observed.length).toBeGreaterThan(10)
+    expect(await fs.readdir(tmp.path)).toEqual(["out.txt"])
   })
 
-  test("readSince restarts at 0 after the file was rewritten shorter", async () => {
+  test("a trailing timer flushes a quiet burst to the file", async () => {
     await using tmp = await tmpdir()
     const file = path.join(tmp.path, "out.txt")
-    const writer = BackgroundOutput.open(file, { capBytes: 1000, headBytes: 200 })
-    writer.write("x".repeat(900))
-    await writer.close()
-    const before = await BackgroundOutput.readSince(file, 0)
-    expect(before.offset).toBe(900)
+    const writer = BackgroundOutput.open(file, { capBytes: 1000, headBytes: 200, flushMs: 300 })
+    writer.write("x".repeat(2000))
+    await Bun.sleep(50)
+    expect(await Bun.file(file).text()).toContain("output truncated")
 
-    await fs.writeFile(file, "short\n")
-    const after = await BackgroundOutput.readSince(file, before.offset)
-    expect(after.text).toBe("short\n")
-    expect(after.offset).toBe(6)
+    writer.write("QUIET BURST END\n")
+    await Bun.sleep(50)
+    expect(await Bun.file(file).text()).not.toContain("QUIET BURST END")
+    const deadline = Date.now() + 2000
+    while (Date.now() < deadline && !(await Bun.file(file).text()).endsWith("QUIET BURST END\n")) await Bun.sleep(25)
+    expect(await Bun.file(file).text()).toEndWith("QUIET BURST END\n")
+    await writer.close()
   })
 
-  test("lastLines returns the final lines", async () => {
+  test("a failing disk keeps pending memory bounded and never throws", async () => {
     await using tmp = await tmpdir()
-    const file = path.join(tmp.path, "out.txt")
-    const writer = BackgroundOutput.open(file)
-    Array.from({ length: 100 }, (_, i) => writer.write(`line ${i}\n`))
-    await writer.close()
-    const text = await BackgroundOutput.lastLines(file, 20)
-    expect(text.split("\n")).toEqual(Array.from({ length: 20 }, (_, i) => `line ${80 + i}`))
-    expect(await BackgroundOutput.lastLines(file, 500)).toContain("line 0\n")
-    expect(await BackgroundOutput.lastLines(path.join(tmp.path, "missing"), 5)).toBe("")
+    const dir = path.join(tmp.path, "readonly")
+    await fs.mkdir(dir)
+    await fs.chmod(dir, 0o500)
+    try {
+      const writer = BackgroundOutput.open(path.join(dir, "out.txt"), { capBytes: 1000, headBytes: 200 })
+      Array.from({ length: 50 }, () => lines(0, 100).forEach((line) => writer.write(line)))
+      expect(writer.pendingBytes()).toBeLessThanOrEqual(1000)
+      await Bun.sleep(20)
+      expect(writer.pendingBytes()).toBeLessThanOrEqual(1000)
+      expect(writer.total()).toBe(50_000)
+      expect(writer.lastLines(1)).toBe(lines(99, 1)[0].trimEnd())
+      await writer.close()
+      expect(writer.pendingBytes()).toBe(0)
+      expect(await fs.readdir(dir)).toEqual([])
+    } finally {
+      await fs.chmod(dir, 0o700)
+    }
   })
 })
