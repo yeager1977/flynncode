@@ -41,6 +41,9 @@ export type Info = Omit<Schema.Schema.Type<typeof Info>, "template"> & {
   // Claude model alias, resolved when the command runs. Kept off the public
   // schema so it is never serialized to clients.
   claudeModel?: string
+  // File a Claude Code command came from. Such files ship with repositories,
+  // so the runner treats the template as untrusted.
+  claudeSource?: string
 }
 
 export function hints(template: string) {
@@ -120,6 +123,7 @@ const layer = Layer.effect(
           allowedTools: command.allowedTools,
           disableModelInvocation: command.disableModelInvocation,
           claudeModel: command.claudeModel,
+          claudeSource: command.claudeSource,
         }
       }
 

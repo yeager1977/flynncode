@@ -2767,7 +2767,12 @@ unix(
   "Claude command inlines allowed ! output and @file references",
   () =>
     Effect.gen(function* () {
-      const { dir, llm } = yield* useServerConfig(providerCfg)
+      // A `.claude` command's `!` line needs a specific allow rule to run
+      // without asking; the blanket `*` default is not enough.
+      const { dir, llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        permission: { bash: { "printf *": "allow" } },
+      }))
       yield* writeText(path.join(dir, "notes.txt"), "remember the milk")
       yield* writeClaudeCommand(
         dir,
@@ -2935,6 +2940,117 @@ unix(
       const permission = yield* Permission.Service
       yield* permission.reply({ requestID: request.id, reply: "reject" })
       yield* Fiber.await(running)
+    }),
+  { git: true },
+  30_000,
+)
+
+const pendingRequest = (sessionID: SessionID, kind: string) =>
+  pollWithTimeout(
+    Effect.gen(function* () {
+      const permission = yield* Permission.Service
+      return (yield* permission.list()).find((item) => item.sessionID === sessionID && item.permission === kind)
+    }),
+    `no ${kind} permission request for the session`,
+  )
+
+unix(
+  "a .claude command's ! line asks even when the default policy allows every command",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      yield* writeClaudeCommand(dir, "sneaky", "Run: !`touch ran-marker`")
+      const { prompt, chat } = yield* boot()
+
+      const running = yield* prompt
+        .command({ sessionID: chat.id, command: "sneaky", arguments: "" })
+        .pipe(Effect.forkChild)
+      const request = yield* pendingBash(chat.id)
+      expect(request.patterns).toEqual(["touch ran-marker"])
+      const permission = yield* Permission.Service
+      yield* permission.reply({ requestID: request.id, reply: "reject" })
+
+      const exit = yield* Fiber.await(running)
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(yield* llm.hits).toHaveLength(0)
+      const afs = yield* FSUtil.Service
+      expect(yield* afs.existsSafe(path.join(dir, "ran-marker"))).toBe(false)
+    }),
+  { git: true },
+  30_000,
+)
+
+unix(
+  "a .claude command's ! line under a blanket bash allow still asks",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig((url) => ({ ...providerCfg(url), permission: { bash: "allow" } }))
+      yield* writeClaudeCommand(dir, "sneaky", "Run: !`printf hi`")
+      const { prompt, chat } = yield* boot()
+
+      const running = yield* prompt
+        .command({ sessionID: chat.id, command: "sneaky", arguments: "" })
+        .pipe(Effect.forkChild)
+      const request = yield* pendingBash(chat.id)
+      expect(request.patterns).toEqual(["printf hi"])
+      const permission = yield* Permission.Service
+      yield* permission.reply({ requestID: request.id, reply: "reject" })
+      expect(Exit.isFailure(yield* Fiber.await(running))).toBe(true)
+      expect(yield* llm.hits).toHaveLength(0)
+    }),
+  { git: true },
+  30_000,
+)
+
+unix(
+  "a command template's @.env reference asks for the read permission",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      yield* writeText(path.join(dir, ".env"), "SECRET=hunter2")
+      yield* writeClaudeCommand(dir, "leak", "Summarize @.env")
+      const { prompt, chat } = yield* boot()
+      yield* llm.text("done")
+
+      const running = yield* prompt
+        .command({ sessionID: chat.id, command: "leak", arguments: "" })
+        .pipe(Effect.forkChild)
+      const request = yield* pendingRequest(chat.id, "read")
+      expect(request.patterns).toEqual([".env"])
+      const permission = yield* Permission.Service
+      yield* permission.reply({ requestID: request.id, reply: "reject" })
+      yield* Fiber.await(running)
+      expect(JSON.stringify(yield* llm.inputs)).not.toContain("hunter2")
+    }),
+  { git: true },
+  30_000,
+)
+
+unix(
+  "a command template's @ reference outside the project asks for external_directory",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      const outside = `${path.basename(dir)}-outside.txt`
+      const afs = yield* FSUtil.Service
+      yield* Effect.addFinalizer(() => afs.remove(path.join(dir, "..", outside)).pipe(Effect.ignore))
+      yield* writeText(path.join(dir, "..", outside), "outside-secret")
+      yield* writeConfig(dir, {
+        ...providerCfg(llm.url),
+        command: { peek: { template: `Look at @../${outside}` } },
+      })
+      const { prompt, chat } = yield* boot()
+      yield* llm.text("done")
+
+      const running = yield* prompt
+        .command({ sessionID: chat.id, command: "peek", arguments: "" })
+        .pipe(Effect.forkChild)
+      const request = yield* pendingRequest(chat.id, "external_directory")
+      expect(request.patterns).toEqual([path.join(path.dirname(dir), "*")])
+      const permission = yield* Permission.Service
+      yield* permission.reply({ requestID: request.id, reply: "reject" })
+      yield* Fiber.await(running)
+      expect(JSON.stringify(yield* llm.inputs)).not.toContain("outside-secret")
     }),
   { git: true },
   30_000,

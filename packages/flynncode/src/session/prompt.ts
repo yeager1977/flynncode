@@ -696,6 +696,19 @@ const layer = Layer.effect(
       return yield* provider.defaultModel().pipe(Effect.orDie)
     })
 
+    // The read tool's `ask` for a file a command template references: the
+    // agent and session rules under the session's approval mode, like a tool
+    // call, minus the turn's `allowed-tools`, which never pre-authorize the
+    // template itself.
+    const templateAsk = Effect.fn("SessionPrompt.templateAsk")(function* (sessionID: SessionID, agent: Agent.Info) {
+      const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+      const cfg = yield* config.get()
+      const policy = ConfigPermissionV1.resolveSessionPolicy(cfg.permission ?? {})
+      const ruleset = Permission.merge(agent.permission, session.permission ?? [])
+      return (req: Parameters<Tool.Context["ask"]>[0]) =>
+        permission.ask({ ...req, sessionID, ruleset, approval: policy.approval }).pipe(Effect.orDie)
+    })
+
     const createUserMessage = Effect.fn("SessionPrompt.createUserMessage")(function* (input: AdmitInput) {
       // A steer/queue prompt joins the conversation already running, so it
       // keeps that conversation's agent instead of switching a steered
@@ -885,6 +898,11 @@ const layer = Layer.effect(
               const mime = (yield* fsys.isDir(filepath)) ? "application/x-directory" : part.mime
 
               const { read } = yield* registry.named()
+              // A file the user typed or attached is read directly. One a
+              // command template referenced goes through the read tool's own
+              // read and external_directory checks, which may ask.
+              const fromTemplate = input.templateFiles?.has(part.url) === true
+              const askTemplate = fromTemplate ? yield* templateAsk(input.sessionID, ag) : undefined
               const execRead = (args: Parameters<typeof read.execute>[0], extra?: Tool.Context["extra"]) => {
                 const controller = new AbortController()
                 return read
@@ -893,10 +911,10 @@ const layer = Layer.effect(
                     abort: controller.signal,
                     agent: input.agent!,
                     messageID: info.id,
-                    extra: { bypassCwdCheck: true, ...extra },
+                    extra: askTemplate ? { ...extra } : { bypassCwdCheck: true, ...extra },
                     messages: [],
                     metadata: () => Effect.void,
-                    ask: () => Effect.void,
+                    ask: askTemplate ?? (() => Effect.void),
                   })
                   .pipe(Effect.onInterrupt(() => Effect.sync(() => controller.abort())))
               }
@@ -1595,6 +1613,8 @@ const layer = Layer.effect(
     // under the command's agent and the session rules only. The command's own
     // `allowed-tools` apply to the model's turn, never to its `!` lines, so a
     // command file cannot pre-authorize what it runs before anyone sees it.
+    // An untrusted template (a `.claude` command, which ships with
+    // repositories) also asks when only a blanket `*` rule allows the line.
     // Anything but approval aborts the whole command.
     const askShell = Effect.fn("SessionPrompt.askShell")(function* (input: {
       sessionID: SessionID
@@ -1603,6 +1623,7 @@ const layer = Layer.effect(
       shell: string
       agent: Agent.Info
       ctx: InstanceContext
+      untrusted: boolean
     }) {
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       const cfg = yield* config.get()
@@ -1620,7 +1641,7 @@ const layer = Layer.effect(
               return yield* permission.ask({
                 ...req,
                 sessionID: input.sessionID,
-                ruleset,
+                ruleset: input.untrusted && req.permission === ShellID.ToolID ? specificAllowOnly(ruleset, req) : ruleset,
                 approval: policy.approval,
               })
             }).pipe(Effect.orDie),
@@ -1728,7 +1749,7 @@ const layer = Layer.effect(
         const ctx = yield* InstanceState.context
         yield* Effect.forEach(
           shellMatches,
-          ([, line]) => askShell({ ...input, line, shell: sh, agent, ctx }),
+          ([, line]) => askShell({ ...input, line, shell: sh, agent, ctx, untrusted: Boolean(cmd.claudeSource) }),
           { discard: true },
         )
         const results = yield* Effect.promise(() =>
@@ -1750,6 +1771,7 @@ const layer = Layer.effect(
       const uniqueTemplateParts = templateParts.filter(
         (part) => part.type !== "file" || !inputFiles.has(fileURLToPath(part.url)),
       )
+      const templateFiles = new Set(uniqueTemplateParts.flatMap((part) => (part.type === "file" ? [part.url] : [])))
       const isSubtask = (agent.mode === "subagent" && cmd.subtask !== false) || cmd.subtask === true
       const parts = isSubtask
         ? [
@@ -1785,6 +1807,7 @@ const layer = Layer.effect(
         parts,
         variant: input.variant,
         permission: allowed.rules,
+        templateFiles,
       })
       yield* events.publish(Command.Event.Executed, {
         name: input.command,
@@ -1836,8 +1859,29 @@ export const PromptInput = Schema.Struct({
 })
 export type PromptInput = Schema.Schema.Type<typeof PromptInput>
 // Internal admission input: `permission` is granted to the turns answering the
-// admitted message only. It is not part of the public PromptInput schema.
-type AdmitInput = PromptInput & { readonly permission?: PermissionV1.Ruleset }
+// admitted message only. `templateFiles` are the file part URLs a command
+// template referenced with `@path`; they are read under the normal read and
+// external_directory permissions instead of the composer's direct read. Neither
+// is part of the public PromptInput schema.
+type AdmitInput = PromptInput & {
+  readonly permission?: PermissionV1.Ruleset
+  readonly templateFiles?: ReadonlySet<string>
+}
+
+// Forces an ask for bash patterns that only a blanket `*` allow rule permits,
+// leaving denies and specific allow rules (such as `git status *`) in force.
+function specificAllowOnly(ruleset: PermissionV1.Ruleset, req: { permission: string; patterns: readonly string[] }) {
+  const standing = req.patterns.map((pattern) => ({ pattern, rule: Permission.evaluate(req.permission, pattern, ruleset) }))
+  // An added ask rule is a glob and may cover other patterns; with a deny in
+  // play, leave the ruleset alone so the deny is what the user sees.
+  if (standing.some((item) => item.rule.action === "deny")) return ruleset
+  return Permission.merge(
+    ruleset,
+    standing
+      .filter((item) => item.rule.action === "allow" && item.rule.pattern === "*")
+      .map((item) => ({ permission: req.permission, pattern: item.pattern, action: "ask" as const })),
+  )
+}
 
 export class LoopInput extends Schema.Class<LoopInput>("SessionPrompt.LoopInput")({
   sessionID: SessionID,
