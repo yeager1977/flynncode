@@ -56,6 +56,7 @@ import { Discovery } from "@/skill/discovery"
 import { Snapshot } from "@/snapshot"
 import { Storage } from "@/storage/storage"
 import { SessionDiffSweep } from "@/storage/session-diff-sweep"
+import { BackgroundShells } from "@/shell/background/service"
 import { ToolRegistry } from "@/tool/registry"
 import { Truncate } from "@/tool/truncate"
 import { Worktree } from "@/worktree"
@@ -253,6 +254,7 @@ export const app = LayerNode.group([
   Storage.node,
   SessionDiffSweep.node,
   WorktreeJanitor.node,
+  BackgroundShells.node,
   Snapshot.node,
   Plugin.node,
   ModelsDev.node,
