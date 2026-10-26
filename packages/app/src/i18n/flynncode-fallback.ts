@@ -5,6 +5,16 @@ import { dict } from "./en"
 // before their own entries, so a real translation always wins and English shows
 // otherwise. Remove a key here once every locale translates it.
 const keys = [
+  "session.plan.title",
+  "session.plan.approveAcceptEdits",
+  "session.plan.approveManual",
+  "session.plan.keepPlanning",
+  "session.plan.sendFeedback",
+  "session.plan.feedback.placeholder",
+  "session.plan.feedback.label",
+  "session.plan.empty",
+  "session.plan.badge",
+  "session.plan.badge.title",
   "session.shells.title",
   "session.shells.chip",
   "session.shells.chip.label",

@@ -230,6 +230,23 @@ export function PromptInputV2(props: PromptInputV2Props) {
                 />
               )}
             </Show>
+            <Show when={view.planMode} keyed>
+              {(control) => (
+                <Show when={control.active()}>
+                  <TooltipV2 placement="top" value={control.title()}>
+                    <ButtonV2
+                      size="small"
+                      variant="ghost-muted"
+                      data-action="prompt-plan-mode"
+                      onMouseDown={(event: MouseEvent) => event.preventDefault()}
+                      onClick={control.onToggle}
+                    >
+                      {control.label()}
+                    </ButtonV2>
+                  </TooltipV2>
+                </Show>
+              )}
+            </Show>
             <Show
               when={props.modelControl}
               fallback={

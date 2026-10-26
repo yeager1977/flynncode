@@ -10,6 +10,7 @@ import { useProviders } from "@/hooks/use-providers"
 import { resolveDefaultModel } from "@/hooks/provider-catalog"
 import { Persist, persisted } from "@/utils/persist"
 import { hasCustomAgent, resolveAgent } from "./local-agent"
+import { BUILD_AGENT, PLAN_AGENT, nextPlanAgent } from "./plan-mode"
 import { cycleModelVariant, getConfiguredAgentVariant, resolveModelVariant } from "./model-variant"
 import { modelServers } from "./model-servers"
 import { useSDK } from "./sdk"
@@ -190,7 +191,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       list,
       visible: agentsVisible,
       current() {
-        return pickAgent(agentsVisible() ? (scope()?.agent ?? store.current) : "build")
+        // Plan mode stays reachable (Shift+Tab, plan tools) while the custom-agent picker is hidden.
+        if (!agentsVisible()) return pickAgent(scope()?.agent === PLAN_AGENT ? PLAN_AGENT : BUILD_AGENT)
+        return pickAgent(scope()?.agent ?? store.current)
+      },
+      togglePlan() {
+        agent.set(nextPlanAgent(agent.current()?.name))
       },
       set(name: string | undefined) {
         const item = pickAgent(name)

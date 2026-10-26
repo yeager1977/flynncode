@@ -2,9 +2,19 @@ import { DataProvider } from "@flynncode/session-ui/context"
 import { showToast } from "@/utils/toast"
 import { base64Encode } from "@flynncode/core/util/encode"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
-import { type Accessor, createEffect, createMemo, createResource, onCleanup, type ParentProps, Show } from "solid-js"
+import {
+  type Accessor,
+  type ComponentProps,
+  createEffect,
+  createMemo,
+  createResource,
+  onCleanup,
+  type ParentProps,
+  Show,
+} from "solid-js"
 import { useLanguage } from "@/context/language"
-import { LocalProvider } from "@/context/local"
+import { LocalProvider, useLocal } from "@/context/local"
+import { PLAN_AGENT } from "@/context/plan-mode"
 import { SDKProvider, useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { decode64 } from "@/utils/base64"
@@ -75,18 +85,36 @@ export function DirectoryDataProvider(
   return (
     <Show when={directory()} keyed>
       {(directory) => (
-        <DataProvider
-          data={sync().data}
-          directory={directory}
-          sessionID={params.id}
-          onNavigateToSession={(sessionID: string) => navigate(href(sessionID))}
-          onSessionHref={href}
-          onShellPromote={promoteShell}
-        >
-          <LocalProvider>{props.children}</LocalProvider>
-        </DataProvider>
+        <LocalProvider>
+          <PlanAwareDataProvider
+            data={sync().data}
+            directory={directory}
+            sessionID={params.id}
+            onNavigateToSession={(sessionID: string) => navigate(href(sessionID))}
+            onSessionHref={href}
+            onShellPromote={promoteShell}
+          >
+            {props.children}
+          </PlanAwareDataProvider>
+        </LocalProvider>
       )}
     </Show>
+  )
+}
+
+// Plan mode is client agent state, which lives in LocalProvider, so the shared timeline reaches it through here.
+function PlanAwareDataProvider(props: ParentProps<ComponentProps<typeof DataProvider>>) {
+  const local = useLocal()
+  return (
+    <DataProvider
+      {...props}
+      planMode={{
+        active: () => local.agent.current()?.name === PLAN_AGENT,
+        restore: (agent) => local.agent.set(agent),
+      }}
+    >
+      {props.children}
+    </DataProvider>
   )
 }
 

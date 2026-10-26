@@ -48,6 +48,12 @@ export type SessionHrefFn = (sessionID: string) => string
 
 export type ShellPromoteFn = (input: { sessionID: string; callID: string }) => Promise<void>
 
+// Plan mode is client-side agent state, so the app owns whether it is on and how to leave it.
+export type PlanModeControl = {
+  active: () => boolean
+  restore: (agent: string) => void
+}
+
 export const { use: useData, provider: DataProvider } = createSimpleContext({
   name: "Data",
   init: (props: {
@@ -57,6 +63,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
     onNavigateToSession?: NavigateToSessionFn
     onSessionHref?: SessionHrefFn
     onShellPromote?: ShellPromoteFn
+    planMode?: PlanModeControl
   }) => {
     return {
       get store() {
@@ -71,6 +78,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
       navigateToSession: props.onNavigateToSession,
       sessionHref: props.onSessionHref,
       promoteShell: props.onShellPromote,
+      planMode: props.planMode,
     }
   },
 })

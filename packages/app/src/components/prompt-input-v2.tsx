@@ -24,6 +24,7 @@ import { selectionFromLines, type SelectedLineRange, useFile } from "@/context/f
 import { useComments } from "@/context/comments"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
+import { PLAN_AGENT } from "@/context/plan-mode"
 import { useLayout } from "@/context/layout"
 import { usePermission } from "@/context/permission"
 import { type ImageAttachmentPart, usePrompt } from "@/context/prompt"
@@ -458,6 +459,18 @@ export function usePromptInputV2Controller(props: PromptInputV2ControllerProps):
               keybind: () => command.keybindParts("agent.cycle"),
             }
           : undefined
+      },
+      planMode: {
+        active: () => props.controls.agents.current === PLAN_AGENT,
+        label: () => language.t("session.plan.badge"),
+        title: () => language.t("session.plan.badge.title"),
+        onToggle: () => props.controls.agents.togglePlan(),
+      },
+      onKeyDown: (event) => {
+        if (event.key !== "Tab" || !event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return
+        if (event.isComposing) return
+        event.preventDefault()
+        props.controls.agents.togglePlan()
       },
       variant: {
         options: () => variants().map((value) => ({ id: value, label: value })),

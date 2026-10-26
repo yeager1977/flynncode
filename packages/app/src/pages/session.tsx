@@ -123,6 +123,7 @@ import { extractPromptFromParts } from "@/utils/prompt"
 import { formatServerError, isLocalSessionNotFoundError, isSessionNotFoundError } from "@/utils/server-errors"
 import { legacySessionHref, requireServerKey, sessionHref } from "@/utils/session-route"
 import { useUsageExceededDialogs } from "./session/usage-exceeded-dialogs"
+import { usePlanModeReactions } from "./session/use-plan-mode-reactions"
 import { createSessionOwnership } from "./session/session-ownership"
 import { createSessionLineage } from "./session/session-lineage"
 import { screenshotFallbackComment } from "./session/hunk-revert"
@@ -2282,6 +2283,7 @@ export default function Page() {
   })
 
   useUsageExceededDialogs()
+  usePlanModeReactions()
 
   const mobileTabs = (compact = false, bottom = false) => (
     <Tabs value={store.mobileTab} class="h-auto">

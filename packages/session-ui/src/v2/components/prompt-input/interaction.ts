@@ -32,6 +32,13 @@ export type PromptInputV2ViewConfig = {
     onAttach: () => void
   }
   agent?: PromptInputV2SelectControl
+  // Shown next to the agent control while plan mode is on, even when the agent picker is hidden.
+  planMode?: {
+    active: Accessor<boolean>
+    label: Accessor<string>
+    title: Accessor<string>
+    onToggle: () => void
+  }
   model?: PromptInputV2SelectControl
   variant?: PromptInputV2SelectControl
   server?: PromptInputV2SelectControl

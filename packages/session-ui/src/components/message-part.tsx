@@ -2097,6 +2097,78 @@ ToolRegistry.register({
   },
 })
 
+ToolRegistry.register({
+  name: "enter_plan_mode",
+  render(props) {
+    const i18n = useI18n()
+    const data = useData()
+    const [undone, setUndone] = createSignal(false)
+    const previous = () => (typeof props.metadata.previousAgent === "string" ? props.metadata.previousAgent : undefined)
+    const undoable = () => props.status === "completed" && !undone() && !!previous() && !!data.planMode?.active()
+    const undo = (event: MouseEvent) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const agent = previous()
+      if (!agent) return
+      setUndone(true)
+      data.planMode?.restore(agent)
+    }
+
+    return (
+      <BasicTool
+        {...props}
+        icon="checklist"
+        hideDetails
+        trigger={
+          <div data-slot="basic-tool-tool-info-structured">
+            <div data-slot="basic-tool-tool-info-main">
+              <span data-slot="basic-tool-tool-title">{i18n.t("ui.tool.plan.enter")}</span>
+              <Show when={props.input.reason ?? props.metadata.reason}>
+                <span data-slot="basic-tool-tool-subtitle">{props.input.reason ?? props.metadata.reason}</span>
+              </Show>
+            </div>
+            <Show when={undoable()}>
+              <span data-slot="basic-tool-tool-action">
+                <ButtonV2
+                  size="small"
+                  variant="ghost-muted"
+                  data-action="plan-mode-undo"
+                  onMouseDown={(event: MouseEvent) => event.preventDefault()}
+                  onClick={undo}
+                >
+                  {i18n.t("ui.tool.plan.undo")}
+                </ButtonV2>
+              </span>
+            </Show>
+          </div>
+        }
+      />
+    )
+  },
+})
+
+ToolRegistry.register({
+  name: "exit_plan_mode",
+  render(props) {
+    const i18n = useI18n()
+    const plan = () => (typeof props.input.plan === "string" ? props.input.plan : "")
+    const subtitle = () => {
+      if (props.status !== "completed") return ""
+      return i18n.t(props.metadata.approved === true ? "ui.tool.plan.approved" : "ui.tool.plan.notApproved")
+    }
+
+    return (
+      <BasicTool {...props} icon="checklist" trigger={{ title: i18n.t("ui.tool.plan.exit"), subtitle: subtitle() }}>
+        <Show when={plan()}>
+          <div data-component="plan-body">
+            <Markdown text={plan()} cacheKey={props.callID ?? plan()} />
+          </div>
+        </Show>
+      </BasicTool>
+    )
+  },
+})
+
 const SHELL_PROMOTE_AFTER_MS = 10_000
 
 ToolRegistry.register({

@@ -47,6 +47,7 @@ import { DialogSelectModelUnpaidV2 } from "@/components/dialog-select-model-unpa
 import { useCommand } from "@/context/command"
 import { usePermission } from "@/context/permission"
 import { useLanguage } from "@/context/language"
+import { PLAN_AGENT } from "@/context/plan-mode"
 import { usePlatform } from "@/context/platform"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { createTextFragment, getCursorPosition, setCursorPosition, setRangeEdge } from "./prompt-input/editor-dom"
@@ -1325,6 +1326,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
     const ctrl = event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
 
+    if (event.key === "Tab" && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && !store.popover) {
+      event.preventDefault()
+      props.controls.agents.togglePlan()
+      return
+    }
+
     if (store.popover) {
       if (event.key === "Tab") {
         selectPopoverActive()
@@ -1680,6 +1687,20 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       />
                     </TooltipKeybind>
                   </div>
+                </Show>
+                <Show when={props.controls.agents.current === PLAN_AGENT}>
+                  <Tooltip placement="top" gutter={4} value={language.t("session.plan.badge.title")}>
+                    <Button
+                      type="button"
+                      size="small"
+                      variant="ghost"
+                      data-component="prompt-plan-badge"
+                      onMouseDown={(event: MouseEvent) => event.preventDefault()}
+                      onClick={() => props.controls.agents.togglePlan()}
+                    >
+                      {language.t("session.plan.badge")}
+                    </Button>
+                  </Tooltip>
                 </Show>
                 <Show when={!providersLoading()}>
                   <Show when={store.mode !== "shell"}>

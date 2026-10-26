@@ -56,6 +56,7 @@ function PromptInputExample() {
       loading: false,
       visible: true,
       select: (agent?: string) => setControls("agent", agent ?? "build"),
+      togglePlan: () => {},
     },
     model: {
       selection: model,
@@ -134,6 +135,7 @@ function PromptInputWithOpenDock() {
       loading: false,
       visible: true,
       select: (agent?: string) => setControls("agent", agent ?? "build"),
+      togglePlan: () => {},
     },
     model: {
       selection: {

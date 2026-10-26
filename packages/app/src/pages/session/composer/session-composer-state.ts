@@ -9,6 +9,7 @@ import { usePermission } from "@/context/permission"
 import type { ApprovalMode, SandboxLevel } from "@/context/permission"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import { planFromQuestion } from "@/context/plan-mode"
 import {
   sessionPermissionRequest,
   sessionQuestionRequest,
@@ -49,6 +50,13 @@ export function createSessionComposerController(options?: { closeMs?: number | (
 
   const questionRequest = createMemo((): QuestionRequest | undefined => {
     return sessionQuestionRequest(sync().data.session, sync().data.question, params.id)
+  })
+
+  // Plan text of the exit_plan_mode call the pending question belongs to; undefined for ordinary questions.
+  const questionPlan = createMemo(() => {
+    const tool = questionRequest()?.tool
+    if (!tool) return
+    return planFromQuestion(tool, sync().data.part[tool.messageID])
   })
 
   const permissionRequest = createMemo((): PermissionRequest | undefined => {
@@ -263,6 +271,7 @@ export function createSessionComposerController(options?: { closeMs?: number | (
   return {
     blocked,
     questionRequest,
+    questionPlan,
     permissionRequest,
     permissionResponding,
     waitingTerminal,

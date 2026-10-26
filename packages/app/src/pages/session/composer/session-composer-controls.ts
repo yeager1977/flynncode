@@ -43,6 +43,7 @@ export function createPromptInputController(input: {
         loading: agentsQuery.isLoading,
         visible: local.agent.visible(),
         select: local.agent.set,
+        togglePlan: local.agent.togglePlan,
       },
       model: {
         selection: input.model ?? local.model,
