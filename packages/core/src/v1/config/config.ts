@@ -274,6 +274,10 @@ export const Info = Schema.Struct({
       mcp_timeout: Schema.optional(PositiveInt).annotate({
         description: "Timeout in milliseconds for model context protocol (MCP) requests",
       }),
+      mcp_defer_threshold: Schema.optional(NonNegativeInt).annotate({
+        description:
+          "Defer MCP tools behind tool_search when more than this many are visible (default: 15). 0 defers all MCP tools",
+      }),
       policies: Schema.optional(Schema.mutable(Schema.Array(ConfigExperimental.Policy))).annotate({
         description: "Policy statements applied to supported resources, such as provider access",
       }),

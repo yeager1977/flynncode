@@ -20,6 +20,10 @@ export const Local = Schema.Struct({
   timeout: Schema.optional(PositiveInt).annotate({
     description: "Timeout in ms for MCP server requests. Defaults to 5000 (5 seconds) if not specified.",
   }),
+  defer: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Defer this server's tools behind tool_search. true always defers, false never defers; unset defers only when the visible MCP tool count exceeds experimental.mcp_defer_threshold.",
+  }),
 }).annotate({ identifier: "McpLocalConfig" })
 export type Local = Schema.Schema.Type<typeof Local>
 
@@ -55,6 +59,10 @@ export const Remote = Schema.Struct({
   }),
   timeout: Schema.optional(PositiveInt).annotate({
     description: "Timeout in ms for MCP server requests. Defaults to 5000 (5 seconds) if not specified.",
+  }),
+  defer: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Defer this server's tools behind tool_search. true always defers, false never defers; unset defers only when the visible MCP tool count exceeds experimental.mcp_defer_threshold.",
   }),
 }).annotate({ identifier: "McpRemoteConfig" })
 export type Remote = Schema.Schema.Type<typeof Remote>

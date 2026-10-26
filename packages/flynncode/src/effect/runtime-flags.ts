@@ -19,6 +19,7 @@ export class Service extends ConfigService.Service<Service>()("@opencode/Runtime
   disableDefaultPlugins: bool("OPENCODE_DISABLE_DEFAULT_PLUGINS"),
   disableEmbeddedWebUi: bool("OPENCODE_DISABLE_EMBEDDED_WEB_UI"),
   disableExternalSkills: bool("OPENCODE_DISABLE_EXTERNAL_SKILLS"),
+  disableMcpDefer: bool("OPENCODE_DISABLE_MCP_DEFER"),
   disableLspDownload: bool("OPENCODE_DISABLE_LSP_DOWNLOAD"),
   // One-invocation escape hatch: run file hooks without persisted trust.
   // Prefer the /hooks-equivalent review flow; this flag is for automation.
