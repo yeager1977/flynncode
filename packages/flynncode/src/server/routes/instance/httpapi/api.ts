@@ -8,6 +8,7 @@ import { SkillV2 } from "@flynncode/core/skill"
 import { InstanceDisposed } from "@/server/event"
 import { ComputerUseExecutor } from "@/computer-use"
 import { Question } from "@/question"
+import { BackgroundShellsApi } from "./groups/background-shells"
 import { ConfigApi } from "./groups/config"
 import { ComputerUseApi } from "./groups/computer-use"
 import { ControlApi } from "./groups/control"
@@ -83,6 +84,7 @@ export const InstanceHttpApi = HttpApi.make("opencode-instance")
   .addHttpApi(SyncApi)
   .addHttpApi(TuiApi)
   .addHttpApi(WorkspaceApi)
+  .addHttpApi(BackgroundShellsApi)
   .middleware(SchemaErrorMiddleware)
 
 export const OpenCodeHttpApi = HttpApi.make("opencode")

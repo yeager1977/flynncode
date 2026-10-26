@@ -4,6 +4,7 @@ import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { AppProcess } from "@flynncode/core/process"
 import { BackgroundShells } from "../../src/shell/background/service"
 import { BackgroundRegistry } from "../../src/shell/background/registry"
+import { GlobalBus, type GlobalEvent } from "../../src/bus/global"
 import { pollWithTimeout, testEffect } from "../lib/effect"
 
 const layer = LayerNode.compile(LayerNode.group([AppProcess.node, BackgroundShells.node]))
@@ -65,6 +66,25 @@ const notified = (texts: string[], count = 1) =>
     `expected ${count} notification(s)`,
     "8 seconds",
   )
+
+// Records this shell's background-shell events from the process-wide bus, with their arrival time.
+const shellEvents = Effect.acquireRelease(
+  Effect.sync(() => {
+    const events: { at: number; directory?: string; type: string; properties: Record<string, unknown> }[] = []
+    const listener = (event: GlobalEvent) => {
+      if (typeof event.payload?.type !== "string" || !event.payload.type.startsWith("shell.background.")) return
+      events.push({
+        at: Date.now(),
+        directory: event.directory,
+        type: event.payload.type,
+        properties: event.payload.properties,
+      })
+    }
+    GlobalBus.on("event", listener)
+    return { events, listener }
+  }),
+  (recorder) => Effect.sync(() => GlobalBus.off("event", recorder.listener)),
+).pipe(Effect.map((recorder) => recorder.events))
 
 const groupAlive = (pgid: number) => {
   try {
@@ -460,6 +480,73 @@ describe("BackgroundShells", () => {
         )
         yield* statusOf(service, "ses_a", shell.id, "exited")
         expect(warnings).toEqual([])
+      }),
+    15_000,
+  )
+
+  it.live(
+    "publishes started, throttled output and exited events routed by the shell's directory",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* BackgroundShells.Service
+        const events = yield* shellEvents
+        const shell = yield* service.start({
+          sessionID: "ses_events",
+          cwd: process.cwd(),
+          directory: "/workspace/events",
+          env: { PATH: process.env.PATH ?? "" },
+          shell: "/bin/sh",
+          command: "for i in 1 2 3 4 5 6 7 8; do echo line$i; sleep 0.3; done",
+        })
+        started.add(shell.pid)
+        yield* statusOf(service, "ses_events", shell.id, "exited")
+        const own = events.filter((event) => event.properties.id === shell.id)
+        expect(own.every((event) => event.directory === "/workspace/events")).toBe(true)
+        expect(own[0]).toMatchObject({
+          type: "shell.background.started",
+          properties: {
+            sessionID: "ses_events",
+            id: shell.id,
+            command: shell.command,
+            pid: shell.pid,
+            startedAt: shell.startedAt,
+          },
+        })
+        expect(own.at(-1)).toMatchObject({
+          type: "shell.background.exited",
+          properties: { sessionID: "ses_events", id: shell.id, status: "exited", exitCode: 0 },
+        })
+        const output = own.filter((event) => event.type === "shell.background.output")
+        // About 2.4 s of output at one event per second at most.
+        expect(output.length).toBeGreaterThanOrEqual(2)
+        expect(output.length).toBeLessThanOrEqual(3)
+        output.slice(1).forEach((event, index) => expect(event.at - output[index].at).toBeGreaterThanOrEqual(950))
+        output.forEach((event) => {
+          expect(event.properties.sessionID).toBe("ses_events")
+          expect(event.properties.tail).toEndWith("\n")
+          expect(event.properties.bytes).toBe(String(event.properties.tail).length)
+        })
+        expect(output[0].properties.tail).toStartWith("line1\n")
+      }),
+    15_000,
+  )
+
+  it.live(
+    "output events carry the writer's total bytes and only the last 4 KiB as the tail",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* BackgroundShells.Service
+        const events = yield* shellEvents
+        const shell = yield* start(service, {
+          command: "head -c 10000 /dev/zero | tr '\\0' a; sleep 1.2; echo end",
+        })
+        yield* statusOf(service, "ses_a", shell.id, "exited")
+        const last = events
+          .filter((event) => event.properties.id === shell.id && event.type === "shell.background.output")
+          .at(-1)
+        expect(last?.properties.bytes).toBe(10004)
+        expect(String(last?.properties.tail)).toHaveLength(4096)
+        expect(String(last?.properties.tail)).toEndWith("aaaaend\n")
       }),
     15_000,
   )

@@ -7,6 +7,8 @@ import { ChildProcess } from "effect/unstable/process"
 import type { ChildProcessHandle } from "effect/unstable/process/ChildProcessSpawner"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { Global } from "@flynncode/core/global"
+import type { Event } from "@flynncode/schema/event"
+import { ShellBackground } from "@flynncode/schema/shell-background"
 import { AppProcess } from "@flynncode/core/process"
 import { GlobalBus, type GlobalEvent } from "@/bus/global"
 import { Identifier } from "@/id/id"
@@ -47,11 +49,6 @@ export type Shell = {
   exitCode?: number
   endedAt?: number
 }
-
-export type Event =
-  | { type: "shell.background.started"; sessionID: string; id: string; command: string; pid: number; startedAt: number }
-  | { type: "shell.background.output"; sessionID: string; id: string; bytes: number; tail: string }
-  | { type: "shell.background.exited"; sessionID: string; id: string; status: Status; exitCode?: number }
 
 export class ShellLimitError extends Schema.TaggedErrorClass<ShellLimitError>()("BackgroundShellLimitError", {
   message: Schema.String,
@@ -210,6 +207,19 @@ const layer = Layer.effect(
         stopped: yield* Deferred.make<void>(),
         finished: yield* Deferred.make<void>(),
       }
+      // Re-read at insert time: a killSession that ran meanwhile dropped the map this call started with. Listed and
+      // announced before output is pumped, so `started` precedes every output and exit event of the shell.
+      sessions.set(
+        input.sessionID,
+        (sessions.get(input.sessionID) ?? new Map<string, Entry>()).set(entry.shell.id, entry),
+      )
+      yield* emit(entry, ShellBackground.Event.Started, {
+        sessionID: entry.shell.sessionID,
+        id: entry.shell.id,
+        command: entry.shell.command,
+        pid: entry.shell.pid,
+        startedAt: entry.shell.startedAt,
+      })
       const pump = yield* Stream.runForEach(Stream.decodeText(handle.all), (chunk) =>
         Effect.suspend(() => {
           entry.writer.write(chunk)
@@ -218,8 +228,7 @@ const layer = Layer.effect(
           if (now - entry.emittedAt < OUTPUT_EVENT_MS) return Effect.void
           entry.emittedAt = now
           const total = entry.writer.total()
-          return emit(entry, {
-            type: "shell.background.output",
+          return emit(entry, ShellBackground.Event.Output, {
             sessionID: entry.shell.sessionID,
             id: entry.shell.id,
             bytes: total,
@@ -229,19 +238,6 @@ const layer = Layer.effect(
       ).pipe(Effect.ignore, Effect.forkIn(fibers))
       yield* record(entry)
       yield* life(entry, scope, pump, limit, input.notify).pipe(Effect.forkIn(fibers))
-      // Re-read at insert time: a killSession that ran meanwhile dropped the map this call started with.
-      sessions.set(
-        input.sessionID,
-        (sessions.get(input.sessionID) ?? new Map<string, Entry>()).set(entry.shell.id, entry),
-      )
-      yield* emit(entry, {
-        type: "shell.background.started",
-        sessionID: entry.shell.sessionID,
-        id: entry.shell.id,
-        command: entry.shell.command,
-        pid: entry.shell.pid,
-        startedAt: entry.shell.startedAt,
-      })
       return { ...entry.shell }
     })
 
@@ -320,8 +316,7 @@ const layer = Layer.effect(
         Deferred.doneUnsafe(watcher.wake, Exit.void)
       })
       yield* Deferred.succeed(entry.finished, undefined)
-      yield* emit(entry, {
-        type: "shell.background.exited",
+      yield* emit(entry, ShellBackground.Event.Exited, {
         sessionID: entry.shell.sessionID,
         id: entry.shell.id,
         status: entry.shell.status,
@@ -540,9 +535,17 @@ const layer = Layer.effect(
 
 export const node = LayerNode.make({ service: Service, layer, deps: [AppProcess.node] })
 
-// Task 6 publishes these on the instance bus for `entry.directory`; until then events go nowhere.
-function emit(_entry: Entry, _event: Event) {
-  return Effect.void
+// This service has no instance context, so events go straight onto the process-wide bus, routed by the directory the
+// shell was started from, the way EventV2Bridge forwards instance events. A failing listener never affects the shell.
+function emit<D extends Event.Definition>(entry: Entry, definition: D, properties: Schema.Codec.Encoded<D["data"]>) {
+  return Effect.sync(() =>
+    GlobalBus.emit("event", { directory: entry.directory, payload: { type: definition.type, properties } }),
+  ).pipe(
+    Effect.asVoid,
+    Effect.catchCause((cause) =>
+      Effect.logWarning("background shell event failed", { type: definition.type, cause: Cause.pretty(cause) }),
+    ),
+  )
 }
 
 function scan(entry: Entry, watcher: Watcher, chunk: string) {

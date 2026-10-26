@@ -92,6 +92,9 @@ export type Event =
   | EventWorkspaceStatus
   | EventWorktreeReady
   | EventWorktreeFailed
+  | EventShellBackgroundStarted
+  | EventShellBackgroundOutput
+  | EventShellBackgroundExited
   | EventServerConnected
   | EventGlobalDisposed
   | EventServerInstanceDisposed
@@ -768,6 +771,8 @@ export type QuestionTool = {
 }
 
 export type QuestionAnswer = Array<string>
+
+export type BackgroundShellStatus = "running" | "exited" | "killed" | "timed_out"
 
 export type GlobalEvent = {
   directory: string
@@ -1646,6 +1651,37 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "shell.background.started"
+        properties: {
+          sessionID: string
+          id: string
+          command: string
+          pid: number
+          startedAt: number
+        }
+      }
+    | {
+        id: string
+        type: "shell.background.output"
+        properties: {
+          sessionID: string
+          id: string
+          bytes: number
+          tail: string
+        }
+      }
+    | {
+        id: string
+        type: "shell.background.exited"
+        properties: {
+          sessionID: string
+          id: string
+          status: BackgroundShellStatus
+          exitCode?: number
+        }
+      }
+    | {
+        id: string
         type: "server.connected"
         properties: {
           [key: string]: unknown
@@ -1965,6 +2001,9 @@ export type AttachmentConfig = {
 export type Config = {
   $schema?: string
   shell?: string
+  background_shells?: {
+    max_ms?: number
+  }
   logLevel?: LogLevel
   server?: ServerConfig
   command?: {
@@ -3242,6 +3281,25 @@ export type WorkspaceWarpError = {
   }
 }
 
+export type BackgroundShell = {
+  id: string
+  sessionID: string
+  command: string
+  pid: number
+  outputPath: string
+  startedAt: number
+  status: BackgroundShellStatus
+  exitCode?: number
+  endedAt?: number
+}
+
+export type BackgroundShellOutput = {
+  text: string
+  offset: number
+  skipped: number
+  truncated: boolean
+}
+
 export type UnauthorizedError = {
   _tag: "UnauthorizedError"
   message: string
@@ -3531,6 +3589,9 @@ export type V2Event =
   | WorkspaceStatus
   | WorktreeReady
   | WorktreeFailed
+  | ShellBackgroundStarted
+  | ShellBackgroundOutput
+  | ShellBackgroundExited
   | ServerConnected
   | GlobalDisposed
 
@@ -6717,6 +6778,67 @@ export type WorktreeFailed = {
   }
 }
 
+export type ShellBackgroundStarted = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "shell.background.started"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    id: string
+    command: string
+    pid: number
+    startedAt: number
+  }
+}
+
+export type ShellBackgroundOutput = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "shell.background.output"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    id: string
+    bytes: number
+    tail: string
+  }
+}
+
+export type ShellBackgroundExited = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "shell.background.exited"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    id: string
+    status: BackgroundShellStatus
+    exitCode?: number
+  }
+}
+
 export type ServerConnected = {
   id: string
   metadata?: {
@@ -7699,6 +7821,40 @@ export type EventWorktreeFailed = {
   type: "worktree.failed"
   properties: {
     message: string
+  }
+}
+
+export type EventShellBackgroundStarted = {
+  id: string
+  type: "shell.background.started"
+  properties: {
+    sessionID: string
+    id: string
+    command: string
+    pid: number
+    startedAt: number
+  }
+}
+
+export type EventShellBackgroundOutput = {
+  id: string
+  type: "shell.background.output"
+  properties: {
+    sessionID: string
+    id: string
+    bytes: number
+    tail: string
+  }
+}
+
+export type EventShellBackgroundExited = {
+  id: string
+  type: "shell.background.exited"
+  properties: {
+    sessionID: string
+    id: string
+    status: BackgroundShellStatus
+    exitCode?: number
   }
 }
 
@@ -12501,6 +12657,107 @@ export type ExperimentalWorkspaceWarpResponses = {
 
 export type ExperimentalWorkspaceWarpResponse =
   ExperimentalWorkspaceWarpResponses[keyof ExperimentalWorkspaceWarpResponses]
+
+export type SessionShellsListData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/shells"
+}
+
+export type SessionShellsListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type SessionShellsListError = SessionShellsListErrors[keyof SessionShellsListErrors]
+
+export type SessionShellsListResponses = {
+  /**
+   * Background shells of the session
+   */
+  200: Array<BackgroundShell>
+}
+
+export type SessionShellsListResponse = SessionShellsListResponses[keyof SessionShellsListResponses]
+
+export type SessionShellsOutputData = {
+  body?: never
+  path: {
+    sessionID: string
+    id: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    offset?: string
+  }
+  url: "/session/{sessionID}/shells/{id}/output"
+}
+
+export type SessionShellsOutputErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionShellsOutputError = SessionShellsOutputErrors[keyof SessionShellsOutputErrors]
+
+export type SessionShellsOutputResponses = {
+  /**
+   * Output from the requested offset
+   */
+  200: BackgroundShellOutput
+}
+
+export type SessionShellsOutputResponse = SessionShellsOutputResponses[keyof SessionShellsOutputResponses]
+
+export type SessionShellsStopData = {
+  body?: never
+  path: {
+    sessionID: string
+    id: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/shells/{id}/stop"
+}
+
+export type SessionShellsStopErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionShellsStopError = SessionShellsStopErrors[keyof SessionShellsStopErrors]
+
+export type SessionShellsStopResponses = {
+  /**
+   * The shell after stopping
+   */
+  200: BackgroundShell
+}
+
+export type SessionShellsStopResponse = SessionShellsStopResponses[keyof SessionShellsStopResponses]
 
 export type V2HealthGetData = {
   body?: never

@@ -250,6 +250,12 @@ import type {
   SessionShareResponses,
   SessionShellErrors,
   SessionShellResponses,
+  SessionShellsListErrors,
+  SessionShellsListResponses,
+  SessionShellsOutputErrors,
+  SessionShellsOutputResponses,
+  SessionShellsStopErrors,
+  SessionShellsStopResponses,
   SessionStatusErrors,
   SessionStatusResponses,
   SessionSummarizeErrors,
@@ -4103,6 +4109,110 @@ export class Folders extends HeyApiClient {
   }
 }
 
+export class Shells extends HeyApiClient {
+  /**
+   * List background shells
+   *
+   * List the background shells the agent started in this session, running and finished.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionShellsListResponses, SessionShellsListErrors, ThrowOnError>({
+      url: "/session/{sessionID}/shells",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Read background shell output
+   *
+   * Read a background shell's output from a logical stream offset (default 0). Pass the returned offset to continue. Does not move the agent's own read position.
+   */
+  public output<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      id: string
+      directory?: string
+      workspace?: string
+      offset?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "id" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "offset" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionShellsOutputResponses, SessionShellsOutputErrors, ThrowOnError>({
+      url: "/session/{sessionID}/shells/{id}/output",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Stop background shell
+   *
+   * Kill a background shell's process group (SIGTERM, then SIGKILL after 5 seconds) and return the shell. A shell that already finished is returned unchanged.
+   */
+  public stop<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      id: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "id" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SessionShellsStopResponses, SessionShellsStopErrors, ThrowOnError>({
+      url: "/session/{sessionID}/shells/{id}/stop",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Session2 extends HeyApiClient {
   /**
    * List sessions
@@ -5115,6 +5225,11 @@ export class Session2 extends HeyApiClient {
   private _folders?: Folders
   get folders2(): Folders {
     return (this._folders ??= new Folders({ client: this.client }))
+  }
+
+  private _shells?: Shells
+  get shells(): Shells {
+    return (this._shells ??= new Shells({ client: this.client }))
   }
 }
 

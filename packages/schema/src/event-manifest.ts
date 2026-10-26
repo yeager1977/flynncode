@@ -27,6 +27,7 @@ import { SessionEvent } from "./session-event"
 import { SessionStatusEvent } from "./session-status-event"
 import { SessionTodo } from "./session-todo"
 import { SessionV1 } from "./session-v1"
+import { ShellBackground } from "./shell-background"
 import { TuiEvent } from "./tui-event"
 import { VcsEvent } from "./vcs-event"
 import { WorkspaceEvent } from "./workspace-event"
@@ -80,6 +81,7 @@ export const Definitions = Event.inventory(
   ...VcsEvent.Definitions,
   ...WorkspaceEvent.Definitions,
   ...WorktreeEvent.Definitions,
+  ...ShellBackground.Event.Definitions,
   ...ServerEvent.Definitions,
 )
 export const Latest = Event.latest(Definitions)

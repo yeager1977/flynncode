@@ -626,6 +626,44 @@ const scenarios: Scenario[] = [
     .json(200, (body) => {
       check(body === false, "background route should be a no-op without running subagents")
     }),
+  http.protected
+    .get("/session/{sessionID}/shells", "session.shells.list")
+    .seeded((ctx) => ctx.session({ title: "Background shells owner" }))
+    .at((ctx) => ({ path: route("/session/{sessionID}/shells", { sessionID: ctx.state.id }), headers: ctx.headers() }))
+    .json(200, (body) => {
+      array(body)
+      check(body.length === 0, "a session without background shells should list none")
+    }),
+  http.protected
+    .get("/session/{sessionID}/shells/{id}/output", "session.shells.output")
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/shells/{id}/output", {
+        sessionID: "ses_httpapi_shells",
+        id: "bash_httpapi_missing",
+      }),
+      headers: ctx.headers(),
+    }))
+    .json(404, object, "status"),
+  http.protected
+    .get("/session/{sessionID}/shells/{id}/output", "session.shells.output.invalid")
+    .at((ctx) => ({
+      path: `${route("/session/{sessionID}/shells/{id}/output", { sessionID: "ses_httpapi_shells", id: "bash_httpapi_missing" })}?offset=-1`,
+      headers: ctx.headers(),
+    }))
+    .status(400),
+  // Destructive route: the auth probe targets a shell that cannot exist, so a probe that got through would kill nothing.
+  http.protected
+    .post("/session/{sessionID}/shells/{id}/stop", "session.shells.stop")
+    .mutating()
+    .probe({ path: "/session/ses_httpapi_probe/shells/bash_httpapi_missing/stop" })
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/shells/{id}/stop", {
+        sessionID: "ses_httpapi_shells",
+        id: "bash_httpapi_missing",
+      }),
+      headers: ctx.headers(),
+    }))
+    .json(404, object, "status"),
   http.protected.get("/experimental/resource", "experimental.resource.list").json(),
   http.protected
     .post("/sync/history", "sync.history.list")
