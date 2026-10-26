@@ -391,6 +391,11 @@ const layer = Layer.effect(
           item.steps = value.steps ?? item.steps
           item.options = mergeDeep(item.options, value.options ?? {})
           item.permission = Permission.merge(item.permission, Permission.fromConfig(value.permission ?? {}))
+          // A Claude Code agent's `tools` list (see ConfigClaude) only narrows
+          // the standing rules; it never grants a tool.
+          const claudeTools = item.options.claudeTools
+          if (Array.isArray(claudeTools)) item.permission = Permission.restrict(item.permission, claudeTools)
+          delete item.options.claudeTools
           // Agent options reach the provider request, so the Claude Code model
           // alias is kept aside instead of being sent as a provider option.
           const alias = item.options.claudeModel

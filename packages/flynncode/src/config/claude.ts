@@ -11,7 +11,8 @@ import { configEntryNameFromPath } from "./entry-name"
 import { ConfigMarkdown } from "./markdown"
 
 // Claude Code tool names mapped onto Flynncode permission keys. Write and
-// MultiEdit run under the `edit` permission, like the deprecated `tools` map.
+// MultiEdit run under the `edit` permission, like the deprecated `tools` map;
+// so does NotebookEdit, which `SCOPES` narrows to notebooks.
 const TOOLS: Record<string, string> = {
   Read: "read",
   Write: "edit",
@@ -24,9 +25,19 @@ const TOOLS: Record<string, string> = {
   WebSearch: "websearch",
   TodoWrite: "todowrite",
   Task: "task",
-  NotebookEdit: "notebook_edit",
+  NotebookEdit: "edit",
   AskUserQuestion: "question",
 }
+
+// Request patterns a listed Claude tool covers when it is narrower than its
+// whole permission key.
+const SCOPES: Record<string, string> = {
+  NotebookEdit: "*.ipynb",
+}
+
+// Checks rather than tools: the listed tools ask them, so an agent's `tools`
+// list never takes them away.
+const ALWAYS_SCOPED = ["external_directory", "doom_loop"]
 
 // Permission keys Flynncode's own tools and checks ask for: the built-in tool
 // ids from ToolRegistry plus keys asked outside a tool. There is no static
@@ -54,6 +65,7 @@ const BUILTIN_PERMISSIONS = new Set([
   "message",
   "monitor",
   "multiedit",
+  "notebook_edit",
   "plan_enter",
   "plan_exit",
   "read_mcp_resource",
@@ -101,15 +113,23 @@ export async function loadAgents(dir: string) {
         : configEntryNameFromPath(path.relative(dir, file), ["agents/"])
     const tools = toolPermissions(data.tools, file)
     warnings.push(...tools.warnings, ...modelWarnings(data.model, `Claude agent ${file}`))
-    const decoded = Schema.decodeUnknownExit(ConfigAgentV1.Info)({
-      name,
-      description: data.description.replaceAll("\\n", "\n"),
-      prompt: md.content.trim(),
-      mode: "subagent",
-      ...model(data.model, file),
-      ...(tools.permission ? { permission: tools.permission } : {}),
-      ...color(data.color),
-    })
+    const modelInfo = model(data.model, file)
+    // Permission precedence follows key order, which the decode only keeps
+    // with `propertyOrder: "original"`.
+    const decoded = Schema.decodeUnknownExit(ConfigAgentV1.Info)(
+      {
+        name,
+        description: data.description.replaceAll("\\n", "\n"),
+        prompt: md.content.trim(),
+        mode: "subagent",
+        ...modelInfo,
+        ...(tools.scopes
+          ? { permission: tools.permission, options: { ...modelInfo.options, claudeTools: tools.scopes } }
+          : {}),
+        ...color(data.color),
+      },
+      { propertyOrder: "original" },
+    )
     if (Exit.isFailure(decoded)) {
       warnings.push(`skipped Claude agent ${file}: ${String(decoded.cause)}`)
       continue
@@ -195,7 +215,8 @@ function allowedToolRule(item: string): PermissionV1.Rule | undefined {
   const permission = match && Object.hasOwn(TOOLS, match[1]) ? TOOLS[match[1]] : undefined
   if (!match || !permission) return undefined
   const specifier = match[2]?.trim()
-  if (!specifier || specifier === "*") return { permission, pattern: "*", action: "allow" }
+  if (!specifier || specifier === "*")
+    return { permission, pattern: Object.hasOwn(SCOPES, match[1]) ? SCOPES[match[1]] : "*", action: "allow" }
   if (match[1] !== "Bash") return undefined
   return { permission, pattern: specifier.endsWith(":*") ? `${specifier.slice(0, -2)} *` : specifier, action: "allow" }
 }
@@ -227,28 +248,35 @@ function commandTools(input: unknown) {
     .filter(Boolean)
 }
 
-// A `tools` list is an allowlist: everything else is denied. Without one the
-// agent keeps the default permissions (all tools).
+// A `tools` list only takes tools away: it comes from a repository, so it must
+// never grant more than the defaults and the user's config. The result denies
+// each built-in permission the list does not cover, and `scopes` names what
+// the list does cover, so Agent can deny everything else (MCP and plugin tools
+// included) while the listed tools keep their standing rules. Without a list
+// the agent keeps the default permissions (all tools).
 function toolPermissions(input: unknown, file: string) {
-  if (input === undefined || input === null) return { permission: undefined, warnings: [] }
+  if (input === undefined || input === null) return { permission: undefined, scopes: undefined, warnings: [] }
   const names = (Array.isArray(input) ? input : String(input).split(","))
     .map((item) => String(item).trim())
     .filter(Boolean)
-  const allowed = names.map((item) => ({
+  const listed = names.map((item) => ({
     item,
     permission: Object.hasOwn(TOOLS, item) ? TOOLS[item] : item.startsWith("mcp__") ? mcpPermission(item) : undefined,
+    pattern: Object.hasOwn(SCOPES, item) ? SCOPES[item] : "*",
   }))
-  const unknown = allowed.filter((entry) => !entry.permission).map((entry) => entry.item)
+  const scopes = [
+    ...ALWAYS_SCOPED.map((permission) => ({ permission, pattern: "*" })),
+    ...listed.flatMap((entry) => (entry.permission ? [{ permission: entry.permission, pattern: entry.pattern }] : [])),
+  ]
+  const unknown = listed.filter((entry) => !entry.permission).map((entry) => entry.item)
   return {
-    // `*: deny` also covers external_directory; restore the default prompt so
-    // allowed file tools can still ask to reach outside the project.
-    permission: {
-      "*": "deny" as const,
-      external_directory: "ask" as const,
-      ...Object.fromEntries(
-        allowed.flatMap((entry) => (entry.permission ? [[entry.permission, "allow" as const]] : [])),
-      ),
-    },
+    permission: Object.fromEntries(
+      [...BUILTIN_PERMISSIONS]
+        .filter((key) => !scopes.some((scope) => scope.permission === key))
+        .toSorted()
+        .map((key) => [key, "deny" as const]),
+    ),
+    scopes,
     warnings: unknown.length
       ? [`Claude agent ${file}: ignored unknown tools or MCP names of built-in permissions ${unknown.join(", ")}`]
       : [],

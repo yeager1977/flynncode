@@ -330,6 +330,48 @@ export function withTurn(
   return merge(ruleset, turn)
 }
 
+// Narrows a ruleset to the given scopes without widening anything, for
+// allowlists that come from untrusted sources such as a `.claude` agent's
+// `tools`. A request outside every scope is denied; one inside keeps the
+// action the ruleset already gives it. Each rule is re-stated for the scopes
+// it overlaps. Where an overlap is not a plain glob, an allow is dropped and
+// an ask or deny becomes a deny, so an approximation only ever restricts.
+export function restrict(
+  ruleset: PermissionV1.Ruleset,
+  scopes: readonly { permission: string; pattern: string }[],
+): PermissionV1.Rule[] {
+  return [
+    ...ruleset,
+    { permission: "*", pattern: "*", action: "deny" },
+    ...ruleset.flatMap((rule) => {
+      const parts = scopes.map((scope) => ({
+        permission: intersect(rule.permission, scope.permission),
+        pattern: intersect(rule.pattern, scope.pattern),
+        overlaps: mayOverlap(rule.permission, scope.permission) && mayOverlap(rule.pattern, scope.pattern),
+      }))
+      const exact = parts.flatMap((part) =>
+        part.permission && part.pattern ? [{ permission: part.permission, pattern: part.pattern, action: rule.action }] : [],
+      )
+      const unknown = parts.some((part) => part.overlaps && !(part.permission && part.pattern))
+      return unknown && rule.action !== "allow" ? [{ ...rule, action: "deny" as const }, ...exact] : exact
+    }),
+  ]
+}
+
+// The glob matching exactly the requests both match, when one contains the
+// other. `?` matches a single character, so a literal comparison of globs
+// holding it says nothing about containment.
+function intersect(a: string, b: string) {
+  if (a === b) return a
+  if (!a.includes("?") && Wildcard.match(b, a)) return b
+  if (!b.includes("?") && Wildcard.match(a, b)) return a
+  return undefined
+}
+
+function mayOverlap(a: string, b: string) {
+  return a === b || /[*?]/.test(a) || /[*?]/.test(b)
+}
+
 export function disabled(tools: string[], ruleset: PermissionV1.Ruleset): Set<string> {
   const edits = ["edit", "multiedit", "notebook_edit", "write", "apply_patch"]
   const reads = ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"]

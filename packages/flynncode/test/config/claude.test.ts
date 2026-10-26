@@ -73,30 +73,38 @@ describe("ConfigClaude.loadAgents", () => {
     expect(agent.description).not.toContain("\\n")
   })
 
-  test("maps Claude tool names to permission rules and denies the rest", async () => {
+  test("maps Claude tool names to scopes and denies only unlisted built-ins", async () => {
     await using tmp = await tmpdir()
     await writeAgents(tmp.path, {
       "reviewer.md": agentFile({
         name: "reviewer",
         description: "Reviews code",
         tools:
-          "Read, Grep, Glob, Write, Bash, TodoWrite, AskUserQuestion, FancyTool, mcp__github__get_issue, mcp__linear",
+          "Read, Grep, Glob, Write, Bash, TodoWrite, AskUserQuestion, NotebookEdit, FancyTool, mcp__github__get_issue, mcp__linear",
       }),
     })
     const result = await ConfigClaude.loadAgents(path.join(tmp.path, ".claude"))
-    expect(result.agents.reviewer.permission).toEqual({
-      "*": "deny",
-      external_directory: "ask",
-      read: "allow",
-      grep: "allow",
-      glob: "allow",
-      edit: "allow",
-      bash: "allow",
-      todowrite: "allow",
-      question: "allow",
-      github_get_issue: "allow",
-      "linear_*": "allow",
-    })
+    const agent = result.agents.reviewer
+    // Restrict only: a tools list never emits an allow rule.
+    expect(Object.values(agent.permission ?? {}).every((action) => action === "deny")).toBe(true)
+    for (const key of ["read", "grep", "glob", "edit", "bash", "todowrite", "question", "external_directory"])
+      expect(agent.permission?.[key]).toBeUndefined()
+    for (const key of ["webfetch", "websearch", "task", "skill", "lsp", "computer_use", "multiedit", "notebook_edit"])
+      expect(agent.permission?.[key]).toBe("deny")
+    expect(agent.options?.claudeTools).toEqual([
+      { permission: "external_directory", pattern: "*" },
+      { permission: "doom_loop", pattern: "*" },
+      { permission: "read", pattern: "*" },
+      { permission: "grep", pattern: "*" },
+      { permission: "glob", pattern: "*" },
+      { permission: "edit", pattern: "*" },
+      { permission: "bash", pattern: "*" },
+      { permission: "todowrite", pattern: "*" },
+      { permission: "question", pattern: "*" },
+      { permission: "edit", pattern: "*.ipynb" },
+      { permission: "github_get_issue", pattern: "*" },
+      { permission: "linear_*", pattern: "*" },
+    ])
     expect(result.warnings).toHaveLength(1)
     expect(result.warnings[0]).toContain("FancyTool")
     expect(result.warnings[0]).toContain("reviewer.md")
@@ -113,12 +121,14 @@ describe("ConfigClaude.loadAgents", () => {
       }),
     })
     const result = await ConfigClaude.loadAgents(path.join(tmp.path, ".claude"))
-    expect(result.agents.sneaky.permission).toEqual({
-      "*": "deny",
-      external_directory: "ask",
-      read: "allow",
-      github_get_issue: "allow",
-    })
+    expect(result.agents.sneaky.options?.claudeTools).toEqual([
+      { permission: "external_directory", pattern: "*" },
+      { permission: "doom_loop", pattern: "*" },
+      { permission: "read", pattern: "*" },
+      { permission: "github_get_issue", pattern: "*" },
+    ])
+    expect(result.agents.sneaky.permission?.bash).toBe("deny")
+    expect(result.agents.sneaky.permission?.list).toBe("deny")
     expect(result.warnings).toHaveLength(1)
     expect(result.warnings[0]).toContain("sneaky.md")
     for (const item of ["mcp__external__directory", "mcp__external", "mcp__list", "mcp__notebook", "mcp__bash"])
@@ -140,12 +150,14 @@ describe("ConfigClaude.loadAgents", () => {
       ].join("\n"),
     })
     const result = await ConfigClaude.loadAgents(path.join(tmp.path, ".claude"))
-    expect(result.agents.lister.permission).toEqual({
-      "*": "deny",
-      external_directory: "ask",
-      read: "allow",
-      webfetch: "allow",
-    })
+    expect(result.agents.lister.options?.claudeTools).toEqual([
+      { permission: "external_directory", pattern: "*" },
+      { permission: "doom_loop", pattern: "*" },
+      { permission: "read", pattern: "*" },
+      { permission: "webfetch", pattern: "*" },
+    ])
+    expect(result.agents.lister.permission?.bash).toBe("deny")
+    expect(result.agents.lister.permission?.read).toBeUndefined()
   })
 
   test("leaves permissions untouched when tools is absent", async () => {
@@ -250,7 +262,8 @@ describe("Config with .claude/agents", () => {
         const config = yield* Config.use.get()
         expect(config.agent?.helper?.description).toBe("Native helper")
         expect(config.agent?.helper?.prompt).toBe("Native prompt")
-        expect(config.agent?.helper?.permission?.["*"]).toBeUndefined()
+        expect(config.agent?.helper?.permission?.bash).toBeUndefined()
+        expect(config.agent?.helper?.options?.claudeTools).toBeUndefined()
       }),
     { git: true },
   )
@@ -543,6 +556,7 @@ describe("ConfigClaude.allowedToolRules", () => {
       "mcp__github__create_issue",
       "mcp__linear",
       "Write",
+      "NotebookEdit",
       "Frobnicate",
       "Read(./secrets/**)",
     ])
@@ -554,6 +568,7 @@ describe("ConfigClaude.allowedToolRules", () => {
       { permission: "github_create_issue", pattern: "*", action: "allow" },
       { permission: "linear_*", pattern: "*", action: "allow" },
       { permission: "edit", pattern: "*", action: "allow" },
+      { permission: "edit", pattern: "*.ipynb", action: "allow" },
     ])
     expect(result.ignored).toEqual(["Frobnicate", "Read(./secrets/**)"])
   })
