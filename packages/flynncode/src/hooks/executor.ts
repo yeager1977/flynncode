@@ -1,5 +1,5 @@
 import { LayerNode } from "@flynncode/core/effect/layer-node"
-import { Context, Effect, Fiber, Layer, Option, Schema, Semaphore } from "effect"
+import { Cause, Context, Effect, Fiber, Layer, Option, Schema, Semaphore } from "effect"
 import { spawn } from "node:child_process"
 import { buffer } from "node:stream/consumers"
 import { ConfigHooksV1 } from "@flynncode/core/v1/config/hooks"
@@ -34,9 +34,10 @@ import { ClaudeFormat } from "@/hooks/claude-format"
 //   behavior and empty stdout stays a no-op.
 // - Non-zero exit (other than 2), timeout, or unparseable output fails closed:
 //   deny for decision hooks, warn-and-ignore for observe/post hooks.
-// - Hook `timeout` is in seconds. Defaults: 600s everywhere except SessionEnd
-//   (1s default, 3s max). Trust is checked before every spawn; untrusted hooks
-//   are skipped with a warning and never executed (fail closed).
+// - Hook `timeout` is in seconds. Defaults: 600s for command hooks and 60s for
+//   http and prompt hooks, except SessionEnd (1s default, 3s max). Trust is
+//   checked before every spawn; untrusted hooks are skipped with a warning and
+//   never executed (fail closed).
 // - `format: "claude"` groups (see claude-format.ts) get Claude's stdin fields,
 //   tool names and snake_case tool_input, the group's `env`, and a
 //   `transcript_path` synced just before the spawn. Their matchers test the
@@ -46,8 +47,19 @@ import { ClaudeFormat } from "@/hooks/claude-format"
 //   denies a tool call (or blocks its result) with `stopReason`. A PostToolUse
 //   block keeps the tool's output and appends the reason on a marked line.
 //   `systemMessage` on tool events is logged, as observe hooks' is.
+// - `http` hooks POST the same input JSON a command would get on stdin, in the
+//   group's format; a 2xx JSON body is read like "exit 0 + that stdout". A
+//   non-2xx status, a timeout, a network error or a non-JSON body is logged
+//   and ignored for EVERY format: unlike a failing native command, an
+//   unreachable endpoint never denies. Header `$VAR`/`${VAR}` is filled only
+//   for names in `allowedEnvVars`.
+// - `prompt` hooks send the prompt (with `$ARGUMENTS` replaced by the input
+//   JSON) to one model and expect {"ok":boolean,"reason"?}. ok:false denies a
+//   tool decision hook, blocks UserPromptSubmit/Stop/SubagentStop and is only
+//   logged elsewhere; ok:true, errors and invalid JSON express no opinion.
 
 export const DEFAULT_COMMAND_TIMEOUT_MS = 600_000
+export const DEFAULT_REMOTE_TIMEOUT_MS = 60_000
 export const SESSION_END_TIMEOUT_MS = 1_000
 export const SESSION_END_TIMEOUT_MAX_MS = 3_000
 export const ASYNC_CONCURRENCY = 8
@@ -232,6 +244,40 @@ function failClosedCollect(kind: "decision" | "post" | "observe"): Collected {
   if (kind === "decision") return denyCollect("Hook failed")
   if (kind === "post") return posted(false)
   return observed({})
+}
+
+// No opinion: what an ignored http or prompt hook contributes.
+function neutralCollect(kind: "decision" | "post" | "observe"): Collected {
+  if (kind === "decision") return decided({ behavior: "undecided" })
+  if (kind === "post") return posted(false)
+  return observed({})
+}
+
+// `$VAR` and `${VAR}` become the variable's value only for allowed names;
+// every other reference becomes "", so a hook file cannot read the environment.
+function interpolateHeaders(headers: Record<string, string> | undefined, allowed: ReadonlyArray<string> | undefined) {
+  return Object.fromEntries(
+    Object.entries(headers ?? {}).map((entry) => [
+      entry[0],
+      entry[1].replaceAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (_match, braced, bare) => {
+        const name: string = braced ?? bare
+        return allowed?.includes(name) ? (process.env[name] ?? "") : ""
+      }),
+    ]),
+  )
+}
+
+const PROMPT_HOOK_SYSTEM =
+  'You evaluate one condition for an automation hook. Reply with ONLY a JSON object, no prose and no code fences: {"ok": true} when the condition is met and the action should proceed, or {"ok": false, "reason": "<short reason>"} when it should not.'
+
+// The first JSON object in a model reply, tolerating code fences and prose.
+function readVerdict(text: string) {
+  const trimmed = text.trim()
+  const start = trimmed.indexOf("{")
+  const end = trimmed.lastIndexOf("}")
+  const parsed = Option.getOrElse(decodeJson(start >= 0 && end > start ? trimmed.slice(start, end + 1) : trimmed), () => undefined)
+  if (!isRecord(parsed) || typeof parsed["ok"] !== "boolean") return undefined
+  return { ok: parsed["ok"], reason: asString(parsed["reason"])?.trim() || undefined }
 }
 
 export const node = LayerNode.make({
@@ -461,6 +507,57 @@ export const node = LayerNode.make({
         return text.slice(0, Math.max(0, limit))
       }
 
+      // A native hook's successful output (exit 0 stdout, or a 2xx http body),
+      // read by the event's kind. `strict` is the command rule: unparseable
+      // decision output fails closed.
+      const nativeOutput = (
+        input: {
+          kind: "decision" | "post" | "observe"
+          event: string
+          label: string
+          limit: number | undefined
+        },
+        stdout: string,
+        strict: boolean,
+      ): Collected => {
+        if (input.kind === "post") {
+          const parsed = Option.getOrElse(decodeJson(stdout.trim()), () => undefined)
+          if (isRecord(parsed) && typeof parsed["blockedOutput"] === "string") {
+            return posted(true, parsed["blockedOutput"])
+          }
+          const context = isRecord(parsed) ? asString(parsed["additionalContext"]) : undefined
+          return posted(false, undefined, limitContext(context, input.limit))
+        }
+        if (input.kind === "observe") {
+          const observe = readObserveJson(stdout)
+          if (observe) {
+            if (observe.additionalContext) observe.additionalContext = limitContext(observe.additionalContext, input.limit)
+            return observed(observe, deniedBy(input.event, stdout))
+          }
+          // Plain-text stdout on observe events is developer context (Codex
+          // parity): only non-JSON output is promoted, so any valid-JSON
+          // output keeps its previous parsed-or-empty behavior, and empty
+          // output stays a no-op.
+          const text = stdout.trim()
+          const parsed = Option.getOrElse(decodeJson(text), () => undefined)
+          return observed(parsed === undefined && text ? { additionalContext: limitContext(text, input.limit) } : {})
+        }
+        const decision = readDecisionJson(stdout)
+        if (!decision) {
+          // Empty output expresses no opinion; non-empty garbage fails closed
+          // for a command, but an http hook never denies on a bad body.
+          if (!strict || stdout.trim() === "") return decided({ behavior: "undecided" })
+          return decided({ behavior: "deny", message: `Hook returned unparseable output: ${input.label}` })
+        }
+        if (decision.behavior === "allow" && decision.updatedInput === undefined && decision.additionalContext) {
+          decision.additionalContext = limitContext(decision.additionalContext, input.limit)
+        }
+        if ((decision.behavior === "undecided" || decision.behavior === "ask") && decision.additionalContext) {
+          decision.additionalContext = limitContext(decision.additionalContext, input.limit)
+        }
+        return decided(decision)
+      }
+
       const collectCommand = Effect.fn("HooksExecutor.collectCommand")(function* (input: {
         kind: "decision" | "post" | "observe"
         event: string
@@ -495,41 +592,29 @@ export const node = LayerNode.make({
           if (input.kind === "post") return posted(false)
           return observed({})
         }
-        if (input.kind === "post") {
-          const parsed = Option.getOrElse(decodeJson(spawned.stdout.trim()), () => undefined)
-          if (isRecord(parsed) && typeof parsed["blockedOutput"] === "string") {
-            return posted(true, parsed["blockedOutput"])
-          }
-          const context = isRecord(parsed) ? asString(parsed["additionalContext"]) : undefined
-          return posted(false, undefined, limitContext(context, input.limit))
-        }
-        if (input.kind === "observe") {
-          const observe = readObserveJson(spawned.stdout)
-          if (observe) {
-            if (observe.additionalContext) observe.additionalContext = limitContext(observe.additionalContext, input.limit)
-            return observed(observe, deniedBy(input.event, spawned.stdout))
-          }
-          // Plain-text stdout on observe events is developer context (Codex
-          // parity): only non-JSON output is promoted, so any valid-JSON
-          // output keeps its previous parsed-or-empty behavior, and empty
-          // output stays a no-op.
-          const text = spawned.stdout.trim()
-          const parsed = Option.getOrElse(decodeJson(text), () => undefined)
-          return observed(parsed === undefined && text ? { additionalContext: limitContext(text, input.limit) } : {})
-        }
-        const decision = readDecisionJson(spawned.stdout)
-        if (!decision) {
-          // Empty output expresses no opinion; non-empty garbage fails closed.
-          if (spawned.stdout.trim() === "") return decided({ behavior: "undecided" })
-          return decided({ behavior: "deny", message: `Hook returned unparseable output: ${input.command}` })
-        }
-        if (decision.behavior === "allow" && decision.updatedInput === undefined && decision.additionalContext) {
-          decision.additionalContext = limitContext(decision.additionalContext, input.limit)
-        }
-        if ((decision.behavior === "undecided" || decision.behavior === "ask") && decision.additionalContext) {
-          decision.additionalContext = limitContext(decision.additionalContext, input.limit)
-        }
-        return decided(decision)
+        return nativeOutput({ ...input, label: input.command }, spawned.stdout, true)
+      })
+
+      // The input JSON a Claude-format hook gets: stdin for a command, the
+      // body for http, and $ARGUMENTS for a prompt.
+      const claudeInput = Effect.fn("HooksExecutor.claudeInput")(function* (input: {
+        event: string
+        payload: Record<string, unknown>
+        toolName: string | undefined
+        transcript: Effect.Effect<string>
+        cwd: string
+      }) {
+        // Tool events carry the turn's approval mode; other events read the
+        // same session policy the tool path resolves it from.
+        const mode =
+          asString(input.payload["permission_mode"]) ??
+          ConfigPermissionV1.resolveSessionPolicy((yield* config.get()).permission ?? {}).approval
+        return ClaudeFormat.input(input.event, input.payload, {
+          transcriptPath: yield* input.transcript,
+          permissionMode: ClaudeFormat.permissionMode(mode),
+          cwd: input.cwd,
+          toolName: input.toolName,
+        })
       })
 
       // Claude's own rules (claude-format.ts): no outcome here ever fails the
@@ -545,17 +630,7 @@ export const node = LayerNode.make({
         cwd: string
         limit: number | undefined
       }) {
-        // Tool events carry the turn's approval mode; other events read the
-        // same session policy the tool path resolves it from.
-        const mode =
-          asString(input.payload["permission_mode"]) ??
-          ConfigPermissionV1.resolveSessionPolicy((yield* config.get()).permission ?? {}).approval
-        const stdin = ClaudeFormat.input(input.event, input.payload, {
-          transcriptPath: yield* input.transcript,
-          permissionMode: ClaudeFormat.permissionMode(mode),
-          cwd: input.cwd,
-          toolName: input.toolName,
-        })
+        const stdin = yield* claudeInput(input)
         const spawned = yield* spawnCommand(input.command, JSON.stringify(stdin), input.timeoutMs, input.cwd, input.env).pipe(
           Effect.catch((error) =>
             Effect.logWarning("Claude hook failed to start", { command: input.command, error: error.message }).pipe(
@@ -576,10 +651,24 @@ export const node = LayerNode.make({
         if (exitCode === 2 && result.kind === "observe" && result.block === undefined) {
           yield* Effect.logWarning("hook exited blocking", { command: input.command, stderr: spawned?.stderr })
         }
+        return yield* claudeCollected({ ...input, label: input.command }, result)
+      })
+
+      // Claude's reading of an output (a command's or an http body's) into the
+      // collected outcome of the event's kind.
+      const claudeCollected = Effect.fn("HooksExecutor.claudeCollected")(function* (
+        input: {
+          event: string
+          label: string
+          payload: Record<string, unknown>
+          limit: number | undefined
+        },
+        result: ClaudeFormat.Result,
+      ) {
         // No tool-event surface shows a hook's systemMessage to the user, so
         // it is logged like an observe hook's (HooksContext.observe).
         if (result.kind !== "observe" && result.systemMessage) {
-          yield* Effect.logWarning(`hooks.${input.event}`, { command: input.command, systemMessage: result.systemMessage })
+          yield* Effect.logWarning(`hooks.${input.event}`, { command: input.label, systemMessage: result.systemMessage })
         }
         if (result.kind === "post") {
           // Claude keeps the tool's output and shows the block reason beside
@@ -616,7 +705,7 @@ export const node = LayerNode.make({
         const back = ClaudeFormat.fromClaudeArgs(asString(input.payload["tool"]) ?? "", limited.updatedInput)
         if (back.dropped.length > 0) {
           yield* Effect.logWarning("Claude hook updatedInput keys dropped", {
-            command: input.command,
+            command: input.label,
             tool: input.payload["tool"],
             dropped: back.dropped,
           })
@@ -712,6 +801,190 @@ export const node = LayerNode.make({
         return decided(decision)
       })
 
+      // The input JSON a hook handler is sent, in the group's format.
+      const handlerInput = (
+        entry: { claude: boolean },
+        input: {
+          event: string
+          payload: Record<string, unknown>
+          toolName: string | undefined
+          transcript: Effect.Effect<string>
+          cwd: string
+        },
+      ) => (entry.claude ? claudeInput(input) : Effect.succeed(input.payload))
+
+      const collectHttp = Effect.fn("HooksExecutor.collectHttp")(function* (input: {
+        kind: "decision" | "post" | "observe"
+        event: string
+        claude: boolean
+        url: string
+        headers: Record<string, string> | undefined
+        allowedEnvVars: ReadonlyArray<string> | undefined
+        payload: Record<string, unknown>
+        toolName: string | undefined
+        transcript: Effect.Effect<string>
+        timeoutMs: number
+        cwd: string
+      }) {
+        const body = JSON.stringify(yield* handlerInput(input, input))
+        const response = yield* Effect.tryPromise({
+          try: async (signal) => {
+            const res = await fetch(input.url, {
+              method: "POST",
+              headers: { "content-type": "application/json", ...interpolateHeaders(input.headers, input.allowedEnvVars) },
+              body,
+              signal: AbortSignal.any([signal, AbortSignal.timeout(input.timeoutMs)]),
+            })
+            return { status: res.status, text: await res.text() }
+          },
+          catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+        }).pipe(
+          Effect.catch((error) =>
+            Effect.logWarning("http hook failed", { url: input.url, error: error.message }).pipe(Effect.as(undefined)),
+          ),
+        )
+        // http failures are ignored for every format, native decision hooks
+        // included: only a command's own failure fails closed.
+        if (!response) return neutralCollect(input.kind)
+        if (response.status < 200 || response.status >= 300) {
+          yield* Effect.logWarning("http hook returned a non-2xx status", { url: input.url, status: response.status })
+          return neutralCollect(input.kind)
+        }
+        const text = response.text.trim()
+        if (text === "") return neutralCollect(input.kind)
+        if (!isRecord(Option.getOrElse(decodeJson(text), () => undefined))) {
+          yield* Effect.logWarning("http hook body is not a JSON object", { url: input.url })
+          return neutralCollect(input.kind)
+        }
+        if (input.claude) {
+          return yield* claudeCollected(
+            { event: input.event, label: input.url, payload: input.payload, limit: undefined },
+            ClaudeFormat.output(input.event, { exitCode: 0, stdout: text, stderr: "" }),
+          )
+        }
+        return nativeOutput({ kind: input.kind, event: input.event, label: input.url, limit: undefined }, text, false)
+      })
+
+      // One non-streaming model request: the handler's model, else small_model,
+      // else the session's model. Fails when no model or service is available.
+      const askModel = Effect.fn("HooksExecutor.askModel")(function* (input: {
+        sessionID: string
+        model: string | undefined
+        prompt: string
+      }) {
+        const { Provider } = yield* Effect.promise(() => import("@/provider/provider"))
+        const { LLM } = yield* Effect.promise(() => import("@/session/llm"))
+        const { Session } = yield* Effect.promise(() => import("@/session/session"))
+        const { MessageID, SessionID } = yield* Effect.promise(() => import("@/session/schema"))
+        const { LLMEvent } = yield* Effect.promise(() => import("@flynncode/llm"))
+        const { Stream } = yield* Effect.promise(() => import("effect"))
+        const maybeProvider = yield* Effect.serviceOption(Provider.Service)
+        const maybeLLM = yield* Effect.serviceOption(LLM.Service)
+        if (Option.isNone(maybeProvider) || Option.isNone(maybeLLM)) {
+          return yield* Effect.fail(new Error("no model service available"))
+        }
+        const provider = maybeProvider.value
+        const maybeSessions = yield* Effect.serviceOption(Session.Service)
+        const session = Option.isSome(maybeSessions)
+          ? yield* maybeSessions.value.get(SessionID.make(input.sessionID)).pipe(Effect.option)
+          : Option.none()
+        const anchor = Option.isSome(session) && session.value.model
+          ? { providerID: session.value.model.providerID, modelID: session.value.model.id }
+          : yield* provider.defaultModel().pipe(Effect.option, Effect.map(Option.getOrUndefined))
+        const explicit = input.model
+          ? yield* Effect.suspend(() => {
+              const parsed = Provider.parseModel(input.model!)
+              return provider.getModel(parsed.providerID, parsed.modelID)
+            }).pipe(
+              Effect.catch(() =>
+                Effect.logWarning("prompt hook model not found, using the default", { model: input.model }).pipe(
+                  Effect.as(undefined),
+                ),
+              ),
+            )
+          : undefined
+        const small = explicit || !anchor ? undefined : yield* provider.getSmallModel(anchor.providerID)
+        const resolved =
+          explicit ??
+          small ??
+          (anchor
+            ? yield* provider.getModel(anchor.providerID, anchor.modelID).pipe(Effect.catch(() => Effect.succeed(undefined)))
+            : undefined)
+        if (!resolved) return yield* Effect.fail(new Error("no model available"))
+        return yield* maybeLLM.value
+          .stream({
+            agent: {
+              name: "hook",
+              mode: "primary",
+              native: true,
+              hidden: true,
+              options: {},
+              temperature: 0,
+              permission: [],
+              prompt: PROMPT_HOOK_SYSTEM,
+            },
+            user: {
+              id: MessageID.ascending(),
+              sessionID: SessionID.make(input.sessionID),
+              role: "user",
+              agent: "hook",
+              model: { providerID: resolved.providerID, modelID: resolved.id },
+              time: { created: Date.now() },
+            },
+            system: [],
+            small: true,
+            tools: {},
+            model: resolved,
+            sessionID: input.sessionID,
+            retries: 1,
+            messages: [{ role: "user", content: input.prompt }],
+          })
+          .pipe(
+            Stream.filter(LLMEvent.is.textDelta),
+            Stream.map((event) => event.text),
+            Stream.mkString,
+          )
+      })
+
+      const collectPrompt = Effect.fn("HooksExecutor.collectPrompt")(function* (input: {
+        kind: "decision" | "post" | "observe"
+        event: string
+        claude: boolean
+        prompt: string
+        model: string | undefined
+        sessionID: string
+        payload: Record<string, unknown>
+        toolName: string | undefined
+        transcript: Effect.Effect<string>
+        timeoutMs: number
+        cwd: string
+      }) {
+        const json = JSON.stringify(yield* handlerInput(input, input))
+        const text = input.prompt.includes("$ARGUMENTS")
+          ? input.prompt.replaceAll("$ARGUMENTS", () => json)
+          : `${input.prompt}\n\n${json}`
+        const reply = yield* askModel({ sessionID: input.sessionID, model: input.model, prompt: text }).pipe(
+          Effect.timeout(input.timeoutMs),
+          Effect.catchCause((cause) =>
+            Effect.logWarning("prompt hook failed", { event: input.event, error: Cause.pretty(cause) }).pipe(
+              Effect.as(undefined),
+            ),
+          ),
+        )
+        if (reply === undefined) return neutralCollect(input.kind)
+        const verdict = readVerdict(reply)
+        if (!verdict) {
+          yield* Effect.logWarning("prompt hook reply is not {ok, reason}", { event: input.event })
+          return neutralCollect(input.kind)
+        }
+        if (verdict.ok) return neutralCollect(input.kind)
+        const reason = verdict.reason ?? "Blocked by prompt hook"
+        if (input.kind === "decision") return denyCollect(reason)
+        if (input.kind === "observe" && BLOCKING_EVENTS.has(input.event)) return observed({}, reason)
+        yield* Effect.logWarning("prompt hook returned ok:false", { event: input.event, reason })
+        return neutralCollect(input.kind)
+      })
+
       const guardCollect = (
         single: Effect.Effect<Collected, Error>,
         kind: "decision" | "post" | "observe",
@@ -760,16 +1033,10 @@ export const node = LayerNode.make({
             })
             continue
           }
-          if (handler.type === "http" || handler.type === "prompt") {
-            yield* Effect.logWarning("skipping hook: handler type not supported yet", {
-              event: def.event,
-              type: handler.type,
-            })
-            continue
-          }
           const timeoutMs = resolveTimeoutMs(
             handler.timeout,
-            input.defaultTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS,
+            input.defaultTimeoutMs ??
+              (handler.type === "http" || handler.type === "prompt" ? DEFAULT_REMOTE_TIMEOUT_MS : DEFAULT_COMMAND_TIMEOUT_MS),
             input.timeoutMaxMs,
           )
           if (entry.claude && handler.type === "mcp_tool") {
@@ -801,16 +1068,44 @@ export const node = LayerNode.make({
                     cwd,
                     limit,
                   })
-              : collectMcp({
-                  kind: input.kind,
-                  event: input.event,
-                  server: handler.server,
-                  tool: handler.tool,
-                  template: handler.input,
-                  payload: input.payload,
-                  timeoutMs,
-                  limit,
-                })
+              : handler.type === "http"
+                ? collectHttp({
+                    kind: input.kind,
+                    event: input.event,
+                    claude: entry.claude,
+                    url: handler.url,
+                    headers: handler.headers,
+                    allowedEnvVars: handler.allowedEnvVars,
+                    payload: input.payload,
+                    toolName: claudeTool,
+                    transcript,
+                    timeoutMs,
+                    cwd,
+                  })
+                : handler.type === "prompt"
+                  ? collectPrompt({
+                      kind: input.kind,
+                      event: input.event,
+                      claude: entry.claude,
+                      prompt: handler.prompt,
+                      model: handler.model,
+                      sessionID: input.sessionID,
+                      payload: input.payload,
+                      toolName: claudeTool,
+                      transcript,
+                      timeoutMs,
+                      cwd,
+                    })
+                  : collectMcp({
+                      kind: input.kind,
+                      event: input.event,
+                      server: handler.server,
+                      tool: handler.tool,
+                      template: handler.input,
+                      payload: input.payload,
+                      timeoutMs,
+                      limit,
+                    })
           if (isAsync) {
             const entry = sessionSlots(input.sessionID)
             const fiber = yield* Effect.forkDetach(

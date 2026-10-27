@@ -329,7 +329,7 @@ describe("hooks executor", () => {
       },
       true,
     ),
-  ).effect("http and prompt handlers are skipped without stopping the handlers after them", () =>
+  ).effect("failing http and prompt handlers are ignored and the handlers after them still run", () =>
     Effect.gen(function* () {
       const executor = yield* HooksExecutor.Service
       const decision = yield* executor.runDecision({
