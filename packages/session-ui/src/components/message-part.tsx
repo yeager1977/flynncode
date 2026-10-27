@@ -2198,7 +2198,6 @@ ToolRegistry.register({
   render(props) {
     const i18n = useI18n()
     const card = createMemo(() => toolSearchCard(props.metadata, props.input))
-    const running = () => props.status === "pending" || props.status === "running"
     const title = () => {
       const value = card()
       if (props.status !== "completed") return i18n.t("ui.tool.toolSearch")
