@@ -73,6 +73,56 @@ describe("ClaudeFormat arguments", () => {
     })
   })
 
+  test("nested keys translate both ways, by each tool's own parameter names", () => {
+    // Flynncode's MultiEdit edits are already snake_case and must stay so.
+    const multi = { file_path: "/a", edits: [{ old_string: "x", new_string: "y", replace_all: true }] }
+    expect(ClaudeFormat.toClaudeArgs("multiedit", multi)).toEqual(multi)
+    expect(ClaudeFormat.fromClaudeArgs("multiedit", { ...multi, edits: [{ ...multi.edits[0], bogus: 1 }] })).toEqual({
+      args: multi,
+      dropped: ["edits[].bogus"],
+    })
+    expect(ClaudeFormat.toClaudeArgs("edit", { filePath: "/a", nested: { innerKey: [{ deepKey: 1 }] } })).toEqual({
+      file_path: "/a",
+      nested: { inner_key: [{ deep_key: 1 }] },
+    })
+    const questions = {
+      questions: [{ question: "q", header: "h", options: [{ label: "a", description: "d", extra_key: 1 }], multiple: true }],
+    }
+    expect(ClaudeFormat.fromClaudeArgs("question", questions)).toEqual({
+      args: { questions: [{ question: "q", header: "h", options: [{ label: "a", description: "d" }], multiple: true }] },
+      dropped: ["questions[].options[].extra_key"],
+    })
+  })
+
+  test("non-plain-object values pass through intact", () => {
+    const when = new Date(0)
+    const map = new Map([["someKey", 1]])
+    const out = ClaudeFormat.toClaudeArgs("edit", { filePath: "/a", when, map })
+    expect(out["when"]).toBe(when)
+    expect(out["map"]).toBe(map)
+    const back = ClaudeFormat.fromClaudeArgs("todowrite", { todos: [when] })
+    expect((back.args["todos"] as Array<unknown>)[0]).toBe(when)
+  })
+
+  const nested: Array<
+    [string, typeof MultiEditParameters | typeof TodoParameters | typeof QuestionParameters, Record<string, unknown>]
+  > = [
+    ["multiedit", MultiEditParameters, { file_path: "/a", edits: [{ old_string: "x", new_string: "y", replace_all: true }] }],
+    ["todowrite", TodoParameters, { todos: [{ content: "c", status: "pending", priority: "high" }] }],
+    [
+      "question",
+      QuestionParameters,
+      { questions: [{ question: "q", header: "h", options: [{ label: "a", description: "d" }], multiple: false }] },
+    ],
+  ]
+  for (const entry of nested) {
+    test(`${entry[0]} nested parameters round-trip and still decode`, () => {
+      const back = ClaudeFormat.fromClaudeArgs(entry[0], ClaudeFormat.toClaudeArgs(entry[0], entry[2]))
+      expect(back).toEqual({ args: entry[2], dropped: [] })
+      expect(() => Schema.decodeUnknownSync(entry[1])(back.args, { onExcessProperty: "error" })).not.toThrow()
+    })
+  }
+
   const schemas: Array<[string, Schema.Struct<Schema.Struct.Fields>]> = [
     ["read", ReadParameters],
     ["write", WriteParameters],
@@ -136,7 +186,7 @@ describe("ClaudeFormat input", () => {
       tool_name: "Bash",
       tool_input: { command: "ls" },
       tool_use_id: "c",
-      tool_response: "a",
+      tool_response: { stdout: "a", interrupted: false },
     })
     expect(pick("PostToolUseFailure", { tool: "bash", callID: "c", args: {}, error: "boom", isInterrupt: true })).toEqual({
       tool_name: "Bash",
@@ -160,6 +210,17 @@ describe("ClaudeFormat input", () => {
       message: "waiting",
       notification_type: "idle",
     })
+  })
+
+  test("PostToolUse tool_response is an object shaped by tool", () => {
+    const response = (tool: string, args: Record<string, unknown>) =>
+      ClaudeFormat.input("PostToolUse", { sessionID: "s", tool, callID: "c", args, output: "done" }, extra)["tool_response"]
+    expect(response("edit", { filePath: "/a" })).toEqual({ filePath: "/a", success: true })
+    expect(response("write", { filePath: "/b", content: "x" })).toEqual({ filePath: "/b", success: true })
+    expect(response("multiedit", { file_path: "/c", edits: [] })).toEqual({ filePath: "/c", success: true })
+    expect(response("notebook_edit", { notebook_path: "/n.ipynb" })).toEqual({ filePath: "/n.ipynb", success: true })
+    expect(response("grep", { pattern: "x" })).toEqual({ output: "done" })
+    expect(response("srv_tool", {})).toEqual({ output: "done" })
   })
 
   test("permission modes map onto Claude's", () => {
@@ -227,6 +288,45 @@ describe("ClaudeFormat output", () => {
     expect(ClaudeFormat.output("PreToolUse", json({ hookSpecificOutput: { additionalContext: "c" } }))).toEqual({
       kind: "decision",
       decision: { behavior: "undecided", additionalContext: "c" },
+    })
+  })
+
+  test("continue:false denies tool calls and blocks tool results with stopReason", () => {
+    const stop = { continue: false, stopReason: "halt: prod creds detected" }
+    expect(ClaudeFormat.output("PreToolUse", json(stop))).toEqual({
+      kind: "decision",
+      decision: { behavior: "deny", message: "halt: prod creds detected" },
+    })
+    // It outranks an allow in the same output.
+    expect(
+      ClaudeFormat.output("PermissionRequest", json({ ...stop, hookSpecificOutput: { decision: { behavior: "allow" } } })),
+    ).toEqual({ kind: "decision", decision: { behavior: "deny", message: "halt: prod creds detected" } })
+    expect(ClaudeFormat.output("PreToolUse", json({ continue: false }))).toEqual({
+      kind: "decision",
+      decision: { behavior: "deny", message: "Stopped by hook" },
+    })
+    expect(ClaudeFormat.output("PostToolUse", json(stop))).toEqual({
+      kind: "post",
+      blocked: true,
+      reason: "halt: prod creds detected",
+    })
+    // continue:true is no stop.
+    expect(ClaudeFormat.output("PreToolUse", json({ continue: true }))).toEqual({
+      kind: "decision",
+      decision: { behavior: "undecided" },
+    })
+  })
+
+  test("systemMessage rides on tool-event results", () => {
+    expect(ClaudeFormat.output("PreToolUse", json({ systemMessage: "heads up" }))).toEqual({
+      kind: "decision",
+      decision: { behavior: "undecided" },
+      systemMessage: "heads up",
+    })
+    expect(ClaudeFormat.output("PostToolUse", json({ systemMessage: "formatted" }))).toEqual({
+      kind: "post",
+      blocked: false,
+      systemMessage: "formatted",
     })
   })
 

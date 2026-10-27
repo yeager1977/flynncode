@@ -3,6 +3,7 @@ import { Context, Effect, Fiber, Layer, Option, Schema, Semaphore } from "effect
 import { spawn } from "node:child_process"
 import { buffer } from "node:stream/consumers"
 import { ConfigHooksV1 } from "@flynncode/core/v1/config/hooks"
+import { ConfigPermissionV1 } from "@flynncode/core/v1/config/permission"
 import type { HooksRunner } from "@/hooks/runner"
 import { HooksConfig } from "@/hooks/config"
 import { HooksTrust } from "@/hooks/trust"
@@ -35,7 +36,10 @@ import { ClaudeFormat } from "@/hooks/claude-format"
 //   `transcript_path` synced just before the spawn. Their matchers test the
 //   Claude tool name. Exit 2 denies/blocks with stderr, exit 0 reads Claude's
 //   JSON or plain-text context, and any other exit, a timeout or a spawn
-//   failure is logged and ignored (never deny-on-error).
+//   failure is logged and ignored (never deny-on-error). `continue: false`
+//   denies a tool call (or blocks its result) with `stopReason`. A PostToolUse
+//   block keeps the tool's output and appends the reason on a marked line.
+//   `systemMessage` on tool events is logged, as observe hooks' is.
 
 export const DEFAULT_COMMAND_TIMEOUT_MS = 600_000
 export const SESSION_END_TIMEOUT_MS = 1_000
@@ -173,6 +177,9 @@ export function enumerateHooks(hooks: ConfigHooksV1.Info | undefined) {
 }
 
 type Collected = ClaudeFormat.Result
+
+// Events with no Claude hook share this instead of a per-event cached sync.
+const noTranscript = Effect.succeed("")
 
 // "trusted" spawns; "killed" and "untrusted" are skipped, each with its own
 // log wording.
@@ -498,9 +505,14 @@ export const node = LayerNode.make({
         cwd: string
         limit: number | undefined
       }) {
+        // Tool events carry the turn's approval mode; other events read the
+        // same session policy the tool path resolves it from.
+        const mode =
+          asString(input.payload["permission_mode"]) ??
+          ConfigPermissionV1.resolveSessionPolicy((yield* config.get()).permission ?? {}).approval
         const stdin = ClaudeFormat.input(input.event, input.payload, {
           transcriptPath: yield* input.transcript,
-          permissionMode: ClaudeFormat.permissionMode(asString(input.payload["permission_mode"])),
+          permissionMode: ClaudeFormat.permissionMode(mode),
           cwd: input.cwd,
           toolName: input.toolName,
         })
@@ -524,10 +536,25 @@ export const node = LayerNode.make({
         if (exitCode === 2 && result.kind === "observe" && result.block === undefined) {
           yield* Effect.logWarning("hook exited blocking", { command: input.command, stderr: spawned?.stderr })
         }
+        // No tool-event surface shows a hook's systemMessage to the user, so
+        // it is logged like an observe hook's (HooksContext.observe).
+        if (result.kind !== "observe" && result.systemMessage) {
+          yield* Effect.logWarning(`hooks.${input.event}`, { command: input.command, systemMessage: result.systemMessage })
+        }
         if (result.kind === "post") {
-          return result.additionalContext === undefined
-            ? result
-            : { ...result, additionalContext: limitContext(result.additionalContext, input.limit) }
+          // Claude keeps the tool's output and shows the block reason beside
+          // it; the runner hands `reason` to the model as the whole result.
+          const output = asString(input.payload["output"])
+          const reason =
+            result.blocked && output ? `${output}\n\n[${input.event} hook blocked: ${result.reason}]` : result.reason
+          return {
+            kind: "post" as const,
+            blocked: result.blocked,
+            ...(reason !== undefined && { reason }),
+            ...(result.additionalContext !== undefined && {
+              additionalContext: limitContext(result.additionalContext, input.limit),
+            }),
+          }
         }
         if (result.kind === "observe") {
           return result.observe.additionalContext === undefined
@@ -590,7 +617,9 @@ export const node = LayerNode.make({
           const session = yield* Effect.serviceOption(Session.Service)
           if (Option.isNone(session)) return ""
           const { ClaudeTranscript } = yield* Effect.promise(() => import("@/hooks/claude-transcript"))
-          return yield* ClaudeTranscript.sync({ sessionID }).pipe(Effect.provideService(Session.Service, session.value))
+          return yield* ClaudeTranscript.sync({ sessionID, toolName: claudeToolName }).pipe(
+            Effect.provideService(Session.Service, session.value),
+          )
         })
 
       const collectMcp = Effect.fn("HooksExecutor.collectMcp")(function* (input: {
@@ -665,7 +694,9 @@ export const node = LayerNode.make({
         const claudeName = groups.some((group) => group.format === "claude") ? yield* claudeMatchName(input) : undefined
         const entries = matchedHandlers(groups, input.event, input.matchName, claudeName)
         // Synced at most once per event, and only when a Claude hook spawns.
-        const transcript = yield* Effect.cached(transcriptPath(input.sessionID))
+        const transcript = entries.some((entry) => entry.claude)
+          ? yield* Effect.cached(transcriptPath(input.sessionID))
+          : noTranscript
         const collected: Collected[] = []
         for (const entry of entries) {
           const def = entry.def

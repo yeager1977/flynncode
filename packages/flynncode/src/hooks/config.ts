@@ -21,21 +21,6 @@ export function matchesClaudeMatcher(name: string | undefined, matcher: string |
   return matchesMatcher(name, matcher)
 }
 
-export function filterGroups(groups: Array<ConfigHooksV1.HookGroup>, toolOrSource: string) {
-  return groups.filter((group) => matchesMatcher(toolOrSource, group.matcher))
-}
-
-// Plan form: (event, name, groups). The event is reserved for future
-// event-scoped matching; filtering is by tool/source name today.
-export function matchHooks(
-  event: string,
-  name: string | undefined,
-  groups: Array<ConfigHooksV1.HookGroup>,
-) {
-  void event
-  return filterGroups(groups, name ?? "")
-}
-
 function lookup(path: string, payload: Record<string, unknown>) {
   return path.split(".").reduce<unknown>((acc, key) => {
     if (acc !== null && typeof acc === "object" && key in acc) return (acc as Record<string, unknown>)[key]

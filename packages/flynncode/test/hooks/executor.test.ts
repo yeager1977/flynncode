@@ -61,16 +61,16 @@ function trustDef(def: HooksTrust.HookDef) {
   return Bun.write(trustPath, JSON.stringify([{ hash: HooksTrust.hashDef(def), trustedAt: Date.now() }]))
 }
 
-function configLayer(hooks: Record<string, unknown>) {
+function configLayer(hooks: Record<string, unknown>, permission?: Record<string, unknown>) {
   return Layer.succeed(
     Config.Service,
-    { get: () => Effect.succeed({ hooks }) } as Partial<Config.Interface> as Config.Interface,
+    { get: () => Effect.succeed({ hooks, ...(permission && { permission }) }) } as Partial<Config.Interface> as Config.Interface,
   )
 }
 
-function executorLayer(hooks: Record<string, unknown>, bypass = false) {
+function executorLayer(hooks: Record<string, unknown>, bypass = false, permission?: Record<string, unknown>) {
   return LayerNode.compile(HooksExecutor.node, [
-    [Config.node, configLayer(hooks)],
+    [Config.node, configLayer(hooks, permission)],
     [RuntimeFlags.node, RuntimeFlags.layer({ bypassHookTrust: bypass })],
   ])
 }
@@ -732,22 +732,94 @@ describe("hooks executor: Claude format", () => {
       }),
   )
 
+  const runPost = Effect.gen(function* () {
+    const executor = yield* HooksExecutor.Service
+    return yield* executor.runPostTool({
+      tool: "bash",
+      matchName: "bash",
+      sessionID: "ses_1",
+      callID: "c1",
+      args: { command: "ls" },
+      output: "a.txt",
+    })
+  })
+
   const postBlockHook = `printf '%s' '${JSON.stringify({ decision: "block", reason: "lint failed" })}'`
   testEffect(executorLayer(claudeGroup("PostToolUse", "Bash", [postBlockHook]))).effect(
-    "PostToolUse decision block replaces the model-visible output",
+    "PostToolUse decision block keeps the output and appends the reason",
     () =>
       Effect.gen(function* () {
         yield* trustClaude("PostToolUse", "Bash", [postBlockHook])
+        expect(yield* runPost).toEqual({ blocked: true, reason: "a.txt\n\n[PostToolUse hook blocked: lint failed]" })
+      }),
+  )
+
+  const nativeBlockHook = `printf '%s' '${JSON.stringify({ blockedOutput: "redacted" })}'`
+  testEffect(executorLayer({ PostToolUse: [{ hooks: [{ type: "command", command: nativeBlockHook }] }] })).effect(
+    "native blockedOutput still replaces the output",
+    () =>
+      Effect.gen(function* () {
+        yield* Effect.promise(() =>
+          trustDef(HooksTrust.fromHandler("PostToolUse", undefined, { type: "command", command: nativeBlockHook })),
+        )
+        expect(yield* runPost).toEqual({ blocked: true, reason: "redacted" })
+      }),
+  )
+
+  const postStopHook = `printf '%s' '${JSON.stringify({ continue: false, stopReason: "stop here", systemMessage: "note" })}'`
+  testEffect(executorLayer(claudeGroup("PostToolUse", "Bash", [postStopHook]))).effect(
+    "PostToolUse continue:false blocks the result with stopReason",
+    () =>
+      Effect.gen(function* () {
+        yield* trustClaude("PostToolUse", "Bash", [postStopHook])
+        expect(yield* runPost).toEqual({ blocked: true, reason: "a.txt\n\n[PostToolUse hook blocked: stop here]" })
+      }),
+  )
+
+  const stopHook = `printf '%s' '${JSON.stringify({
+    continue: false,
+    stopReason: "halt: prod creds detected",
+    hookSpecificOutput: { permissionDecision: "allow" },
+  })}'`
+  testEffect(executorLayer(claudeGroup("PreToolUse", "Bash", [stopHook]))).effect(
+    "PreToolUse continue:false denies the call with stopReason",
+    () =>
+      Effect.gen(function* () {
+        yield* trustClaude("PreToolUse", "Bash", [stopHook])
+        expect(yield* preToolUse("bash", { command: "ls" })).toEqual({
+          behavior: "deny",
+          message: "halt: prod creds detected",
+        })
+      }),
+  )
+
+  testEffect(executorLayer(claudeGroup("PermissionRequest", "Bash", [stopHook]))).effect(
+    "PermissionRequest continue:false denies the call with stopReason",
+    () =>
+      Effect.gen(function* () {
+        yield* trustClaude("PermissionRequest", "Bash", [stopHook])
         const executor = yield* HooksExecutor.Service
-        const out = yield* executor.runPostTool({
-          tool: "bash",
+        const decision = yield* executor.runDecision({
+          event: "PermissionRequest",
           matchName: "bash",
+          tool: "bash",
           sessionID: "ses_1",
           callID: "c1",
           args: { command: "ls" },
-          output: "a.txt",
         })
-        expect(out).toEqual({ blocked: true, reason: "lint failed" })
+        expect(decision).toEqual({ behavior: "deny", message: "halt: prod creds detected" })
+      }),
+  )
+
+  const modeHook = claudeCapture()
+  testEffect(executorLayer(claudeGroup("SessionStart", undefined, [modeHook]), false, { approval: "accept-edits" })).effect(
+    "non-tool events carry the session policy's permission_mode",
+    () =>
+      Effect.gen(function* () {
+        yield* trustClaude("SessionStart", undefined, [modeHook])
+        const executor = yield* HooksExecutor.Service
+        yield* executor.runObserve({ event: "SessionStart", matchName: "startup", sessionID: "ses_1", payload: { source: "startup" } })
+        expect((yield* readCapture)["permission_mode"]).toBe("acceptEdits")
       }),
   )
 })

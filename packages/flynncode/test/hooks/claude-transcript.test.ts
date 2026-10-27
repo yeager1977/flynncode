@@ -34,7 +34,7 @@ const addUser = Effect.fn("Test.addUser")(function* (sessionID: SessionID, text:
 const addAssistant = Effect.fn("Test.addAssistant")(function* (
   sessionID: SessionID,
   parentID: MessageID,
-  input: { text?: string; tools?: SessionV1.ToolPart["state"][]; completed?: boolean },
+  input: { text?: string; tools?: SessionV1.ToolPart["state"][]; completed?: boolean; tool?: string },
 ) {
   const session = yield* Session.Service
   const id = MessageID.ascending()
@@ -70,7 +70,7 @@ const addAssistant = Effect.fn("Test.addAssistant")(function* (
       messageID: id,
       type: "tool",
       callID: `call_${index}`,
-      tool: "bash",
+      tool: input.tool ?? "bash",
       state,
     } as SessionV1.ToolPart),
   )
@@ -137,8 +137,8 @@ describe("ClaudeTranscript", () => {
             role: "assistant",
             content: [
               { type: "text", text: "running ls" },
-              { type: "tool_use", id: "call_0", name: "bash", input: { command: "ls" } },
-              { type: "tool_use", id: "call_1", name: "bash", input: { command: "false" } },
+              { type: "tool_use", id: "call_0", name: "Bash", input: { command: "ls" } },
+              { type: "tool_use", id: "call_1", name: "Bash", input: { command: "false" } },
             ],
           },
         })
@@ -179,7 +179,83 @@ describe("ClaudeTranscript", () => {
         expect(lines[1]?.parentUuid).toBe(user)
         expect(
           (yield* Effect.promise(() => Bun.file(ClaudeTranscript.path(sessionID).replace(/\.jsonl$/, ".cursor")).text())),
-        ).toBe(assistant)
+        ).toBe(`${assistant}\n${assistant}`)
+      }),
+    ),
+  )
+
+  it.instance("tool_use blocks use Claude tool names and argument keys, as hook stdin does", () =>
+    withSession(({ sessionID }) =>
+      Effect.gen(function* () {
+        const user = yield* addUser(sessionID, "edit it")
+        yield* addAssistant(sessionID, user, {
+          tool: "edit",
+          tools: [{ ...completed, input: { filePath: "/a.ts", oldString: "x", newString: "y" } }],
+        })
+        const lines = yield* read(yield* ClaudeTranscript.sync({ sessionID }))
+        expect(lines[1]?.message.content).toEqual([
+          { type: "tool_use", id: "call_0", name: "Edit", input: { file_path: "/a.ts", old_string: "x", new_string: "y" } },
+        ])
+        const named = yield* ClaudeTranscript.sync({
+          sessionID,
+          toolName: (id) => Effect.succeed(`mcp__srv__${id}`),
+        })
+        // Already written lines are never rewritten.
+        expect((yield* read(named))[1]?.message.content[0].name).toBe("Edit")
+      }),
+    ),
+  )
+
+  it.instance("a sync with nothing new returns before writing: no file is touched", () =>
+    withSession(({ sessionID }) =>
+      Effect.gen(function* () {
+        const user = yield* addUser(sessionID, "first")
+        yield* addAssistant(sessionID, user, { text: "answer" })
+        const file = yield* ClaudeTranscript.sync({ sessionID })
+        const cursor = file.replace(/\.jsonl$/, ".cursor")
+        const stat = () => Effect.promise(() => Promise.all([fs.stat(file), fs.stat(cursor)]))
+        const before = yield* stat()
+        yield* Effect.sleep("20 millis")
+        // A still-streaming reply after the cursor is not new content either.
+        const second = yield* addUser(sessionID, "second")
+        yield* ClaudeTranscript.sync({ sessionID })
+        const mid = yield* stat()
+        yield* addAssistant(sessionID, second, { text: "streaming", completed: false })
+        yield* Effect.sleep("20 millis")
+        yield* ClaudeTranscript.sync({ sessionID })
+        yield* ClaudeTranscript.sync({ sessionID })
+        const after = yield* stat()
+        expect(mid.map((item) => item.mtimeMs)).not.toEqual(before.map((item) => item.mtimeMs))
+        expect(after.map((item) => item.mtimeMs)).toEqual(mid.map((item) => item.mtimeMs))
+        expect(after.map((item) => item.ctimeMs)).toEqual(mid.map((item) => item.ctimeMs))
+        expect((yield* read(file)).map((line) => line.uuid)).toEqual([user, expect.any(String), second])
+      }),
+    ),
+  )
+
+  it.instance("concurrent syncs of one session write each line once", () =>
+    withSession(({ sessionID }) =>
+      Effect.gen(function* () {
+        const user = yield* addUser(sessionID, "q")
+        const assistant = yield* addAssistant(sessionID, user, { text: "a", tools: [completed] })
+        const files = yield* Effect.all(
+          Array.from({ length: 6 }, () => ClaudeTranscript.sync({ sessionID })),
+          { concurrency: "unbounded" },
+        )
+        expect(new Set(files)).toEqual(new Set([ClaudeTranscript.path(sessionID)]))
+        expect((yield* read(files[0] ?? "")).map((line) => line.uuid)).toEqual([user, assistant, `${assistant}:tool_result`])
+      }),
+    ),
+  )
+
+  it.instance("rebuilds when the transcript file is gone but the cursor remains", () =>
+    withSession(({ sessionID }) =>
+      Effect.gen(function* () {
+        const user = yield* addUser(sessionID, "one")
+        const file = yield* ClaudeTranscript.sync({ sessionID })
+        yield* Effect.promise(() => fs.rm(file))
+        yield* ClaudeTranscript.sync({ sessionID })
+        expect((yield* read(file)).map((line) => line.uuid)).toEqual([user])
       }),
     ),
   )

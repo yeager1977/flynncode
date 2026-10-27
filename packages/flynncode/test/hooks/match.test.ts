@@ -11,15 +11,15 @@ test("decodes PreToolUse Bash group", () => {
 })
 
 test("empty matcher matches all, regex filters", () => {
-  const groups = [{ hooks: [] }, { matcher: "^Bash$", hooks: [] }]
-  expect(HooksConfig.matchHooks("PreToolUse", undefined, groups).length).toBe(1)
-  expect(HooksConfig.matchHooks("PreToolUse", "Bash", groups).length).toBe(2)
-  expect(HooksConfig.matchHooks("PreToolUse", "read", groups).length).toBe(1)
+  expect(HooksConfig.matchesMatcher("read", undefined)).toBe(true)
+  expect(HooksConfig.matchesMatcher("read", "")).toBe(true)
+  expect(HooksConfig.matchesMatcher("read", "*")).toBe(true)
+  expect(HooksConfig.matchesMatcher("Bash", "^Bash$")).toBe(true)
+  expect(HooksConfig.matchesMatcher("read", "^Bash$")).toBe(false)
 })
 
 test("invalid matcher never matches instead of throwing", () => {
-  const groups = [{ matcher: "([invalid", hooks: [] }]
-  expect(HooksConfig.matchHooks("PreToolUse", "([invalid", groups).length).toBe(0)
+  expect(HooksConfig.matchesMatcher("([invalid", "([invalid")).toBe(false)
 })
 
 test("whole-value placeholder preserves JSON type", () => {
@@ -30,7 +30,7 @@ test("whole-value placeholder preserves JSON type", () => {
 test("decodes the disableAllHooks kill switch", () => {
   const decoded = Schema.decodeUnknownSync(ConfigHooksV1.Info)({ disableAllHooks: true })
   expect(decoded.disableAllHooks).toBe(true)
-  expect(HooksConfig.matchHooks("PreToolUse", "Bash", decoded.PreToolUse ?? []).length).toBe(0)
+  expect(decoded.PreToolUse).toBeUndefined()
 })
 
 test("disableAllHooks fails safe across layer merges", () => {
