@@ -111,6 +111,18 @@ export function group<const Items extends readonly AnyNode[]>(
   return { kind: "group", name: "group", dependencies }
 }
 
+// A dependency resolved when a graph is walked rather than when the declaring
+// module is evaluated, for nodes whose modules import each other in a cycle.
+export function lazy<A, E, T extends Tag | undefined>(resolve: () => Node<A, E, T>): Node<A, E, T> {
+  return {
+    kind: "group",
+    name: "group",
+    get dependencies() {
+      return [resolve()]
+    },
+  }
+}
+
 export type Replacement = readonly [source: AnyNode, replacement: AnyNode | Layer.Any]
 export type Replacements = readonly Replacement[]
 

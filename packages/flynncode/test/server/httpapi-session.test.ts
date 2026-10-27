@@ -4,6 +4,7 @@ import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { SessionV1 } from "@flynncode/core/v1/session"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
+import { pathToFileURL } from "node:url"
 import { Cause, Config, Effect, Exit, Layer } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse, HttpRouter, HttpServer } from "effect/unstable/http"
 import { layerWebSocketConstructorGlobal } from "effect/unstable/socket/Socket"
@@ -482,6 +483,68 @@ describe("session HttpApi", () => {
           data: { message: "no secrets in prompts" },
         })
         expect(yield* llm.calls).toBe(0)
+      }).pipe(Effect.provide(TestLLMServer.layer), Effect.provide(AppNodeBuilder.build(CrossSpawnSpawner.node))),
+    30_000,
+  )
+
+  it.live(
+    "runs in-process plugin hooks that dispatch through the hooks runner",
+    () =>
+      Effect.gen(function* () {
+        const llm = yield* TestLLMServer
+        yield* llm.text("ok", { usage: { input: 1, output: 1 } })
+        const directory = yield* tmpdirScoped({ git: true })
+        const file = path.join(directory, "hooks-plugin.ts")
+        // `chat.message` is triggered on Plugin directly; `session.prompt` only
+        // reaches plugins through the HooksRunner SessionPrompt was given.
+        yield* Effect.promise(() =>
+          Bun.write(
+            file,
+            [
+              "export default async () => ({",
+              '  "chat.message": async () => {',
+              `    await Bun.write(${JSON.stringify(path.join(directory, "chat-message.txt"))}, "fired")`,
+              "  },",
+              '  "session.prompt": async (input) => {',
+              `    await Bun.write(${JSON.stringify(path.join(directory, "session-prompt.txt"))}, input.prompt)`,
+              "  },",
+              "})",
+              "",
+            ].join("\n"),
+          ),
+        )
+        yield* Effect.promise(() =>
+          Bun.write(
+            path.join(directory, "opencode.json"),
+            JSON.stringify({
+              ...testProviderConfig(llm.url),
+              formatter: false,
+              lsp: false,
+              plugin: [pathToFileURL(file).href],
+            }),
+          ),
+        )
+        const session = yield* createSession({ title: "plugin hooks" }).pipe(provideInstanceEffect(directory))
+
+        const response = yield* request(
+          `${pathFor(SessionPaths.prompt, { sessionID: session.id })}?directory=${encodeURIComponent(directory)}`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              agent: "build",
+              model: { providerID: "test", modelID: "test-model" },
+              parts: [{ type: "text", text: "hello hooks" }],
+            }),
+          },
+        )
+
+        expect(response.status).toBe(200)
+        yield* responseJson(response)
+        expect(yield* Effect.promise(() => Bun.file(path.join(directory, "chat-message.txt")).text())).toBe("fired")
+        expect(yield* Effect.promise(() => Bun.file(path.join(directory, "session-prompt.txt")).text())).toBe(
+          "hello hooks",
+        )
       }).pipe(Effect.provide(TestLLMServer.layer), Effect.provide(AppNodeBuilder.build(CrossSpawnSpawner.node))),
     30_000,
   )

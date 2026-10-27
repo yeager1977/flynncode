@@ -63,6 +63,14 @@ describe("layer node", () => {
     expect(await Effect.runPromise(program)).toEqual(["first", "second"])
   })
 
+  test("resolves lazy dependencies when the graph is compiled", async () => {
+    const nodes: { value?: typeof value } = {}
+    const greeting = make({ service: Greeting, layer: greetingLayer, deps: [LayerNode.lazy(() => nodes.value!)] })
+    nodes.value = value
+    const program = Effect.map(Greeting, (item) => item.value).pipe(Effect.provide(build(LayerNode.group([greeting]))))
+    expect(await Effect.runPromise(program)).toBe("hello production")
+  })
+
   test("requires unbound nodes to be replaced before compilation", async () => {
     const unbound = LayerNode.unbound(Value, tags.values.app)
     const greeting = make({ service: Greeting, layer: greetingLayer, deps: [unbound] })

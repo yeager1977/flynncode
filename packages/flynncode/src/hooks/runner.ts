@@ -1,6 +1,6 @@
 import { LayerNode } from "@flynncode/core/effect/layer-node"
-import { Context, Effect, Layer, Option } from "effect"
-import type { Plugin } from "@/plugin"
+import { Context, Effect, Layer } from "effect"
+import { Plugin } from "@/plugin"
 import { HooksExecutor, type ExecutorInterface } from "@/hooks/executor"
 import { HooksTrust } from "@/hooks/trust"
 
@@ -644,35 +644,23 @@ export const node = LayerNode.make({
   layer: Layer.effect(
     Service,
     Effect.gen(function* () {
-      // Dynamic import: src/plugin/index pulls the full internal plugin graph
-      // (which transitively reaches session/prompt -> tool/task -> this module),
-      // so a static value import would create an eval-time cycle (TDZ on Plugin.node).
-      // serviceOption keeps this layer free of a hard Plugin dependency: graphs
-      // that provide Plugin.Service get full hook behavior, others degrade to
-      // passthrough with a warning instead of failing layer construction.
-      const pluginModule = yield* Effect.promise(() => import("../plugin"))
-      const maybePlugin = yield* Effect.serviceOption(pluginModule.Plugin.Service)
-      const maybeExecutor = yield* Effect.serviceOption(HooksExecutor.Service)
-      const trust = yield* HooksTrust.Service
       // In-memory plugin hooks are already-loaded code and therefore trusted.
       // File-based command hooks consult HooksTrust before execution (Task 9);
       // trust lookup failures fail closed via isTrusted === false.
-      void trust
-      if (Option.isNone(maybePlugin)) {
-        yield* Effect.logWarning("HooksRunner running without Plugin service; hooks disabled")
-        return createRunner(noopPlugin, Option.getOrUndefined(maybeExecutor))
-      }
-      return createRunner(maybePlugin.value, Option.getOrUndefined(maybeExecutor))
+      yield* HooksTrust.Service
+      return createRunner(yield* Plugin.Service, yield* HooksExecutor.Service)
     }),
   ),
-  deps: [HooksTrust.node, HooksExecutor.node],
+  deps: [
+    // Plugin is declared, not read from whatever context this layer is first
+    // built in: the layer is memoized process-wide, so a graph reaching
+    // HooksRunner without Plugin would leave every caller with a runner that
+    // drops plugin hooks. Lazy because src/plugin transitively imports this
+    // module (via session, permission, question, ...).
+    LayerNode.lazy(() => Plugin.node),
+    HooksTrust.node,
+    HooksExecutor.node,
+  ],
 })
-
-const noopPlugin: TriggerLike = {
-  trigger: (_name, _input, output) => Effect.succeed(output as never),
-  triggerDecision: (_input, output) => Effect.succeed(output),
-  triggerPermissionAsk: (_input, output) => Effect.succeed(output),
-  list: () => Effect.succeed([]),
-}
 
 export * as HooksRunner from "./runner"

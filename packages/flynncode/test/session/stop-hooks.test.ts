@@ -115,9 +115,7 @@ const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap
 const llmServer = LayerNode.make({ service: TestLLMServer, layer: TestLLMServer.layer, deps: [] })
 
 // HooksRunner is a root so idle transitions, which find it in the caller's
-// context as the app runtime provides it, can reach it. Plugin comes first,
-// as in the app runtime, so the runner built for SessionPrompt sees plugin
-// hooks.
+// context as the app runtime provides it, can reach it.
 const hooked = testEffect(
   LayerNode.compile(
     LayerNode.group([
