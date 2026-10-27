@@ -74,7 +74,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   agent: Agent.Info
   model: Provider.Model
   session: Session.Info
-  processor: Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall">
+  processor: Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall" | "stopAfterStep">
   bypassAgentCheck: boolean
   messages: SessionV1.WithParts[]
   promptOps: TaskPromptOps
@@ -288,7 +288,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       .pipe(Effect.orDie)
   })
 
-  // A PreToolUse deny fails the call. An ask means the call must be confirmed
+  // A PreToolUse deny fails the call, and a deny from `continue: false` also
+  // ends the turn after this step. An ask means the call must be confirmed
   // with exactly one prompt. A tool with a check of its own (`gatedBy`, its
   // permission key) gets a Confirm for its context, which forces that check
   // to prompt with the tool's own patterns. Any other tool is never gated by
@@ -301,6 +302,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     gatedBy: string | undefined
   }) {
     const decision = decided.decision
+    if (decision.behavior === "deny" && decision.stop) yield* input.processor.stopAfterStep
     if (decision.behavior === "deny") throw new HooksRunner.HookDeniedError(decision.message)
     if (decision.behavior !== "ask") return undefined
     if (decided.gatedBy !== undefined) {
@@ -370,6 +372,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           Effect.gen(function* () {
             const error = Cause.squash(cause)
             const outcome = yield* failed(errorMessage(error), call.options.abortSignal?.aborted === true)
+            if (outcome.blocked && outcome.stop) yield* input.processor.stopAfterStep
             const note = outcome.blocked ? outcome.reason : outcome.additionalContext
             if (note === undefined) return yield* Effect.failCause(cause)
             if (Cause.hasInterruptsOnly(cause)) {
@@ -402,7 +405,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         args: toRecord(call.args),
         result: output,
       })
-      return { ...output, ...post }
+      if (post.stop) yield* input.processor.stopAfterStep
+      return { ...output, title: post.title, output: post.output, metadata: post.metadata }
     })
 
   const registered = (item: Tool.Def): AITool => {

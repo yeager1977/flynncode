@@ -19,7 +19,7 @@ const it = testEffect(
         "session.idle": async (_input, output) => {
           signals.started()
           await release.promise
-          output.additionalContext = "stop hook context"
+          output.additionalContext = "idle hook context"
           signals.done()
         },
       },
@@ -27,7 +27,9 @@ const it = testEffect(
   ),
 )
 
-it.instance("a slow Stop hook neither delays idle, clobbers a new status, nor stores context", () =>
+// The session.idle plugin hook still runs detached on idle. The Stop event no
+// longer does: it runs blocking at the end of the prompt loop (stop-hooks.test.ts).
+it.instance("a slow session.idle hook neither delays idle, clobbers a new status, nor stores context", () =>
   Effect.gen(function* () {
     const status = yield* SessionStatus.Service
     const store = yield* HooksContext.Service
@@ -38,14 +40,14 @@ it.instance("a slow Stop hook neither delays idle, clobbers a new status, nor st
     signals.done = () => Deferred.doneUnsafe(finished, Effect.void)
 
     yield* status.set(sessionID, { type: "busy" })
-    // Returns while the Stop hook is still blocked.
-    yield* awaitWithTimeout(status.set(sessionID, { type: "idle" }), "idle transition waited on the Stop hook")
+    // Returns while the session.idle hook is still blocked.
+    yield* awaitWithTimeout(status.set(sessionID, { type: "idle" }), "idle transition waited on the session.idle hook")
     expect(yield* status.get(sessionID)).toEqual({ type: "idle" })
-    yield* awaitWithTimeout(Deferred.await(started), "Stop hook never started")
+    yield* awaitWithTimeout(Deferred.await(started), "session.idle hook never started")
 
     yield* status.set(sessionID, { type: "busy" })
     release.resolve()
-    yield* awaitWithTimeout(Deferred.await(finished), "Stop hook never finished")
+    yield* awaitWithTimeout(Deferred.await(finished), "session.idle hook never finished")
 
     expect(yield* status.get(sessionID)).toEqual({ type: "busy" })
     expect(yield* store.get(sessionID)).toEqual([])

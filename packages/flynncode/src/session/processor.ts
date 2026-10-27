@@ -45,6 +45,9 @@ export interface Handle {
     },
   ) => Effect.Effect<void>
   readonly process: (streamInput: LLM.StreamInput) => Effect.Effect<Result>
+  // Ends the turn once this step's tool calls settle, as a permission
+  // rejection does: `process` returns "stop". A hook's `continue: false`.
+  readonly stopAfterStep: Effect.Effect<void>
 }
 
 type Input = {
@@ -706,6 +709,9 @@ const layer = Layer.effect(
         updateToolCall,
         completeToolCall,
         process,
+        stopAfterStep: Effect.sync(() => {
+          ctx.blocked = true
+        }),
       } satisfies Handle
     })
 

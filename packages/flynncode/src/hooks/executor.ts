@@ -25,6 +25,9 @@ import { ClaudeFormat } from "@/hooks/claude-format"
 // - PostToolUse JSON may carry {"blockedOutput": string} to replace the model-visible result.
 //   PostToolUseFailure stdin carries `error` and `isInterrupt` instead of `output`.
 // - Observe hooks honor {"additionalContext"?,"systemMessage"?,"continue"?,"stopReason"?}.
+//   On UserPromptSubmit, Stop and SubagentStop, exit 2 (stderr is the reason)
+//   or {"behavior":"deny","message"?} blocks: the prompt is not admitted, or
+//   the stop is refused and the reason continues the turn.
 //   Non-JSON non-empty stdout on observe events is promoted wholesale to
 //   additionalContext (Codex parity: plain stdout is developer context),
 //   bounded by `additionalContextLimit`; valid-JSON output keeps the parsed
@@ -207,8 +210,19 @@ function posted(blocked: boolean, reason?: string, additionalContext?: string): 
   return { kind: "post", blocked, reason, additionalContext }
 }
 
-function observed(observe: HooksRunner.SessionObserve): Collected {
-  return { kind: "observe", observe }
+function observed(observe: HooksRunner.SessionObserve, block?: string): Collected {
+  return block === undefined ? { kind: "observe", observe } : { kind: "observe", observe, block }
+}
+
+// Events a native observe hook can block, as Claude's can.
+const BLOCKING_EVENTS = new Set(["UserPromptSubmit", "Stop", "SubagentStop"])
+
+// A native `{"behavior":"deny"}` on a blocking event.
+function deniedBy(event: string, stdout: string) {
+  if (!BLOCKING_EVENTS.has(event)) return undefined
+  const parsed = Option.getOrElse(decodeJson(stdout.trim()), () => undefined)
+  if (!isRecord(parsed) || parsed["behavior"] !== "deny") return undefined
+  return asString(parsed["message"]) || "Blocked by hook"
 }
 
 function failClosedCollect(kind: "decision" | "post" | "observe"): Collected {
@@ -446,6 +460,7 @@ export const node = LayerNode.make({
 
       const collectCommand = Effect.fn("HooksExecutor.collectCommand")(function* (input: {
         kind: "decision" | "post" | "observe"
+        event: string
         command: string
         payload: Record<string, unknown>
         timeoutMs: number
@@ -466,6 +481,7 @@ export const node = LayerNode.make({
             spawned.stderr.trim() || spawned.stdout.trim() || `Hook blocked: ${input.command}`
           if (input.kind === "decision") return decided({ behavior: "deny", message })
           if (input.kind === "post") return posted(true, message)
+          if (BLOCKING_EVENTS.has(input.event)) return observed({}, message)
           yield* Effect.logWarning("hook exited blocking", { command: input.command })
           return observed({})
         }
@@ -488,7 +504,7 @@ export const node = LayerNode.make({
           const observe = readObserveJson(spawned.stdout)
           if (observe) {
             if (observe.additionalContext) observe.additionalContext = limitContext(observe.additionalContext, input.limit)
-            return observed(observe)
+            return observed(observe, deniedBy(input.event, spawned.stdout))
           }
           // Plain-text stdout on observe events is developer context (Codex
           // parity): only non-JSON output is promoted, so any valid-JSON
@@ -571,6 +587,7 @@ export const node = LayerNode.make({
           return {
             kind: "post" as const,
             blocked: result.blocked,
+            ...(result.stop && { stop: true }),
             ...(reason !== undefined && { reason }),
             ...(result.additionalContext !== undefined && {
               additionalContext: limitContext(result.additionalContext, input.limit),
@@ -648,6 +665,7 @@ export const node = LayerNode.make({
 
       const collectMcp = Effect.fn("HooksExecutor.collectMcp")(function* (input: {
         kind: "decision" | "post" | "observe"
+        event: string
         server: string
         tool: string
         template: Record<string, unknown> | undefined
@@ -681,7 +699,7 @@ export const node = LayerNode.make({
         if (input.kind === "observe") {
           const observe = readObserveJson(text) ?? {}
           if (observe.additionalContext) observe.additionalContext = limitContext(observe.additionalContext, input.limit)
-          return observed(observe)
+          return observed(observe, deniedBy(input.event, text))
         }
         const decision = readDecisionJson(text)
         if (!decision) {
@@ -771,9 +789,18 @@ export const node = LayerNode.make({
                     cwd,
                     limit,
                   })
-                : collectCommand({ kind: input.kind, command: handler.command, payload: input.payload, timeoutMs, cwd, limit })
+                : collectCommand({
+                    kind: input.kind,
+                    event: input.event,
+                    command: handler.command,
+                    payload: input.payload,
+                    timeoutMs,
+                    cwd,
+                    limit,
+                  })
               : collectMcp({
                   kind: input.kind,
+                  event: input.event,
                   server: handler.server,
                   tool: handler.tool,
                   template: handler.input,
@@ -803,8 +830,9 @@ export const node = LayerNode.make({
 
       // deny > ask > allow > undecided.
       const mergeDecisions = (decisions: Array<HooksRunner.PreToolUseDecision>): HooksRunner.PreToolUseDecision => {
-        const denied = decisions.find((decision) => decision.behavior === "deny")
-        if (denied) return denied
+        const denials = decisions.filter((decision) => decision.behavior === "deny")
+        const denied = denials[0]
+        if (denied) return denials.some((decision) => decision.stop) ? { ...denied, stop: true } : denied
         const contexts = decisions.flatMap((decision) =>
           decision.behavior !== "deny" && decision.additionalContext ? [decision.additionalContext] : [],
         )
@@ -899,8 +927,13 @@ export const node = LayerNode.make({
           },
           timeoutMaxMs: input.timeoutMaxMs,
         })
-        const blocked = collected.find((item) => item.kind === "post" && item.blocked)
-        if (blocked && blocked.kind === "post") return { blocked: true as const, reason: blocked.reason ?? "Blocked by hook" }
+        const blocked = collected.flatMap((item) => (item.kind === "post" && item.blocked ? [item] : []))
+        if (blocked[0]) {
+          const reason = blocked[0].reason ?? "Blocked by hook"
+          return blocked.some((item) => item.stop)
+            ? { blocked: true as const, reason, stop: true }
+            : { blocked: true as const, reason }
+        }
         const contexts = collected.flatMap((item) =>
           item.kind === "post" && item.additionalContext ? [item.additionalContext] : [],
         )
@@ -928,9 +961,8 @@ export const node = LayerNode.make({
           timeoutMaxMs: input.timeoutMaxMs,
           defaultTimeoutMs: input.defaultTimeoutMs,
         })
-        // A Claude hook's `block` (UserPromptSubmit, Stop, SubagentStop) is
-        // parsed into the collected result but not enforced yet (Task 5).
         const observes = collected.flatMap((item) => (item.kind === "observe" ? [item.observe] : []))
+        const blocks = collected.flatMap((item) => (item.kind === "observe" && item.block !== undefined ? [item.block] : []))
         const contexts = observes.flatMap((item) => (item.additionalContext ? [item.additionalContext] : []))
         const system = observes.map((item) => item.systemMessage).find((part) => part !== undefined)
         const continued = observes.some((item) => item.continue === false) ? false : undefined
@@ -940,6 +972,7 @@ export const node = LayerNode.make({
         if (system) out.systemMessage = system
         if (continued !== undefined) out.continue = continued
         if (stop) out.stopReason = stop
+        if (blocks.length > 0) out.block = { reason: blocks.join("\n\n") }
         return out
       })
 

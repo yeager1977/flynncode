@@ -91,10 +91,11 @@ const TEXT_EVENTS = new Set(["SessionStart", "UserPromptSubmit"])
 
 // The executor's per-handler result. `block` on an observe result is the
 // reason a UserPromptSubmit, Stop or SubagentStop hook blocked with.
-// `systemMessage` on tool events is for the user, never the model.
+// `systemMessage` on tool events is for the user, never the model. `stop` on
+// a post result is `continue: false`: the turn ends after this tool step.
 export type Result =
   | { kind: "decision"; decision: HooksRunner.PreToolUseDecision; systemMessage?: string }
-  | { kind: "post"; blocked: boolean; reason?: string; additionalContext?: string; systemMessage?: string }
+  | { kind: "post"; blocked: boolean; reason?: string; additionalContext?: string; systemMessage?: string; stop?: boolean }
   | { kind: "observe"; observe: HooksRunner.SessionObserve; block?: string }
 
 const decodeJson = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)
@@ -235,17 +236,19 @@ function fromJson(event: string, parsed: Record<string, unknown>): Result {
   const system = asString(parsed["systemMessage"]) || undefined
   const stop = asString(parsed["stopReason"]) || undefined
   // `continue: false` outranks any event-specific decision: the call is
-  // denied, or its result blocked, with the stop reason.
+  // denied, or its result blocked, with the stop reason, and the turn ends
+  // after this tool step. A prompt is blocked; a stop is let through.
   const halted = parsed["continue"] === false ? (stop ?? "Stopped by hook") : undefined
   if (DECISION_EVENTS.has(event)) {
     return {
       kind: "decision",
-      decision: halted ? { behavior: "deny", message: halted } : readDecision(event, parsed, specific, context),
+      decision: halted ? { behavior: "deny", message: halted, stop: true } : readDecision(event, parsed, specific, context),
       ...(system && { systemMessage: system }),
     }
   }
   if (POST_EVENTS.has(event)) {
-    const block = halted ?? (parsed["decision"] === "block" ? (reason ?? "Blocked by hook") : undefined)
+    if (halted) return { kind: "post", blocked: true, reason: halted, stop: true, ...(system && { systemMessage: system }) }
+    const block = parsed["decision"] === "block" ? (reason ?? "Blocked by hook") : undefined
     if (block) return { kind: "post", blocked: true, reason: block, ...(system && { systemMessage: system }) }
     return { kind: "post", blocked: false, ...(context && { additionalContext: context }), ...(system && { systemMessage: system }) }
   }
@@ -255,7 +258,8 @@ function fromJson(event: string, parsed: Record<string, unknown>): Result {
     ...(typeof parsed["continue"] === "boolean" && { continue: parsed["continue"] }),
     ...(stop && { stopReason: stop }),
   }
-  if (BLOCKING_EVENTS.has(event) && parsed["decision"] === "block") {
+  if (event === "UserPromptSubmit" && halted) return { kind: "observe", observe, block: halted }
+  if (BLOCKING_EVENTS.has(event) && !halted && parsed["decision"] === "block") {
     return { kind: "observe", observe, block: reason ?? "Blocked by hook" }
   }
   return { kind: "observe", observe }

@@ -230,6 +230,29 @@ describe("hooks executor", () => {
     }),
   )
 
+  const exitBlock = "echo 'tests are failing' >&2; exit 2"
+  const denyBlock = `printf '%s' '${JSON.stringify({ behavior: "deny", message: "not this prompt" })}'`
+  const blockingHooks = {
+    Stop: [{ hooks: [{ type: "command", command: exitBlock }] }],
+    SubagentStop: [{ hooks: [{ type: "command", command: exitBlock }, { type: "command", command: denyBlock }] }],
+    UserPromptSubmit: [{ hooks: [{ type: "command", command: denyBlock }] }],
+    SessionStart: [{ hooks: [{ type: "command", command: exitBlock }] }],
+  }
+  testEffect(executorLayer(blockingHooks, true)).effect(
+    "native exit 2 and behavior deny block UserPromptSubmit, Stop and SubagentStop only",
+    () =>
+      Effect.gen(function* () {
+        const executor = yield* HooksExecutor.Service
+        const observe = (event: "Stop" | "SubagentStop" | "UserPromptSubmit" | "SessionStart") =>
+          executor.runObserve({ event, matchName: "", sessionID: "ses_1", payload: {} })
+        expect(yield* observe("Stop")).toEqual({ block: { reason: "tests are failing" } })
+        // Every blocking hook's reason is kept.
+        expect(yield* observe("SubagentStop")).toEqual({ block: { reason: "tests are failing\n\nnot this prompt" } })
+        expect(yield* observe("UserPromptSubmit")).toEqual({ block: { reason: "not this prompt" } })
+        expect(yield* observe("SessionStart")).toEqual({})
+      }),
+  )
+
   testEffect(executorLayer({ PreToolUse: [{ hooks: [{ type: "command", command: "sleep 30", timeout: 0.05 }] }] })).effect(
     "timeout kills the spawn and denies fail-closed",
     () =>
@@ -937,11 +960,15 @@ describe("hooks executor: Claude format", () => {
 
   const postStopHook = `printf '%s' '${JSON.stringify({ continue: false, stopReason: "stop here", systemMessage: "note" })}'`
   testEffect(executorLayer(claudeGroup("PostToolUse", "Bash", [postStopHook]))).effect(
-    "PostToolUse continue:false blocks the result with stopReason",
+    "PostToolUse continue:false blocks the result with stopReason and ends the turn",
     () =>
       Effect.gen(function* () {
         yield* trustClaude("PostToolUse", "Bash", [postStopHook])
-        expect(yield* runPost).toEqual({ blocked: true, reason: "a.txt\n\n[PostToolUse hook blocked: stop here]" })
+        expect(yield* runPost).toEqual({
+          blocked: true,
+          reason: "a.txt\n\n[PostToolUse hook blocked: stop here]",
+          stop: true,
+        })
       }),
   )
 
@@ -951,13 +978,14 @@ describe("hooks executor: Claude format", () => {
     hookSpecificOutput: { permissionDecision: "allow" },
   })}'`
   testEffect(executorLayer(claudeGroup("PreToolUse", "Bash", [stopHook]))).effect(
-    "PreToolUse continue:false denies the call with stopReason",
+    "PreToolUse continue:false denies the call with stopReason and ends the turn",
     () =>
       Effect.gen(function* () {
         yield* trustClaude("PreToolUse", "Bash", [stopHook])
         expect(yield* preToolUse("bash", { command: "ls" })).toEqual({
           behavior: "deny",
           message: "halt: prod creds detected",
+          stop: true,
         })
       }),
   )
@@ -976,7 +1004,7 @@ describe("hooks executor: Claude format", () => {
           callID: "c1",
           args: { command: "ls" },
         })
-        expect(decision).toEqual({ behavior: "deny", message: "halt: prod creds detected" })
+        expect(decision).toEqual({ behavior: "deny", message: "halt: prod creds detected", stop: true })
       }),
   )
 

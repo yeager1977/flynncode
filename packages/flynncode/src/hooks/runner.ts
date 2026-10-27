@@ -6,7 +6,9 @@ import { HooksTrust } from "@/hooks/trust"
 
 export type PreToolUseDecision =
   | { behavior: "allow"; updatedInput?: Record<string, unknown>; additionalContext?: string }
-  | { behavior: "deny"; message: string }
+  // `stop`: a Claude hook's `continue: false`; the turn also ends after this
+  // tool step.
+  | { behavior: "deny"; message: string; stop?: boolean }
   // The call must be confirmed: its own permission check prompts even where a
   // rule or an "always" approval allows (rule denies still deny), and a tool
   // without a check of its own gets one prompt before it runs. The prompt shows
@@ -16,7 +18,7 @@ export type PreToolUseDecision =
   | { behavior: "undecided"; additionalContext?: string }
 
 export type PostToolUseOutcome =
-  | { blocked: true; reason: string }
+  | { blocked: true; reason: string; stop?: boolean }
   | { blocked: false; additionalContext?: string }
 
 // The model-visible slice of a tool result that `tool.execute.after` plugins
@@ -32,6 +34,9 @@ export type SessionObserve = {
   systemMessage?: string
   continue?: boolean
   stopReason?: string
+  // UserPromptSubmit, Stop and SubagentStop only: a hook blocked. The prompt
+  // is not admitted, or the stop is refused and the reason continues the turn.
+  block?: { reason: string }
 }
 
 export class HookDeniedError extends Error {
@@ -77,7 +82,8 @@ export interface RunnerInterface {
     result: ToolResultView
     model?: string
     permissionMode?: string
-  }) => Effect.Effect<ToolResultView>
+    // `stop`: a hook's `continue: false`; the turn ends after this tool step.
+  }) => Effect.Effect<ToolResultView & { stop?: boolean }>
   // Runs instead of runPostToolUse when the tool failed or was interrupted.
   // A block reason or additional context is for the model, next to the error.
   readonly runPostToolUseFailure: (input: {
@@ -114,16 +120,36 @@ export interface RunnerInterface {
     agentID: string
     agentType: string
   }) => Effect.Effect<SessionObserve>
+  // A no-op for a child session whose prompt loop already ran SubagentStop
+  // (runStop), so the task tool's call after the child returns fires nothing.
   readonly runSubagentStop: (input: {
     sessionID: string
     agentID: string
     agentType: string
   }) => Effect.Effect<SessionObserve>
+  // Stop (a root session) or SubagentStop (a child session) at the end of the
+  // prompt loop, before the session goes idle. A block refuses the stop: the
+  // reason continues the turn. `active` is stop_hook_active: this stop follows
+  // a continuation forced by a Stop hook for the same user prompt.
+  readonly runStop: (input: {
+    sessionID: string
+    subagent: boolean
+    agentID?: string
+    agentType?: string
+    active: boolean
+  }) => Effect.Effect<{ block: boolean; reason?: string }>
+  // The plugin session.idle hook on every idle transition. The Stop event no
+  // longer fires here: it runs blocking in the prompt loop (runStop).
   readonly runIdle: (input: { sessionID: string; reason?: "idle" | "interrupt" }) => Effect.Effect<SessionObserve>
   readonly runInterrupt: (input: { sessionID: string }) => Effect.Effect<SessionObserve>
 }
 
 export type NotificationType = "permission_prompt" | "question" | "idle"
+
+// Child sessions whose loop ran SubagentStop, kept until the task tool's own
+// runSubagentStop consumes them. Children that never reach the task tool's
+// call (backgrounded, driven directly) are dropped oldest first.
+const MAX_HANDLED_SUBAGENT_STOPS = 256
 
 export class Service extends Context.Service<Service, RunnerInterface>()("@opencode/HooksRunner") {}
 
@@ -172,10 +198,13 @@ function mergeObserve(first: SessionObserve, second: SessionObserve): SessionObs
     systemMessage: first.systemMessage ?? second.systemMessage,
     continue: continued,
     stopReason: first.stopReason ?? second.stopReason,
+    ...((first.block ?? second.block) && { block: first.block ?? second.block }),
   }
 }
 
 export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): RunnerInterface {
+  const handledSubagentStops = new Set<string>()
+
   const runPreToolUse = Effect.fn("HooksRunner.runPreToolUse")(function* (input: {
     sessionID: string
     tool: string
@@ -321,7 +350,7 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
       model: input.model,
       permissionMode: input.permissionMode,
     })
-    if (filePost.blocked) return { ...view, output: filePost.reason }
+    if (filePost.blocked) return { ...view, output: filePost.reason, ...(filePost.stop && { stop: true }) }
     return view
   })
 
@@ -494,6 +523,7 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
     agentID: string
     agentType: string
   }) {
+    if (handledSubagentStops.delete(input.sessionID)) return {}
     const output = {
       additionalContext: undefined as string | undefined,
       systemMessage: undefined as string | undefined,
@@ -519,21 +549,55 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
     )
   })
 
+  const runStop = Effect.fn("HooksRunner.runStop")(function* (input: {
+    sessionID: string
+    subagent: boolean
+    agentID?: string
+    agentType?: string
+    active: boolean
+  }) {
+    const agentID = input.agentID ?? input.sessionID
+    const agentType = input.agentType ?? ""
+    if (input.subagent) {
+      handledSubagentStops.delete(input.sessionID)
+      handledSubagentStops.add(input.sessionID)
+      if (handledSubagentStops.size > MAX_HANDLED_SUBAGENT_STOPS) {
+        handledSubagentStops.delete(handledSubagentStops.values().next().value ?? input.sessionID)
+      }
+      const output = { additionalContext: undefined as string | undefined, systemMessage: undefined as string | undefined }
+      yield* plugin.trigger("subagent.stop", { sessionID: input.sessionID, agentID, agentType }, output)
+      if (output.systemMessage) yield* Effect.logWarning("hooks.subagent.stop", { systemMessage: output.systemMessage })
+    }
+    if (!executor) return { block: false }
+    const observe = yield* executor.runObserve(
+      input.subagent
+        ? {
+            event: "SubagentStop",
+            matchName: agentType,
+            sessionID: input.sessionID,
+            payload: { agentID, agentType, stopHookActive: input.active },
+          }
+        : {
+            event: "Stop",
+            matchName: "idle",
+            sessionID: input.sessionID,
+            payload: { reason: "idle", stopHookActive: input.active },
+          },
+    )
+    if (observe.systemMessage) {
+      yield* Effect.logWarning(input.subagent ? "hooks.subagent.stop" : "hooks.session.stop", {
+        systemMessage: observe.systemMessage,
+      })
+    }
+    if (!observe.block) return { block: false }
+    return { block: true, reason: observe.block.reason }
+  })
+
   const runIdle = Effect.fn("HooksRunner.runIdle")(function* (input: { sessionID: string; reason?: "idle" | "interrupt" }) {
     const reason = input.reason ?? "idle"
     const output = { additionalContext: undefined as string | undefined, systemMessage: undefined as string | undefined }
     yield* plugin.trigger("session.idle", { sessionID: input.sessionID, reason }, output)
-    const pluginObserve: SessionObserve = { additionalContext: output.additionalContext, systemMessage: output.systemMessage }
-    if (!executor) return pluginObserve
-    return mergeObserve(
-      pluginObserve,
-      yield* executor.runObserve({
-        event: "Stop",
-        matchName: reason,
-        sessionID: input.sessionID,
-        payload: { reason },
-      }),
-    )
+    return { additionalContext: output.additionalContext, systemMessage: output.systemMessage } satisfies SessionObserve
   })
 
   const runInterrupt = Effect.fn("HooksRunner.runInterrupt")(function* (input: { sessionID: string }) {
@@ -568,6 +632,7 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
     runCompact,
     runSubagentStart,
     runSubagentStop,
+    runStop,
     runIdle,
     runInterrupt,
   })

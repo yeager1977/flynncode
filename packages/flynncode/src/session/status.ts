@@ -55,8 +55,9 @@ const layer = Layer.effect(
       yield* events.publish(Event.Status, { sessionID, status })
       if (status.type !== "idle") return
       yield* events.publish(Event.Idle, { sessionID })
-      // Observe-only Stop hook on idle transition: detached so it never delays
-      // the turn, and report-only so its context does not accumulate.
+      // The observe-only session.idle plugin hook: detached so it never delays
+      // the turn, and report-only so its context does not accumulate. The Stop
+      // event runs earlier, blocking, at the end of the prompt loop.
       const maybeHooks = yield* Effect.serviceOption(HooksRunner.Service)
       if (Option.isSome(maybeHooks)) {
         yield* HooksContext.observe("hooks.session.idle", maybeHooks.value.runIdle({ sessionID })).pipe(
@@ -64,7 +65,7 @@ const layer = Layer.effect(
         )
         if (!options?.interrupted) yield* notifyIdle(maybeHooks.value, sessionID).pipe(Effect.forkDetach)
       }
-      // Best-effort idle memory extraction, next to the Stop hook: forked,
+      // Best-effort idle memory extraction, next to the idle hook: forked,
       // ignored and optional so the idle transition never blocks on memory.
       const maybeCurate = yield* Effect.serviceOption(SessionMemoryCurate.Service)
       if (Option.isSome(maybeCurate)) {

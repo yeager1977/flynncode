@@ -59,7 +59,7 @@ it.instance("same-directory sessions authorize only their own attachments", () =
   for (const [owner, own, other] of [[a, extraA, extraB], [b, extraB, extraA]] as const) {
     const tools = yield* SessionTools.resolve({
       agent, model, session: owner, messages: [], bypassAgentCheck: false, promptOps: {} as never, mcp: { tools: {}, sent: [], deferred: [], listed: [] },
-      processor: { message: { id: MessageID.ascending(), sessionID: owner.id } as never, updateToolCall: () => Effect.void as never, completeToolCall: () => Effect.void },
+      processor: { message: { id: MessageID.ascending(), sessionID: owner.id } as never, updateToolCall: () => Effect.void as never, completeToolCall: () => Effect.void, stopAfterStep: Effect.void },
     }).pipe(Effect.provideService(InstanceRef, shared))
     const call = (name: string, args: Record<string, unknown>) => Effect.promise(() => {
       const execute = tools[name]?.execute

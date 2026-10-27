@@ -299,20 +299,27 @@ describe("ClaudeFormat output", () => {
     const stop = { continue: false, stopReason: "halt: prod creds detected" }
     expect(ClaudeFormat.output("PreToolUse", json(stop))).toEqual({
       kind: "decision",
-      decision: { behavior: "deny", message: "halt: prod creds detected" },
+      decision: { behavior: "deny", message: "halt: prod creds detected", stop: true },
     })
     // It outranks an allow in the same output.
     expect(
       ClaudeFormat.output("PermissionRequest", json({ ...stop, hookSpecificOutput: { decision: { behavior: "allow" } } })),
-    ).toEqual({ kind: "decision", decision: { behavior: "deny", message: "halt: prod creds detected" } })
+    ).toEqual({ kind: "decision", decision: { behavior: "deny", message: "halt: prod creds detected", stop: true } })
     expect(ClaudeFormat.output("PreToolUse", json({ continue: false }))).toEqual({
       kind: "decision",
-      decision: { behavior: "deny", message: "Stopped by hook" },
+      decision: { behavior: "deny", message: "Stopped by hook", stop: true },
     })
     expect(ClaudeFormat.output("PostToolUse", json(stop))).toEqual({
       kind: "post",
       blocked: true,
       reason: "halt: prod creds detected",
+      stop: true,
+    })
+    // A plain decision:block is no stop.
+    expect(ClaudeFormat.output("PostToolUse", json({ decision: "block", reason: "lint" }))).toEqual({
+      kind: "post",
+      blocked: true,
+      reason: "lint",
     })
     // continue:true is no stop.
     expect(ClaudeFormat.output("PreToolUse", json({ continue: true }))).toEqual({
@@ -387,6 +394,22 @@ describe("ClaudeFormat output", () => {
       kind: "observe",
       observe: {},
       block: "tests fail",
+    })
+    // continue:false blocks a prompt with its stopReason, and outranks a
+    // Stop block: the stop is let through.
+    expect(ClaudeFormat.output("UserPromptSubmit", json({ continue: false, stopReason: "not now" }))).toEqual({
+      kind: "observe",
+      observe: { continue: false, stopReason: "not now" },
+      block: "not now",
+    })
+    expect(ClaudeFormat.output("Stop", json({ continue: false, decision: "block", reason: "more" }))).toEqual({
+      kind: "observe",
+      observe: { continue: false },
+    })
+    expect(ClaudeFormat.output("SubagentStop", json({ decision: "block", reason: "more" }))).toEqual({
+      kind: "observe",
+      observe: {},
+      block: "more",
     })
     // decision:block only blocks the events that can block.
     expect(ClaudeFormat.output("SessionStart", json({ decision: "block", reason: "x" }))).toEqual({ kind: "observe", observe: {} })

@@ -377,7 +377,7 @@ for (const approval of ["manual", "auto", "accept-edits"] as const) {
       const providers = yield* Provider.Service
       const model = yield* providers.getModel(ProviderV2.ID.make("test"), ModelV2.ID.make("test-model"))
       const tools = yield* SessionTools.resolve({ agent, model, session, messages: [], bypassAgentCheck: false, promptOps: {} as never, mcp: { tools: {}, sent: [], deferred: [], listed: [] },
-        processor: { message: { id: MessageID.ascending(), sessionID: session.id } as never, updateToolCall: () => Effect.void as never, completeToolCall: () => Effect.void } })
+        processor: { message: { id: MessageID.ascending(), sessionID: session.id } as never, updateToolCall: () => Effect.void as never, completeToolCall: () => Effect.void, stopAfterStep: Effect.void } })
       for (const [name, args] of [["read", { filePath: file }], ["glob", { pattern: "*.txt", path: dir }], ["grep", { pattern: "safe", path: dir }]] as const) {
         const execute = tools[name].execute
         if (!execute) throw new Error(`missing ${name}`)

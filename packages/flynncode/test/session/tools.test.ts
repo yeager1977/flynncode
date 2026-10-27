@@ -213,7 +213,8 @@ it.effect("preserves running tool start time across metadata updates", () =>
           return state
         }),
       completeToolCall: () => Effect.void,
-    } satisfies Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall">
+      stopAfterStep: Effect.void,
+    } satisfies Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall" | "stopAfterStep">
 
     const tools = yield* SessionTools.resolve({
       agent,
@@ -266,7 +267,8 @@ it.effect("sandbox gate checks every pattern, not just the first", () =>
       } satisfies SessionV1.Assistant,
       updateToolCall: () => Effect.succeed(undefined),
       completeToolCall: () => Effect.void,
-    } satisfies Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall">
+      stopAfterStep: Effect.void,
+    } satisfies Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall" | "stopAfterStep">
 
     const tools = yield* SessionTools.resolve({
       agent,
@@ -314,6 +316,7 @@ it.effect("sandbox contains external_directory for write tools but not reads", (
         message: { id: messageID, sessionID } as SessionV1.Assistant,
         updateToolCall: () => Effect.succeed(undefined),
         completeToolCall: () => Effect.void,
+        stopAfterStep: Effect.void,
       },
       bypassAgentCheck: false,
       messages: [],
@@ -358,6 +361,7 @@ it.effect("workspace-write allows edits inside a session's attached additional d
         message: { id: messageID, sessionID } as SessionV1.Assistant,
         updateToolCall: () => Effect.succeed(undefined),
         completeToolCall: () => Effect.void,
+        stopAfterStep: Effect.void,
       },
       bypassAgentCheck: false,
       messages: [],
@@ -499,6 +503,7 @@ const resolveAsker = (permission: PermissionV1.Ruleset = askBash) =>
       message: { id: messageID, sessionID } as SessionV1.Assistant,
       updateToolCall: () => Effect.succeed(undefined),
       completeToolCall: () => Effect.void,
+      stopAfterStep: Effect.void,
     }
     return yield* SessionTools.resolve({
       agent,
@@ -661,7 +666,8 @@ const sandboxProcessor = {
   message: { id: messageID, sessionID } as SessionV1.Assistant,
   updateToolCall: () => Effect.succeed(undefined),
   completeToolCall: () => Effect.void,
-} satisfies Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall">
+  stopAfterStep: Effect.void,
+} satisfies Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall" | "stopAfterStep">
 
 const runSandboxTool = (env: ReturnType<typeof sandboxEnv>, name: string) =>
   Effect.gen(function* () {

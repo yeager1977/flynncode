@@ -130,6 +130,10 @@ export function peerHeaderFrom(text: string) {
   )
 }
 
+// Forced continuations a Stop or SubagentStop hook may cause per user prompt;
+// past that the stop is allowed with a warning.
+const MAX_STOP_CONTINUATIONS = 8
+
 // Trust anchor for peer replies: a message whose every text part is synthetic.
 // Normal user messages (including model-authored text that merely quotes a
 // <peer_message header) never qualify.
@@ -1143,9 +1147,10 @@ const layer = Layer.effect(
       return { info, parts }
     }, Effect.scoped)
 
-    // UserPromptSubmit hook runs before admission. A blocking hook aborts the
-    // turn with a hook error (fail closed — never silently continue).
-    // Returns the hook's additionalContext for this prompt.
+    // UserPromptSubmit hook runs before admission. A blocking hook keeps the
+    // prompt out: the admission fails with a HookDeniedError carrying the
+    // hook's reason, and a hook failure fails it too (fail closed — never
+    // silently continue). Returns the hook's additionalContext for this prompt.
     const runPromptSubmitHook = Effect.fnUntraced(function* (input: PromptInput) {
       const text = input.parts
         .filter((part) => part.type === "text")
@@ -1163,6 +1168,7 @@ const layer = Layer.effect(
       if (hookExit.value.systemMessage) {
         yield* Effect.logWarning("hooks.session.prompt", { systemMessage: hookExit.value.systemMessage })
       }
+      if (hookExit.value.block) throw new HooksRunner.HookDeniedError(hookExit.value.block.reason)
       return hookExit.value.additionalContext
     })
 
@@ -1254,7 +1260,9 @@ const layer = Layer.effect(
       )
     })
 
-    const runLoopOnce: (sessionID: SessionID) => Effect.Effect<[SessionV1.WithParts, SessionV1.User]> = Effect.fn(
+    // `steps` counts the loop iterations that did work; none means the
+    // session was already done.
+    const runLoopOnce: (sessionID: SessionID) => Effect.Effect<[SessionV1.WithParts, SessionV1.User, number]> = Effect.fn(
       "SessionPrompt.runLoopOnce",
     )(function* (sessionID) {
       const ctx = yield* InstanceState.context
@@ -1621,18 +1629,85 @@ const layer = Layer.effect(
         // Best-effort idle-boundary memory curation: forked and ignored so the
         // drain never blocks or fails on memory errors.
         yield* curate.extract(sessionID).pipe(Effect.ignore, Effect.forkIn(scope))
-        return [yield* lastAssistant(sessionID), drainedMessages!] as const
+        return [yield* lastAssistant(sessionID), drainedMessages!, step] as const
       },
     )
 
+    // Stop (a root session) or SubagentStop (a child session) once a turn has
+    // ended on its own, before the session goes idle. A block is admitted as a
+    // synthetic user message carrying the hook's reason, without a
+    // UserPromptSubmit hook, and the drain promotes it like a queued input.
+    // Returns the admitted message's id.
+    const runStopHook = Effect.fnUntraced(function* (input: {
+      result: SessionV1.WithParts
+      user: SessionV1.User
+      steps: number
+      forced: number
+    }) {
+      const info = input.result.info
+      if (input.steps === 0 || info.role !== "assistant" || info.error || info.summary) return undefined
+      if (!info.finish || ["tool-calls", "unknown"].includes(info.finish)) return undefined
+      const sessionID = input.user.sessionID
+      const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+      const subagent = Boolean(session.parentID)
+      const stop = yield* hooksRunner.runStop({
+        sessionID,
+        subagent,
+        agentID: sessionID,
+        agentType: input.user.agent,
+        active: input.forced > 0,
+      })
+      if (!stop.block) return undefined
+      const event = subagent ? "SubagentStop" : "Stop"
+      if (input.forced >= MAX_STOP_CONTINUATIONS) {
+        yield* Effect.logWarning(`${event} hook kept blocking; letting the turn stop`, {
+          "session.id": sessionID,
+          continuations: input.forced,
+          reason: stop.reason,
+        })
+        return undefined
+      }
+      const reason = stop.reason ?? "Blocked by hook"
+      // The continuation answers the same user prompt, so it keeps that
+      // prompt's agent, model, format, system and turn permissions.
+      const message = yield* createUserMessage({
+        sessionID,
+        agent: input.user.agent,
+        model: { providerID: input.user.model.providerID, modelID: input.user.model.modelID },
+        variant: input.user.model.variant,
+        format: input.user.format,
+        system: input.user.system,
+        permission: input.user.permission,
+        parts: [
+          { type: "text", synthetic: true, text: `${event} hook feedback:\n${reason}`, metadata: { hook: event, reason } },
+        ],
+      }).pipe(Effect.orDie)
+      yield* sessions.touch(sessionID)
+      return message.info.id
+    })
+
     const runLoop: (sessionID: SessionID) => Effect.Effect<SessionV1.WithParts> = Effect.fn("SessionPrompt.run")(
       function* (sessionID: SessionID) {
+        // Stop-hook continuations admitted by this drain, and how many followed
+        // the user prompt being answered. A continuation is always promoted in
+        // the drain that admitted it, so the count lives here.
+        const continuations = new Set<string>()
+        let forced = 0
         // A drain must not return while steer/queue user messages persisted after
         // the last messages read remain unconsumed — they would sit in the
         // database until some later drain. Rerun the loop when the post-teardown
-        // re-check finds newer user messages.
+        // re-check finds newer user messages, and before going idle, when a
+        // Stop hook refuses the stop.
         while (true) {
-          const [result, user] = yield* runLoopOnce(sessionID)
+          const [result, user, steps] = yield* runLoopOnce(sessionID)
+          if (yield* hasNewerUser(sessionID, user)) continue
+          if (!continuations.has(user.id)) forced = 0
+          const continued = yield* runStopHook({ result, user, steps, forced })
+          if (continued !== undefined) {
+            continuations.add(continued)
+            forced++
+            continue
+          }
           if (!(yield* hasNewerUser(sessionID, user))) return result
         }
       },
