@@ -206,3 +206,30 @@ export const SessionTombstoneTable = sqliteTable("session_tombstone", {
   id: text().$type<SessionSchema.ID>().primaryKey(),
   time_deleted: integer().notNull(),
 })
+
+// Local only: never part of a machine-sync bundle or the hub sync. No foreign
+// key to the session, because a machine-sync apply deletes and re-inserts the
+// session row and must not wipe this machine's jobs; the scheduler and
+// session removal delete the rows instead.
+export const SessionScheduleTable = sqliteTable(
+  "session_schedule",
+  {
+    id: text().primaryKey(),
+    session_id: text().$type<SessionSchema.ID>().notNull(),
+    kind: text().$type<"cron" | "wakeup">().notNull(),
+    cron: text(),
+    prompt: text().notNull(),
+    reason: text(),
+    recurring: integer({ mode: "boolean" }).notNull(),
+    next_run_at: integer().notNull(),
+    expires_at: integer(),
+    lease_until: integer(),
+    failures: integer().notNull().default(0),
+    pending_message_id: text(),
+    time_created: integer().notNull(),
+  },
+  (table) => [
+    index("session_schedule_session_idx").on(table.session_id),
+    index("session_schedule_next_run_idx").on(table.next_run_at),
+  ],
+)

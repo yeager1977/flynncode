@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "3eac4471-8cf2-41ee-84b1-bdb5cad10d63",
+  "id": "95af279f-a780-4118-9b47-1f9d8763e018",
   "prevIds": [
-    "022ce9f0-2002-4bb3-82a6-000f8825f2cf"
+    "3eac4471-8cf2-41ee-84b1-bdb5cad10d63"
   ],
   "ddl": [
     {
@@ -72,6 +72,10 @@
     },
     {
       "name": "session_message",
+      "entityType": "tables"
+    },
+    {
+      "name": "session_schedule",
       "entityType": "tables"
     },
     {
@@ -1128,6 +1132,136 @@
       "generated": null,
       "name": "id",
       "entityType": "columns",
+      "table": "session_schedule"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "session_id",
+      "entityType": "columns",
+      "table": "session_schedule"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "kind",
+      "entityType": "columns",
+      "table": "session_schedule"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "cron",
+      "entityType": "columns",
+      "table": "session_schedule"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "prompt",
+      "entityType": "columns",
+      "table": "session_schedule"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "reason",
+      "entityType": "columns",
+      "table": "session_schedule"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "recurring",
+      "entityType": "columns",
+      "table": "session_schedule"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "next_run_at",
+      "entityType": "columns",
+      "table": "session_schedule"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "expires_at",
+      "entityType": "columns",
+      "table": "session_schedule"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lease_until",
+      "entityType": "columns",
+      "table": "session_schedule"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "failures",
+      "entityType": "columns",
+      "table": "session_schedule"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "pending_message_id",
+      "entityType": "columns",
+      "table": "session_schedule"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "session_schedule"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
       "table": "session"
     },
     {
@@ -1951,6 +2085,15 @@
         "id"
       ],
       "nameExplicit": false,
+      "name": "session_schedule_pk",
+      "table": "session_schedule",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
       "name": "session_pk",
       "table": "session",
       "entityType": "pks"
@@ -2280,6 +2423,34 @@
       "name": "session_message_session_time_updated_idx",
       "entityType": "indexes",
       "table": "session_message"
+    },
+    {
+      "columns": [
+        {
+          "value": "session_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "session_schedule_session_idx",
+      "entityType": "indexes",
+      "table": "session_schedule"
+    },
+    {
+      "columns": [
+        {
+          "value": "next_run_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "session_schedule_next_run_idx",
+      "entityType": "indexes",
+      "table": "session_schedule"
     },
     {
       "columns": [
