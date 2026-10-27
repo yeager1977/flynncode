@@ -258,7 +258,7 @@ export const app = LayerNode.group([
   SessionDiffSweep.node,
   WorktreeJanitor.node,
   BackgroundShells.node,
-  // Process-global: ticks every 15 s for as long as this server's routes layer lives.
+  // Polls every 15 s while this graph lives; only the machine-wide leader (an opted-in long-lived server) ticks.
   Scheduler.node,
   Snapshot.node,
   Plugin.node,

@@ -6,6 +6,8 @@ import { Context, Effect, Layer, Schema } from "effect"
 import { Database } from "@flynncode/core/database/database"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { SessionScheduleTable, SessionTable } from "@flynncode/core/session/sql"
+import { SessionSchedule } from "@flynncode/schema/session-schedule"
+import { GlobalBus } from "@/bus/global"
 import { Identifier } from "@/id/id"
 import type { SessionID } from "@/session/schema"
 
@@ -37,19 +39,35 @@ export type CreateInput = {
   now: Date
 }
 
+export type Summary = {
+  count: number
+  /** The earliest `next_run_at`, or null without jobs. */
+  next: number | null
+  /** The earliest `expires_at`, or null when no job expires. */
+  expires: number | null
+}
+
 export interface Interface {
   readonly create: (input: CreateInput) => Effect.Effect<Job, LimitError | InvalidCronError>
   readonly list: (sessionID: SessionID) => Effect.Effect<Job[]>
   readonly remove: (sessionID: SessionID, id: string) => Effect.Effect<boolean>
-  readonly removeSession: (sessionID: SessionID) => Effect.Effect<void>
-  /** Atomically leases every due job; only the returned rows belong to the caller. */
-  readonly claimDue: (now: Date) => Effect.Effect<Job[]>
-  /** The prompt was delivered: advance a recurring job, delete a one-shot. */
-  readonly complete: (job: Job, input: { now: Date; messageID: string }) => Effect.Effect<void>
+  /** Deletes every job of the session and returns how many there were. */
+  readonly removeSession: (sessionID: SessionID) => Effect.Effect<number>
+  /** One read over the whole table, so an idle tick never writes. */
+  readonly summary: () => Effect.Effect<Summary>
+  /** Due jobs nobody holds a lease on, without claiming them. */
+  readonly due: (now: Date) => Effect.Effect<Job[]>
+  /** Atomically leases one due job until `now + LEASE_MS`; undefined when it is not due or someone else holds it. */
+  readonly claim: (id: string, now: Date) => Effect.Effect<Job | undefined>
+  /**
+   * The prompt was delivered: advance a recurring job, delete a one-shot. Like `skip` and `fail`, it applies only while
+   * the claimed lease is still the job's lease, and returns whether it did.
+   */
+  readonly complete: (job: Job, input: { now: Date; messageID: string }) => Effect.Effect<boolean>
   /** The previous prompt is still pending: move a recurring job to its next slot without delivering. */
-  readonly skip: (job: Job, now: Date) => Effect.Effect<void>
+  readonly skip: (job: Job, now: Date) => Effect.Effect<boolean>
   /** Delivery failed: count it, release the lease, and delete the job at 3 in a row. */
-  readonly fail: (job: Job) => Effect.Effect<void>
+  readonly fail: (job: Job) => Effect.Effect<boolean>
   /** Deletes jobs past `expires_at` and returns them. */
   readonly expire: (now: Date) => Effect.Effect<Job[]>
   /** Deletes jobs whose session is gone or archived and returns them; there is no foreign key to cascade. */
@@ -58,24 +76,46 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/ScheduleStore") {}
 
+/**
+ * Publishes `session.schedule.updated` on the process-wide bus, routed by the session's directory the way
+ * instance events are, so clients re-list the session's jobs.
+ */
+export function publishUpdated(input: { directory: string; sessionID: SessionID }) {
+  return Effect.sync(() =>
+    GlobalBus.emit("event", {
+      directory: input.directory,
+      payload: { type: SessionSchedule.Event.Updated.type, properties: { sessionID: input.sessionID } },
+    }),
+  ).pipe(Effect.asVoid)
+}
+
 /** The first match strictly after `after` for a standard 5-field cron in local time, or undefined. */
 export function nextRun(cron: string, after: Date) {
   // croner also takes seconds, years and @nicknames; only 5 fields are supported here.
   if (cron.trim().split(/\s+/).length !== 5) return undefined
-  const job = (() => {
-    try {
-      return new Cron(cron)
-    } catch {
-      return undefined
-    }
-  })()
-  return job?.nextRun(after) ?? undefined
+  return parse(cron)?.nextRun(after) ?? undefined
+}
+
+// croner throws on an invalid pattern.
+function parse(cron: string) {
+  try {
+    return new Cron(cron)
+  } catch {
+    return undefined
+  }
+}
+
+// The fence for complete/skip/fail: the job still carries the lease this caller claimed. A re-claim after the lease
+// lapsed always sets a later `lease_until`, so an equal value means nobody else claimed it since. An unclaimed copy
+// (no lease) holds nothing.
+function held(job: Job) {
+  return and(eq(SessionScheduleTable.id, job.id), eq(SessionScheduleTable.lease_until, job.lease_until ?? -1))
 }
 
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const db = (yield* Database.Service).db
+    const { db } = yield* Database.Service
 
     const create = Effect.fn("ScheduleStore.create")(function* (input: CreateInput) {
       const first = input.kind === "wakeup" ? (input.runAt ?? input.now) : nextRun(input.cron ?? "", input.now)
@@ -147,26 +187,52 @@ const layer = Layer.effect(
     })
 
     const removeSession = Effect.fn("ScheduleStore.removeSession")(function* (sessionID: SessionID) {
-      yield* db
+      const removed = yield* db
         .delete(SessionScheduleTable)
         .where(eq(SessionScheduleTable.session_id, sessionID))
-        .run()
+        .returning({ id: SessionScheduleTable.id })
+        .all()
+        .pipe(Effect.orDie)
+      return removed.length
+    })
+
+    const summary = Effect.fn("ScheduleStore.summary")(function* () {
+      const row = yield* db
+        .select({
+          count: sql<number>`count(*)`,
+          next: sql<number | null>`min(${SessionScheduleTable.next_run_at})`,
+          expires: sql<number | null>`min(${SessionScheduleTable.expires_at})`,
+        })
+        .from(SessionScheduleTable)
+        .get()
+        .pipe(Effect.orDie)
+      return { count: row?.count ?? 0, next: row?.next ?? null, expires: row?.expires ?? null }
+    })
+
+    const free = (now: Date) =>
+      and(
+        lte(SessionScheduleTable.next_run_at, now.getTime()),
+        or(isNull(SessionScheduleTable.lease_until), lt(SessionScheduleTable.lease_until, now.getTime())),
+      )
+
+    const due = Effect.fn("ScheduleStore.due")(function* (now: Date) {
+      return yield* db
+        .select()
+        .from(SessionScheduleTable)
+        .where(free(now))
+        .orderBy(asc(SessionScheduleTable.next_run_at), asc(SessionScheduleTable.id))
+        .all()
         .pipe(Effect.orDie)
     })
 
     // One UPDATE decides the claim, so servers sharing the database cannot both win a job.
-    const claimDue = Effect.fn("ScheduleStore.claimDue")(function* (now: Date) {
+    const claim = Effect.fn("ScheduleStore.claim")(function* (id: string, now: Date) {
       return yield* db
         .update(SessionScheduleTable)
         .set({ lease_until: now.getTime() + LEASE_MS })
-        .where(
-          and(
-            lte(SessionScheduleTable.next_run_at, now.getTime()),
-            or(isNull(SessionScheduleTable.lease_until), lt(SessionScheduleTable.lease_until, now.getTime())),
-          ),
-        )
+        .where(and(eq(SessionScheduleTable.id, id), free(now)))
         .returning()
-        .all()
+        .get()
         .pipe(Effect.orDie)
     })
 
@@ -177,49 +243,55 @@ const layer = Layer.effect(
       extra: Partial<typeof SessionScheduleTable.$inferInsert>,
     ) {
       const next = job.recurring && job.cron ? nextRun(job.cron, now) : undefined
-      if (!next) {
-        yield* db.delete(SessionScheduleTable).where(eq(SessionScheduleTable.id, job.id)).run().pipe(Effect.orDie)
-        return
-      }
-      yield* db
-        .update(SessionScheduleTable)
-        .set({ ...extra, next_run_at: next.getTime(), lease_until: null })
-        .where(eq(SessionScheduleTable.id, job.id))
-        .run()
-        .pipe(Effect.orDie)
+      const changed = next
+        ? yield* db
+            .update(SessionScheduleTable)
+            .set({ ...extra, next_run_at: next.getTime(), lease_until: null })
+            .where(held(job))
+            .returning({ id: SessionScheduleTable.id })
+            .all()
+            .pipe(Effect.orDie)
+        : yield* db
+            .delete(SessionScheduleTable)
+            .where(held(job))
+            .returning({ id: SessionScheduleTable.id })
+            .all()
+            .pipe(Effect.orDie)
+      return changed.length > 0
     })
 
     const complete = Effect.fn("ScheduleStore.complete")(function* (job: Job, input: { now: Date; messageID: string }) {
-      yield* advance(job, input.now, { failures: 0, pending_message_id: input.messageID })
+      return yield* advance(job, input.now, { failures: 0, pending_message_id: input.messageID })
     })
 
     const skip = Effect.fn("ScheduleStore.skip")(function* (job: Job, now: Date) {
+      if (job.recurring) return yield* advance(job, now, {})
       // A one-shot has no next slot; it stays due and fires on a later tick.
-      if (!job.recurring) {
-        yield* db
-          .update(SessionScheduleTable)
-          .set({ lease_until: null })
-          .where(eq(SessionScheduleTable.id, job.id))
-          .run()
-          .pipe(Effect.orDie)
-        return
-      }
-      yield* advance(job, now, {})
+      const released = yield* db
+        .update(SessionScheduleTable)
+        .set({ lease_until: null })
+        .where(held(job))
+        .returning({ id: SessionScheduleTable.id })
+        .all()
+        .pipe(Effect.orDie)
+      return released.length > 0
     })
 
     const fail = Effect.fn("ScheduleStore.fail")(function* (job: Job) {
-      yield* db
+      return yield* db
         .transaction(
           (tx) =>
             Effect.gen(function* () {
               const updated = yield* tx
                 .update(SessionScheduleTable)
                 .set({ failures: sql`${SessionScheduleTable.failures} + 1`, lease_until: null })
-                .where(eq(SessionScheduleTable.id, job.id))
+                .where(held(job))
                 .returning({ failures: SessionScheduleTable.failures })
                 .get()
-              if (updated && updated.failures >= MAX_FAILURES)
+              if (!updated) return false
+              if (updated.failures >= MAX_FAILURES)
                 yield* tx.delete(SessionScheduleTable).where(eq(SessionScheduleTable.id, job.id)).run()
+              return true
             }),
           { behavior: "immediate" },
         )
@@ -249,7 +321,20 @@ const layer = Layer.effect(
         .pipe(Effect.orDie)
     })
 
-    return Service.of({ create, list, remove, removeSession, claimDue, complete, skip, fail, expire, prune })
+    return Service.of({
+      create,
+      list,
+      remove,
+      removeSession,
+      summary,
+      due,
+      claim,
+      complete,
+      skip,
+      fail,
+      expire,
+      prune,
+    })
   }),
 )
 

@@ -19,6 +19,9 @@ export const AcpCommand = effectCmd({
   handler: Effect.fn("Cli.acp")(function* (args) {
     const { Server } = yield* Effect.promise(() => import("@/server/server"))
     const { ACP } = yield* Effect.promise(() => import("@/acp/agent"))
+    const { Scheduler } = yield* Effect.promise(() => import("@/schedule/scheduler"))
+    // A long-lived server may run this machine's scheduled prompts.
+    Scheduler.enableLeadership()
     ACPProfile.mark("cli.acp.handler")
     process.env.OPENCODE_CLIENT = "acp"
     const opts = yield* resolveNetworkOptions(args)

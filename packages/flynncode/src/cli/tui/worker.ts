@@ -11,10 +11,15 @@ import { AppRuntime } from "@/effect/app-runtime"
 import { Effect } from "effect"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { Scheduler } from "@/schedule/scheduler"
 
 // Before anything builds the runtime: take the hook-trust bypass handed over
 // by the TUI thread into memory so spawned processes never inherit it.
 RuntimeFlags.adoptBypassHookTrustEnv()
+
+// The TUI worker lives as long as the TUI, so it may run this machine's scheduled prompts, through the in-process
+// `Server.Default` or a listener. `flynncode run` never opts in.
+Scheduler.enableLeadership()
 
 Heap.start()
 

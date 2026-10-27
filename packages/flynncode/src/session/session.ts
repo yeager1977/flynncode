@@ -704,7 +704,8 @@ const layer: Layer.Layer<
           yield* remove(child.id)
         }
         // Schedules have no foreign key to the session (machine sync re-inserts session rows).
-        yield* schedules.removeSession(sessionID)
+        if ((yield* schedules.removeSession(sessionID)) > 0)
+          yield* ScheduleStore.publishUpdated({ directory: session.directory, sessionID })
 
         yield* events.publish(SessionV1.Event.Deleted, { sessionID, info: session })
         // SessionEnd is always synchronous with a 3s cap; output is advisory only.
@@ -874,7 +875,10 @@ const layer: Layer.Layer<
 
     const setArchived = Effect.fn("Session.setArchived")(function* (input: { sessionID: SessionID; time?: number }) {
       yield* patch(input.sessionID, { time: { archived: input.time } }).pipe(Effect.orDie)
-      if (input.time !== undefined) yield* schedules.removeSession(input.sessionID)
+      if (input.time === undefined) return
+      if ((yield* schedules.removeSession(input.sessionID)) === 0) return
+      const session = yield* get(input.sessionID).pipe(Effect.orDie)
+      yield* ScheduleStore.publishUpdated({ directory: session.directory, sessionID: input.sessionID })
     })
 
     const setMetadata = Effect.fn("Session.setMetadata")(function* (input: typeof SetMetadataInput.Type) {

@@ -108,7 +108,9 @@ async function start(command: StartCommand) {
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
-    const { Server } = await import("virtual:opencode-server")
+    const { Server, Scheduler } = await import("virtual:opencode-server")
+    // The sidecar lives as long as the app, so it may run this machine's scheduled prompts.
+    Scheduler.enableLeadership()
 
     listener = await Server.listen({
       port: command.port,

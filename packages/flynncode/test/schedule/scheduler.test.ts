@@ -1,13 +1,16 @@
 import { ConfigV1 } from "@flynncode/core/v1/config/config"
 import { SessionV1 } from "@flynncode/core/v1/session"
 import { Database } from "@flynncode/core/database/database"
+import { SessionScheduleTable } from "@flynncode/core/session/sql"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { SessionProjector } from "@flynncode/core/session/projector"
 import { FSUtil } from "@flynncode/core/fs-util"
 import { CrossSpawnSpawner } from "@flynncode/core/cross-spawn-spawner"
 import { Ripgrep } from "@flynncode/core/ripgrep"
+import { ProviderV2 } from "@flynncode/core/provider"
+import { ModelV2 } from "@flynncode/core/model"
 import { expect } from "bun:test"
-import { Deferred, Effect, Layer } from "effect"
+import { Deferred, Effect, Exit, Layer, Scope } from "effect"
 import path from "path"
 import { GlobalBus, type GlobalEvent } from "@/bus/global"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -36,7 +39,7 @@ import { SessionPrompt } from "@/session/prompt"
 import { SessionRevert } from "@/session/revert"
 import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
-import { SessionID } from "@/session/schema"
+import { MessageID, SessionID } from "@/session/schema"
 import { Skill } from "@/skill"
 import { SystemPrompt } from "@/session/system"
 import { Snapshot } from "@/snapshot"
@@ -236,6 +239,9 @@ const setup = Effect.fn("test.setup")(function* () {
   )
   const config = yield* Config.Service
   yield* config.get()
+  // The test process shares one database; earlier tests' jobs would otherwise come due in this one's ticks.
+  const { db } = yield* Database.Service
+  yield* db.delete(SessionScheduleTable).run()
   const sessions = yield* Session.Service
   const prompt = yield* SessionPrompt.Service
   const store = yield* ScheduleStore.Service
@@ -426,27 +432,166 @@ unix(
 )
 
 unix(
-  "two schedulers on one database deliver a due job once",
+  "only the scheduler holding the leader lock ticks",
   () =>
     Effect.gen(function* () {
       const { llm, chat, sessions, store } = yield* setup()
       yield* settled(chat.id, 1)
       yield* store.create(cron(chat.id))
-      const first = yield* Scheduler.make({ now: () => due })
-      const second = yield* Scheduler.make({ now: () => due })
+      const lock = `schedule-test:${chat.id}`
+      const first = yield* Scheduler.make({ now: () => due, lock })
+      const second = yield* Scheduler.make({ now: () => due, lock })
 
       yield* llm.text("scheduled answer")
-      yield* Effect.all([first.tick(), second.tick()], { concurrency: "unbounded" })
+      const ticked = yield* Effect.all([first.poll(), second.poll()], { concurrency: "unbounded" })
+      expect(ticked.filter((value) => value)).toHaveLength(1)
       yield* settled(chat.id, 2)
-
       expect(yield* scheduledMessages(sessions, chat.id)).toHaveLength(1)
       expect(yield* llm.calls).toBe(2)
+
+      // The follower keeps trying and keeps losing while the leader lives.
+      const follower = ticked[0] ? second : first
+      expect(yield* follower.poll(new Date("2026-10-27T10:10:00"))).toBe(false)
+      const [stored] = yield* store.list(chat.id)
+      expect(stored?.next_run_at).toBe(new Date("2026-10-27T10:10:00").getTime())
     }),
   30_000,
 )
 
 unix(
-  "deleting or archiving a session removes its jobs",
+  "another scheduler takes over when the leader exits",
+  () =>
+    Effect.gen(function* () {
+      const { llm, chat, sessions, store } = yield* setup()
+      yield* settled(chat.id, 1)
+      yield* store.create(cron(chat.id))
+      const lock = `schedule-test:${chat.id}`
+      const scope = yield* Scope.make()
+      const leader = yield* Scheduler.make({ now: () => start, lock }).pipe(Scope.provide(scope))
+      const follower = yield* Scheduler.make({ now: () => due, lock })
+
+      expect(yield* leader.poll()).toBe(true)
+      expect(yield* follower.poll()).toBe(false)
+      expect(yield* scheduledMessages(sessions, chat.id)).toHaveLength(0)
+
+      yield* Scope.close(scope, Exit.void)
+      yield* llm.text("scheduled answer")
+      expect(yield* follower.poll()).toBe(true)
+      yield* settled(chat.id, 2)
+      expect(yield* scheduledMessages(sessions, chat.id)).toHaveLength(1)
+    }),
+  30_000,
+)
+
+unix(
+  "a session busy in another process only gets the prompt admitted, and an idle one with a stranded prompt is drained",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm, chat, sessions, store } = yield* setup()
+      yield* settled(chat.id, 1)
+      const user = (yield* sessions.messages({ sessionID: chat.id })).find((item) => item.info.role === "user")!
+      // Another process is mid-turn: its unfinished assistant row is all this process can see of it.
+      const running = yield* sessions.updateMessage({
+        id: MessageID.ascending(),
+        role: "assistant",
+        sessionID: chat.id,
+        mode: "plan",
+        agent: "plan",
+        path: { cwd: dir, root: dir },
+        cost: 0,
+        tokens: { output: 0, input: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        modelID: ModelV2.ID.make("test-model"),
+        providerID: ProviderV2.ID.make("test"),
+        parentID: user.info.id,
+        time: { created: Date.now() },
+      })
+      const job = yield* store.create(cron(chat.id))
+      const scheduler = yield* Scheduler.make({ now: () => due })
+
+      yield* scheduler.tick()
+      const [admitted] = yield* scheduledMessages(sessions, chat.id)
+      expect(admitted).toBeDefined()
+      expect((yield* store.list(chat.id))[0]?.pending_message_id).toBe(admitted?.info.id ?? null)
+      const status = yield* SessionStatus.Service
+      expect((yield* status.get(chat.id)).type).toBe("idle")
+
+      // Still busy at the next slot: the firing is skipped and nothing starts a turn.
+      yield* scheduler.tick(new Date("2026-10-27T10:10:00"))
+      expect((yield* status.get(chat.id)).type).toBe("idle")
+      expect(yield* llm.calls).toBe(1)
+      expect((yield* store.list(chat.id))[0]?.next_run_at).toBe(new Date("2026-10-27T10:15:00").getTime())
+
+      // That process died without answering; once its turn is finished the prompt is stranded, and the next slot
+      // drains it instead of delivering again.
+      yield* sessions.updateMessage({ ...running, time: { created: running.time.created, completed: Date.now() } })
+      yield* llm.text("scheduled answer")
+      yield* scheduler.tick(new Date("2026-10-27T10:15:00"))
+      yield* settled(chat.id, 3)
+      expect(yield* llm.calls).toBe(2)
+      expect(lastUserText((yield* llm.inputs).at(-1))).toContain("check the build")
+      expect(yield* scheduledMessages(sessions, chat.id)).toHaveLength(1)
+      expect((yield* store.list(chat.id))[0]?.id).toBe(job.id)
+    }),
+  30_000,
+)
+
+unix(
+  "a job whose delivery fails three times in a row is deleted",
+  () =>
+    Effect.gen(function* () {
+      const { llm, chat, sessions, store } = yield* setup()
+      yield* settled(chat.id, 1)
+      // A queued prompt keeps the conversation's agent, so an agent that no longer exists fails admission.
+      const user = (yield* sessions.messages({ sessionID: chat.id })).find((item) => item.info.role === "user")!
+      if (user.info.role !== "user") throw new Error("expected a user message")
+      yield* sessions.updateMessage({ ...user.info, agent: "ghost" })
+      const job = yield* store.create(cron(chat.id))
+      const scheduler = yield* Scheduler.make({ now: () => due })
+
+      yield* scheduler.tick()
+      expect((yield* store.list(chat.id))[0]).toEqual(
+        expect.objectContaining({ id: job.id, failures: 1, lease_until: null }),
+      )
+      yield* scheduler.tick()
+      expect((yield* store.list(chat.id))[0]?.failures).toBe(2)
+      yield* scheduler.tick()
+
+      expect(yield* store.list(chat.id)).toEqual([])
+      expect(yield* scheduledMessages(sessions, chat.id)).toHaveLength(0)
+      expect(yield* llm.calls).toBe(1)
+    }),
+  30_000,
+)
+
+unix(
+  "a pending revert defers the firing until it is resolved",
+  () =>
+    Effect.gen(function* () {
+      const { llm, chat, sessions, store } = yield* setup()
+      yield* settled(chat.id, 1)
+      const assistant = (yield* sessions.messages({ sessionID: chat.id })).find(
+        (item) => item.info.role === "assistant",
+      )!
+      yield* sessions.setRevert({ sessionID: chat.id, revert: { messageID: assistant.info.id }, summary: undefined })
+      const job = yield* store.create(cron(chat.id))
+      const scheduler = yield* Scheduler.make({ now: () => due })
+
+      yield* scheduler.tick()
+      expect(yield* scheduledMessages(sessions, chat.id)).toHaveLength(0)
+      expect((yield* sessions.get(chat.id)).revert).toEqual({ messageID: assistant.info.id })
+      expect(yield* store.list(chat.id)).toEqual([job])
+
+      yield* sessions.clearRevert(chat.id)
+      yield* llm.text("scheduled answer")
+      yield* scheduler.tick()
+      yield* settled(chat.id, 2)
+      expect(yield* scheduledMessages(sessions, chat.id)).toHaveLength(1)
+    }),
+  30_000,
+)
+
+unix(
+  "deleting or archiving a session removes its jobs and announces it",
   () =>
     Effect.gen(function* () {
       const { chat, sessions, store } = yield* setup()
@@ -455,11 +600,27 @@ unix(
       yield* store.create(cron(chat.id))
       yield* store.create(cron(other.id))
 
+      const seen: string[] = []
+      const listen = (event: GlobalEvent) => {
+        if (event.payload?.type === "session.schedule.updated") seen.push(event.payload.properties.sessionID)
+      }
+      yield* Effect.acquireRelease(
+        Effect.sync(() => GlobalBus.on("event", listen)),
+        () => Effect.sync(() => GlobalBus.off("event", listen)),
+      )
+
       yield* sessions.setArchived({ sessionID: chat.id, time: Date.now() })
       expect(yield* store.list(chat.id)).toEqual([])
 
       yield* sessions.remove(other.id)
       expect(yield* store.list(other.id)).toEqual([])
+      expect(seen).toEqual([chat.id, other.id])
+
+      // Without jobs there is nothing to announce.
+      const empty = yield* sessions.create({ title: "Empty" })
+      yield* sessions.setArchived({ sessionID: empty.id, time: Date.now() })
+      yield* sessions.remove(empty.id)
+      expect(seen).toEqual([chat.id, other.id])
     }),
   30_000,
 )

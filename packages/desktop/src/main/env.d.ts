@@ -11,6 +11,9 @@ declare module "virtual:opencode-server" {
     export const listen: typeof import("../../../flynncode/dist/types/src/node").Server.listen
     export type Listener = import("../../../flynncode/dist/types/src/node").Server.Listener
   }
+  export namespace Scheduler {
+    export const enableLeadership: typeof import("../../../flynncode/dist/types/src/node").Scheduler.enableLeadership
+  }
   export namespace Config {
     export const get: typeof import("../../../flynncode/dist/types/src/node").Config.get
     export type Info = import("../../../flynncode/dist/types/src/node").Config.Info

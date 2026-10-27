@@ -143,61 +143,71 @@ describe("ScheduleStore", () => {
     }),
   )
 
-  it.effect("claims a due job once and not again within the lease", () =>
+  it.effect("lists due jobs without claiming them, and claims a due job once within its lease", () =>
     Effect.gen(function* () {
       const store = yield* ScheduleStore.Service
       const id = session("claim")
       const job = yield* store.create(cron(id))
       const due = new Date(job.next_run_at)
+      const mine = (jobs: ScheduleStore.Job[]) => jobs.filter((item) => item.session_id === id).map((item) => item.id)
 
-      expect((yield* store.claimDue(new Date(job.next_run_at - 1))).filter((item) => item.session_id === id)).toEqual(
-        [],
-      )
+      expect(mine(yield* store.due(new Date(job.next_run_at - 1)))).toEqual([])
+      expect(yield* store.claim(job.id, new Date(job.next_run_at - 1))).toBeUndefined()
+      expect(mine(yield* store.due(due))).toEqual([job.id])
+      expect(mine(yield* store.due(due))).toEqual([job.id])
 
-      const first = (yield* store.claimDue(due)).filter((item) => item.session_id === id)
-      expect(first.map((item) => item.id)).toEqual([job.id])
-      expect(first[0]!.lease_until).toBe(due.getTime() + MINUTE)
-
-      const second = (yield* store.claimDue(new Date(due.getTime() + 30_000))).filter((item) => item.session_id === id)
-      expect(second).toEqual([])
+      const first = yield* store.claim(job.id, due)
+      expect(first?.lease_until).toBe(due.getTime() + MINUTE)
+      expect(mine(yield* store.due(new Date(due.getTime() + 30_000)))).toEqual([])
+      expect(yield* store.claim(job.id, new Date(due.getTime() + 30_000))).toBeUndefined()
 
       // A crashed claimant's lease expires and the job is claimable again.
-      const third = (yield* store.claimDue(new Date(due.getTime() + MINUTE + 1))).filter(
-        (item) => item.session_id === id,
-      )
-      expect(third.map((item) => item.id)).toEqual([job.id])
+      const third = yield* store.claim(job.id, new Date(due.getTime() + MINUTE + 1))
+      expect(third?.id).toBe(job.id)
     }),
   )
 
   it.effect("lets exactly one of several concurrent claims win", () =>
     Effect.gen(function* () {
       const store = yield* ScheduleStore.Service
-      const id = session("race")
-      const job = yield* store.create(cron(id))
+      const job = yield* store.create(cron(session("race")))
       const due = new Date(job.next_run_at)
       const claims = yield* Effect.all(
-        Array.from({ length: 5 }, () => store.claimDue(due)),
+        Array.from({ length: 5 }, () => store.claim(job.id, due)),
         { concurrency: "unbounded" },
       )
-      expect(claims.flat().filter((item) => item.id === job.id)).toHaveLength(1)
+      expect(claims.filter((item) => item !== undefined)).toHaveLength(1)
+    }),
+  )
+
+  it.effect("summarizes the table in one read", () =>
+    Effect.gen(function* () {
+      const store = yield* ScheduleStore.Service
+      const before = yield* store.summary()
+      const job = yield* store.create(cron(session("summary"), new Date("2020-01-01T00:00:30")))
+      const after = yield* store.summary()
+      expect(after.count).toBe(before.count + 1)
+      expect(after.next).toBe(job.next_run_at)
+      expect(after.expires).toBe(job.expires_at)
+      yield* store.removeSession(session("summary"))
     }),
   )
 
   it.effect("advances a recurring job on complete and deletes a one-shot", () =>
     Effect.gen(function* () {
       const store = yield* ScheduleStore.Service
-      const db = (yield* Database.Service).db
+      const { db } = yield* Database.Service
       const id = session("complete")
       const recurring = yield* store.create(cron(id))
       const once = yield* store.create({ ...cron(id), recurring: false })
       const due = new Date(recurring.next_run_at)
-      yield* store.claimDue(due)
       // Failures from earlier ticks are forgotten once a delivery succeeds.
       yield* db.update(SessionScheduleTable).set({ failures: 2 }).where(eq(SessionScheduleTable.id, recurring.id)).run()
+      const claimed = [yield* store.claim(recurring.id, due), yield* store.claim(once.id, due)]
 
       const late = new Date(due.getTime() + 12 * MINUTE)
-      yield* store.complete(recurring, { now: late, messageID: "msg_a" })
-      yield* store.complete(once, { now: late, messageID: "msg_b" })
+      expect(yield* store.complete(claimed[0]!, { now: late, messageID: "msg_a" })).toBe(true)
+      expect(yield* store.complete(claimed[1]!, { now: late, messageID: "msg_b" })).toBe(true)
 
       const jobs = yield* store.list(id)
       expect(jobs.map((job) => job.id)).toEqual([recurring.id])
@@ -208,17 +218,43 @@ describe("ScheduleStore", () => {
     }),
   )
 
+  it.effect("applies complete, skip and fail only while the claimed lease is still the job's lease", () =>
+    Effect.gen(function* () {
+      const store = yield* ScheduleStore.Service
+      const id = session("fence")
+      const job = yield* store.create(cron(id))
+      const due = new Date(job.next_run_at)
+      const first = (yield* store.claim(job.id, due))!
+      // The first claimant stalls past its lease, and another process claims the job again and delivers it.
+      const second = (yield* store.claim(job.id, new Date(due.getTime() + MINUTE + 1)))!
+      expect(second.lease_until).not.toBe(first.lease_until)
+
+      expect(yield* store.complete(first, { now: due, messageID: "msg_stale" })).toBe(false)
+      expect(yield* store.skip(first, due)).toBe(false)
+      expect(yield* store.fail(first)).toBe(false)
+      const untouched = (yield* store.list(id))[0]!
+      expect(untouched.lease_until).toBe(second.lease_until)
+      expect(untouched.next_run_at).toBe(job.next_run_at)
+      expect(untouched.failures).toBe(0)
+      expect(untouched.pending_message_id).toBeNull()
+
+      expect(yield* store.complete(second, { now: due, messageID: "msg_live" })).toBe(true)
+      expect((yield* store.list(id))[0]!.pending_message_id).toBe("msg_live")
+      // An unclaimed copy holds no lease.
+      expect(yield* store.complete(job, { now: due, messageID: "msg_unclaimed" })).toBe(false)
+    }),
+  )
+
   it.effect("skip advances a recurring job without recording a delivery", () =>
     Effect.gen(function* () {
       const store = yield* ScheduleStore.Service
       const id = session("skip")
       const job = yield* store.create(cron(id))
-      yield* store.complete(job, { now, messageID: "msg_prev" })
+      yield* store.complete((yield* store.claim(job.id, new Date(job.next_run_at)))!, { now, messageID: "msg_prev" })
       const current = (yield* store.list(id))[0]!
-      const claimed = yield* store.claimDue(new Date(current.next_run_at))
-      const mine = claimed.find((item) => item.id === job.id)!
+      const mine = (yield* store.claim(job.id, new Date(current.next_run_at)))!
 
-      yield* store.skip(mine, new Date(current.next_run_at))
+      expect(yield* store.skip(mine, new Date(current.next_run_at))).toBe(true)
       const after = (yield* store.list(id))[0]!
       expect(after.next_run_at).toBe(current.next_run_at + 5 * MINUTE)
       expect(after.lease_until).toBeNull()
@@ -232,16 +268,18 @@ describe("ScheduleStore", () => {
       const id = session("fail")
       const job = yield* store.create(cron(id))
       const due = new Date(job.next_run_at)
+      const fail = Effect.gen(function* () {
+        return yield* store.fail((yield* store.claim(job.id, due))!)
+      })
 
-      yield* store.claimDue(due)
-      yield* store.fail(job)
+      expect(yield* fail).toBe(true)
       const once = (yield* store.list(id))[0]!
       expect(once.failures).toBe(1)
       expect(once.lease_until).toBeNull()
 
-      yield* store.fail(job)
+      yield* fail
       expect((yield* store.list(id))[0]!.failures).toBe(2)
-      yield* store.fail(job)
+      yield* fail
       expect(yield* store.list(id)).toEqual([])
     }),
   )
@@ -268,7 +306,8 @@ describe("ScheduleStore", () => {
       yield* store.create(cron(id))
       yield* store.create(cron(id))
       yield* store.create(cron(session("purge-keep")))
-      yield* store.removeSession(id)
+      expect(yield* store.removeSession(id)).toBe(2)
+      expect(yield* store.removeSession(id)).toBe(0)
       expect(yield* store.list(id)).toEqual([])
       expect(yield* store.list(session("purge-keep"))).toHaveLength(1)
     }),

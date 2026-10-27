@@ -37,6 +37,9 @@ export const WebCommand = effectCmd({
   instance: false,
   handler: Effect.fn("Cli.web")(function* (args) {
     const { Server } = yield* Effect.promise(() => import("../../server/server"))
+    const { Scheduler } = yield* Effect.promise(() => import("../../schedule/scheduler"))
+    // A long-lived server may run this machine's scheduled prompts.
+    Scheduler.enableLeadership()
     if (!Flag.OPENCODE_SERVER_PASSWORD) {
       UI.println(UI.Style.TEXT_WARNING_BOLD + "!  OPENCODE_SERVER_PASSWORD is not set; server is unsecured.")
     }
