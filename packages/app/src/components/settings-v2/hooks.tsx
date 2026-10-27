@@ -178,6 +178,9 @@ export const SettingsHooksV2: Component<{ directory?: string }> = (props) => {
                       {(command) => <code class="text-12-regular text-text-base break-all">{command}</code>}
                     </For>
                     <For each={source.warnings}>{(warning) => <div>{warning}</div>}</For>
+                    <Show when={source.disabledByProject}>
+                      <div>{language.t("settings.hooks.claude.disabledByProject")}</div>
+                    </Show>
                   </div>
                 }
               >
@@ -187,7 +190,7 @@ export const SettingsHooksV2: Component<{ directory?: string }> = (props) => {
                   </Show>
                   <Switch
                     checked={source.enabled}
-                    disabled={busy() === source.id}
+                    disabled={busy() === source.id || source.disabledByProject}
                     onChange={(checked) => void toggle(source.id, checked)}
                     hideLabel
                   >

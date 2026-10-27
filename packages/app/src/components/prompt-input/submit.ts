@@ -10,6 +10,7 @@ import { useContributorAck } from "@/utils/contributor-ack"
 import { isContributorModel } from "@/utils/contributor-models"
 import { useTabs } from "@/context/tabs"
 import { useServerSync, type ServerSync } from "@/context/server-sync"
+import { useServerSDK } from "@/context/server-sdk"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useLocal, type ModelSelection } from "@/context/local"
@@ -24,6 +25,7 @@ import { setCursorPosition } from "./editor-dom"
 import { formatServerError } from "@/utils/server-errors"
 import { ScopedKey } from "@/utils/server-scope"
 import { preparePromptSubmission } from "./submission-state"
+import { watchPromptBlock } from "./prompt-block"
 import { normalizeSessionInfo } from "@/utils/session"
 import { toLegacySummary } from "@/context/global-sync/home-session-index"
 import { Event } from "@flynncode/schema/event"
@@ -247,6 +249,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const sdk = useSDK()
   const sync = useSync()
   const serverSync = useServerSync()
+  const serverSDK = useServerSDK()
   const local = useLocal()
   const permission = usePermission()
   const prompt = input.prompt
@@ -378,8 +381,15 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const permissionState = permission.currentServerState()
     const owner = { scope: sdk().scope, directory: sdk().directory, sessionID: params.id, draftID: search.draftId }
     const submission = await preparePromptSubmission(target)
-    if (!submission || prompt.capture() !== target || owner.scope !== sdk().scope ||
-      owner.directory !== sdk().directory || owner.sessionID !== params.id || owner.draftID !== search.draftId) return
+    if (
+      !submission ||
+      prompt.capture() !== target ||
+      owner.scope !== sdk().scope ||
+      owner.directory !== sdk().directory ||
+      owner.sessionID !== params.id ||
+      owner.draftID !== search.draftId
+    )
+      return
     const currentPrompt = submission.prompt
     const context = submission.context
     const text = currentPrompt.map((part) => ("content" in part ? part.content : "")).join("")
@@ -720,6 +730,24 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return true
     }
 
+    // A UserPromptSubmit hook's block arrives after the send resolves. The
+    // notification context shows its reason; this undoes the send, and leaves
+    // the status of a turn that was already running alone.
+    const previousStatus = serverSync().session.data.session_status[session.id]?.type
+    const stopBlockWatch = watchPromptBlock({
+      sessionID: session.id,
+      messageID,
+      listen: (handler) => serverSDK().event.listen((event) => handler(event.details)),
+      blocked: () => {
+        batch(() => {
+          if (previousStatus === undefined || previousStatus === "idle")
+            serverSync().session.set("session_status", session.id, { type: "idle" })
+          removeOptimisticMessage()
+        })
+        if (restoreInput()) restoreCommentItems(submission.target(), commentItems)
+      },
+    })
+
     void sendFollowupDraft({
       api: sdk().api.session,
       sync: sync(),
@@ -728,18 +756,23 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       messageID,
       optimisticBusy: true,
       before: waitForWorktree,
-    }).catch((err) => {
-      pending.delete(pendingKey(session.id))
-      if (sessionDirectory === projectDirectory) {
-        sync().set("session_status", session.id, { type: "idle" })
-      }
-      showToast({
-        title: language.t("prompt.toast.promptSendFailed.title"),
-        description: errorMessage(err),
-      })
-      removeOptimisticMessage()
-      if (restoreInput()) restoreCommentItems(submission.target(), commentItems)
     })
+      .then((sent) => {
+        if (!sent) stopBlockWatch()
+      })
+      .catch((err) => {
+        stopBlockWatch()
+        pending.delete(pendingKey(session.id))
+        if (sessionDirectory === projectDirectory) {
+          sync().set("session_status", session.id, { type: "idle" })
+        }
+        showToast({
+          title: language.t("prompt.toast.promptSendFailed.title"),
+          description: errorMessage(err),
+        })
+        removeOptimisticMessage()
+        if (restoreInput()) restoreCommentItems(submission.target(), commentItems)
+      })
   }
 
   return {

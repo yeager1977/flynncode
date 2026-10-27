@@ -45,6 +45,7 @@ const keys = [
   "approval.reviewerDeferred.note",
   "approval.hookReason",
   "approval.hookBlockedPrompt.title",
+  "session.timeline.hookDivider",
   "approval.sandboxBlocked.description",
   "approval.sandboxBlocked.title",
   "computerUse.allowlist.add",

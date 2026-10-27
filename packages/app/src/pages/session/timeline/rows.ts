@@ -3,6 +3,7 @@ import type { SessionMessageInfo } from "@opencode-ai/client/promise"
 import { AssistantMessage, Part, SessionStatus, UserMessage } from "@flynncode/sdk/v2"
 import { groupParts, renderable, type PartGroup } from "@flynncode/session-ui/message-part"
 import { TimelineRow, type SummaryDiff } from "./timeline-row"
+import { hookContinuation } from "./hook-divider"
 import { uniqueSummaryDiffs } from "./summary-diffs"
 import { compareMessages } from "@/utils/session-message"
 import { usageLimit } from "@flynncode/core/session/usage-limit"
@@ -93,6 +94,8 @@ export type TimelineRowMap = {
   TurnDivider: {
     userMessageID: string
     label: "compaction" | "interrupted" | "background"
+    hookEvent?: string
+    hookReason?: string
   }
   AssistantPart: {
     userMessageID: string
@@ -245,6 +248,7 @@ export namespace Timeline {
         new TimelineRow.TurnDivider({
           userMessageID: userMessage.id,
           label: "background",
+          ...hookContinuation(userParts),
         }),
       )
     } else {
@@ -268,9 +272,7 @@ export namespace Timeline {
     // Task chip: the model-suggested follow-up renders after the turn's parts
     // once the turn has settled (not while it is still streaming).
     const settled = !(isActive && status === "busy")
-    const found = settled
-      ? MessageComment.taskSuggestionFromMessages(assistantMessages, getMessageParts)
-      : undefined
+    const found = settled ? MessageComment.taskSuggestionFromMessages(assistantMessages, getMessageParts) : undefined
 
     let assistantGroupIndex = 0
     assistantItems.forEach((item) => {

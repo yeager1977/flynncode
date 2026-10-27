@@ -873,6 +873,7 @@ export const dict = {
   "session.todo.status.cancelled": "Cancelled",
   "session.todo.statusLabel": "Todo status: {{status}}",
   "session.timeline.backgroundDivider": "Background activity",
+  "session.timeline.hookDivider": "Background activity · {{event}} hook: {{reason}}",
   "session.taskSuggestion.confirm.title": "Start task in a new worktree?",
   "session.taskSuggestion.confirm.description": "Creates a new git worktree and opens a session there for: {{title}}",
   "session.taskSuggestion.confirm.action": "Start task",
@@ -1346,6 +1347,8 @@ export const dict = {
   "settings.hooks.claude.empty": "No Claude Code hooks found.",
   "settings.hooks.claude.disabledByEnv":
     "Claude Code hooks are turned off by OPENCODE_DISABLE_CLAUDE_HOOKS or OPENCODE_DISABLE_CLAUDE_CODE.",
+  "settings.hooks.claude.disabledByProject":
+    "Disabled by project config (claude_hooks.disabled). Remove it there to turn this source on.",
   "settings.hooks.claude.kind.user": "user settings",
   "settings.hooks.claude.kind.project": "project settings",
   "settings.hooks.claude.kind.plugin": "plugin",

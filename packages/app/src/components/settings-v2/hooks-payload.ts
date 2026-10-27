@@ -29,11 +29,15 @@ export type ClaudeHookSource = {
   events: Array<string>
   commands: Array<string>
   enabled: boolean
+  // Off through a project config's claude_hooks.disabled, which the switch
+  // (it writes the global config) cannot turn back on.
+  disabledByProject?: boolean
   warnings: Array<string>
 }
 
-export type ClaudeSourceRow = Omit<ClaudeHookSource, "root"> & {
+export type ClaudeSourceRow = Omit<ClaudeHookSource, "root" | "disabledByProject"> & {
   pending: number
+  disabledByProject: boolean
 }
 
 export function statusOf(entry: Pick<HookTrustSource, "trusted" | "managed">): HookTrustStatus {
@@ -70,6 +74,7 @@ export function claudeSourceRows(
     commands: source.commands,
     warnings: source.warnings,
     enabled: source.enabled,
+    disabledByProject: source.disabledByProject === true,
     pending: rows.filter((row) => row.sourceID === source.id && row.status === "pending").length,
   }))
 }

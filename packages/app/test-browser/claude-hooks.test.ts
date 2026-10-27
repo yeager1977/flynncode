@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { claudeSourceRows, trustRows } from "@/components/settings-v2/hooks-payload"
 import { offersAlwaysApproval, permissionHookReason } from "@/pages/session/composer/permission-dock-state"
 import { hookBlockReason } from "@/utils/server-errors"
+import { watchPromptBlock } from "@/components/prompt-input/prompt-block"
+import { hookContinuation } from "@/pages/session/timeline/hook-divider"
 
 const project = "claude:project:/repo/.claude"
 const plugin = "claude:plugin:latte@market"
@@ -24,6 +26,7 @@ const sources = [
     events: ["PreToolUse"],
     commands: ["lint.sh"],
     enabled: false,
+    disabledByProject: true,
     warnings: ["unsupported hook event TeammateIdle"],
   },
   {
@@ -70,7 +73,7 @@ describe("Claude Code hook sources section", () => {
     ])
   })
 
-  test("source rows keep server order and count hooks awaiting review per source", () => {
+  test("source rows keep server order, count hooks awaiting review and flag project-disabled sources", () => {
     expect(claudeSourceRows(sources, trustRows(entries, sources))).toEqual([
       {
         id: "claude:user",
@@ -80,6 +83,7 @@ describe("Claude Code hook sources section", () => {
         commands: ["check.sh", "stop.sh"],
         warnings: [],
         enabled: true,
+        disabledByProject: false,
         pending: 0,
       },
       {
@@ -90,6 +94,7 @@ describe("Claude Code hook sources section", () => {
         commands: ["lint.sh"],
         warnings: ["unsupported hook event TeammateIdle"],
         enabled: false,
+        disabledByProject: true,
         pending: 0,
       },
       {
@@ -100,6 +105,7 @@ describe("Claude Code hook sources section", () => {
         commands: ["${CLAUDE_PLUGIN_ROOT}/stop.sh"],
         warnings: [],
         enabled: true,
+        disabledByProject: false,
         pending: 1,
       },
     ])
@@ -150,5 +156,84 @@ describe("hookBlockReason", () => {
     expect(
       hookBlockReason({ name: "MessageAbortedError", data: { message: "Prompt blocked by hook: x" } }),
     ).toBeUndefined()
+  })
+})
+
+describe("watchPromptBlock", () => {
+  const emitter = () => {
+    const handlers = new Set<(event: { type: string; properties?: unknown }) => void>()
+    return {
+      listen: (handler: (event: { type: string; properties?: unknown }) => void) => {
+        handlers.add(handler)
+        return () => handlers.delete(handler)
+      },
+      emit: (type: string, properties: unknown) => handlers.forEach((handler) => handler({ type, properties })),
+      size: () => handlers.size,
+    }
+  }
+  const blockedError = (reason: string) => ({
+    name: "UnknownError",
+    data: { message: `Prompt blocked by hook: ${reason}` },
+  })
+
+  test("rolls back once on its session's hook block and stops listening", () => {
+    const events = emitter()
+    const reasons: string[] = []
+    watchPromptBlock({ sessionID: "ses_1", messageID: "msg_1", listen: events.listen, blocked: (r) => reasons.push(r) })
+    events.emit("session.error", { sessionID: "ses_2", error: blockedError("other session") })
+    events.emit("session.error", { sessionID: "ses_1", error: { name: "UnknownError", data: { message: "boom" } } })
+    expect(reasons).toEqual([])
+    events.emit("session.error", { sessionID: "ses_1", error: blockedError("no secrets") })
+    events.emit("session.error", { sessionID: "ses_1", error: blockedError("again") })
+    expect(reasons).toEqual(["no secrets"])
+    expect(events.size()).toBe(0)
+  })
+
+  test("stops once the server admits the message", () => {
+    const events = emitter()
+    const reasons: string[] = []
+    watchPromptBlock({ sessionID: "ses_1", messageID: "msg_1", listen: events.listen, blocked: (r) => reasons.push(r) })
+    events.emit("message.updated", { info: { sessionID: "ses_1", id: "msg_0" } })
+    expect(events.size()).toBe(1)
+    events.emit("message.updated", { info: { sessionID: "ses_1", id: "msg_1" } })
+    events.emit("session.error", { sessionID: "ses_1", error: blockedError("a later prompt") })
+    expect(reasons).toEqual([])
+    expect(events.size()).toBe(0)
+  })
+
+  test("stops when stopped or timed out", async () => {
+    const events = emitter()
+    const stop = watchPromptBlock({ sessionID: "ses_1", messageID: "msg_1", listen: events.listen, blocked: () => {} })
+    stop()
+    expect(events.size()).toBe(0)
+    watchPromptBlock({ sessionID: "ses_1", messageID: "msg_2", listen: events.listen, blocked: () => {}, timeoutMs: 5 })
+    expect(events.size()).toBe(1)
+    await Bun.sleep(20)
+    expect(events.size()).toBe(0)
+  })
+})
+
+describe("Stop hook divider", () => {
+  const part = (text: string, metadata?: Record<string, unknown>) => ({
+    id: "prt_1",
+    sessionID: "ses_1",
+    messageID: "msg_1",
+    type: "text" as const,
+    text,
+    synthetic: true,
+    ...(metadata && { metadata }),
+  })
+
+  test("reads the hook event and the first line of its reason", () => {
+    expect(
+      hookContinuation([
+        part("Stop hook feedback:\nrun the tests", { hook: "Stop", reason: " run the tests\nthen lint" }),
+      ]),
+    ).toEqual({ hookEvent: "Stop", hookReason: "run the tests" })
+  })
+
+  test("is empty for other background prompts", () => {
+    expect(hookContinuation([part("A background shell finished")])).toEqual({})
+    expect(hookContinuation([part("x", { hook: "Stop", reason: "   " })])).toEqual({})
   })
 })

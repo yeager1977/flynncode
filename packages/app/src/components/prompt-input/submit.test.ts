@@ -249,9 +249,16 @@ beforeAll(async () => {
     }),
   }))
 
+  mock.module("@/context/server-sdk", () => ({
+    useServerSDK: () => () => ({
+      event: { listen: () => () => undefined },
+    }),
+  }))
+
   mock.module("@/context/server-sync", () => ({
     useServerSync: () => () => ({
       session: {
+        data: { session_status: {} },
         remember: () => undefined,
         set: (...args: unknown[]) => {
           sessionStatusSets.push(args)

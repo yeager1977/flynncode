@@ -18,6 +18,9 @@ export namespace TimelineRow {
   export class TurnDivider extends Data.TaggedClass("TurnDivider")<{
     userMessageID: string
     label: "compaction" | "interrupted" | "background"
+    // A Stop hook continuation's event and reason, on a background divider.
+    hookEvent?: string
+    hookReason?: string
   }> {}
   export class AssistantPart extends Data.TaggedClass("AssistantPart")<{
     userMessageID: string
