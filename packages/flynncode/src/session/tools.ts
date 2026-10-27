@@ -14,7 +14,6 @@ import { Permission } from "@/permission"
 import { AutoReviewer } from "@/permission/auto-reviewer"
 import { Sandbox } from "@/permission/sandbox"
 import { Reviewer } from "@/permission/reviewer"
-import { Question } from "@/question"
 import { Tool } from "@/tool/tool"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { ToolRegistry } from "@/tool/registry"
@@ -41,6 +40,27 @@ const MCP_RESOURCE_TOOLS = {
   listTemplates: "list_mcp_resource_templates",
   read: "read_mcp_resource",
 } as const
+// Tools whose own permission check always asks under their permission key
+// (Permission.toolPermission) before they act, so a PreToolUse ask forces that
+// check instead of adding a prompt. bash checks every non-blank command under a
+// hook ask (`hookAsk` in the context's extra). MCP tools check their key too.
+const SELF_GATED = new Set([
+  "bash",
+  "edit",
+  "write",
+  "multiedit",
+  "notebook_edit",
+  "apply_patch",
+  "read",
+  "glob",
+  "grep",
+  "lsp",
+  "skill",
+  "todowrite",
+  "webfetch",
+  "websearch",
+  "message",
+])
 const MAX_MCP_RESOURCE_BLOB_BYTES = 10 * 1024 * 1024
 const SUPPORTED_MCP_RESOURCE_ATTACHMENT_MIMES = new Set([
   "application/pdf",
@@ -113,12 +133,22 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       Effect.catch(() => Effect.succeed(instanceDirs)),
     )
 
-  const context = (args: Record<string, unknown>, options: ToolExecutionOptions, toolID: string): Tool.Context => ({
+  const context = (
+    args: Record<string, unknown>,
+    options: ToolExecutionOptions,
+    toolID: string,
+    confirm?: Confirm,
+  ): Tool.Context => ({
     sessionID: input.session.id,
     abort: options.abortSignal!,
     messageID: input.processor.message.id,
     callID: options.toolCallId,
-    extra: { model: input.model, bypassAgentCheck: input.bypassAgentCheck, promptOps: input.promptOps },
+    extra: {
+      model: input.model,
+      bypassAgentCheck: input.bypassAgentCheck,
+      promptOps: input.promptOps,
+      ...(confirm !== undefined && { hookAsk: true }),
+    },
     agent: input.agent.name,
     messages: input.messages,
     metadata: (val) =>
@@ -164,6 +194,18 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             )
           }
         }
+        // The call's first check under the confirmed permission is its single
+        // forced prompt, carrying the hook's reason.
+        if (confirm?.pending && req.permission === confirm.permission) {
+          confirm.pending = false
+          return yield* gate({
+            req: confirm.reason === undefined ? req : { ...req, metadata: { ...req.metadata, reason: confirm.reason } },
+            args,
+            toolID,
+            callID: options.toolCallId,
+            force: true,
+          })
+        }
         return yield* gate({ req, args, toolID, callID: options.toolCallId, force: false })
       }),
   })
@@ -171,20 +213,24 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   // `force` is a PreToolUse ask: the request prompts even where a rule or an
   // "always" approval allows it, and the static read approval and
   // accept-edits never skip it. Under approval "auto" the auto-reviewer still
-  // answers it, as it answers every prompt in that mode.
+  // answers it, as it answers every prompt in that mode. `ruleset` replaces
+  // the session's rules.
   const gate = Effect.fn("SessionTools.gate")(function* (gated: {
     req: Parameters<Tool.Context["ask"]>[0]
     args: Record<string, unknown>
     toolID: string
     callID: string
     force: boolean
+    ruleset?: PermissionV1.Ruleset
   }) {
     const req = gated.req
-    const ruleset = Permission.withTurn(
-      Permission.merge(input.agent.permission, input.session.permission ?? []),
-      input.turnPermission,
-      req,
-    )
+    const ruleset =
+      gated.ruleset ??
+      Permission.withTurn(
+        Permission.merge(input.agent.permission, input.session.permission ?? []),
+        input.turnPermission,
+        req,
+      )
     // Rule-allowed, "always"-approved and denied calls never reach the
     // prompt, so the reviewer only vets requests that would actually ask.
     const asks =
@@ -242,23 +288,28 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       .pipe(Effect.orDie)
   })
 
-  // A PreToolUse deny fails the call. An ask prompts for the call before the
-  // tool runs: one generic prompt for the tool and its input, after which the
-  // tool's own permission checks apply as usual.
+  // A PreToolUse deny fails the call. An ask means the call must be confirmed
+  // with exactly one prompt. A tool with a check of its own (`gatedBy`, its
+  // permission key) gets a Confirm for its context, which forces that check
+  // to prompt with the tool's own patterns. Any other tool is never gated by
+  // the rules, so it gets its one prompt here, before it runs.
   const decide = Effect.fn("SessionTools.decide")(function* (decided: {
     toolID: string
     callID: string
     decision: HooksRunner.PreToolUseDecision
     args: Record<string, unknown>
+    gatedBy: string | undefined
   }) {
     const decision = decided.decision
     if (decision.behavior === "deny") throw new HooksRunner.HookDeniedError(decision.message)
-    if (decision.behavior !== "ask") return
+    if (decision.behavior !== "ask") return undefined
+    if (decided.gatedBy !== undefined) {
+      return { permission: decided.gatedBy, reason: decision.message, pending: true } satisfies Confirm
+    }
     yield* gate({
       req: {
-        permission: decided.toolID,
+        permission: Permission.toolPermission(decided.toolID),
         patterns: ["*"],
-        // An "always" reply must not outlast the hook that asked.
         always: [],
         metadata: { input: decided.args, ...(decision.message !== undefined && { reason: decision.message }) },
       },
@@ -266,7 +317,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       toolID: decided.toolID,
       callID: decided.callID,
       force: true,
+      ruleset: [],
     })
+    return undefined
   })
 
   // PreToolUse, then the call's context. The context carries the effective
@@ -276,6 +329,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     toolID: string,
     args: unknown,
     options: ToolExecutionOptions,
+    gatedBy: string | undefined,
   ) {
     const decision = yield* hooksRunner.runPreToolUse({
       ...hookContext,
@@ -287,14 +341,15 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     const resolved = resolveEffectiveArgs(toolID, args, decision)
     if (resolved.warning) yield* Effect.logWarning(resolved.warning, { toolID })
     const effective = toRecord(resolved.effective)
-    yield* decide({ toolID, callID: options.toolCallId, decision, args: effective })
-    return { args: resolved.effective, ctx: context(effective, options, toolID) }
+    const confirm = yield* decide({ toolID, callID: options.toolCallId, decision, args: effective, gatedBy })
+    return { args: resolved.effective, ctx: context(effective, options, toolID, confirm) }
   })
 
   // PostToolUse when the call succeeded. PostToolUseFailure instead when the
   // tool failed or was aborted; its block reason or context reaches the model
-  // after the error, except on a permission or question rejection, whose error
-  // type the processor acts on.
+  // after the error, on an error of the same type and fields (the processor
+  // stops the turn on permission and question rejections). An interrupted
+  // call shows the model nothing, so the note is logged.
   const postTool = <T extends HooksRunner.ToolResultView, E>(
     call: { toolID: string; args: unknown; options: ToolExecutionOptions },
     body: Effect.Effect<T, E>,
@@ -316,8 +371,21 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             const error = Cause.squash(cause)
             const outcome = yield* failed(errorMessage(error), call.options.abortSignal?.aborted === true)
             const note = outcome.blocked ? outcome.reason : outcome.additionalContext
-            if (note === undefined || rejected(error)) return yield* Effect.failCause(cause)
-            return yield* Effect.die(new Error(`${errorMessage(error)}\n\n${note}`))
+            if (note === undefined) return yield* Effect.failCause(cause)
+            if (Cause.hasInterruptsOnly(cause)) {
+              yield* Effect.logWarning("PostToolUseFailure note dropped: the call was interrupted", {
+                tool: call.toolID,
+                note,
+              })
+              return yield* Effect.failCause(cause)
+            }
+            if (!(error instanceof Error)) {
+              return yield* Effect.die(new Error(`${errorMessage(error)}\n\n${note}`, { cause: error }))
+            }
+            if (Cause.hasFails(cause)) {
+              return yield* Effect.failCause(Cause.map(cause, (item) => (item === error ? withNote(item, note) : item)))
+            }
+            return yield* Effect.die(withNote(error, note))
           }),
         ),
       )
@@ -345,7 +413,12 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       execute(args, options) {
         return run.promise(
           Effect.gen(function* () {
-            const pre = yield* preTool(item.id, args, options)
+            const pre = yield* preTool(
+              item.id,
+              args,
+              options,
+              SELF_GATED.has(item.id) ? Permission.toolPermission(item.id) : undefined,
+            )
             return yield* postTool(
               { toolID: item.id, args: pre.args, options },
               item.execute(pre.args, pre.ctx).pipe(
@@ -398,7 +471,6 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         return run.promise(
           Effect.gen(function* () {
             const parsed = parseListMcpResourcesArgs(args)
-            const ctx = context(toRecord(args), opts, MCP_RESOURCE_TOOLS.list)
             const clients = yield* mcp.clients()
             const resourceServers = Object.entries(clients)
               .filter((entry) => !!entry[1].getServerCapabilities()?.resources)
@@ -416,17 +488,23 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               : resourceServers.map((server) => `mcp:${server}:*`)
             const preList = yield* hooksRunner.runPreToolUse({
               ...hookContext,
-              sessionID: ctx.sessionID,
+              sessionID: input.session.id,
               tool: MCP_RESOURCE_TOOLS.list,
               callID: opts.toolCallId,
               args: toRecord(args),
             })
-            yield* decide({
-              toolID: MCP_RESOURCE_TOOLS.list,
-              callID: opts.toolCallId,
-              decision: preList,
-              args: toRecord(args),
-            })
+            const ctx = context(
+              toRecord(args),
+              opts,
+              MCP_RESOURCE_TOOLS.list,
+              yield* decide({
+                toolID: MCP_RESOURCE_TOOLS.list,
+                callID: opts.toolCallId,
+                decision: preList,
+                args: toRecord(args),
+                gatedBy: "read",
+              }),
+            )
             return yield* postTool(
               { toolID: MCP_RESOURCE_TOOLS.list, args, options: opts },
               Effect.gen(function* () {
@@ -485,7 +563,6 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         return run.promise(
           Effect.gen(function* () {
             const parsed = parseListMcpResourcesArgs(args)
-            const ctx = context(toRecord(args), opts, MCP_RESOURCE_TOOLS.listTemplates)
             const clients = yield* mcp.clients()
             const resourceServers = Object.entries(clients)
               .filter((entry) => !!entry[1].getServerCapabilities()?.resources)
@@ -503,17 +580,23 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               : resourceServers.map((server) => `mcp:${server}:*`)
             const preTemplates = yield* hooksRunner.runPreToolUse({
               ...hookContext,
-              sessionID: ctx.sessionID,
+              sessionID: input.session.id,
               tool: MCP_RESOURCE_TOOLS.listTemplates,
               callID: opts.toolCallId,
               args: toRecord(args),
             })
-            yield* decide({
-              toolID: MCP_RESOURCE_TOOLS.listTemplates,
-              callID: opts.toolCallId,
-              decision: preTemplates,
-              args: toRecord(args),
-            })
+            const ctx = context(
+              toRecord(args),
+              opts,
+              MCP_RESOURCE_TOOLS.listTemplates,
+              yield* decide({
+                toolID: MCP_RESOURCE_TOOLS.listTemplates,
+                callID: opts.toolCallId,
+                decision: preTemplates,
+                args: toRecord(args),
+                gatedBy: "read",
+              }),
+            )
             return yield* postTool(
               { toolID: MCP_RESOURCE_TOOLS.listTemplates, args, options: opts },
               Effect.gen(function* () {
@@ -576,7 +659,6 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         return run.promise(
           Effect.gen(function* () {
             const parsed = parseReadMcpResourceArgs(args)
-            const ctx = context(toRecord(args), opts, MCP_RESOURCE_TOOLS.read)
             const clients = yield* mcp.clients()
             const client = clients[parsed.server]
             if (!client) {
@@ -587,17 +669,23 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             }
             const preRead = yield* hooksRunner.runPreToolUse({
               ...hookContext,
-              sessionID: ctx.sessionID,
+              sessionID: input.session.id,
               tool: MCP_RESOURCE_TOOLS.read,
               callID: opts.toolCallId,
               args: toRecord(args),
             })
-            yield* decide({
-              toolID: MCP_RESOURCE_TOOLS.read,
-              callID: opts.toolCallId,
-              decision: preRead,
-              args: toRecord(args),
-            })
+            const ctx = context(
+              toRecord(args),
+              opts,
+              MCP_RESOURCE_TOOLS.read,
+              yield* decide({
+                toolID: MCP_RESOURCE_TOOLS.read,
+                callID: opts.toolCallId,
+                decision: preRead,
+                args: toRecord(args),
+                gatedBy: "read",
+              }),
+            )
             return yield* postTool(
               { toolID: MCP_RESOURCE_TOOLS.read, args, options: opts },
               Effect.gen(function* () {
@@ -656,7 +744,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     item.execute = (args, opts) =>
       run.promise(
         Effect.gen(function* () {
-          const pre = yield* preTool(key, args, opts)
+          const pre = yield* preTool(key, args, opts, key)
           const effectiveMcp = pre.args
           const ctx = pre.ctx
           return yield* postTool(
@@ -928,12 +1016,18 @@ function formatBytes(value: number) {
   return `${Math.ceil(value / (1024 * 1024))} MB`
 }
 
-// The processor stops the turn on these, so their error type must survive.
-function rejected(error: unknown) {
-  return (
-    error instanceof PermissionV1.RejectedError ||
-    error instanceof PermissionV1.CorrectedError ||
-    error instanceof Question.RejectedError
+// A PreToolUse ask for one call. The call's first permission check under
+// `permission` is forced to prompt; `pending` clears once it has.
+type Confirm = { permission: string; reason: string | undefined; pending: boolean }
+
+// A copy of `error` whose message ends with a hook's note. The prototype and
+// fields are kept, so typed handling downstream (instanceof, tags) still works.
+function withNote<T>(error: T, note: string): T {
+  if (!(error instanceof Error)) return error
+  return Object.defineProperty(
+    Object.create(Object.getPrototypeOf(error), Object.getOwnPropertyDescriptors(error)),
+    "message",
+    { value: `${errorMessage(error)}\n\n${note}`, writable: true, configurable: true, enumerable: false },
   )
 }
 

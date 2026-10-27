@@ -210,3 +210,52 @@ it.instance("a forced ask still fails on a deny rule", () =>
     if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(DeniedError)
   }),
 )
+
+const pendingAsk = (input: Partial<Permission.AskInput> & { patterns: string[] }) =>
+  Effect.gen(function* () {
+    const permission = yield* Permission.Service
+    const before = (yield* permission.list()).length
+    const fiber = yield* permission
+      .ask({
+        sessionID: SessionID.make("session_test"),
+        permission: "edit",
+        metadata: {},
+        always: ["*"],
+        ruleset: [{ permission: "edit", pattern: "*", action: "ask" }],
+        ...input,
+      })
+      .pipe(Effect.exit, Effect.forkScoped)
+    const request = yield* pollWithTimeout(
+      permission.list().pipe(Effect.map((pending) => (pending.length > before ? pending.at(-1) : undefined))),
+      "the ask never prompted",
+    )
+    return { request, fiber }
+  })
+
+it.instance("an always reply to another prompt never resolves a forced prompt", () =>
+  Effect.gen(function* () {
+    const permission = yield* Permission.Service
+    const forced = yield* pendingAsk({ patterns: ["src/.env"], force: true })
+    expect(forced.request.always).toEqual([])
+    const other = yield* pendingAsk({ patterns: ["src/a.ts"] })
+    yield* permission.reply({ requestID: other.request.id, reply: "always" })
+    expect(Exit.isSuccess(yield* Fiber.join(other.fiber))).toBe(true)
+    expect((yield* permission.list()).map((item) => item.id)).toEqual([forced.request.id])
+    yield* Fiber.interrupt(forced.fiber)
+  }),
+)
+
+it.instance("an always reply to a forced prompt approves only that call", () =>
+  Effect.gen(function* () {
+    const permission = yield* Permission.Service
+    const waiting = yield* pendingAsk({ patterns: ["src/b.ts"] })
+    const forced = yield* pendingAsk({ patterns: ["src/a.ts"], always: ["*"], force: true })
+    yield* permission.reply({ requestID: forced.request.id, reply: "always" })
+    expect(Exit.isSuccess(yield* Fiber.join(forced.fiber))).toBe(true)
+    expect((yield* permission.list()).map((item) => item.id)).toEqual([waiting.request.id])
+    const next = yield* pendingAsk({ patterns: ["src/a.ts"] })
+    expect(next.request.patterns).toEqual(["src/a.ts"])
+    yield* Fiber.interrupt(waiting.fiber)
+    yield* Fiber.interrupt(next.fiber)
+  }),
+)

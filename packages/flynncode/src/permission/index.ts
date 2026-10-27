@@ -19,7 +19,9 @@ export type AskInput = PermissionV1.AskInput & {
   staticApproval?: "allow"
   // A PreToolUse hook asked: prompt even where a rule or an "always" approval
   // allows. Deny rules still deny, and accept-edits and the static approval
-  // never skip it.
+  // never skip it. The prompt answers only this call: it offers no "always"
+  // patterns, an "always" reply to it counts as "once", and an "always" reply
+  // to another prompt never resolves it.
   force?: boolean
 }
 
@@ -41,6 +43,7 @@ export interface Interface {
 interface PendingEntry {
   info: PermissionV1.Request
   deferred: Deferred.Deferred<void, PermissionV1.RejectedError | PermissionV1.CorrectedError>
+  forced: boolean
 }
 
 interface State {
@@ -192,7 +195,7 @@ const layer = Layer.effect(
         permission: request.permission,
         patterns: request.patterns,
         metadata: request.metadata,
-        always: request.always,
+        always: force ? [] : request.always,
         tool: request.tool,
         // An auto-review defer that reached the human prompt; the dock reads
         // this from the permission.asked event.
@@ -201,13 +204,14 @@ const layer = Layer.effect(
       yield* Effect.logInfo("asking", { id, permission: info.permission, patterns: info.patterns })
 
       const deferred = yield* Deferred.make<void, PermissionV1.RejectedError | PermissionV1.CorrectedError>()
-      pending.set(id, { info, deferred })
+      pending.set(id, { info, deferred, forced: force === true })
       // Observe-only and detached, so a slow hook never delays the prompt.
       yield* hooksRunner
         .runNotification({
           sessionID: request.sessionID,
           message: `Flynncode needs your permission to use ${hook?.tool ?? request.permission}`,
           type: "permission_prompt",
+          tool: hook?.tool ?? request.permission,
         })
         .pipe(Effect.forkDetach)
       yield* events.publish(Event.Asked, info)
@@ -258,7 +262,7 @@ const layer = Layer.effect(
       }
 
       yield* Deferred.succeed(existing.deferred, undefined)
-      if (input.reply === "once") return
+      if (input.reply === "once" || existing.forced) return
 
       for (const pattern of existing.info.always) {
         approved.push({
@@ -269,7 +273,7 @@ const layer = Layer.effect(
       }
 
       for (const [id, item] of pending.entries()) {
-        if (item.info.sessionID !== existing.info.sessionID) continue
+        if (item.info.sessionID !== existing.info.sessionID || item.forced) continue
         const ok = item.info.patterns.every(
           (pattern) => evaluate(item.info.permission, pattern, approved).action === "allow",
         )
@@ -386,19 +390,18 @@ function mayOverlap(a: string, b: string) {
   return a === b || /[*?]/.test(a) || /[*?]/.test(b)
 }
 
+// The permission a tool's own checks ask under, where it is not the tool id.
+export function toolPermission(tool: string) {
+  if (["edit", "multiedit", "notebook_edit", "write", "apply_patch"].includes(tool)) return "edit"
+  if (["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"].includes(tool)) return "read"
+  if (["bash_output", "kill_shell", "monitor"].includes(tool)) return "bash"
+  return tool
+}
+
 export function disabled(tools: string[], ruleset: PermissionV1.Ruleset): Set<string> {
-  const edits = ["edit", "multiedit", "notebook_edit", "write", "apply_patch"]
-  const reads = ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"]
-  const shells = ["bash_output", "kill_shell", "monitor"]
   return new Set(
     tools.filter((tool) => {
-      const permission = edits.includes(tool)
-        ? "edit"
-        : reads.includes(tool)
-          ? "read"
-          : shells.includes(tool)
-            ? "bash"
-            : tool
+      const permission = toolPermission(tool)
       const rule = ruleset.findLast((rule) => Wildcard.match(permission, rule.permission))
       return rule?.pattern === "*" && rule.action === "deny"
     }),

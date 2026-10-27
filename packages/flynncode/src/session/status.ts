@@ -16,7 +16,10 @@ export const Event = SessionStatusEvent
 export interface Interface {
   readonly get: (sessionID: SessionID) => Effect.Effect<Info>
   readonly list: () => Effect.Effect<Map<SessionID, Info>>
-  readonly set: (sessionID: SessionID, status: Info) => Effect.Effect<void>
+  // `interrupted` marks an idle transition caused by a cancel or an aborted
+  // turn, which the user just asked for, so it does not notify them that the
+  // session is waiting.
+  readonly set: (sessionID: SessionID, status: Info, options?: { interrupted?: boolean }) => Effect.Effect<void>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionStatus") {}
@@ -39,7 +42,11 @@ const layer = Layer.effect(
       return new Map(yield* InstanceState.get(state))
     })
 
-    const set = Effect.fn("SessionStatus.set")(function* (sessionID: SessionID, status: Info) {
+    const set = Effect.fn("SessionStatus.set")(function* (
+      sessionID: SessionID,
+      status: Info,
+      options?: { interrupted?: boolean },
+    ) {
       const data = yield* InstanceState.get(state)
       // Update the map before anything can yield, so a busy status set while
       // a hook runs is never overwritten by this idle transition.
@@ -55,7 +62,7 @@ const layer = Layer.effect(
         yield* HooksContext.observe("hooks.session.idle", maybeHooks.value.runIdle({ sessionID })).pipe(
           Effect.forkDetach,
         )
-        yield* notifyIdle(maybeHooks.value, sessionID).pipe(Effect.forkDetach)
+        if (!options?.interrupted) yield* notifyIdle(maybeHooks.value, sessionID).pipe(Effect.forkDetach)
       }
       // Best-effort idle memory extraction, next to the Stop hook: forked,
       // ignored and optional so the idle transition never blocks on memory.

@@ -792,6 +792,51 @@ describe("hooks executor: Claude format", () => {
       }),
   )
 
+  testEffect(executorLayer(claudeGroup("Notification", "idle_prompt", [notificationHook]))).effect(
+    "Notification speaks Claude's type names and tool names",
+    () =>
+      Effect.gen(function* () {
+        yield* trustClaude("Notification", "idle_prompt", [notificationHook])
+        const executor = yield* HooksExecutor.Service
+        yield* executor.runObserve({
+          event: "Notification",
+          matchName: "idle",
+          sessionID: "ses_1",
+          payload: { message: "waiting", notificationType: "idle" },
+        })
+        expect((yield* readCapture)["notification_type"]).toBe("idle_prompt")
+      }),
+  )
+
+  testEffect(executorLayer(claudeGroup("Notification", undefined, [notificationHook]))).effect(
+    "Notification maps question to elicitation_dialog and names the Claude tool",
+    () =>
+      Effect.gen(function* () {
+        yield* trustClaude("Notification", undefined, [notificationHook])
+        const executor = yield* HooksExecutor.Service
+        yield* executor.runObserve({
+          event: "Notification",
+          matchName: "question",
+          sessionID: "ses_1",
+          payload: { message: "Which color?", notificationType: "question" },
+        })
+        expect((yield* readCapture)["notification_type"]).toBe("elicitation_dialog")
+        yield* executor.runObserve({
+          event: "Notification",
+          matchName: "permission_prompt",
+          sessionID: "ses_1",
+          payload: {
+            message: "Flynncode needs your permission to use bash",
+            notificationType: "permission_prompt",
+            tool: "bash",
+          },
+        })
+        const stdin = yield* readCapture
+        expect(stdin["notification_type"]).toBe("permission_prompt")
+        expect(stdin["message"]).toBe("Flynncode needs your permission to use Bash")
+      }),
+  )
+
   const exit2Hook = `echo "on stdout"; echo "rm is not allowed" >&2; exit 2`
   testEffect(executorLayer(claudeGroup("PreToolUse", "Bash", [exit2Hook]))).effect("exit 2 denies with stderr", () =>
     Effect.gen(function* () {

@@ -1,5 +1,6 @@
 import { ConfigV1 } from "@flynncode/core/v1/config/config"
 import { SessionV1 } from "@flynncode/core/v1/session"
+import type { PermissionV1 } from "@flynncode/core/v1/permission"
 import { Database } from "@flynncode/core/database/database"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { SessionProjector } from "@flynncode/core/session/projector"
@@ -3196,10 +3197,10 @@ const readLines = (file: string) =>
 const lineWith = (file: string, match: (line: Record<string, unknown>) => boolean, message: string) =>
   pollWithTimeout(readLines(file).pipe(Effect.map((lines) => lines.find(match))), message)
 
-const runToolTurn = Effect.fn("test.runToolTurn")(function* (sessionID: SessionID) {
+const runToolTurn = Effect.fn("test.runToolTurn")(function* (sessionID: SessionID, agent = "build") {
   const prompt = yield* SessionPrompt.Service
   return yield* prompt
-    .prompt({ sessionID, agent: "build", parts: [{ type: "text", text: "go" }] })
+    .prompt({ sessionID, agent, parts: [{ type: "text", text: "go" }] })
     .pipe(Effect.forkChild)
 })
 
@@ -3209,8 +3210,25 @@ const toolParts = (sessionID: SessionID) =>
     return (yield* sessions.messages({ sessionID })).flatMap((item) => item.parts).filter((part) => part.type === "tool")
   })
 
+// Answers every prompt of the session with `reply` until the turn ends, and
+// returns the prompts it answered.
+const answerAll = (sessionID: SessionID, running: Fiber.Fiber<unknown, unknown>, reply: "once" | "reject") =>
+  Effect.gen(function* () {
+    const permission = yield* Permission.Service
+    const answered: PermissionV1.Request[] = []
+    while (running.pollUnsafe() === undefined) {
+      const request = (yield* permission.list()).find((item) => item.sessionID === sessionID)
+      if (request) {
+        answered.push(request)
+        yield* permission.reply({ requestID: request.id, reply })
+      }
+      yield* Effect.sleep("20 millis")
+    }
+    return answered
+  }).pipe(Effect.timeoutOrElse({ duration: "20 seconds", orElse: () => Effect.fail(new Error("the turn never ended")) }))
+
 hookedUnix(
-  "a native PreToolUse ask prompts for a call the rules allow",
+  "a native PreToolUse ask gives an allowed bash call exactly one prompt with its command",
   () =>
     Effect.gen(function* () {
       const { llm } = yield* useServerConfig((url) => ({
@@ -3223,11 +3241,10 @@ hookedUnix(
       yield* llm.text("done")
 
       const running = yield* runToolTurn(chat.id)
-      const request = yield* pendingRequest(chat.id, "bash")
-      expect(request.metadata["reason"]).toBe("confirm it")
-      const permission = yield* Permission.Service
-      yield* permission.reply({ requestID: request.id, reply: "once" })
-      yield* Fiber.await(running)
+      const answered = yield* answerAll(chat.id, running, "once")
+      expect(answered.map((item) => [item.permission, item.patterns])).toEqual([["bash", ["printf asked-and-ran"]]])
+      expect(answered[0].metadata).toMatchObject({ command: "printf asked-and-ran", reason: "confirm it" })
+      expect(answered[0].always).toEqual([])
 
       const part = (yield* toolParts(chat.id)).find((item) => item.type === "tool" && item.tool === "bash")
       expect(part?.type === "tool" && part.state.status).toBe("completed")
@@ -3536,6 +3553,221 @@ hookedUnix(
       const failure = yield* lineWith(failures, (line) => line["tool"] === "bash", "no PostToolUseFailure input")
       expect(failure["isInterrupt"]).toBe(true)
       expect(yield* readLines(posts)).toEqual([])
+    }),
+  { git: true },
+  30_000,
+)
+
+hookedUnix(
+  "an always reply to another prompt does not resolve a hook ask's prompt",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        permission: { bash: "allow" },
+        hooks: { PreToolUse: [{ matcher: "bash", hooks: [command(printJson({ behavior: "ask" }))] }] },
+      }))
+      const { chat } = yield* boot()
+      yield* llm.tool("bash", { command: "printf forced", description: "Print" })
+      yield* llm.text("done")
+
+      const running = yield* runToolTurn(chat.id)
+      const forced = yield* pendingRequest(chat.id, "bash")
+      const permission = yield* Permission.Service
+      const other = yield* permission
+        .ask({
+          sessionID: chat.id,
+          permission: "bash",
+          patterns: ["printf other"],
+          metadata: {},
+          always: ["*"],
+          ruleset: [{ permission: "bash", pattern: "*", action: "ask" }],
+        })
+        .pipe(Effect.forkChild)
+      const otherRequest = yield* pollWithTimeout(
+        permission.list().pipe(Effect.map((items) => items.find((item) => item.id !== forced.id))),
+        "the other prompt never appeared",
+      )
+      yield* permission.reply({ requestID: otherRequest.id, reply: "always" })
+      yield* Fiber.join(other)
+      expect((yield* permission.list()).map((item) => item.id)).toEqual([forced.id])
+      yield* permission.reply({ requestID: forced.id, reply: "reject" })
+      yield* Fiber.await(running)
+    }),
+  { git: true },
+  30_000,
+)
+
+hookedUnix(
+  "a hook ask on a call the rules ask for gives exactly one prompt",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        permission: { bash: "ask" },
+        hooks: { PreToolUse: [{ matcher: "bash", hooks: [command(printJson({ behavior: "ask", message: "check" }))] }] },
+      }))
+      const { chat } = yield* boot()
+      yield* llm.tool("bash", { command: "printf once-only", description: "Print" })
+      yield* llm.text("done")
+
+      const running = yield* runToolTurn(chat.id)
+      const answered = yield* answerAll(chat.id, running, "once")
+      expect(answered.map((item) => [item.permission, item.patterns])).toEqual([["bash", ["printf once-only"]]])
+      const part = (yield* toolParts(chat.id)).find((item) => item.type === "tool" && item.tool === "bash")
+      expect(part?.type === "tool" && part.state.status === "completed" && part.state.output).toContain("once-only")
+    }),
+  { git: true },
+  30_000,
+)
+
+hookedUnix(
+  "a hook ask with updatedInput prompts with the rewritten input",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        permission: { bash: "allow" },
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: "bash",
+              hooks: [
+                command(
+                  printJson({
+                    behavior: "ask",
+                    message: "rewritten",
+                    updatedInput: { command: "touch rewritten-marker", description: "Touch" },
+                  }),
+                ),
+              ],
+            },
+          ],
+        },
+      }))
+      const { chat } = yield* boot()
+      yield* llm.tool("bash", { command: "printf original", description: "Print" })
+      yield* llm.text("done")
+
+      const running = yield* runToolTurn(chat.id)
+      const answered = yield* answerAll(chat.id, running, "reject")
+      expect(answered.map((item) => item.patterns)).toEqual([["touch rewritten-marker"]])
+      expect(answered[0].metadata).toMatchObject({ command: "touch rewritten-marker", reason: "rewritten" })
+      const afs = yield* FSUtil.Service
+      expect(yield* afs.existsSafe(path.join(dir, "rewritten-marker"))).toBe(false)
+    }),
+  { git: true },
+  30_000,
+)
+
+hookedUnix(
+  "a hook ask on write under a tools-restricted agent prompts under edit like a normal check",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        permission: { edit: "allow" },
+        hooks: { PreToolUse: [{ matcher: "write", hooks: [command(printJson({ behavior: "ask" }))] }] },
+      }))
+      yield* writeText(
+        path.join(dir, ".claude", "agents", "writer.md"),
+        ["---", "name: writer", "description: Writes files", "tools: Write, Read", "---", "Write files."].join("\n"),
+      )
+      const { chat } = yield* boot()
+      yield* llm.tool("write", { filePath: path.join(dir, "restricted.txt"), content: "hello" })
+      yield* llm.text("done")
+
+      const running = yield* runToolTurn(chat.id, "writer")
+      const answered = yield* answerAll(chat.id, running, "once")
+      expect(answered.map((item) => [item.permission, item.patterns])).toEqual([["edit", ["restricted.txt"]]])
+      expect(yield* Effect.promise(() => Bun.file(path.join(dir, "restricted.txt")).text())).toBe("hello")
+    }),
+  { git: true },
+  30_000,
+)
+
+hookedUnix(
+  "a hook ask on a tool without a permission check of its own prompts once before it runs",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        permission: { bash: { "*": "deny", "git *": "allow" } },
+        hooks: { PreToolUse: [{ matcher: "bash_output", hooks: [command(printJson({ behavior: "ask" }))] }] },
+      }))
+      const { chat } = yield* boot()
+      yield* llm.tool("bash_output", { shell_id: "missing" })
+      yield* llm.text("done")
+
+      const running = yield* runToolTurn(chat.id)
+      const answered = yield* answerAll(chat.id, running, "reject")
+      expect(answered.map((item) => [item.permission, item.patterns])).toEqual([["bash", ["*"]]])
+    }),
+  { git: true },
+  30_000,
+)
+
+hookedUnix(
+  "a cancelled turn does not fire Notification idle",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const notes = path.join(dir, "notifications.jsonl")
+      const { llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        hooks: { Notification: [{ matcher: "idle", hooks: [command(appendStdin(notes))] }] },
+      }))
+      const { prompt, chat } = yield* boot()
+      yield* llm.tool("bash", { command: "printf started; sleep 30", description: "Wait", timeout: 30_000 })
+      const run = yield* runToolTurn(chat.id)
+      yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const tool = (yield* toolParts(chat.id)).find((part) => part.type === "tool")
+          if (tool?.type === "tool" && tool.state.status === "running" && tool.state.metadata?.output?.includes("started"))
+            return true
+        }),
+        "bash never started",
+      )
+      yield* prompt.cancel(chat.id)
+      yield* Fiber.await(run)
+
+      yield* llm.text("done")
+      yield* prompt.prompt({ sessionID: chat.id, agent: "build", parts: [{ type: "text", text: "hello" }] })
+      yield* lineWith(notes, (line) => line["sessionID"] === chat.id, "no idle Notification after the second turn")
+      yield* Effect.sleep("500 millis")
+      expect((yield* readLines(notes)).filter((line) => line["sessionID"] === chat.id)).toHaveLength(1)
+    }),
+  { git: true },
+  30_000,
+)
+
+hookedUnix(
+  "a PostToolUseFailure note reaches the model on an error of the original type",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        permission: { bash: "ask" },
+        hooks: {
+          PostToolUseFailure: [
+            { hooks: [command(printJson({ additionalContext: "try a dry run first" }))] },
+          ],
+        },
+      }))
+      const { chat } = yield* boot()
+      yield* llm.tool("bash", { command: "touch rejected-marker", description: "Touch" })
+      yield* llm.text("done")
+
+      const running = yield* runToolTurn(chat.id)
+      yield* answerAll(chat.id, running, "reject")
+
+      const part = (yield* toolParts(chat.id)).find((item) => item.type === "tool" && item.tool === "bash")
+      expect(part?.type === "tool" && part.state.status).toBe("error")
+      expect(part?.type === "tool" && part.state.status === "error" && part.state.error).toContain("try a dry run first")
+      // The rejection still stops the turn: the model is not called again.
+      expect(yield* llm.calls).toBe(1)
+      const afs = yield* FSUtil.Service
+      expect(yield* afs.existsSafe(path.join(dir, "rejected-marker"))).toBe(false)
     }),
   { git: true },
   30_000,

@@ -618,8 +618,8 @@ export const node = LayerNode.make({
         return server === undefined ? tool : ClaudeFormat.mcpToolName(server, entry.def.name)
       })
 
-      // Claude ignores matchers on UserPromptSubmit and Stop, and matches
-      // SessionEnd on its reason.
+      // Claude ignores matchers on UserPromptSubmit and Stop, matches
+      // SessionEnd on its reason and Notification on its own type names.
       const claudeMatchName = Effect.fn("HooksExecutor.claudeMatchName")(function* (input: {
         event: string
         matchName: string
@@ -628,6 +628,7 @@ export const node = LayerNode.make({
         if (ClaudeFormat.isToolEvent(input.event)) return yield* claudeToolName(input.matchName)
         if (input.event === "UserPromptSubmit" || input.event === "Stop") return undefined
         if (input.event === "SessionEnd") return asString(input.payload["reason"]) ?? input.matchName
+        if (input.event === "Notification") return ClaudeFormat.notificationType(input.matchName)
         return input.matchName
       })
 
@@ -716,6 +717,11 @@ export const node = LayerNode.make({
         const groups = eventGroups(cfg.hooks, input.event)
         const claudeName = groups.some((group) => group.format === "claude") ? yield* claudeMatchName(input) : undefined
         const entries = matchedHandlers(groups, input.event, input.matchName, claudeName)
+        // The Claude tool name a Claude hook's stdin uses: the matched name on
+        // tool events, the prompted tool on a permission Notification.
+        const notifiedTool = input.event === "Notification" ? asString(input.payload["tool"]) : undefined
+        const claudeTool =
+          claudeName !== undefined && notifiedTool !== undefined ? yield* claudeToolName(notifiedTool) : claudeName
         // Synced at most once per event, and only when a Claude hook spawns.
         const transcript = entries.some((entry) => entry.claude)
           ? yield* Effect.cached(transcriptPath(input.sessionID))
@@ -758,7 +764,7 @@ export const node = LayerNode.make({
                     event: input.event,
                     command: handler.command,
                     payload: input.payload,
-                    toolName: claudeName,
+                    toolName: claudeTool,
                     env: entry.env,
                     transcript,
                     timeoutMs,

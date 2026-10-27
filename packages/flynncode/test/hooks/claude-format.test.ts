@@ -208,7 +208,11 @@ describe("ClaudeFormat input", () => {
     })
     expect(pick("Notification", { message: "waiting", notificationType: "idle" })).toEqual({
       message: "waiting",
-      notification_type: "idle",
+      notification_type: "idle_prompt",
+    })
+    expect(pick("Notification", { message: "Which color?", notificationType: "question" })).toEqual({
+      message: "Which color?",
+      notification_type: "elicitation_dialog",
     })
   })
 

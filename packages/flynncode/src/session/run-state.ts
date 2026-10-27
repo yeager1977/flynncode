@@ -37,6 +37,8 @@ const layer = Layer.effect(
       Effect.fn("SessionRunState.state")(function* () {
         const scope = yield* Scope.Scope
         const runners = new Map<SessionID, Runner.Runner<SessionV1.WithParts>>()
+        // Sessions being cancelled, whose idle transition is an interrupt.
+        const cancelling = new Set<SessionID>()
         yield* Effect.addFinalizer(
           Effect.fnUntraced(function* () {
             yield* Effect.forEach(runners.values(), (runner) => runner.cancel, {
@@ -46,7 +48,7 @@ const layer = Layer.effect(
             runners.clear()
           }),
         )
-        return { runners, scope }
+        return { runners, cancelling, scope }
       }),
     )
 
@@ -60,7 +62,7 @@ const layer = Layer.effect(
       const next = Runner.make<SessionV1.WithParts>(data.scope, {
         onIdle: Effect.gen(function* () {
           data.runners.delete(sessionID)
-          yield* status.set(sessionID, { type: "idle" })
+          yield* status.set(sessionID, { type: "idle" }, { interrupted: data.cancelling.has(sessionID) })
         }),
         onBusy: status.set(sessionID, { type: "busy" }),
         onInterrupt,
@@ -82,10 +84,11 @@ const layer = Layer.effect(
       const data = yield* InstanceState.get(state)
       const existing = data.runners.get(sessionID)
       if (!existing) {
-        yield* status.set(sessionID, { type: "idle" })
+        yield* status.set(sessionID, { type: "idle" }, { interrupted: true })
         return
       }
-      yield* existing.cancel
+      data.cancelling.add(sessionID)
+      yield* existing.cancel.pipe(Effect.ensuring(Effect.sync(() => data.cancelling.delete(sessionID))))
     })
 
     const ensureRunning = Effect.fn("SessionRunState.ensureRunning")(function* (

@@ -635,7 +635,7 @@ const layer = Layer.effect(
           sessionID: ctx.assistantMessage.sessionID,
           error: ctx.assistantMessage.error,
         })
-        yield* status.set(ctx.sessionID, { type: "idle" })
+        yield* status.set(ctx.sessionID, { type: "idle" }, { interrupted: SessionV1.AbortedError.isInstance(error) })
       })
 
       const process = Effect.fn("SessionProcessor.process")(function* (streamInput: LLM.StreamInput) {

@@ -7,8 +7,11 @@ import { HooksTrust } from "@/hooks/trust"
 export type PreToolUseDecision =
   | { behavior: "allow"; updatedInput?: Record<string, unknown>; additionalContext?: string }
   | { behavior: "deny"; message: string }
-  // Forces the permission prompt for the call even when a rule allows it.
-  // `updatedInput` is shown to the user and run if they approve.
+  // The call must be confirmed: its own permission check prompts even where a
+  // rule or an "always" approval allows (rule denies still deny), and a tool
+  // without a check of its own gets one prompt before it runs. The prompt shows
+  // `updatedInput` in its patterns and metadata, and that input runs if the
+  // user approves.
   | { behavior: "ask"; message?: string; additionalContext?: string; updatedInput?: Record<string, unknown> }
   | { behavior: "undecided"; additionalContext?: string }
 
@@ -87,11 +90,13 @@ export interface RunnerInterface {
     model?: string
     permissionMode?: string
   }) => Effect.Effect<PostToolUseOutcome>
-  // Observe-only: the user is being waited on.
+  // Observe-only: the user is being waited on. `tool` is the Flynncode tool id
+  // a permission prompt's message ends with; Claude hooks see its Claude name.
   readonly runNotification: (input: {
     sessionID: string
     message: string
     type: NotificationType
+    tool?: string
   }) => Effect.Effect<void>
   readonly runSessionStart: (input: {
     sessionID: string
@@ -361,14 +366,19 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
     sessionID: string
     message: string
     type: NotificationType
+    tool?: string
   }) {
-    yield* plugin.trigger("session.notification", input, {})
+    yield* plugin.trigger("session.notification", { sessionID: input.sessionID, message: input.message, type: input.type }, {})
     if (!executor) return
     yield* executor.runObserve({
       event: "Notification",
       matchName: input.type,
       sessionID: input.sessionID,
-      payload: { message: input.message, notificationType: input.type },
+      payload: {
+        message: input.message,
+        notificationType: input.type,
+        ...(input.tool !== undefined && { tool: input.tool }),
+      },
     })
   })
 

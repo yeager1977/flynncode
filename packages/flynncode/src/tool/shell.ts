@@ -1001,7 +1001,15 @@ export const ShellTool = Tool.define(
                   ),
                 )
               }
-              yield* askPermission(ctx, { command: params.command, cwd, shell, instance: instanceCtx })
+              // A PreToolUse ask (session/tools.ts) forces the bash check, so it
+              // must happen for every non-blank command, cd-only ones included.
+              yield* askPermission(ctx, {
+                command: params.command,
+                cwd,
+                shell,
+                instance: instanceCtx,
+                strict: ctx.extra?.["hookAsk"] === true,
+              })
 
               if (params.run_in_background) {
                 return yield* runBackground(

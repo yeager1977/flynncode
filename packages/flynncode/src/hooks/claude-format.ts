@@ -75,6 +75,12 @@ const MODES: Record<string, string> = {
   auto: "auto",
 }
 
+// Claude's `notification_type` for each Flynncode one; others pass through.
+const NOTIFICATION_TYPES: Record<string, string> = {
+  idle: "idle_prompt",
+  question: "elicitation_dialog",
+}
+
 const TOOL_EVENTS = new Set(["PreToolUse", "PermissionRequest", "PostToolUse", "PostToolUseFailure"])
 const DECISION_EVENTS = new Set(["PreToolUse", "PermissionRequest"])
 const POST_EVENTS = new Set(["PostToolUse", "PostToolUseFailure"])
@@ -103,6 +109,10 @@ export function toolName(id: string) {
 
 export function mcpToolName(server: string, tool: string) {
   return `mcp__${server}__${tool}`
+}
+
+export function notificationType(type: string) {
+  return Object.hasOwn(NOTIFICATION_TYPES, type) ? NOTIFICATION_TYPES[type] : type
 }
 
 export function permissionMode(mode: string | undefined) {
@@ -179,7 +189,18 @@ function eventFields(event: string, payload: Record<string, unknown>, name: stri
       agent_type: payload["agentType"],
     }
   }
-  if (event === "Notification") return { message: payload["message"], notification_type: payload["notificationType"] }
+  if (event === "Notification") {
+    const message = asString(payload["message"]) ?? ""
+    const tool = asString(payload["tool"])
+    // A permission prompt's message ends with the tool, renamed for Claude.
+    return {
+      message:
+        tool !== undefined && name !== undefined && message.endsWith(tool)
+          ? message.slice(0, message.length - tool.length) + name
+          : message,
+      notification_type: notificationType(asString(payload["notificationType"]) ?? ""),
+    }
+  }
   return {}
 }
 
