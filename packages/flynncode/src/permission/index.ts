@@ -12,10 +12,11 @@ export const Event = PermissionV1.Event
 
 // The PermissionRequest hook sees the same tool name and arguments PreToolUse
 // saw. Callers without a tool call fall back to the permission name and its
-// patterns/metadata.
+// patterns/metadata. `stop` ends the turn after this tool step; it runs when
+// the hook's deny is a Claude `continue: false`.
 export type AskInput = PermissionV1.AskInput & {
   approval?: ConfigPermissionV1.ApprovalMode
-  hook?: { tool: string; args: Record<string, unknown> }
+  hook?: { tool: string; args: Record<string, unknown>; stop?: Effect.Effect<void> }
   staticApproval?: "allow"
   // A PreToolUse hook asked: prompt even where a rule or an "always" approval
   // allows. Deny rules still deny, and accept-edits and the static approval
@@ -182,6 +183,7 @@ const layer = Layer.effect(
         permissionMode: approval,
       })
       if (verdict.behavior === "deny") {
+        if (verdict.stop && hook?.stop) yield* hook.stop
         return yield* new PermissionV1.DeniedError({
           ruleset: ruleset.filter((rule) => rule.permission === request.permission),
         })

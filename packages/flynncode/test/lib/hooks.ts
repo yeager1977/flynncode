@@ -51,6 +51,7 @@ function stubPlugin(hooks: Array<Hooks>): HooksRunner.TriggerLike {
         return output
       })
     },
+    list: () => Effect.succeed(hooks),
     triggerPermissionAsk: (input, output) => {
       // Same aggregation as Plugin.triggerPermissionAsk: fail-open on a
       // throwing hook (no deny-by-crash), then isolated per-hook outputs,

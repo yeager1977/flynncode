@@ -133,11 +133,32 @@ export function peerHeaderFrom(text: string) {
 // Forced continuations a Stop or SubagentStop hook may cause per user prompt;
 // past that the stop is allowed with a warning.
 const MAX_STOP_CONTINUATIONS = 8
+// Real prompts whose forced-continuation count is kept; the oldest is dropped.
+const MAX_COUNTED_PROMPTS = 256
+
+// A prompt a person sent: a user message with non-synthetic text, a file, an
+// agent or a subtask. Stop-hook continuations, compaction follow-ups,
+// background notifications and peer messages carry only synthetic text.
+function isRealUser(message: SessionV1.WithParts) {
+  return (
+    message.info.role === "user" &&
+    message.parts.some((part) => (part.type === "text" ? part.synthetic !== true : part.type !== "compaction"))
+  )
+}
+
+// A turn that ended on its own: steps ran and the last assistant finished
+// cleanly. Errors, refusals, permission rejections, continue:false halts
+// (they finish on tool calls) and compactions do not count.
+function endedOnItsOwn(result: SessionV1.WithParts, steps: number) {
+  const info = result.info
+  if (steps === 0 || info.role !== "assistant" || info.error || info.summary) return false
+  return !!info.finish && !["tool-calls", "unknown"].includes(info.finish)
+}
 
 // Trust anchor for peer replies: a message whose every text part is synthetic.
 // Normal user messages (including model-authored text that merely quotes a
 // <peer_message header) never qualify.
-export function isSyntheticMessage(message: { parts: { type: string; synthetic?: boolean }[] }) {
+export function isSyntheticMessage(message: { parts: ReadonlyArray<{ type: string; synthetic?: boolean }> }) {
   const textParts = message.parts.filter((part): part is { type: "text"; synthetic?: boolean } => part.type === "text")
   return textParts.length > 0 && textParts.every((part) => part.synthetic === true)
 }
@@ -1151,7 +1172,11 @@ const layer = Layer.effect(
     // prompt out: the admission fails with a HookDeniedError carrying the
     // hook's reason, and a hook failure fails it too (fail closed — never
     // silently continue). Returns the hook's additionalContext for this prompt.
+    // A system-generated prompt (every text part synthetic: background-shell
+    // and monitor notifications, background task results, peer messages)
+    // runs no UserPromptSubmit hook.
     const runPromptSubmitHook = Effect.fnUntraced(function* (input: PromptInput) {
+      if (isSyntheticMessage(input)) return undefined
       const text = input.parts
         .filter((part) => part.type === "text")
         .map((part) => part.text)
@@ -1261,10 +1286,15 @@ const layer = Layer.effect(
     })
 
     // `steps` counts the loop iterations that did work; none means the
-    // session was already done.
-    const runLoopOnce: (sessionID: SessionID) => Effect.Effect<[SessionV1.WithParts, SessionV1.User, number]> = Effect.fn(
-      "SessionPrompt.runLoopOnce",
-    )(function* (sessionID) {
+    // session was already done. `history` is the last message read, which
+    // ends at `user`.
+    const runLoopOnce: (sessionID: SessionID) => Effect.Effect<{
+      result: SessionV1.WithParts
+      user: SessionV1.User
+      steps: number
+      session: Session.Info
+      history: SessionV1.WithParts[]
+    }> = Effect.fn("SessionPrompt.runLoopOnce")(function* (sessionID) {
       const ctx = yield* InstanceState.context
       let structured: unknown
       let step = 0
@@ -1272,6 +1302,7 @@ const layer = Layer.effect(
       // The newer-user message this drain last observed, carried across loop
       // iterations so the post-loop re-check can compare against the right turn.
       let drainedMessages: SessionV1.User | undefined
+      let drainedHistory: SessionV1.WithParts[] = []
 
         while (true) {
           yield* status.set(sessionID, { type: "busy" })
@@ -1283,6 +1314,7 @@ const layer = Layer.effect(
 
           const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = MessageV2.latest(msgs)
           drainedMessages = lastUser
+          drainedHistory = msgs
           if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
 
           const lastAssistantMsg = msgs.findLast(
@@ -1629,49 +1661,86 @@ const layer = Layer.effect(
         // Best-effort idle-boundary memory curation: forked and ignored so the
         // drain never blocks or fails on memory errors.
         yield* curate.extract(sessionID).pipe(Effect.ignore, Effect.forkIn(scope))
-        return [yield* lastAssistant(sessionID), drainedMessages!, step] as const
+        return {
+          result: yield* lastAssistant(sessionID),
+          user: drainedMessages!,
+          steps: step,
+          session,
+          history: drainedHistory,
+        }
       },
     )
 
+    // Whether a user message newer than `after` was stored, from the newest
+    // one alone: a bounded read, unlike hasNewerUser's history load.
+    const hasNewerInput = Effect.fnUntraced(function* (sessionID: SessionID, after: SessionV1.User) {
+      const newest = yield* sessions.findMessage(sessionID, (m) => m.info.role === "user").pipe(Effect.orDie)
+      if (Option.isNone(newest)) return false
+      const info = newest.value.info
+      return (
+        info.id !== after.id &&
+        (info.time.created > after.time.created || (info.time.created === after.time.created && info.id > after.id))
+      )
+    })
+
+    // Forced Stop-hook continuations per real prompt, by its message id. They
+    // keep counting across synthetic inputs (compaction follow-ups, background
+    // notifications, peer replies) and across drains of the same prompt.
+    const stopContinuations = new Map<string, number>()
+
+    // The latest real prompt. A compaction can leave it out of the loaded
+    // history; it is then looked up newest-first.
+    const lastRealUser = Effect.fnUntraced(function* (sessionID: SessionID, history: SessionV1.WithParts[]) {
+      const loaded = history.findLast(isRealUser)
+      if (loaded) return loaded.info.id
+      const found = yield* sessions.findMessage(sessionID, isRealUser).pipe(Effect.orDie)
+      return Option.isSome(found) ? found.value.info.id : sessionID
+    })
+
     // Stop (a root session) or SubagentStop (a child session) once a turn has
-    // ended on its own, before the session goes idle. A block is admitted as a
-    // synthetic user message carrying the hook's reason, without a
-    // UserPromptSubmit hook, and the drain promotes it like a queued input.
-    // Returns the admitted message's id.
+    // ended on its own, before the session goes idle. Returns the continuation
+    // to admit when a hook refuses the stop, or undefined to let the turn stop.
     const runStopHook = Effect.fnUntraced(function* (input: {
-      result: SessionV1.WithParts
       user: SessionV1.User
-      steps: number
-      forced: number
+      history: SessionV1.WithParts[]
+      subagent: boolean
     }) {
-      const info = input.result.info
-      if (input.steps === 0 || info.role !== "assistant" || info.error || info.summary) return undefined
-      if (!info.finish || ["tool-calls", "unknown"].includes(info.finish)) return undefined
       const sessionID = input.user.sessionID
-      const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
-      const subagent = Boolean(session.parentID)
+      const prompt = yield* lastRealUser(sessionID, input.history)
+      const forced = stopContinuations.get(prompt) ?? 0
       const stop = yield* hooksRunner.runStop({
         sessionID,
-        subagent,
+        subagent: input.subagent,
         agentID: sessionID,
         agentType: input.user.agent,
-        active: input.forced > 0,
+        active: forced > 0,
       })
       if (!stop.block) return undefined
-      const event = subagent ? "SubagentStop" : "Stop"
-      if (input.forced >= MAX_STOP_CONTINUATIONS) {
+      const event = input.subagent ? "SubagentStop" : "Stop"
+      if (forced >= MAX_STOP_CONTINUATIONS) {
         yield* Effect.logWarning(`${event} hook kept blocking; letting the turn stop`, {
           "session.id": sessionID,
-          continuations: input.forced,
+          continuations: forced,
           reason: stop.reason,
         })
         return undefined
       }
-      const reason = stop.reason ?? "Blocked by hook"
-      // The continuation answers the same user prompt, so it keeps that
-      // prompt's agent, model, format, system and turn permissions.
+      return { event, reason: stop.reason ?? "Blocked by hook", prompt, forced }
+    })
+
+    // Admits a Stop hook's reason as a synthetic user message, without a
+    // UserPromptSubmit hook, and counts it against the real prompt. It answers
+    // the same prompt, so it keeps that prompt's agent, model, format, system
+    // and turn permissions.
+    const admitContinuation = Effect.fnUntraced(function* (input: {
+      user: SessionV1.User
+      event: string
+      reason: string
+      prompt: string
+      forced: number
+    }) {
       const message = yield* createUserMessage({
-        sessionID,
+        sessionID: input.user.sessionID,
         agent: input.user.agent,
         model: { providerID: input.user.model.providerID, modelID: input.user.model.modelID },
         variant: input.user.model.variant,
@@ -1679,37 +1748,69 @@ const layer = Layer.effect(
         system: input.user.system,
         permission: input.user.permission,
         parts: [
-          { type: "text", synthetic: true, text: `${event} hook feedback:\n${reason}`, metadata: { hook: event, reason } },
+          {
+            type: "text",
+            synthetic: true,
+            text: `${input.event} hook feedback:\n${input.reason}`,
+            metadata: { hook: input.event, reason: input.reason },
+          },
         ],
       }).pipe(Effect.orDie)
-      yield* sessions.touch(sessionID)
+      yield* sessions.touch(input.user.sessionID)
+      stopContinuations.delete(input.prompt)
+      stopContinuations.set(input.prompt, input.forced + 1)
+      const oldest = stopContinuations.keys().next()
+      if (stopContinuations.size > MAX_COUNTED_PROMPTS && !oldest.done) stopContinuations.delete(oldest.value)
       return message.info.id
+    })
+
+    // A cancel after a continuation is admitted but before a step answers it
+    // would leave the hook's feedback in history, replayed into the next real
+    // prompt: it is removed. Once a step answered it, it stays.
+    const dropContinuation = Effect.fnUntraced(function* (sessionID: SessionID, messageID: MessageID) {
+      const latest = yield* sessions.findMessage(
+        sessionID,
+        (m) => m.info.id === messageID || (m.info.role === "assistant" && m.info.parentID === messageID),
+      )
+      if (Option.isNone(latest) || latest.value.info.id !== messageID) return
+      yield* sessions.removeMessage({ sessionID, messageID })
     })
 
     const runLoop: (sessionID: SessionID) => Effect.Effect<SessionV1.WithParts> = Effect.fn("SessionPrompt.run")(
       function* (sessionID: SessionID) {
-        // Stop-hook continuations admitted by this drain, and how many followed
-        // the user prompt being answered. A continuation is always promoted in
-        // the drain that admitted it, so the count lives here.
-        const continuations = new Set<string>()
-        let forced = 0
+        // The continuation this drain admitted that no step has answered yet.
+        let pending: MessageID | undefined
         // A drain must not return while steer/queue user messages persisted after
         // the last messages read remain unconsumed — they would sit in the
         // database until some later drain. Rerun the loop when the post-teardown
         // re-check finds newer user messages, and before going idle, when a
         // Stop hook refuses the stop.
-        while (true) {
-          const [result, user, steps] = yield* runLoopOnce(sessionID)
-          if (yield* hasNewerUser(sessionID, user)) continue
-          if (!continuations.has(user.id)) forced = 0
-          const continued = yield* runStopHook({ result, user, steps, forced })
-          if (continued !== undefined) {
-            continuations.add(continued)
-            forced++
-            continue
+        return yield* Effect.gen(function* () {
+          while (true) {
+            const once = yield* runLoopOnce(sessionID)
+            pending = undefined
+            if (yield* hasNewerUser(sessionID, once.user)) continue
+            const subagent = Boolean(once.session.parentID)
+            if (!endedOnItsOwn(once.result, once.steps)) return once.result
+            if (!(yield* hooksRunner.hasStop({ subagent }))) return once.result
+            const refused = yield* runStopHook({ user: once.user, history: once.history, subagent })
+            // Input admitted while the hook ran takes over, with its own agent,
+            // model, format and system, and a refused stop is dropped.
+            if (yield* hasNewerInput(sessionID, once.user)) {
+              if (refused) yield* Effect.logInfo("stop hook continuation dropped for newer input", { "session.id": sessionID })
+              continue
+            }
+            if (!refused) return once.result
+            yield* admitContinuation({ user: once.user, ...refused }).pipe(
+              Effect.tap((id) =>
+                Effect.sync(() => {
+                  pending = id
+                }),
+              ),
+              Effect.uninterruptible,
+            )
           }
-          if (!(yield* hasNewerUser(sessionID, user))) return result
-        }
+        }).pipe(Effect.onInterrupt(() => (pending === undefined ? Effect.void : dropContinuation(sessionID, pending).pipe(Effect.ignore))))
       },
     )
 

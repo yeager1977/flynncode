@@ -19,6 +19,7 @@ import { Workspace } from "../../src/control-plane/workspace"
 import { InstanceBootstrap as InstanceBootstrapService } from "../../src/project/bootstrap-service"
 import { InstanceStore } from "../../src/project/instance-store"
 import { Project } from "../../src/project/project"
+import { HooksTrust } from "../../src/hooks/trust"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import * as HttpSessionError from "../../src/server/routes/instance/httpapi/handlers/session-errors"
 import { ExperimentalPaths } from "../../src/server/routes/instance/httpapi/groups/experimental"
@@ -425,6 +426,64 @@ describe("session HttpApi", () => {
         root: sessionDirectory,
       })
     }).pipe(Effect.provide(TestLLMServer.layer), Effect.provide(AppNodeBuilder.build(CrossSpawnSpawner.node))),
+  )
+
+  it.live(
+    "answers a prompt a UserPromptSubmit hook blocks with a 422 and the reason",
+    () =>
+      Effect.gen(function* () {
+        const llm = yield* TestLLMServer
+        const handler = {
+          type: "command" as const,
+          command: "grep -q hunter2 && { echo 'no secrets in prompts' >&2; exit 2; }; exit 0",
+        }
+        const directory = yield* tmpdirScoped({
+          git: true,
+          config: { ...testProviderConfig(llm.url), hooks: { UserPromptSubmit: [{ hooks: [handler] }] } },
+        })
+        // The project hook is trusted through a trust file of the test's own,
+        // as the executor tests do.
+        const trustFile = path.join(directory, "hooks-trust.json")
+        const previous = process.env["FLYNNCODE_HOOKS_TRUST_FILE"]
+        yield* Effect.acquireRelease(
+          Effect.sync(() => {
+            process.env["FLYNNCODE_HOOKS_TRUST_FILE"] = trustFile
+          }),
+          () =>
+            Effect.sync(() => {
+              if (previous === undefined) delete process.env["FLYNNCODE_HOOKS_TRUST_FILE"]
+              if (previous !== undefined) process.env["FLYNNCODE_HOOKS_TRUST_FILE"] = previous
+            }),
+        )
+        const bound = yield* HooksTrust.bindToInstance(
+          HooksTrust.fromHandler("UserPromptSubmit", undefined, handler),
+        ).pipe(provideInstanceEffect(directory))
+        yield* Effect.promise(() =>
+          Bun.write(trustFile, JSON.stringify([{ hash: HooksTrust.hashDef(bound), trustedAt: Date.now() }])),
+        )
+        const session = yield* createSession({ title: "blocked prompt" }).pipe(provideInstanceEffect(directory))
+
+        const response = yield* request(
+          `${pathFor(SessionPaths.prompt, { sessionID: session.id })}?directory=${encodeURIComponent(directory)}`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              agent: "build",
+              model: { providerID: "test", modelID: "test-model" },
+              parts: [{ type: "text", text: "my password is hunter2" }],
+            }),
+          },
+        )
+
+        expect(response.status).toBe(422)
+        expect(yield* responseJson(response)).toEqual({
+          name: "PromptBlockedError",
+          data: { message: "no secrets in prompts" },
+        })
+        expect(yield* llm.calls).toBe(0)
+      }).pipe(Effect.provide(TestLLMServer.layer), Effect.provide(AppNodeBuilder.build(CrossSpawnSpawner.node))),
+    30_000,
   )
 
   it.instance(

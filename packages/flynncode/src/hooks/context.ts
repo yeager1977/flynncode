@@ -9,9 +9,10 @@ import type { HooksRunner } from "@/hooks/runner"
 // assembled system prompt (the shared seam). Per-turn events must not store:
 // UserPromptSubmit context rides on its own user message, PreCompact context
 // feeds that compaction, Interrupt is report-only via observe, and a Stop or
-// SubagentStop block reaches the model as a continuation prompt. Entries dedupe by equality and the per-session list is capped to
-// bound growth; session removal clears the entry. Store absence (tests,
-// minimal graphs) degrades to report-only.
+// SubagentStop block reaches the model as a continuation prompt. Entries
+// dedupe by equality and the per-session list is capped to bound growth;
+// session removal clears the entry. Store absence (tests, minimal graphs)
+// degrades to report-only.
 
 export const MAX_ENTRIES = 100
 

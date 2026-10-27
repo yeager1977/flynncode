@@ -48,8 +48,17 @@ import {
   SummarizePayload,
   UpdatePayload,
 } from "../groups/session"
-import { InvalidRequestError, PermissionNotFoundError, notFound } from "../errors"
+import { InvalidRequestError, PermissionNotFoundError, PromptBlockedError, notFound } from "../errors"
 import * as SessionError from "./session-errors"
+
+// A UserPromptSubmit hook's block is a reason for the user, not a server
+// error: the sync prompt routes answer it with a 422.
+function blockedPrompt(defect: unknown) {
+  if (defect instanceof HooksRunner.HookDeniedError) {
+    return Effect.fail(new PromptBlockedError({ name: "PromptBlockedError", data: { message: defect.message } }))
+  }
+  return Effect.die(defect)
+}
 
 const tryParseJson = (text: string) =>
   Effect.try({
@@ -365,7 +374,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           ...ctx.payload,
           sessionID: ctx.params.sessionID,
         })
-        .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+        .pipe(
+          Effect.mapError(() => new HttpApiError.BadRequest({})),
+          Effect.catchDefect(blockedPrompt),
+        )
       return HttpServerResponse.stream(Stream.make(JSON.stringify(message)).pipe(Stream.encodeText), {
         contentType: "application/json",
       })
@@ -402,9 +414,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof CommandPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
-      return yield* promptSvc
-        .command({ ...ctx.payload, sessionID: ctx.params.sessionID })
-        .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+      return yield* promptSvc.command({ ...ctx.payload, sessionID: ctx.params.sessionID }).pipe(
+        Effect.mapError(() => new HttpApiError.BadRequest({})),
+        Effect.catchDefect(blockedPrompt),
+      )
     })
 
     const shell = Effect.fn("SessionHttpApi.shell")(function* (ctx: {

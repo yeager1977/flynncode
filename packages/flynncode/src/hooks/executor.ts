@@ -103,6 +103,9 @@ export interface ExecutorInterface {
     defaultTimeoutMs?: number
   }) => Effect.Effect<HooksRunner.SessionObserve, never, never>
   readonly cancelSession: (sessionID: string) => Effect.Effect<void, never, never>
+  // Whether any file hook group is configured for the event, from the loaded
+  // config alone: nothing is matched, trusted or spawned.
+  readonly hasHandlers: (event: ObserveEvent) => Effect.Effect<boolean, never, never>
 }
 
 export class Service extends Context.Service<Service, ExecutorInterface>()("@opencode/HooksExecutor") {}
@@ -976,7 +979,12 @@ export const node = LayerNode.make({
         return out
       })
 
-      return Service.of({ runDecision, runPostTool, runObserve, cancelSession })
+      const hasHandlers = Effect.fn("HooksExecutor.hasHandlers")(function* (event: ObserveEvent) {
+        const cfg = yield* config.get()
+        return cfg.hooks?.disableAllHooks !== true && eventGroups(cfg.hooks, event).length > 0
+      })
+
+      return Service.of({ runDecision, runPostTool, runObserve, cancelSession, hasHandlers })
     }),
   ),
   deps: [Config.node, HooksTrust.node, RuntimeFlags.node, HooksManaged.node],

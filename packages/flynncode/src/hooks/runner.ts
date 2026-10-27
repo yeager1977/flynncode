@@ -120,8 +120,9 @@ export interface RunnerInterface {
     agentID: string
     agentType: string
   }) => Effect.Effect<SessionObserve>
-  // A no-op for a child session whose prompt loop already ran SubagentStop
-  // (runStop), so the task tool's call after the child returns fires nothing.
+  // Always a no-op: the prompt loop fires SubagentStop for every child turn
+  // that ends on its own (runStop), so the task tool's call after the child
+  // returns fires nothing.
   readonly runSubagentStop: (input: {
     sessionID: string
     agentID: string
@@ -130,7 +131,9 @@ export interface RunnerInterface {
   // Stop (a root session) or SubagentStop (a child session) at the end of the
   // prompt loop, before the session goes idle. A block refuses the stop: the
   // reason continues the turn. `active` is stop_hook_active: this stop follows
-  // a continuation forced by a Stop hook for the same user prompt.
+  // a continuation forced by a Stop hook for the same user prompt. A hook or
+  // plugin failure lets the stop through: a finished turn never fails because
+  // of a hook.
   readonly runStop: (input: {
     sessionID: string
     subagent: boolean
@@ -138,6 +141,10 @@ export interface RunnerInterface {
     agentType?: string
     active: boolean
   }) => Effect.Effect<{ block: boolean; reason?: string }>
+  // Whether runStop could run anything: a Stop (root) or SubagentStop (child)
+  // file hook, or a plugin subagent.stop hook for a child. It reads only the
+  // loaded config and plugins, so a turn end without such hooks costs nothing.
+  readonly hasStop: (input: { subagent: boolean }) => Effect.Effect<boolean>
   // The plugin session.idle hook on every idle transition. The Stop event no
   // longer fires here: it runs blocking in the prompt loop (runStop).
   readonly runIdle: (input: { sessionID: string; reason?: "idle" | "interrupt" }) => Effect.Effect<SessionObserve>
@@ -145,11 +152,6 @@ export interface RunnerInterface {
 }
 
 export type NotificationType = "permission_prompt" | "question" | "idle"
-
-// Child sessions whose loop ran SubagentStop, kept until the task tool's own
-// runSubagentStop consumes them. Children that never reach the task tool's
-// call (backgrounded, driven directly) are dropped oldest first.
-const MAX_HANDLED_SUBAGENT_STOPS = 256
 
 export class Service extends Context.Service<Service, RunnerInterface>()("@opencode/HooksRunner") {}
 
@@ -170,9 +172,10 @@ export type TriggerLike = {
   trigger: Plugin.Interface["trigger"]
   triggerDecision: Plugin.Interface["triggerDecision"]
   triggerPermissionAsk: Plugin.Interface["triggerPermissionAsk"]
+  list: Plugin.Interface["list"]
 }
 
-export type ExecutorLike = Pick<ExecutorInterface, "runDecision" | "runPostTool" | "runObserve">
+export type ExecutorLike = Pick<ExecutorInterface, "runDecision" | "runPostTool" | "runObserve" | "hasHandlers">
 
 function withContext(
   base: PreToolUseDecision,
@@ -203,8 +206,6 @@ function mergeObserve(first: SessionObserve, second: SessionObserve): SessionObs
 }
 
 export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): RunnerInterface {
-  const handledSubagentStops = new Set<string>()
-
   const runPreToolUse = Effect.fn("HooksRunner.runPreToolUse")(function* (input: {
     sessionID: string
     tool: string
@@ -518,35 +519,12 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
     )
   })
 
-  const runSubagentStop = Effect.fn("HooksRunner.runSubagentStop")(function* (input: {
+  const runSubagentStop = Effect.fn("HooksRunner.runSubagentStop")(function* (_input: {
     sessionID: string
     agentID: string
     agentType: string
   }) {
-    if (handledSubagentStops.delete(input.sessionID)) return {}
-    const output = {
-      additionalContext: undefined as string | undefined,
-      systemMessage: undefined as string | undefined,
-      continue: undefined as boolean | undefined,
-      stopReason: undefined as string | undefined,
-    }
-    yield* plugin.trigger("subagent.stop", input, output)
-    const pluginObserve: SessionObserve = {
-      additionalContext: output.additionalContext,
-      systemMessage: output.systemMessage,
-      continue: output.continue,
-      stopReason: output.stopReason,
-    }
-    if (!executor) return pluginObserve
-    return mergeObserve(
-      pluginObserve,
-      yield* executor.runObserve({
-        event: "SubagentStop",
-        matchName: input.agentType,
-        sessionID: input.sessionID,
-        payload: { agentID: input.agentID, agentType: input.agentType },
-      }),
-    )
+    return {} satisfies SessionObserve
   })
 
   const runStop = Effect.fn("HooksRunner.runStop")(function* (input: {
@@ -559,11 +537,6 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
     const agentID = input.agentID ?? input.sessionID
     const agentType = input.agentType ?? ""
     if (input.subagent) {
-      handledSubagentStops.delete(input.sessionID)
-      handledSubagentStops.add(input.sessionID)
-      if (handledSubagentStops.size > MAX_HANDLED_SUBAGENT_STOPS) {
-        handledSubagentStops.delete(handledSubagentStops.values().next().value ?? input.sessionID)
-      }
       const output = { additionalContext: undefined as string | undefined, systemMessage: undefined as string | undefined }
       yield* plugin.trigger("subagent.stop", { sessionID: input.sessionID, agentID, agentType }, output)
       if (output.systemMessage) yield* Effect.logWarning("hooks.subagent.stop", { systemMessage: output.systemMessage })
@@ -591,6 +564,16 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
     }
     if (!observe.block) return { block: false }
     return { block: true, reason: observe.block.reason }
+  }, Effect.catchDefect((defect) =>
+    Effect.logWarning("stop hook failed; letting the turn stop", {
+      error: defect instanceof Error ? defect.message : String(defect),
+    }).pipe(Effect.as({ block: false })),
+  ))
+
+  const hasStop = Effect.fn("HooksRunner.hasStop")(function* (input: { subagent: boolean }) {
+    if (input.subagent && (yield* plugin.list()).some((hooks) => hooks["subagent.stop"] !== undefined)) return true
+    if (!executor) return false
+    return yield* executor.hasHandlers(input.subagent ? "SubagentStop" : "Stop")
   })
 
   const runIdle = Effect.fn("HooksRunner.runIdle")(function* (input: { sessionID: string; reason?: "idle" | "interrupt" }) {
@@ -633,6 +616,7 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
     runSubagentStart,
     runSubagentStop,
     runStop,
+    hasStop,
     runIdle,
     runInterrupt,
   })
@@ -671,6 +655,7 @@ const noopPlugin: TriggerLike = {
   trigger: (_name, _input, output) => Effect.succeed(output as never),
   triggerDecision: (_input, output) => Effect.succeed(output),
   triggerPermissionAsk: (_input, output) => Effect.succeed(output),
+  list: () => Effect.succeed([]),
 }
 
 export * as HooksRunner from "./runner"

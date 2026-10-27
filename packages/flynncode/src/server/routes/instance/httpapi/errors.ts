@@ -185,6 +185,17 @@ export class ApiNotFoundError extends Schema.ErrorClass<ApiNotFoundError>("NotFo
   { httpApiStatus: 404 },
 ) {}
 
+// A UserPromptSubmit hook blocked the prompt; `message` is the hook's reason.
+export class PromptBlockedError extends Schema.ErrorClass<PromptBlockedError>("PromptBlockedError")(
+  {
+    name: Schema.Literal("PromptBlockedError"),
+    data: Schema.Struct({
+      message: Schema.String,
+    }),
+  },
+  { httpApiStatus: 422 },
+) {}
+
 export function notFound(message: string) {
   return new ApiNotFoundError({
     name: "NotFoundError",

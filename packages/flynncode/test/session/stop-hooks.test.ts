@@ -6,8 +6,9 @@ import { FSUtil } from "@flynncode/core/fs-util"
 import { CrossSpawnSpawner } from "@flynncode/core/cross-spawn-spawner"
 import { Ripgrep } from "@flynncode/core/ripgrep"
 import { expect } from "bun:test"
-import { Cause, Effect, Exit, Layer } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer, Option, Tracer } from "effect"
 import path from "path"
+import { pathToFileURL } from "url"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Agent } from "@/agent/agent"
 import { BackgroundJob } from "@/background/job"
@@ -114,10 +115,13 @@ const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap
 const llmServer = LayerNode.make({ service: TestLLMServer, layer: TestLLMServer.layer, deps: [] })
 
 // HooksRunner is a root so idle transitions, which find it in the caller's
-// context as the app runtime provides it, can reach it.
+// context as the app runtime provides it, can reach it. Plugin comes first,
+// as in the app runtime, so the runner built for SessionPrompt sees plugin
+// hooks.
 const hooked = testEffect(
   LayerNode.compile(
     LayerNode.group([
+      Plugin.node,
       SessionPrompt.node,
       Session.node,
       SessionProjector.node,
@@ -128,7 +132,6 @@ const hooked = testEffect(
       Agent.node,
       Command.node,
       Permission.node,
-      Plugin.node,
       Config.node,
       Provider.node,
       LSP.node,
@@ -162,7 +165,14 @@ const hooked = testEffect(
       [SessionSummary.node, summary],
       [LSP.node, lsp],
       [MCP.node, mcp],
-      [RuntimeFlags.node, RuntimeFlags.layer({ experimentalEventSystem: true, bypassHookTrust: true })],
+      [
+        RuntimeFlags.node,
+        RuntimeFlags.layer({
+          experimentalEventSystem: true,
+          bypassHookTrust: true,
+          experimentalBackgroundSubagents: true,
+        }),
+      ],
       [InstanceStore.bootstrapNode, noopBootstrap],
     ],
   ),
@@ -252,6 +262,29 @@ const go = (sessionID: SessionID, text = "go") =>
     const prompt = yield* SessionPrompt.Service
     return yield* prompt.prompt({ sessionID, agent: "build", parts: [{ type: "text", text }] })
   })
+
+// Appends its stdin, then the first time only waits for `release` (at most
+// about 20 s) and blocks with the reason.
+const blockOnceAfter = (log: string, flag: string, release: string, reason: string) =>
+  `${appendStdin(log)}; [ -e "${flag}" ] && exit 0; touch "${flag}"; i=0; ` +
+  `while [ ! -e "${release}" ] && [ $i -lt 400 ]; do sleep 0.05; i=$((i+1)); done; echo '${reason}' >&2; exit 2`
+
+const waitForLines = (file: string, count: number) =>
+  pollWithTimeout(
+    readLines(file).pipe(Effect.map((lines) => (lines.length >= count ? lines : undefined))),
+    `fewer than ${count} lines in ${file}`,
+  )
+
+const userTexts = (sessions: Session.Interface, sessionID: SessionID) =>
+  sessions
+    .messages({ sessionID })
+    .pipe(
+      Effect.map((items) =>
+        items
+          .filter((item) => item.info.role === "user")
+          .map((item) => item.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")),
+      ),
+    )
 
 unix(
   "a Claude Stop hook that blocks once continues the turn with its reason",
@@ -388,7 +421,7 @@ unix(
 )
 
 unix(
-  "SubagentStop fires exactly once per child",
+  "SubagentStop fires exactly once for a foreground and for a background child",
   () =>
     Effect.gen(function* () {
       const { directory: dir } = yield* TestInstance
@@ -401,9 +434,304 @@ unix(
       yield* llm.text("parent done")
 
       yield* go(chat.id)
+      const foreground = (yield* sessions.children(chat.id))[0]!
+      expect((yield* readLines(subagentStops)).map((line) => line["sessionID"])).toEqual([foreground.id])
 
-      const children = yield* sessions.children(chat.id)
-      expect((yield* readLines(subagentStops)).map((line) => line["sessionID"])).toEqual([children[0]!.id])
+      // The background child and the parent then ask the model concurrently;
+      // both get the server's default answer.
+      yield* llm.tool("task", {
+        description: "inspect more",
+        prompt: "look further",
+        subagent_type: "general",
+        background: true,
+      })
+      yield* go(chat.id, "again")
+      const background = (yield* sessions.children(chat.id)).find((child) => child.id !== foreground.id)!
+      // The parent's turn answering the injected background result ends idle.
+      const status = yield* SessionStatus.Service
+      yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const texts = yield* userTexts(sessions, chat.id)
+          const last = (yield* sessions.messages({ sessionID: chat.id })).at(-1)
+          const done =
+            texts.some((text) => text.includes("Background task completed")) &&
+            last?.info.role === "assistant" &&
+            last.info.finish !== undefined &&
+            (yield* status.get(chat.id)).type === "idle"
+          return done ? true : undefined
+        }),
+        "the background result never reached the parent",
+      )
+      expect((yield* readLines(subagentStops)).map((line) => line["sessionID"])).toEqual([foreground.id, background.id])
+    }),
+  { git: true },
+  60_000,
+)
+
+unix(
+  "a throwing subagent.stop plugin lets the child's finished turn through",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const plugin = path.join(dir, "plugin.ts")
+      const marker = path.join(dir, "plugin-ran")
+      yield* writeText(
+        plugin,
+        [
+          "export default async () => ({",
+          '  "subagent.stop": async () => {',
+          `    await Bun.write(${JSON.stringify(marker)}, "ran")`,
+          '    throw new Error("plugin boom")',
+          "  },",
+          "})",
+          "",
+        ].join("\n"),
+      )
+      const { llm, chat } = yield* setup({ plugin: [pathToFileURL(plugin).href] })
+      yield* llm.tool("task", { description: "inspect bug", prompt: "look into it", subagent_type: "general" })
+      yield* llm.text("child done")
+      yield* llm.text("parent done")
+
+      const result = yield* go(chat.id)
+
+      const sent = yield* requests(llm)
+      expect(sent).toHaveLength(3)
+      expect(sent[2]).toContain("child done")
+      expect(result.parts.some((part) => part.type === "text" && part.text === "parent done")).toBe(true)
+      expect(yield* Effect.promise(() => Bun.file(marker).exists())).toBe(true)
+    }),
+  { git: true },
+  30_000,
+)
+
+unix(
+  "a turn end without Stop hooks does no hook work",
+  () =>
+    Effect.gen(function* () {
+      const { llm, chat } = yield* setup({})
+      yield* llm.text("done")
+      // A real tracer records every span: whatever the drain does after its
+      // last loop shows up as a direct child of its span.
+      const spans = new Map<string, { name: string; parent?: string }>()
+      const tracer = Tracer.make({
+        span(options) {
+          const span = new Tracer.NativeSpan(options)
+          spans.set(span.spanId, {
+            name: options.name,
+            parent: Option.isSome(options.parent) ? options.parent.value.spanId : undefined,
+          })
+          return span
+        },
+      })
+
+      yield* go(chat.id).pipe(Effect.withTracer(tracer))
+
+      const runs = [...spans.entries()].filter((entry) => entry[1].name === "SessionPrompt.run")
+      expect(runs).toHaveLength(1)
+      const children = [...spans.values()].filter((span) => span.parent === runs[0]![0]).map((span) => span.name)
+      expect(children).toEqual(["SessionPrompt.runLoopOnce", "SessionPrompt.hasNewerUser", "HooksRunner.hasStop"])
+    }),
+  { git: true },
+  30_000,
+)
+
+unix(
+  "the continuation cap holds across an auto-compaction",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const stops = path.join(dir, "stops.jsonl")
+      const { llm, chat, sessions } = yield* setup({
+        hooks: {
+          Stop: [
+            { hooks: [command(`${appendStdin(stops)}; ${printJson({ behavior: "deny", message: "never done" })}`)] },
+          ],
+        },
+      })
+      yield* llm.text("one")
+      yield* llm.text("two")
+      // Past the model's context: the next step compacts first, and the
+      // compaction admits its own synthetic "Continue" prompt.
+      yield* llm.text("three", { usage: { input: 200_000, output: 10 } })
+
+      yield* go(chat.id)
+
+      const texts = yield* userTexts(sessions, chat.id)
+      expect(texts.some((text) => text.startsWith("Continue if you have next steps"))).toBe(true)
+      expect((yield* readLines(stops)).map((line) => line["stopHookActive"])).toEqual([false, ...Array(8).fill(true)])
+      const status = yield* SessionStatus.Service
+      expect((yield* status.get(chat.id)).type).toBe("idle")
+    }),
+  { git: true },
+  60_000,
+)
+
+unix(
+  "a steer sent while a blocking Stop hook runs takes over from the continuation",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const stops = path.join(dir, "stops.jsonl")
+      const release = path.join(dir, "release")
+      const { llm, chat, sessions, prompt } = yield* setup({
+        hooks: {
+          Stop: [{ hooks: [command(blockOnceAfter(stops, path.join(dir, "stop.flag"), release, "hook wants more"))] }],
+        },
+      })
+      yield* llm.text("first answer")
+      yield* llm.text("steer answer")
+
+      const running = yield* go(chat.id).pipe(Effect.forkChild)
+      yield* waitForLines(stops, 1)
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        delivery: "steer",
+        parts: [{ type: "text", text: "steer now" }],
+      })
+      yield* writeText(release, "")
+      yield* Fiber.join(running)
+
+      const sent = yield* requests(llm)
+      expect(sent).toHaveLength(2)
+      expect(sent[1]).toContain("steer now")
+      expect(sent[1]).not.toContain("hook wants more")
+      const texts = yield* userTexts(sessions, chat.id)
+      expect(texts).toEqual(["go", "steer now"])
+      // The steer is a new prompt: its own Stop is not a forced one.
+      expect((yield* readLines(stops)).map((line) => line["stopHookActive"])).toEqual([false, false])
+    }),
+  { git: true },
+  30_000,
+)
+
+unix(
+  "a cancel during a Stop hook leaves no continuation",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const stops = path.join(dir, "stops.jsonl")
+      const release = path.join(dir, "release")
+      const { llm, chat, sessions, prompt } = yield* setup({
+        hooks: {
+          Stop: [{ hooks: [command(blockOnceAfter(stops, path.join(dir, "stop.flag"), release, "hook wants more"))] }],
+        },
+      })
+      yield* llm.text("first answer")
+
+      const running = yield* go(chat.id).pipe(Effect.forkChild)
+      yield* waitForLines(stops, 1)
+      yield* prompt.cancel(chat.id)
+      yield* Fiber.await(running)
+
+      expect(yield* requests(llm)).toHaveLength(1)
+      expect(yield* userTexts(sessions, chat.id)).toEqual(["go"])
+      const status = yield* SessionStatus.Service
+      expect((yield* status.get(chat.id)).type).toBe("idle")
+    }),
+  { git: true },
+  30_000,
+)
+
+unix(
+  "a cancel just after a Stop hook blocks removes the continuation",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const stops = path.join(dir, "stops.jsonl")
+      const { llm, chat, sessions, prompt } = yield* setup({
+        hooks: { Stop: [{ hooks: [command(blockOnce(stops, path.join(dir, "stop.flag"), "hook wants more"))] }] },
+      })
+      yield* llm.text("first answer")
+      // Listeners run inside the publishing fiber: this one sees the
+      // continuation's part being written, starts a cancel and holds the
+      // admission long enough for the cancel to reach the drain, so the
+      // cancel lands before the continuation's step can start.
+      const events = yield* EventV2Bridge.Service
+      const seen = { cancelled: false }
+      const unsubscribe = yield* events.listen((event) => {
+        if (seen.cancelled || event.type !== MessageV2.Event.PartUpdated.type) return Effect.void
+        const part = (event.data as typeof MessageV2.Event.PartUpdated.data.Type).part
+        if (part.type !== "text" || !part.text.startsWith("Stop hook feedback")) return Effect.void
+        seen.cancelled = true
+        return prompt.cancel(chat.id).pipe(Effect.forkDetach, Effect.andThen(Effect.sleep("200 millis")))
+      })
+      yield* Effect.addFinalizer(() => unsubscribe)
+
+      yield* go(chat.id).pipe(Effect.exit)
+
+      expect(seen.cancelled).toBe(true)
+      expect(yield* requests(llm)).toHaveLength(1)
+      expect(yield* userTexts(sessions, chat.id)).toEqual(["go"])
+      const status = yield* SessionStatus.Service
+      yield* pollWithTimeout(
+        status.get(chat.id).pipe(Effect.map((current) => (current.type === "idle" ? true : undefined))),
+        "the session never went idle",
+      )
+    }),
+  { git: true },
+  30_000,
+)
+
+unix(
+  "a Claude PermissionRequest continue:false ends the turn after the tool step",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      yield* writeText(
+        path.join(dir, ".claude", "settings.json"),
+        JSON.stringify({
+          hooks: {
+            PermissionRequest: [
+              { matcher: "Bash", hooks: [command(printJson({ continue: false, stopReason: "halt now" }))] },
+            ],
+          },
+        }),
+      )
+      const { llm, sessions } = yield* setup({})
+      const asking = yield* sessions.create({
+        title: "Asks for bash",
+        permission: [
+          { permission: "*", pattern: "*", action: "allow" },
+          { permission: "bash", pattern: "*", action: "ask" },
+        ],
+      })
+      yield* llm.tool("bash", { command: "printf ran", description: "Print" })
+      yield* llm.text("never requested")
+
+      yield* go(asking.id)
+
+      expect(yield* requests(llm)).toHaveLength(1)
+      const part = (yield* sessions.messages({ sessionID: asking.id }))
+        .flatMap((item) => item.parts)
+        .find((item) => item.type === "tool")
+      expect(part?.type === "tool" && part.state.status).toBe("error")
+    }),
+  { git: true },
+  30_000,
+)
+
+unix(
+  "a synthetic prompt runs no UserPromptSubmit hook",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const prompts = path.join(dir, "prompts.jsonl")
+      const { llm, chat, prompt } = yield* setup({
+        hooks: {
+          UserPromptSubmit: [
+            { hooks: [command(`${appendStdin(prompts)}; ${printJson({ behavior: "deny", message: "no" })}`)] },
+          ],
+        },
+      })
+
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        parts: [{ type: "text", synthetic: true, text: "[background shell sh_1 exited (code 0)] make test" }],
+      })
+
+      expect(yield* requests(llm)).toHaveLength(1)
+      expect(yield* readLines(prompts)).toEqual([])
     }),
   { git: true },
   30_000,

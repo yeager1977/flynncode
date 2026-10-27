@@ -122,6 +122,7 @@ const fileDenyIt = testEffect(
     runPostTool: (): Effect.Effect<HooksRunner.PostToolUseOutcome, never, never> =>
       Effect.succeed({ blocked: false }),
     runObserve: (): Effect.Effect<HooksRunner.SessionObserve, never, never> => Effect.succeed({}),
+    hasHandlers: () => Effect.succeed(false),
   }),
 )
 
@@ -147,6 +148,7 @@ const fileRewriteIt = testEffect(
     runPostTool: (): Effect.Effect<HooksRunner.PostToolUseOutcome, never, never> =>
       Effect.succeed({ blocked: false }),
     runObserve: (): Effect.Effect<HooksRunner.SessionObserve, never, never> => Effect.succeed({}),
+    hasHandlers: () => Effect.succeed(false),
   }),
 )
 
@@ -248,6 +250,7 @@ const fileBlockIt = testEffect(
     runDecision: () => Effect.succeed({ behavior: "undecided" as const }),
     runPostTool: () => Effect.succeed({ blocked: true as const, reason: "file hook blocked" }),
     runObserve: () => Effect.succeed({}),
+    hasHandlers: () => Effect.succeed(false),
   }),
 )
 
@@ -278,6 +281,7 @@ const contextIt = testEffect(
     },
     runPostTool: () => Effect.succeed({ blocked: false } as const),
     runObserve: () => Effect.succeed({} as const),
+    hasHandlers: () => Effect.succeed(false),
   }),
 )
 
@@ -336,6 +340,7 @@ const fileAskIt = testEffect(
         Effect.succeed({ behavior: "ask", message: "file hook asks" }),
       runPostTool: (): Effect.Effect<HooksRunner.PostToolUseOutcome, never, never> => Effect.succeed({ blocked: false }),
       runObserve: (): Effect.Effect<HooksRunner.SessionObserve, never, never> => Effect.succeed({}),
+      hasHandlers: () => Effect.succeed(false),
     },
   ),
 )
@@ -346,6 +351,56 @@ describe("hooks runner ask", () => {
       const runner = yield* HooksRunner.Service
       const decision = yield* runner.runPreToolUse({ sessionID: "ses_1", tool: "bash", callID: "c1", args: { command: "ls" } })
       expect(decision).toEqual({ behavior: "ask", message: "file hook asks" })
+    }),
+  )
+})
+
+// A plugin whose subagent.stop throws, and file hooks for Stop only.
+const stopIt = testEffect(
+  testLayerWithHooks(
+    [
+      {
+        "subagent.stop": async () => {
+          throw new Error("plugin boom")
+        },
+      },
+    ],
+    {
+      runDecision: () => Effect.succeed({ behavior: "undecided" as const }),
+      runPostTool: () => Effect.succeed({ blocked: false as const }),
+      runObserve: () => Effect.succeed({}),
+      hasHandlers: (event) => Effect.succeed(event === "Stop"),
+    },
+  ),
+)
+
+describe("hooks runner stop", () => {
+  stopIt.effect("hasStop sees file Stop hooks for a root and plugin subagent.stop for a child", () =>
+    Effect.gen(function* () {
+      const runner = yield* HooksRunner.Service
+      expect(yield* runner.hasStop({ subagent: false })).toBe(true)
+      expect(yield* runner.hasStop({ subagent: true })).toBe(true)
+    }),
+  )
+
+  stopIt.effect("a throwing subagent.stop plugin lets the stop through", () =>
+    Effect.gen(function* () {
+      const runner = yield* HooksRunner.Service
+      expect(yield* runner.runStop({ sessionID: "ses_1", subagent: true, agentType: "general", active: false })).toEqual(
+        { block: false },
+      )
+    }),
+  )
+})
+
+const noStopIt = testEffect(testLayerWithHooks([]))
+
+describe("hooks runner without stop hooks", () => {
+  noStopIt.effect("hasStop is false for a root and a child", () =>
+    Effect.gen(function* () {
+      const runner = yield* HooksRunner.Service
+      expect(yield* runner.hasStop({ subagent: false })).toBe(false)
+      expect(yield* runner.hasStop({ subagent: true })).toBe(false)
     }),
   )
 })

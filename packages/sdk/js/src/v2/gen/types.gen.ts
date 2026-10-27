@@ -3568,6 +3568,13 @@ export type SubtaskPartInput = {
   command?: string
 }
 
+export type PromptBlockedError = {
+  name: "PromptBlockedError"
+  data: {
+    message: string
+  }
+}
+
 export type SessionBusyError = {
   _tag: "SessionBusyError"
   sessionID: string
@@ -11549,6 +11556,10 @@ export type SessionPromptErrors = {
    * NotFoundError
    */
   404: NotFoundError
+  /**
+   * PromptBlockedError
+   */
+  422: PromptBlockedError
 }
 
 export type SessionPromptError = SessionPromptErrors[keyof SessionPromptErrors]
@@ -11946,6 +11957,10 @@ export type SessionCommandErrors = {
    * NotFoundError
    */
   404: NotFoundError
+  /**
+   * PromptBlockedError
+   */
+  422: PromptBlockedError
 }
 
 export type SessionCommandError = SessionCommandErrors[keyof SessionCommandErrors]

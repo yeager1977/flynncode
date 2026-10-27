@@ -283,7 +283,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         ...(staticApproval === "allow" ? { staticApproval } : {}),
         ...(reviewer !== undefined ? { reviewer } : {}),
         ...(gated.force ? { force: true } : {}),
-        hook: { tool: gated.toolID, args: gated.args },
+        hook: { tool: gated.toolID, args: gated.args, stop: input.processor.stopAfterStep },
       })
       .pipe(Effect.orDie)
   })
