@@ -17,7 +17,7 @@ import { ConfigMarkdown } from "./markdown"
 // Claude Code tool names mapped onto Flynncode permission keys. Write and
 // MultiEdit run under the `edit` permission, like the deprecated `tools` map;
 // so does NotebookEdit, which `SCOPES` narrows to notebooks.
-const TOOLS: Record<string, string> = {
+export const TOOLS: Record<string, string> = {
   Read: "read",
   Write: "edit",
   Edit: "edit",

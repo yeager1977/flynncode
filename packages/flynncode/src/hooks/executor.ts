@@ -11,8 +11,10 @@ import { MCP } from "@/mcp"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { InstanceState } from "@/effect/instance-state"
 import { HooksManaged } from "@/hooks/managed"
+import { ClaudeFormat } from "@/hooks/claude-format"
 
-// File-hook execution protocol (stdin JSON in, stdout JSON out):
+// File-hook execution protocol (stdin JSON in, stdout JSON out). Each group
+// speaks its `format`: native (below) or Claude Code's (last bullet).
 // - exit 0 + JSON decision: PreToolUse/PermissionRequest honor
 //   {"behavior":"deny","message"?} | {"behavior":"allow","updatedInput"?,"additionalContext"?} | {"behavior":"undecided","additionalContext"?}.
 // - exit 2: deny (decision hooks) or blocked output (PostToolUse); the message
@@ -28,6 +30,12 @@ import { HooksManaged } from "@/hooks/managed"
 // - Hook `timeout` is in seconds. Defaults: 600s everywhere except SessionEnd
 //   (1s default, 3s max). Trust is checked before every spawn; untrusted hooks
 //   are skipped with a warning and never executed (fail closed).
+// - `format: "claude"` groups (see claude-format.ts) get Claude's stdin fields,
+//   tool names and snake_case tool_input, the group's `env`, and a
+//   `transcript_path` synced just before the spawn. Their matchers test the
+//   Claude tool name. Exit 2 denies/blocks with stderr, exit 0 reads Claude's
+//   JSON or plain-text context, and any other exit, a timeout or a spawn
+//   failure is logged and ignored (never deny-on-error).
 
 export const DEFAULT_COMMAND_TIMEOUT_MS = 600_000
 export const SESSION_END_TIMEOUT_MS = 1_000
@@ -109,21 +117,34 @@ export function resolveTimeoutMs(entryTimeoutSec: number | undefined, defaultMs:
   return Math.min(ms, maxMs)
 }
 
-function matchedHandlers(hooks: ConfigHooksV1.Info | undefined, event: string, matchName: string) {
+function eventGroups(hooks: ConfigHooksV1.Info | undefined, event: string) {
   // disableAllHooks is the kill-switch flag, not an event: only array values
   // on real event keys match.
   const value = hooks?.[event as keyof ConfigHooksV1.Info]
-  // Claude-format groups expect Claude's stdin and output protocol; running
-  // them with the native one would misread their exit codes, so they wait
-  // until the executor speaks it.
-  const native = Array.isArray(value) ? value.filter((group) => group.format !== "claude") : []
-  const groups = HooksConfig.matchHooks(event, matchName, native)
-  return groups.flatMap((group) =>
-    group.hooks.map((handler) => ({
-      def: HooksTrust.fromHandler(event, group.matcher, handler, group.source),
-      handler,
-    })),
-  )
+  return Array.isArray(value) ? value : []
+}
+
+// Native groups match the Flynncode name; Claude groups match `claudeName`.
+function matchedHandlers(
+  groups: Array<ConfigHooksV1.HookGroup>,
+  event: string,
+  matchName: string,
+  claudeName: string | undefined,
+) {
+  return groups
+    .filter((group) =>
+      group.format === "claude"
+        ? HooksConfig.matchesClaudeMatcher(claudeName, group.matcher)
+        : HooksConfig.matchesMatcher(matchName, group.matcher),
+    )
+    .flatMap((group) =>
+      group.hooks.map((handler) => ({
+        def: HooksTrust.fromHandler(event, group.matcher, handler, group.source),
+        handler,
+        claude: group.format === "claude",
+        env: group.env,
+      })),
+    )
 }
 
 // Every configured file hook with its trust identity and a display summary,
@@ -151,16 +172,13 @@ export function enumerateHooks(hooks: ConfigHooksV1.Info | undefined) {
   })
 }
 
-type Collected =
-  | { kind: "decision"; decision: HooksRunner.PreToolUseDecision }
-  | { kind: "post"; blocked: boolean; reason?: string; additionalContext?: string }
-  | { kind: "observe"; observe: HooksRunner.SessionObserve }
+type Collected = ClaudeFormat.Result
 
 // "trusted" spawns; "killed" and "untrusted" are skipped, each with its own
 // log wording.
 type TrustVerdict = "trusted" | "untrusted" | "killed"
 
-function decided(decision: HooksRunner.PreToolUseDecision): Collected {
+function decided(decision: ClaudeFormat.Decision): Collected {
   return { kind: "decision", decision }
 }
 
@@ -265,6 +283,7 @@ export const node = LayerNode.make({
         inputJson: string,
         timeoutMs: number,
         cwd: string,
+        env?: Record<string, string>,
       ): Effect.Effect<Spawned, Error> => {
         let kill: ((signal: NodeJS.Signals) => void) | undefined
         return Effect.uninterruptibleMask((restore) =>
@@ -272,7 +291,7 @@ export const node = LayerNode.make({
             Effect.promise(async () => {
               const child = spawn("sh", ["-c", command], {
                 cwd,
-                env: { ...process.env },
+                env: { ...process.env, ...env },
                 stdio: ["pipe", "pipe", "pipe"],
                 detached: true,
                 windowsHide: process.platform === "win32",
@@ -466,6 +485,114 @@ export const node = LayerNode.make({
         return decided(decision)
       })
 
+      // Claude's own rules (claude-format.ts): no outcome here ever fails the
+      // call, so spawn failures read as a non-blocking error too.
+      const collectClaude = Effect.fn("HooksExecutor.collectClaude")(function* (input: {
+        event: string
+        command: string
+        payload: Record<string, unknown>
+        toolName: string | undefined
+        env: Record<string, string> | undefined
+        transcript: Effect.Effect<string>
+        timeoutMs: number
+        cwd: string
+        limit: number | undefined
+      }) {
+        const stdin = ClaudeFormat.input(input.event, input.payload, {
+          transcriptPath: yield* input.transcript,
+          permissionMode: ClaudeFormat.permissionMode(asString(input.payload["permission_mode"])),
+          cwd: input.cwd,
+          toolName: input.toolName,
+        })
+        const spawned = yield* spawnCommand(input.command, JSON.stringify(stdin), input.timeoutMs, input.cwd, input.env).pipe(
+          Effect.catch((error) =>
+            Effect.logWarning("Claude hook failed to start", { command: input.command, error: error.message }).pipe(
+              Effect.as(undefined),
+            ),
+          ),
+        )
+        if (spawned?.timedOut) yield* Effect.logWarning("hook timed out", { command: input.command, timeoutMs: input.timeoutMs })
+        const exitCode = spawned === undefined || spawned.timedOut ? null : spawned.code
+        if (exitCode !== null && exitCode !== 0 && exitCode !== 2) {
+          yield* Effect.logWarning("Claude hook failed", { command: input.command, code: exitCode, stderr: spawned?.stderr })
+        }
+        const result = ClaudeFormat.output(input.event, {
+          exitCode,
+          stdout: spawned?.stdout ?? "",
+          stderr: spawned?.stderr ?? "",
+        })
+        if (exitCode === 2 && result.kind === "observe" && result.block === undefined) {
+          yield* Effect.logWarning("hook exited blocking", { command: input.command, stderr: spawned?.stderr })
+        }
+        if (result.kind === "post") {
+          return result.additionalContext === undefined
+            ? result
+            : { ...result, additionalContext: limitContext(result.additionalContext, input.limit) }
+        }
+        if (result.kind === "observe") {
+          return result.observe.additionalContext === undefined
+            ? result
+            : {
+                ...result,
+                observe: { ...result.observe, additionalContext: limitContext(result.observe.additionalContext, input.limit) },
+              }
+        }
+        const decision = result.decision
+        const limited =
+          decision.behavior !== "deny" && decision.additionalContext !== undefined
+            ? { ...decision, additionalContext: limitContext(decision.additionalContext, input.limit) }
+            : decision
+        if (limited.behavior !== "allow" || limited.updatedInput === undefined) return decided(limited)
+        const back = ClaudeFormat.fromClaudeArgs(asString(input.payload["tool"]) ?? "", limited.updatedInput)
+        if (back.dropped.length > 0) {
+          yield* Effect.logWarning("Claude hook updatedInput keys dropped", {
+            command: input.command,
+            tool: input.payload["tool"],
+            dropped: back.dropped,
+          })
+        }
+        return decided({ ...limited, updatedInput: back.args })
+      })
+
+      // The Claude name a tool event's Claude groups match on. MCP tool ids
+      // (`<server>_<tool>`, sanitized) cannot be split reliably, so the
+      // connected MCP clients say which server and tool an id belongs to.
+      const claudeToolName = Effect.fn("HooksExecutor.claudeToolName")(function* (tool: string) {
+        const name = ClaudeFormat.toolName(tool)
+        if (name !== tool) return name
+        const maybeMcp = yield* Effect.serviceOption(MCP.Service)
+        if (Option.isNone(maybeMcp)) return tool
+        const entry = (yield* maybeMcp.value.tools())[tool]
+        if (!entry) return tool
+        const server = Object.entries(yield* maybeMcp.value.clients()).find((item) => item[1] === entry.client)?.[0]
+        return server === undefined ? tool : ClaudeFormat.mcpToolName(server, entry.def.name)
+      })
+
+      // Claude ignores matchers on UserPromptSubmit and Stop, and matches
+      // SessionEnd on its reason.
+      const claudeMatchName = Effect.fn("HooksExecutor.claudeMatchName")(function* (input: {
+        event: string
+        matchName: string
+        payload: Record<string, unknown>
+      }) {
+        if (ClaudeFormat.isToolEvent(input.event)) return yield* claudeToolName(input.matchName)
+        if (input.event === "UserPromptSubmit" || input.event === "Stop") return undefined
+        if (input.event === "SessionEnd") return asString(input.payload["reason"]) ?? input.matchName
+        return input.matchName
+      })
+
+      // Session.Service comes from the caller's context: the executor sits
+      // below the session layer, and hooks fired outside a session get "".
+      const transcriptPath = (sessionID: string) =>
+        Effect.gen(function* () {
+          if (!sessionID) return ""
+          const { Session } = yield* Effect.promise(() => import("@/session/session"))
+          const session = yield* Effect.serviceOption(Session.Service)
+          if (Option.isNone(session)) return ""
+          const { ClaudeTranscript } = yield* Effect.promise(() => import("@/hooks/claude-transcript"))
+          return yield* ClaudeTranscript.sync({ sessionID }).pipe(Effect.provideService(Session.Service, session.value))
+        })
+
       const collectMcp = Effect.fn("HooksExecutor.collectMcp")(function* (input: {
         kind: "decision" | "post" | "observe"
         server: string
@@ -534,7 +661,11 @@ export const node = LayerNode.make({
       }) {
         const cfg = yield* config.get()
         const cwd = yield* workdir
-        const entries = matchedHandlers(cfg.hooks, input.event, input.matchName)
+        const groups = eventGroups(cfg.hooks, input.event)
+        const claudeName = groups.some((group) => group.format === "claude") ? yield* claudeMatchName(input) : undefined
+        const entries = matchedHandlers(groups, input.event, input.matchName, claudeName)
+        // Synced at most once per event, and only when a Claude hook spawns.
+        const transcript = yield* Effect.cached(transcriptPath(input.sessionID))
         const collected: Collected[] = []
         for (const entry of entries) {
           const def = entry.def
@@ -560,11 +691,27 @@ export const node = LayerNode.make({
             input.defaultTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS,
             input.timeoutMaxMs,
           )
+          if (entry.claude && handler.type === "mcp_tool") {
+            yield* Effect.logWarning("skipping hook: Claude hooks have no mcp_tool handler", { event: def.event })
+            continue
+          }
           const limit = handler.type === "command" ? handler.additionalContextLimit : undefined
           const isAsync = handler.type === "command" && handler.async === true
           const collect =
             handler.type === "command"
-              ? collectCommand({ kind: input.kind, command: handler.command, payload: input.payload, timeoutMs, cwd, limit })
+              ? entry.claude
+                ? collectClaude({
+                    event: input.event,
+                    command: handler.command,
+                    payload: input.payload,
+                    toolName: claudeName,
+                    env: entry.env,
+                    transcript,
+                    timeoutMs,
+                    cwd,
+                    limit,
+                  })
+                : collectCommand({ kind: input.kind, command: handler.command, payload: input.payload, timeoutMs, cwd, limit })
               : collectMcp({
                   kind: input.kind,
                   server: handler.server,
@@ -589,20 +736,27 @@ export const node = LayerNode.make({
       })
 
       const isAllowRewrite = (
-        decision: HooksRunner.PreToolUseDecision,
+        decision: ClaudeFormat.Decision,
       ): decision is Extract<HooksRunner.PreToolUseDecision, { behavior: "allow" }> & {
         updatedInput: Record<string, unknown>
       } => decision.behavior === "allow" && decision.updatedInput !== undefined
 
-      const mergeDecisions = (
-        decisions: Array<HooksRunner.PreToolUseDecision>,
-      ): HooksRunner.PreToolUseDecision => {
+      // deny > ask > allow > undecided.
+      const mergeDecisions = (decisions: Array<ClaudeFormat.Decision>): ClaudeFormat.Decision => {
         const denied = decisions.find((decision) => decision.behavior === "deny")
         if (denied) return denied
         const contexts = decisions.flatMap((decision) =>
           decision.behavior !== "deny" && decision.additionalContext ? [decision.additionalContext] : [],
         )
         const context = contexts.length > 0 ? contexts.join("\n\n") : undefined
+        const asked = decisions.find((decision) => decision.behavior === "ask")
+        if (asked) {
+          return {
+            behavior: "ask",
+            ...(asked.message !== undefined && { message: asked.message }),
+            ...(context !== undefined && { additionalContext: context }),
+          }
+        }
         const rewritten = decisions.find(isAllowRewrite)
         if (rewritten) {
           return context === undefined
@@ -644,7 +798,13 @@ export const node = LayerNode.make({
           },
           timeoutMaxMs: input.timeoutMaxMs,
         })
-        return mergeDecisions(collected.flatMap((item) => (item.kind === "decision" ? [item.decision] : [])))
+        const merged = mergeDecisions(collected.flatMap((item) => (item.kind === "decision" ? [item.decision] : [])))
+        // HooksRunner.PreToolUseDecision cannot carry `ask` yet (Task 4 adds
+        // it); until then an ask leaves the call to the permission rules.
+        if (merged.behavior !== "ask") return merged
+        return merged.additionalContext === undefined
+          ? ({ behavior: "undecided" } as const)
+          : ({ behavior: "undecided", additionalContext: merged.additionalContext } as const)
       })
 
       const runPostTool = Effect.fn("HooksExecutor.runPostTool")(function* (input: {
@@ -705,6 +865,8 @@ export const node = LayerNode.make({
           timeoutMaxMs: input.timeoutMaxMs,
           defaultTimeoutMs: input.defaultTimeoutMs,
         })
+        // A Claude hook's `block` (UserPromptSubmit, Stop, SubagentStop) is
+        // parsed into the collected result but not enforced yet (Task 5).
         const observes = collected.flatMap((item) => (item.kind === "observe" ? [item.observe] : []))
         const contexts = observes.flatMap((item) => (item.additionalContext ? [item.additionalContext] : []))
         const system = observes.map((item) => item.systemMessage).find((part) => part !== undefined)

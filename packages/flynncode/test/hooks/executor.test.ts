@@ -8,6 +8,13 @@ import { HooksExecutor, resolveTimeoutMs } from "../../src/hooks/executor"
 import { HooksTrust } from "../../src/hooks/trust"
 import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { MCP } from "@/mcp"
+import { Session } from "@/session/session"
+import { MessageV2 } from "@/session/message-v2"
+import { MessageID, PartID } from "@/session/schema"
+import { SessionProjector } from "@flynncode/core/session/projector"
+import type { SessionV1 } from "@flynncode/core/v1/session"
+import { ClaudeTranscript } from "../../src/hooks/claude-transcript"
 
 const dir = path.join(os.tmpdir(), `opencode-hooks-exec-${process.pid}`)
 const trustPath = path.join(dir, "trust.json")
@@ -284,28 +291,6 @@ describe("hooks executor", () => {
       }),
   )
 
-  // Bypass is on so only the executor's own skips stand between these hooks and a spawn.
-  testEffect(
-    executorLayer(
-      { PreToolUse: [{ format: "claude", source: "claude:user", hooks: [{ type: "command", command: markScript }] }] },
-      true,
-    ),
-  ).effect("Claude-format groups are skipped until the executor speaks their protocol", () =>
-    Effect.gen(function* () {
-      const executor = yield* HooksExecutor.Service
-      const decision = yield* executor.runDecision({
-        event: "PreToolUse",
-        matchName: "Bash",
-        tool: "Bash",
-        sessionID: "ses_1",
-        callID: "c1",
-        args: { command: "ls" },
-      })
-      expect(decision).toEqual({ behavior: "undecided" })
-      expect(yield* Effect.promise(() => Bun.file(markerPath).text())).toBe("pristine")
-    }),
-  )
-
   testEffect(
     executorLayer(
       {
@@ -559,6 +544,283 @@ describe("hooks executor", () => {
         })
         expect(decision.behavior).toBe("deny")
       }),
+  )
+})
+
+const claudeSource = "claude:plugin:demo@market"
+const claudeEnvPath = path.join(dir, "claude-env.txt")
+const claudeCapture = (stdout = "") =>
+  `cat > "${capturePath}"; printf '%s' "$CLAUDE_PLUGIN_ROOT" > "${claudeEnvPath}"; printf '%s' '${stdout}'`
+
+type Command = string | { type: "command"; command: string; timeout?: number }
+const handler = (command: Command) => (typeof command === "string" ? { type: "command" as const, command } : command)
+
+function claudeGroup(event: string, matcher: string | undefined, commands: Array<Command>) {
+  return {
+    [event]: [
+      {
+        ...(matcher === undefined ? {} : { matcher }),
+        format: "claude",
+        source: claudeSource,
+        env: { CLAUDE_PLUGIN_ROOT: dir, CLAUDE_PROJECT_DIR: dir },
+        hooks: commands.map(handler),
+      },
+    ],
+  }
+}
+
+// Trust is checked against the instance-bound def, so trust what the executor will ask about.
+const trustClaude = Effect.fn("Test.trustClaude")(function* (event: string, matcher: string | undefined, commands: Array<Command>) {
+  const defs = yield* Effect.forEach(commands, (command) =>
+    HooksTrust.bindToInstance(HooksTrust.fromHandler(event, matcher, handler(command), claudeSource)),
+  )
+  yield* Effect.promise(() =>
+    Bun.write(trustPath, JSON.stringify(defs.map((def) => ({ hash: HooksTrust.hashDef(def), trustedAt: Date.now() })))),
+  )
+})
+
+const readCapture = Effect.promise(async () => JSON.parse(await Bun.file(capturePath).text()) as Record<string, unknown>)
+
+const preToolUse = (tool: string, args: Record<string, unknown>, permissionMode?: string) =>
+  Effect.gen(function* () {
+    const executor = yield* HooksExecutor.Service
+    return yield* executor.runDecision({
+      event: "PreToolUse",
+      matchName: tool,
+      tool,
+      sessionID: "ses_1",
+      callID: "c1",
+      args,
+      ...(permissionMode === undefined ? {} : { permissionMode }),
+    })
+  })
+
+describe("hooks executor: Claude format", () => {
+  const editHook = claudeCapture()
+  testEffect(executorLayer(claudeGroup("PreToolUse", "Edit|Write", [editHook]))).effect(
+    "stdin carries Claude's fields and an Edit|Write matcher matches edit",
+    () =>
+      Effect.gen(function* () {
+        yield* trustClaude("PreToolUse", "Edit|Write", [editHook])
+        const decision = yield* preToolUse("edit", { filePath: "/a.ts", oldString: "x", newString: "y" }, "accept-edits")
+        expect(decision).toEqual({ behavior: "undecided" })
+        expect(yield* readCapture).toEqual({
+          session_id: "ses_1",
+          transcript_path: "",
+          cwd: process.cwd(),
+          permission_mode: "acceptEdits",
+          hook_event_name: "PreToolUse",
+          tool_name: "Edit",
+          tool_input: { file_path: "/a.ts", old_string: "x", new_string: "y" },
+          tool_use_id: "c1",
+        })
+        expect(yield* Effect.promise(() => Bun.file(claudeEnvPath).text())).toBe(dir)
+      }),
+  )
+
+  testEffect(executorLayer(claudeGroup("PreToolUse", "Edit|Write", [markScript]))).effect(
+    "Claude matchers test the Claude tool name, not the Flynncode id",
+    () =>
+      Effect.gen(function* () {
+        yield* trustClaude("PreToolUse", "Edit|Write", [markScript])
+        yield* preToolUse("bash", { command: "ls" })
+        expect(yield* Effect.promise(() => Bun.file(markerPath).text())).toBe("pristine")
+      }),
+  )
+
+  const allowHook = `printf '%s' '${JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "allow",
+      updatedInput: { file_path: "/b.ts", old_string: "x", new_string: "z", bogus: true },
+    },
+  })}'`
+  testEffect(executorLayer(claudeGroup("PreToolUse", "Edit", [allowHook]))).effect(
+    "permissionDecision allow rewrites the input in Flynncode's argument names",
+    () =>
+      Effect.gen(function* () {
+        yield* trustClaude("PreToolUse", "Edit", [allowHook])
+        expect(yield* preToolUse("edit", { filePath: "/a.ts", oldString: "x", newString: "y" })).toEqual({
+          behavior: "allow",
+          updatedInput: { filePath: "/b.ts", oldString: "x", newString: "z" },
+        })
+      }),
+  )
+
+  const denyHook = `printf '%s' '${JSON.stringify({
+    hookSpecificOutput: { permissionDecision: "deny", permissionDecisionReason: "protected file" },
+  })}'`
+  testEffect(executorLayer(claudeGroup("PreToolUse", "Edit", [denyHook]))).effect("permissionDecision deny denies", () =>
+    Effect.gen(function* () {
+      yield* trustClaude("PreToolUse", "Edit", [denyHook])
+      expect(yield* preToolUse("edit", { filePath: "/a.ts" })).toEqual({ behavior: "deny", message: "protected file" })
+    }),
+  )
+
+  const askHook = `printf '%s' '${JSON.stringify({ hookSpecificOutput: { permissionDecision: "ask" } })}'`
+  const plainAllowHook = `printf '%s' '${JSON.stringify({ hookSpecificOutput: { permissionDecision: "allow" } })}'`
+  testEffect(executorLayer(claudeGroup("PreToolUse", undefined, [plainAllowHook, askHook]))).effect(
+    "ask beats allow and, until the runner can ask, leaves the call to the permission rules",
+    () =>
+      Effect.gen(function* () {
+        yield* trustClaude("PreToolUse", undefined, [plainAllowHook, askHook])
+        expect(yield* preToolUse("bash", { command: "ls" })).toEqual({ behavior: "undecided" })
+      }),
+  )
+
+  const exit2Hook = `echo "on stdout"; echo "rm is not allowed" >&2; exit 2`
+  testEffect(executorLayer(claudeGroup("PreToolUse", "Bash", [exit2Hook]))).effect("exit 2 denies with stderr", () =>
+    Effect.gen(function* () {
+      yield* trustClaude("PreToolUse", "Bash", [exit2Hook])
+      expect(yield* preToolUse("bash", { command: "rm -rf /" })).toEqual({ behavior: "deny", message: "rm is not allowed" })
+    }),
+  )
+
+  const exit1Hook = `echo "broken hook" >&2; exit 1`
+  const slowHook = { type: "command" as const, command: "sleep 30", timeout: 0.05 }
+  testEffect(executorLayer(claudeGroup("PreToolUse", "Bash", [exit1Hook, slowHook, "exit 7"]))).effect(
+    "other exits and timeouts are ignored",
+    () =>
+      Effect.gen(function* () {
+        yield* trustClaude("PreToolUse", "Bash", [exit1Hook, slowHook, "exit 7"])
+        expect(yield* preToolUse("bash", { command: "ls" })).toEqual({ behavior: "undecided" })
+      }),
+  )
+
+  testEffect(executorLayer({ PreToolUse: [{ hooks: [{ type: "command", command: exit1Hook }] }] })).effect(
+    "native exit 1 still denies",
+    () =>
+      Effect.gen(function* () {
+        yield* Effect.promise(() => trustDef(HooksTrust.fromHandler("PreToolUse", undefined, { type: "command", command: exit1Hook })))
+        expect(yield* preToolUse("bash", { command: "ls" })).toEqual({ behavior: "deny", message: "broken hook" })
+      }),
+  )
+
+  testEffect(executorLayer(claudeGroup("SessionStart", "startup", [observeTextScript]))).effect(
+    "SessionStart plain stdout becomes context",
+    () =>
+      Effect.gen(function* () {
+        yield* trustClaude("SessionStart", "startup", [observeTextScript])
+        const executor = yield* HooksExecutor.Service
+        const out = yield* executor.runObserve({
+          event: "SessionStart",
+          matchName: "startup",
+          sessionID: "ses_1",
+          payload: { source: "startup" },
+        })
+        expect(out).toEqual({ additionalContext: "Build docs live in ./docs" })
+      }),
+  )
+
+  const contextHook = `printf '%s' '${JSON.stringify({
+    systemMessage: "hello",
+    hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: "use superpowers" },
+  })}'`
+  testEffect(executorLayer(claudeGroup("SessionStart", undefined, [contextHook]))).effect(
+    "SessionStart JSON context and systemMessage reach the observe result",
+    () =>
+      Effect.gen(function* () {
+        yield* trustClaude("SessionStart", undefined, [contextHook])
+        const executor = yield* HooksExecutor.Service
+        const out = yield* executor.runObserve({
+          event: "SessionStart",
+          matchName: "startup",
+          sessionID: "ses_1",
+          payload: { source: "startup" },
+        })
+        expect(out).toEqual({ additionalContext: "use superpowers", systemMessage: "hello" })
+      }),
+  )
+
+  const postBlockHook = `printf '%s' '${JSON.stringify({ decision: "block", reason: "lint failed" })}'`
+  testEffect(executorLayer(claudeGroup("PostToolUse", "Bash", [postBlockHook]))).effect(
+    "PostToolUse decision block replaces the model-visible output",
+    () =>
+      Effect.gen(function* () {
+        yield* trustClaude("PostToolUse", "Bash", [postBlockHook])
+        const executor = yield* HooksExecutor.Service
+        const out = yield* executor.runPostTool({
+          tool: "bash",
+          matchName: "bash",
+          sessionID: "ses_1",
+          callID: "c1",
+          args: { command: "ls" },
+          output: "a.txt",
+        })
+        expect(out).toEqual({ blocked: true, reason: "lint failed" })
+      }),
+  )
+})
+
+const mcpFixture = path.join(import.meta.dir, "../fixture/mcp-lifecycle-stdio.ts")
+const mcpHook = claudeCapture()
+const withMcp = testEffect(
+  LayerNode.compile(LayerNode.group([HooksExecutor.node, MCP.node]), [
+    [Config.node, configLayer({
+      PreToolUse: [
+        { matcher: "mcp__.*", format: "claude", source: claudeSource, hooks: [{ type: "command", command: mcpHook }] },
+      ],
+    })],
+    [RuntimeFlags.node, RuntimeFlags.layer({ bypassHookTrust: false })],
+  ]),
+)
+
+describe("hooks executor: Claude format with MCP", () => {
+  withMcp.instance("an mcp__.* matcher matches an MCP tool under its Claude name", () =>
+    Effect.gen(function* () {
+      yield* trustClaude("PreToolUse", "mcp__.*", [mcpHook])
+      const mcp = yield* MCP.Service
+      yield* mcp.add("demo-srv", { type: "local", command: [process.execPath, mcpFixture] })
+      const id = Object.keys(yield* mcp.tools()).find((key) => key.endsWith("current_directory"))
+      expect(id).toBeDefined()
+      yield* preToolUse(id ?? "", {})
+      const stdin = yield* readCapture
+      expect(stdin["tool_name"]).toBe("mcp__demo-srv__current_directory")
+      expect(stdin["tool_input"]).toEqual({})
+    }),
+  )
+})
+
+const transcriptHook = claudeCapture()
+const withSession = testEffect(
+  LayerNode.compile(LayerNode.group([HooksExecutor.node, Session.node, MessageV2.node, SessionProjector.node]), [
+    [Config.node, configLayer(claudeGroup("UserPromptSubmit", undefined, [transcriptHook]))],
+    [RuntimeFlags.node, RuntimeFlags.layer({ bypassHookTrust: false })],
+  ]),
+)
+
+describe("hooks executor: Claude format with a session", () => {
+  withSession.instance("transcript_path points at the session's up-to-date transcript", () =>
+    Effect.gen(function* () {
+      yield* trustClaude("UserPromptSubmit", undefined, [transcriptHook])
+      const session = yield* Session.Service
+      const created = yield* session.create({})
+      const messageID = MessageID.ascending()
+      yield* session.updateMessage({
+        id: messageID,
+        sessionID: created.id,
+        role: "user",
+        time: { created: Date.now() },
+        agent: "test",
+        model: { providerID: "test", modelID: "test" },
+        tools: {},
+        mode: "",
+      } as unknown as SessionV1.Info)
+      yield* session.updatePart({ id: PartID.ascending(), sessionID: created.id, messageID, type: "text", text: "hello" })
+      const executor = yield* HooksExecutor.Service
+      yield* executor.runObserve({
+        event: "UserPromptSubmit",
+        matchName: "",
+        sessionID: created.id,
+        payload: { prompt: "hello" },
+      })
+      const stdin = yield* readCapture
+      expect(stdin["prompt"]).toBe("hello")
+      expect(stdin["transcript_path"]).toBe(ClaudeTranscript.path(created.id))
+      const lines = (yield* Effect.promise(() => Bun.file(ClaudeTranscript.path(created.id)).text())).trim().split("\n")
+      expect(JSON.parse(lines[0] ?? "{}").uuid).toBe(messageID)
+      yield* session.remove(created.id)
+    }),
   )
 })
 

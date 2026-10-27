@@ -12,6 +12,15 @@ export function matchesMatcher(toolOrSource: string, matcher: string | undefined
   }
 }
 
+// Claude Code matchers: a plain name or an `A|B` list matches whole names
+// (`Edit` is not `MultiEdit`); anything else is a regex, as in matchesMatcher.
+// An undefined name is an event Claude never matches on, so every group runs.
+export function matchesClaudeMatcher(name: string | undefined, matcher: string | undefined) {
+  if (name === undefined || !matcher || matcher === "*") return true
+  if (/^[A-Za-z0-9_|]+$/.test(matcher)) return matcher.split("|").includes(name)
+  return matchesMatcher(name, matcher)
+}
+
 export function filterGroups(groups: Array<ConfigHooksV1.HookGroup>, toolOrSource: string) {
   return groups.filter((group) => matchesMatcher(toolOrSource, group.matcher))
 }
