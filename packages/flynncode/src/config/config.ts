@@ -24,6 +24,7 @@ import { containsPath, type InstanceContext } from "../project/instance-context"
 import { ConfigV1 } from "@flynncode/core/v1/config/config"
 import { ConfigHooksV1 } from "@flynncode/core/v1/config/hooks"
 import { HooksConfig } from "@/hooks/config"
+import { RuntimeFlags } from "@/effect/runtime-flags"
 import { RemoteAuthError } from "@flynncode/core/v1/config/error"
 import { ConfigPermissionV1 } from "@flynncode/core/v1/config/permission"
 import { ConfigPluginV1 } from "@flynncode/core/v1/config/plugin"
@@ -56,6 +57,13 @@ function mergeConfigConcatArrays(target: Info, source: Info): Info {
   // higher precedence never replaces lower.
   if (target.hooks || source.hooks) {
     merged.hooks = HooksConfig.mergeHooksConfigs(target.hooks, source.hooks)
+  }
+  // A project's switched-off Claude sources add to the global list.
+  if (target.claude_hooks?.disabled && source.claude_hooks?.disabled) {
+    merged.claude_hooks = {
+      ...merged.claude_hooks,
+      disabled: Array.from(new Set([...target.claude_hooks.disabled, ...source.claude_hooks.disabled])),
+    }
   }
   return merged
 }
@@ -310,6 +318,7 @@ const layer = Layer.effect(
     const authSvc = yield* Auth.Service
     const accountSvc = yield* Account.Service
     const env = yield* Env.Service
+    const flags = yield* RuntimeFlags.Service
     const installDependencies = yield* ConfigDependencies.make
     const http = yield* HttpClient.HttpClient
 
@@ -535,7 +544,7 @@ const layer = Layer.effect(
     // Claude Code hooks from Claude user settings, the project `.claude`
     // directories and enabled Claude plugins.
     const loadClaudeHooks = Effect.fnUntraced(function* (ctx: InstanceContext, disabled: ReadonlyArray<string>) {
-      if (Flag.OPENCODE_DISABLE_CLAUDE_HOOKS) return undefined
+      if (flags.disableClaudeHooks) return undefined
       const user = path.join(Global.Path.home, ".claude")
       const dirs = yield* claudeDirs(ctx)
       const loaded = yield* Effect.promise(() =>
@@ -548,6 +557,7 @@ const layer = Layer.effect(
         }),
       )
       yield* Effect.forEach(loaded.warnings, (warning) => Effect.logWarning(warning))
+      yield* Effect.forEach(loaded.notices, (notice) => Effect.logDebug(notice))
       return Object.keys(loaded.hooks).length > 0 ? loaded.hooks : undefined
     })
 
@@ -985,7 +995,7 @@ const layer = Layer.effect(
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [FSUtil.node, Auth.node, Account.node, Env.node, Npm.node, httpClient],
+  deps: [FSUtil.node, Auth.node, Account.node, Env.node, Npm.node, httpClient, RuntimeFlags.node],
 })
 
 export * as Config from "./config"

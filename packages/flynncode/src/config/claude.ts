@@ -356,9 +356,13 @@ const decodeHandler = Schema.decodeUnknownOption(ConfigHooksV1.HookHandler)
 // `.claude/settings{,.local}.json` files and the `hooks/hooks.json` of every
 // plugin enabled in `~/.claude/settings.json`. Groups are tagged with their
 // source, `format: "claude"` and the env Claude gives them, with
-// `${CLAUDE_PLUGIN_ROOT}` and `${CLAUDE_PROJECT_DIR}` expanded in commands.
-// Sources in `disabled` are listed but contribute no hooks. Bad files and
-// entries are skipped with a warning; nothing here fails config loading.
+// `${CLAUDE_PLUGIN_ROOT}` and `${CLAUDE_PROJECT_DIR}` (braced or not) expanded
+// in commands. Sources in `disabled` are listed but contribute no hooks.
+// Claude's own `disableAllHooks: true` skips every source when it is set in the
+// user settings, and a project's sources when it is set in that project's.
+// Bad files and entries are skipped with a warning; nothing here fails config
+// loading. `notices` holds the unsupported-event warnings, which are
+// debug-level material: they are also in `sources[].warnings`, not `warnings`.
 export async function loadHooks(input: {
   home: string
   projectDirs: ReadonlyArray<string>
@@ -368,22 +372,6 @@ export async function loadHooks(input: {
   const claude = path.join(input.home, ".claude")
   const env = { CLAUDE_PROJECT_DIR: input.projectRoot }
   const settings = await readJson(path.join(claude, "settings.json"))
-  const plugins = await pluginCandidates(claude, settings.value, env)
-  const projects = await Promise.all(
-    input.projectDirs
-      .filter((dir) => dir !== claude)
-      .map(async (dir) => ({
-        id: `claude:project:${dir}`,
-        kind: "project" as const,
-        label: `Claude Code project settings (${dir})`,
-        root: dir,
-        env,
-        files: await Promise.all(
-          ["settings.json", "settings.local.json"].map((file) => readJson(path.join(dir, file))),
-        ),
-        warnings: [],
-      })),
-  )
   const user = {
     id: "claude:user",
     kind: "user" as const,
@@ -393,6 +381,25 @@ export async function loadHooks(input: {
     files: [settings, await readJson(path.join(claude, "settings.local.json"))],
     warnings: [],
   }
+  if (hooksDisabled(user.files)) return { hooks: HooksConfig.mergeHooksConfigs(), sources: [], warnings: [], notices: [] }
+  const plugins = await pluginCandidates(claude, settings.value, env, input.projectRoot)
+  const projects = (
+    await Promise.all(
+      input.projectDirs
+        .filter((dir) => dir !== claude)
+        .map(async (dir) => ({
+          id: `claude:project:${dir}`,
+          kind: "project" as const,
+          label: `Claude Code project settings (${dir})`,
+          root: dir,
+          env,
+          files: await Promise.all(
+            ["settings.json", "settings.local.json"].map((file) => readJson(path.join(dir, file))),
+          ),
+          warnings: [],
+        })),
+    )
+  ).filter((candidate) => !hooksDisabled(candidate.files))
   // A source with neither hooks nor warnings (e.g. settings without hooks) is
   // not worth listing.
   const loaded = [user, ...projects, ...plugins.candidates]
@@ -405,15 +412,30 @@ export async function loadHooks(input: {
         .flatMap((item) => item.groups.map((entry) => ({ [entry.event]: [entry.group] }))),
     ),
     sources: loaded.map((item) => item.source),
-    warnings: [...plugins.warnings, ...loaded.flatMap((item) => item.source.warnings)],
+    warnings: [
+      ...plugins.warnings,
+      ...loaded.flatMap((item) => item.source.warnings.filter((warning) => !item.notices.includes(warning))),
+    ],
+    notices: loaded.flatMap((item) => item.notices),
   }
+}
+
+// Claude merges settings files, `settings.local.json` winning, and any
+// `disableAllHooks: true` left in the result switches its hooks off.
+function hooksDisabled(files: ReadonlyArray<JsonFile>) {
+  return (
+    files
+      .map((file) => (isRecord(file.value) ? file.value.disableAllHooks : undefined))
+      .filter((value) => typeof value === "boolean")
+      .at(-1) === true
+  )
 }
 
 // Plugins set to `true` in `enabledPlugins`, resolved through
 // `installed_plugins.json` (version 2: name -> list of installs). The user
-// install wins, else the last one listed. A plugin without `hooks/hooks.json`
-// has no hooks and is not a source.
-async function pluginCandidates(claude: string, settings: unknown, env: Record<string, string>) {
+// install wins, else the project install whose `projectPath` is this project.
+// A plugin without `hooks/hooks.json` has no hooks and is not a source.
+async function pluginCandidates(claude: string, settings: unknown, env: Record<string, string>, projectRoot: string) {
   const enabled =
     isRecord(settings) && isRecord(settings.enabledPlugins)
       ? Object.entries(settings.enabledPlugins)
@@ -422,16 +444,24 @@ async function pluginCandidates(claude: string, settings: unknown, env: Record<s
       : []
   if (enabled.length === 0) return { candidates: [], warnings: [] }
   const installed = await readJson(path.join(claude, "plugins", "installed_plugins.json"))
-  if (installed.value === undefined) return { candidates: [], warnings: installed.warnings }
-  if (!isRecord(installed.value) || !isRecord(installed.value.plugins)) {
-    return { candidates: [], warnings: [`skipped Claude plugin hooks: ${installed.file} has no "plugins" object`] }
+  // An invalid file already carries its own warning.
+  if (installed.warnings.length > 0) return { candidates: [], warnings: installed.warnings }
+  const unsupported = (reason: string) => ({
+    candidates: [],
+    warnings: [`skipped Claude plugin hooks: unsupported installed_plugins.json format (${reason}): ${installed.file}`],
+  })
+  if (installed.value === undefined) return unsupported("file is missing")
+  if (!isRecord(installed.value) || installed.value.version !== 2 || !isRecord(installed.value.plugins)) {
+    return unsupported("expected version 2 with a plugins object")
   }
   const plugins = installed.value.plugins
   const candidates = await Promise.all(
     enabled.map(async (name): Promise<HookCandidate | undefined> => {
       const listed = plugins[name]
       const entries = Array.isArray(listed) ? listed.filter(isRecord) : []
-      const entry = entries.find((item) => item.scope === "user") ?? entries.at(-1)
+      const entry =
+        entries.find((item) => item.scope === "user") ??
+        entries.find((item) => item.scope === "project" && item.projectPath === projectRoot)
       const root = typeof entry?.installPath === "string" ? entry.installPath : undefined
       const base = {
         id: `claude:plugin:${name}`,
@@ -440,7 +470,16 @@ async function pluginCandidates(claude: string, settings: unknown, env: Record<s
         root,
         env,
       }
-      if (!root) return { ...base, files: [], warnings: [`skipped Claude plugin ${name}: not in ${installed.file}`] }
+      if (!entry) {
+        const reason =
+          entries.length === 0
+            ? `not in ${installed.file}`
+            : `no user-scope install and no project-scope install for ${projectRoot}`
+        return { ...base, files: [], warnings: [`skipped Claude plugin ${name}: ${reason}`] }
+      }
+      if (!root) {
+        return { ...base, files: [], warnings: [`skipped Claude plugin ${name}: install entry has no installPath`] }
+      }
       if (!existsSync(root)) {
         return { ...base, files: [], warnings: [`skipped Claude plugin ${name}: install path ${root} is missing`] }
       }
@@ -464,6 +503,10 @@ async function pluginCandidates(claude: string, settings: unknown, env: Record<s
 function loadSource(candidate: HookCandidate, disabled: ReadonlySet<string>) {
   const parsed = candidate.files.map((file) => parseHooks(file, candidate))
   const groups = parsed.flatMap((item) => item.groups)
+  // One entry per unsupported event, however many of the source's files use it.
+  const notices = [...new Set(parsed.flatMap((item) => item.unsupported))].map(
+    (event) => `skipped Claude hook event ${event} in ${candidate.id}: not supported`,
+  )
   const source: ClaudeHookSource = {
     id: candidate.id,
     kind: candidate.kind,
@@ -476,31 +519,43 @@ function loadSource(candidate: HookCandidate, disabled: ReadonlySet<string>) {
       ...candidate.warnings,
       ...candidate.files.flatMap((file) => file.warnings),
       ...parsed.flatMap((item) => item.warnings),
+      ...notices,
     ],
   }
-  return { groups, source }
+  return { groups, source, notices }
 }
 
 function parseHooks(json: JsonFile, candidate: HookCandidate) {
-  if (!isRecord(json.value) || json.value.hooks === undefined) return { groups: [], warnings: [] }
+  if (!isRecord(json.value) || json.value.hooks === undefined) return { groups: [], warnings: [], unsupported: [] }
   if (!isRecord(json.value.hooks)) {
-    return { groups: [], warnings: [`skipped Claude hooks in ${json.file}: "hooks" is not an object`] }
+    return {
+      groups: [],
+      warnings: [`skipped Claude hooks in ${json.file}: "hooks" is not an object`],
+      unsupported: [],
+    }
   }
   const events = Object.entries(json.value.hooks).map((entry) => {
     const event = entry[0]
-    if (!HOOK_EVENTS.has(event)) {
-      return { groups: [], warnings: [`skipped Claude hook event ${event} in ${json.file}: not supported`] }
-    }
+    if (!HOOK_EVENTS.has(event)) return { groups: [], warnings: [], unsupported: [event] }
     if (!Array.isArray(entry[1])) {
-      return { groups: [], warnings: [`skipped Claude hook event ${event} in ${json.file}: expected a list of groups`] }
+      return {
+        groups: [],
+        warnings: [`skipped Claude hook event ${event} in ${json.file}: expected a list of groups`],
+        unsupported: [],
+      }
     }
     const parsed = entry[1].map((raw: unknown) => parseGroup(raw, `${json.file} (${event})`, candidate))
     return {
       groups: parsed.flatMap((item): Array<LoadedGroup> => (item.group ? [{ event, group: item.group }] : [])),
       warnings: parsed.flatMap((item) => item.warnings),
+      unsupported: [],
     }
   })
-  return { groups: events.flatMap((item) => item.groups), warnings: events.flatMap((item) => item.warnings) }
+  return {
+    groups: events.flatMap((item) => item.groups),
+    warnings: events.flatMap((item) => item.warnings),
+    unsupported: events.flatMap((item) => item.unsupported),
+  }
 }
 
 function parseGroup(raw: unknown, where: string, candidate: HookCandidate) {
@@ -538,8 +593,13 @@ function expandHandler(handler: ConfigHooksV1.HookHandler, env: Record<string, s
   if (handler.type !== "command") return handler
   return {
     ...handler,
-    command: handler.command.replace(/\$\{(CLAUDE_PLUGIN_ROOT|CLAUDE_PROJECT_DIR)\}/g, (match, name: string) =>
-      Object.hasOwn(env, name) ? env[name] : match,
+    // Whole names only: $CLAUDE_PROJECT_DIRX is some other variable.
+    command: handler.command.replace(
+      /\$(?:\{(CLAUDE_PLUGIN_ROOT|CLAUDE_PROJECT_DIR)\}|(CLAUDE_PLUGIN_ROOT|CLAUDE_PROJECT_DIR)(?![A-Za-z0-9_]))/g,
+      (match, braced?: string, bare?: string) => {
+        const name = braced ?? bare ?? ""
+        return Object.hasOwn(env, name) ? env[name] : match
+      },
     ),
   }
 }

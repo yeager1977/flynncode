@@ -63,7 +63,7 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
             event: item.event,
             matcher: item.matcher,
             summary: item.summary,
-            trusted: managed || HooksTrust.sourceTrusted(item.def) || trustedAt !== undefined,
+            trusted: managed || trustedAt !== undefined,
             trustedAt,
             managed,
           }

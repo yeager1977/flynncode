@@ -48,7 +48,8 @@ export const bind = Effect.fn("HooksTrust.bind")(function* (
     ...new Set(
       def.command
         .split(/[\s;|&()<>`]+/)
-        .map((token) => token.replace(/^['"]|['"]$/g, ""))
+        // Quotes may sit mid-token: "$CLAUDE_PROJECT_DIR"/hooks/x.sh expands to "/root"/hooks/x.sh.
+        .map((token) => token.replaceAll(/['"]/g, ""))
         .filter((token) => token !== "" && !token.startsWith("-"))
         .map((token) => path.resolve(project.cwd, token))
         .filter((file) => inside(project.root, file)),
@@ -127,14 +128,6 @@ export function fromHandler(
   return { ...base, type: "prompt", prompt: handler.prompt, model: handler.model }
 }
 
-// Hooks from the user's own Claude settings (~/.claude, outside any
-// repository) run without review, as Claude Code runs them. Claude project and
-// plugin hooks go through review. Only the config loader sets `source`: it
-// strips it from config files, so a file cannot claim this.
-export function sourceTrusted(def: HookDef) {
-  return def.source === "claude:user"
-}
-
 export interface TrustInterface {
   readonly hashDef: (def: HookDef) => string
   readonly isTrusted: (def: HookDef) => Effect.Effect<boolean>
@@ -183,10 +176,7 @@ export const node = LayerNode.make({
     Effect.gen(function* () {
       return Service.of({
         hashDef,
-        isTrusted: (def) =>
-          sourceTrusted(def)
-            ? Effect.succeed(true)
-            : Effect.promise(() => readHashes().then((hashes) => hashes.has(hashDef(def)))),
+        isTrusted: (def) => Effect.promise(() => readHashes().then((hashes) => hashes.has(hashDef(def)))),
         trust: (def) =>
           Effect.promise(async () => {
             const hashes = await readHashes()

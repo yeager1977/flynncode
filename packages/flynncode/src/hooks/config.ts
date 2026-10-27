@@ -96,8 +96,9 @@ export function summarize(handler: ConfigHooksV1.HookHandler) {
 }
 
 // Only the Claude loader may tag groups with `source`, `format` and `env`. A
-// config file setting them could pose as a trusted Claude source, so native
-// layers lose them before Claude groups are appended.
+// config file setting them could pose as a Claude source (or as another
+// source's trusted hook), so native layers lose them before Claude groups are
+// appended.
 export function stripLoaderTags(info: ConfigHooksV1.Info | undefined) {
   if (!info) return undefined
   return Object.fromEntries(

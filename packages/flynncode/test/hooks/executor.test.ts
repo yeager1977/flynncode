@@ -284,6 +284,59 @@ describe("hooks executor", () => {
       }),
   )
 
+  // Bypass is on so only the executor's own skips stand between these hooks and a spawn.
+  testEffect(
+    executorLayer(
+      { PreToolUse: [{ format: "claude", source: "claude:user", hooks: [{ type: "command", command: markScript }] }] },
+      true,
+    ),
+  ).effect("Claude-format groups are skipped until the executor speaks their protocol", () =>
+    Effect.gen(function* () {
+      const executor = yield* HooksExecutor.Service
+      const decision = yield* executor.runDecision({
+        event: "PreToolUse",
+        matchName: "Bash",
+        tool: "Bash",
+        sessionID: "ses_1",
+        callID: "c1",
+        args: { command: "ls" },
+      })
+      expect(decision).toEqual({ behavior: "undecided" })
+      expect(yield* Effect.promise(() => Bun.file(markerPath).text())).toBe("pristine")
+    }),
+  )
+
+  testEffect(
+    executorLayer(
+      {
+        PreToolUse: [
+          {
+            hooks: [
+              { type: "http", url: "http://127.0.0.1:1/never" },
+              { type: "prompt", prompt: "is this fine? $ARGUMENTS" },
+              { type: "command", command: markScript },
+            ],
+          },
+        ],
+      },
+      true,
+    ),
+  ).effect("http and prompt handlers are skipped without stopping the handlers after them", () =>
+    Effect.gen(function* () {
+      const executor = yield* HooksExecutor.Service
+      const decision = yield* executor.runDecision({
+        event: "PreToolUse",
+        matchName: "Bash",
+        tool: "Bash",
+        sessionID: "ses_1",
+        callID: "c1",
+        args: { command: "ls" },
+      })
+      expect(decision).toEqual({ behavior: "undecided" })
+      expect(yield* Effect.promise(() => Bun.file(markerPath).text())).toBe("ran\n")
+    }),
+  )
+
   testEffect(
     executorLayer({ disableAllHooks: true, PreToolUse: [{ hooks: [{ type: "command", command: markScript }] }] }, true),
   ).effect(
