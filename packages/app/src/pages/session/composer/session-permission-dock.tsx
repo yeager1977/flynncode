@@ -5,6 +5,7 @@ import { DockPrompt } from "@flynncode/session-ui/dock-prompt"
 import { Icon } from "@flynncode/ui/icon"
 import { useLanguage } from "@/context/language"
 import type { ApprovalMode, SandboxLevel } from "@/context/permission"
+import { offersAlwaysApproval, permissionHookReason } from "./permission-dock-state"
 
 const SANDBOX_BADGE_KEY: Record<
   SandboxLevel,
@@ -76,7 +77,7 @@ export function SessionPermissionDock(props: {
               >
                 {language.t("ui.permission.deny")}
               </Button>
-              <Show when={props.request.permission !== "computer_use"}>
+              <Show when={offersAlwaysApproval(props.request)}>
                 <Button
                   variant="secondary"
                   size="normal"
@@ -142,6 +143,15 @@ export function SessionPermissionDock(props: {
             </For>
           </div>
         </div>
+      </Show>
+
+      <Show when={permissionHookReason(props.request)}>
+        {(reason) => (
+          <div data-slot="permission-row">
+            <span data-slot="permission-spacer" aria-hidden="true" />
+            <div data-slot="permission-hint">{language.t("approval.hookReason", { reason: reason() })}</div>
+          </div>
+        )}
       </Show>
 
       <Show when={props.reviewerApproved === true}>

@@ -12,6 +12,8 @@ import { decode64 } from "@/utils/base64"
 import { EventSessionError } from "@flynncode/sdk/v2"
 import { Persist, persisted } from "@/utils/persist"
 import { playSoundById } from "@/utils/sound"
+import { hookBlockReason } from "@/utils/server-errors"
+import { showToast } from "@/utils/toast"
 import { useGlobal } from "./global"
 import { ServerConnection, useServer } from "./server"
 import { type DraftTab, useTabs } from "./tabs"
@@ -369,6 +371,13 @@ function createServerNotificationState(input: {
     time: number,
   ) => {
     const sessionID = event.properties.sessionID
+    // A prompt a UserPromptSubmit hook blocked was never admitted: tell the
+    // user why instead of raising a session error.
+    const blocked = hookBlockReason(event.properties.error)
+    if (blocked !== undefined) {
+      showToast({ variant: "error", title: language.t("approval.hookBlockedPrompt.title"), description: blocked })
+      return
+    }
     void lookup(directory, sessionID).then((session) => {
       if (meta.disposed) return
       if (session?.parentID) return

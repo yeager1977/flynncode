@@ -1,6 +1,7 @@
 import { afterEach, describe, expect } from "bun:test"
 import path from "path"
 import { Server } from "../../src/server/server"
+import { Config } from "../../src/config/config"
 import { Effect, Fiber } from "effect"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, tmpdir } from "../fixture/fixture"
@@ -120,6 +121,87 @@ describe("config HttpApi", () => {
           },
         },
       })
+    }),
+  )
+
+  it.live(
+    "lists Claude Code hook sources and switches one off in the global config",
+    Effect.gen(function* () {
+      const home = yield* tmpdirEffect({})
+      const tmp = yield* tmpdirEffect({ git: true, config: { formatter: false, lsp: false } })
+      const file = Config.globalConfigFile()
+      const before = yield* Effect.promise(() =>
+        Bun.file(file)
+          .text()
+          .catch(() => undefined),
+      )
+      const previousHome = process.env.OPENCODE_TEST_HOME
+      yield* Effect.addFinalizer(() =>
+        Effect.promise(async () => {
+          if (previousHome === undefined) delete process.env.OPENCODE_TEST_HOME
+          else process.env.OPENCODE_TEST_HOME = previousHome
+          if (before === undefined)
+            await Bun.file(file)
+              .delete()
+              .catch(() => undefined)
+          else await Bun.write(file, before)
+        }),
+      )
+      process.env.OPENCODE_TEST_HOME = home.path
+      const hooks = (command: string) => ({
+        hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command }] }] },
+      })
+      yield* Effect.promise(() =>
+        Promise.all([
+          Bun.write(path.join(home.path, ".claude", "settings.json"), JSON.stringify(hooks("user-check.sh"))),
+          Bun.write(path.join(tmp.path, ".claude", "settings.json"), JSON.stringify(hooks("project-check.sh"))),
+        ]),
+      )
+      const project = `claude:project:${path.join(tmp.path, ".claude")}`
+      const headers = { "content-type": "application/json", "x-opencode-directory": tmp.path }
+      const list = () =>
+        Effect.promise(async () => {
+          const response = await app().request("/config/hooks/trust", { headers })
+          expect(response.status).toBe(200)
+          return response.json()
+        })
+      const toggle = (id: string, enabled: boolean) =>
+        Effect.promise(() =>
+          Promise.resolve(
+            app().request("/config/hooks/claude", { method: "POST", headers, body: JSON.stringify({ id, enabled }) }),
+          ),
+        )
+
+      const listed = yield* list()
+      expect(listed.claudeDisabled).toBe(false)
+      expect(listed.claudeSources).toEqual([
+        expect.objectContaining({
+          id: "claude:user",
+          kind: "user",
+          events: ["PreToolUse"],
+          commands: ["user-check.sh"],
+          enabled: true,
+        }),
+        expect.objectContaining({ id: project, kind: "project", commands: ["project-check.sh"], enabled: true }),
+      ])
+      expect(listed.hooks).toContainEqual(expect.objectContaining({ summary: "user-check.sh", source: "claude:user" }))
+
+      const off = yield* toggle(project, false)
+      expect(off.status).toBe(200)
+      const offBody = yield* Effect.promise(() => off.json())
+      expect(offBody.claudeSources).toContainEqual(expect.objectContaining({ id: project, enabled: false }))
+      expect(offBody.hooks).not.toContainEqual(expect.objectContaining({ summary: "project-check.sh" }))
+      expect(yield* Effect.promise(() => Bun.file(file).text())).toContain(project)
+      expect((yield* list()).claudeSources).toContainEqual(expect.objectContaining({ id: project, enabled: false }))
+
+      const on = yield* toggle(project, true)
+      expect(on.status).toBe(200)
+      expect((yield* Effect.promise(() => on.json())).claudeSources).toContainEqual(
+        expect.objectContaining({ id: project, enabled: true }),
+      )
+      expect(yield* Effect.promise(() => Bun.file(file).text())).not.toContain(project)
+
+      expect((yield* toggle("native:hook", false)).status).toBe(400)
     }),
   )
 })

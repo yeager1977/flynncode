@@ -15,6 +15,7 @@ import type {
   AuthRemoveResponses,
   AuthSetErrors,
   AuthSetResponses,
+  ClaudeHookToggleInput,
   CommandListErrors,
   CommandListResponses,
   ComputerUseReply,
@@ -25,6 +26,8 @@ import type {
   Config as Config3,
   ConfigGetErrors,
   ConfigGetResponses,
+  ConfigHooksClaudeToggleErrors,
+  ConfigHooksClaudeToggleResponses,
   ConfigHooksTrustApproveErrors,
   ConfigHooksTrustApproveResponses,
   ConfigHooksTrustListErrors,
@@ -1705,10 +1708,58 @@ export class Trust extends HeyApiClient {
   }
 }
 
+export class Claude extends HeyApiClient {
+  /**
+   * Turn a Claude Code hook source on or off
+   *
+   * Add or remove a Claude Code hook source id in claude_hooks.disabled in the global config file. A source disabled by project config stays disabled.
+   */
+  public toggle<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      claudeHookToggleInput?: ClaudeHookToggleInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { key: "claudeHookToggleInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ConfigHooksClaudeToggleResponses,
+      ConfigHooksClaudeToggleErrors,
+      ThrowOnError
+    >({
+      url: "/config/hooks/claude",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Hooks extends HeyApiClient {
   private _trust?: Trust
   get trust(): Trust {
     return (this._trust ??= new Trust({ client: this.client }))
+  }
+
+  private _claude?: Claude
+  get claude(): Claude {
+    return (this._claude ??= new Claude({ client: this.client }))
   }
 }
 

@@ -7,6 +7,7 @@ import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { showToast } from "@/utils/toast"
+import { hookBlockReason } from "@/utils/server-errors"
 import { endedOnUsageLimit } from "@/utils/usage-limit"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import {
@@ -229,8 +230,13 @@ function Row(props: {
         directory: props.child.directory,
       })
       setSteer("")
-    } catch {
-      showToast({ title: language.t("session.subagents.steer.failed") })
+    } catch (error) {
+      const blocked = hookBlockReason(error)
+      showToast(
+        blocked === undefined
+          ? { title: language.t("session.subagents.steer.failed") }
+          : { variant: "error", title: language.t("approval.hookBlockedPrompt.title"), description: blocked },
+      )
     } finally {
       setSteering(false)
     }

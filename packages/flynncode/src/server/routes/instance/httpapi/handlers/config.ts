@@ -5,6 +5,7 @@ import { HooksExecutor, enumerateHooks } from "@/hooks/executor"
 import { HooksManaged } from "@/hooks/managed"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import * as InstanceState from "@/effect/instance-state"
+import { FSUtil } from "@flynncode/core/fs-util"
 import { Effect, Option } from "effect"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
@@ -16,6 +17,7 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
     const configSvc = yield* Config.Service
     const trustSvc = yield* HooksTrust.Service
     const flags = yield* RuntimeFlags.Service
+    const fs = yield* FSUtil.Service
 
     const get = Effect.fn("ConfigHttpApi.get")(function* () {
       return yield* configSvc.get()
@@ -66,16 +68,48 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
             trusted: managed || trustedAt !== undefined,
             trustedAt,
             managed,
+            source: item.def.source,
           }
         }),
-        managed: (def: HooksTrust.HookDef) =>
-          Option.isSome(maybeManaged) && maybeManaged.value.isManaged(def),
+        managed: (def: HooksTrust.HookDef) => Option.isSome(maybeManaged) && maybeManaged.value.isManaged(def),
       }
+    })
+
+    // Claude Code hook sources as the config loader sees them, including
+    // sources switched off by claude_hooks.disabled.
+    const claudeHooks = Effect.fn("ConfigHttpApi.claudeHooks")(function* () {
+      if (flags.disableClaudeHooks) return { sources: [], warnings: [] }
+      const cfg = yield* configSvc.get()
+      return yield* Config.loadClaudeHookSet(yield* InstanceState.context, cfg.claude_hooks?.disabled ?? []).pipe(
+        Effect.provideService(FSUtil.Service, fs),
+      )
     })
 
     const hooksTrust = Effect.fn("ConfigHttpApi.hooksTrust")(function* () {
       const listed = yield* hooksEntries()
-      return { hooks: listed.entries, bypass: flags.bypassHookTrust }
+      const claude = yield* claudeHooks()
+      return {
+        hooks: listed.entries,
+        bypass: flags.bypassHookTrust,
+        claudeSources: claude.sources,
+        claudeWarnings: claude.warnings,
+        claudeDisabled: flags.disableClaudeHooks,
+      }
+    })
+
+    // The switch writes the global config file, so a source turned off here is
+    // off in every project.
+    const hooksClaudeToggle = Effect.fn("ConfigHttpApi.hooksClaudeToggle")(function* (ctx: {
+      payload: { id: string; enabled: boolean }
+    }) {
+      if (!ctx.payload.id.startsWith("claude:")) return yield* Effect.fail(new HttpApiError.BadRequest({}))
+      const global = yield* configSvc.getGlobal()
+      const current = global.claude_hooks?.disabled ?? []
+      const disabled = ctx.payload.enabled
+        ? current.filter((id) => id !== ctx.payload.id)
+        : Array.from(new Set([...current, ctx.payload.id]))
+      yield* configSvc.updateGlobal({ claude_hooks: { ...global.claude_hooks, disabled } })
+      return yield* hooksTrust()
     })
 
     const hooksTrustOne = Effect.fn("ConfigHttpApi.hooksTrustOne")(function* (ctx: { payload: { hash: string } }) {
@@ -109,5 +143,6 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
       .handle("hooksTrust", hooksTrust)
       .handle("hooksTrustOne", hooksTrustOne)
       .handle("hooksRevoke", hooksRevoke)
+      .handle("hooksClaudeToggle", hooksClaudeToggle)
   }),
 )

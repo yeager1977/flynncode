@@ -668,6 +668,8 @@ export const dict = {
   "approval.sandboxBlocked.description": "This action targets a path outside the session sandbox.",
   "approval.reviewerApproved.note": "Auto-approved by reviewer",
   "approval.reviewerDeferred.note": "The auto reviewer couldn't decide — asking you.",
+  "approval.hookReason": "Hook: {{reason}}",
+  "approval.hookBlockedPrompt.title": "Prompt blocked by hook",
 
   "toast.model.none.title": "No model selected",
   "toast.model.none.description": "Connect a provider to summarize this session",
@@ -1337,6 +1339,17 @@ export const dict = {
   "settings.hooks.status.managed": "managed",
   "settings.hooks.status.trusted": "trusted",
   "settings.hooks.status.pending": "pending review",
+  "settings.hooks.source": "from {{source}}",
+  "settings.hooks.claude.title": "Claude Code",
+  "settings.hooks.claude.description":
+    "Hooks from Claude Code user settings, project .claude settings and plugins enabled in Claude Code. Each hook still needs your trust above. A switch applies in every project.",
+  "settings.hooks.claude.empty": "No Claude Code hooks found.",
+  "settings.hooks.claude.disabledByEnv":
+    "Claude Code hooks are turned off by OPENCODE_DISABLE_CLAUDE_HOOKS or OPENCODE_DISABLE_CLAUDE_CODE.",
+  "settings.hooks.claude.kind.user": "user settings",
+  "settings.hooks.claude.kind.project": "project settings",
+  "settings.hooks.claude.kind.plugin": "plugin",
+  "settings.hooks.claude.toggle": "Run hooks from {{source}}",
   "settings.tab.modelRouter": "Model Router",
   "settings.modelRouter.title": "Model Router",
   "settings.modelRouter.description": "Route agents to the best Ollama model for each kind of task.",

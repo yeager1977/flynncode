@@ -3,7 +3,7 @@ title: Hooks
 description: Run your own commands at lifecycle points - tool use, permissions, session events, and compaction.
 ---
 
-Hooks let you run your own commands at fixed points in a session's lifecycle: before and after tool calls, when a permission would normally prompt, when a session starts or ends, and around compaction. Hooks are declared in JSON configuration, execute shell commands or MCP tools, and can deny actions, rewrite tool input, or inject context.
+Hooks let you run your own commands at fixed points in a session's lifecycle: before and after tool calls, when a permission would normally prompt, when a session starts or ends, and around compaction. Hooks are declared in JSON configuration, run shell commands, MCP tools, HTTP endpoints or a model prompt, and can deny actions, ask for confirmation, rewrite tool input, block a prompt or a stop, or inject context. Hooks written for Claude Code also run, from Claude's settings and enabled Claude plugins: see [Claude Code hooks](#claude-code-hooks).
 
 In-process extensions live in [plugins](/docs/plugins). Hooks are the file-based complement: they work in any language that can read JSON from stdin and print a response.
 
@@ -42,32 +42,39 @@ Hook groups merge across config layers (global, project, and managed policy): ho
 
 ## Events
 
-Twelve events are available. They fall into three kinds:
+Fourteen events are available. They fall into four kinds:
 
-- **Decision** hooks can deny a tool call or rewrite its input. They block execution until they return.
-- **Post** hooks run after a tool executed. They can block or replace the tool result the model sees.
-- **Observe** hooks inject context or report; they cannot block execution (with one documented exception below).
+- **Decision** hooks can deny a tool call, ask the user to confirm it, or rewrite its input. They block execution until they return.
+- **Post** hooks run after a tool executed or failed. They can block or replace the tool result the model sees.
+- **Blocking** hooks can stop a prompt from being admitted (`UserPromptSubmit`) or refuse a stop and keep the turn going (`Stop`, `SubagentStop`). Otherwise they behave like observe hooks.
+- **Observe** hooks inject context or report; they cannot block execution.
 
 | Event | Kind | Matcher matches on | Fires when |
 |---|---|---|---|
 | `PreToolUse` | Decision | Tool name | Before a tool call executes |
 | `PermissionRequest` | Decision | Tool name | Instead of showing a permission prompt |
-| `PostToolUse` | Post | Tool name | After a tool executed |
+| `PostToolUse` | Post | Tool name | After a tool succeeded |
+| `PostToolUseFailure` | Post | Tool name | Instead of `PostToolUse`, when a tool errors or is aborted |
+| `Notification` | Observe | Type (`permission_prompt`, `question`, `idle`) | A permission prompt or a question waits for the user, or a root session goes idle after a turn |
 | `SessionStart` | Observe | Session source (`startup`, `resume`, `clear`, `compact`) | A session is created |
 | `SessionEnd` | Observe | (empty - matches all) | A session is removed |
 | `PreCompact` | Observe | Trigger (`manual`, `auto`) | Before a compaction runs |
 | `PostCompact` | Observe | Trigger (`manual`, `auto`) | After a compaction succeeded |
-| `UserPromptSubmit` | Observe | (empty - matches all) | A user prompt is admitted, before the turn runs |
+| `UserPromptSubmit` | Blocking | (empty - matches all) | A user prompt is about to be admitted, before the turn runs |
 | `SubagentStart` | Observe | Agent type | A subagent session starts |
-| `SubagentStop` | Observe | Agent type | A subagent session stops |
-| `Stop` | Observe | Reason (`idle`, `interrupt`) | The session goes idle |
+| `SubagentStop` | Blocking | Agent type | A subagent's turn ends on its own, before it returns its result |
+| `Stop` | Blocking | (always `idle`) | A root session's turn ends on its own, before the session goes idle |
 | `Interrupt` | Observe | (always `interrupt`) | The user interrupts the session |
+
+`Stop` and `SubagentStop` run at the end of the prompt loop, only for a turn that ended on its own. They do not fire after a cancel, an error, a content-filter stop, a rejected permission, a `continue: false` halt or a compaction-only turn. A session with a `parentID` fires `SubagentStop`; a root session fires `Stop`.
+
+`UserPromptSubmit` does not run for synthetic prompts: background-task results, shell and monitor notifications, peer messages, and `Stop` continuations.
 
 ---
 
 ## Handler shapes
 
-Two handler types are supported.
+Four handler types are supported: `command`, `mcp_tool`, `http` and `prompt`.
 
 ### command
 
@@ -125,6 +132,64 @@ Calls a tool on a connected [MCP server](/docs/mcp-servers). The `input` object 
 }
 ```
 
+### http
+
+POSTs the hook input JSON (the same object a command gets on stdin, in the group's format) to `url`.
+
+```json title="opencode.json"
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "http",
+            "url": "http://127.0.0.1:8787/hooks/pre-tool",
+            "headers": { "Authorization": "Bearer ${POLICY_TOKEN}" },
+            "allowedEnvVars": ["POLICY_TOKEN"],
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+- `headers` - `$VAR` and `${VAR}` in header values are filled in only for names listed in `allowedEnvVars`; any other variable becomes an empty string.
+- A 2xx response whose body is a JSON object is read exactly like "exit 0 with that JSON on stdout", in the group's format.
+- A non-2xx status, a timeout, a network error, or a body that is not a JSON object is logged and ignored, in every format. Unlike a failing native command, an unreachable endpoint never denies. HTTP has no exit-2 equivalent.
+- `timeout` - in seconds, default 60. `statusMessage` works as for `command`.
+
+### prompt
+
+Asks a model to judge the event. The model must answer `{"ok": boolean, "reason"?: string}`.
+
+```json title="opencode.json"
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Did the assistant finish every task the user asked for? Event: $ARGUMENTS",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+- `$ARGUMENTS` in `prompt` is replaced with the hook input JSON. If it is absent, the input is appended to the prompt.
+- `model` - `provider/model`. Without it the configured `small_model` is used, else the session's model.
+- `ok: false` denies a `PreToolUse` or `PermissionRequest` call, blocks a `UserPromptSubmit` prompt, and refuses a `Stop`/`SubagentStop` with `reason` as the continuation. On other events it is logged.
+- `ok: true`, a model error, or an answer that is not valid JSON expresses no opinion.
+- `timeout` - in seconds, default 60. `statusMessage` works as for `command`.
+
 ---
 
 ## Input payload
@@ -136,12 +201,15 @@ Every hook receives one JSON object on stdin (for `mcp_tool` handlers, the same 
 | `event` | all | The event name, e.g. `"PreToolUse"` |
 | `sessionID` | all | The session the hook fired for |
 | `cwd` | all | The directory the hook runs in |
-| `tool`, `callID`, `args` | decision and PostToolUse events | The tool call: name, ID, and arguments object |
+| `tool`, `callID`, `args` | decision, PostToolUse and PostToolUseFailure events | The tool call: name, ID, and arguments object |
 | `output` | `PostToolUse` | The tool's output |
+| `error`, `isInterrupt` | `PostToolUseFailure` | The error text, and whether the call was interrupted (aborted) |
 | `model` | `PreToolUse` and `PostToolUse` | The model driving the turn, when known |
 | `permission_mode` | decision and PostToolUse events | The active permission approval mode, when known |
 | `source` | `SessionStart` | One of `startup`, `resume`, `clear`, `compact` |
-| `reason` | `SessionEnd`, `Stop`, `Interrupt` | Why the session went idle or was interrupted (`idle` or `interrupt`; on `SessionEnd` currently always `other`) |
+| `reason` | `SessionEnd`, `Stop`, `Interrupt` | `idle` on `Stop`, `interrupt` on `Interrupt`; on `SessionEnd` currently always `other` |
+| `stopHookActive` | `Stop`, `SubagentStop` | `true` when this stop follows a continuation a stop hook forced |
+| `message`, `notificationType`, `tool` | `Notification` | The notice text, its type (`permission_prompt`, `question`, `idle`), and the tool id for a permission prompt |
 | `prompt` | `UserPromptSubmit` | The text of the admitted prompt |
 | `trigger`, `phase` | `PreCompact` / `PostCompact` | One of `manual` / `auto`, and `pre` / `post` |
 | `agentID`, `agentType` | `SubagentStart` / `SubagentStop` | The subagent session ID and agent name |
@@ -165,6 +233,7 @@ Exit code 0 with JSON on stdout:
 - `{"behavior": "deny", "message": "..."}` - the call fails with `message` (default "Denied by hook"). In a deny, every other hook's context and rewrites are discarded.
 - `{"behavior": "allow", "updatedInput": { ... }}` - the call proceeds with replaced arguments.
 - `{"behavior": "allow", "additionalContext": "..."}` - the call proceeds; the text is added as context for the turn.
+- `{"behavior": "ask", "message": "...", "updatedInput"?: { ... }}` - ask the user. See [The ask decision](#the-ask-decision).
 - `{"behavior": "undecided", "additionalContext": "..."}` - no opinion; context is still carried.
 
 On `PermissionRequest`, `updatedInput` is ignored: the hook may only deny or skip the prompt.
@@ -176,11 +245,20 @@ Other outcomes of a decision hook:
 - **Any other non-zero exit, a timeout, a spawn failure, or non-empty stdout that is not valid decision JSON** (including valid JSON without a recognized `behavior`) - **fails closed**: the call is denied with a generic message.
 - **MCP tool errors** for an `mcp_tool` decision hook also fail closed (deny).
 
-When several decision hooks match, **deny wins** regardless of order; otherwise the first `updatedInput` rewrite wins and remaining contexts are joined with a blank line.
+When several decision hooks match, **deny beats ask, and ask beats allow**, regardless of order (deny > ask > allow > undecided); otherwise the first `updatedInput` rewrite wins and remaining contexts are joined with a blank line.
 
 For `PermissionRequest`, hooks run after config permission rules - a config-level deny has already applied, and the hook only stands in for a prompt the user would otherwise see. A deny still wins over any allow, in every approval mode.
 
-### PostToolUse
+### The ask decision
+
+A `PreToolUse` hook can return `ask`: native `{"behavior": "ask", "message": "..."}` or Claude `"permissionDecision": "ask"`. It forces the normal permission prompt for that call even when a rule or an earlier "always" approval would allow it, and even under accept-edits.
+
+- There is exactly one prompt: the tool's own permission prompt, with its real patterns (the command, the file path) after any `updatedInput` rewrite. Tools without their own permission check get one prompt under the tool's id before they run.
+- The hook's message is shown in the prompt (`metadata.reason`).
+- The prompt cannot be skipped by another prompt's "always" answer, and it carries no "always" patterns: the app does not offer "Allow always", and an "always" reply from another client approves only this call.
+- Config deny rules still deny. In `auto` approval mode the auto-reviewer answers it, as it answers every prompt; `PermissionRequest` hooks and the plugin `permission.ask` hook can answer it too.
+
+### PostToolUse and PostToolUseFailure
 
 Exit code 0. The hook may:
 
@@ -189,6 +267,8 @@ Exit code 0. The hook may:
 - Return anything else (or plain text, or nothing): no effect.
 
 Non-zero exits other than 2 and timeouts are warn-and-ignore: a post hook failing closed would only degrade the result, so it does not block.
+
+`PostToolUseFailure` fires instead of `PostToolUse` when the tool body fails (an error, a permission denial or rejection, a sandbox violation) or the call is aborted (`isInterrupt: true`). A `PreToolUse` deny does not fire it, because the tool never ran. A block reason or `additionalContext` from the hook is appended to the error the model sees.
 
 ### Observe hooks
 
@@ -199,15 +279,22 @@ Exit code 0, JSON:
 ```
 
 - `additionalContext` - injected as model context, with placement per event (see below).
-- `systemMessage` - surfaced to the user as a warning log; never enters the model context.
-- `continue` - `false` is honored by `PreCompact` (it skips the post-compaction auto-continue turn). On other events it is parsed but has no effect (`SubagentStart` ignores it by design).
+- `systemMessage` - written to the log as a warning; it never enters the model context and is not yet shown in the app.
+- `continue` - `false` is honored by `PreCompact` (it skips the post-compaction auto-continue turn). On other native observe events it is parsed but has no effect (`SubagentStart` ignores it by design). Claude-format hooks honor it more widely; see [Claude output](#claude-output).
 - `stopReason` - recorded in logs alongside `continue`.
 
 Plain-text stdout is developer context: **on observe events, non-empty non-JSON stdout is promoted wholesale to `additionalContext`** (bounded by `additionalContextLimit` when set). Any valid JSON keeps its parsed behavior, and empty stdout stays a no-op.
 
 Observe hooks never block: exit 2, other non-zero exits, and timeouts are logged and ignored.
 
-**UserPromptSubmit exception:** the runner treats a failing `UserPromptSubmit` hook as blocking the whole prompt (the turn aborts with a hook error rather than continuing silently). Exit 2 and structured block shapes from a file hook are not honored on this event - treat that as a documented deviation.
+### Blocking hooks (UserPromptSubmit, Stop, SubagentStop)
+
+These accept everything observe hooks do, and can also block: exit 2 (stderr is the reason, then stdout) or `{"behavior": "deny", "message": "<reason>"}`. A Claude-format hook blocks with exit 2 or `"decision": "block"`, and a `prompt` handler with `ok: false`.
+
+- **`UserPromptSubmit`:** the prompt is not admitted. No user message is written and no model call is made, and the app shows the reason in a toast. Over HTTP, `POST /session/:id/prompt_async` publishes a `session.error` whose message is `Prompt blocked by hook: <reason>`; the synchronous `POST /session/:id/message` and `/command` routes answer `422` with `{"name": "PromptBlockedError", "data": {"message": "<reason>"}}`.
+- **`Stop` and `SubagentStop`:** the stop is refused. The reason is admitted as a synthetic user message (`Stop hook feedback:` followed by the reason; the app shows it as a compact "Background activity" divider) and the loop runs another turn. The next stop hook input has `stopHookActive: true` (`stop_hook_active` for Claude hooks). A `SubagentStop` block continues the sub-agent before it returns its result.
+- **Cap:** at most **8** forced continuations per user prompt. After that the stop is allowed and a warning is logged; the hook still runs on that ninth stop. A new real prompt resets the count.
+- A `Stop` hook runs inline before the session goes idle, so a slow hook keeps the session busy for its run. A cancel interrupts it.
 
 ---
 
@@ -217,7 +304,7 @@ Observed `additionalContext` is placed differently per event:
 
 - **Sticky (whole session):** `SessionStart`, `SubagentStart` (stored on the child subagent session), and `PostCompact`. These are stored per session, deduplicated, capped at 100 entries, injected into every assembled system prompt after the built-in sections, and cleared when the session is removed.
 - **Per-turn:** `UserPromptSubmit` context rides on the admitted user message for that prompt only. `PreCompact` context is appended to that compaction's prompt only.
-- **Report-only:** `SessionEnd`, `SubagentStop`, `Stop`, and `Interrupt` - their output is logged and discarded; nothing is stored.
+- **Report-only:** `SessionEnd`, `SubagentStop`, `Stop`, `Notification` and `Interrupt` - their context output is logged and discarded; nothing is stored. (A `Stop`/`SubagentStop` block reason is the exception: it becomes the continuation.)
 
 `additionalContextLimit` (command handlers only) truncates context at every one of these surfaces, including promoted plain-stdout text.
 
@@ -225,7 +312,7 @@ Observed `additionalContext` is placed differently per event:
 
 ## Matchers
 
-Each group's optional `matcher` is a regular expression tested (unanchored, `RegExp.test`) against the match name for the event: the tool name for `PreToolUse`, `PermissionRequest`, and `PostToolUse`; the session source for `SessionStart`; the trigger for `PreCompact`/`PostCompact`; the agent type for `SubagentStart`/`SubagentStop`; and the idle/interrupt reason for `Stop`/`Interrupt`. `"Bash"` also matches `AnyBash`-like names because the pattern is unanchored.
+Each group's optional `matcher` is a regular expression tested (unanchored, `RegExp.test`) against the match name for the event: the tool name for `PreToolUse`, `PermissionRequest`, `PostToolUse` and `PostToolUseFailure`; the notification type for `Notification`; the session source for `SessionStart`; the trigger for `PreCompact`/`PostCompact`; the agent type for `SubagentStart`/`SubagentStop`; and the idle/interrupt reason for `Stop`/`Interrupt`. Claude-format groups match differently; see [Claude input](#claude-input). `"Bash"` also matches `AnyBash`-like names because the pattern is unanchored.
 
 - Omitted, empty, or `"*"` match everything.
 - Invalid patterns never match (and never crash the call).
@@ -244,16 +331,110 @@ A hook is executable code. Flynncode reviews it before running it.
 
 **Bypass flag.** The CLI flag `--dangerously-bypass-hook-trust` (environment equivalent `FLYNNCODE_BYPASS_HOOK_TRUST`) treats every hook as trusted for that one invocation, without writing trust state. It exists for automation; the review flow is preferred for interactive use. The flag is process-memory only and is never inherited by the commands, shells, or nested CLI processes a hook or session spawns.
 
-**Kill switch.** `"hooks": { "disableAllHooks": true }` disables every hook from file configuration - including managed (MDM) policy hooks - and cannot be re-enabled by the bypass flag. In-process plugin hooks are unaffected by this switch.
+**Kill switch.** `"hooks": { "disableAllHooks": true }` disables every hook from file configuration - including managed (MDM) policy hooks and Claude Code hooks - and cannot be re-enabled by the bypass flag. In-process plugin hooks are unaffected by this switch. Claude Code hooks have their own switches; see [Sources and switches](#sources-and-switches).
 
 ---
 
 ## Timings
 
-- Every hook has a **timeout in seconds**; the default is 600 seconds. `SessionEnd` hooks are advisory with a 1 second default and a hard 3 second cap.
-- On timeout the hook's whole process group receives `SIGTERM`; after 3 more seconds it is sent `SIGKILL`, so orphaned grandchildren cannot hold pipes open.
+- Every hook has a **timeout in seconds**. The default is 600 seconds for `command` (and `mcp_tool`) handlers and 60 seconds for `http` and `prompt` handlers. `SessionEnd` hooks are advisory with a 1 second default and a hard 3 second cap.
+- On timeout a command hook's whole process group receives `SIGTERM`; after 3 more seconds it is sent `SIGKILL`, so orphaned grandchildren cannot hold pipes open.
 - `timeoutMs` caps may also be applied programmatically; a per-hook `timeout` larger than the event's cap is clamped down.
 - Handlers marked `"async": true` run detached. Their output is discarded (context, decisions, and blocking do not apply). At most 8 async hooks run concurrently per session; synchronous hooks are never queued behind them. Asynchronous hooks are cancelled when their session is removed.
+
+---
+
+## Claude Code hooks
+
+Flynncode also runs hooks written for Claude Code. They join the same runner, tagged with the Claude format, and run **after** the native hooks of the same event.
+
+### Sources and switches
+
+| Source | Source id | Files |
+|---|---|---|
+| Claude user | `claude:user` | `~/.claude/settings.json`, `~/.claude/settings.local.json` (`hooks` key) |
+| Claude project | `claude:project:<absolute .claude dir>` | `<dir>/.claude/settings.json` and `settings.local.json` for each project `.claude` directory from the worktree root down to the working directory |
+| Claude plugin | `claude:plugin:<name@marketplace>` | `<installPath>/hooks/hooks.json` (`hooks` key) for every plugin set to `true` in `enabledPlugins` of `~/.claude/settings.json`, resolved through `~/.claude/plugins/installed_plugins.json` (version 2). The `user`-scope install is preferred, then a `project`-scope install for this project. |
+
+Variables:
+
+- `${CLAUDE_PROJECT_DIR}` (the project root) and, for plugins, `${CLAUDE_PLUGIN_ROOT}` (the plugin's install path) are expanded in `command` strings, braced or not, and are also set as environment variables.
+- Plugin hooks also get `CLAUDE_PLUGIN_DATA=~/.claude/plugins/data/<plugin id with @ replaced by ->`.
+
+Only hooks are imported. Permissions, env, model and other settings, and plugin commands, agents, skills and MCP servers are not.
+
+Bad sources are skipped with a warning shown on the Hooks settings page and in the log: invalid JSON, an unknown event or handler type (Claude's `agent` type is not supported), a missing install path, or a plugin missing from `installed_plugins.json`. Other hooks are unaffected.
+
+Switches, from widest to narrowest:
+
+- `"hooks": { "disableAllHooks": true }` in Flynncode config turns off every hook, Claude hooks included.
+- `OPENCODE_DISABLE_CLAUDE_HOOKS=1` turns off only the Claude sources. `OPENCODE_DISABLE_CLAUDE_CODE=1` turns them off too, with the rest of the Claude Code compatibility.
+- Claude's own `"disableAllHooks": true`: in the Claude user settings it turns off every Claude source; in a project's settings it turns off that project source. The last value across `settings.json` and `settings.local.json` wins.
+- `"claude_hooks": { "disabled": ["<source id>", ...] }` in Flynncode config skips the listed sources. Lists from every config layer are combined. Each source on the **Settings → Hooks → Claude Code** page has an on/off switch, which adds or removes its id in the global config file (`~/.config/flynncode/opencode.jsonc`). A source disabled in a project config stays off there.
+
+**Trust.** Claude hooks go through the same [trust review](#trust-and-the-kill-switch) as native hooks. The source id is part of each hook's identity, and the settings page names the source of every hook awaiting review. A changed command is a new hook and needs trust again.
+
+### Claude input
+
+A Claude-format hook gets Claude Code's stdin fields:
+
+| Field | Events |
+|---|---|
+| `session_id`, `transcript_path`, `cwd`, `permission_mode`, `hook_event_name` | all |
+| `tool_name`, `tool_input`, `tool_use_id` | `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PostToolUseFailure` |
+| `tool_response` | `PostToolUse` |
+| `error`, `is_interrupt` | `PostToolUseFailure` |
+| `prompt` | `UserPromptSubmit` |
+| `source` (`startup`, `resume`, `clear`, `compact`) | `SessionStart` |
+| `reason` | `SessionEnd` |
+| `trigger` (`manual`, `auto`), `custom_instructions` | `PreCompact` |
+| `stop_hook_active` | `Stop`, `SubagentStop` |
+| `agent_id`, `agent_type` | `SubagentStart`, `SubagentStop` |
+| `message`, `notification_type` | `Notification` |
+
+Translation:
+
+- **Tool names** use Claude's: `bash` → `Bash`, `read` → `Read`, `edit` → `Edit`, `write` → `Write`, `glob` → `Glob`, `grep` → `Grep`, `task` → `Task`, `question` → `AskUserQuestion`, and so on. MCP tools become `mcp__<server>__<tool>`. A tool with no Claude name keeps its Flynncode id.
+- **`tool_input`** keys of translated tools are snake_case (`filePath` → `file_path`, `oldString` → `old_string`), at every depth.
+- **`tool_response`** is `{stdout, interrupted}` for Bash, `{filePath, success}` for file writes and edits, and `{output}` otherwise.
+- **`permission_mode`**: `manual` → `default`, `accept-edits` → `acceptEdits`, `auto` → `auto`.
+- **`notification_type`**: `permission_prompt`, `elicitation_dialog` (a question) or `idle_prompt` (idle).
+- **Matchers** test the Claude name: a plain name or an `A|B` list must equal the whole name (`Edit|Write`), any other matcher is an unanchored regular expression (`mcp__.*`). On `Notification` they test the Claude `notification_type`; on `UserPromptSubmit` and `Stop` they are ignored.
+
+### Claude output
+
+| Result | Meaning |
+|---|---|
+| Exit 2 | Depends on the event, below. |
+| Exit 0, stdout is a JSON object | Claude's JSON fields, below. |
+| Exit 0, plain text | Added as context on `SessionStart` and `UserPromptSubmit`; ignored elsewhere. |
+| Any other exit, a timeout, or a spawn failure | Logged and ignored. Claude hooks never deny on error. |
+
+Exit 2:
+
+- `PreToolUse`, `PermissionRequest`: deny the call; stderr goes to the model.
+- `PostToolUse`, `PostToolUseFailure`: stderr goes to the model.
+- `UserPromptSubmit`: block the prompt; stderr is shown to the user.
+- `Stop`, `SubagentStop`: refuse the stop; stderr is the continuation reason.
+- Other events: stderr is logged.
+
+JSON fields:
+
+- `hookSpecificOutput.permissionDecision` (`allow`, `deny`, `ask`) with `permissionDecisionReason`, on `PreToolUse`.
+- `hookSpecificOutput.updatedInput` on `PreToolUse`, translated back to Flynncode argument names. Keys that don't map are dropped with a warning.
+- `hookSpecificOutput.additionalContext` on `SessionStart`, `UserPromptSubmit`, `PostToolUse` and `PostToolUseFailure`.
+- `decision: "block"` with `reason`: on `PostToolUse` the tool output is kept and the reason is appended on a marked line; on `UserPromptSubmit` the prompt is blocked; on `Stop`/`SubagentStop` the stop is refused.
+- `continue: false` with `stopReason`: on `PreToolUse` and `PermissionRequest` the call is denied, and on `PostToolUse`/`PostToolUseFailure` its result is blocked; the turn then ends after that tool step. On `UserPromptSubmit` the prompt is blocked. On `Stop`/`SubagentStop` it outranks `decision: "block"`, so the stop goes through.
+- `systemMessage`: logged as a warning. It is not yet shown in the app.
+
+### Transcript file
+
+`transcript_path` points to `<data dir>/claude-transcripts/<sessionID>.jsonl` (the data dir is `~/.local/share/opencode`), written in Claude Code's transcript line format: one JSON object per message with `type` (`user` or `assistant`), `message` (`role` and `content` blocks: `text`, `tool_use {id, name, input}`, `tool_result {tool_use_id, content, is_error}`), `uuid`, `parentUuid`, `timestamp`, `sessionId` and `cwd`.
+
+- It is brought up to date right before a Claude-format hook runs, and exists only for sessions where one ran. New messages are appended; the last written message is kept in `<sessionID>.cursor`. A message still streaming is written on a later update.
+- Tool names and inputs use the Claude translation above.
+- It is deleted with its session and swept with the rest of the history retention.
+- A failed write is logged, and the hook still runs with the last good path, or an empty `transcript_path`.
 
 ---
 

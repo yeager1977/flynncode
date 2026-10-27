@@ -16,13 +16,33 @@ export const HooksTrustEntry = Schema.Struct({
   trusted: Schema.Boolean,
   trustedAt: Schema.optional(Schema.Number),
   managed: Schema.Boolean,
+  source: Schema.optional(Schema.String),
 }).annotate({ identifier: "HooksTrustEntry" })
 export type HooksTrustEntry = Schema.Schema.Type<typeof HooksTrustEntry>
+
+export const ClaudeHookSource = Schema.Struct({
+  id: Schema.String,
+  kind: Schema.Literals(["user", "project", "plugin"]),
+  label: Schema.String,
+  root: Schema.optional(Schema.String),
+  events: Schema.Array(Schema.String),
+  commands: Schema.Array(Schema.String),
+  enabled: Schema.Boolean,
+  warnings: Schema.Array(Schema.String),
+}).annotate({ identifier: "ClaudeHookSource" })
 
 export const HooksTrustList = Schema.Struct({
   hooks: Schema.Array(HooksTrustEntry),
   bypass: Schema.Boolean,
+  claudeSources: Schema.Array(ClaudeHookSource),
+  claudeWarnings: Schema.Array(Schema.String),
+  claudeDisabled: Schema.Boolean,
 }).annotate({ identifier: "HooksTrustList" })
+
+export const ClaudeHookToggleInput = Schema.Struct({
+  id: Schema.String,
+  enabled: Schema.Boolean,
+}).annotate({ identifier: "ClaudeHookToggleInput" })
 
 export const HooksHashInput = Schema.Struct({
   hash: Schema.String,
@@ -111,6 +131,19 @@ export const ConfigApi = HttpApi.make("config")
             identifier: "config.hooks.trust.revoke",
             summary: "Revoke hook trust",
             description: "Remove trust for a hook hash. Managed hooks cannot be revoked.",
+          }),
+        ),
+        HttpApiEndpoint.post("hooksClaudeToggle", `${root}/hooks/claude`, {
+          query: WorkspaceRoutingQuery,
+          payload: ClaudeHookToggleInput,
+          success: described(HooksTrustList, "Hooks with trust state after the change"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "config.hooks.claude.toggle",
+            summary: "Turn a Claude Code hook source on or off",
+            description:
+              "Add or remove a Claude Code hook source id in claude_hooks.disabled in the global config file. A source disabled by project config stays disabled.",
           }),
         ),
       )

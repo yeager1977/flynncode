@@ -2998,15 +2998,35 @@ export type HooksTrustEntry = {
   trusted: boolean
   trustedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   managed: boolean
+  source?: string
+}
+
+export type ClaudeHookSource = {
+  id: string
+  kind: "user" | "project" | "plugin"
+  label: string
+  root?: string
+  events: Array<string>
+  commands: Array<string>
+  enabled: boolean
+  warnings: Array<string>
 }
 
 export type HooksTrustList = {
   hooks: Array<HooksTrustEntry>
   bypass: boolean
+  claudeSources: Array<ClaudeHookSource>
+  claudeWarnings: Array<string>
+  claudeDisabled: boolean
 }
 
 export type HooksHashInput = {
   hash: string
+}
+
+export type ClaudeHookToggleInput = {
+  id: string
+  enabled: boolean
 }
 
 export type ComputerUseReply = {
@@ -8907,6 +8927,34 @@ export type ConfigHooksTrustRevokeResponses = {
 }
 
 export type ConfigHooksTrustRevokeResponse = ConfigHooksTrustRevokeResponses[keyof ConfigHooksTrustRevokeResponses]
+
+export type ConfigHooksClaudeToggleData = {
+  body?: ClaudeHookToggleInput
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/config/hooks/claude"
+}
+
+export type ConfigHooksClaudeToggleErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type ConfigHooksClaudeToggleError = ConfigHooksClaudeToggleErrors[keyof ConfigHooksClaudeToggleErrors]
+
+export type ConfigHooksClaudeToggleResponses = {
+  /**
+   * Hooks with trust state after the change
+   */
+  200: HooksTrustList
+}
+
+export type ConfigHooksClaudeToggleResponse = ConfigHooksClaudeToggleResponses[keyof ConfigHooksClaudeToggleResponses]
 
 export type ComputerUseRequestsData = {
   body?: never

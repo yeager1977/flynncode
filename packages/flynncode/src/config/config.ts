@@ -311,6 +311,36 @@ function writableGlobal(info: Info) {
   return next
 }
 
+// `~/.claude` first, then `.claude` directories from the worktree root down
+// to the instance directory, so the closest definition of a name wins.
+const claudeDirectories = Effect.fnUntraced(function* (ctx: InstanceContext) {
+  const fs = yield* FSUtil.Service
+  const global = path.join(Global.Path.home, ".claude")
+  const project = Flag.OPENCODE_DISABLE_PROJECT_CONFIG
+    ? []
+    : yield* fs
+        .up({ targets: [".claude"], start: ctx.directory, stop: ctx.worktree })
+        .pipe(Effect.catch(() => Effect.succeed([] as string[])))
+  return yield* Effect.filter([global, ...project.toReversed().filter((dir) => dir !== global)], (dir) => fs.isDir(dir))
+})
+
+// Claude Code hooks and their sources for an instance: Claude user settings,
+// the project `.claude` directories and enabled Claude plugins. The hooks
+// settings page lists the same sources the loader merges.
+export const loadClaudeHookSet = Effect.fnUntraced(function* (ctx: InstanceContext, disabled: ReadonlyArray<string>) {
+  const user = path.join(Global.Path.home, ".claude")
+  const dirs = yield* claudeDirectories(ctx)
+  return yield* Effect.promise(() =>
+    ConfigClaude.loadHooks({
+      home: Global.Path.home,
+      projectDirs: dirs.filter((dir) => dir !== user),
+      // Non-git projects have "/" as their worktree.
+      projectRoot: ctx.worktree === "/" ? ctx.directory : ctx.worktree,
+      disabled: new Set(disabled),
+    }),
+  )
+})
+
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -505,19 +535,7 @@ const layer = Layer.effect(
       }
     })
 
-    // `~/.claude` first, then `.claude` directories from the worktree root down
-    // to the instance directory, so the closest definition of a name wins.
-    const claudeDirs = Effect.fnUntraced(function* (ctx: InstanceContext) {
-      const global = path.join(Global.Path.home, ".claude")
-      const project = Flag.OPENCODE_DISABLE_PROJECT_CONFIG
-        ? []
-        : yield* fs
-            .up({ targets: [".claude"], start: ctx.directory, stop: ctx.worktree })
-            .pipe(Effect.catch(() => Effect.succeed([] as string[])))
-      return yield* Effect.filter([global, ...project.toReversed().filter((dir) => dir !== global)], (dir) =>
-        fs.isDir(dir),
-      )
-    })
+    const claudeDirs = (ctx: InstanceContext) => claudeDirectories(ctx).pipe(Effect.provideService(FSUtil.Service, fs))
 
     const loadClaudeAgents = Effect.fnUntraced(function* (ctx: InstanceContext) {
       if (Flag.OPENCODE_DISABLE_CLAUDE_CODE_AGENTS) return {}
@@ -545,17 +563,7 @@ const layer = Layer.effect(
     // directories and enabled Claude plugins.
     const loadClaudeHooks = Effect.fnUntraced(function* (ctx: InstanceContext, disabled: ReadonlyArray<string>) {
       if (flags.disableClaudeHooks) return undefined
-      const user = path.join(Global.Path.home, ".claude")
-      const dirs = yield* claudeDirs(ctx)
-      const loaded = yield* Effect.promise(() =>
-        ConfigClaude.loadHooks({
-          home: Global.Path.home,
-          projectDirs: dirs.filter((dir) => dir !== user),
-          // Non-git projects have "/" as their worktree.
-          projectRoot: ctx.worktree === "/" ? ctx.directory : ctx.worktree,
-          disabled: new Set(disabled),
-        }),
-      )
+      const loaded = yield* loadClaudeHookSet(ctx, disabled).pipe(Effect.provideService(FSUtil.Service, fs))
       yield* Effect.forEach(loaded.warnings, (warning) => Effect.logWarning(warning))
       yield* Effect.forEach(loaded.notices, (notice) => Effect.logDebug(notice))
       return Object.keys(loaded.hooks).length > 0 ? loaded.hooks : undefined

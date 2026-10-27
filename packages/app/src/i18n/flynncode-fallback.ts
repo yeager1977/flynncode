@@ -43,6 +43,8 @@ const keys = [
   "approval.mode.manual",
   "approval.reviewerApproved.note",
   "approval.reviewerDeferred.note",
+  "approval.hookReason",
+  "approval.hookBlockedPrompt.title",
   "approval.sandboxBlocked.description",
   "approval.sandboxBlocked.title",
   "computerUse.allowlist.add",

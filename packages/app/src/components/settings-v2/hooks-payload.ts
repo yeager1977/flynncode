@@ -7,6 +7,7 @@ export type HookTrustSource = {
   summary: string
   trusted: boolean
   managed: boolean
+  source?: string
 }
 
 export type HookTrustRow = {
@@ -15,6 +16,24 @@ export type HookTrustRow = {
   matcher: string
   summary: string
   status: HookTrustStatus
+  // The Claude Code source's label (or its id when it is no longer listed);
+  // undefined for native hooks.
+  source?: string
+  sourceID?: string
+}
+
+export type ClaudeHookSource = {
+  id: string
+  kind: "user" | "project" | "plugin"
+  label: string
+  events: Array<string>
+  commands: Array<string>
+  enabled: boolean
+  warnings: Array<string>
+}
+
+export type ClaudeSourceRow = Omit<ClaudeHookSource, "root"> & {
+  pending: number
 }
 
 export function statusOf(entry: Pick<HookTrustSource, "trusted" | "managed">): HookTrustStatus {
@@ -23,13 +42,35 @@ export function statusOf(entry: Pick<HookTrustSource, "trusted" | "managed">): H
   return "pending"
 }
 
-export function trustRows(entries: Array<HookTrustSource>): Array<HookTrustRow> {
+export function trustRows(
+  entries: Array<HookTrustSource>,
+  sources: ReadonlyArray<ClaudeHookSource> = [],
+): Array<HookTrustRow> {
+  const labels = new Map(sources.map((source) => [source.id, source.label]))
   return entries.map((entry) => ({
     hash: entry.hash,
     event: entry.event,
     matcher: entry.matcher,
     summary: entry.summary,
     status: statusOf(entry),
+    source: entry.source === undefined ? undefined : (labels.get(entry.source) ?? entry.source),
+    sourceID: entry.source,
+  }))
+}
+
+export function claudeSourceRows(
+  sources: ReadonlyArray<ClaudeHookSource>,
+  rows: ReadonlyArray<HookTrustRow>,
+): Array<ClaudeSourceRow> {
+  return sources.map((source) => ({
+    id: source.id,
+    kind: source.kind,
+    label: source.label,
+    events: source.events,
+    commands: source.commands,
+    warnings: source.warnings,
+    enabled: source.enabled,
+    pending: rows.filter((row) => row.sourceID === source.id && row.status === "pending").length,
   }))
 }
 

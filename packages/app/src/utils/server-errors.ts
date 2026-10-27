@@ -63,6 +63,23 @@ export function isSessionNotFoundError(error: unknown, sessionID: string) {
   return value._tag === "SessionNotFoundError" && value.sessionID === sessionID
 }
 
+// prompt_async reports a prompt a UserPromptSubmit hook blocked as a
+// session.error UnknownError with this prefix; the sync routes answer 422
+// PromptBlockedError.
+const promptBlockedPrefix = "Prompt blocked by hook: "
+
+export function hookBlockReason(error: unknown) {
+  const unwrapped = unwrapNamedError(error)
+  if (typeof unwrapped !== "object" || unwrapped === null) return undefined
+  const value = unwrapped as { name?: unknown; data?: { message?: unknown } }
+  const message = typeof value.data?.message === "string" ? value.data.message : undefined
+  if (message === undefined) return undefined
+  if (value.name === "PromptBlockedError") return message
+  if (value.name === "UnknownError" && message.startsWith(promptBlockedPrefix))
+    return message.slice(promptBlockedPrefix.length)
+  return undefined
+}
+
 function isConfigInvalidErrorLike(error: unknown): error is ConfigInvalidError {
   if (typeof error !== "object" || error === null) return false
   const o = error as Record<string, unknown>
