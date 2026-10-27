@@ -2182,7 +2182,29 @@ export type Config = {
             timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
             statusMessage?: string
           }
+        | {
+            type: "http"
+            url: string
+            headers?: {
+              [key: string]: string
+            }
+            allowedEnvVars?: Array<string>
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+        | {
+            type: "prompt"
+            prompt: string
+            model?: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
       >
+      source?: string
+      format?: "native" | "claude"
+      env?: {
+        [key: string]: string
+      }
     }>
     PermissionRequest?: Array<{
       matcher?: string
@@ -2205,7 +2227,29 @@ export type Config = {
             timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
             statusMessage?: string
           }
+        | {
+            type: "http"
+            url: string
+            headers?: {
+              [key: string]: string
+            }
+            allowedEnvVars?: Array<string>
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+        | {
+            type: "prompt"
+            prompt: string
+            model?: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
       >
+      source?: string
+      format?: "native" | "claude"
+      env?: {
+        [key: string]: string
+      }
     }>
     PostToolUse?: Array<{
       matcher?: string
@@ -2228,7 +2272,119 @@ export type Config = {
             timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
             statusMessage?: string
           }
+        | {
+            type: "http"
+            url: string
+            headers?: {
+              [key: string]: string
+            }
+            allowedEnvVars?: Array<string>
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+        | {
+            type: "prompt"
+            prompt: string
+            model?: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
       >
+      source?: string
+      format?: "native" | "claude"
+      env?: {
+        [key: string]: string
+      }
+    }>
+    PostToolUseFailure?: Array<{
+      matcher?: string
+      hooks: Array<
+        | {
+            type: "command"
+            command: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+            async?: boolean
+            additionalContextLimit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          }
+        | {
+            type: "mcp_tool"
+            server: string
+            tool: string
+            input?: {
+              [key: string]: unknown
+            }
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+        | {
+            type: "http"
+            url: string
+            headers?: {
+              [key: string]: string
+            }
+            allowedEnvVars?: Array<string>
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+        | {
+            type: "prompt"
+            prompt: string
+            model?: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+      >
+      source?: string
+      format?: "native" | "claude"
+      env?: {
+        [key: string]: string
+      }
+    }>
+    Notification?: Array<{
+      matcher?: string
+      hooks: Array<
+        | {
+            type: "command"
+            command: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+            async?: boolean
+            additionalContextLimit?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+          }
+        | {
+            type: "mcp_tool"
+            server: string
+            tool: string
+            input?: {
+              [key: string]: unknown
+            }
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+        | {
+            type: "http"
+            url: string
+            headers?: {
+              [key: string]: string
+            }
+            allowedEnvVars?: Array<string>
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+        | {
+            type: "prompt"
+            prompt: string
+            model?: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+      >
+      source?: string
+      format?: "native" | "claude"
+      env?: {
+        [key: string]: string
+      }
     }>
     SessionStart?: Array<{
       matcher?: string
@@ -2251,7 +2407,29 @@ export type Config = {
             timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
             statusMessage?: string
           }
+        | {
+            type: "http"
+            url: string
+            headers?: {
+              [key: string]: string
+            }
+            allowedEnvVars?: Array<string>
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+        | {
+            type: "prompt"
+            prompt: string
+            model?: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
       >
+      source?: string
+      format?: "native" | "claude"
+      env?: {
+        [key: string]: string
+      }
     }>
     SessionEnd?: Array<{
       matcher?: string
@@ -2274,7 +2452,29 @@ export type Config = {
             timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
             statusMessage?: string
           }
+        | {
+            type: "http"
+            url: string
+            headers?: {
+              [key: string]: string
+            }
+            allowedEnvVars?: Array<string>
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+        | {
+            type: "prompt"
+            prompt: string
+            model?: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
       >
+      source?: string
+      format?: "native" | "claude"
+      env?: {
+        [key: string]: string
+      }
     }>
     PreCompact?: Array<{
       matcher?: string
@@ -2297,7 +2497,29 @@ export type Config = {
             timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
             statusMessage?: string
           }
+        | {
+            type: "http"
+            url: string
+            headers?: {
+              [key: string]: string
+            }
+            allowedEnvVars?: Array<string>
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+        | {
+            type: "prompt"
+            prompt: string
+            model?: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
       >
+      source?: string
+      format?: "native" | "claude"
+      env?: {
+        [key: string]: string
+      }
     }>
     PostCompact?: Array<{
       matcher?: string
@@ -2320,7 +2542,29 @@ export type Config = {
             timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
             statusMessage?: string
           }
+        | {
+            type: "http"
+            url: string
+            headers?: {
+              [key: string]: string
+            }
+            allowedEnvVars?: Array<string>
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+        | {
+            type: "prompt"
+            prompt: string
+            model?: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
       >
+      source?: string
+      format?: "native" | "claude"
+      env?: {
+        [key: string]: string
+      }
     }>
     UserPromptSubmit?: Array<{
       matcher?: string
@@ -2343,7 +2587,29 @@ export type Config = {
             timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
             statusMessage?: string
           }
+        | {
+            type: "http"
+            url: string
+            headers?: {
+              [key: string]: string
+            }
+            allowedEnvVars?: Array<string>
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+        | {
+            type: "prompt"
+            prompt: string
+            model?: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
       >
+      source?: string
+      format?: "native" | "claude"
+      env?: {
+        [key: string]: string
+      }
     }>
     SubagentStart?: Array<{
       matcher?: string
@@ -2366,7 +2632,29 @@ export type Config = {
             timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
             statusMessage?: string
           }
+        | {
+            type: "http"
+            url: string
+            headers?: {
+              [key: string]: string
+            }
+            allowedEnvVars?: Array<string>
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+        | {
+            type: "prompt"
+            prompt: string
+            model?: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
       >
+      source?: string
+      format?: "native" | "claude"
+      env?: {
+        [key: string]: string
+      }
     }>
     SubagentStop?: Array<{
       matcher?: string
@@ -2389,7 +2677,29 @@ export type Config = {
             timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
             statusMessage?: string
           }
+        | {
+            type: "http"
+            url: string
+            headers?: {
+              [key: string]: string
+            }
+            allowedEnvVars?: Array<string>
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+        | {
+            type: "prompt"
+            prompt: string
+            model?: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
       >
+      source?: string
+      format?: "native" | "claude"
+      env?: {
+        [key: string]: string
+      }
     }>
     Stop?: Array<{
       matcher?: string
@@ -2412,7 +2722,29 @@ export type Config = {
             timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
             statusMessage?: string
           }
+        | {
+            type: "http"
+            url: string
+            headers?: {
+              [key: string]: string
+            }
+            allowedEnvVars?: Array<string>
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+        | {
+            type: "prompt"
+            prompt: string
+            model?: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
       >
+      source?: string
+      format?: "native" | "claude"
+      env?: {
+        [key: string]: string
+      }
     }>
     Interrupt?: Array<{
       matcher?: string
@@ -2435,9 +2767,34 @@ export type Config = {
             timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
             statusMessage?: string
           }
+        | {
+            type: "http"
+            url: string
+            headers?: {
+              [key: string]: string
+            }
+            allowedEnvVars?: Array<string>
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
+        | {
+            type: "prompt"
+            prompt: string
+            model?: string
+            timeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+            statusMessage?: string
+          }
       >
+      source?: string
+      format?: "native" | "claude"
+      env?: {
+        [key: string]: string
+      }
     }>
     disableAllHooks?: boolean
+  }
+  claude_hooks?: {
+    disabled?: Array<string>
   }
   tools?: {
     [key: string]: boolean

@@ -12,15 +12,23 @@ import { Filesystem } from "@/util/filesystem"
 export type HookDef = {
   event: string
   matcher: string
-  type: "command" | "mcp_tool"
+  type: "command" | "mcp_tool" | "http" | "prompt"
   command?: string
   timeout?: number
   server?: string
   tool?: string
   input?: Record<string, unknown>
+  url?: string
+  headers?: Record<string, string>
+  allowedEnvVars?: ReadonlyArray<string>
+  prompt?: string
+  model?: string
   async?: boolean
   additionalContextLimit?: number
   statusMessage?: string
+  // The Claude Code source a loaded group came from, e.g. `claude:user` or
+  // `claude:plugin:<name@marketplace>`; native hooks have none.
+  source?: string
   // Set by bind(): the project the hook was trusted in, and content hashes
   // of project files the command references.
   scope?: string
@@ -99,29 +107,32 @@ export function fromHandler(
   event: string,
   matcher: string | undefined,
   handler: ConfigHooksV1.HookHandler,
+  source?: string,
 ): HookDef {
+  const base = { event, matcher: matcher ?? "", timeout: handler.timeout, statusMessage: handler.statusMessage, source }
   if (handler.type === "command") {
     return {
-      event,
-      matcher: matcher ?? "",
+      ...base,
       type: "command",
       command: handler.command,
-      timeout: handler.timeout,
       async: handler.async,
       additionalContextLimit: handler.additionalContextLimit,
-      statusMessage: handler.statusMessage,
     }
   }
-  return {
-    event,
-    matcher: matcher ?? "",
-    type: "mcp_tool",
-    server: handler.server,
-    tool: handler.tool,
-    input: handler.input,
-    timeout: handler.timeout,
-    statusMessage: handler.statusMessage,
+  if (handler.type === "mcp_tool")
+    return { ...base, type: "mcp_tool", server: handler.server, tool: handler.tool, input: handler.input }
+  if (handler.type === "http") {
+    return { ...base, type: "http", url: handler.url, headers: handler.headers, allowedEnvVars: handler.allowedEnvVars }
   }
+  return { ...base, type: "prompt", prompt: handler.prompt, model: handler.model }
+}
+
+// Hooks from the user's own Claude settings (~/.claude, outside any
+// repository) run without review, as Claude Code runs them. Claude project and
+// plugin hooks go through review. Only the config loader sets `source`: it
+// strips it from config files, so a file cannot claim this.
+export function sourceTrusted(def: HookDef) {
+  return def.source === "claude:user"
 }
 
 export interface TrustInterface {
@@ -172,7 +183,10 @@ export const node = LayerNode.make({
     Effect.gen(function* () {
       return Service.of({
         hashDef,
-        isTrusted: (def) => Effect.promise(() => readHashes().then((hashes) => hashes.has(hashDef(def)))),
+        isTrusted: (def) =>
+          sourceTrusted(def)
+            ? Effect.succeed(true)
+            : Effect.promise(() => readHashes().then((hashes) => hashes.has(hashDef(def)))),
         trust: (def) =>
           Effect.promise(async () => {
             const hashes = await readHashes()

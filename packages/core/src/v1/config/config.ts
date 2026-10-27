@@ -207,7 +207,17 @@ export const Info = Schema.Struct({
   permission: Schema.optional(ConfigPermissionV1.Info),
   hooks: Schema.optional(ConfigHooksV1.Info).annotate({
     description:
-      "Lifecycle hooks: PreToolUse, PermissionRequest, PostToolUse, SessionStart/End, Pre/PostCompact, UserPromptSubmit, SubagentStart/Stop, Stop, Interrupt",
+      "Lifecycle hooks: PreToolUse, PermissionRequest, PostToolUse, PostToolUseFailure, Notification, SessionStart/End, Pre/PostCompact, UserPromptSubmit, SubagentStart/Stop, Stop, Interrupt",
+  }),
+  claude_hooks: Schema.optional(
+    Schema.Struct({
+      disabled: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
+        description:
+          "Claude Code hook source ids to skip: claude:user, claude:project:<.claude dir> or claude:plugin:<name@marketplace>",
+      }),
+    }),
+  ).annotate({
+    description: "Claude Code hooks loaded from Claude settings files and enabled Claude plugins",
   }),
   tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
   attachment: Schema.optional(ConfigAttachmentV1.Info).annotate({

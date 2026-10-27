@@ -532,6 +532,25 @@ const layer = Layer.effect(
       return Object.fromEntries(loaded.flatMap((item) => Object.entries(item.commands)))
     })
 
+    // Claude Code hooks from Claude user settings, the project `.claude`
+    // directories and enabled Claude plugins.
+    const loadClaudeHooks = Effect.fnUntraced(function* (ctx: InstanceContext, disabled: ReadonlyArray<string>) {
+      if (Flag.OPENCODE_DISABLE_CLAUDE_HOOKS) return undefined
+      const user = path.join(Global.Path.home, ".claude")
+      const dirs = yield* claudeDirs(ctx)
+      const loaded = yield* Effect.promise(() =>
+        ConfigClaude.loadHooks({
+          home: Global.Path.home,
+          projectDirs: dirs.filter((dir) => dir !== user),
+          // Non-git projects have "/" as their worktree.
+          projectRoot: ctx.worktree === "/" ? ctx.directory : ctx.worktree,
+          disabled: new Set(disabled),
+        }),
+      )
+      yield* Effect.forEach(loaded.warnings, (warning) => Effect.logWarning(warning))
+      return Object.keys(loaded.hooks).length > 0 ? loaded.hooks : undefined
+    })
+
     const loadInstanceState = Effect.fn("Config.loadInstanceState")(
       function* (ctx: InstanceContext) {
         const auth = yield* authSvc.all().pipe(Effect.orDie)
@@ -778,6 +797,13 @@ const layer = Layer.effect(
               source: managed.source,
             }),
           )
+        }
+
+        // Claude Code hooks run after every native hook of the same event, so
+        // they are appended last, after managed config.
+        const claudeHooks = yield* loadClaudeHooks(ctx, result.claude_hooks?.disabled ?? [])
+        if (result.hooks || claudeHooks) {
+          result.hooks = HooksConfig.mergeHooksConfigs(HooksConfig.stripLoaderTags(result.hooks), claudeHooks)
         }
 
         for (const [name, mode] of Object.entries(result.mode ?? {})) {

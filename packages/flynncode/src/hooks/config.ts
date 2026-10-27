@@ -87,4 +87,30 @@ export function mergeHooksConfigs(
   return (disableAllHooks ? { ...merged, disableAllHooks: true } : merged) as ConfigHooksV1.Info
 }
 
+// One-line description of a handler for logs and the hooks settings page.
+export function summarize(handler: ConfigHooksV1.HookHandler) {
+  if (handler.type === "command") return handler.command
+  if (handler.type === "mcp_tool") return `${handler.server}/${handler.tool}`
+  if (handler.type === "http") return handler.url
+  return handler.prompt
+}
+
+// Only the Claude loader may tag groups with `source`, `format` and `env`. A
+// config file setting them could pose as a trusted Claude source, so native
+// layers lose them before Claude groups are appended.
+export function stripLoaderTags(info: ConfigHooksV1.Info | undefined) {
+  if (!info) return undefined
+  return Object.fromEntries(
+    Object.entries(info).map((entry) => [
+      entry[0],
+      Array.isArray(entry[1])
+        ? entry[1].map((group: ConfigHooksV1.HookGroup) => ({
+            ...(group.matcher === undefined ? {} : { matcher: group.matcher }),
+            hooks: group.hooks,
+          }))
+        : entry[1],
+    ]),
+  ) as ConfigHooksV1.Info
+}
+
 export * as HooksConfig from "./config"

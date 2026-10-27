@@ -113,9 +113,16 @@ function matchedHandlers(hooks: ConfigHooksV1.Info | undefined, event: string, m
   // disableAllHooks is the kill-switch flag, not an event: only array values
   // on real event keys match.
   const value = hooks?.[event as keyof ConfigHooksV1.Info]
-  const groups = HooksConfig.matchHooks(event, matchName, Array.isArray(value) ? value : [])
+  // Claude-format groups expect Claude's stdin and output protocol; running
+  // them with the native one would misread their exit codes, so they wait
+  // until the executor speaks it.
+  const native = Array.isArray(value) ? value.filter((group) => group.format !== "claude") : []
+  const groups = HooksConfig.matchHooks(event, matchName, native)
   return groups.flatMap((group) =>
-    group.hooks.map((handler) => ({ def: HooksTrust.fromHandler(event, group.matcher, handler), handler })),
+    group.hooks.map((handler) => ({
+      def: HooksTrust.fromHandler(event, group.matcher, handler, group.source),
+      handler,
+    })),
   )
 }
 
@@ -130,9 +137,15 @@ export function enumerateHooks(hooks: ConfigHooksV1.Info | undefined) {
     if (!Array.isArray(groups)) return []
     return groups.flatMap((group) =>
       group.hooks.map((handler) => {
-        const def = HooksTrust.fromHandler(event, group.matcher, handler)
-        const summary = handler.type === "command" ? handler.command : `${handler.server}/${handler.tool}`
-        return { event, matcher: group.matcher ?? "", handler, def, summary, hash: HooksTrust.hashDef(def) }
+        const def = HooksTrust.fromHandler(event, group.matcher, handler, group.source)
+        return {
+          event,
+          matcher: group.matcher ?? "",
+          handler,
+          def,
+          summary: HooksConfig.summarize(handler),
+          hash: HooksTrust.hashDef(def),
+        }
       }),
     )
   })
@@ -531,7 +544,14 @@ export const node = LayerNode.make({
             yield* Effect.logWarning(verdict === "killed" ? "hook skipped by hooks.disableAllHooks" : "skipping untrusted hook", {
               event: def.event,
               matcher: def.matcher,
-              command: def.command ?? `${def.server}/${def.tool}`,
+              command: HooksConfig.summarize(handler),
+            })
+            continue
+          }
+          if (handler.type === "http" || handler.type === "prompt") {
+            yield* Effect.logWarning("skipping hook: handler type not supported yet", {
+              event: def.event,
+              type: handler.type,
             })
             continue
           }

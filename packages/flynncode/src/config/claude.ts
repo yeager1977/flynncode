@@ -1,12 +1,16 @@
 export * as ConfigClaude from "./claude"
 
 import path from "path"
-import { Exit, Schema } from "effect"
+import { existsSync } from "fs"
+import { Exit, Option, Schema } from "effect"
 import { Glob } from "@flynncode/core/util/glob"
 import { Wildcard } from "@flynncode/core/util/wildcard"
 import { ConfigAgentV1 } from "@flynncode/core/v1/config/agent"
 import { ConfigCommandV1 } from "@flynncode/core/v1/config/command"
+import { ConfigHooksV1 } from "@flynncode/core/v1/config/hooks"
 import type { PermissionV1 } from "@flynncode/core/v1/permission"
+import { HooksConfig } from "@/hooks/config"
+import { isRecord } from "@/util/record"
 import { configEntryNameFromPath } from "./entry-name"
 import { ConfigMarkdown } from "./markdown"
 
@@ -322,4 +326,232 @@ function color(input: unknown) {
   if (/^#[0-9a-fA-F]{6}$/.test(input)) return { color: input }
   const mapped = COLORS[input.trim().toLowerCase()]
   return mapped ? { color: mapped } : {}
+}
+
+export type ClaudeHookSource = {
+  id: string
+  kind: "user" | "project" | "plugin"
+  label: string
+  root?: string
+  events: Array<string>
+  commands: Array<string>
+  enabled: boolean
+  warnings: Array<string>
+}
+
+type JsonFile = { file: string; value: unknown; warnings: Array<string> }
+
+type HookCandidate = Pick<ClaudeHookSource, "id" | "kind" | "label" | "root" | "warnings"> & {
+  env: Record<string, string>
+  files: Array<JsonFile>
+}
+
+type LoadedGroup = { event: string; group: ConfigHooksV1.HookGroup }
+
+const HOOK_EVENTS = new Set(Object.keys(ConfigHooksV1.Info.fields).filter((key) => key !== "disableAllHooks"))
+const decodeJson = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)
+const decodeHandler = Schema.decodeUnknownOption(ConfigHooksV1.HookHandler)
+
+// Loads Claude Code hooks from `~/.claude/settings{,.local}.json`, the project
+// `.claude/settings{,.local}.json` files and the `hooks/hooks.json` of every
+// plugin enabled in `~/.claude/settings.json`. Groups are tagged with their
+// source, `format: "claude"` and the env Claude gives them, with
+// `${CLAUDE_PLUGIN_ROOT}` and `${CLAUDE_PROJECT_DIR}` expanded in commands.
+// Sources in `disabled` are listed but contribute no hooks. Bad files and
+// entries are skipped with a warning; nothing here fails config loading.
+export async function loadHooks(input: {
+  home: string
+  projectDirs: ReadonlyArray<string>
+  projectRoot: string
+  disabled: ReadonlySet<string>
+}) {
+  const claude = path.join(input.home, ".claude")
+  const env = { CLAUDE_PROJECT_DIR: input.projectRoot }
+  const settings = await readJson(path.join(claude, "settings.json"))
+  const plugins = await pluginCandidates(claude, settings.value, env)
+  const projects = await Promise.all(
+    input.projectDirs
+      .filter((dir) => dir !== claude)
+      .map(async (dir) => ({
+        id: `claude:project:${dir}`,
+        kind: "project" as const,
+        label: `Claude Code project settings (${dir})`,
+        root: dir,
+        env,
+        files: await Promise.all(
+          ["settings.json", "settings.local.json"].map((file) => readJson(path.join(dir, file))),
+        ),
+        warnings: [],
+      })),
+  )
+  const user = {
+    id: "claude:user",
+    kind: "user" as const,
+    label: "Claude Code user settings",
+    root: claude,
+    env,
+    files: [settings, await readJson(path.join(claude, "settings.local.json"))],
+    warnings: [],
+  }
+  // A source with neither hooks nor warnings (e.g. settings without hooks) is
+  // not worth listing.
+  const loaded = [user, ...projects, ...plugins.candidates]
+    .map((candidate) => loadSource(candidate, input.disabled))
+    .filter((item) => item.groups.length > 0 || item.source.warnings.length > 0)
+  return {
+    hooks: HooksConfig.mergeHooksConfigs(
+      ...loaded
+        .filter((item) => item.source.enabled)
+        .flatMap((item) => item.groups.map((entry) => ({ [entry.event]: [entry.group] }))),
+    ),
+    sources: loaded.map((item) => item.source),
+    warnings: [...plugins.warnings, ...loaded.flatMap((item) => item.source.warnings)],
+  }
+}
+
+// Plugins set to `true` in `enabledPlugins`, resolved through
+// `installed_plugins.json` (version 2: name -> list of installs). The user
+// install wins, else the last one listed. A plugin without `hooks/hooks.json`
+// has no hooks and is not a source.
+async function pluginCandidates(claude: string, settings: unknown, env: Record<string, string>) {
+  const enabled =
+    isRecord(settings) && isRecord(settings.enabledPlugins)
+      ? Object.entries(settings.enabledPlugins)
+          .filter((entry) => entry[1] === true)
+          .map((entry) => entry[0])
+      : []
+  if (enabled.length === 0) return { candidates: [], warnings: [] }
+  const installed = await readJson(path.join(claude, "plugins", "installed_plugins.json"))
+  if (installed.value === undefined) return { candidates: [], warnings: installed.warnings }
+  if (!isRecord(installed.value) || !isRecord(installed.value.plugins)) {
+    return { candidates: [], warnings: [`skipped Claude plugin hooks: ${installed.file} has no "plugins" object`] }
+  }
+  const plugins = installed.value.plugins
+  const candidates = await Promise.all(
+    enabled.map(async (name): Promise<HookCandidate | undefined> => {
+      const listed = plugins[name]
+      const entries = Array.isArray(listed) ? listed.filter(isRecord) : []
+      const entry = entries.find((item) => item.scope === "user") ?? entries.at(-1)
+      const root = typeof entry?.installPath === "string" ? entry.installPath : undefined
+      const base = {
+        id: `claude:plugin:${name}`,
+        kind: "plugin" as const,
+        label: `Claude Code plugin ${name}`,
+        root,
+        env,
+      }
+      if (!root) return { ...base, files: [], warnings: [`skipped Claude plugin ${name}: not in ${installed.file}`] }
+      if (!existsSync(root)) {
+        return { ...base, files: [], warnings: [`skipped Claude plugin ${name}: install path ${root} is missing`] }
+      }
+      const hooks = path.join(root, "hooks", "hooks.json")
+      if (!(await Bun.file(hooks).exists())) return undefined
+      return {
+        ...base,
+        env: {
+          ...env,
+          CLAUDE_PLUGIN_ROOT: root,
+          CLAUDE_PLUGIN_DATA: path.join(claude, "plugins", "data", name.replaceAll("@", "-")),
+        },
+        files: [await readJson(hooks)],
+        warnings: [],
+      }
+    }),
+  )
+  return { candidates: candidates.filter((item) => item !== undefined), warnings: [] }
+}
+
+function loadSource(candidate: HookCandidate, disabled: ReadonlySet<string>) {
+  const parsed = candidate.files.map((file) => parseHooks(file, candidate))
+  const groups = parsed.flatMap((item) => item.groups)
+  const source: ClaudeHookSource = {
+    id: candidate.id,
+    kind: candidate.kind,
+    label: candidate.label,
+    root: candidate.root,
+    events: [...new Set(groups.map((entry) => entry.event))],
+    commands: groups.flatMap((entry) => entry.group.hooks.map(HooksConfig.summarize)),
+    enabled: !disabled.has(candidate.id),
+    warnings: [
+      ...candidate.warnings,
+      ...candidate.files.flatMap((file) => file.warnings),
+      ...parsed.flatMap((item) => item.warnings),
+    ],
+  }
+  return { groups, source }
+}
+
+function parseHooks(json: JsonFile, candidate: HookCandidate) {
+  if (!isRecord(json.value) || json.value.hooks === undefined) return { groups: [], warnings: [] }
+  if (!isRecord(json.value.hooks)) {
+    return { groups: [], warnings: [`skipped Claude hooks in ${json.file}: "hooks" is not an object`] }
+  }
+  const events = Object.entries(json.value.hooks).map((entry) => {
+    const event = entry[0]
+    if (!HOOK_EVENTS.has(event)) {
+      return { groups: [], warnings: [`skipped Claude hook event ${event} in ${json.file}: not supported`] }
+    }
+    if (!Array.isArray(entry[1])) {
+      return { groups: [], warnings: [`skipped Claude hook event ${event} in ${json.file}: expected a list of groups`] }
+    }
+    const parsed = entry[1].map((raw: unknown) => parseGroup(raw, `${json.file} (${event})`, candidate))
+    return {
+      groups: parsed.flatMap((item): Array<LoadedGroup> => (item.group ? [{ event, group: item.group }] : [])),
+      warnings: parsed.flatMap((item) => item.warnings),
+    }
+  })
+  return { groups: events.flatMap((item) => item.groups), warnings: events.flatMap((item) => item.warnings) }
+}
+
+function parseGroup(raw: unknown, where: string, candidate: HookCandidate) {
+  if (!isRecord(raw) || !Array.isArray(raw.hooks)) {
+    return {
+      group: undefined,
+      warnings: [`skipped Claude hook group in ${where}: expected { matcher?, hooks: [...] }`],
+    }
+  }
+  if (raw.matcher !== undefined && typeof raw.matcher !== "string") {
+    return { group: undefined, warnings: [`skipped Claude hook group in ${where}: matcher must be a string`] }
+  }
+  const handlers = raw.hooks.map((item: unknown) => ({ item, decoded: decodeHandler(item) }))
+  const hooks = handlers.flatMap((entry) =>
+    Option.isSome(entry.decoded) ? [expandHandler(entry.decoded.value, candidate.env)] : [],
+  )
+  const warnings = handlers
+    .filter((entry) => Option.isNone(entry.decoded))
+    .map((entry) => {
+      const type = isRecord(entry.item) && typeof entry.item.type === "string" ? entry.item.type : "unknown"
+      return `skipped Claude hook in ${where}: unsupported or invalid "${type}" handler`
+    })
+  if (hooks.length === 0) return { group: undefined, warnings }
+  const group: ConfigHooksV1.HookGroup = {
+    ...(raw.matcher === undefined ? {} : { matcher: raw.matcher }),
+    hooks,
+    format: "claude",
+    source: candidate.id,
+    env: candidate.env,
+  }
+  return { group, warnings }
+}
+
+function expandHandler(handler: ConfigHooksV1.HookHandler, env: Record<string, string>) {
+  if (handler.type !== "command") return handler
+  return {
+    ...handler,
+    command: handler.command.replace(/\$\{(CLAUDE_PLUGIN_ROOT|CLAUDE_PROJECT_DIR)\}/g, (match, name: string) =>
+      Object.hasOwn(env, name) ? env[name] : match,
+    ),
+  }
+}
+
+// A missing file is no source; an unreadable or invalid one is a warning.
+async function readJson(file: string): Promise<JsonFile> {
+  const handle = Bun.file(file)
+  if (!(await handle.exists())) return { file, value: undefined, warnings: [] }
+  const text = await handle.text().catch(() => undefined)
+  if (text === undefined) return { file, value: undefined, warnings: [`skipped Claude settings ${file}: unreadable`] }
+  const value = decodeJson(text)
+  if (Option.isNone(value))
+    return { file, value: undefined, warnings: [`skipped Claude settings ${file}: invalid JSON`] }
+  return { file, value: value.value, warnings: [] }
 }

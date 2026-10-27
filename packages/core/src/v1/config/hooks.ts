@@ -19,12 +19,32 @@ export const HookHandler = Schema.Union([
     timeout: Schema.optional(Schema.Number),
     statusMessage: Schema.optional(Schema.String),
   }),
+  Schema.Struct({
+    type: Schema.Literal("http"),
+    url: Schema.String,
+    headers: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+    allowedEnvVars: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
+    timeout: Schema.optional(Schema.Number),
+    statusMessage: Schema.optional(Schema.String),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("prompt"),
+    prompt: Schema.String,
+    model: Schema.optional(Schema.String),
+    timeout: Schema.optional(Schema.Number),
+    statusMessage: Schema.optional(Schema.String),
+  }),
 ])
 export type HookHandler = Schema.Schema.Type<typeof HookHandler>
 
 export const HookGroup = Schema.Struct({
   matcher: Schema.optional(Schema.String),
   hooks: Schema.mutable(Schema.Array(HookHandler)),
+  // Set by the loader on Claude Code groups. The loader strips them from
+  // config files, so a file can never pose as a (trusted) Claude source.
+  source: Schema.optional(Schema.String),
+  format: Schema.optional(Schema.Literals(["native", "claude"])),
+  env: Schema.optional(Schema.Record(Schema.String, Schema.String)),
 })
 export type HookGroup = Schema.Schema.Type<typeof HookGroup>
 
@@ -32,6 +52,8 @@ export const Info = Schema.Struct({
   PreToolUse: Schema.optional(Schema.mutable(Schema.Array(HookGroup))),
   PermissionRequest: Schema.optional(Schema.mutable(Schema.Array(HookGroup))),
   PostToolUse: Schema.optional(Schema.mutable(Schema.Array(HookGroup))),
+  PostToolUseFailure: Schema.optional(Schema.mutable(Schema.Array(HookGroup))),
+  Notification: Schema.optional(Schema.mutable(Schema.Array(HookGroup))),
   SessionStart: Schema.optional(Schema.mutable(Schema.Array(HookGroup))),
   SessionEnd: Schema.optional(Schema.mutable(Schema.Array(HookGroup))),
   PreCompact: Schema.optional(Schema.mutable(Schema.Array(HookGroup))),
