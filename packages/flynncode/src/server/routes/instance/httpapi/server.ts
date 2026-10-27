@@ -57,6 +57,7 @@ import { Snapshot } from "@/snapshot"
 import { Storage } from "@/storage/storage"
 import { SessionDiffSweep } from "@/storage/session-diff-sweep"
 import { BackgroundShells } from "@/shell/background/service"
+import { Scheduler } from "@/schedule/scheduler"
 import { ToolRegistry } from "@/tool/registry"
 import { Truncate } from "@/tool/truncate"
 import { Worktree } from "@/worktree"
@@ -257,6 +258,8 @@ export const app = LayerNode.group([
   SessionDiffSweep.node,
   WorktreeJanitor.node,
   BackgroundShells.node,
+  // Process-global: ticks every 15 s for as long as this server's routes layer lives.
+  Scheduler.node,
   Snapshot.node,
   Plugin.node,
   ModelsDev.node,

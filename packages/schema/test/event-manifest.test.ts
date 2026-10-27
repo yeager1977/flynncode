@@ -4,6 +4,7 @@ import { EventManifest } from "../src/event-manifest"
 import { ComputerUseV1 } from "../src/computer-use-v1"
 import { IdeEvent } from "../src/ide-event"
 import { SessionEvent } from "../src/session-event"
+import { SessionSchedule } from "../src/session-schedule"
 import { SessionTodo } from "../src/session-todo"
 import { SessionV1 } from "../src/session-v1"
 import { ShellBackground } from "../src/shell-background"
@@ -12,7 +13,7 @@ import { WorkspaceEvent } from "../src/workspace-event"
 describe("public event manifest", () => {
   test("owns the complete public event surface", () => {
     expect(EventManifest.ServerDefinitions.length).toBe(59)
-    expect(EventManifest.Definitions.length).toBe(92)
+    expect(EventManifest.Definitions.length).toBe(93)
     expect(SessionV1.Event.Definitions).toEqual([
       SessionV1.Event.Created,
       SessionV1.Event.Updated,
@@ -25,7 +26,7 @@ describe("public event manifest", () => {
       SessionV1.Event.Diff,
       SessionV1.Event.Error,
     ])
-    expect(EventManifest.Latest.size).toBe(92)
+    expect(EventManifest.Latest.size).toBe(93)
     expect(EventManifest.Durable.size).toBe(35)
   })
 
@@ -50,6 +51,7 @@ describe("public event manifest", () => {
       ShellBackground.Event.Output,
       ShellBackground.Event.Exited,
     ])
+    expect(EventManifest.Latest.get("session.schedule.updated")).toBe(SessionSchedule.Event.Updated)
     expect(EventManifest.Definitions.slice(40, 43)).toEqual([
       SessionEvent.RevertEvent.Staged,
       SessionEvent.RevertEvent.Cleared,

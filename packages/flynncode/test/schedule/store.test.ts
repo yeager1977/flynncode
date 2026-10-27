@@ -246,15 +246,16 @@ describe("ScheduleStore", () => {
     }),
   )
 
-  it.effect("expires jobs past expires_at and returns how many went", () =>
+  it.effect("expires jobs past expires_at and returns them", () =>
     Effect.gen(function* () {
       const store = yield* ScheduleStore.Service
       const id = session("expire")
       const recurring = yield* store.create(cron(id))
       const once = yield* store.create({ ...cron(id), recurring: false })
 
-      expect(yield* store.expire(new Date(now.getTime() + 6 * DAY))).toBe(0)
-      expect(yield* store.expire(new Date(now.getTime() + 7 * DAY + 1))).toBe(1)
+      const mine = (jobs: ScheduleStore.Job[]) => jobs.filter((job) => job.session_id === id).map((job) => job.id)
+      expect(mine(yield* store.expire(new Date(now.getTime() + 6 * DAY)))).toEqual([])
+      expect(mine(yield* store.expire(new Date(now.getTime() + 7 * DAY + 1)))).toEqual([recurring.id])
       expect((yield* store.list(id)).map((job) => job.id)).toEqual([once.id])
       expect(recurring.expires_at).not.toBeNull()
     }),

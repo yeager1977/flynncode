@@ -51,6 +51,7 @@ import { HooksRunner } from "@/hooks/runner"
 import { HooksContext } from "@/hooks/context"
 import { HooksExecutor } from "@/hooks/executor"
 import { ClaudeTranscript } from "@/hooks/claude-transcript"
+import { ScheduleStore } from "@/schedule/store"
 
 const parentTitlePrefix = "New session - "
 const childTitlePrefix = "Child session - "
@@ -523,6 +524,7 @@ const layer: Layer.Layer<
   | EventV2Bridge.Service
   | FSUtil.Service
   | SessionFolders.Service
+  | ScheduleStore.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -533,6 +535,7 @@ const layer: Layer.Layer<
     const flags = yield* RuntimeFlags.Service
     const fs = yield* FSUtil.Service
     const sessionFolders = yield* SessionFolders.Service
+    const schedules = yield* ScheduleStore.Service
 
     const requireExtras = Effect.fn("Session.requireExtras")(function* (directory: string, raw?: string[]) {
       const extras = normalizeFolders(directory, raw ?? [])
@@ -700,6 +703,8 @@ const layer: Layer.Layer<
         for (const child of kids) {
           yield* remove(child.id)
         }
+        // Schedules have no foreign key to the session (machine sync re-inserts session rows).
+        yield* schedules.removeSession(sessionID)
 
         yield* events.publish(SessionV1.Event.Deleted, { sessionID, info: session })
         // SessionEnd is always synchronous with a 3s cap; output is advisory only.
@@ -869,6 +874,7 @@ const layer: Layer.Layer<
 
     const setArchived = Effect.fn("Session.setArchived")(function* (input: { sessionID: SessionID; time?: number }) {
       yield* patch(input.sessionID, { time: { archived: input.time } }).pipe(Effect.orDie)
+      if (input.time !== undefined) yield* schedules.removeSession(input.sessionID)
     })
 
     const setMetadata = Effect.fn("Session.setMetadata")(function* (input: typeof SetMetadataInput.Type) {
@@ -1124,7 +1130,15 @@ function listByProject(
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [BackgroundJob.node, RuntimeFlags.node, Database.node, EventV2Bridge.node, FSUtil.node, SessionFolders.node],
+  deps: [
+    BackgroundJob.node,
+    RuntimeFlags.node,
+    Database.node,
+    EventV2Bridge.node,
+    FSUtil.node,
+    SessionFolders.node,
+    ScheduleStore.node,
+  ],
 })
 
 export * as Session from "./session"

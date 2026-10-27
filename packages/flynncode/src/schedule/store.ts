@@ -1,11 +1,11 @@
 export * as ScheduleStore from "./store"
 
-import { and, asc, eq, isNotNull, isNull, lte, lt, or, sql } from "drizzle-orm"
+import { and, asc, eq, isNotNull, isNull, lte, lt, notInArray, or, sql } from "drizzle-orm"
 import { Cron } from "croner"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Database } from "@flynncode/core/database/database"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
-import { SessionScheduleTable } from "@flynncode/core/session/sql"
+import { SessionScheduleTable, SessionTable } from "@flynncode/core/session/sql"
 import { Identifier } from "@/id/id"
 import type { SessionID } from "@/session/schema"
 
@@ -50,8 +50,10 @@ export interface Interface {
   readonly skip: (job: Job, now: Date) => Effect.Effect<void>
   /** Delivery failed: count it, release the lease, and delete the job at 3 in a row. */
   readonly fail: (job: Job) => Effect.Effect<void>
-  /** Deletes jobs past `expires_at` and returns how many went. */
-  readonly expire: (now: Date) => Effect.Effect<number>
+  /** Deletes jobs past `expires_at` and returns them. */
+  readonly expire: (now: Date) => Effect.Effect<Job[]>
+  /** Deletes jobs whose session is gone or archived and returns them; there is no foreign key to cascade. */
+  readonly prune: () => Effect.Effect<Job[]>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/ScheduleStore") {}
@@ -225,16 +227,29 @@ const layer = Layer.effect(
     })
 
     const expire = Effect.fn("ScheduleStore.expire")(function* (now: Date) {
-      const removed = yield* db
+      return yield* db
         .delete(SessionScheduleTable)
         .where(and(isNotNull(SessionScheduleTable.expires_at), lte(SessionScheduleTable.expires_at, now.getTime())))
-        .returning({ id: SessionScheduleTable.id })
+        .returning()
         .all()
         .pipe(Effect.orDie)
-      return removed.length
     })
 
-    return Service.of({ create, list, remove, removeSession, claimDue, complete, skip, fail, expire })
+    const prune = Effect.fn("ScheduleStore.prune")(function* () {
+      return yield* db
+        .delete(SessionScheduleTable)
+        .where(
+          notInArray(
+            SessionScheduleTable.session_id,
+            db.select({ id: SessionTable.id }).from(SessionTable).where(isNull(SessionTable.time_archived)),
+          ),
+        )
+        .returning()
+        .all()
+        .pipe(Effect.orDie)
+    })
+
+    return Service.of({ create, list, remove, removeSession, claimDue, complete, skip, fail, expire, prune })
   }),
 )
 
