@@ -43,6 +43,8 @@ export type StreamInput = {
   messages: ModelMessage[]
   small?: boolean
   tools: Record<string, Tool>
+  /** MCP tool ids hidden behind tool_search this step; calls to them get a load-first hint. */
+  deferredTools?: ReadonlyArray<string>
   retries?: number
   toolChoice?: "auto" | "required" | "none"
 }
@@ -301,11 +303,14 @@ const live: Layer.Layer<
                 toolName: lower,
               }
             }
+            const name = failed.toolCall.toolName
             return {
               ...failed.toolCall,
               input: JSON.stringify({
-                tool: failed.toolCall.toolName,
-                error: failed.error.message,
+                tool: name,
+                error: input.deferredTools?.includes(name)
+                  ? `${name} is a deferred MCP tool that is not loaded yet. Load it first by calling tool_search with query "select:${name}", then call ${name} again.`
+                  : failed.error.message,
               }),
               toolName: "invalid",
             }

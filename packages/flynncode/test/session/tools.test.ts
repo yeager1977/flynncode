@@ -92,6 +92,9 @@ const layer = Layer.mergeAll(
   Layer.succeed(Project.Service, fakeProject),
   Layer.succeed(MCP.Service, fakeMcp()),
   Layer.succeed(Truncate.Service, fakeTruncate),
+  // tool_search only appears when MCP tools are deferred; these fakes have none.
+  Layer.mock(Session.Service, {}),
+  Layer.mock(Agent.Service, {}),
   RuntimeFlags.layer(),
   Layer.succeed(
     ToolRegistry.Service,
@@ -441,6 +444,8 @@ function autoLayer(
         Layer.succeed(Project.Service, fakeProject),
         Layer.succeed(MCP.Service, fakeMcp()),
         Layer.succeed(Truncate.Service, fakeTruncate),
+        Layer.mock(Session.Service, {}),
+        Layer.mock(Agent.Service, {}),
         RuntimeFlags.layer(),
         ...(verdict === undefined
           ? []
@@ -642,6 +647,8 @@ function sandboxEnv(config: Partial<ConfigV1.Info>, metadata?: Record<string, un
         Layer.succeed(Project.Service, fakeProject),
         Layer.succeed(MCP.Service, fakeMcp()),
         Layer.succeed(Truncate.Service, fakeTruncate),
+        Layer.mock(Session.Service, {}),
+        Layer.mock(Agent.Service, {}),
         RuntimeFlags.layer(),
         Layer.succeed(ToolRegistry.Service, registry),
       ),

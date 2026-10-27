@@ -9,6 +9,8 @@ import { Provider } from "@/provider/provider"
 import { ProviderTransform } from "@/provider/transform"
 import { MCP } from "@/mcp"
 import { McpCatalog } from "@/mcp/catalog"
+import { McpDefer } from "@/mcp/defer"
+import { McpLoaded } from "@/mcp/loaded"
 import { Permission } from "@/permission"
 import { AutoReviewer } from "@/permission/auto-reviewer"
 import { Sandbox } from "@/permission/sandbox"
@@ -16,6 +18,7 @@ import { Reviewer } from "@/permission/reviewer"
 import { Tool } from "@/tool/tool"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { ToolRegistry } from "@/tool/registry"
+import { ToolSearch } from "@/tool/tool-search"
 import { Truncate } from "@/tool/truncate"
 
 import { HooksRunner } from "@/hooks/runner"
@@ -57,6 +60,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   promptOps: TaskPromptOps
   // Rules the user message being answered grants to this turn only.
   turnPermission?: PermissionV1.Ruleset
+  // The step's MCP deferral plan; computed from the session's loaded set when omitted.
+  mcp?: McpPlan
 }) {
   const tools: Record<string, AITool> = {}
   const run = yield* EffectBridge.make()
@@ -216,14 +221,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       }),
   })
 
-  for (const item of yield* registry.tools({
-    modelID: ModelV2.ID.make(input.model.api.id),
-    providerID: input.model.providerID,
-    agent: input.agent,
-    permission: input.session.permission,
-  })) {
+  const registered = (item: Tool.Def): AITool => {
     const schema = ProviderTransform.schema(input.model, ToolJsonSchema.fromTool(item))
-    tools[item.id] = tool({
+    return tool({
       description: item.description,
       inputSchema: jsonSchema(schema),
       execute(args, options) {
@@ -268,6 +268,15 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         )
       },
     })
+  }
+
+  for (const item of yield* registry.tools({
+    modelID: ModelV2.ID.make(input.model.api.id),
+    providerID: input.model.providerID,
+    agent: input.agent,
+    permission: input.session.permission,
+  })) {
+    tools[item.id] = registered(item)
   }
 
   const hasMcpResourceServer = Object.values(yield* mcp.clients()).some(
@@ -545,7 +554,25 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
 
   if (flags.experimentalCodeMode) return tools
 
-  for (const [key, entry] of Object.entries(yield* mcp.tools())) {
+  const plan =
+    input.mcp ??
+    (yield* mcpPlan({ agent: input.agent, permission: input.session.permission, loaded: McpLoaded.get(input.session) }))
+  if (plan.deferred.length > 0) {
+    const search = yield* Tool.init(
+      yield* ToolSearch.make({
+        deferred: plan.listed.map((item) => ({
+          id: item.id,
+          description: plan.tools[item.id]?.def.description,
+          inputSchema: plan.tools[item.id]?.def.inputSchema ?? {},
+        })),
+      }),
+    )
+    tools[search.id] = registered(search)
+  }
+
+  for (const key of plan.sent) {
+    const entry = plan.tools[key]
+    if (!entry) continue
     const item = McpCatalog.convertTool(entry.def, entry.client, entry.timeout)
     const execute = item.execute
     if (!execute) continue
@@ -661,6 +688,70 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
 
   return tools
 }, (effect, input) => effect.pipe(SessionWorkspace.provide(input.session.id)))
+
+export type McpPlan = {
+  tools: Record<string, MCP.McpTool>
+  /** Visible MCP tool ids sent as normal tools this step. */
+  sent: string[]
+  /** Visible MCP tool ids hidden behind tool_search this step. */
+  deferred: string[]
+  /** Every deferrable tool, ignoring the loaded set, for the system prompt and tool_search. */
+  listed: Array<{ id: string; server: string }>
+}
+
+/**
+ * Splits the agent's visible MCP tools into sent and deferred for one provider step.
+ * `listed` ignores the loaded set so the system prompt's deferred block stays
+ * cache-stable while tools load.
+ */
+export const mcpPlan = Effect.fn("SessionTools.mcpPlan")(function* (input: {
+  agent: Agent.Info
+  permission?: PermissionV1.Ruleset
+  loaded: ReadonlyArray<string>
+}) {
+  const mcp = yield* MCP.Service
+  const config = yield* Config.Service
+  const flags = yield* RuntimeFlags.Service
+  const cfg = yield* config.get()
+  const tools = yield* mcp.tools()
+  const clients = Object.entries(yield* mcp.clients())
+  const ruleset = Permission.merge(input.agent.permission, input.permission ?? [])
+  const hidden = Permission.disabled([...Object.keys(tools), "tool_search"], ruleset)
+  const visible = Object.keys(tools).filter((id) => !hidden.has(id))
+  // Tool ids sanitize the server name, so map back through the client instead of parsing the id.
+  const serverOf = (id: string) => clients.find((entry) => entry[1] === tools[id]?.client)?.[0] ?? id
+  const base = {
+    tools: visible,
+    servers: Object.fromEntries(
+      Object.entries(cfg.mcp ?? {}).map(([name, entry]) => [
+        name,
+        { defer: "defer" in entry ? entry.defer : undefined },
+      ]),
+    ),
+    serverOf,
+    threshold: cfg.experimental?.mcp_defer_threshold ?? 15,
+    // Deferring behind a tool_search the agent may not call would strand the tools.
+    disabled: flags.disableMcpDefer || flags.experimentalCodeMode || hidden.has("tool_search"),
+  }
+  return yield* Effect.try({
+    try: (): McpPlan => {
+      const current = McpDefer.plan({ ...base, loaded: new Set(input.loaded) })
+      return {
+        tools,
+        sent: current.sent,
+        deferred: current.deferred,
+        listed: McpDefer.plan({ ...base, loaded: new Set() }).deferred.map((id) => ({ id, server: serverOf(id) })),
+      }
+    },
+    catch: (cause) => cause,
+  }).pipe(
+    Effect.catch((cause) =>
+      Effect.logWarning("failed to plan deferred MCP tools; sending all", { cause }).pipe(
+        Effect.as({ tools, sent: visible.toSorted(), deferred: [], listed: [] }),
+      ),
+    ),
+  )
+})
 
 function toRecord(value: unknown) {
   if (isRecord(value)) return value

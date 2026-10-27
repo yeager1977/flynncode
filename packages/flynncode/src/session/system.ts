@@ -78,7 +78,11 @@ export function editingTools(toolIDs: Iterable<string>) {
 export interface Interface {
   readonly environment: (model: Provider.Model, sessionID?: SessionID) => Effect.Effect<string[]>
   readonly skills: (agent: Agent.Info) => Effect.Effect<string | undefined>
-  readonly mcp: (agent: Agent.Info, permission?: PermissionV1.Ruleset) => Effect.Effect<string | undefined>
+  readonly mcp: (
+    agent: Agent.Info,
+    permission?: PermissionV1.Ruleset,
+    deferred?: ReadonlyArray<{ id: string; server: string }>,
+  ) => Effect.Effect<string | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SystemPrompt") {}
@@ -149,22 +153,57 @@ const layer = Layer.effect(
         ].join("\n")
       }),
 
-      mcp: Effect.fn("SystemPrompt.mcp")(function* (agent: Agent.Info, permission?: PermissionV1.Ruleset) {
+      mcp: Effect.fn("SystemPrompt.mcp")(function* (
+        agent: Agent.Info,
+        permission?: PermissionV1.Ruleset,
+        deferred: ReadonlyArray<{ id: string; server: string }> = [],
+      ) {
         const ruleset = Permission.merge(agent.permission, permission ?? [])
         const instructions = (yield* mcp.instructions()).filter(
           (item) => item.tools.length === 0 || Permission.disabled(item.tools, ruleset).size < item.tools.length,
         )
-        if (instructions.length === 0) return
-
-        return [
-          "<mcp_instructions>",
-          ...instructions.flatMap((item) => [
-            `  <server name="${item.name}">`,
-            ...item.instructions.split("\n").map((line) => `    ${line}`),
-            "  </server>",
-          ]),
-          "</mcp_instructions>",
-        ].join("\n")
+        const hidden = Permission.disabled(
+          deferred.map((item) => item.id),
+          ruleset,
+        )
+        // Sorted names only, independent of which tools are loaded, so the block is
+        // byte-stable across steps and keeps the prompt cache warm.
+        const groups = Object.entries(
+          Object.groupBy(
+            deferred.filter((item) => !hidden.has(item.id)),
+            (item) => item.server,
+          ),
+        ).toSorted(([a], [b]) => a.localeCompare(b))
+        const parts = [
+          instructions.length === 0
+            ? undefined
+            : [
+                "<mcp_instructions>",
+                ...instructions.flatMap((item) => [
+                  `  <server name="${item.name}">`,
+                  ...item.instructions.split("\n").map((line) => `    ${line}`),
+                  "  </server>",
+                ]),
+                "</mcp_instructions>",
+              ].join("\n"),
+          groups.length === 0
+            ? undefined
+            : [
+                "<deferred_mcp_tools>",
+                'These MCP tools are deferred: only their names are listed. Load a tool with tool_search (query "select:<name>" or keywords) before calling it; loaded tools stay available for the rest of the session.',
+                ...groups.flatMap(([server, items]) => [
+                  `  <server name="${server}">`,
+                  ...(items ?? [])
+                    .map((item) => item.id)
+                    .toSorted()
+                    .map((id) => `    ${id}`),
+                  "  </server>",
+                ]),
+                "</deferred_mcp_tools>",
+              ].join("\n"),
+        ].filter((part): part is string => part !== undefined)
+        if (parts.length === 0) return
+        return parts.join("\n\n")
       }),
     })
   }),

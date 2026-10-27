@@ -22,6 +22,7 @@ import { Plugin } from "../plugin"
 import { MAX_STEPS_PROMPT } from "@flynncode/core/session/runner/max-steps"
 import { ToolRegistry } from "@/tool/registry"
 import { MCP } from "../mcp"
+import { McpLoaded } from "../mcp/loaded"
 import { LSP } from "@/lsp/lsp"
 import { ulid } from "ulid"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
@@ -1439,6 +1440,17 @@ const layer = Layer.effect(
             const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
             const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
             const promptOps = yield* ops()
+            // `session` is fetched once per run, but tool_search loads tools mid-turn, so read
+            // the loaded set fresh each step (pruning ids whose tools no longer exist).
+            const mcpPlan = yield* SessionTools.mcpPlan({
+              agent,
+              permission: session.permission,
+              loaded: yield* McpLoaded.prune(sessions, sessionID, new Set(Object.keys(yield* mcp.tools()))),
+            }).pipe(
+              Effect.provideService(MCP.Service, mcp),
+              Effect.provideService(Config.Service, config),
+              Effect.provideService(RuntimeFlags.Service, flags),
+            )
 
             const tools = yield* SessionTools.resolve({
               agent,
@@ -1449,7 +1461,10 @@ const layer = Layer.effect(
               messages: msgs,
               promptOps,
               turnPermission: lastUser.permission,
+              mcp: mcpPlan,
             }).pipe(
+              Effect.provideService(Session.Service, sessions),
+              Effect.provideService(Agent.Service, agents),
               Effect.provideService(Plugin.Service, plugin),
               Effect.provideService(HooksRunner.Service, hooksRunner),
               Effect.provideService(Permission.Service, permission),
@@ -1481,7 +1496,7 @@ const layer = Layer.effect(
               sys.skills(agent),
               sys.environment(model, sessionID),
               instruction.system().pipe(Effect.orDie),
-              sys.mcp(agent, session.permission),
+              sys.mcp(agent, session.permission, mcpPlan.listed),
               MessageV2.toModelMessagesEffect(msgs, model),
               hooksContext.get(sessionID),
             ])
@@ -1509,6 +1524,7 @@ const layer = Layer.effect(
                 ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS_PROMPT }] : []),
               ],
               tools,
+              deferredTools: mcpPlan.deferred,
               model,
               toolChoice: ProviderTransform.structuredOutputToolChoice(model, format),
             })
