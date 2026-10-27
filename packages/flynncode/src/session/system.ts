@@ -162,18 +162,12 @@ const layer = Layer.effect(
         const instructions = (yield* mcp.instructions()).filter(
           (item) => item.tools.length === 0 || Permission.disabled(item.tools, ruleset).size < item.tools.length,
         )
-        const hidden = Permission.disabled(
-          deferred.map((item) => item.id),
-          ruleset,
+        // `deferred` is already permission-filtered (SessionTools.mcpPlan). Sorted names only,
+        // independent of which tools are loaded, so the block is byte-stable across steps and
+        // keeps the prompt cache warm.
+        const groups = Object.entries(Object.groupBy(deferred, (item) => item.server)).toSorted(([a], [b]) =>
+          a.localeCompare(b),
         )
-        // Sorted names only, independent of which tools are loaded, so the block is
-        // byte-stable across steps and keeps the prompt cache warm.
-        const groups = Object.entries(
-          Object.groupBy(
-            deferred.filter((item) => !hidden.has(item.id)),
-            (item) => item.server,
-          ),
-        ).toSorted(([a], [b]) => a.localeCompare(b))
         const parts = [
           instructions.length === 0
             ? undefined

@@ -14,15 +14,16 @@ export type Plan = { sent: string[]; deferred: string[] }
 
 // Pure so callers can recompute per provider step: the plan only changes when the
 // tool list, config, or loaded set changes, which keeps the prompt prefix stable.
+// Outputs keep the input order (the MCP tool order), so a request with nothing
+// deferred is identical to one built without deferral.
 export function plan(input: Input): Plan {
-  const sorted = input.tools.toSorted()
-  if (input.disabled) return { sent: sorted, deferred: [] }
-  const overThreshold = sorted.length > input.threshold
-  const deferred = sorted.filter((id) => {
+  if (input.disabled) return { sent: input.tools, deferred: [] }
+  const overThreshold = input.tools.length > input.threshold
+  const deferred = input.tools.filter((id) => {
     if (input.loaded.has(id)) return false
     const defer = input.servers[input.serverOf(id)]?.defer
     return defer ?? overThreshold
   })
   const skip = new Set(deferred)
-  return { sent: sorted.filter((id) => !skip.has(id)), deferred }
+  return { sent: input.tools.filter((id) => !skip.has(id)), deferred }
 }

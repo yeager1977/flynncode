@@ -50,6 +50,7 @@ import { Shell } from "@flynncode/core/shell"
 import { ShellID } from "@/tool/shell/id"
 import { FSUtil } from "@flynncode/core/fs-util"
 import { Truncate } from "@/tool/truncate"
+import { ToolSearch } from "@/tool/tool-search"
 import { Image } from "@/image/image"
 import { decodeDataUrl } from "@/util/data-url"
 import { Process } from "@/util/process"
@@ -1441,16 +1442,42 @@ const layer = Layer.effect(
             const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
             const promptOps = yield* ops()
             // `session` is fetched once per run, but tool_search loads tools mid-turn, so read
-            // the loaded set fresh each step (pruning ids whose tools no longer exist).
+            // the loaded set fresh each step, unioned with the tool_search results in `msgs` so a
+            // failed metadata write never hides a tool loaded earlier in this run.
             const mcpPlan = yield* SessionTools.mcpPlan({
               agent,
               permission: session.permission,
-              loaded: yield* McpLoaded.prune(sessions, sessionID, new Set(Object.keys(yield* mcp.tools()))),
+              loaded: Effect.gen(function* () {
+                return yield* McpLoaded.current({
+                  sessions,
+                  sessionID,
+                  messages: msgs,
+                  tools: new Set(Object.keys(yield* mcp.tools())),
+                  servers: yield* mcp.status(),
+                })
+              }),
             }).pipe(
               Effect.provideService(MCP.Service, mcp),
               Effect.provideService(Config.Service, config),
               Effect.provideService(RuntimeFlags.Service, flags),
             )
+            // tool_search stays for as long as deferral is active, even once every listed tool is
+            // loaded, so it never disappears while the deferred block still points at it.
+            const toolSearch =
+              mcpPlan.listed.length === 0
+                ? undefined
+                : yield* ToolSearch.make({
+                    deferred: mcpPlan.listed.map((item) => ({
+                      id: item.id,
+                      description: mcpPlan.tools[item.id]?.def.description,
+                      inputSchema: mcpPlan.tools[item.id]?.def.inputSchema ?? {},
+                    })),
+                  }).pipe(
+                    Effect.flatMap(Tool.init),
+                    Effect.provideService(Session.Service, sessions),
+                    Effect.provideService(Agent.Service, agents),
+                    Effect.provideService(Truncate.Service, truncate),
+                  )
 
             const tools = yield* SessionTools.resolve({
               agent,
@@ -1462,9 +1489,8 @@ const layer = Layer.effect(
               promptOps,
               turnPermission: lastUser.permission,
               mcp: mcpPlan,
+              toolSearch,
             }).pipe(
-              Effect.provideService(Session.Service, sessions),
-              Effect.provideService(Agent.Service, agents),
               Effect.provideService(Plugin.Service, plugin),
               Effect.provideService(HooksRunner.Service, hooksRunner),
               Effect.provideService(Permission.Service, permission),

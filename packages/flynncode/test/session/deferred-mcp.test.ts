@@ -13,7 +13,8 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 import { describe, expect } from "bun:test"
-import { Effect, Layer } from "effect"
+import { sql } from "drizzle-orm"
+import { Effect, Fiber, Layer } from "effect"
 import path from "path"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { BackgroundJob } from "@/background/job"
@@ -28,6 +29,7 @@ import { Agent } from "../../src/agent/agent"
 import { Command } from "../../src/command"
 import { MCP } from "../../src/mcp"
 import { McpLoaded } from "../../src/mcp/loaded"
+import { notLoaded } from "../../src/tool/invalid"
 import { Permission } from "../../src/permission"
 import { Plugin } from "../../src/plugin"
 import { Env } from "../../src/env"
@@ -46,6 +48,7 @@ import { SessionRevert } from "../../src/session/revert"
 import { SessionRunState } from "../../src/session/run-state"
 import { MessageID, PartID, type SessionID } from "../../src/session/schema"
 import { SessionStatus } from "../../src/session/status"
+import { SessionTools } from "../../src/session/tools"
 import { SystemPrompt } from "../../src/session/system"
 import { Skill } from "../../src/skill"
 import { Snapshot } from "../../src/snapshot"
@@ -53,7 +56,7 @@ import { Format } from "../../src/format"
 import { InstanceStore } from "../../src/project/instance-store"
 import { InstanceBootstrap } from "../../src/project/bootstrap-service"
 import { TestInstance } from "../fixture/fixture"
-import { testEffect } from "../lib/effect"
+import { pollWithTimeout, testEffect } from "../lib/effect"
 import { TestLLMServer } from "../lib/llm-server"
 
 const ref = {
@@ -150,48 +153,54 @@ const it = harness()
 const codeMode = harness({ experimentalCodeMode: true })
 const disabled = harness({ disableMcpDefer: true })
 
-// A real streamable-HTTP MCP server exposing `count` tools named tool_00, tool_01, ...
+// A real streamable-HTTP MCP server exposing `count` tools named tool_00, tool_01, ... It lists
+// them in reverse, so a test can tell the MCP tool order from an alphabetical re-sort. It is
+// stateless (a fresh protocol per request), so a client can disconnect and connect again.
 function mcpServer(name: string, count: number) {
-  return Effect.acquireRelease(
-    Effect.promise(async () => {
-      const protocol = new Server({ name, version: "1.0.0" }, { capabilities: { tools: {} } })
-      protocol.setRequestHandler(ListToolsRequestSchema, () =>
-        Promise.resolve({
-          tools: Array.from({ length: count }, (_, index) => ({
-            name: `tool_${String(index).padStart(2, "0")}`,
-            description: `${name} fixture tool number ${index}`,
-            inputSchema: { type: "object" as const, properties: { note: { type: "string" } } },
-          })),
-        }),
-      )
-      protocol.setRequestHandler(CallToolRequestSchema, (request) =>
-        Promise.resolve({ content: [{ type: "text" as const, text: `called ${name}/${request.params.name}` }] }),
-      )
-      const transport = new WebStandardStreamableHTTPServerTransport({
-        sessionIdGenerator: () => crypto.randomUUID(),
-        enableJsonResponse: true,
-      })
-      await protocol.connect(transport)
-      const http = Bun.serve({ port: 0, fetch: (request) => transport.handleRequest(request) })
-      return { url: http.url.toString(), protocol, http }
-    }),
-    (server) =>
-      Effect.promise(async () => {
-        await server.protocol.close().catch(() => {})
-        server.http.stop(true)
+  const protocol = () => {
+    const server = new Server({ name, version: "1.0.0" }, { capabilities: { tools: {} } })
+    server.setRequestHandler(ListToolsRequestSchema, () =>
+      Promise.resolve({
+        tools: Array.from({ length: count }, (_, index) => ({
+          name: `tool_${String(index).padStart(2, "0")}`,
+          description: `${name} fixture tool number ${index}`,
+          inputSchema: { type: "object" as const, properties: { note: { type: "string" } } },
+        })).toReversed(),
       }),
-  )
+    )
+    server.setRequestHandler(CallToolRequestSchema, (request) =>
+      Promise.resolve({ content: [{ type: "text" as const, text: `called ${name}/${request.params.name}` }] }),
+    )
+    return server
+  }
+  return Effect.acquireRelease(
+    Effect.sync(() =>
+      Bun.serve({
+        port: 0,
+        fetch: async (request) => {
+          const transport = new WebStandardStreamableHTTPServerTransport({
+            sessionIdGenerator: undefined,
+            enableJsonResponse: true,
+          })
+          await protocol().connect(transport)
+          return transport.handleRequest(request)
+        },
+      }),
+    ),
+    (http) => Effect.promise(() => http.stop(true)),
+  ).pipe(Effect.map((http) => ({ url: http.url.toString() })))
 }
 
-// Two servers, 17 MCP tools in total: over the default threshold of 15.
+// Two servers, 17 MCP tools in total by default: over the default threshold of 15.
 const setup = Effect.fn("test.setup")(function* (input?: {
   config?: Partial<ConfigV1.Info>
   mcp?: Record<string, { defer?: boolean }>
+  sizes?: { alpha: number; zeta: number }
 }) {
   const instance = yield* TestInstance
   const llm = yield* TestLLMServer
-  const alpha = yield* mcpServer("alpha", 9)
-  const zeta = yield* mcpServer("zeta", 8)
+  const alpha = yield* mcpServer("alpha", input?.sizes?.alpha ?? 9)
+  const zeta = yield* mcpServer("zeta", input?.sizes?.zeta ?? 8)
   const fs = yield* FSUtil.Service
   yield* fs.writeWithDirs(
     path.join(instance.directory, "opencode.json"),
@@ -263,6 +272,24 @@ const requests = Effect.fn("test.requests")(function* () {
 const ids = (server: string, count: number) =>
   Array.from({ length: count }, (_, index) => `${server}_tool_${String(index).padStart(2, "0")}`)
 const ALL = [...ids("alpha", 9), ...ids("zeta", 8)]
+
+// MCP tool ids in the order the MCP service yields them (connection order, then each server's list order).
+const mcpOrder = Effect.fn("test.mcpOrder")(function* () {
+  const mcp = yield* MCP.Service
+  return Object.keys(yield* mcp.tools())
+})
+
+const planFor = Effect.fn("test.planFor")(function* (loaded: Effect.Effect<ReadonlyArray<string>>) {
+  const agents = yield* Agent.Service
+  const agent = yield* agents.get("build")
+  if (!agent) throw new Error("missing build agent")
+  return yield* SessionTools.mcpPlan({ agent, permission: [], loaded })
+})
+
+const loaded = Effect.fn("test.loaded")(function* (sessionID: SessionID) {
+  const sessions = yield* Session.Service
+  return McpLoaded.get(yield* sessions.get(sessionID))
+})
 
 const toolParts = Effect.fn("test.toolParts")(function* (sessionID: SessionID) {
   const msgs = yield* MessageV2.filterCompactedEffect(sessionID)
@@ -417,9 +444,10 @@ describe("deferred MCP tools", () => {
 
       const parts = yield* toolParts(session.id)
       const hint = output(parts.find((part) => part.tool === "invalid"))
-      expect(hint).toContain("zeta_tool_02")
-      expect(hint).toContain("tool_search")
-      expect(hint).toContain("select:zeta_tool_02")
+      expect(hint).toBe(
+        'Tool zeta_tool_02 is not loaded. Load it first with tool_search (query: "select:zeta_tool_02"), then call it again.',
+      )
+      expect(hint).toBe(notLoaded("zeta_tool_02"))
     }),
   )
 
@@ -434,6 +462,15 @@ describe("deferred MCP tools", () => {
       expect(first?.tools).not.toContain("tool_search")
       expect(first?.tools.filter((name) => ALL.includes(name))).toEqual(ALL)
       expect(first?.system).not.toContain("<deferred_mcp_tools>")
+
+      // Request prep sorts the final tool list, so check the plan itself keeps the MCP order:
+      // filtered, never re-sorted. Nothing is deferral-eligible, so the loaded set is never read.
+      const order = yield* mcpOrder()
+      expect(order).not.toEqual(order.toSorted())
+      const plan = yield* planFor(Effect.die("the loaded set must not be read below the threshold"))
+      expect(plan.sent).toEqual(order)
+      expect(plan.deferred).toEqual([])
+      expect(plan.listed).toEqual([])
     }),
   )
 
@@ -474,6 +511,8 @@ describe("deferred MCP tools", () => {
       const [first] = yield* requests()
       expect(first?.tools).not.toContain("tool_search")
       expect(first?.system).not.toContain("<deferred_mcp_tools>")
+      const plan = yield* planFor(Effect.die("the loaded set must not be read in code mode"))
+      expect(plan.listed).toEqual([])
     }),
   )
 
@@ -488,6 +527,142 @@ describe("deferred MCP tools", () => {
       expect(first?.tools).not.toContain("tool_search")
       expect(first?.tools.filter((name) => ALL.includes(name))).toEqual(ALL)
       expect(first?.system).not.toContain("<deferred_mcp_tools>")
+      const plan = yield* planFor(Effect.die("the loaded set must not be read when deferral is off"))
+      expect(plan.sent).toEqual(yield* mcpOrder())
+    }),
+  )
+
+  it.instance("keeps a tool loaded in the run when the metadata write fails", () =>
+    Effect.gen(function* () {
+      const { llm } = yield* setup()
+      const session = yield* start()
+      // Real failure injection: the database rejects any session write that records mcpLoaded.
+      const database = yield* Database.Service
+      yield* Effect.acquireRelease(
+        database.db.run(
+          sql`CREATE TRIGGER fail_mcp_loaded BEFORE UPDATE ON session WHEN NEW.metadata LIKE '%mcpLoaded%' BEGIN SELECT RAISE(ABORT, 'injected mcpLoaded write failure'); END`,
+        ),
+        () => database.db.run(sql`DROP TRIGGER IF EXISTS fail_mcp_loaded`).pipe(Effect.orDie),
+      )
+      yield* llm.tool("tool_search", { query: "select:alpha_tool_03" })
+      yield* llm.tool("alpha_tool_03", { note: "hi" })
+      yield* llm.text("done")
+      yield* ask(session.id, "use alpha tool 3")
+
+      expect(yield* loaded(session.id)).toEqual([])
+      const turn = yield* requests()
+      expect(turn).toHaveLength(3)
+      expect(turn[1]?.tools).toContain("alpha_tool_03")
+      const parts = yield* toolParts(session.id)
+      expect(parts.some((part) => part.tool === "invalid")).toBe(false)
+      expect(output(parts.find((part) => part.tool === "alpha_tool_03"))).toBe("called alpha/tool_03")
+    }),
+  )
+
+  it.instance("drops removed tools but keeps the tools of a disconnected server for its reconnect", () =>
+    Effect.gen(function* () {
+      const { llm } = yield* setup({ config: { experimental: { mcp_defer_threshold: 5 } } })
+      const session = yield* start()
+      const sessions = yield* Session.Service
+      // alpha_tool_99 belongs to a connected server that does not list it: it was removed.
+      yield* sessions.setMetadata({
+        sessionID: session.id,
+        metadata: { mcpLoaded: ["alpha_tool_03", "alpha_tool_99", "zeta_tool_02"] },
+      })
+      const mcp = yield* MCP.Service
+      yield* mcp.disconnect("zeta")
+      yield* llm.text("done")
+      yield* ask(session.id, "hello")
+
+      const first = (yield* requests()).at(-1)
+      expect(first?.tools).toContain("alpha_tool_03")
+      expect(first?.tools).toContain("tool_search")
+      expect(first?.tools).not.toContain("zeta_tool_02")
+      expect(yield* loaded(session.id)).toEqual(["alpha_tool_03", "zeta_tool_02"])
+
+      yield* mcp.connect("zeta")
+      yield* llm.text("again")
+      yield* ask(session.id, "after reconnect")
+      const after = (yield* requests()).at(-1)
+      expect(after?.tools).toContain("zeta_tool_02")
+      expect(after?.tools).toContain("alpha_tool_03")
+      expect(after?.tools).not.toContain("zeta_tool_03")
+    }),
+  )
+
+  it.instance("defer true defers a server below the threshold", () =>
+    Effect.gen(function* () {
+      const { llm } = yield* setup({
+        config: { experimental: { mcp_defer_threshold: 17 } },
+        mcp: { zeta: { defer: true } },
+      })
+      const session = yield* start()
+      yield* llm.text("done")
+      yield* ask(session.id, "hello")
+
+      const [first] = yield* requests()
+      expect(first?.tools).toContain("tool_search")
+      expect(first?.tools.filter((name) => ALL.includes(name))).toEqual(ids("alpha", 9))
+      expect(first?.system).toContain('<server name="zeta">')
+      expect(first?.system).not.toContain('<server name="alpha">')
+      // With deferral active the plan still filters the MCP order instead of re-sorting it.
+      const order = yield* mcpOrder()
+      const plan = yield* planFor(Effect.succeed([]))
+      expect(plan.sent).toEqual(order.filter((id) => id.startsWith("alpha_")))
+      expect(plan.deferred).toEqual(order.filter((id) => id.startsWith("zeta_")))
+    }),
+  )
+
+  it.instance("threshold zero defers every tool and keeps tool_search once all are loaded", () =>
+    Effect.gen(function* () {
+      const { llm } = yield* setup({
+        config: { experimental: { mcp_defer_threshold: 0 } },
+        sizes: { alpha: 1, zeta: 1 },
+      })
+      const session = yield* start()
+      yield* llm.tool("tool_search", { query: "select:alpha_tool_00,zeta_tool_00" })
+      yield* llm.text("done")
+      yield* ask(session.id, "load everything")
+
+      const [first, second] = yield* requests()
+      expect(first?.tools).toContain("tool_search")
+      expect(first?.tools).not.toContain("alpha_tool_00")
+      expect(first?.tools).not.toContain("zeta_tool_00")
+      expect(first?.system).toContain("    alpha_tool_00")
+      expect(first?.system).toContain("    zeta_tool_00")
+      // Every deferral-eligible tool is loaded, yet tool_search and the block stay unchanged.
+      expect(second?.tools).toContain("tool_search")
+      expect(second?.tools).toContain("alpha_tool_00")
+      expect(second?.tools).toContain("zeta_tool_00")
+      expect(second?.system).toBe(first?.system)
+    }),
+  )
+
+  it.instance("still asks permission before running a loaded tool", () =>
+    Effect.gen(function* () {
+      const { llm } = yield* setup()
+      const session = yield* start([{ permission: "alpha_tool_03", pattern: "*", action: "ask" }])
+      yield* llm.tool("tool_search", { query: "select:alpha_tool_03" })
+      yield* llm.tool("alpha_tool_03", { note: "hi" })
+      yield* llm.text("done")
+      const running = yield* ask(session.id, "use alpha tool 3").pipe(Effect.forkChild)
+
+      const permission = yield* Permission.Service
+      const request = yield* pollWithTimeout(
+        permission
+          .list()
+          .pipe(
+            Effect.map((items) =>
+              items.find((item) => item.sessionID === session.id && item.permission === "alpha_tool_03"),
+            ),
+          ),
+        "no alpha_tool_03 permission request",
+        "15 seconds",
+      )
+      yield* permission.reply({ requestID: request.id, reply: "once" })
+      yield* Fiber.await(running)
+      const parts = yield* toolParts(session.id)
+      expect(output(parts.find((part) => part.tool === "alpha_tool_03"))).toBe("called alpha/tool_03")
     }),
   )
 })

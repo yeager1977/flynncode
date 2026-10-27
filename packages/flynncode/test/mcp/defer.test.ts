@@ -56,8 +56,9 @@ describe("McpDefer.plan", () => {
     expect(plan({ tools: ids("a", 16), loaded: new Set(["gone_tool"]) }).sent).toEqual([])
   })
 
-  test("outputs are sorted regardless of input order", () => {
-    const result = plan({ tools: ["b_z", "a_y", "b_a", "a_x"], threshold: 0, loaded: new Set(["b_z"]) })
-    expect(result).toEqual({ sent: ["b_z"], deferred: ["a_x", "a_y", "b_a"] })
+  test("outputs keep the input order", () => {
+    const result = plan({ tools: ["b_z", "a_y", "b_a", "a_x"], threshold: 0, loaded: new Set(["b_a"]) })
+    expect(result).toEqual({ sent: ["b_a"], deferred: ["b_z", "a_y", "a_x"] })
+    expect(plan({ tools: ["b_z", "a_y", "b_a"] })).toEqual({ sent: ["b_z", "a_y", "b_a"], deferred: [] })
   })
 })

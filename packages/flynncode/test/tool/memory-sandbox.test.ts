@@ -52,7 +52,7 @@ const setup = (consent = false) => Effect.gen(function* () {
   const providers = yield* Provider.Service
   const model = yield* providers.getModel(ProviderV2.ID.make("test"), ModelV2.ID.make("test-model"))
   const resolve = (sandbox: "readonly" | "workspace-write" | "full-access") => SessionTools.resolve({
-    agent, model, session: { ...session, metadata: { sandbox } }, messages: [], bypassAgentCheck: false, promptOps: {} as never,
+    agent, model, session: { ...session, metadata: { sandbox } }, messages: [], bypassAgentCheck: false, promptOps: {} as never, mcp: { tools: {}, sent: [], deferred: [], listed: [] },
     processor: { message: { id: MessageID.ascending(), sessionID: session.id } as never, updateToolCall: () => Effect.void as never, completeToolCall: () => Effect.void },
   })
   const call = (tools: Record<string, Tool>, action: "save" | "remove", scope: "project" | "global", slug = "topic") => Effect.promise(() => {

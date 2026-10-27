@@ -10,7 +10,6 @@ import { ProviderTransform } from "@/provider/transform"
 import { MCP } from "@/mcp"
 import { McpCatalog } from "@/mcp/catalog"
 import { McpDefer } from "@/mcp/defer"
-import { McpLoaded } from "@/mcp/loaded"
 import { Permission } from "@/permission"
 import { AutoReviewer } from "@/permission/auto-reviewer"
 import { Sandbox } from "@/permission/sandbox"
@@ -18,7 +17,6 @@ import { Reviewer } from "@/permission/reviewer"
 import { Tool } from "@/tool/tool"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { ToolRegistry } from "@/tool/registry"
-import { ToolSearch } from "@/tool/tool-search"
 import { Truncate } from "@/tool/truncate"
 
 import { HooksRunner } from "@/hooks/runner"
@@ -60,8 +58,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   promptOps: TaskPromptOps
   // Rules the user message being answered grants to this turn only.
   turnPermission?: PermissionV1.Ruleset
-  // The step's MCP deferral plan; computed from the session's loaded set when omitted.
-  mcp?: McpPlan
+  // The step's MCP deferral plan (see mcpPlan).
+  mcp: McpPlan
+  // tool_search over the plan's deferral-eligible tools, built by the caller while deferral is active.
+  toolSearch?: Tool.Def
 }) {
   const tools: Record<string, AITool> = {}
   const run = yield* EffectBridge.make()
@@ -554,24 +554,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
 
   if (flags.experimentalCodeMode) return tools
 
-  const plan =
-    input.mcp ??
-    (yield* mcpPlan({ agent: input.agent, permission: input.session.permission, loaded: McpLoaded.get(input.session) }))
-  if (plan.deferred.length > 0) {
-    const search = yield* Tool.init(
-      yield* ToolSearch.make({
-        deferred: plan.listed.map((item) => ({
-          id: item.id,
-          description: plan.tools[item.id]?.def.description,
-          inputSchema: plan.tools[item.id]?.def.inputSchema ?? {},
-        })),
-      }),
-    )
-    tools[search.id] = registered(search)
-  }
+  if (input.toolSearch) tools[input.toolSearch.id] = registered(input.toolSearch)
 
-  for (const key of plan.sent) {
-    const entry = plan.tools[key]
+  for (const key of input.mcp.sent) {
+    const entry = input.mcp.tools[key]
     if (!entry) continue
     const item = McpCatalog.convertTool(entry.def, entry.client, entry.timeout)
     const execute = item.execute
@@ -691,23 +677,27 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
 
 export type McpPlan = {
   tools: Record<string, MCP.McpTool>
-  /** Visible MCP tool ids sent as normal tools this step. */
+  /** Visible MCP tool ids sent as normal tools this step, in MCP tool order. */
   sent: string[]
   /** Visible MCP tool ids hidden behind tool_search this step. */
   deferred: string[]
-  /** Every deferrable tool, ignoring the loaded set, for the system prompt and tool_search. */
+  /**
+   * Every deferral-eligible tool, loaded or not: the system prompt's deferred block and the
+   * tool_search index. Non-empty exactly while deferral is active.
+   */
   listed: Array<{ id: string; server: string }>
 }
 
 /**
  * Splits the agent's visible MCP tools into sent and deferred for one provider step.
  * `listed` ignores the loaded set so the system prompt's deferred block stays
- * cache-stable while tools load.
+ * cache-stable while tools load. `loaded` runs only when something is deferral-eligible,
+ * so steps without deferral skip the session read.
  */
 export const mcpPlan = Effect.fn("SessionTools.mcpPlan")(function* (input: {
   agent: Agent.Info
   permission?: PermissionV1.Ruleset
-  loaded: ReadonlyArray<string>
+  loaded: Effect.Effect<ReadonlyArray<string>>
 }) {
   const mcp = yield* MCP.Service
   const config = yield* Config.Service
@@ -733,22 +723,22 @@ export const mcpPlan = Effect.fn("SessionTools.mcpPlan")(function* (input: {
     // Deferring behind a tool_search the agent may not call would strand the tools.
     disabled: flags.disableMcpDefer || flags.experimentalCodeMode || hidden.has("tool_search"),
   }
-  return yield* Effect.try({
-    try: (): McpPlan => {
-      const current = McpDefer.plan({ ...base, loaded: new Set(input.loaded) })
-      return {
-        tools,
-        sent: current.sent,
-        deferred: current.deferred,
-        listed: McpDefer.plan({ ...base, loaded: new Set() }).deferred.map((id) => ({ id, server: serverOf(id) })),
-      }
-    },
-    catch: (cause) => cause,
+  const plan = (loaded: ReadonlySet<string>) =>
+    Effect.try({ try: () => McpDefer.plan({ ...base, loaded }), catch: (cause) => cause })
+  const unplanned: McpPlan = { tools, sent: visible, deferred: [], listed: [] }
+  return yield* Effect.gen(function* () {
+    const eligible = (yield* plan(new Set())).deferred
+    if (eligible.length === 0) return unplanned
+    const current = yield* plan(new Set(yield* input.loaded))
+    return {
+      tools,
+      sent: current.sent,
+      deferred: current.deferred,
+      listed: eligible.map((id) => ({ id, server: serverOf(id) })),
+    } satisfies McpPlan
   }).pipe(
     Effect.catch((cause) =>
-      Effect.logWarning("failed to plan deferred MCP tools; sending all", { cause }).pipe(
-        Effect.as({ tools, sent: visible.toSorted(), deferred: [], listed: [] }),
-      ),
+      Effect.logWarning("failed to plan deferred MCP tools; sending all", { cause }).pipe(Effect.as(unplanned)),
     ),
   )
 })

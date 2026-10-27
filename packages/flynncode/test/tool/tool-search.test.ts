@@ -267,7 +267,7 @@ describe("McpLoaded", () => {
       const session = yield* sessions.create({ title: "prune" })
       yield* sessions.setMetadata({ sessionID: session.id, metadata: { worktree: "/w", sandbox: "readonly" } })
       yield* McpLoaded.add(sessions, session.id, ["a_one", "b_two", "c_three"])
-      const kept = yield* McpLoaded.prune(sessions, session.id, new Set(["a_one", "c_three", "d_new"]))
+      const kept = yield* McpLoaded.prune(sessions, session.id, (id) => ["a_one", "c_three", "d_new"].includes(id))
       expect(kept).toEqual(["a_one", "c_three"])
       const stored = yield* sessions.get(session.id)
       expect(stored.metadata).toEqual({ worktree: "/w", sandbox: "readonly", mcpLoaded: ["a_one", "c_three"] })
@@ -283,11 +283,14 @@ describe("McpLoaded", () => {
       yield* McpLoaded.add(sessions, session.id, ["a_one", "b_two"])
       const before = (yield* sessions.get(session.id)).time.updated
       yield* Effect.promise(() => Bun.sleep(10))
-      expect(yield* McpLoaded.prune(sessions, session.id, new Set(["a_one", "b_two", "z"]))).toEqual(["a_one", "b_two"])
+      expect(yield* McpLoaded.prune(sessions, session.id, (id) => ["a_one", "b_two", "z"].includes(id))).toEqual([
+        "a_one",
+        "b_two",
+      ])
       expect(yield* McpLoaded.add(sessions, session.id, ["a_one"])).toEqual(["a_one", "b_two"])
       expect((yield* sessions.get(session.id)).time.updated).toBe(before)
       // A real change does bump the updated time, so the assertion above is meaningful.
-      yield* McpLoaded.prune(sessions, session.id, new Set(["a_one"]))
+      yield* McpLoaded.prune(sessions, session.id, (id) => ["a_one"].includes(id))
       expect((yield* sessions.get(session.id)).time.updated).toBeGreaterThan(before)
     }),
   )

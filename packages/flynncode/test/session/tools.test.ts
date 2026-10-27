@@ -46,6 +46,9 @@ const model = {
   api: { id: "test-model" },
 } as Provider.Model
 
+// The fake MCP service has no tools, so nothing is sent or deferred.
+const noMcp: SessionTools.McpPlan = { tools: {}, sent: [], deferred: [], listed: [] }
+
 function fakeMcp() {
   return MCP.Service.of({
     tools: () => Effect.succeed({}),
@@ -92,9 +95,6 @@ const layer = Layer.mergeAll(
   Layer.succeed(Project.Service, fakeProject),
   Layer.succeed(MCP.Service, fakeMcp()),
   Layer.succeed(Truncate.Service, fakeTruncate),
-  // tool_search only appears when MCP tools are deferred; these fakes have none.
-  Layer.mock(Session.Service, {}),
-  Layer.mock(Agent.Service, {}),
   RuntimeFlags.layer(),
   Layer.succeed(
     ToolRegistry.Service,
@@ -223,6 +223,7 @@ it.effect("preserves running tool start time across metadata updates", () =>
       bypassAgentCheck: false,
       messages: [],
       promptOps: {} as never,
+      mcp: noMcp,
     })
     const execute = tools.timing.execute
     if (!execute) throw new Error("timing tool is missing execute")
@@ -275,6 +276,7 @@ it.effect("sandbox gate checks every pattern, not just the first", () =>
       bypassAgentCheck: false,
       messages: [],
       promptOps: {} as never,
+      mcp: noMcp,
     })
     const execute = tools.writer.execute
     if (!execute) throw new Error("writer tool is missing execute")
@@ -316,6 +318,7 @@ it.effect("sandbox contains external_directory for write tools but not reads", (
       bypassAgentCheck: false,
       messages: [],
       promptOps: {} as never,
+      mcp: noMcp,
     })
     const call = (name: string) => {
       const execute = tools[name]?.execute
@@ -359,6 +362,7 @@ it.effect("workspace-write allows edits inside a session's attached additional d
       bypassAgentCheck: false,
       messages: [],
       promptOps: {} as never,
+      mcp: noMcp,
     }).pipe(
       Effect.provideService(InstanceRef, instanceCtx),
       Effect.provide(Layer.mock(SessionFolders.Service, { list: () => Effect.succeed([AbsolutePath.make("/extra")]) })),
@@ -444,8 +448,6 @@ function autoLayer(
         Layer.succeed(Project.Service, fakeProject),
         Layer.succeed(MCP.Service, fakeMcp()),
         Layer.succeed(Truncate.Service, fakeTruncate),
-        Layer.mock(Session.Service, {}),
-        Layer.mock(Agent.Service, {}),
         RuntimeFlags.layer(),
         ...(verdict === undefined
           ? []
@@ -506,6 +508,7 @@ const resolveAsker = (permission: PermissionV1.Ruleset = askBash) =>
       bypassAgentCheck: false,
       messages: [],
       promptOps: {} as never,
+      mcp: noMcp,
     })
   })
 
@@ -647,8 +650,6 @@ function sandboxEnv(config: Partial<ConfigV1.Info>, metadata?: Record<string, un
         Layer.succeed(Project.Service, fakeProject),
         Layer.succeed(MCP.Service, fakeMcp()),
         Layer.succeed(Truncate.Service, fakeTruncate),
-        Layer.mock(Session.Service, {}),
-        Layer.mock(Agent.Service, {}),
         RuntimeFlags.layer(),
         Layer.succeed(ToolRegistry.Service, registry),
       ),
@@ -672,6 +673,7 @@ const runSandboxTool = (env: ReturnType<typeof sandboxEnv>, name: string) =>
       bypassAgentCheck: false,
       messages: [],
       promptOps: {} as never,
+      mcp: noMcp,
     })
     const execute = tools[name]?.execute
     if (!execute) throw new Error(`${name} tool is missing execute`)

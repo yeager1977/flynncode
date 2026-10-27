@@ -24,6 +24,7 @@ import { SessionID } from "@/session/schema"
 import { Auth } from "@/auth"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { notLoaded } from "@/tool/invalid"
 import * as Option from "effect/Option"
 import * as OtelTracer from "@effect/opentelemetry/Tracer"
 import { LLMAISDK } from "./llm/ai-sdk"
@@ -308,9 +309,7 @@ const live: Layer.Layer<
               ...failed.toolCall,
               input: JSON.stringify({
                 tool: name,
-                error: input.deferredTools?.includes(name)
-                  ? `${name} is a deferred MCP tool that is not loaded yet. Load it first by calling tool_search with query "select:${name}", then call ${name} again.`
-                  : failed.error.message,
+                error: input.deferredTools?.includes(name) ? notLoaded(name) : failed.error.message,
               }),
               toolName: "invalid",
             }
