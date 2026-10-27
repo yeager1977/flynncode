@@ -60,6 +60,7 @@ import { setSessionHandoff } from "@/pages/session/handoff"
 import { SessionHistoryPanel } from "@/pages/session/history/session-history-panel"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { BackgroundShellsSection } from "@/pages/session/background-shells-panel"
+import { SessionSchedulesSection } from "@/pages/session/session-schedules-panel"
 import { SubagentList } from "@/pages/session/subagent-list-view"
 import { artifactVersionSignal, loadStoredArtifacts } from "@/pages/layout/sidebar-artifacts"
 import { createSessionArtifacts, SessionArtifactsPanel } from "@/pages/session/session-artifacts-panel"
@@ -962,6 +963,7 @@ export function SessionSidePanel(props: {
                 </div>
                 <div class="h-full overflow-y-auto">
                   <BackgroundShellsSection sessionID={() => params.id ?? ""} />
+                  <SessionSchedulesSection sessionID={() => params.id ?? ""} />
                   <SubagentList sessionID={() => params.id ?? ""} />
                 </div>
               </div>

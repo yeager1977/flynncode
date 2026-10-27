@@ -21,6 +21,9 @@ export namespace TimelineRow {
     // A Stop hook continuation's event and reason, on a background divider.
     hookEvent?: string
     hookReason?: string
+    // A scheduled prompt's kind and its cron expression or wakeup reason.
+    scheduleKind?: "cron" | "wakeup"
+    scheduleDetail?: string
   }> {}
   export class AssistantPart extends Data.TaggedClass("AssistantPart")<{
     userMessageID: string

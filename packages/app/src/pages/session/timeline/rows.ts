@@ -4,6 +4,7 @@ import { AssistantMessage, Part, SessionStatus, UserMessage } from "@flynncode/s
 import { groupParts, renderable, type PartGroup } from "@flynncode/session-ui/message-part"
 import { TimelineRow, type SummaryDiff } from "./timeline-row"
 import { hookContinuation } from "./hook-divider"
+import { scheduleContinuation } from "./schedule-divider"
 import { uniqueSummaryDiffs } from "./summary-diffs"
 import { compareMessages } from "@/utils/session-message"
 import { usageLimit } from "@flynncode/core/session/usage-limit"
@@ -249,6 +250,7 @@ export namespace Timeline {
           userMessageID: userMessage.id,
           label: "background",
           ...hookContinuation(userParts),
+          ...scheduleContinuation(userParts),
         }),
       )
     } else {

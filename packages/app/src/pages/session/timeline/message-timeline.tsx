@@ -1304,21 +1304,27 @@ export function MessageTimeline(props: {
         const dividerLabel = turnDividerRow().label
         const hookEvent = turnDividerRow().hookEvent
         const hookReason = turnDividerRow().hookReason
+        const scheduleKind = turnDividerRow().scheduleKind
+        const scheduleDetail = turnDividerRow().scheduleDetail
         return (
           <TimelineRowFrame row={turnDividerRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
               <div data-slot="session-turn-compaction">
                 <MessageDivider
                   label={
-                    hookEvent && hookReason
-                      ? language.t("session.timeline.hookDivider", { event: hookEvent, reason: hookReason })
-                      : language.t(
-                          dividerLabel === "background"
-                            ? "session.timeline.backgroundDivider"
-                            : dividerLabel === "compaction"
-                              ? "ui.messagePart.compaction"
-                              : "ui.message.interrupted",
-                        )
+                    scheduleKind && scheduleDetail
+                      ? scheduleKind === "cron"
+                        ? language.t("session.timeline.scheduledDivider", { cron: scheduleDetail })
+                        : language.t("session.timeline.wakeupDivider", { reason: scheduleDetail })
+                      : hookEvent && hookReason
+                        ? language.t("session.timeline.hookDivider", { event: hookEvent, reason: hookReason })
+                        : language.t(
+                            dividerLabel === "background"
+                              ? "session.timeline.backgroundDivider"
+                              : dividerLabel === "compaction"
+                                ? "ui.messagePart.compaction"
+                                : "ui.message.interrupted",
+                          )
                   }
                 />
               </div>

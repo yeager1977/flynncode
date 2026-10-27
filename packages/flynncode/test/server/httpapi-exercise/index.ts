@@ -674,6 +674,30 @@ const scenarios: Scenario[] = [
       body: { callID: "call_httpapi_missing" },
     }))
     .json(404, object, "status"),
+  http.protected
+    .get("/session/{sessionID}/schedules", "session.schedules.list")
+    .seeded((ctx) => ctx.session({ title: "Scheduled prompts owner" }))
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/schedules", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      array(body)
+      check(body.length === 0, "a session without scheduled prompts should list none")
+    }),
+  // Destructive route: the auth probe targets a job that cannot exist, so a probe that got through would cancel nothing.
+  http.protected
+    .delete("/session/{sessionID}/schedules/{jobID}", "session.schedules.delete")
+    .mutating()
+    .probe({ path: "/session/ses_httpapi_probe/schedules/sch_httpapi_missing" })
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/schedules/{jobID}", {
+        sessionID: "ses_httpapi_schedules",
+        jobID: "sch_httpapi_missing",
+      }),
+      headers: ctx.headers(),
+    }))
+    .json(404, object, "status"),
   http.protected.get("/experimental/resource", "experimental.resource.list").json(),
   http.protected
     .post("/sync/history", "sync.history.list")

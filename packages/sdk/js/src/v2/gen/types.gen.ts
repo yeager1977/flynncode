@@ -95,6 +95,7 @@ export type Event =
   | EventShellBackgroundStarted
   | EventShellBackgroundOutput
   | EventShellBackgroundExited
+  | EventSessionScheduleUpdated
   | EventServerConnected
   | EventGlobalDisposed
   | EventServerInstanceDisposed
@@ -1679,6 +1680,13 @@ export type GlobalEvent = {
           id: string
           status: BackgroundShellStatus
           exitCode?: number
+        }
+      }
+    | {
+        id: string
+        type: "session.schedule.updated"
+        properties: {
+          sessionID: string
         }
       }
     | {
@@ -3703,6 +3711,19 @@ export type ConflictError = {
   resource?: string
 }
 
+export type SessionScheduleKind = "cron" | "wakeup"
+
+export type SessionSchedule = {
+  id: string
+  kind: SessionScheduleKind
+  cron?: string
+  prompt: string
+  reason?: string
+  recurring: boolean
+  nextRunAt: number
+  expiresAt?: number
+}
+
 export type UnauthorizedError = {
   _tag: "UnauthorizedError"
   message: string
@@ -3989,6 +4010,7 @@ export type V2Event =
   | ShellBackgroundStarted
   | ShellBackgroundOutput
   | ShellBackgroundExited
+  | SessionScheduleUpdated
   | ServerConnected
   | GlobalDisposed
 
@@ -7236,6 +7258,23 @@ export type ShellBackgroundExited = {
   }
 }
 
+export type SessionScheduleUpdated = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.schedule.updated"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+  }
+}
+
 export type ServerConnected = {
   id: string
   metadata?: {
@@ -8252,6 +8291,14 @@ export type EventShellBackgroundExited = {
     id: string
     status: BackgroundShellStatus
     exitCode?: number
+  }
+}
+
+export type EventSessionScheduleUpdated = {
+  id: string
+  type: "session.schedule.updated"
+  properties: {
+    sessionID: string
   }
 }
 
@@ -13234,6 +13281,71 @@ export type SessionShellsPromoteResponses = {
 }
 
 export type SessionShellsPromoteResponse = SessionShellsPromoteResponses[keyof SessionShellsPromoteResponses]
+
+export type SessionSchedulesListData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/schedules"
+}
+
+export type SessionSchedulesListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type SessionSchedulesListError = SessionSchedulesListErrors[keyof SessionSchedulesListErrors]
+
+export type SessionSchedulesListResponses = {
+  /**
+   * Scheduled prompts of the session
+   */
+  200: Array<SessionSchedule>
+}
+
+export type SessionSchedulesListResponse = SessionSchedulesListResponses[keyof SessionSchedulesListResponses]
+
+export type SessionSchedulesDeleteData = {
+  body?: never
+  path: {
+    sessionID: string
+    jobID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/schedules/{jobID}"
+}
+
+export type SessionSchedulesDeleteErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionSchedulesDeleteError = SessionSchedulesDeleteErrors[keyof SessionSchedulesDeleteErrors]
+
+export type SessionSchedulesDeleteResponses = {
+  /**
+   * Whether the scheduled prompt was cancelled
+   */
+  200: boolean
+}
+
+export type SessionSchedulesDeleteResponse = SessionSchedulesDeleteResponses[keyof SessionSchedulesDeleteResponses]
 
 export type V2HealthGetData = {
   body?: never

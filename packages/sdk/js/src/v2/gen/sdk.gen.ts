@@ -249,6 +249,10 @@ import type {
   SessionPromptResponses,
   SessionRevertErrors,
   SessionRevertResponses,
+  SessionSchedulesDeleteErrors,
+  SessionSchedulesDeleteResponses,
+  SessionSchedulesListErrors,
+  SessionSchedulesListResponses,
   SessionShareErrors,
   SessionShareResponses,
   SessionShellErrors,
@@ -4309,6 +4313,82 @@ export class Shells extends HeyApiClient {
   }
 }
 
+export class Schedules extends HeyApiClient {
+  /**
+   * List scheduled prompts
+   *
+   * List the cron jobs and wakeups scheduled for this session, soonest first.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      SessionSchedulesListResponses,
+      SessionSchedulesListErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/schedules",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Cancel a scheduled prompt
+   *
+   * Cancel a cron job or wakeup of this session. 404 when the session has no such job.
+   */
+  public delete<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      jobID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "jobID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<
+      SessionSchedulesDeleteResponses,
+      SessionSchedulesDeleteErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/schedules/{jobID}",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Session2 extends HeyApiClient {
   /**
    * List sessions
@@ -5326,6 +5406,11 @@ export class Session2 extends HeyApiClient {
   private _shells?: Shells
   get shells(): Shells {
     return (this._shells ??= new Shells({ client: this.client }))
+  }
+
+  private _schedules?: Schedules
+  get schedules(): Schedules {
+    return (this._schedules ??= new Schedules({ client: this.client }))
   }
 }
 

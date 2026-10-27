@@ -44,6 +44,7 @@ import { SessionFoldersMenu } from "./session-folders-menu"
 import { SessionWorktreeMenu } from "./session-worktree-menu"
 import { CiStatusStrip } from "./ci-status"
 import { BackgroundShellsChip } from "./background-shells-chip"
+import { SessionSchedulesChip } from "./session-schedules-chip"
 import { IconButtonV2 } from "@flynncode/ui/v2/icon-button-v2"
 import { Icon as IconV2 } from "@flynncode/ui/v2/icon"
 import { KeybindV2 } from "@flynncode/ui/v2/keybind-v2"
@@ -719,6 +720,7 @@ export function SessionHeader() {
                         <ComputerUseMenu />
                       </Show>
                       <BackgroundShellsChip sessionID={params.id} onOpen={() => view().tasks.open()} />
+                      <SessionSchedulesChip sessionID={params.id} onOpen={() => view().tasks.open()} />
                       <Tooltip placement="bottom" value={language.t("session.subagents.tasks")}>
                         <Button
                           variant="ghost"
@@ -856,6 +858,7 @@ function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
           <ComputerUseMenu variant="v2" />
         </Show>
         <BackgroundShellsChip sessionID={props.state.sessionID} onOpen={props.state.onShellsOpen} />
+        <SessionSchedulesChip sessionID={props.state.sessionID} onOpen={props.state.onShellsOpen} />
         <TooltipV2 class="shrink-0" placement="bottom" value={props.state.tasksLabel}>
           <IconButtonV2
             type="button"

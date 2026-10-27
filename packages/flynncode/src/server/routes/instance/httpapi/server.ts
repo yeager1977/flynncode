@@ -57,6 +57,7 @@ import { Snapshot } from "@/snapshot"
 import { Storage } from "@/storage/storage"
 import { SessionDiffSweep } from "@/storage/session-diff-sweep"
 import { BackgroundShells } from "@/shell/background/service"
+import { ScheduleStore } from "@/schedule/store"
 import { Scheduler } from "@/schedule/scheduler"
 import { ToolRegistry } from "@/tool/registry"
 import { Truncate } from "@/tool/truncate"
@@ -117,6 +118,7 @@ import { projectCopyHandlers } from "./handlers/project-copy"
 import { providerHandlers } from "./handlers/provider"
 import { pullRequestHandlers } from "./handlers/pull-request"
 import { backgroundShellsHandlers } from "./handlers/background-shells"
+import { sessionSchedulesHandlers } from "./handlers/session-schedules"
 import { ptyConnectHandlers, ptyHandlers } from "./handlers/pty"
 import { questionHandlers } from "./handlers/question"
 import { sessionHandlers } from "./handlers/session"
@@ -197,6 +199,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     tuiHandlers,
     workspaceHandlers,
     backgroundShellsHandlers,
+    sessionSchedulesHandlers,
   ]),
 )
 
@@ -258,6 +261,7 @@ export const app = LayerNode.group([
   SessionDiffSweep.node,
   WorktreeJanitor.node,
   BackgroundShells.node,
+  ScheduleStore.node,
   // Polls every 15 s while this graph lives; only the machine-wide leader (an opted-in long-lived server) ticks.
   Scheduler.node,
   Snapshot.node,

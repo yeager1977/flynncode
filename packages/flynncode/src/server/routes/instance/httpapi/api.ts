@@ -9,6 +9,7 @@ import { InstanceDisposed } from "@/server/event"
 import { ComputerUseExecutor } from "@/computer-use"
 import { Question } from "@/question"
 import { BackgroundShellsApi } from "./groups/background-shells"
+import { SessionSchedulesApi } from "./groups/session-schedules"
 import { ConfigApi } from "./groups/config"
 import { ComputerUseApi } from "./groups/computer-use"
 import { ControlApi } from "./groups/control"
@@ -85,6 +86,7 @@ export const InstanceHttpApi = HttpApi.make("opencode-instance")
   .addHttpApi(TuiApi)
   .addHttpApi(WorkspaceApi)
   .addHttpApi(BackgroundShellsApi)
+  .addHttpApi(SessionSchedulesApi)
   .middleware(SchemaErrorMiddleware)
 
 export const OpenCodeHttpApi = HttpApi.make("opencode")
