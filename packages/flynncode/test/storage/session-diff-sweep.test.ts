@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect } from "bun:test"
+import fs from "fs/promises"
 import { sql } from "drizzle-orm"
 import { Duration, Effect } from "effect"
 import * as TestClock from "effect/testing/TestClock"
@@ -6,6 +7,7 @@ import { Flag } from "@flynncode/core/flag/flag"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { Database } from "@flynncode/core/database/database"
 import { Storage } from "../../src/storage/storage"
+import { ClaudeTranscript } from "../../src/hooks/claude-transcript"
 import { SessionDiffSweep } from "../../src/storage/session-diff-sweep"
 import { testEffect } from "../lib/effect"
 
@@ -61,6 +63,26 @@ describe("SessionDiffSweep", () => {
       const left = (yield* storage.list(["session_diff"])).map((key) => key.at(-1))
       expect(removed).toBe(0)
       expect(left).toContain("ses_back")
+    }),
+  )
+
+  it.instance("removes Claude transcripts of tombstoned sessions and keeps the rest", () =>
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      yield* database.db.run(sql`INSERT OR IGNORE INTO session_tombstone (id, time_deleted) VALUES ('ses_tr_gone', 2)`)
+      const names = ["ses_tr_gone.jsonl", "ses_tr_gone.cursor", "ses_tr_other.jsonl", "ses_tr_other.cursor"]
+      yield* Effect.promise(async () => {
+        await fs.mkdir(ClaudeTranscript.directory(), { recursive: true })
+        await Promise.all(names.map((name) => Bun.write(`${ClaudeTranscript.directory()}/${name}`, "")))
+      })
+      const sweep = yield* SessionDiffSweep.Service
+      const removed = yield* sweep.sweep()
+      const left = yield* Effect.promise(() => fs.readdir(ClaudeTranscript.directory()))
+      expect(removed).toBe(2)
+      expect(left).toContain("ses_tr_other.jsonl")
+      expect(left).toContain("ses_tr_other.cursor")
+      expect(left).not.toContain("ses_tr_gone.jsonl")
+      expect(left).not.toContain("ses_tr_gone.cursor")
     }),
   )
 

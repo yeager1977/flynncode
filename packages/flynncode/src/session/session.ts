@@ -50,6 +50,7 @@ import { SessionMessage } from "@flynncode/schema/session-message"
 import { HooksRunner } from "@/hooks/runner"
 import { HooksContext } from "@/hooks/context"
 import { HooksExecutor } from "@/hooks/executor"
+import { ClaudeTranscript } from "@/hooks/claude-transcript"
 
 const parentTitlePrefix = "New session - "
 const childTitlePrefix = "Child session - "
@@ -711,6 +712,7 @@ const layer: Layer.Layer<
           const maybeExecutor = yield* Effect.serviceOption(HooksExecutor.Service)
           if (Option.isSome(maybeExecutor)) yield* maybeExecutor.value.cancelSession(sessionID)
         }
+        yield* ClaudeTranscript.remove(sessionID)
         yield* events.remove(sessionID)
       } catch (error) {
         yield* Effect.logError("failed to remove session", { sessionID, error })

@@ -3,6 +3,8 @@ import { Database } from "@flynncode/core/database/database"
 import { Flag } from "@flynncode/core/flag/flag"
 import { sql } from "drizzle-orm"
 import { Cause, Context, Duration, Effect, Layer, Schedule } from "effect"
+import fs from "fs/promises"
+import { ClaudeTranscript } from "@/hooks/claude-transcript"
 import { Storage } from "./storage"
 
 export interface Interface {
@@ -27,7 +29,10 @@ const layer = Layer.effect(
     const database = yield* Database.Service
     const sweep = Effect.fn("SessionDiffSweep.sweep")(function* () {
       const keys = yield* storage.list(["session_diff"]).pipe(Effect.orElseSucceed(() => []))
-      if (keys.length === 0) return 0
+      const transcripts = yield* Effect.promise(() =>
+        fs.readdir(ClaudeTranscript.directory()).catch(() => [] as string[]),
+      )
+      if (keys.length === 0 && transcripts.length === 0) return 0
       const deleted = new Set(
         (yield* database.db
           .all<{ id: string }>(sql`SELECT id FROM session_tombstone WHERE id NOT IN (SELECT id FROM session)`)
@@ -41,7 +46,16 @@ const layer = Layer.effect(
             Effect.orElseSucceed(() => false),
           ),
       )
-      const removed = results.filter(Boolean).length
+      const orphaned = transcripts.filter((name) => deleted.has(name.replace(/\.(jsonl|cursor)$/, "")))
+      const transcriptResults = yield* Effect.forEach(orphaned, (name) =>
+        Effect.promise(() =>
+          fs.rm(`${ClaudeTranscript.directory()}/${name}`, { force: true }).then(
+            () => true,
+            () => false,
+          ),
+        ),
+      )
+      const removed = [...results, ...transcriptResults].filter(Boolean).length
       if (removed > 0) yield* Effect.logInfo("session diff sweep", { removed })
       return removed
     })
