@@ -65,6 +65,7 @@ import { AnimatedCountList } from "./tool-count-summary"
 import { ToolStatusTitle } from "./tool-status-title"
 import { patchFiles } from "./apply-patch-file"
 import { partDefaultOpen } from "./part-default-open"
+import { toolSearchCard } from "./tool-search-card"
 import { animate } from "motion"
 import { attached, inline, kind, typeLabel } from "./message-file"
 import { readPartText } from "./message-part-text"
@@ -2189,6 +2190,33 @@ ToolRegistry.register({
         </Show>
       </BasicTool>
     )
+  },
+})
+
+ToolRegistry.register({
+  name: "tool_search",
+  render(props) {
+    const i18n = useI18n()
+    const card = createMemo(() => toolSearchCard(props.metadata, props.input))
+    const running = () => props.status === "pending" || props.status === "running"
+    const title = () => {
+      const value = card()
+      if (props.status !== "completed") return i18n.t("ui.tool.toolSearch")
+      if (value.kind === "none") return i18n.t("ui.tool.toolSearch.none", { query: value.query })
+      return i18n.t(value.count === 1 ? "ui.tool.toolSearch.loaded.one" : "ui.tool.toolSearch.loaded.other", {
+        count: value.count,
+      })
+    }
+    const subtitle = () => {
+      const value = card()
+      if (props.status !== "completed" || value.kind === "none") return ""
+      return [
+        ...value.names,
+        ...(value.more > 0 ? [i18n.t("ui.tool.toolSearch.more", { count: value.more })] : []),
+      ].join(", ")
+    }
+
+    return <BasicTool {...props} icon="mcp" trigger={{ title: title(), subtitle: subtitle() }} hideDetails />
   },
 })
 
