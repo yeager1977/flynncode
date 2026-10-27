@@ -137,6 +137,37 @@ describe("schedule tools", () => {
     }),
   )
 
+  it.instance("cron_create refuses a recurring job that would first fire after its 7-day expiry", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const store = yield* ScheduleStore.Service
+      const session = yield* sessions.create({ title: "root" })
+      const t = yield* tools
+      // February 29th is always more than 7 days away, except in the week before one.
+      const message = failure(
+        yield* t.create.execute({ cron: "0 0 29 2 *", prompt: "leap day" }, ctx(session.id)).pipe(Effect.exit),
+      )
+      expect(message).toContain("would never fire")
+      expect(message).toContain("recurring false")
+      expect(yield* store.list(session.id)).toHaveLength(0)
+      yield* t.create.execute({ cron: "0 0 29 2 *", prompt: "leap day", recurring: false }, ctx(session.id))
+      expect(yield* store.list(session.id)).toHaveLength(1)
+    }),
+  )
+
+  it.instance("jobs created in a process that never leads belong to the desktop sidecar", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const store = yield* ScheduleStore.Service
+      const session = yield* sessions.create({ title: "root" })
+      const t = yield* tools
+      expect(ScheduleStore.processOwner()).toBeUndefined()
+      yield* t.create.execute({ cron: "*/5 * * * *", prompt: "poll" }, ctx(session.id))
+      yield* t.wakeup.execute({ delaySeconds: 120, prompt: "look", reason: "wait" }, ctx(session.id))
+      expect((yield* store.list(session.id)).map((job) => job.owner)).toEqual(["sidecar", "sidecar"])
+    }),
+  )
+
   it.instance("cron_create refuses the 21st job; a wakeup counts toward the limit", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service

@@ -143,6 +143,50 @@ describe("ScheduleStore", () => {
     }),
   )
 
+  it.effect("refuses a recurring job that first matches at or after its 7-day expiry", () =>
+    Effect.gen(function* () {
+      const store = yield* ScheduleStore.Service
+      const id = session("never")
+      // New Year's midnight is two months away, far past the expiry.
+      const error = yield* store.create(cron(id, now, "0 0 1 1 *")).pipe(Effect.flip)
+      expect(error).toBeInstanceOf(ScheduleStore.NeverFiresError)
+      expect(error).toMatchObject({
+        nextRunAt: new Date("2027-01-01T00:00:00").getTime(),
+        expiresAt: now.getTime() + ScheduleStore.EXPIRY_MS,
+      })
+      // Exactly at the expiry is refused too: the job is deleted the moment it would fire.
+      const atExpiry = new Date("2026-10-20T10:00:00")
+      expect(yield* store.create(cron(id, atExpiry, "0 10 27 10 *")).pipe(Effect.flip)).toBeInstanceOf(
+        ScheduleStore.NeverFiresError,
+      )
+      // The same cron as a one-shot never expires, and one that matches within 7 days is fine.
+      yield* store.create({ ...cron(id, now, "0 0 1 1 *"), recurring: false })
+      yield* store.create(cron(id, now, "0 9 * * 1"))
+      expect(yield* store.list(id)).toHaveLength(2)
+      yield* store.removeSession(id)
+    }),
+  )
+
+  it.effect("keeps each job's owner kind and serves due jobs and summaries per kind", () =>
+    Effect.gen(function* () {
+      const store = yield* ScheduleStore.Service
+      const id = session("owner")
+      const sidecar = yield* store.create(cron(id))
+      const tui = yield* store.create({ ...cron(id), owner: "tui" })
+      expect(sidecar.owner).toBe("sidecar")
+      expect(tui.owner).toBe("tui")
+      const due = new Date(sidecar.next_run_at)
+      const mine = (jobs: ScheduleStore.Job[]) => jobs.filter((item) => item.session_id === id).map((item) => item.id)
+      expect(mine(yield* store.due(due, "sidecar"))).toEqual([sidecar.id])
+      expect(mine(yield* store.due(due, "tui"))).toEqual([tui.id])
+      expect(mine(yield* store.due(due, "serve"))).toEqual([])
+      expect((yield* store.summary("tui")).count).toBeGreaterThanOrEqual(1)
+      expect(mine(yield* store.expire(new Date(now.getTime() + 7 * ScheduleStore.EXPIRY_MS), "tui"))).toEqual([tui.id])
+      expect((yield* store.list(id)).map((job) => job.id)).toEqual([sidecar.id])
+      yield* store.removeSession(id)
+    }),
+  )
+
   it.effect("lists due jobs without claiming them, and claims a due job once within its lease", () =>
     Effect.gen(function* () {
       const store = yield* ScheduleStore.Service
@@ -151,14 +195,14 @@ describe("ScheduleStore", () => {
       const due = new Date(job.next_run_at)
       const mine = (jobs: ScheduleStore.Job[]) => jobs.filter((item) => item.session_id === id).map((item) => item.id)
 
-      expect(mine(yield* store.due(new Date(job.next_run_at - 1)))).toEqual([])
+      expect(mine(yield* store.due(new Date(job.next_run_at - 1), "sidecar"))).toEqual([])
       expect(yield* store.claim(job.id, new Date(job.next_run_at - 1))).toBeUndefined()
-      expect(mine(yield* store.due(due))).toEqual([job.id])
-      expect(mine(yield* store.due(due))).toEqual([job.id])
+      expect(mine(yield* store.due(due, "sidecar"))).toEqual([job.id])
+      expect(mine(yield* store.due(due, "sidecar"))).toEqual([job.id])
 
       const first = yield* store.claim(job.id, due)
       expect(first?.lease_until).toBe(due.getTime() + MINUTE)
-      expect(mine(yield* store.due(new Date(due.getTime() + 30_000)))).toEqual([])
+      expect(mine(yield* store.due(new Date(due.getTime() + 30_000), "sidecar"))).toEqual([])
       expect(yield* store.claim(job.id, new Date(due.getTime() + 30_000))).toBeUndefined()
 
       // A crashed claimant's lease expires and the job is claimable again.
@@ -183,9 +227,9 @@ describe("ScheduleStore", () => {
   it.effect("summarizes the table in one read", () =>
     Effect.gen(function* () {
       const store = yield* ScheduleStore.Service
-      const before = yield* store.summary()
+      const before = yield* store.summary("sidecar")
       const job = yield* store.create(cron(session("summary"), new Date("2020-01-01T00:00:30")))
-      const after = yield* store.summary()
+      const after = yield* store.summary("sidecar")
       expect(after.count).toBe(before.count + 1)
       expect(after.next).toBe(job.next_run_at)
       expect(after.expires).toBe(job.expires_at)
@@ -292,8 +336,8 @@ describe("ScheduleStore", () => {
       const once = yield* store.create({ ...cron(id), recurring: false })
 
       const mine = (jobs: ScheduleStore.Job[]) => jobs.filter((job) => job.session_id === id).map((job) => job.id)
-      expect(mine(yield* store.expire(new Date(now.getTime() + 6 * DAY)))).toEqual([])
-      expect(mine(yield* store.expire(new Date(now.getTime() + 7 * DAY + 1)))).toEqual([recurring.id])
+      expect(mine(yield* store.expire(new Date(now.getTime() + 6 * DAY), "sidecar"))).toEqual([])
+      expect(mine(yield* store.expire(new Date(now.getTime() + 7 * DAY + 1), "sidecar"))).toEqual([recurring.id])
       expect((yield* store.list(id)).map((job) => job.id)).toEqual([once.id])
       expect(recurring.expires_at).not.toBeNull()
     }),

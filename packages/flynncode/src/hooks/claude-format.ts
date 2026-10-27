@@ -68,6 +68,9 @@ const PARAMS: Record<string, Shape> = {
   schedule_wakeup: { delaySeconds: true, prompt: true, reason: true },
 }
 
+// Tools whose Claude Code input keeps camelCase keys (ScheduleWakeup's `delaySeconds`), passed to hooks unchanged.
+const CAMEL = new Set(["schedule_wakeup"])
+
 // Tools whose PostToolUse `tool_response` is `{ filePath, success: true }`,
 // with the argument that names the file.
 const FILE_TOOLS: Record<string, string> = {
@@ -129,9 +132,10 @@ export function permissionMode(mode: string | undefined) {
 }
 
 // camelCase keys become snake_case at every depth: in nested plain objects
-// and in arrays of them. Other values are passed on as they are.
+// and in arrays of them, except for CAMEL tools. Other values are passed on
+// as they are.
 export function toClaudeArgs(id: string, args: Record<string, unknown>): Record<string, unknown> {
-  if (!Object.hasOwn(NAMES, id)) return args
+  if (!Object.hasOwn(NAMES, id) || CAMEL.has(id)) return args
   return snakeKeys(args)
 }
 

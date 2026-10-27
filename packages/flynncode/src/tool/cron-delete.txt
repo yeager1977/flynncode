@@ -1,5 +1,1 @@
-Cancels a scheduled job of this session, by the id that cron_create or cron_list shows. A pending wakeup from schedule_wakeup is cancelled the same way.
-
-An id that does not belong to this session, or that has already fired or been deleted, returns "no such job".
-
-Only the main session has scheduled jobs; sub-agents cannot schedule.
+Cancels one of this session's scheduled jobs, or its pending wakeup, by id.

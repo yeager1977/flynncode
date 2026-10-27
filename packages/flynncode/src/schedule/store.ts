@@ -18,6 +18,28 @@ export const EXPIRY_MS = 7 * 24 * 60 * 60 * 1000
 
 export type Job = typeof SessionScheduleTable.$inferSelect
 
+/**
+ * The kind of long-lived server that delivers a job: the one that created it, so the scheduled turn streams to the
+ * clients of that process. `web` and `acp` serve through `Server.listen` like `serve` and count as `serve`.
+ */
+export type Owner = Job["owner"]
+
+// Process memory, not the environment: a `flynncode run` spawned from a shell tool must never inherit it.
+let current: Owner | undefined
+
+/** Marks this process as a long-lived server of `owner`'s kind; only such a process leads scheduling for its kind. */
+export function adoptOwner(owner: Owner) {
+  current = owner
+}
+
+/**
+ * The kind of server this process is, or undefined for a process that never delivers (`flynncode run`, plugin
+ * clients, tests); jobs such a process creates belong to the desktop sidecar, the column default.
+ */
+export function processOwner() {
+  return current
+}
+
 export class LimitError extends Schema.TaggedErrorClass<LimitError>()("ScheduleLimitError", {
   sessionID: Schema.String,
   limit: Schema.Number,
@@ -25,6 +47,13 @@ export class LimitError extends Schema.TaggedErrorClass<LimitError>()("ScheduleL
 
 export class InvalidCronError extends Schema.TaggedErrorClass<InvalidCronError>()("ScheduleInvalidCronError", {
   cron: Schema.String,
+}) {}
+
+/** A recurring job whose first match comes at or after its expiry would never fire. */
+export class NeverFiresError extends Schema.TaggedErrorClass<NeverFiresError>()("ScheduleNeverFiresError", {
+  cron: Schema.String,
+  nextRunAt: Schema.Number,
+  expiresAt: Schema.Number,
 }) {}
 
 export type CreateInput = {
@@ -36,6 +65,8 @@ export type CreateInput = {
   recurring: boolean
   /** When a wakeup fires; a cron job derives its first run from `cron`. Defaults to `now`. */
   runAt?: Date
+  /** Defaults to the sidecar. */
+  owner?: Owner
   now: Date
 }
 
@@ -48,15 +79,15 @@ export type Summary = {
 }
 
 export interface Interface {
-  readonly create: (input: CreateInput) => Effect.Effect<Job, LimitError | InvalidCronError>
+  readonly create: (input: CreateInput) => Effect.Effect<Job, LimitError | InvalidCronError | NeverFiresError>
   readonly list: (sessionID: SessionID) => Effect.Effect<Job[]>
   readonly remove: (sessionID: SessionID, id: string) => Effect.Effect<boolean>
   /** Deletes every job of the session and returns how many there were. */
   readonly removeSession: (sessionID: SessionID) => Effect.Effect<number>
-  /** One read over the whole table, so an idle tick never writes. */
-  readonly summary: () => Effect.Effect<Summary>
-  /** Due jobs nobody holds a lease on, without claiming them. */
-  readonly due: (now: Date) => Effect.Effect<Job[]>
+  /** One read over `owner`'s jobs, so an idle tick never writes. */
+  readonly summary: (owner: Owner) => Effect.Effect<Summary>
+  /** `owner`'s due jobs nobody holds a lease on, without claiming them. */
+  readonly due: (now: Date, owner: Owner) => Effect.Effect<Job[]>
   /** Atomically leases one due job until `now + LEASE_MS`; undefined when it is not due or someone else holds it. */
   readonly claim: (id: string, now: Date) => Effect.Effect<Job | undefined>
   /**
@@ -68,8 +99,8 @@ export interface Interface {
   readonly skip: (job: Job, now: Date) => Effect.Effect<boolean>
   /** Delivery failed: count it, release the lease, and delete the job at 3 in a row. */
   readonly fail: (job: Job) => Effect.Effect<boolean>
-  /** Deletes jobs past `expires_at` and returns them. */
-  readonly expire: (now: Date) => Effect.Effect<Job[]>
+  /** Deletes `owner`'s jobs past `expires_at` and returns them. */
+  readonly expire: (now: Date, owner: Owner) => Effect.Effect<Job[]>
   /** Deletes jobs whose session is gone or archived and returns them; there is no foreign key to cascade. */
   readonly prune: () => Effect.Effect<Job[]>
 }
@@ -120,6 +151,9 @@ const layer = Layer.effect(
     const create = Effect.fn("ScheduleStore.create")(function* (input: CreateInput) {
       const first = input.kind === "wakeup" ? (input.runAt ?? input.now) : nextRun(input.cron ?? "", input.now)
       if (!first) return yield* new InvalidCronError({ cron: input.cron ?? "" })
+      const expiresAt = input.kind === "cron" && input.recurring ? input.now.getTime() + EXPIRY_MS : null
+      if (expiresAt !== null && first.getTime() >= expiresAt)
+        return yield* new NeverFiresError({ cron: input.cron ?? "", nextRunAt: first.getTime(), expiresAt })
       return yield* db
         .transaction(
           (tx) =>
@@ -150,8 +184,9 @@ const layer = Layer.effect(
                   reason: input.reason ?? null,
                   recurring: input.recurring,
                   next_run_at: first.getTime(),
-                  expires_at: input.kind === "cron" && input.recurring ? input.now.getTime() + EXPIRY_MS : null,
+                  expires_at: expiresAt,
                   time_created: input.now.getTime(),
+                  ...(input.owner ? { owner: input.owner } : {}),
                 })
                 .returning()
                 .get()
@@ -196,7 +231,7 @@ const layer = Layer.effect(
       return removed.length
     })
 
-    const summary = Effect.fn("ScheduleStore.summary")(function* () {
+    const summary = Effect.fn("ScheduleStore.summary")(function* (owner: Owner) {
       const row = yield* db
         .select({
           count: sql<number>`count(*)`,
@@ -204,6 +239,7 @@ const layer = Layer.effect(
           expires: sql<number | null>`min(${SessionScheduleTable.expires_at})`,
         })
         .from(SessionScheduleTable)
+        .where(eq(SessionScheduleTable.owner, owner))
         .get()
         .pipe(Effect.orDie)
       return { count: row?.count ?? 0, next: row?.next ?? null, expires: row?.expires ?? null }
@@ -215,11 +251,11 @@ const layer = Layer.effect(
         or(isNull(SessionScheduleTable.lease_until), lt(SessionScheduleTable.lease_until, now.getTime())),
       )
 
-    const due = Effect.fn("ScheduleStore.due")(function* (now: Date) {
+    const due = Effect.fn("ScheduleStore.due")(function* (now: Date, owner: Owner) {
       return yield* db
         .select()
         .from(SessionScheduleTable)
-        .where(free(now))
+        .where(and(eq(SessionScheduleTable.owner, owner), free(now)))
         .orderBy(asc(SessionScheduleTable.next_run_at), asc(SessionScheduleTable.id))
         .all()
         .pipe(Effect.orDie)
@@ -298,10 +334,16 @@ const layer = Layer.effect(
         .pipe(Effect.orDie)
     })
 
-    const expire = Effect.fn("ScheduleStore.expire")(function* (now: Date) {
+    const expire = Effect.fn("ScheduleStore.expire")(function* (now: Date, owner: Owner) {
       return yield* db
         .delete(SessionScheduleTable)
-        .where(and(isNotNull(SessionScheduleTable.expires_at), lte(SessionScheduleTable.expires_at, now.getTime())))
+        .where(
+          and(
+            eq(SessionScheduleTable.owner, owner),
+            isNotNull(SessionScheduleTable.expires_at),
+            lte(SessionScheduleTable.expires_at, now.getTime()),
+          ),
+        )
         .returning()
         .all()
         .pipe(Effect.orDie)

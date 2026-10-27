@@ -227,6 +227,9 @@ export const SessionScheduleTable = sqliteTable(
     failures: integer().notNull().default(0),
     pending_message_id: text(),
     time_created: integer().notNull(),
+    // The kind of server process that created the job and delivers it, so its turn streams to the clients of that
+    // process. Jobs from before the column belong to the desktop sidecar.
+    owner: text().$type<"sidecar" | "tui" | "serve">().notNull().default("sidecar"),
   },
   (table) => [
     index("session_schedule_session_idx").on(table.session_id),

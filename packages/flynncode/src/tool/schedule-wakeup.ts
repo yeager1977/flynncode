@@ -39,6 +39,7 @@ export const ScheduleWakeupTool = Tool.define<typeof Parameters, Metadata, Sched
               prompt: params.prompt,
               reason: params.reason,
               recurring: false,
+              owner: ScheduleStore.processOwner(),
               now: new Date(now),
               runAt: new Date(now + delaySeconds * 1000),
             })
@@ -50,8 +51,8 @@ export const ScheduleWakeupTool = Tool.define<typeof Parameters, Metadata, Sched
                   ),
                 ),
               ),
-              // A wakeup carries no cron.
-              Effect.catchTag("ScheduleInvalidCronError", Effect.die),
+              // A wakeup carries no cron and never expires.
+              Effect.catchTags({ ScheduleInvalidCronError: Effect.die, ScheduleNeverFiresError: Effect.die }),
             )
           yield* ScheduleStore.publishUpdated({ directory: session.directory, sessionID: ctx.sessionID })
           return {

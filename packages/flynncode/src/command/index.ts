@@ -9,7 +9,7 @@ import { MCP } from "../mcp"
 import { Skill } from "../skill"
 import PROMPT_INITIALIZE from "./template/initialize.txt"
 import PROMPT_REVIEW from "./template/review.txt"
-import { instructions as loopInstructions } from "./loop"
+import { Loop } from "./loop"
 import { LegacyEvent } from "@flynncode/schema/legacy-event"
 
 type State = {
@@ -114,9 +114,9 @@ const layer = Layer.effect(
         source: "command",
         argumentHint: "[interval] <prompt> | stop",
         get template() {
-          return loopInstructions("$ARGUMENTS")
+          return Loop.instructions("$ARGUMENTS")
         },
-        expand: loopInstructions,
+        expand: Loop.instructions,
         hints: ["$ARGUMENTS"],
       }
 

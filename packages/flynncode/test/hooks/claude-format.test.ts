@@ -173,6 +173,20 @@ describe("ClaudeFormat input", () => {
     })
   })
 
+  test("ScheduleWakeup keeps Claude Code's camelCase delaySeconds", () => {
+    const stdin = ClaudeFormat.input(
+      "PreToolUse",
+      { sessionID: "s", tool: "schedule_wakeup", callID: "c", args: { delaySeconds: 120, prompt: "p", reason: "r" } },
+      extra,
+    )
+    expect(stdin["tool_name"]).toBe("ScheduleWakeup")
+    expect(stdin["tool_input"]).toEqual({ delaySeconds: 120, prompt: "p", reason: "r" })
+    expect(ClaudeFormat.fromClaudeArgs("schedule_wakeup", { delaySeconds: 90 })).toEqual({
+      args: { delaySeconds: 90 },
+      dropped: [],
+    })
+  })
+
   test("an explicit Claude tool name wins over the translated id", () => {
     const stdin = ClaudeFormat.input("PreToolUse", { sessionID: "s", tool: "srv_t", callID: "c", args: {} }, {
       ...extra,

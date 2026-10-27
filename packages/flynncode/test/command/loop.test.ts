@@ -43,14 +43,24 @@ describe("parseInterval", () => {
     expect(parseInterval("5h")?.note).toContain("every 6 hours")
     expect(parseInterval("9h")?.cron).toBe("0 */8 * * *")
     expect(parseInterval("24h")).toEqual({ cron: "0 0 */1 * *" })
-    expect(parseInterval("48h")).toEqual({ cron: "0 0 */2 * *" })
+    expect(parseInterval("48h")?.cron).toBe("0 0 */2 * *")
   })
 
-  test("days map to a day-of-month step", () => {
+  test("days map to a day-of-month step, and a multi-day step notes the month-end restart", () => {
     expect(parseInterval("1d")).toEqual({ cron: "0 0 */1 * *" })
-    expect(parseInterval("3d")).toEqual({ cron: "0 0 */3 * *" })
-    expect(parseInterval("45d")?.cron).toBe("0 0 */31 * *")
-    expect(parseInterval("45d")?.note).toContain("every 31 days")
+    expect(parseInterval("3d")?.cron).toBe("0 0 */3 * *")
+    expect(parseInterval("3d")?.note).toContain("restarts on the 1st of each month")
+    expect(parseInterval("6d")?.refusal).toBeUndefined()
+  })
+
+  test("7 days or more is refused: the recurring job would expire before its second run", () => {
+    for (const text of ["7d", "10d", "45d", "168h", "200h"]) {
+      expect(parseInterval(text)?.refusal).toContain("expires after 7 days")
+      const refused = instructions(`${text} check the backups`)
+      expect(refused).toContain("Do not schedule anything")
+      expect(refused).toContain("Use an interval under 7d")
+      expect(refused).not.toContain("cron_create with")
+    }
   })
 
   test("seconds round up to whole minutes", () => {
@@ -78,8 +88,20 @@ describe("loop instructions", () => {
     expect(text).not.toContain("schedule_wakeup")
   })
 
-  test("a slash command stays the prompt, verbatim", () => {
-    expect(instructions("10m /babysit-prs --all")).toContain("Prompt: /babysit-prs --all")
+  test("a slash command is scheduled verbatim and first run through a one-minute wakeup", () => {
+    const text = instructions("10m /babysit-prs --all")
+    expect(text).toContain("Command: /babysit-prs --all")
+    expect(text).toContain('cron_create with cron "*/10 * * * *"')
+    expect(text).toContain("schedule_wakeup with delaySeconds 60")
+    expect(text).toContain("cannot run it inside this turn")
+    // A path is not a command.
+    expect(instructions("10m /tmp/report.txt summarize it")).toContain("Prompt: /tmp/report.txt summarize it")
+  })
+
+  test("a self-paced loop refuses a slash command", () => {
+    const text = instructions("/babysit-prs")
+    expect(text).toContain("Do not schedule anything")
+    expect(text).toContain('"/loop 10m /babysit-prs"')
   })
 
   test("a rounded interval shows the chosen cron and a note", () => {
@@ -98,6 +120,8 @@ describe("loop instructions", () => {
     expect(text).toContain("Prompt: fix the failing tests until they pass")
     expect(text).toContain("schedule nothing")
     expect(text).not.toContain("cron_create")
+    // The wakeup re-invokes /loop, so the woken turn gets these rules again.
+    expect(text).toContain('the prompt "/loop fix the failing tests until they pass" exactly')
   })
 
   test("a prompt that merely starts with a number is still self-paced", () => {

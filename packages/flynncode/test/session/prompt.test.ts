@@ -2816,6 +2816,63 @@ it.instance(
   30_000,
 )
 
+it.instance(
+  "a scheduled subtask command is admitted queued, keeps the conversation's agent and carries the schedule metadata",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        command: { audit: { template: "audit $1", agent: "general", subtask: true } },
+      }))
+      const { prompt, chat } = yield* boot()
+      yield* prompt.prompt({ sessionID: chat.id, agent: "plan", noReply: true, parts: [{ type: "text", text: "hi" }] })
+      const metadata = { schedule: { id: "sch_test", kind: "cron", cron: "*/5 * * * *" } }
+
+      const admitted = yield* prompt.command({
+        sessionID: chat.id,
+        command: "audit",
+        arguments: "deps",
+        scheduled: metadata,
+      })
+
+      expect(yield* llm.calls).toBe(0)
+      expect(admitted.info.role === "user" && admitted.info.agent).toBe("plan")
+      expect(admitted.parts.map((part) => part.type)).toEqual(["subtask", "text"])
+      expect(admitted.parts[1]).toMatchObject({ type: "text", synthetic: true, text: "/audit deps", metadata })
+    }),
+  { git: true },
+  30_000,
+)
+
+it.instance(
+  "a sub-agent session's request carries no schedule tools; a root session's does",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const { prompt, sessions, chat } = yield* boot()
+      const child = yield* sessions.create({ title: "Child", parentID: chat.id })
+      const sent = Effect.map(llm.inputs, (inputs) => {
+        const tools = inputs.at(-1)?.tools
+        return (Array.isArray(tools) ? tools : []).flatMap((item) =>
+          typeof item?.function?.name === "string" ? [String(item.function.name)] : [],
+        )
+      })
+      const schedule = ["cron_create", "cron_list", "cron_delete", "schedule_wakeup"]
+
+      yield* llm.text("root")
+      yield* prompt.prompt({ sessionID: chat.id, agent: "build", parts: [{ type: "text", text: "hello" }] })
+      expect(yield* sent).toEqual(expect.arrayContaining(schedule))
+
+      yield* llm.text("child")
+      yield* prompt.prompt({ sessionID: child.id, agent: "build", parts: [{ type: "text", text: "hello" }] })
+      const childTools = yield* sent
+      expect(childTools).toContain("read")
+      expect(childTools.filter((name) => schedule.includes(name))).toEqual([])
+    }),
+  { git: true },
+  30_000,
+)
+
 unix(
   "command ! expansion denied by the bash permission aborts without a model call",
   () =>

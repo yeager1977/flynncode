@@ -14,8 +14,8 @@ export const ServeCommand = effectCmd({
   handler: Effect.fn("Cli.serve")(function* (args) {
     const { Server } = yield* Effect.promise(() => import("../../server/server"))
     const { Scheduler } = yield* Effect.promise(() => import("../../schedule/scheduler"))
-    // A long-lived server may run this machine's scheduled prompts.
-    Scheduler.enableLeadership()
+    // A long-lived server runs the scheduled prompts that `serve`-kind processes created.
+    Scheduler.enableLeadership("serve")
     if (!Flag.OPENCODE_SERVER_PASSWORD) {
       console.log("Warning: OPENCODE_SERVER_PASSWORD is not set; server is unsecured.")
     }

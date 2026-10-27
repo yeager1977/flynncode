@@ -168,7 +168,7 @@ export interface Interface {
   readonly prompt: (input: PromptInput) => Effect.Effect<SessionV1.WithParts, Image.Error>
   readonly loop: (input: LoopInput) => Effect.Effect<SessionV1.WithParts>
   readonly shell: (input: ShellInput) => Effect.Effect<SessionV1.WithParts, Session.BusyError>
-  readonly command: (input: CommandInput) => Effect.Effect<SessionV1.WithParts, Image.Error>
+  readonly command: (input: CommandAdmitInput) => Effect.Effect<SessionV1.WithParts, Image.Error>
   readonly resolvePromptParts: (template: string) => Effect.Effect<PromptInput["parts"]>
 }
 
@@ -1897,7 +1897,7 @@ const layer = Layer.effect(
       throw error
     })
 
-    const command = Effect.fn("SessionPrompt.command")(function* (input: CommandInput) {
+    const command = Effect.fn("SessionPrompt.command")(function* (input: CommandAdmitInput) {
       yield* Effect.logInfo("command", {
         "session.id": input.sessionID,
         command: input.command,
@@ -1911,7 +1911,14 @@ const layer = Layer.effect(
         yield* events.publish(Session.Event.Error, { sessionID: input.sessionID, error: error.toObject() })
         throw error
       }
-      const agentName = cmd.agent ?? input.agent
+      // A scheduled command joins the conversation, so like a queued prompt it keeps the conversation's agent.
+      const previous =
+        !input.agent && input.scheduled
+          ? yield* sessions.findMessage(input.sessionID, (m) => m.info.role === "user").pipe(Effect.orDie)
+          : Option.none()
+      const conversation =
+        Option.isSome(previous) && previous.value.info.role === "user" ? previous.value.info.agent : undefined
+      const agentName = cmd.agent ?? input.agent ?? conversation
 
       const raw = input.arguments.match(argsRegex) ?? []
       const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))
@@ -1950,7 +1957,9 @@ const layer = Layer.effect(
           tools: allowed.ignored,
         })
 
-      const shellMatches = expanded === undefined ? ConfigMarkdown.shell(template) : []
+      // Nobody is there to approve a shell line when a scheduled command fires, so it stays text for the model, which
+      // runs it with its tools and asks as usual.
+      const shellMatches = expanded === undefined && !input.scheduled ? ConfigMarkdown.shell(template) : []
       if (shellMatches.length > 0) {
         const cfg = yield* config.get()
         const sh = Shell.preferred(cfg.shell)
@@ -1993,8 +2002,11 @@ const layer = Layer.effect(
             },
           ]
         : [...uniqueTemplateParts, ...(input.parts ?? [])]
+      const admitted = input.scheduled
+        ? scheduledParts(parts, input.scheduled, `/${input.command} ${input.arguments}`)
+        : parts
 
-      const userAgent = isSubtask ? (input.agent ?? (yield* agents.defaultInfo()).name) : agent.name
+      const userAgent = isSubtask ? (input.agent ?? conversation ?? (yield* agents.defaultInfo()).name) : agent.name
       const userModel = isSubtask
         ? input.model
           ? Provider.parseModel(input.model)
@@ -2004,7 +2016,7 @@ const layer = Layer.effect(
       yield* plugin.trigger(
         "command.execute.before",
         { command: input.command, sessionID: input.sessionID, arguments: input.arguments },
-        { parts },
+        { parts: admitted },
       )
 
       const result = yield* prompt({
@@ -2012,10 +2024,11 @@ const layer = Layer.effect(
         messageID: input.messageID,
         model: userModel,
         agent: userAgent,
-        parts,
+        parts: admitted,
         variant: input.variant,
         permission: allowed.rules,
         templateFiles,
+        ...(input.scheduled ? { noReply: true, delivery: "queue" as const } : {}),
       })
       yield* events.publish(Command.Event.Executed, {
         name: input.command,
@@ -2155,6 +2168,17 @@ export const CommandInput = Schema.Struct({
   ),
 })
 export type CommandInput = Schema.Schema.Type<typeof CommandInput>
+// Internal command input: `scheduled` is the metadata of a scheduled prompt that names this command. The expanded
+// command is then admitted like any scheduled prompt: every text part synthetic and carrying the metadata, queued
+// without a reply, and with no `!` shell line run. It is not part of the public CommandInput schema.
+export type CommandAdmitInput = CommandInput & { readonly scheduled?: Record<string, unknown> }
+
+// A subtask command has no text part to carry the metadata, so the scheduled line is added as one.
+function scheduledParts(parts: PromptInput["parts"], metadata: Record<string, unknown>, line: string) {
+  const marked = parts.map((part) => (part.type === "text" ? { ...part, synthetic: true, metadata } : part))
+  if (marked.some((part) => part.type === "text")) return marked
+  return [...marked, { type: "text" as const, synthetic: true, text: line.trim(), metadata }]
+}
 
 /** @internal Exported for testing */
 export function createStructuredOutputTool(input: {

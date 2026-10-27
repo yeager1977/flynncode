@@ -6,15 +6,9 @@ import { Session } from "@/session/session"
 import { requireRoot, when } from "./schedule/guard"
 
 export const Parameters = Schema.Struct({
-  cron: Schema.String.annotate({
-    description:
-      'Standard 5-field cron expression (minute hour day-of-month month day-of-week) in the server\'s local time zone, e.g. "*/5 * * * *"',
-  }),
-  prompt: Schema.String.annotate({ description: "The prompt to deliver to this session at each fire time" }),
-  recurring: Schema.optional(Schema.Boolean).annotate({
-    description:
-      "true (default) fires at every match until deleted or after 7 days; false fires once at the next match",
-  }),
+  cron: Schema.String.annotate({ description: "5-field cron, server local time" }),
+  prompt: Schema.String.annotate({ description: "The prompt to deliver at each fire time" }),
+  recurring: Schema.optional(Schema.Boolean).annotate({ description: "Default true; false fires once" }),
 })
 
 type Metadata = { jobId?: string; nextRunAt?: number }
@@ -39,6 +33,7 @@ export const CronCreateTool = Tool.define<typeof Parameters, Metadata, ScheduleS
               cron: params.cron.trim(),
               prompt: params.prompt,
               recurring,
+              owner: ScheduleStore.processOwner(),
               now: new Date(yield* Clock.currentTimeMillis),
             })
             .pipe(
@@ -46,6 +41,13 @@ export const CronCreateTool = Tool.define<typeof Parameters, Metadata, ScheduleS
                 Effect.fail(
                   new Error(
                     `Invalid cron expression "${params.cron}": use 5 fields (minute hour day-of-month month day-of-week), e.g. "*/5 * * * *"`,
+                  ),
+                ),
+              ),
+              Effect.catchTag("ScheduleNeverFiresError", (error) =>
+                Effect.fail(
+                  new Error(
+                    `"${params.cron}" first matches at ${when(error.nextRunAt)}, after a recurring job's 7-day expiry (${when(error.expiresAt)}), so it would never fire. Use recurring false for a single run, or a cron that matches within 7 days.`,
                   ),
                 ),
               ),

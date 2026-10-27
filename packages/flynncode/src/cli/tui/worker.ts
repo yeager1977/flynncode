@@ -17,9 +17,9 @@ import { Scheduler } from "@/schedule/scheduler"
 // by the TUI thread into memory so spawned processes never inherit it.
 RuntimeFlags.adoptBypassHookTrustEnv()
 
-// The TUI worker lives as long as the TUI, so it may run this machine's scheduled prompts, through the in-process
+// The TUI worker lives as long as the TUI, so it runs the scheduled prompts TUIs created, through the in-process
 // `Server.Default` or a listener. `flynncode run` never opts in.
-Scheduler.enableLeadership()
+Scheduler.enableLeadership("tui")
 
 Heap.start()
 

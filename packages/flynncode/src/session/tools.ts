@@ -451,6 +451,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     agent: input.agent,
     permission: input.session.permission,
   })) {
+    // A scheduled prompt wakes its session later and a finished sub-agent must never be woken, so a sub-agent's
+    // requests never carry the schedule tools (and their tokens).
+    if (input.session.parentID && Permission.toolPermission(item.id) === "schedule") continue
     tools[item.id] = registered(item)
   }
 

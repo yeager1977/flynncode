@@ -10,6 +10,7 @@ import { Ripgrep } from "@flynncode/core/ripgrep"
 import { ProviderV2 } from "@flynncode/core/provider"
 import { ModelV2 } from "@flynncode/core/model"
 import { expect } from "bun:test"
+import { eq } from "drizzle-orm"
 import { Deferred, Effect, Exit, Layer, Scope } from "effect"
 import path from "path"
 import { GlobalBus, type GlobalEvent } from "@/bus/global"
@@ -220,7 +221,7 @@ const readLines = (file: string) =>
 
 // A session that already had one ordinary turn, with a UserPromptSubmit hook
 // recording every prompt it sees.
-const setup = Effect.fn("test.setup")(function* () {
+const setup = Effect.fn("test.setup")(function* (extra?: Partial<ConfigV1.Info>) {
   const { directory: dir } = yield* TestInstance
   const llm = yield* TestLLMServer
   const hooked = path.join(dir, "prompts.jsonl")
@@ -229,6 +230,7 @@ const setup = Effect.fn("test.setup")(function* () {
     JSON.stringify({
       $schema: "https://opencode.ai/config.json",
       ...provider(llm.url),
+      ...extra,
     } satisfies Partial<ConfigV1.Info>),
   )
   yield* writeText(
@@ -254,13 +256,44 @@ const setup = Effect.fn("test.setup")(function* () {
   return { dir, llm, chat, sessions, prompt, store, hooked }
 })
 
-const cron = (sessionID: SessionID, input?: { recurring?: boolean }) => ({
+const cron = (sessionID: SessionID, input?: { recurring?: boolean; prompt?: string; owner?: ScheduleStore.Owner }) => ({
   sessionID,
   kind: "cron" as const,
   cron: "*/5 * * * *",
-  prompt: "check the build",
+  prompt: input?.prompt ?? "check the build",
   recurring: input?.recurring ?? true,
+  owner: input?.owner,
   now: start,
+})
+
+const wakeup = (sessionID: SessionID, prompt: string) => ({
+  sessionID,
+  kind: "wakeup" as const,
+  prompt,
+  reason: "waiting",
+  recurring: false,
+  runAt: due,
+  now: start,
+})
+
+// Another process mid-turn: its unfinished assistant row is all this process can see of it.
+const foreignTurn = Effect.fn("test.foreignTurn")(function* (dir: string, sessionID: SessionID) {
+  const sessions = yield* Session.Service
+  const user = (yield* sessions.messages({ sessionID })).findLast((item) => item.info.role === "user")!
+  return yield* sessions.updateMessage({
+    id: MessageID.ascending(),
+    role: "assistant",
+    sessionID,
+    mode: "plan",
+    agent: "plan",
+    path: { cwd: dir, root: dir },
+    cost: 0,
+    tokens: { output: 0, input: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    modelID: ModelV2.ID.make("test-model"),
+    providerID: ProviderV2.ID.make("test"),
+    parentID: user.info.id,
+    time: { created: Date.now() },
+  })
 })
 
 const scheduled = (message: SessionV1.WithParts) =>
@@ -352,37 +385,49 @@ unix(
 )
 
 unix(
-  "a busy session gets the prompt after its turn, and a still-pending prompt skips the next firing",
+  "nothing is admitted while a turn runs: a recurring job moves on, a one-shot stays due and fires once idle",
   () =>
     Effect.gen(function* () {
       const { llm, chat, sessions, prompt, store } = yield* setup()
       yield* settled(chat.id, 1)
       const gate = yield* Deferred.make<void>()
       yield* llm.hold("busy answer", Effect.runPromise(Deferred.await(gate)))
-      yield* llm.text("scheduled answer")
       yield* prompt
         .prompt({ sessionID: chat.id, agent: "plan", parts: [{ type: "text", text: "keep working" }] })
         .pipe(Effect.forkScoped)
       yield* llm.wait(2)
 
-      const job = yield* store.create(cron(chat.id))
+      const recurring = yield* store.create(cron(chat.id))
+      const once = yield* store.create(cron(chat.id, { recurring: false, prompt: "one-shot check" }))
       const scheduler = yield* Scheduler.make({ now: () => due })
       yield* scheduler.tick()
-      expect(yield* scheduledMessages(sessions, chat.id)).toHaveLength(1)
 
-      // The next slot comes while the first scheduled prompt still waits for the turn.
-      const next = new Date("2026-10-27T10:10:00")
-      yield* scheduler.tick(next)
-      expect(yield* scheduledMessages(sessions, chat.id)).toHaveLength(1)
-      const [skipped] = yield* store.list(chat.id)
-      expect(skipped?.id).toBe(job.id)
-      expect(skipped?.next_run_at).toBe(new Date("2026-10-27T10:15:00").getTime())
-      expect(skipped?.lease_until).toBeNull()
+      // The running turn is never steered: nothing was admitted.
+      expect(yield* scheduledMessages(sessions, chat.id)).toHaveLength(0)
+      expect((yield* store.list(chat.id)).map((job) => [job.id, job.next_run_at, job.lease_until])).toEqual([
+        [once.id, due.getTime(), null],
+        [recurring.id, new Date("2026-10-27T10:10:00").getTime(), null],
+      ])
 
+      yield* llm.text("one-shot answer")
       yield* Deferred.succeed(gate, undefined)
+      yield* settled(chat.id, 2)
+
+      // Idle now: the one-shot fires and its turn starts, so the recurring slot that comes due with it moves on.
+      yield* scheduler.tick(new Date("2026-10-27T10:10:00"))
       yield* settled(chat.id, 3)
-      expect(yield* llm.calls).toBe(3)
-      expect(lastUserText((yield* llm.inputs).at(-1))).toContain("check the build")
+      const delivered = yield* scheduledMessages(sessions, chat.id)
+      expect(delivered.map((item) => scheduled(item)[0]?.text)).toEqual(["one-shot check"])
+      expect(lastUserText((yield* llm.inputs).at(-1))).toContain("one-shot check")
+      expect((yield* store.list(chat.id)).map((job) => [job.id, job.next_run_at])).toEqual([
+        [recurring.id, new Date("2026-10-27T10:15:00").getTime()],
+      ])
+
+      yield* llm.text("scheduled answer")
+      yield* scheduler.tick(new Date("2026-10-27T10:15:00"))
+      yield* settled(chat.id, 4)
+      expect(yield* scheduledMessages(sessions, chat.id)).toHaveLength(2)
+      expect(yield* llm.calls).toBe(4)
     }),
   30_000,
 )
@@ -484,53 +529,185 @@ unix(
 )
 
 unix(
-  "a session busy in another process only gets the prompt admitted, and an idle one with a stranded prompt is drained",
+  "a turn another process is running holds delivery until it ends",
   () =>
     Effect.gen(function* () {
       const { dir, llm, chat, sessions, store } = yield* setup()
       yield* settled(chat.id, 1)
-      const user = (yield* sessions.messages({ sessionID: chat.id })).find((item) => item.info.role === "user")!
-      // Another process is mid-turn: its unfinished assistant row is all this process can see of it.
-      const running = yield* sessions.updateMessage({
-        id: MessageID.ascending(),
-        role: "assistant",
-        sessionID: chat.id,
-        mode: "plan",
-        agent: "plan",
-        path: { cwd: dir, root: dir },
-        cost: 0,
-        tokens: { output: 0, input: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-        modelID: ModelV2.ID.make("test-model"),
-        providerID: ProviderV2.ID.make("test"),
-        parentID: user.info.id,
-        time: { created: Date.now() },
-      })
-      const job = yield* store.create(cron(chat.id))
+      const running = yield* foreignTurn(dir, chat.id)
+      const recurring = yield* store.create(cron(chat.id))
+      const woken = yield* store.create(wakeup(chat.id, "look again"))
       const scheduler = yield* Scheduler.make({ now: () => due })
 
       yield* scheduler.tick()
-      const [admitted] = yield* scheduledMessages(sessions, chat.id)
-      expect(admitted).toBeDefined()
-      expect((yield* store.list(chat.id))[0]?.pending_message_id).toBe(admitted?.info.id ?? null)
       const status = yield* SessionStatus.Service
       expect((yield* status.get(chat.id)).type).toBe("idle")
-
-      // Still busy at the next slot: the firing is skipped and nothing starts a turn.
-      yield* scheduler.tick(new Date("2026-10-27T10:10:00"))
-      expect((yield* status.get(chat.id)).type).toBe("idle")
+      expect(yield* scheduledMessages(sessions, chat.id)).toHaveLength(0)
       expect(yield* llm.calls).toBe(1)
-      expect((yield* store.list(chat.id))[0]?.next_run_at).toBe(new Date("2026-10-27T10:15:00").getTime())
+      expect((yield* store.list(chat.id)).map((job) => [job.id, job.next_run_at, job.lease_until])).toEqual([
+        [woken.id, due.getTime(), null],
+        [recurring.id, new Date("2026-10-27T10:10:00").getTime(), null],
+      ])
 
-      // That process died without answering; once its turn is finished the prompt is stranded, and the next slot
-      // drains it instead of delivering again.
+      // That turn ends: the wakeup fires once, and the recurring slot due with it waits for the wakeup's turn.
       yield* sessions.updateMessage({ ...running, time: { created: running.time.created, completed: Date.now() } })
-      yield* llm.text("scheduled answer")
-      yield* scheduler.tick(new Date("2026-10-27T10:15:00"))
+      yield* llm.text("woken answer")
+      yield* scheduler.tick(new Date("2026-10-27T10:10:00"))
       yield* settled(chat.id, 3)
+      expect((yield* scheduledMessages(sessions, chat.id)).map((item) => scheduled(item)[0]?.text)).toEqual([
+        "look again",
+      ])
       expect(yield* llm.calls).toBe(2)
-      expect(lastUserText((yield* llm.inputs).at(-1))).toContain("check the build")
+      expect((yield* store.list(chat.id)).map((job) => job.id)).toEqual([recurring.id])
+    }),
+  30_000,
+)
+
+unix(
+  "an old unfinished assistant row followed by a completed turn does not hold delivery",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm, chat, sessions, prompt, store } = yield* setup()
+      yield* settled(chat.id, 1)
+      // A crash left this turn unfinished; the user carried on and the next turn completed, all within BUSY_MS.
+      yield* foreignTurn(dir, chat.id)
+      yield* llm.text("second answer")
+      yield* prompt.prompt({ sessionID: chat.id, agent: "plan", parts: [{ type: "text", text: "again" }] })
+      yield* settled(chat.id, 2)
+      yield* store.create(wakeup(chat.id, "look again"))
+      const scheduler = yield* Scheduler.make({ now: () => due })
+
+      yield* llm.text("woken answer")
+      yield* scheduler.tick()
+      yield* settled(chat.id, 3)
       expect(yield* scheduledMessages(sessions, chat.id)).toHaveLength(1)
-      expect((yield* store.list(chat.id))[0]?.id).toBe(job.id)
+      expect(lastUserText((yield* llm.inputs).at(-1))).toContain("look again")
+      expect(yield* store.list(chat.id)).toEqual([])
+    }),
+  30_000,
+)
+
+unix(
+  "an idle session's stranded pending prompt is answered instead of delivering again",
+  () =>
+    Effect.gen(function* () {
+      const { llm, chat, sessions, prompt, store } = yield* setup()
+      yield* settled(chat.id, 1)
+      // A process admitted this prompt and exited before answering it.
+      const stranded = yield* prompt.prompt({
+        sessionID: chat.id,
+        noReply: true,
+        delivery: "queue",
+        parts: [{ type: "text", synthetic: true, text: "stranded check" }],
+      })
+      const job = yield* store.create(cron(chat.id))
+      const { db } = yield* Database.Service
+      yield* db
+        .update(SessionScheduleTable)
+        .set({ pending_message_id: stranded.info.id })
+        .where(eq(SessionScheduleTable.id, job.id))
+        .run()
+      const scheduler = yield* Scheduler.make({ now: () => due })
+
+      yield* llm.text("late answer")
+      yield* scheduler.tick()
+      yield* settled(chat.id, 2)
+      expect(yield* llm.calls).toBe(2)
+      expect(lastUserText((yield* llm.inputs).at(-1))).toContain("stranded check")
+      expect(yield* scheduledMessages(sessions, chat.id)).toHaveLength(0)
+      expect((yield* store.list(chat.id))[0]?.next_run_at).toBe(new Date("2026-10-27T10:10:00").getTime())
+    }),
+  30_000,
+)
+
+unix(
+  "each kind's leader delivers only the jobs its kind created",
+  () =>
+    Effect.gen(function* () {
+      const { llm, chat, sessions, store } = yield* setup()
+      yield* settled(chat.id, 1)
+      const other = yield* sessions.create({ title: "Other" })
+      yield* store.create(cron(chat.id, { owner: "tui" }))
+      const sidecarJob = yield* store.create(cron(other.id))
+      const tui = yield* Scheduler.make({ now: () => due, owner: "tui" })
+      const sidecar = yield* Scheduler.make({ now: () => due, owner: "sidecar" })
+
+      yield* llm.text("tui answer")
+      expect(yield* tui.poll()).toBe(true)
+      yield* settled(chat.id, 2)
+      expect(yield* scheduledMessages(sessions, chat.id)).toHaveLength(1)
+      expect(yield* scheduledMessages(sessions, other.id)).toHaveLength(0)
+      expect(yield* store.list(other.id)).toEqual([sidecarJob])
+
+      // Each kind leads under its own lock, so the sidecar's leader runs alongside the TUI's.
+      yield* llm.text("sidecar answer")
+      expect(yield* sidecar.poll()).toBe(true)
+      yield* settled(other.id, 1)
+      expect(yield* scheduledMessages(sessions, other.id)).toHaveLength(1)
+      expect(yield* scheduledMessages(sessions, chat.id)).toHaveLength(1)
+      expect(yield* llm.calls).toBe(3)
+    }),
+  30_000,
+)
+
+unix(
+  "two processes of the same kind deliver a job once",
+  () =>
+    Effect.gen(function* () {
+      const { llm, chat, sessions, store } = yield* setup()
+      yield* settled(chat.id, 1)
+      yield* store.create(cron(chat.id, { owner: "serve" }))
+      const first = yield* Scheduler.make({ now: () => due, owner: "serve" })
+      const second = yield* Scheduler.make({ now: () => due, owner: "serve" })
+
+      yield* llm.text("scheduled answer")
+      const ticked = yield* Effect.all([first.poll(), second.poll()], { concurrency: "unbounded" })
+      expect(ticked.filter((value) => value)).toHaveLength(1)
+      yield* settled(chat.id, 2)
+      // The follower stays out even at a later slot.
+      expect(yield* (ticked[0] ? second : first).poll(new Date("2026-10-27T10:10:00"))).toBe(false)
+      expect(yield* scheduledMessages(sessions, chat.id)).toHaveLength(1)
+      expect(yield* llm.calls).toBe(2)
+    }),
+  30_000,
+)
+
+unix(
+  "a scheduled /command prompt runs that command, expanded at fire time and admitted as a scheduled prompt",
+  () =>
+    Effect.gen(function* () {
+      const { llm, chat, sessions, store, hooked } = yield* setup({
+        command: { greet: { template: "Say hello to $1 and run !`echo nope`" } },
+      })
+      yield* settled(chat.id, 1)
+      const job = yield* store.create(cron(chat.id, { prompt: "/greet world" }))
+      const scheduler = yield* Scheduler.make({ now: () => due })
+
+      yield* llm.text("hello")
+      yield* scheduler.tick()
+      yield* settled(chat.id, 2)
+      // Expanded, with the shell line left as text: nobody is there to approve it.
+      expect(lastUserText((yield* llm.inputs).at(-1))).toContain("Say hello to world and run !`echo nope`")
+      const [message] = yield* scheduledMessages(sessions, chat.id)
+      expect(message?.info.role === "user" && message.info.agent).toBe("plan")
+      expect(message && scheduled(message)).toEqual([
+        expect.objectContaining({
+          synthetic: true,
+          metadata: { schedule: { id: job.id, kind: "cron", cron: "*/5 * * * *" } },
+        }),
+      ])
+      expect(yield* readLines(hooked)).toHaveLength(1)
+
+      // A self-paced loop's wakeup re-invokes /loop, so the woken turn gets the loop's rules again.
+      yield* store.removeSession(chat.id)
+      yield* store.create(wakeup(chat.id, "/loop keep the build green"))
+      yield* llm.text("still looping")
+      yield* scheduler.tick(new Date("2026-10-27T10:10:00"))
+      yield* settled(chat.id, 3)
+      const woken = lastUserText((yield* llm.inputs).at(-1))
+      expect(woken).toContain("self-paced loop")
+      expect(woken).toContain("Prompt: keep the build green")
+      expect(woken).toContain('\\"/loop keep the build green\\" exactly')
     }),
   30_000,
 )

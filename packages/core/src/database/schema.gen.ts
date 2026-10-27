@@ -203,7 +203,8 @@ export default {
           \`lease_until\` integer,
           \`failures\` integer DEFAULT 0 NOT NULL,
           \`pending_message_id\` text,
-          \`time_created\` integer NOT NULL
+          \`time_created\` integer NOT NULL,
+          \`owner\` text DEFAULT 'sidecar' NOT NULL
         );
       `)
       yield* tx.run(`
