@@ -9,6 +9,7 @@ import { MCP } from "../mcp"
 import { Skill } from "../skill"
 import PROMPT_INITIALIZE from "./template/initialize.txt"
 import PROMPT_REVIEW from "./template/review.txt"
+import { instructions as loopInstructions } from "./loop"
 import { LegacyEvent } from "@flynncode/schema/legacy-event"
 
 type State = {
@@ -44,6 +45,9 @@ export type Info = Omit<Schema.Schema.Type<typeof Info>, "template"> & {
   // File a Claude Code command came from. Such files ship with repositories,
   // so the runner treats the template as untrusted.
   claudeSource?: string
+  // Builds the prompt from the arguments instead of substituting them into `template`. Like `claudeModel` it stays
+  // off the public schema; the result is used as it is, with no `$N` or shell substitution of the arguments.
+  expand?: (args: string) => string
 }
 
 export function hints(template: string) {
@@ -59,6 +63,7 @@ export function hints(template: string) {
 export const Default = {
   INIT: "init",
   REVIEW: "review",
+  LOOP: "loop",
 } as const
 
 export interface Interface {
@@ -103,8 +108,21 @@ const layer = Layer.effect(
         hints: hints(PROMPT_REVIEW),
       }
 
+      commands[Default.LOOP] = {
+        name: Default.LOOP,
+        description: "repeat a prompt on an interval or self-paced: <interval> <prompt> | <prompt> | stop",
+        source: "command",
+        argumentHint: "[interval] <prompt> | stop",
+        get template() {
+          return loopInstructions("$ARGUMENTS")
+        },
+        expand: loopInstructions,
+        hints: ["$ARGUMENTS"],
+      }
+
       for (const [name, command] of Object.entries(cfg.command ?? {})) {
-        if (command.claudeSource && commands[name]) {
+        // /loop is the one built-in a Claude Code `loop` command may replace: users bring their own loop skill.
+        if (command.claudeSource && commands[name] && name !== Default.LOOP) {
           yield* Effect.logWarning("Claude Code command ignored: it would override a built-in command", { name })
           continue
         }

@@ -110,6 +110,23 @@ describe("ConfigClaude.loadAgents", () => {
     expect(result.warnings[0]).toContain("reviewer.md")
   })
 
+  test("maps the Claude scheduling tools onto the schedule permission", async () => {
+    await using tmp = await tmpdir()
+    await writeAgents(tmp.path, {
+      "planner.md": agentFile({
+        name: "planner",
+        description: "Plans",
+        tools: "Read, CronCreate, CronList, CronDelete, ScheduleWakeup",
+      }),
+      "reader.md": agentFile({ name: "reader", description: "Reads", tools: "Read" }),
+    })
+    const result = await ConfigClaude.loadAgents(path.join(tmp.path, ".claude"))
+    expect(result.warnings).toEqual([])
+    expect(result.agents.planner.permission?.schedule).toBeUndefined()
+    expect(result.agents.reader.permission?.schedule).toBe("deny")
+    expect(result.agents.planner.options?.claudeTools).toContainEqual({ permission: "schedule", pattern: "*" })
+  })
+
   test("never maps mcp__ tools onto built-in permissions", async () => {
     await using tmp = await tmpdir()
     await writeAgents(tmp.path, {

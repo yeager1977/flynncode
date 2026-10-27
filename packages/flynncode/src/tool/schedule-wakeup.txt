@@ -1,0 +1,15 @@
+Schedules this session to be woken once, after a delay, with a prompt. Use it to pace your own work: when something is still running or changing, check back later instead of polling in a loop or sleeping.
+
+Parameters:
+- delaySeconds: how long to wait. It is clamped to between 60 and 3600 seconds. The result tells you the delay that was used and the fire time.
+- prompt: the instruction delivered when the wakeup fires. Write it so it makes sense on its own, since you will read it later without the context of this turn. For a /loop, repeat the loop's task.
+- reason: one short sentence on why you are waiting. The user sees it next to the wakeup.
+
+Choosing the delay: match how fast the thing you wait for changes. A build that finishes in a few minutes deserves 60 to 270 seconds; a slow deployment or a queue deserves 20 to 30 minutes; never wait longer than an hour. Prefer a delay that is not exactly a round hour, so many sessions do not wake together.
+
+Notes:
+- A session has at most one pending wakeup. Calling this again replaces the earlier wakeup.
+- It counts toward the limit of 20 scheduled jobs per session.
+- The wakeup fires once and is then gone. To keep going, schedule the next wakeup from the woken turn; when the work is finished, schedule nothing.
+- For a fixed recurring schedule use cron_create instead.
+- Only the main session can schedule. Sub-agents cannot.

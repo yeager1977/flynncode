@@ -2794,6 +2794,28 @@ unix(
   30_000,
 )
 
+it.instance(
+  "the built-in loop command sends its instructions once, without substituting the arguments again",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const { prompt, sessions, chat } = yield* boot()
+      yield* llm.text("scheduled")
+
+      // `$1` and a shell line in the user's prompt are text for the agent, never expanded or appended.
+      yield* prompt.command({ sessionID: chat.id, command: "loop", arguments: "5m watch $1 !`echo nope`" })
+
+      const user = (yield* sessions.messages({ sessionID: chat.id })).find((item) => item.info.role === "user")
+      const text = user?.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n") ?? ""
+      expect(text).toContain('cron "*/5 * * * *"')
+      expect(text).toContain("Prompt: watch $1 !`echo nope`")
+      expect(text).not.toContain("\n\n5m watch")
+      expect(text.match(/watch \$1/g)).toHaveLength(1)
+    }),
+  { git: true },
+  30_000,
+)
+
 unix(
   "command ! expansion denied by the bash permission aborts without a model call",
   () =>

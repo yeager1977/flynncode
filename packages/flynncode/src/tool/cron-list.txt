@@ -1,0 +1,5 @@
+Lists the scheduled jobs of this session: the recurring and one-shot prompts created with cron_create and the pending wakeup created with schedule_wakeup.
+
+Each entry shows the job id, its kind, its cron expression or wakeup reason, whether it recurs, the prompt, when it runs next and when it expires. Use the id with cron_delete to cancel a job.
+
+Only the main session has scheduled jobs; sub-agents cannot schedule.

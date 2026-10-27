@@ -16,6 +16,10 @@ import { Parameters as TodoParameters } from "../../src/tool/todo"
 import { Parameters as QuestionParameters } from "../../src/tool/question"
 import { Parameters as ShellParameters } from "../../src/tool/shell/prompt"
 import { Parameters as TaskParameters } from "../../src/tool/task"
+import { Parameters as CronCreateParameters } from "../../src/tool/cron-create"
+import { Parameters as CronListParameters } from "../../src/tool/cron-list"
+import { Parameters as CronDeleteParameters } from "../../src/tool/cron-delete"
+import { Parameters as ScheduleWakeupParameters } from "../../src/tool/schedule-wakeup"
 
 const extra = { transcriptPath: "/t.jsonl", permissionMode: "default", cwd: "/work" }
 
@@ -40,7 +44,7 @@ describe("ClaudeFormat tool names", () => {
   })
 
   test("every Claude tool the compat pack maps has a tool id here", () => {
-    const names = ["read", "write", "edit", "multiedit", "bash", "glob", "grep", "webfetch", "websearch", "todowrite", "task", "notebook_edit", "question"].map(
+    const names = ["read", "write", "edit", "multiedit", "bash", "glob", "grep", "webfetch", "websearch", "todowrite", "task", "notebook_edit", "question", "cron_create", "cron_list", "cron_delete", "schedule_wakeup"].map(
       ClaudeFormat.toolName,
     )
     expect(names.toSorted()).toEqual(Object.keys(ConfigClaude.TOOLS).toSorted())
@@ -137,6 +141,10 @@ describe("ClaudeFormat arguments", () => {
     ["question", QuestionParameters],
     ["bash", ShellParameters],
     ["task", TaskParameters],
+    ["cron_create", CronCreateParameters],
+    ["cron_list", CronListParameters],
+    ["cron_delete", CronDeleteParameters],
+    ["schedule_wakeup", ScheduleWakeupParameters],
   ]
   for (const entry of schemas) {
     test(`${entry[0]} parameters round-trip through Claude names`, () => {

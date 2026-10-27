@@ -399,6 +399,7 @@ export function toolPermission(tool: string) {
   if (["edit", "multiedit", "notebook_edit", "write", "apply_patch"].includes(tool)) return "edit"
   if (["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"].includes(tool)) return "read"
   if (["bash_output", "kill_shell", "monitor"].includes(tool)) return "bash"
+  if (["cron_create", "cron_list", "cron_delete", "schedule_wakeup"].includes(tool)) return "schedule"
   return tool
 }
 

@@ -31,6 +31,10 @@ export const TOOLS: Record<string, string> = {
   Task: "task",
   NotebookEdit: "edit",
   AskUserQuestion: "question",
+  CronCreate: "schedule",
+  CronList: "schedule",
+  CronDelete: "schedule",
+  ScheduleWakeup: "schedule",
 }
 
 // Request patterns a listed Claude tool covers when it is narrower than its
@@ -57,6 +61,9 @@ export const BUILTIN_PERMISSIONS = new Set([
   "auth_status",
   "bash_output",
   "computer_use",
+  "cron_create",
+  "cron_delete",
+  "cron_list",
   "doom_loop",
   "enter_plan_mode",
   "execute",
@@ -78,6 +85,7 @@ export const BUILTIN_PERMISSIONS = new Set([
   "rank_models",
   "read_mcp_resource",
   "route_task",
+  "schedule_wakeup",
   "session_manage",
   "skill",
   "todoread",

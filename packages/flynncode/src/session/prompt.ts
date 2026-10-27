@@ -1915,28 +1915,10 @@ const layer = Layer.effect(
 
       const raw = input.arguments.match(argsRegex) ?? []
       const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))
-      const templateCommand = yield* Effect.promise(async () => cmd.template)
-
-      const placeholders = templateCommand.match(placeholderRegex) ?? []
-      let last = 0
-      for (const item of placeholders) {
-        const value = Number(item.slice(1))
-        if (value > last) last = value
-      }
-
-      const withArgs = templateCommand.replaceAll(placeholderRegex, (_, index) => {
-        const position = Number(index)
-        const argIndex = position - 1
-        if (argIndex >= args.length) return ""
-        if (position === last) return args.slice(argIndex).join(" ")
-        return args[argIndex]
-      })
-      const usesArgumentsPlaceholder = templateCommand.includes("$ARGUMENTS")
-      let template = withArgs.replaceAll("$ARGUMENTS", input.arguments)
-
-      if (placeholders.length === 0 && !usesArgumentsPlaceholder && input.arguments.trim()) {
-        template = template + "\n\n" + input.arguments
-      }
+      // An expanding command builds the whole prompt from the arguments, so none of them is substituted again.
+      const expanded = cmd.expand?.(input.arguments)
+      let template =
+        expanded ?? substituteArguments(yield* Effect.promise(async () => cmd.template), input.arguments, args)
 
       const taskModel = yield* Effect.gen(function* () {
         if (cmd.model) return Provider.parseModel(cmd.model)
@@ -1968,7 +1950,7 @@ const layer = Layer.effect(
           tools: allowed.ignored,
         })
 
-      const shellMatches = ConfigMarkdown.shell(template)
+      const shellMatches = expanded === undefined ? ConfigMarkdown.shell(template) : []
       if (shellMatches.length > 0) {
         const cfg = yield* config.get()
         const sh = Shell.preferred(cfg.shell)
@@ -2054,6 +2036,27 @@ const layer = Layer.effect(
     })
   }),
 )
+
+function substituteArguments(templateCommand: string, rawArguments: string, args: string[]) {
+  const placeholders = templateCommand.match(placeholderRegex) ?? []
+  let last = 0
+  for (const item of placeholders) {
+    const value = Number(item.slice(1))
+    if (value > last) last = value
+  }
+
+  const withArgs = templateCommand.replaceAll(placeholderRegex, (_, index) => {
+    const position = Number(index)
+    const argIndex = position - 1
+    if (argIndex >= args.length) return ""
+    if (position === last) return args.slice(argIndex).join(" ")
+    return args[argIndex]
+  })
+  const result = withArgs.replaceAll("$ARGUMENTS", rawArguments)
+  if (placeholders.length === 0 && !templateCommand.includes("$ARGUMENTS") && rawArguments.trim())
+    return result + "\n\n" + rawArguments
+  return result
+}
 
 const ModelRef = Schema.Struct({
   providerID: ProviderV2.ID,

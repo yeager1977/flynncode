@@ -8,6 +8,11 @@ import { QuestionTool } from "./question"
 import { ShellTool } from "./shell"
 import { BashOutputTool } from "./bash-output"
 import { KillShellTool } from "./kill-shell"
+import { CronCreateTool } from "./cron-create"
+import { CronListTool } from "./cron-list"
+import { CronDeleteTool } from "./cron-delete"
+import { ScheduleWakeupTool } from "./schedule-wakeup"
+import { ScheduleStore } from "@/schedule/store"
 import { MonitorTool } from "./monitor"
 import { EditTool } from "./edit"
 import { MultiEditTool } from "./multiedit"
@@ -131,6 +136,10 @@ const layer = Layer.effect(
     const shell = yield* ShellTool
     const bashOutput = yield* BashOutputTool
     const killShell = yield* KillShellTool
+    const cronCreate = yield* CronCreateTool
+    const cronList = yield* CronListTool
+    const cronDelete = yield* CronDeleteTool
+    const scheduleWakeup = yield* ScheduleWakeupTool
     const monitor = yield* MonitorTool
     const globtool = yield* GlobTool
     const writetool = yield* WriteTool
@@ -240,6 +249,10 @@ const layer = Layer.effect(
           shell: Tool.init(shell),
           bash_output: Tool.init(bashOutput),
           kill_shell: Tool.init(killShell),
+          cron_create: Tool.init(cronCreate),
+          cron_list: Tool.init(cronList),
+          cron_delete: Tool.init(cronDelete),
+          schedule_wakeup: Tool.init(scheduleWakeup),
           monitor: Tool.init(monitor),
           read: Tool.init(read),
           glob: Tool.init(globtool),
@@ -273,6 +286,10 @@ const layer = Layer.effect(
             tool.shell,
             tool.bash_output,
             tool.kill_shell,
+            tool.cron_create,
+            tool.cron_list,
+            tool.cron_delete,
+            tool.schedule_wakeup,
             tool.monitor,
             tool.read,
             tool.glob,
@@ -519,6 +536,7 @@ export const node = LayerNode.make({
     locationServiceMapNode,
     Ripgrep.node,
     BackgroundShells.node,
+    ScheduleStore.node,
   ],
 })
 

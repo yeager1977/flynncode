@@ -24,6 +24,10 @@ const NAMES: Record<string, string> = {
   task: "Task",
   notebook_edit: "NotebookEdit",
   question: "AskUserQuestion",
+  cron_create: "CronCreate",
+  cron_list: "CronList",
+  cron_delete: "CronDelete",
+  schedule_wakeup: "ScheduleWakeup",
 }
 
 // Parameter names of the translated tools, with the shape of nested objects
@@ -58,6 +62,10 @@ const PARAMS: Record<string, Shape> = {
   question: {
     questions: { question: true, header: true, options: { label: true, description: true }, multiple: true },
   },
+  cron_create: { cron: true, prompt: true, recurring: true },
+  cron_list: {},
+  cron_delete: { id: true },
+  schedule_wakeup: { delaySeconds: true, prompt: true, reason: true },
 }
 
 // Tools whose PostToolUse `tool_response` is `{ filePath, success: true }`,

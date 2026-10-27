@@ -1,0 +1,17 @@
+Schedules a prompt to be delivered back into this session later, once or on a recurring schedule.
+
+The prompt is queued like a message from the user at each fire time: an idle session starts a turn, and a busy session receives it after the current turn ends. Use it to poll for a status, babysit a long-running job, or come back to a task at a set time.
+
+Parameters:
+- cron: a standard 5-field cron expression (minute hour day-of-month month day-of-week) in the server's local time zone. "*/5 * * * *" is every 5 minutes, "30 14 * * 1-5" is 14:30 on weekdays. Seconds, years and @nicknames are not supported, so the smallest interval is 1 minute.
+- prompt: the instruction to deliver at each fire time. Write it so it makes sense on its own, since you will read it later without the context of this turn.
+- recurring: true (the default) fires at every match until the job is deleted or expires 7 days after creation. false fires once, at the next match, and then the job is deleted.
+
+Notes:
+- The result gives the job id and the next run. Use cron_list to see jobs and cron_delete to cancel one.
+- A session holds at most 20 scheduled jobs, counting a pending schedule_wakeup.
+- A run missed while the app was closed fires once when the app is back, not once per missed slot.
+- A firing is skipped while the previously delivered prompt has not started yet.
+- Scheduled turns ask for tool permissions as usual, so avoid prompts that need approvals nobody is there to give.
+- Only the main session can schedule. Sub-agents cannot.
+- Do not stack schedules: delete a job that is no longer needed. When a recurring task is finished, delete its job.
