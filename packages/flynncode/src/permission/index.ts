@@ -208,14 +208,16 @@ const layer = Layer.effect(
       const deferred = yield* Deferred.make<void, PermissionV1.RejectedError | PermissionV1.CorrectedError>()
       pending.set(id, { info, deferred, forced: force === true })
       // Observe-only and detached, so a slow hook never delays the prompt.
-      yield* hooksRunner
-        .runNotification({
-          sessionID: request.sessionID,
-          message: `Flynncode needs your permission to use ${hook?.tool ?? request.permission}`,
-          type: "permission_prompt",
-          tool: hook?.tool ?? request.permission,
-        })
-        .pipe(Effect.forkDetach)
+      if (yield* hooksRunner.hasNotification()) {
+        yield* hooksRunner
+          .runNotification({
+            sessionID: request.sessionID,
+            message: `Flynncode needs your permission to use ${hook?.tool ?? request.permission}`,
+            type: "permission_prompt",
+            tool: hook?.tool ?? request.permission,
+          })
+          .pipe(Effect.forkDetach)
+      }
       yield* events.publish(Event.Asked, info)
       return yield* Effect.ensuring(
         Deferred.await(deferred),

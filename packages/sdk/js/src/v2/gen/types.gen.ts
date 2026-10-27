@@ -3009,6 +3009,7 @@ export type ClaudeHookSource = {
   events: Array<string>
   commands: Array<string>
   enabled: boolean
+  disabledByProject?: boolean
   warnings: Array<string>
 }
 

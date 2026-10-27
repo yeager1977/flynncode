@@ -28,6 +28,9 @@ export const ClaudeHookSource = Schema.Struct({
   events: Schema.Array(Schema.String),
   commands: Schema.Array(Schema.String),
   enabled: Schema.Boolean,
+  // Disabled by a claude_hooks.disabled entry outside the global config file,
+  // which the global switch cannot turn back on.
+  disabledByProject: Schema.optional(Schema.Boolean),
   warnings: Schema.Array(Schema.String),
 }).annotate({ identifier: "ClaudeHookSource" })
 

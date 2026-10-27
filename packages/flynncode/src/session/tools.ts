@@ -40,10 +40,12 @@ const MCP_RESOURCE_TOOLS = {
   listTemplates: "list_mcp_resource_templates",
   read: "read_mcp_resource",
 } as const
-// Tools whose own permission check always asks under their permission key
-// (Permission.toolPermission) before they act, so a PreToolUse ask forces that
-// check instead of adding a prompt. bash checks every non-blank command under a
-// hook ask (`hookAsk` in the context's extra). MCP tools check their key too.
+// Built-in tools whose own permission check always asks under their permission
+// key (Permission.toolPermission) before they act, so a PreToolUse ask forces
+// that check instead of adding a prompt. bash checks every non-blank command
+// under a hook ask (`hookAsk` in the context's extra). MCP tools check their key
+// too. A custom or plugin tool reusing one of these ids is not covered: its
+// checks are unknown, so it gets the separate prompt before it runs.
 const SELF_GATED = new Set([
   "bash",
   "edit",
@@ -421,7 +423,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               item.id,
               args,
               options,
-              SELF_GATED.has(item.id) ? Permission.toolPermission(item.id) : undefined,
+              item.builtin && SELF_GATED.has(item.id) ? Permission.toolPermission(item.id) : undefined,
             )
             return yield* postTool(
               { toolID: item.id, args: pre.args, options },

@@ -193,6 +193,10 @@ describe("config HttpApi", () => {
       expect(offBody.hooks).not.toContainEqual(expect.objectContaining({ summary: "project-check.sh" }))
       expect(yield* Effect.promise(() => Bun.file(file).text())).toContain(project)
       expect((yield* list()).claudeSources).toContainEqual(expect.objectContaining({ id: project, enabled: false }))
+      // Switched off globally, so the switch can turn it back on.
+      expect((yield* list()).claudeSources).not.toContainEqual(
+        expect.objectContaining({ id: project, disabledByProject: true }),
+      )
 
       const on = yield* toggle(project, true)
       expect(on.status).toBe(200)
@@ -202,6 +206,42 @@ describe("config HttpApi", () => {
       expect(yield* Effect.promise(() => Bun.file(file).text())).not.toContain(project)
 
       expect((yield* toggle("native:hook", false)).status).toBe(400)
+    }),
+  )
+
+  it.live(
+    "marks a Claude source disabled by project config",
+    Effect.gen(function* () {
+      const home = yield* tmpdirEffect({})
+      const tmp = yield* tmpdirEffect({ git: true })
+      const previousHome = process.env.OPENCODE_TEST_HOME
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          if (previousHome === undefined) delete process.env.OPENCODE_TEST_HOME
+          else process.env.OPENCODE_TEST_HOME = previousHome
+        }),
+      )
+      process.env.OPENCODE_TEST_HOME = home.path
+      const project = `claude:project:${path.join(tmp.path, ".claude")}`
+      yield* Effect.promise(() =>
+        Promise.all([
+          Bun.write(
+            path.join(tmp.path, ".claude", "settings.json"),
+            JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: "command", command: "project-check.sh" }] }] } }),
+          ),
+          Bun.write(
+            path.join(tmp.path, "opencode.json"),
+            JSON.stringify({ formatter: false, lsp: false, claude_hooks: { disabled: [project] } }),
+          ),
+        ]),
+      )
+      const response = yield* Effect.promise(() =>
+        Promise.resolve(app().request("/config/hooks/trust", { headers: { "x-opencode-directory": tmp.path } })),
+      )
+      expect(response.status).toBe(200)
+      expect((yield* Effect.promise(() => response.json())).claudeSources).toContainEqual(
+        expect.objectContaining({ id: project, enabled: false, disabledByProject: true }),
+      )
     }),
   )
 })

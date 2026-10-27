@@ -104,9 +104,17 @@ export interface RunnerInterface {
     type: NotificationType
     tool?: string
   }) => Effect.Effect<void>
+  // Whether runNotification could run anything: a Notification file hook or a
+  // plugin session.notification hook. Like hasStop, it reads only the loaded
+  // config and plugins, so callers can skip forking the notification at all.
+  readonly hasNotification: () => Effect.Effect<boolean>
+  // `subagent`: a child session. Claude Code never runs SessionStart for its
+  // subagents, so Claude-format groups are skipped; native hooks and plugins
+  // still run.
   readonly runSessionStart: (input: {
     sessionID: string
     source: "startup" | "resume" | "clear" | "compact"
+    subagent?: boolean
   }) => Effect.Effect<SessionObserve>
   readonly runSessionEnd: (input: { sessionID: string }) => Effect.Effect<void>
   readonly runSessionPrompt: (input: { sessionID: string; prompt: string }) => Effect.Effect<SessionObserve>
@@ -412,12 +420,19 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
     })
   })
 
+  const hasNotification = Effect.fn("HooksRunner.hasNotification")(function* () {
+    if ((yield* plugin.list()).some((hooks) => hooks["session.notification"] !== undefined)) return true
+    if (!executor) return false
+    return yield* executor.hasHandlers("Notification")
+  })
+
   const runSessionStart = Effect.fn("HooksRunner.runSessionStart")(function* (input: {
     sessionID: string
     source: "startup" | "resume" | "clear" | "compact"
+    subagent?: boolean
   }) {
     const output = { additionalContext: undefined as string | undefined, systemMessage: undefined as string | undefined }
-    yield* plugin.trigger("session.start", input, output)
+    yield* plugin.trigger("session.start", { sessionID: input.sessionID, source: input.source }, output)
     const pluginObserve: SessionObserve = { additionalContext: output.additionalContext, systemMessage: output.systemMessage }
     if (!executor) return pluginObserve
     return mergeObserve(
@@ -427,6 +442,7 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
         matchName: input.source,
         sessionID: input.sessionID,
         payload: { source: input.source },
+        nativeOnly: input.subagent,
       }),
     )
   })
@@ -609,6 +625,7 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
     runPostToolUse,
     runPostToolUseFailure,
     runNotification,
+    hasNotification,
     runSessionStart,
     runSessionEnd,
     runSessionPrompt,

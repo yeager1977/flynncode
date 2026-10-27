@@ -62,6 +62,9 @@ export interface Def<
   jsonSchema?: JSONSchema7
   execute(args: Schema.Schema.Type<Parameters>, ctx: Context): Effect.Effect<ExecuteResult<M>>
   formatValidationError?(error: unknown): string
+  // Set by the registry on Flynncode's own tools, never on custom or plugin
+  // tools, even one that reuses a built-in id.
+  builtin?: boolean
 }
 export type DefWithoutID<
   Parameters extends Schema.Decoder<unknown> = Schema.Decoder<unknown>,

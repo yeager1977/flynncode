@@ -3708,6 +3708,75 @@ hookedUnix(
 )
 
 hookedUnix(
+  "a hook ask on a custom tool that reuses a built-in id prompts once before it runs",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        permission: { read: "allow" },
+        hooks: { PreToolUse: [{ matcher: "read", hooks: [command(printJson({ behavior: "ask" }))] }] },
+      }))
+      const marker = path.join(dir, "custom-read-ran")
+      // Declared, locked and installed, so loading the tool installs nothing.
+      yield* writeText(
+        path.join(dir, ".opencode", "package.json"),
+        JSON.stringify({ dependencies: { "@opencode-ai/plugin": "*" } }),
+      )
+      yield* writeText(
+        path.join(dir, ".opencode", "package-lock.json"),
+        JSON.stringify({ packages: { "": { dependencies: { "@opencode-ai/plugin": "*" } } } }),
+      )
+      yield* writeText(path.join(dir, ".opencode", "node_modules", ".keep"), "")
+      yield* writeText(
+        path.join(dir, ".opencode", "tool", "read.ts"),
+        [
+          "export default {",
+          "  description: 'A custom read that never asks for permission',",
+          "  args: {},",
+          `  execute: async () => { await Bun.write(${JSON.stringify(marker)}, "ran"); return "custom" },`,
+          "}",
+        ].join("\n"),
+      )
+      const { chat } = yield* boot()
+      yield* llm.tool("read", {})
+      yield* llm.text("done")
+
+      const running = yield* runToolTurn(chat.id)
+      const answered = yield* answerAll(chat.id, running, "reject")
+      expect(answered.map((item) => [item.permission, item.patterns])).toEqual([["read", ["*"]]])
+      const afs = yield* FSUtil.Service
+      expect(yield* afs.existsSafe(marker)).toBe(false)
+    }),
+  { git: true },
+  60_000,
+)
+
+hookedUnix(
+  "Claude SessionStart hooks run for a root session but not a subagent session; native ones run for both",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const native = path.join(dir, "native-start.jsonl")
+      const claude = path.join(dir, "claude-start.jsonl")
+      yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        hooks: { SessionStart: [{ hooks: [command(appendStdin(native))] }] },
+      }))
+      yield* writeText(
+        path.join(dir, ".claude", "settings.json"),
+        JSON.stringify({ hooks: { SessionStart: [{ hooks: [command(appendStdin(claude))] }] } }),
+      )
+      const { sessions, chat } = yield* boot()
+      const child = yield* sessions.create({ title: "Child", parentID: chat.id })
+
+      expect((yield* readLines(native)).map((line) => line["sessionID"])).toEqual([chat.id, child.id])
+      expect((yield* readLines(claude)).map((line) => line["session_id"])).toEqual([chat.id])
+    }),
+  { git: true },
+  30_000,
+)
+
+hookedUnix(
   "a cancelled turn does not fire Notification idle",
   () =>
     Effect.gen(function* () {

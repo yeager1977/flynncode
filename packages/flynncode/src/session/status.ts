@@ -63,7 +63,8 @@ const layer = Layer.effect(
         yield* HooksContext.observe("hooks.session.idle", maybeHooks.value.runIdle({ sessionID })).pipe(
           Effect.forkDetach,
         )
-        if (!options?.interrupted) yield* notifyIdle(maybeHooks.value, sessionID).pipe(Effect.forkDetach)
+        if (!options?.interrupted && (yield* maybeHooks.value.hasNotification()))
+          yield* notifyIdle(maybeHooks.value, sessionID).pipe(Effect.forkDetach)
       }
       // Best-effort idle memory extraction, next to the idle hook: forked,
       // ignored and optional so the idle transition never blocks on memory.

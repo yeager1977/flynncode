@@ -10,7 +10,7 @@ import path from "path"
 import { testEffect } from "../lib/effect"
 import { TestInstance } from "../fixture/fixture"
 import { TestLLMServer } from "../lib/llm-server"
-import { HooksExecutor } from "../../src/hooks/executor"
+import { HooksExecutor, MAX_HTTP_BODY_BYTES } from "../../src/hooks/executor"
 import { HooksTrust } from "../../src/hooks/trust"
 import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -200,6 +200,68 @@ describe("http handler", () => {
         )
         expect(seen).toHaveLength(1)
         expect(decision).toEqual({ behavior: "undecided" })
+      },
+    )
+  })
+
+  test("a redirect is not followed and reads as a failure", async () => {
+    await withServer(
+      () => json({ behavior: "deny", message: "followed the redirect" }),
+      async (target, targetSeen) => {
+        await withServer(
+          () => new Response(null, { status: 307, headers: { location: target } }),
+          async (url, seen) => {
+            const decision = await Effect.runPromise(
+              Effect.gen(function* () {
+                return yield* (yield* HooksExecutor.Service).runDecision(decisionInput)
+              }).pipe(Effect.provide(stubConfig(httpHooks({ url, headers: { "X-Api-Key": "k" } })))),
+            )
+            expect(seen).toHaveLength(1)
+            expect(targetSeen).toHaveLength(0)
+            expect(decision).toEqual({ behavior: "undecided" })
+          },
+        )
+      },
+    )
+  })
+
+  test("a body over the size cap is ignored, with or without a content-length", async () => {
+    const big = JSON.stringify({ behavior: "deny", message: "too big", pad: "x".repeat(MAX_HTTP_BODY_BYTES) })
+    const streamed = () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            const bytes = new TextEncoder().encode(big)
+            for (let at = 0; at < bytes.length; at += 64 * 1024) controller.enqueue(bytes.slice(at, at + 64 * 1024))
+            controller.close()
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )
+    const declared = () => new Response(big, { status: 200, headers: { "content-type": "application/json" } })
+    for (const respond of [declared, streamed]) {
+      await withServer(respond, async (url, seen) => {
+        const decision = await Effect.runPromise(
+          Effect.gen(function* () {
+            return yield* (yield* HooksExecutor.Service).runDecision(decisionInput)
+          }).pipe(Effect.provide(stubConfig(httpHooks({ url })))),
+        )
+        expect(seen).toHaveLength(1)
+        expect(decision).toEqual({ behavior: "undecided" })
+      })
+    }
+  })
+
+  test("a body under the size cap is still read", async () => {
+    await withServer(
+      () => json({ behavior: "deny", message: "small enough", pad: "x".repeat(MAX_HTTP_BODY_BYTES - 1024) }),
+      async (url) => {
+        const decision = await Effect.runPromise(
+          Effect.gen(function* () {
+            return yield* (yield* HooksExecutor.Service).runDecision(decisionInput)
+          }).pipe(Effect.provide(stubConfig(httpHooks({ url })))),
+        )
+        expect(decision).toEqual({ behavior: "deny", message: "small enough" })
       },
     )
   })

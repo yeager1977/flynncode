@@ -88,10 +88,13 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
     const hooksTrust = Effect.fn("ConfigHttpApi.hooksTrust")(function* () {
       const listed = yield* hooksEntries()
       const claude = yield* claudeHooks()
+      const global = new Set((yield* configSvc.getGlobal()).claude_hooks?.disabled ?? [])
       return {
         hooks: listed.entries,
         bypass: flags.bypassHookTrust,
-        claudeSources: claude.sources,
+        claudeSources: claude.sources.map((source) =>
+          source.enabled || global.has(source.id) ? source : { ...source, disabledByProject: true },
+        ),
         claudeWarnings: claude.warnings,
         claudeDisabled: flags.disableClaudeHooks,
       }

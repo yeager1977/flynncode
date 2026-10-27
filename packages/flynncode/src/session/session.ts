@@ -598,7 +598,11 @@ const layer: Layer.Layer<
         yield* HooksContext.observeAndStore(
           "hooks.session.start",
           result.id,
-          maybeStartHooks.value.runSessionStart({ sessionID: result.id, source: input.source ?? "startup" }),
+          maybeStartHooks.value.runSessionStart({
+            sessionID: result.id,
+            source: input.source ?? "startup",
+            subagent: input.parentID !== undefined,
+          }),
         )
       }
 

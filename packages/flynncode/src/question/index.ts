@@ -104,13 +104,15 @@ const layer = Layer.effect(
       }
       pending.set(id, { info, deferred })
       // Observe-only and detached, so a slow hook never delays the question.
-      yield* hooksRunner
-        .runNotification({
-          sessionID: input.sessionID,
-          message: input.questions[0]?.question ?? "Flynncode has a question",
-          type: "question",
-        })
-        .pipe(Effect.forkDetach)
+      if (yield* hooksRunner.hasNotification()) {
+        yield* hooksRunner
+          .runNotification({
+            sessionID: input.sessionID,
+            message: input.questions[0]?.question ?? "Flynncode has a question",
+            type: "question",
+          })
+          .pipe(Effect.forkDetach)
+      }
       yield* events.publish(Event.Asked, info)
 
       return yield* Effect.ensuring(

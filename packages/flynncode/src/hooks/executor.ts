@@ -1,5 +1,5 @@
 import { LayerNode } from "@flynncode/core/effect/layer-node"
-import { Cause, Context, Effect, Fiber, Layer, Option, Schema, Semaphore } from "effect"
+import { Cause, Context, Effect, Fiber, Layer, Option, Schema, Semaphore, Stream } from "effect"
 import { spawn } from "node:child_process"
 import { buffer } from "node:stream/consumers"
 import { ConfigHooksV1 } from "@flynncode/core/v1/config/hooks"
@@ -113,6 +113,9 @@ export interface ExecutorInterface {
     payload: Record<string, unknown>
     timeoutMaxMs?: number
     defaultTimeoutMs?: number
+    // Skips Claude-format groups: Claude runs some events only for its main
+    // session.
+    nativeOnly?: boolean
   }) => Effect.Effect<HooksRunner.SessionObserve, never, never>
   readonly cancelSession: (sessionID: string) => Effect.Effect<void, never, never>
   // Whether any file hook group is configured for the event, from the loaded
@@ -209,9 +212,13 @@ type Collected = ClaudeFormat.Result
 // Events with no Claude hook share this instead of a per-event cached sync.
 const noTranscript = Effect.succeed("")
 
-// "trusted" spawns; "killed" and "untrusted" are skipped, each with its own
-// log wording.
-type TrustVerdict = "trusted" | "untrusted" | "killed"
+// Hashes already warned about as untrusted: a plugin hook matching every tool
+// would otherwise log on every event until it is trusted.
+const warnedUntrusted = new Set<string>()
+
+// An http hook's response body is read up to this size; a larger one is
+// ignored like any other failure.
+export const MAX_HTTP_BODY_BYTES = 1024 * 1024
 
 function decided(decision: HooksRunner.PreToolUseDecision): Collected {
   return { kind: "decision", decision }
@@ -265,6 +272,28 @@ function interpolateHeaders(headers: Record<string, string> | undefined, allowed
       }),
     ]),
   )
+}
+
+// The body as text, or undefined once it exceeds `limit` bytes.
+async function readCapped(res: Response, limit: number) {
+  if (Number(res.headers.get("content-length") ?? 0) > limit) {
+    await res.body?.cancel()
+    return undefined
+  }
+  if (!res.body) return ""
+  const reader = res.body.getReader()
+  const chunks: Array<Uint8Array> = []
+  let size = 0
+  while (true) {
+    const next = await reader.read()
+    if (next.done) return Buffer.concat(chunks).toString("utf8")
+    size += next.value.byteLength
+    if (size > limit) {
+      await reader.cancel()
+      return undefined
+    }
+    chunks.push(next.value)
+  }
 }
 
 const PROMPT_HOOK_SYSTEM =
@@ -341,15 +370,17 @@ export const node = LayerNode.make({
         // plugin hooks (the runner's plugin trigger edges) are unaffected;
         // gating them is a separate follow-up.
         const cfg = yield* config.get()
-        if (cfg.hooks?.disableAllHooks === true) return "killed"
+        // "trusted" spawns; "killed" and "untrusted" are skipped, each with its
+        // own log wording. An untrusted verdict carries the hash trust is keyed on.
+        if (cfg.hooks?.disableAllHooks === true) return { verdict: "killed" } as const
         const managed = yield* Effect.serviceOption(HooksManaged.ManagedHooks)
-        if (Option.isSome(managed) && managed.value.isManaged(def)) return "trusted"
-        if (flags.bypassHookTrust) return "trusted"
+        if (Option.isSome(managed) && managed.value.isManaged(def)) return { verdict: "trusted" } as const
+        if (flags.bypassHookTrust) return { verdict: "trusted" } as const
         // Trust is per project and covers referenced project scripts.
         const bound = yield* HooksTrust.bindToInstance(def)
         // Fail closed: trust lookup failures read as untrusted.
         const trusted = yield* trust.isTrusted(bound).pipe(Effect.orElseSucceed(() => false))
-        return trusted ? "trusted" : "untrusted"
+        return trusted ? ({ verdict: "trusted" } as const) : ({ verdict: "untrusted", hash: HooksTrust.hashDef(bound) } as const)
       })
 
       type Spawned = { code: number; stdout: string; stderr: string; timedOut: boolean }
@@ -829,13 +860,20 @@ export const node = LayerNode.make({
         const body = JSON.stringify(yield* handlerInput(input, input))
         const response = yield* Effect.tryPromise({
           try: async (signal) => {
+            // A redirect is not followed: it would carry the headers and the
+            // hook input to another host. It reads as a non-2xx failure.
             const res = await fetch(input.url, {
               method: "POST",
               headers: { "content-type": "application/json", ...interpolateHeaders(input.headers, input.allowedEnvVars) },
               body,
+              redirect: "manual",
               signal: AbortSignal.any([signal, AbortSignal.timeout(input.timeoutMs)]),
             })
-            return { status: res.status, text: await res.text() }
+            if (res.status < 200 || res.status >= 300) {
+              await res.body?.cancel()
+              return { status: res.status, text: "" }
+            }
+            return { status: res.status, text: await readCapped(res, MAX_HTTP_BODY_BYTES) }
           },
           catch: (error) => (error instanceof Error ? error : new Error(String(error))),
         }).pipe(
@@ -848,6 +886,13 @@ export const node = LayerNode.make({
         if (!response) return neutralCollect(input.kind)
         if (response.status < 200 || response.status >= 300) {
           yield* Effect.logWarning("http hook returned a non-2xx status", { url: input.url, status: response.status })
+          return neutralCollect(input.kind)
+        }
+        if (response.text === undefined) {
+          yield* Effect.logWarning("http hook response body is over the size limit", {
+            url: input.url,
+            limit: MAX_HTTP_BODY_BYTES,
+          })
           return neutralCollect(input.kind)
         }
         const text = response.text.trim()
@@ -877,7 +922,6 @@ export const node = LayerNode.make({
         const { Session } = yield* Effect.promise(() => import("@/session/session"))
         const { MessageID, SessionID } = yield* Effect.promise(() => import("@/session/schema"))
         const { LLMEvent } = yield* Effect.promise(() => import("@flynncode/llm"))
-        const { Stream } = yield* Effect.promise(() => import("effect"))
         const maybeProvider = yield* Effect.serviceOption(Provider.Service)
         const maybeLLM = yield* Effect.serviceOption(LLM.Service)
         if (Option.isNone(maybeProvider) || Option.isNone(maybeLLM)) {
@@ -891,11 +935,9 @@ export const node = LayerNode.make({
         const anchor = Option.isSome(session) && session.value.model
           ? { providerID: session.value.model.providerID, modelID: session.value.model.id }
           : yield* provider.defaultModel().pipe(Effect.option, Effect.map(Option.getOrUndefined))
-        const explicit = input.model
-          ? yield* Effect.suspend(() => {
-              const parsed = Provider.parseModel(input.model!)
-              return provider.getModel(parsed.providerID, parsed.modelID)
-            }).pipe(
+        const parsed = input.model ? Provider.parseModel(input.model) : undefined
+        const explicit = parsed
+          ? yield* provider.getModel(parsed.providerID, parsed.modelID).pipe(
               Effect.catch(() =>
                 Effect.logWarning("prompt hook model not found, using the default", { model: input.model }).pipe(
                   Effect.as(undefined),
@@ -1005,10 +1047,13 @@ export const node = LayerNode.make({
         payload: Record<string, unknown>
         timeoutMaxMs?: number
         defaultTimeoutMs?: number
+        nativeOnly?: boolean
       }) {
         const cfg = yield* config.get()
         const cwd = yield* workdir
-        const groups = eventGroups(cfg.hooks, input.event)
+        const groups = eventGroups(cfg.hooks, input.event).filter(
+          (group) => !input.nativeOnly || group.format !== "claude",
+        )
         const claudeName = groups.some((group) => group.format === "claude") ? yield* claudeMatchName(input) : undefined
         const entries = matchedHandlers(groups, input.event, input.matchName, claudeName)
         // The Claude tool name a Claude hook's stdin uses: the matched name on
@@ -1020,17 +1065,96 @@ export const node = LayerNode.make({
         const transcript = entries.some((entry) => entry.claude)
           ? yield* Effect.cached(transcriptPath(input.sessionID))
           : noTranscript
+        const collectEntry = (entry: (typeof entries)[number], timeoutMs: number, limit: number | undefined) => {
+          const handler = entry.handler
+          if (handler.type === "command" && entry.claude) {
+            return collectClaude({
+              event: input.event,
+              command: handler.command,
+              payload: input.payload,
+              toolName: claudeTool,
+              env: entry.env,
+              transcript,
+              timeoutMs,
+              cwd,
+              limit,
+            })
+          }
+          if (handler.type === "command") {
+            return collectCommand({
+              kind: input.kind,
+              event: input.event,
+              command: handler.command,
+              payload: input.payload,
+              timeoutMs,
+              cwd,
+              limit,
+            })
+          }
+          if (handler.type === "http") {
+            return collectHttp({
+              kind: input.kind,
+              event: input.event,
+              claude: entry.claude,
+              url: handler.url,
+              headers: handler.headers,
+              allowedEnvVars: handler.allowedEnvVars,
+              payload: input.payload,
+              toolName: claudeTool,
+              transcript,
+              timeoutMs,
+              cwd,
+            })
+          }
+          if (handler.type === "prompt") {
+            return collectPrompt({
+              kind: input.kind,
+              event: input.event,
+              claude: entry.claude,
+              prompt: handler.prompt,
+              model: handler.model,
+              sessionID: input.sessionID,
+              payload: input.payload,
+              toolName: claudeTool,
+              transcript,
+              timeoutMs,
+              cwd,
+            })
+          }
+          return collectMcp({
+            kind: input.kind,
+            event: input.event,
+            server: handler.server,
+            tool: handler.tool,
+            template: handler.input,
+            payload: input.payload,
+            timeoutMs,
+            limit,
+          })
+        }
         const collected: Collected[] = []
         for (const entry of entries) {
           const def = entry.def
           const handler = entry.handler
-          const verdict = yield* trusted(def)
-          if (verdict !== "trusted") {
-            yield* Effect.logWarning(verdict === "killed" ? "hook skipped by hooks.disableAllHooks" : "skipping untrusted hook", {
+          const gate = yield* trusted(def)
+          if (gate.verdict === "killed") {
+            yield* Effect.logWarning("hook skipped by hooks.disableAllHooks", {
               event: def.event,
               matcher: def.matcher,
               command: HooksConfig.summarize(handler),
             })
+            continue
+          }
+          if (gate.verdict === "untrusted") {
+            if (!warnedUntrusted.has(gate.hash)) {
+              warnedUntrusted.add(gate.hash)
+              yield* Effect.logWarning("skipping untrusted hook (logged once per hook)", {
+                event: def.event,
+                matcher: def.matcher,
+                command: HooksConfig.summarize(handler),
+                source: def.source,
+              })
+            }
             continue
           }
           const timeoutMs = resolveTimeoutMs(
@@ -1045,67 +1169,7 @@ export const node = LayerNode.make({
           }
           const limit = handler.type === "command" ? handler.additionalContextLimit : undefined
           const isAsync = handler.type === "command" && handler.async === true
-          const collect =
-            handler.type === "command"
-              ? entry.claude
-                ? collectClaude({
-                    event: input.event,
-                    command: handler.command,
-                    payload: input.payload,
-                    toolName: claudeTool,
-                    env: entry.env,
-                    transcript,
-                    timeoutMs,
-                    cwd,
-                    limit,
-                  })
-                : collectCommand({
-                    kind: input.kind,
-                    event: input.event,
-                    command: handler.command,
-                    payload: input.payload,
-                    timeoutMs,
-                    cwd,
-                    limit,
-                  })
-              : handler.type === "http"
-                ? collectHttp({
-                    kind: input.kind,
-                    event: input.event,
-                    claude: entry.claude,
-                    url: handler.url,
-                    headers: handler.headers,
-                    allowedEnvVars: handler.allowedEnvVars,
-                    payload: input.payload,
-                    toolName: claudeTool,
-                    transcript,
-                    timeoutMs,
-                    cwd,
-                  })
-                : handler.type === "prompt"
-                  ? collectPrompt({
-                      kind: input.kind,
-                      event: input.event,
-                      claude: entry.claude,
-                      prompt: handler.prompt,
-                      model: handler.model,
-                      sessionID: input.sessionID,
-                      payload: input.payload,
-                      toolName: claudeTool,
-                      transcript,
-                      timeoutMs,
-                      cwd,
-                    })
-                  : collectMcp({
-                      kind: input.kind,
-                      event: input.event,
-                      server: handler.server,
-                      tool: handler.tool,
-                      template: handler.input,
-                      payload: input.payload,
-                      timeoutMs,
-                      limit,
-                    })
+          const collect = collectEntry(entry, timeoutMs, limit)
           if (isAsync) {
             const entry = sessionSlots(input.sessionID)
             const fiber = yield* Effect.forkDetach(
@@ -1246,6 +1310,7 @@ export const node = LayerNode.make({
         payload: Record<string, unknown>
         timeoutMaxMs?: number
         defaultTimeoutMs?: number
+        nativeOnly?: boolean
       }) {
         // Observe events are session-scoped: only the instance directory is
         // available here, so model/permission_mode stay omitted.
@@ -1258,6 +1323,7 @@ export const node = LayerNode.make({
           payload: { event: input.event, sessionID: input.sessionID, cwd, ...input.payload },
           timeoutMaxMs: input.timeoutMaxMs,
           defaultTimeoutMs: input.defaultTimeoutMs,
+          nativeOnly: input.nativeOnly,
         })
         const observes = collected.flatMap((item) => (item.kind === "observe" ? [item.observe] : []))
         const blocks = collected.flatMap((item) => (item.kind === "observe" && item.block !== undefined ? [item.block] : []))

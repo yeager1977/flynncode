@@ -1101,3 +1101,35 @@ describe("hooks executor timeouts", () => {
     expect(resolveTimeoutMs(600, 1_000, 3_000)).toBe(3_000)
   })
 })
+
+describe("hooks executor: nativeOnly", () => {
+  const hooks = {
+    SessionStart: [
+      { hooks: [{ type: "command", command: observeTextScript }] },
+      {
+        format: "claude",
+        source: claudeSource,
+        env: { CLAUDE_PLUGIN_ROOT: dir, CLAUDE_PROJECT_DIR: dir },
+        hooks: [{ type: "command", command: "printf 'claude context'" }],
+      },
+    ],
+  }
+  const start = (nativeOnly?: boolean) =>
+    Effect.gen(function* () {
+      const executor = yield* HooksExecutor.Service
+      return yield* executor.runObserve({
+        event: "SessionStart",
+        matchName: "startup",
+        sessionID: "ses_1",
+        payload: { source: "startup" },
+        nativeOnly,
+      })
+    })
+
+  testEffect(executorLayer(hooks, true)).effect("skips Claude groups and keeps native ones", () =>
+    Effect.gen(function* () {
+      expect((yield* start()).additionalContext).toBe("Build docs live in ./docs\n\nclaude context")
+      expect((yield* start(true)).additionalContext).toBe("Build docs live in ./docs")
+    }),
+  )
+})

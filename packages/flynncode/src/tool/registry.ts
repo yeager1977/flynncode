@@ -340,6 +340,7 @@ const layer = Layer.effect(
     })
 
     const tools: Interface["tools"] = Effect.fn("ToolRegistry.tools")(function* (input) {
+      const builtin = new Set((yield* InstanceState.get(state)).builtin)
       const filtered = (yield* all()).filter((tool) => {
         if (tool.id === WebSearchTool.id) {
           return webSearchEnabled(input.providerID, { exa: flags.enableExa, parallel: flags.enableParallel })
@@ -388,6 +389,7 @@ const layer = Layer.effect(
             jsonSchema,
             execute: tool.execute,
             formatValidationError: tool.formatValidationError,
+            builtin: builtin.has(tool),
           }
         }),
         { concurrency: "unbounded" },

@@ -404,3 +404,64 @@ describe("hooks runner without stop hooks", () => {
     }),
   )
 })
+
+describe("hooks runner notification gate", () => {
+  noStopIt.effect("hasNotification is false with no hooks at all", () =>
+    Effect.gen(function* () {
+      const runner = yield* HooksRunner.Service
+      expect(yield* runner.hasNotification()).toBe(false)
+    }),
+  )
+
+  testEffect(
+    testLayerWithHooks([], {
+      runDecision: () => Effect.succeed({ behavior: "undecided" as const }),
+      runPostTool: () => Effect.succeed({ blocked: false as const }),
+      runObserve: () => Effect.succeed({}),
+      hasHandlers: (event) => Effect.succeed(event === "Notification"),
+    }),
+  ).effect("hasNotification sees a Notification file hook", () =>
+    Effect.gen(function* () {
+      const runner = yield* HooksRunner.Service
+      expect(yield* runner.hasNotification()).toBe(true)
+    }),
+  )
+
+  testEffect(testLayerWithHooks([{ "session.notification": async () => {} }])).effect(
+    "hasNotification sees a plugin session.notification hook",
+    () =>
+      Effect.gen(function* () {
+        const runner = yield* HooksRunner.Service
+        expect(yield* runner.hasNotification()).toBe(true)
+      }),
+  )
+})
+
+const startObserves: Array<{ event: string; nativeOnly?: boolean }> = []
+const startIt = testEffect(
+  testLayerWithHooks([], {
+    runDecision: () => Effect.succeed({ behavior: "undecided" as const }),
+    runPostTool: () => Effect.succeed({ blocked: false as const }),
+    runObserve: (input) =>
+      Effect.sync(() => {
+        startObserves.push({ event: input.event, nativeOnly: input.nativeOnly })
+        return {}
+      }),
+    hasHandlers: () => Effect.succeed(true),
+  }),
+)
+
+describe("hooks runner SessionStart", () => {
+  startIt.effect("a subagent's SessionStart runs native groups only", () =>
+    Effect.gen(function* () {
+      startObserves.length = 0
+      const runner = yield* HooksRunner.Service
+      yield* runner.runSessionStart({ sessionID: "ses_root", source: "startup" })
+      yield* runner.runSessionStart({ sessionID: "ses_child", source: "startup", subagent: true })
+      expect(startObserves).toEqual([
+        { event: "SessionStart", nativeOnly: undefined },
+        { event: "SessionStart", nativeOnly: true },
+      ])
+    }),
+  )
+})
