@@ -7,6 +7,9 @@ import { HooksTrust } from "@/hooks/trust"
 export type PreToolUseDecision =
   | { behavior: "allow"; updatedInput?: Record<string, unknown>; additionalContext?: string }
   | { behavior: "deny"; message: string }
+  // Forces the permission prompt for the call even when a rule allows it.
+  // `updatedInput` is shown to the user and run if they approve.
+  | { behavior: "ask"; message?: string; additionalContext?: string; updatedInput?: Record<string, unknown> }
   | { behavior: "undecided"; additionalContext?: string }
 
 export type PostToolUseOutcome =
@@ -72,6 +75,24 @@ export interface RunnerInterface {
     model?: string
     permissionMode?: string
   }) => Effect.Effect<ToolResultView>
+  // Runs instead of runPostToolUse when the tool failed or was interrupted.
+  // A block reason or additional context is for the model, next to the error.
+  readonly runPostToolUseFailure: (input: {
+    sessionID: string
+    tool: string
+    callID: string
+    args: Record<string, unknown>
+    error: string
+    interrupted: boolean
+    model?: string
+    permissionMode?: string
+  }) => Effect.Effect<PostToolUseOutcome>
+  // Observe-only: the user is being waited on.
+  readonly runNotification: (input: {
+    sessionID: string
+    message: string
+    type: NotificationType
+  }) => Effect.Effect<void>
   readonly runSessionStart: (input: {
     sessionID: string
     source: "startup" | "resume" | "clear" | "compact"
@@ -97,11 +118,16 @@ export interface RunnerInterface {
   readonly runInterrupt: (input: { sessionID: string }) => Effect.Effect<SessionObserve>
 }
 
+export type NotificationType = "permission_prompt" | "question" | "idle"
+
 export class Service extends Context.Service<Service, RunnerInterface>()("@opencode/HooksRunner") {}
 
+// deny > ask > allow (a rewrite first) > undecided.
 export function denyWins(decisions: Array<PreToolUseDecision>): PreToolUseDecision {
   const denied = decisions.find((decision) => decision.behavior === "deny")
   if (denied) return denied
+  const asked = decisions.find((decision) => decision.behavior === "ask")
+  if (asked) return asked
   const rewritten = decisions.find((decision) => decision.behavior === "allow" && decision.updatedInput)
   if (rewritten) return rewritten
   const allowed = decisions.find((decision) => decision.behavior === "allow")
@@ -172,7 +198,10 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
         })
       : undefined
     if (fileVerdict?.behavior === "deny") return fileVerdict
-    const fileRewrite = fileVerdict && fileVerdict.behavior === "allow" ? fileVerdict.updatedInput : undefined
+    const fileRewrite =
+      fileVerdict && (fileVerdict.behavior === "allow" || fileVerdict.behavior === "ask")
+        ? fileVerdict.updatedInput
+        : undefined
     const output = { args: verdict.updatedInput ?? fileRewrite ?? input.args }
     yield* plugin.trigger(
       "tool.execute.before",
@@ -180,6 +209,8 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
       output,
     )
     if (output.args !== input.args) {
+      // A file hook's ask still prompts, now for the rewritten input.
+      if (fileVerdict?.behavior === "ask") return { ...fileVerdict, updatedInput: output.args }
       const rewritten: PreToolUseDecision = { behavior: "allow", updatedInput: output.args }
       return withContext(rewritten, fileVerdict)
     }
@@ -287,6 +318,58 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
     })
     if (filePost.blocked) return { ...view, output: filePost.reason }
     return view
+  })
+
+  const runPostToolUseFailure = Effect.fn("HooksRunner.runPostToolUseFailure")(function* (input: {
+    sessionID: string
+    tool: string
+    callID: string
+    args: Record<string, unknown>
+    error: string
+    interrupted: boolean
+    model?: string
+    permissionMode?: string
+  }) {
+    yield* plugin.trigger(
+      "tool.execute.failure",
+      {
+        tool: input.tool,
+        sessionID: input.sessionID,
+        callID: input.callID,
+        args: input.args,
+        error: input.error,
+        interrupted: input.interrupted,
+      },
+      {},
+    )
+    if (!executor) return { blocked: false } as const
+    return yield* executor.runPostTool({
+      event: "PostToolUseFailure",
+      tool: input.tool,
+      matchName: input.tool,
+      sessionID: input.sessionID,
+      callID: input.callID,
+      args: input.args,
+      error: input.error,
+      interrupted: input.interrupted,
+      model: input.model,
+      permissionMode: input.permissionMode,
+    })
+  })
+
+  const runNotification = Effect.fn("HooksRunner.runNotification")(function* (input: {
+    sessionID: string
+    message: string
+    type: NotificationType
+  }) {
+    yield* plugin.trigger("session.notification", input, {})
+    if (!executor) return
+    yield* executor.runObserve({
+      event: "Notification",
+      matchName: input.type,
+      sessionID: input.sessionID,
+      payload: { message: input.message, notificationType: input.type },
+    })
   })
 
   const runSessionStart = Effect.fn("HooksRunner.runSessionStart")(function* (input: {
@@ -467,6 +550,8 @@ export function createRunner(plugin: TriggerLike, executor?: ExecutorLike): Runn
     runPermissionRequest,
     runPermissionAsk,
     runPostToolUse,
+    runPostToolUseFailure,
+    runNotification,
     runSessionStart,
     runSessionEnd,
     runSessionPrompt,

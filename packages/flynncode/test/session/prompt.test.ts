@@ -3161,3 +3161,382 @@ it.instance(
   { git: true },
   30_000,
 )
+
+// Hook decisions and events around tool calls, run through real command hooks
+// and the test LLM server. Trust is bypassed so config hooks run unprompted.
+
+// HooksRunner is a root so idle transitions, which find it in the caller's
+// context as the app runtime provides it, can reach it.
+const hooked = testEffect(
+  LayerNode.compile(LayerNode.group([promptRoot, testLLMServerNode, HooksRunner.node]), [
+    [SessionSummary.node, summary],
+    [LSP.node, lsp],
+    [MCP.node, makeMcp()],
+    [RuntimeFlags.node, RuntimeFlags.layer({ experimentalEventSystem: true, bypassHookTrust: true })],
+    [InstanceStore.bootstrapNode, noopBootstrap],
+  ]),
+)
+const hookedUnix = process.platform !== "win32" ? hooked.instance : hooked.instance.skip
+
+const command = (text: string) => ({ type: "command" as const, command: text })
+const printJson = (value: unknown) => `printf '%s' '${JSON.stringify(value)}'`
+// Appends each hook's stdin as one JSON line.
+const appendStdin = (file: string) => `{ cat; echo; } >> "${file}"`
+
+const readLines = (file: string) =>
+  Effect.promise(async () => {
+    const handle = Bun.file(file)
+    if (!(await handle.exists())) return []
+    return (await handle.text())
+      .split("\n")
+      .filter((line) => line.trim() !== "")
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+  })
+
+const lineWith = (file: string, match: (line: Record<string, unknown>) => boolean, message: string) =>
+  pollWithTimeout(readLines(file).pipe(Effect.map((lines) => lines.find(match))), message)
+
+const runToolTurn = Effect.fn("test.runToolTurn")(function* (sessionID: SessionID) {
+  const prompt = yield* SessionPrompt.Service
+  return yield* prompt
+    .prompt({ sessionID, agent: "build", parts: [{ type: "text", text: "go" }] })
+    .pipe(Effect.forkChild)
+})
+
+const toolParts = (sessionID: SessionID) =>
+  Effect.gen(function* () {
+    const sessions = yield* Session.Service
+    return (yield* sessions.messages({ sessionID })).flatMap((item) => item.parts).filter((part) => part.type === "tool")
+  })
+
+hookedUnix(
+  "a native PreToolUse ask prompts for a call the rules allow",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        permission: { bash: "allow" },
+        hooks: { PreToolUse: [{ matcher: "bash", hooks: [command(printJson({ behavior: "ask", message: "confirm it" }))] }] },
+      }))
+      const { chat } = yield* boot()
+      yield* llm.tool("bash", { command: "printf asked-and-ran", description: "Print" })
+      yield* llm.text("done")
+
+      const running = yield* runToolTurn(chat.id)
+      const request = yield* pendingRequest(chat.id, "bash")
+      expect(request.metadata["reason"]).toBe("confirm it")
+      const permission = yield* Permission.Service
+      yield* permission.reply({ requestID: request.id, reply: "once" })
+      yield* Fiber.await(running)
+
+      const part = (yield* toolParts(chat.id)).find((item) => item.type === "tool" && item.tool === "bash")
+      expect(part?.type === "tool" && part.state.status).toBe("completed")
+      expect(part?.type === "tool" && part.state.status === "completed" && part.state.output).toContain("asked-and-ran")
+    }),
+  { git: true },
+  30_000,
+)
+
+hookedUnix(
+  "a Claude permissionDecision ask prompts for a call the rules allow",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig((url) => ({ ...providerCfg(url), permission: { bash: "allow" } }))
+      yield* writeText(
+        path.join(dir, ".claude", "settings.json"),
+        JSON.stringify({
+          hooks: {
+            PreToolUse: [
+              {
+                matcher: "Bash",
+                hooks: [
+                  command(
+                    printJson({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "ask" } }),
+                  ),
+                ],
+              },
+            ],
+          },
+        }),
+      )
+      const { chat } = yield* boot()
+      yield* llm.tool("bash", { command: "touch claude-ask-marker", description: "Touch" })
+      yield* llm.text("done")
+
+      const running = yield* runToolTurn(chat.id)
+      const request = yield* pendingRequest(chat.id, "bash")
+      const permission = yield* Permission.Service
+      yield* permission.reply({ requestID: request.id, reply: "reject" })
+      yield* Fiber.await(running)
+
+      const afs = yield* FSUtil.Service
+      expect(yield* afs.existsSafe(path.join(dir, "claude-ask-marker"))).toBe(false)
+    }),
+  { git: true },
+  30_000,
+)
+
+hookedUnix(
+  "a PreToolUse deny beats an ask without prompting",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        permission: { bash: "allow" },
+        hooks: {
+          PreToolUse: [
+            {
+              hooks: [
+                command(printJson({ behavior: "ask" })),
+                command(printJson({ behavior: "deny", message: "blocked by hook policy" })),
+              ],
+            },
+          ],
+        },
+      }))
+      const { chat } = yield* boot()
+      yield* llm.tool("bash", { command: "printf never", description: "Print" })
+      yield* llm.text("done")
+
+      yield* Fiber.await(yield* runToolTurn(chat.id))
+
+      const part = (yield* toolParts(chat.id)).find((item) => item.type === "tool" && item.tool === "bash")
+      expect(part?.type === "tool" && part.state.status).toBe("error")
+      expect(part?.type === "tool" && part.state.status === "error" && part.state.error).toContain("blocked by hook policy")
+      const permission = yield* Permission.Service
+      expect(yield* permission.list()).toEqual([])
+    }),
+  { git: true },
+  30_000,
+)
+
+hookedUnix(
+  "a PreToolUse rewrite is what the permission rules check",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        permission: { bash: { "*": "allow", "touch *": "deny" } },
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: "bash",
+              hooks: [
+                command(
+                  printJson({ behavior: "allow", updatedInput: { command: "touch rewrite-marker", description: "Touch" } }),
+                ),
+              ],
+            },
+          ],
+        },
+      }))
+      const { chat } = yield* boot()
+      yield* llm.tool("bash", { command: "ls", description: "List" })
+      yield* llm.text("done")
+
+      yield* Fiber.await(yield* runToolTurn(chat.id))
+
+      const part = (yield* toolParts(chat.id)).find((item) => item.type === "tool" && item.tool === "bash")
+      expect(part?.type === "tool" && part.state.status).toBe("error")
+      const afs = yield* FSUtil.Service
+      expect(yield* afs.existsSafe(path.join(dir, "rewrite-marker"))).toBe(false)
+    }),
+  { git: true },
+  30_000,
+)
+
+hookedUnix(
+  "PermissionRequest hooks see the PreToolUse rewrite, not the original input",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const seen = path.join(dir, "permission-request.json")
+      const { llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        permission: { bash: "ask" },
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: "bash",
+              hooks: [
+                command(
+                  printJson({ behavior: "allow", updatedInput: { command: "printf rewritten", description: "Print" } }),
+                ),
+              ],
+            },
+          ],
+          PermissionRequest: [
+            {
+              hooks: [command(`cat > "${seen}"; ${printJson({ behavior: "deny", message: "seen it" })}`)],
+            },
+          ],
+        },
+      }))
+      const { chat } = yield* boot()
+      yield* llm.tool("bash", { command: "printf original", description: "Print" })
+      yield* llm.text("done")
+
+      yield* Fiber.await(yield* runToolTurn(chat.id))
+
+      const stdin = yield* Effect.promise(() => Bun.file(seen).json() as Promise<Record<string, unknown>>)
+      expect(stdin["args"]).toMatchObject({ command: "printf rewritten" })
+    }),
+  { git: true },
+  30_000,
+)
+
+hookedUnix(
+  "a failing tool fires PostToolUseFailure instead of PostToolUse",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const failures = path.join(dir, "failures.jsonl")
+      const posts = path.join(dir, "posts.jsonl")
+      const { llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        hooks: {
+          PostToolUse: [{ hooks: [command(appendStdin(posts))] }],
+          PostToolUseFailure: [{ matcher: "read", hooks: [command(appendStdin(failures))] }],
+        },
+      }))
+      const { chat } = yield* boot()
+      yield* llm.tool("read", { filePath: path.join(dir, "missing.txt") })
+      yield* llm.text("done")
+
+      yield* Fiber.await(yield* runToolTurn(chat.id))
+
+      const failure = yield* lineWith(failures, (line) => line["tool"] === "read", "no PostToolUseFailure input")
+      expect(failure["event"]).toBe("PostToolUseFailure")
+      expect(String(failure["error"])).toContain("File not found")
+      expect(failure["isInterrupt"]).toBe(false)
+      expect(yield* readLines(posts)).toEqual([])
+    }),
+  { git: true },
+  30_000,
+)
+
+hookedUnix(
+  "a permission prompt fires Notification permission_prompt",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const notes = path.join(dir, "notifications.jsonl")
+      const { llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        permission: { bash: "ask" },
+        hooks: { Notification: [{ matcher: "permission_prompt", hooks: [command(appendStdin(notes))] }] },
+      }))
+      const { chat } = yield* boot()
+      yield* llm.tool("bash", { command: "printf hi", description: "Print" })
+      yield* llm.text("done")
+
+      const running = yield* runToolTurn(chat.id)
+      const request = yield* pendingRequest(chat.id, "bash")
+      const note = yield* lineWith(notes, (line) => line["notificationType"] === "permission_prompt", "no Notification")
+      expect(note["sessionID"]).toBe(chat.id)
+      expect(note["message"]).toBe("Flynncode needs your permission to use bash")
+      const permission = yield* Permission.Service
+      yield* permission.reply({ requestID: request.id, reply: "reject" })
+      yield* Fiber.await(running)
+    }),
+  { git: true },
+  30_000,
+)
+
+hookedUnix(
+  "the question tool fires Notification question",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const notes = path.join(dir, "notifications.jsonl")
+      const { llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        hooks: { Notification: [{ hooks: [command(appendStdin(notes))] }] },
+      }))
+      const { chat } = yield* boot()
+      yield* llm.tool("question", {
+        questions: [{ question: "Which color?", header: "Color", options: [{ label: "red", description: "Red" }] }],
+      })
+      yield* llm.text("done")
+
+      const running = yield* runToolTurn(chat.id)
+      const question = yield* Question.Service
+      const asked = yield* pollWithTimeout(
+        question.list().pipe(Effect.map((items) => items.find((item) => item.sessionID === chat.id))),
+        "no question asked",
+      )
+      const note = yield* lineWith(notes, (line) => line["notificationType"] === "question", "no Notification")
+      expect(note["message"]).toBe("Which color?")
+      yield* question.reject(asked.id)
+      yield* Fiber.await(running)
+    }),
+  { git: true },
+  30_000,
+)
+
+hookedUnix(
+  "a root session going idle fires Notification idle, a child session does not",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const notes = path.join(dir, "notifications.jsonl")
+      const { llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        hooks: { Notification: [{ matcher: "idle", hooks: [command(appendStdin(notes))] }] },
+      }))
+      const { prompt, sessions, chat } = yield* boot()
+      const child = yield* sessions.create({ title: "Child", parentID: chat.id })
+      const status = yield* SessionStatus.Service
+      yield* status.set(child.id, { type: "busy" })
+      yield* status.set(child.id, { type: "idle" })
+      yield* llm.text("done")
+
+      yield* prompt.prompt({ sessionID: chat.id, agent: "build", parts: [{ type: "text", text: "hello" }] })
+
+      const note = yield* lineWith(notes, (line) => line["sessionID"] === chat.id, "no idle Notification")
+      expect(note["notificationType"]).toBe("idle")
+      expect(note["message"]).toBe("Flynncode is waiting for your input")
+      expect((yield* readLines(notes)).filter((line) => line["sessionID"] === child.id)).toEqual([])
+    }),
+  { git: true },
+  30_000,
+)
+
+hookedUnix(
+  "an interrupted tool fires PostToolUseFailure with isInterrupt",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const failures = path.join(dir, "failures.jsonl")
+      const posts = path.join(dir, "posts.jsonl")
+      const { llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        hooks: {
+          PostToolUse: [{ hooks: [command(appendStdin(posts))] }],
+          PostToolUseFailure: [{ hooks: [command(appendStdin(failures))] }],
+        },
+      }))
+      const { prompt, chat } = yield* boot()
+      yield* prompt.prompt({ sessionID: chat.id, agent: "build", noReply: true, parts: [{ type: "text", text: "wait" }] })
+      yield* llm.tool("bash", { command: "printf started; sleep 30", description: "Wait", timeout: 30_000 })
+
+      const run = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const msgs = yield* MessageV2.filterCompactedEffect(chat.id)
+          const tool = msgs.flatMap((item) => item.parts).find((part) => part.type === "tool")
+          if (tool?.type === "tool" && tool.state.status === "running" && tool.state.metadata?.output?.includes("started"))
+            return true
+        }),
+        "bash never started",
+      )
+      yield* prompt.cancel(chat.id)
+      yield* Fiber.await(run)
+
+      const failure = yield* lineWith(failures, (line) => line["tool"] === "bash", "no PostToolUseFailure input")
+      expect(failure["isInterrupt"]).toBe(true)
+      expect(yield* readLines(posts)).toEqual([])
+    }),
+  { git: true },
+  30_000,
+)

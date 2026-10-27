@@ -547,6 +547,59 @@ describe("hooks executor", () => {
   )
 })
 
+const nativeAsk = `printf '%s' '${JSON.stringify({ behavior: "ask", message: "check with the user" })}'`
+const nativeDeny = `printf '%s' '${JSON.stringify({ behavior: "deny", message: "never" })}'`
+const nativeAllow = `printf '%s' '${JSON.stringify({ behavior: "allow" })}'`
+const nativeGroup = (commands: Array<string>) => ({
+  PreToolUse: [{ hooks: commands.map((command) => ({ type: "command" as const, command })) }],
+})
+const trustNative = (commands: Array<string>) =>
+  Effect.promise(() =>
+    Bun.write(
+      trustPath,
+      JSON.stringify(
+        commands.map((command) => ({
+          hash: HooksTrust.hashDef(HooksTrust.fromHandler("PreToolUse", undefined, { type: "command", command })),
+          trustedAt: Date.now(),
+        })),
+      ),
+    ),
+  )
+
+describe("hooks executor: ask", () => {
+  testEffect(executorLayer(nativeGroup([nativeAllow, nativeAsk]))).effect("native ask beats allow", () =>
+    Effect.gen(function* () {
+      yield* trustNative([nativeAllow, nativeAsk])
+      const executor = yield* HooksExecutor.Service
+      const decision = yield* executor.runDecision({
+        event: "PreToolUse",
+        matchName: "bash",
+        tool: "bash",
+        sessionID: "ses_1",
+        callID: "c1",
+        args: { command: "ls" },
+      })
+      expect(decision).toEqual({ behavior: "ask", message: "check with the user" })
+    }),
+  )
+
+  testEffect(executorLayer(nativeGroup([nativeAsk, nativeDeny]))).effect("deny beats ask", () =>
+    Effect.gen(function* () {
+      yield* trustNative([nativeAsk, nativeDeny])
+      const executor = yield* HooksExecutor.Service
+      const decision = yield* executor.runDecision({
+        event: "PreToolUse",
+        matchName: "bash",
+        tool: "bash",
+        sessionID: "ses_1",
+        callID: "c1",
+        args: { command: "ls" },
+      })
+      expect(decision).toEqual({ behavior: "deny", message: "never" })
+    }),
+  )
+})
+
 const claudeSource = "claude:plugin:demo@market"
 const claudeEnvPath = path.join(dir, "claude-env.txt")
 const claudeCapture = (stdout = "") =>
@@ -660,11 +713,82 @@ describe("hooks executor: Claude format", () => {
   const askHook = `printf '%s' '${JSON.stringify({ hookSpecificOutput: { permissionDecision: "ask" } })}'`
   const plainAllowHook = `printf '%s' '${JSON.stringify({ hookSpecificOutput: { permissionDecision: "allow" } })}'`
   testEffect(executorLayer(claudeGroup("PreToolUse", undefined, [plainAllowHook, askHook]))).effect(
-    "ask beats allow and, until the runner can ask, leaves the call to the permission rules",
+    "ask beats allow",
     () =>
       Effect.gen(function* () {
         yield* trustClaude("PreToolUse", undefined, [plainAllowHook, askHook])
-        expect(yield* preToolUse("bash", { command: "ls" })).toEqual({ behavior: "undecided" })
+        expect(yield* preToolUse("bash", { command: "ls" })).toEqual({ behavior: "ask" })
+      }),
+  )
+
+  const askRewriteHook = `printf '%s' '${JSON.stringify({
+    hookSpecificOutput: { permissionDecision: "ask", permissionDecisionReason: "look first", updatedInput: { file_path: "/b.ts" } },
+  })}'`
+  testEffect(executorLayer(claudeGroup("PreToolUse", "Edit", [askRewriteHook]))).effect(
+    "ask carries its reason and a rewritten input in Flynncode's argument names",
+    () =>
+      Effect.gen(function* () {
+        yield* trustClaude("PreToolUse", "Edit", [askRewriteHook])
+        expect(yield* preToolUse("edit", { filePath: "/a.ts" })).toEqual({
+          behavior: "ask",
+          message: "look first",
+          updatedInput: { filePath: "/b.ts" },
+        })
+      }),
+  )
+
+  const failureHook = `${claudeCapture()}; echo "retry with -v" >&2; exit 2`
+  testEffect(executorLayer(claudeGroup("PostToolUseFailure", "Bash", [failureHook]))).effect(
+    "PostToolUseFailure gets error and is_interrupt, and exit 2 sends stderr to the model",
+    () =>
+      Effect.gen(function* () {
+        yield* trustClaude("PostToolUseFailure", "Bash", [failureHook])
+        const executor = yield* HooksExecutor.Service
+        const outcome = yield* executor.runPostTool({
+          event: "PostToolUseFailure",
+          tool: "bash",
+          matchName: "bash",
+          sessionID: "ses_1",
+          callID: "c1",
+          args: { command: "make" },
+          error: "make: *** [all] Error 1",
+          interrupted: false,
+        })
+        expect(outcome).toEqual({ blocked: true, reason: "retry with -v" })
+        const stdin = yield* readCapture
+        expect(stdin["hook_event_name"]).toBe("PostToolUseFailure")
+        expect(stdin["tool_name"]).toBe("Bash")
+        expect(stdin["tool_input"]).toEqual({ command: "make" })
+        expect(stdin["error"]).toBe("make: *** [all] Error 1")
+        expect(stdin["is_interrupt"]).toBe(false)
+        expect(stdin).not.toHaveProperty("tool_response")
+      }),
+  )
+
+  const notificationHook = claudeCapture()
+  testEffect(executorLayer(claudeGroup("Notification", "permission_prompt", [notificationHook]))).effect(
+    "Notification matches notification_type and gets message",
+    () =>
+      Effect.gen(function* () {
+        yield* trustClaude("Notification", "permission_prompt", [notificationHook])
+        const executor = yield* HooksExecutor.Service
+        yield* executor.runObserve({
+          event: "Notification",
+          matchName: "idle",
+          sessionID: "ses_1",
+          payload: { message: "waiting", notificationType: "idle" },
+        })
+        expect(yield* Effect.promise(() => Bun.file(capturePath).text())).toBe("")
+        yield* executor.runObserve({
+          event: "Notification",
+          matchName: "permission_prompt",
+          sessionID: "ses_1",
+          payload: { message: "Flynncode needs your permission to use bash", notificationType: "permission_prompt" },
+        })
+        const stdin = yield* readCapture
+        expect(stdin["hook_event_name"]).toBe("Notification")
+        expect(stdin["message"]).toBe("Flynncode needs your permission to use bash")
+        expect(stdin["notification_type"]).toBe("permission_prompt")
       }),
   )
 

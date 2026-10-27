@@ -14,6 +14,7 @@ import { Permission } from "@/permission"
 import { AutoReviewer } from "@/permission/auto-reviewer"
 import { Sandbox } from "@/permission/sandbox"
 import { Reviewer } from "@/permission/reviewer"
+import { Question } from "@/question"
 import { Tool } from "@/tool/tool"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { ToolRegistry } from "@/tool/registry"
@@ -22,7 +23,7 @@ import { Truncate } from "@/tool/truncate"
 import { HooksRunner } from "@/hooks/runner"
 import type { TaskPromptOps } from "@/tool/task"
 import { type Tool as AITool, tool, jsonSchema, type ToolExecutionOptions, asSchema } from "ai"
-import { Effect, Option } from "effect"
+import { Cause, Effect, Option } from "effect"
 import { MessageV2 } from "./message-v2"
 import { Session } from "./session"
 import { SessionProcessor } from "./processor"
@@ -31,6 +32,7 @@ import { EffectBridge } from "@/effect/bridge"
 import { ProviderV2 } from "@flynncode/core/provider"
 import { ModelV2 } from "@flynncode/core/model"
 import { isRecord } from "@/util/record"
+import { errorMessage } from "@/util/error"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { SessionWorkspace } from "./workspace"
 
@@ -135,11 +137,6 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       }),
     ask: (req) =>
       Effect.gen(function* () {
-        const ruleset = Permission.withTurn(
-          Permission.merge(input.agent.permission, input.session.permission ?? []),
-          input.turnPermission,
-          req,
-        )
         // Bash patterns are command globs, not paths; the shell tool raises external_directory
         // for paths it touches, so bash itself is only gated by readonly.
         if (req.permission === "bash" && policy.sandbox === "readonly") {
@@ -167,59 +164,178 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             )
           }
         }
-        // Rule-allowed, "always"-approved and denied calls never reach the
-        // prompt, so the reviewer only vets requests that would actually ask.
-        const asks = yield* permission.wouldAsk({ permission: req.permission, patterns: req.patterns, ruleset })
-        const staticApproval = Reviewer.review({
+        return yield* gate({ req, args, toolID, callID: options.toolCallId, force: false })
+      }),
+  })
+
+  // `force` is a PreToolUse ask: the request prompts even where a rule or an
+  // "always" approval allows it, and the static read approval and
+  // accept-edits never skip it. Under approval "auto" the auto-reviewer still
+  // answers it, as it answers every prompt in that mode.
+  const gate = Effect.fn("SessionTools.gate")(function* (gated: {
+    req: Parameters<Tool.Context["ask"]>[0]
+    args: Record<string, unknown>
+    toolID: string
+    callID: string
+    force: boolean
+  }) {
+    const req = gated.req
+    const ruleset = Permission.withTurn(
+      Permission.merge(input.agent.permission, input.session.permission ?? []),
+      input.turnPermission,
+      req,
+    )
+    // Rule-allowed, "always"-approved and denied calls never reach the
+    // prompt, so the reviewer only vets requests that would actually ask.
+    const asks =
+      gated.force || (yield* permission.wouldAsk({ permission: req.permission, patterns: req.patterns, ruleset }))
+    const staticApproval = gated.force
+      ? "defer"
+      : Reviewer.review({
           permission: req.permission,
           patterns: req.patterns,
           ruleset,
-          tool: toolID,
-          args,
+          tool: gated.toolID,
+          args: gated.args,
         })
-        // approval "auto": the LLM auto-reviewer vets the request before the
-        // human prompt. allow approves without prompting, deny fails closed,
-        // defer or an absent reviewer service falls through to the normal
-        // prompt path. The verdict rides on the ask input so the
-        // permission.asked event can surface it to the dock.
-        const reviewer =
-          asks &&
-          staticApproval !== "allow" &&
-          policy.approval === "auto" &&
-          !Permission.ALWAYS_ASK.includes(req.permission)
-            ? Option.isSome(autoReviewer)
-              ? yield* autoReviewer.value.request({
-                  sessionID: input.session.id,
-                  tool: toolID,
-                  args,
-                  permission: req.permission,
-                  patterns: req.patterns,
-                })
-              : "defer"
-            : undefined
-        if (reviewer === "deny") {
-          return yield* Effect.orDie(
-            Effect.fail(
-              new PermissionV1.DeniedError({
-                ruleset: ruleset.filter((rule) => Wildcard.match(req.permission, rule.permission)),
-              }),
-            ),
-          )
-        }
-        return yield* permission
-          .ask({
-            ...req,
-            sessionID: input.session.id,
-            tool: { messageID: input.processor.message.id, callID: options.toolCallId },
-            ruleset,
-            approval: policy.approval,
-            ...(staticApproval === "allow" ? { staticApproval } : {}),
-            ...(reviewer !== undefined ? { reviewer } : {}),
-            hook: { tool: toolID, args },
-          })
-          .pipe(Effect.orDie)
-      }),
+    // approval "auto": the LLM auto-reviewer vets the request before the
+    // human prompt. allow approves without prompting, deny fails closed,
+    // defer or an absent reviewer service falls through to the normal
+    // prompt path. The verdict rides on the ask input so the
+    // permission.asked event can surface it to the dock.
+    const reviewer =
+      asks &&
+      staticApproval !== "allow" &&
+      policy.approval === "auto" &&
+      !Permission.ALWAYS_ASK.includes(req.permission)
+        ? Option.isSome(autoReviewer)
+          ? yield* autoReviewer.value.request({
+              sessionID: input.session.id,
+              tool: gated.toolID,
+              args: gated.args,
+              permission: req.permission,
+              patterns: req.patterns,
+            })
+          : "defer"
+        : undefined
+    if (reviewer === "deny") {
+      return yield* Effect.orDie(
+        Effect.fail(
+          new PermissionV1.DeniedError({
+            ruleset: ruleset.filter((rule) => Wildcard.match(req.permission, rule.permission)),
+          }),
+        ),
+      )
+    }
+    return yield* permission
+      .ask({
+        ...req,
+        sessionID: input.session.id,
+        tool: { messageID: input.processor.message.id, callID: gated.callID },
+        ruleset,
+        approval: policy.approval,
+        ...(staticApproval === "allow" ? { staticApproval } : {}),
+        ...(reviewer !== undefined ? { reviewer } : {}),
+        ...(gated.force ? { force: true } : {}),
+        hook: { tool: gated.toolID, args: gated.args },
+      })
+      .pipe(Effect.orDie)
   })
+
+  // A PreToolUse deny fails the call. An ask prompts for the call before the
+  // tool runs: one generic prompt for the tool and its input, after which the
+  // tool's own permission checks apply as usual.
+  const decide = Effect.fn("SessionTools.decide")(function* (decided: {
+    toolID: string
+    callID: string
+    decision: HooksRunner.PreToolUseDecision
+    args: Record<string, unknown>
+  }) {
+    const decision = decided.decision
+    if (decision.behavior === "deny") throw new HooksRunner.HookDeniedError(decision.message)
+    if (decision.behavior !== "ask") return
+    yield* gate({
+      req: {
+        permission: decided.toolID,
+        patterns: ["*"],
+        // An "always" reply must not outlast the hook that asked.
+        always: [],
+        metadata: { input: decided.args, ...(decision.message !== undefined && { reason: decision.message }) },
+      },
+      args: decided.args,
+      toolID: decided.toolID,
+      callID: decided.callID,
+      force: true,
+    })
+  })
+
+  // PreToolUse, then the call's context. The context carries the effective
+  // input, so auto-review, PermissionRequest hooks and the tool's own
+  // permission checks all see a hook's rewrite rather than the model's input.
+  const preTool = Effect.fn("SessionTools.preTool")(function* (
+    toolID: string,
+    args: unknown,
+    options: ToolExecutionOptions,
+  ) {
+    const decision = yield* hooksRunner.runPreToolUse({
+      ...hookContext,
+      sessionID: input.session.id,
+      tool: toolID,
+      callID: options.toolCallId,
+      args: toRecord(args),
+    })
+    const resolved = resolveEffectiveArgs(toolID, args, decision)
+    if (resolved.warning) yield* Effect.logWarning(resolved.warning, { toolID })
+    const effective = toRecord(resolved.effective)
+    yield* decide({ toolID, callID: options.toolCallId, decision, args: effective })
+    return { args: resolved.effective, ctx: context(effective, options, toolID) }
+  })
+
+  // PostToolUse when the call succeeded. PostToolUseFailure instead when the
+  // tool failed or was aborted; its block reason or context reaches the model
+  // after the error, except on a permission or question rejection, whose error
+  // type the processor acts on.
+  const postTool = <T extends HooksRunner.ToolResultView, E>(
+    call: { toolID: string; args: unknown; options: ToolExecutionOptions },
+    body: Effect.Effect<T, E>,
+  ) =>
+    Effect.gen(function* () {
+      const failed = (error: string, interrupted: boolean) =>
+        hooksRunner.runPostToolUseFailure({
+          ...hookContext,
+          sessionID: input.session.id,
+          tool: call.toolID,
+          callID: call.options.toolCallId,
+          args: toRecord(call.args),
+          error,
+          interrupted,
+        })
+      const output = yield* body.pipe(
+        Effect.catchCause((cause) =>
+          Effect.gen(function* () {
+            const error = Cause.squash(cause)
+            const outcome = yield* failed(errorMessage(error), call.options.abortSignal?.aborted === true)
+            const note = outcome.blocked ? outcome.reason : outcome.additionalContext
+            if (note === undefined || rejected(error)) return yield* Effect.failCause(cause)
+            return yield* Effect.die(new Error(`${errorMessage(error)}\n\n${note}`))
+          }),
+        ),
+      )
+      if (call.options.abortSignal?.aborted) {
+        yield* failed("Tool execution aborted", true)
+        yield* input.processor.completeToolCall(call.options.toolCallId, output)
+        return output
+      }
+      const post = yield* hooksRunner.runPostToolUse({
+        ...hookContext,
+        sessionID: input.session.id,
+        tool: call.toolID,
+        callID: call.options.toolCallId,
+        args: toRecord(call.args),
+        result: output,
+      })
+      return { ...output, ...post }
+    })
 
   const registered = (item: Tool.Def): AITool => {
     const schema = ProviderTransform.schema(input.model, ToolJsonSchema.fromTool(item))
@@ -229,41 +345,21 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       execute(args, options) {
         return run.promise(
           Effect.gen(function* () {
-            const ctx = context(args, options, item.id)
-            const decision = yield* hooksRunner.runPreToolUse({
-              ...hookContext,
-              sessionID: ctx.sessionID,
-              tool: item.id,
-              callID: options.toolCallId ?? ctx.callID ?? "unknown",
-              args: toRecord(args),
-            })
-            if (decision.behavior === "deny") throw new HooksRunner.HookDeniedError(decision.message)
-            const resolved = resolveEffectiveArgs(item.id, args, decision)
-            if (resolved.warning) yield* Effect.logWarning(resolved.warning, { toolID: item.id })
-            const effectiveArgs = resolved.effective
-            const result = yield* item.execute(effectiveArgs, ctx)
-            const output = {
-              ...result,
-              attachments: result.attachments?.map((attachment) => ({
-                ...attachment,
-                id: PartID.ascending(),
-                sessionID: ctx.sessionID,
-                messageID: input.processor.message.id,
-              })),
-            }
-            const post = yield* hooksRunner.runPostToolUse({
-              ...hookContext,
-              sessionID: ctx.sessionID,
-              tool: item.id,
-              callID: options.toolCallId ?? ctx.callID ?? "unknown",
-              args: toRecord(effectiveArgs),
-              result: output,
-            })
-            const finalOutput = { ...output, ...post }
-            if (options.abortSignal?.aborted) {
-              yield* input.processor.completeToolCall(options.toolCallId, finalOutput)
-            }
-            return finalOutput
+            const pre = yield* preTool(item.id, args, options)
+            return yield* postTool(
+              { toolID: item.id, args: pre.args, options },
+              item.execute(pre.args, pre.ctx).pipe(
+                Effect.map((result) => ({
+                  ...result,
+                  attachments: result.attachments?.map((attachment) => ({
+                    ...attachment,
+                    id: PartID.ascending(),
+                    sessionID: input.session.id,
+                    messageID: input.processor.message.id,
+                  })),
+                })),
+              ),
+            )
           }),
         )
       },
@@ -325,48 +421,45 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               callID: opts.toolCallId,
               args: toRecord(args),
             })
-            if (preList.behavior === "deny") throw new HooksRunner.HookDeniedError(preList.message)
-            yield* ctx.ask({
-              permission: "read",
-              metadata: parsed.server ? { server: parsed.server } : {},
-              patterns: permissionPatterns,
-              always: permissionPatterns,
-            })
-
-            const resources = Object.values(yield* mcp.resources(parsed.server))
-            const filtered = resources
-              .filter((resource) => !parsed.server || resource.client === parsed.server)
-              .toSorted((a, b) =>
-                (a.client + "\u0000" + a.name + "\u0000" + a.uri).localeCompare(
-                  b.client + "\u0000" + b.name + "\u0000" + b.uri,
-                ),
-              )
-            const content = JSON.stringify({ resources: filtered.map(formatMcpResource) }, null, 2)
-            const truncated = yield* truncate.output(content, {}, input.agent)
-            const output = {
-              title: parsed.server ? `MCP resources: ${parsed.server}` : "MCP resources",
-              metadata: {
-                count: filtered.length,
-                servers: resourceServers,
-                ...(parsed.server ? { server: parsed.server } : {}),
-                truncated: truncated.truncated,
-                ...(truncated.truncated && { outputPath: truncated.outputPath }),
-              },
-              output: truncated.content,
-            }
-            const postList = yield* hooksRunner.runPostToolUse({
-              ...hookContext,
-              sessionID: ctx.sessionID,
-              tool: MCP_RESOURCE_TOOLS.list,
+            yield* decide({
+              toolID: MCP_RESOURCE_TOOLS.list,
               callID: opts.toolCallId,
+              decision: preList,
               args: toRecord(args),
-              result: output,
             })
-            const finalList = { ...output, ...postList }
-            if (opts.abortSignal?.aborted) {
-              yield* input.processor.completeToolCall(opts.toolCallId, finalList)
-            }
-            return finalList
+            return yield* postTool(
+              { toolID: MCP_RESOURCE_TOOLS.list, args, options: opts },
+              Effect.gen(function* () {
+                yield* ctx.ask({
+                  permission: "read",
+                  metadata: parsed.server ? { server: parsed.server } : {},
+                  patterns: permissionPatterns,
+                  always: permissionPatterns,
+                })
+
+                const resources = Object.values(yield* mcp.resources(parsed.server))
+                const filtered = resources
+                  .filter((resource) => !parsed.server || resource.client === parsed.server)
+                  .toSorted((a, b) =>
+                    (a.client + "\u0000" + a.name + "\u0000" + a.uri).localeCompare(
+                      b.client + "\u0000" + b.name + "\u0000" + b.uri,
+                    ),
+                  )
+                const content = JSON.stringify({ resources: filtered.map(formatMcpResource) }, null, 2)
+                const truncated = yield* truncate.output(content, {}, input.agent)
+                return {
+                  title: parsed.server ? `MCP resources: ${parsed.server}` : "MCP resources",
+                  metadata: {
+                    count: filtered.length,
+                    servers: resourceServers,
+                    ...(parsed.server ? { server: parsed.server } : {}),
+                    truncated: truncated.truncated,
+                    ...(truncated.truncated && { outputPath: truncated.outputPath }),
+                  },
+                  output: truncated.content,
+                }
+              }),
+            )
           }),
         )
       },
@@ -415,48 +508,45 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               callID: opts.toolCallId,
               args: toRecord(args),
             })
-            if (preTemplates.behavior === "deny") throw new HooksRunner.HookDeniedError(preTemplates.message)
-            yield* ctx.ask({
-              permission: "read",
-              metadata: parsed.server ? { server: parsed.server } : {},
-              patterns: permissionPatterns,
-              always: permissionPatterns,
-            })
-
-            const templates = Object.values(yield* mcp.resourceTemplates(parsed.server))
-            const filtered = templates
-              .filter((template) => !parsed.server || template.client === parsed.server)
-              .toSorted((a, b) =>
-                (a.client + "\u0000" + a.name + "\u0000" + a.uriTemplate).localeCompare(
-                  b.client + "\u0000" + b.name + "\u0000" + b.uriTemplate,
-                ),
-              )
-            const content = JSON.stringify({ resourceTemplates: filtered.map(formatMcpResourceTemplate) }, null, 2)
-            const truncated = yield* truncate.output(content, {}, input.agent)
-            const output = {
-              title: parsed.server ? `MCP resource templates: ${parsed.server}` : "MCP resource templates",
-              metadata: {
-                count: filtered.length,
-                servers: resourceServers,
-                ...(parsed.server ? { server: parsed.server } : {}),
-                truncated: truncated.truncated,
-                ...(truncated.truncated && { outputPath: truncated.outputPath }),
-              },
-              output: truncated.content,
-            }
-            const postTemplates = yield* hooksRunner.runPostToolUse({
-              ...hookContext,
-              sessionID: ctx.sessionID,
-              tool: MCP_RESOURCE_TOOLS.listTemplates,
+            yield* decide({
+              toolID: MCP_RESOURCE_TOOLS.listTemplates,
               callID: opts.toolCallId,
+              decision: preTemplates,
               args: toRecord(args),
-              result: output,
             })
-            const finalTemplates = { ...output, ...postTemplates }
-            if (opts.abortSignal?.aborted) {
-              yield* input.processor.completeToolCall(opts.toolCallId, finalTemplates)
-            }
-            return finalTemplates
+            return yield* postTool(
+              { toolID: MCP_RESOURCE_TOOLS.listTemplates, args, options: opts },
+              Effect.gen(function* () {
+                yield* ctx.ask({
+                  permission: "read",
+                  metadata: parsed.server ? { server: parsed.server } : {},
+                  patterns: permissionPatterns,
+                  always: permissionPatterns,
+                })
+
+                const templates = Object.values(yield* mcp.resourceTemplates(parsed.server))
+                const filtered = templates
+                  .filter((template) => !parsed.server || template.client === parsed.server)
+                  .toSorted((a, b) =>
+                    (a.client + "\u0000" + a.name + "\u0000" + a.uriTemplate).localeCompare(
+                      b.client + "\u0000" + b.name + "\u0000" + b.uriTemplate,
+                    ),
+                  )
+                const content = JSON.stringify({ resourceTemplates: filtered.map(formatMcpResourceTemplate) }, null, 2)
+                const truncated = yield* truncate.output(content, {}, input.agent)
+                return {
+                  title: parsed.server ? `MCP resource templates: ${parsed.server}` : "MCP resource templates",
+                  metadata: {
+                    count: filtered.length,
+                    servers: resourceServers,
+                    ...(parsed.server ? { server: parsed.server } : {}),
+                    truncated: truncated.truncated,
+                    ...(truncated.truncated && { outputPath: truncated.outputPath }),
+                  },
+                  output: truncated.content,
+                }
+              }),
+            )
           }),
         )
       },
@@ -502,50 +592,47 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               callID: opts.toolCallId,
               args: toRecord(args),
             })
-            if (preRead.behavior === "deny") throw new HooksRunner.HookDeniedError(preRead.message)
-            yield* ctx.ask({
-              permission: "read",
-              metadata: { server: parsed.server, uri: parsed.uri },
-              patterns: [`mcp:${parsed.server}:${parsed.uri}`],
-              always: [`mcp:${parsed.server}:*`],
-            })
-
-            const content = yield* mcp.readResource(parsed.server, parsed.uri)
-            if (!content) throw new Error(`Failed to read MCP resource: ${parsed.server}/${parsed.uri}`)
-
-            const formatted = formatMcpResourceContent(parsed.server, parsed.uri, content)
-            const truncated = yield* truncate.output(formatted.text, {}, input.agent)
-            const output = {
-              title: `MCP resource: ${parsed.uri}`,
-              metadata: {
-                server: parsed.server,
-                uri: parsed.uri,
-                contents: formatted.contents,
-                attachments: formatted.attachments.length,
-                truncated: truncated.truncated,
-                ...(truncated.truncated && { outputPath: truncated.outputPath }),
-              },
-              output: truncated.content,
-              attachments: formatted.attachments.map((attachment) => ({
-                ...attachment,
-                id: PartID.ascending(),
-                sessionID: ctx.sessionID,
-                messageID: input.processor.message.id,
-              })),
-            }
-            const postRead = yield* hooksRunner.runPostToolUse({
-              ...hookContext,
-              sessionID: ctx.sessionID,
-              tool: MCP_RESOURCE_TOOLS.read,
+            yield* decide({
+              toolID: MCP_RESOURCE_TOOLS.read,
               callID: opts.toolCallId,
+              decision: preRead,
               args: toRecord(args),
-              result: output,
             })
-            const finalRead = { ...output, ...postRead }
-            if (opts.abortSignal?.aborted) {
-              yield* input.processor.completeToolCall(opts.toolCallId, finalRead)
-            }
-            return finalRead
+            return yield* postTool(
+              { toolID: MCP_RESOURCE_TOOLS.read, args, options: opts },
+              Effect.gen(function* () {
+                yield* ctx.ask({
+                  permission: "read",
+                  metadata: { server: parsed.server, uri: parsed.uri },
+                  patterns: [`mcp:${parsed.server}:${parsed.uri}`],
+                  always: [`mcp:${parsed.server}:*`],
+                })
+
+                const content = yield* mcp.readResource(parsed.server, parsed.uri)
+                if (!content) throw new Error(`Failed to read MCP resource: ${parsed.server}/${parsed.uri}`)
+
+                const formatted = formatMcpResourceContent(parsed.server, parsed.uri, content)
+                const truncated = yield* truncate.output(formatted.text, {}, input.agent)
+                return {
+                  title: `MCP resource: ${parsed.uri}`,
+                  metadata: {
+                    server: parsed.server,
+                    uri: parsed.uri,
+                    contents: formatted.contents,
+                    attachments: formatted.attachments.length,
+                    truncated: truncated.truncated,
+                    ...(truncated.truncated && { outputPath: truncated.outputPath }),
+                  },
+                  output: truncated.content,
+                  attachments: formatted.attachments.map((attachment) => ({
+                    ...attachment,
+                    id: PartID.ascending(),
+                    sessionID: ctx.sessionID,
+                    messageID: input.processor.message.id,
+                  })),
+                }
+              }),
+            )
           }),
         )
       },
@@ -569,104 +656,87 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     item.execute = (args, opts) =>
       run.promise(
         Effect.gen(function* () {
-          const ctx = context(args, opts, key)
-          const preMcp = yield* hooksRunner.runPreToolUse({
-            ...hookContext,
-            sessionID: ctx.sessionID,
-            tool: key,
-            callID: opts.toolCallId,
-            args: toRecord(args),
-          })
-          if (preMcp.behavior === "deny") throw new HooksRunner.HookDeniedError(preMcp.message)
-          const resolvedMcp = resolveEffectiveArgs(key, args, preMcp)
-          if (resolvedMcp.warning) yield* Effect.logWarning(resolvedMcp.warning, { toolID: key })
-          const effectiveMcp = resolvedMcp.effective
-          const result: Awaited<ReturnType<NonNullable<typeof execute>>> = yield* Effect.gen(function* () {
-            yield* ctx.ask({ permission: key, metadata: { input: effectiveMcp }, patterns: ["*"], always: ["*"] })
-            return yield* Effect.promise(() => execute(effectiveMcp, opts))
-          }).pipe(
-            Effect.withSpan("Tool.execute", {
-              attributes: {
-                "tool.name": key,
-                "tool.call_id": opts.toolCallId,
-                "session.id": ctx.sessionID,
-                "message.id": input.processor.message.id,
-              },
+          const pre = yield* preTool(key, args, opts)
+          const effectiveMcp = pre.args
+          const ctx = pre.ctx
+          return yield* postTool(
+            { toolID: key, args: effectiveMcp, options: opts },
+            Effect.gen(function* () {
+              const result: Awaited<ReturnType<NonNullable<typeof execute>>> = yield* Effect.gen(function* () {
+                yield* ctx.ask({ permission: key, metadata: { input: effectiveMcp }, patterns: ["*"], always: ["*"] })
+                return yield* Effect.promise(() => execute(effectiveMcp, opts))
+              }).pipe(
+                Effect.withSpan("Tool.execute", {
+                  attributes: {
+                    "tool.name": key,
+                    "tool.call_id": opts.toolCallId,
+                    "session.id": ctx.sessionID,
+                    "message.id": input.processor.message.id,
+                  },
+                }),
+              )
+              // PostToolUse observe + block-replace runs on the truncated
+              // model-visible output below via runPostToolUse.
+
+              const textParts: string[] = []
+              const attachments: Omit<SessionV1.FilePart, "id" | "sessionID" | "messageID">[] = []
+              for (const contentItem of result.content) {
+                if (contentItem.type === "text") textParts.push(contentItem.text)
+                else if (contentItem.type === "image") {
+                  attachments.push({
+                    type: "file",
+                    mime: contentItem.mimeType,
+                    url: `data:${contentItem.mimeType};base64,${contentItem.data}`,
+                  })
+                } else if (contentItem.type === "resource") {
+                  const { resource } = contentItem
+                  if (resource.text) textParts.push(resource.text)
+                  if (resource.blob) {
+                    const mime = resource.mimeType ?? "application/octet-stream"
+                    const size = base64Size(resource.blob)
+                    if (!SUPPORTED_MCP_RESOURCE_ATTACHMENT_MIMES.has(mime)) {
+                      textParts.push(
+                        `[Binary MCP resource omitted: ${resource.uri} (${mime}, ${formatBytes(size)}) is not a supported attachment type]`,
+                      )
+                      continue
+                    }
+                    if (size > MAX_MCP_RESOURCE_BLOB_BYTES) {
+                      textParts.push(
+                        `[Binary MCP resource omitted: ${resource.uri} (${mime}, ${formatBytes(size)}) exceeds ${formatBytes(MAX_MCP_RESOURCE_BLOB_BYTES)}]`,
+                      )
+                      continue
+                    }
+                    attachments.push({
+                      type: "file",
+                      mime,
+                      url: `data:${mime};base64,${resource.blob}`,
+                      filename: resource.uri,
+                    })
+                  }
+                }
+              }
+
+              const truncated = yield* truncate.output(textParts.join("\n\n"), {}, input.agent)
+              const metadata = {
+                ...result.metadata,
+                truncated: truncated.truncated,
+                ...(truncated.truncated && { outputPath: truncated.outputPath }),
+              }
+
+              return {
+                title: "",
+                metadata,
+                output: truncated.content,
+                attachments: attachments.map((attachment) => ({
+                  ...attachment,
+                  id: PartID.ascending(),
+                  sessionID: ctx.sessionID,
+                  messageID: input.processor.message.id,
+                })),
+                content: result.content,
+              }
             }),
           )
-          // PostToolUse observe + block-replace runs on the truncated
-          // model-visible output below via runPostToolUse.
-
-          const textParts: string[] = []
-          const attachments: Omit<SessionV1.FilePart, "id" | "sessionID" | "messageID">[] = []
-          for (const contentItem of result.content) {
-            if (contentItem.type === "text") textParts.push(contentItem.text)
-            else if (contentItem.type === "image") {
-              attachments.push({
-                type: "file",
-                mime: contentItem.mimeType,
-                url: `data:${contentItem.mimeType};base64,${contentItem.data}`,
-              })
-            } else if (contentItem.type === "resource") {
-              const { resource } = contentItem
-              if (resource.text) textParts.push(resource.text)
-              if (resource.blob) {
-                const mime = resource.mimeType ?? "application/octet-stream"
-                const size = base64Size(resource.blob)
-                if (!SUPPORTED_MCP_RESOURCE_ATTACHMENT_MIMES.has(mime)) {
-                  textParts.push(
-                    `[Binary MCP resource omitted: ${resource.uri} (${mime}, ${formatBytes(size)}) is not a supported attachment type]`,
-                  )
-                  continue
-                }
-                if (size > MAX_MCP_RESOURCE_BLOB_BYTES) {
-                  textParts.push(
-                    `[Binary MCP resource omitted: ${resource.uri} (${mime}, ${formatBytes(size)}) exceeds ${formatBytes(MAX_MCP_RESOURCE_BLOB_BYTES)}]`,
-                  )
-                  continue
-                }
-                attachments.push({
-                  type: "file",
-                  mime,
-                  url: `data:${mime};base64,${resource.blob}`,
-                  filename: resource.uri,
-                })
-              }
-            }
-          }
-
-          const truncated = yield* truncate.output(textParts.join("\n\n"), {}, input.agent)
-          const metadata = {
-            ...result.metadata,
-            truncated: truncated.truncated,
-            ...(truncated.truncated && { outputPath: truncated.outputPath }),
-          }
-
-          const output = {
-            title: "",
-            metadata,
-            output: truncated.content,
-            attachments: attachments.map((attachment) => ({
-              ...attachment,
-              id: PartID.ascending(),
-              sessionID: ctx.sessionID,
-              messageID: input.processor.message.id,
-            })),
-            content: result.content,
-          }
-          const postMcp = yield* hooksRunner.runPostToolUse({
-            ...hookContext,
-            sessionID: ctx.sessionID,
-            tool: key,
-            callID: opts.toolCallId,
-            args: toRecord(effectiveMcp),
-            result: output,
-          })
-          const finalMcp = { ...output, ...postMcp }
-          if (opts.abortSignal?.aborted) {
-            yield* input.processor.completeToolCall(opts.toolCallId, finalMcp)
-          }
-          return finalMcp
         }),
       )
     tools[key] = item
@@ -755,7 +825,9 @@ export function resolveEffectiveArgs(
   original: unknown,
   decision: HooksRunner.PreToolUseDecision,
 ): { effective: unknown; warning?: string } {
-  if (decision.behavior !== "allow" || !decision.updatedInput) return { effective: original }
+  if ((decision.behavior !== "allow" && decision.behavior !== "ask") || !decision.updatedInput) {
+    return { effective: original }
+  }
   const updated = decision.updatedInput
   if (toolID === "bash" && "command" in updated && typeof updated["command"] !== "string") {
     return { effective: original, warning: "hook rewrite rejected: bash command must be a string" }
@@ -854,6 +926,15 @@ function formatBytes(value: number) {
   if (value < 1024) return `${value} B`
   if (value < 1024 * 1024) return `${Math.ceil(value / 1024)} KB`
   return `${Math.ceil(value / (1024 * 1024))} MB`
+}
+
+// The processor stops the turn on these, so their error type must survive.
+function rejected(error: unknown) {
+  return (
+    error instanceof PermissionV1.RejectedError ||
+    error instanceof PermissionV1.CorrectedError ||
+    error instanceof Question.RejectedError
+  )
 }
 
 export * as SessionTools from "./tools"

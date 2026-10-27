@@ -17,6 +17,10 @@ export type AskInput = PermissionV1.AskInput & {
   approval?: ConfigPermissionV1.ApprovalMode
   hook?: { tool: string; args: Record<string, unknown> }
   staticApproval?: "allow"
+  // A PreToolUse hook asked: prompt even where a rule or an "always" approval
+  // allows. Deny rules still deny, and accept-edits and the static approval
+  // never skip it.
+  force?: boolean
 }
 
 export type WouldAskInput = {
@@ -106,9 +110,9 @@ const layer = Layer.effect(
 
     const ask = Effect.fn("Permission.ask")(function* (input: AskInput) {
       const { approved, pending } = yield* InstanceState.get(state)
-      const { ruleset, approval: approvalRaw, hook, staticApproval, ...request } = input
+      const { ruleset, approval: approvalRaw, hook, staticApproval, force, ...request } = input
       const approval = approvalRaw ?? "manual"
-      let needsAsk = false
+      let needsAsk = force === true
 
       for (const pattern of request.patterns) {
         const rule = effective(request.permission, pattern, ruleset, approved)
@@ -148,7 +152,7 @@ const layer = Layer.effect(
       const AUTO_EDIT_PERMISSIONS = ["edit", "read", "glob", "grep", "list"]
       // computer_use and archive always reach the user, whatever the approval mode.
       if (!ALWAYS_ASK.includes(request.permission)) {
-        if (staticApproval === "allow") return
+        if (staticApproval === "allow" && !force) return
         // approval "auto" approves only on an explicit LLM auto-reviewer allow
         // verdict; the session tools gate (session/tools.ts) consults the
         // reviewer and carries the verdict in `reviewer`. Direct callers
@@ -160,7 +164,7 @@ const layer = Layer.effect(
           })
         }
         if (approval === "auto" && request.reviewer === "allow") return
-        if (approval === "accept-edits" && AUTO_EDIT_PERMISSIONS.includes(request.permission)) return
+        if (approval === "accept-edits" && AUTO_EDIT_PERMISSIONS.includes(request.permission) && !force) return
       }
 
       // The PermissionRequest hook only stands in for a prompt the user would
@@ -198,6 +202,14 @@ const layer = Layer.effect(
 
       const deferred = yield* Deferred.make<void, PermissionV1.RejectedError | PermissionV1.CorrectedError>()
       pending.set(id, { info, deferred })
+      // Observe-only and detached, so a slow hook never delays the prompt.
+      yield* hooksRunner
+        .runNotification({
+          sessionID: request.sessionID,
+          message: `Flynncode needs your permission to use ${hook?.tool ?? request.permission}`,
+          type: "permission_prompt",
+        })
+        .pipe(Effect.forkDetach)
       yield* events.publish(Event.Asked, info)
       return yield* Effect.ensuring(
         Deferred.await(deferred),

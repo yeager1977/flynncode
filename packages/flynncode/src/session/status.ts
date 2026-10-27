@@ -55,6 +55,7 @@ const layer = Layer.effect(
         yield* HooksContext.observe("hooks.session.idle", maybeHooks.value.runIdle({ sessionID })).pipe(
           Effect.forkDetach,
         )
+        yield* notifyIdle(maybeHooks.value, sessionID).pipe(Effect.forkDetach)
       }
       // Best-effort idle memory extraction, next to the Stop hook: forked,
       // ignored and optional so the idle transition never blocks on memory.
@@ -67,6 +68,20 @@ const layer = Layer.effect(
     return Service.of({ get, list, set })
   }),
 )
+
+// Notification "idle" is for the user waiting on a root session; a child
+// session going idle hands control back to its parent, not to the user.
+// Session.Service comes from the caller's context (dynamic import: the session
+// module sits above this one).
+const notifyIdle = (hooks: HooksRunner.RunnerInterface, sessionID: SessionID) =>
+  Effect.gen(function* () {
+    const { Session } = yield* Effect.promise(() => import("./session"))
+    const sessions = yield* Effect.serviceOption(Session.Service)
+    if (Option.isNone(sessions)) return
+    const info = yield* sessions.value.get(sessionID)
+    if (info.parentID) return
+    yield* hooks.runNotification({ sessionID, message: "Flynncode is waiting for your input", type: "idle" })
+  }).pipe(Effect.catchCause((cause) => Effect.logWarning("idle notification failed", { sessionID, cause })))
 
 export const node = LayerNode.make({ service: Service, layer: layer, deps: [EventV2Bridge.node] })
 

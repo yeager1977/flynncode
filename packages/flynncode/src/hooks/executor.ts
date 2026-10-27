@@ -17,10 +17,13 @@ import { ClaudeFormat } from "@/hooks/claude-format"
 // File-hook execution protocol (stdin JSON in, stdout JSON out). Each group
 // speaks its `format`: native (below) or Claude Code's (last bullet).
 // - exit 0 + JSON decision: PreToolUse/PermissionRequest honor
-//   {"behavior":"deny","message"?} | {"behavior":"allow","updatedInput"?,"additionalContext"?} | {"behavior":"undecided","additionalContext"?}.
-// - exit 2: deny (decision hooks) or blocked output (PostToolUse); the message
+//   {"behavior":"deny","message"?} | {"behavior":"allow","updatedInput"?,"additionalContext"?} |
+//   {"behavior":"ask","message"?,"updatedInput"?,"additionalContext"?} | {"behavior":"undecided","additionalContext"?}.
+//   Merged deny > ask > allow > undecided; ask forces the permission prompt.
+// - exit 2: deny (decision hooks) or blocked output (PostToolUse, PostToolUseFailure); the message
 //   prefers a trimmed non-empty stderr, then stdout, else a generic fallback.
 // - PostToolUse JSON may carry {"blockedOutput": string} to replace the model-visible result.
+//   PostToolUseFailure stdin carries `error` and `isInterrupt` instead of `output`.
 // - Observe hooks honor {"additionalContext"?,"systemMessage"?,"continue"?,"stopReason"?}.
 //   Non-JSON non-empty stdout on observe events is promoted wholesale to
 //   additionalContext (Codex parity: plain stdout is developer context),
@@ -57,6 +60,8 @@ export type ObserveEvent =
   | "SubagentStop"
   | "Stop"
   | "Interrupt"
+  | "Notification"
+export type PostEvent = "PostToolUse" | "PostToolUseFailure"
 
 export interface ExecutorInterface {
   readonly runDecision: (input: {
@@ -70,13 +75,18 @@ export interface ExecutorInterface {
     permissionMode?: string
     timeoutMaxMs?: number
   }) => Effect.Effect<HooksRunner.PreToolUseDecision, never, never>
+  // PostToolUse (the default) reads `output`; PostToolUseFailure reads
+  // `error` and `interrupted`.
   readonly runPostTool: (input: {
+    event?: PostEvent
     tool: string
     matchName: string
     sessionID: string
     callID: string
     args: Record<string, unknown>
-    output: string
+    output?: string
+    error?: string
+    interrupted?: boolean
     model?: string
     permissionMode?: string
     timeoutMaxMs?: number
@@ -185,7 +195,7 @@ const noTranscript = Effect.succeed("")
 // log wording.
 type TrustVerdict = "trusted" | "untrusted" | "killed"
 
-function decided(decision: ClaudeFormat.Decision): Collected {
+function decided(decision: HooksRunner.PreToolUseDecision): Collected {
   return { kind: "decision", decision }
 }
 
@@ -397,6 +407,17 @@ export const node = LayerNode.make({
           if (context) return { behavior: "allow", additionalContext: context }
           return { behavior: "allow" }
         }
+        if (parsed["behavior"] === "ask") {
+          const message = asString(parsed["message"])
+          const updated = isRecord(parsed["updatedInput"]) ? parsed["updatedInput"] : undefined
+          const context = asString(parsed["additionalContext"])
+          return {
+            behavior: "ask",
+            ...(message !== undefined && { message }),
+            ...(updated && { updatedInput: updated }),
+            ...(context && { additionalContext: context }),
+          }
+        }
         if (parsed["behavior"] === "undecided") {
           const context = asString(parsed["additionalContext"])
           return context ? { behavior: "undecided", additionalContext: context } : { behavior: "undecided" }
@@ -486,7 +507,7 @@ export const node = LayerNode.make({
         if (decision.behavior === "allow" && decision.updatedInput === undefined && decision.additionalContext) {
           decision.additionalContext = limitContext(decision.additionalContext, input.limit)
         }
-        if (decision.behavior === "undecided" && decision.additionalContext) {
+        if ((decision.behavior === "undecided" || decision.behavior === "ask") && decision.additionalContext) {
           decision.additionalContext = limitContext(decision.additionalContext, input.limit)
         }
         return decided(decision)
@@ -569,7 +590,9 @@ export const node = LayerNode.make({
           decision.behavior !== "deny" && decision.additionalContext !== undefined
             ? { ...decision, additionalContext: limitContext(decision.additionalContext, input.limit) }
             : decision
-        if (limited.behavior !== "allow" || limited.updatedInput === undefined) return decided(limited)
+        if ((limited.behavior !== "allow" && limited.behavior !== "ask") || limited.updatedInput === undefined) {
+          return decided(limited)
+        }
         const back = ClaudeFormat.fromClaudeArgs(asString(input.payload["tool"]) ?? "", limited.updatedInput)
         if (back.dropped.length > 0) {
           yield* Effect.logWarning("Claude hook updatedInput keys dropped", {
@@ -767,13 +790,13 @@ export const node = LayerNode.make({
       })
 
       const isAllowRewrite = (
-        decision: ClaudeFormat.Decision,
+        decision: HooksRunner.PreToolUseDecision,
       ): decision is Extract<HooksRunner.PreToolUseDecision, { behavior: "allow" }> & {
         updatedInput: Record<string, unknown>
       } => decision.behavior === "allow" && decision.updatedInput !== undefined
 
       // deny > ask > allow > undecided.
-      const mergeDecisions = (decisions: Array<ClaudeFormat.Decision>): ClaudeFormat.Decision => {
+      const mergeDecisions = (decisions: Array<HooksRunner.PreToolUseDecision>): HooksRunner.PreToolUseDecision => {
         const denied = decisions.find((decision) => decision.behavior === "deny")
         if (denied) return denied
         const contexts = decisions.flatMap((decision) =>
@@ -781,14 +804,17 @@ export const node = LayerNode.make({
         )
         const context = contexts.length > 0 ? contexts.join("\n\n") : undefined
         const asked = decisions.find((decision) => decision.behavior === "ask")
+        const rewritten = decisions.find(isAllowRewrite)
+        // An ask prompts for its own rewrite, else for another hook's.
         if (asked) {
+          const updated = asked.updatedInput ?? rewritten?.updatedInput
           return {
             behavior: "ask",
             ...(asked.message !== undefined && { message: asked.message }),
+            ...(updated !== undefined && { updatedInput: updated }),
             ...(context !== undefined && { additionalContext: context }),
           }
         }
-        const rewritten = decisions.find(isAllowRewrite)
         if (rewritten) {
           return context === undefined
             ? { behavior: "allow", updatedInput: rewritten.updatedInput }
@@ -829,39 +855,39 @@ export const node = LayerNode.make({
           },
           timeoutMaxMs: input.timeoutMaxMs,
         })
-        const merged = mergeDecisions(collected.flatMap((item) => (item.kind === "decision" ? [item.decision] : [])))
-        // HooksRunner.PreToolUseDecision cannot carry `ask` yet (Task 4 adds
-        // it); until then an ask leaves the call to the permission rules.
-        if (merged.behavior !== "ask") return merged
-        return merged.additionalContext === undefined
-          ? ({ behavior: "undecided" } as const)
-          : ({ behavior: "undecided", additionalContext: merged.additionalContext } as const)
+        return mergeDecisions(collected.flatMap((item) => (item.kind === "decision" ? [item.decision] : [])))
       })
 
       const runPostTool = Effect.fn("HooksExecutor.runPostTool")(function* (input: {
+        event?: PostEvent
         tool: string
         matchName: string
         sessionID: string
         callID: string
         args: Record<string, unknown>
-        output: string
+        output?: string
+        error?: string
+        interrupted?: boolean
         model?: string
         permissionMode?: string
         timeoutMaxMs?: number
       }) {
         const cwd = yield* workdir
+        const event = input.event ?? "PostToolUse"
         const collected = yield* runHandlers({
           kind: "post",
-          event: "PostToolUse",
+          event,
           matchName: input.matchName,
           sessionID: input.sessionID,
           payload: {
-            event: "PostToolUse",
+            event,
             sessionID: input.sessionID,
             tool: input.tool,
             callID: input.callID,
             args: input.args,
-            output: input.output,
+            ...(event === "PostToolUseFailure"
+              ? { error: input.error ?? "", isInterrupt: input.interrupted === true }
+              : { output: input.output ?? "" }),
             cwd,
             ...contextFields(input),
           },

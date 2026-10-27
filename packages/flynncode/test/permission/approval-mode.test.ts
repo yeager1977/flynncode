@@ -145,3 +145,68 @@ it.instance("auto approval still prompts for archive", () =>
     yield* Fiber.interrupt(fiber)
   }),
 )
+
+const forcedPrompt = (input: Partial<Permission.AskInput>) =>
+  Effect.gen(function* () {
+    const permission = yield* Permission.Service
+    const fiber = yield* permission
+      .ask({
+        sessionID: SessionID.make("session_test"),
+        permission: "edit",
+        patterns: ["src/a.ts"],
+        metadata: {},
+        always: [],
+        ruleset: [{ permission: "edit", pattern: "*", action: "allow" }],
+        force: true,
+        ...input,
+      })
+      .pipe(Effect.forkScoped)
+    yield* pollWithTimeout(
+      permission.list().pipe(Effect.map((pending) => (pending.length === 1 ? true : undefined))),
+      "a forced ask never prompted",
+    )
+    yield* Fiber.interrupt(fiber)
+  })
+
+it.instance("a forced ask prompts although a rule allows it", () => forcedPrompt({}))
+
+it.instance("a forced ask prompts under accept-edits and a static approval", () =>
+  forcedPrompt({ approval: "accept-edits", staticApproval: "allow" }),
+)
+
+it.instance("a forced ask is still answered by the auto-reviewer's allow", () =>
+  Effect.gen(function* () {
+    const permission = yield* Permission.Service
+    yield* permission.ask({
+      sessionID: SessionID.make("session_test"),
+      permission: "bash",
+      patterns: ["*"],
+      metadata: {},
+      always: [],
+      ruleset: [],
+      approval: "auto",
+      reviewer: "allow",
+      force: true,
+    })
+    expect(yield* permission.list()).toEqual([])
+  }),
+)
+
+it.instance("a forced ask still fails on a deny rule", () =>
+  Effect.gen(function* () {
+    const permission = yield* Permission.Service
+    const exit = yield* permission
+      .ask({
+        sessionID: SessionID.make("session_test"),
+        permission: "bash",
+        patterns: ["rm -rf /"],
+        metadata: {},
+        always: [],
+        ruleset: [{ permission: "bash", pattern: "rm *", action: "deny" }],
+        force: true,
+      })
+      .pipe(Effect.exit)
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(DeniedError)
+  }),
+)

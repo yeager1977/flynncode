@@ -332,6 +332,14 @@ export interface Hooks {
       metadata: any
     },
   ) => Promise<void>
+  /**
+   * Runs instead of `tool.execute.after` when a tool failed or was interrupted.
+   * Observe-only.
+   */
+  "tool.execute.failure"?: (
+    input: { tool: string; sessionID: string; callID: string; args: any; error: string; interrupted: boolean },
+    output: {},
+  ) => Promise<void>
   "experimental.chat.messages.transform"?: (
     input: {},
     output: {
@@ -408,6 +416,14 @@ export interface Hooks {
   "session.idle"?: (
     input: { sessionID: string; reason: "idle" | "interrupt" },
     output: { additionalContext?: string; systemMessage?: string },
+  ) => Promise<void>
+  /**
+   * Observe-only: fires when a permission prompt or question waits for the
+   * user, and when a root session goes idle after a turn.
+   */
+  "session.notification"?: (
+    input: { sessionID: string; message: string; type: "permission_prompt" | "question" | "idle" },
+    output: {},
   ) => Promise<void>
   "subagent.start"?: (
     input: { sessionID: string; agentID: string; agentType: string },

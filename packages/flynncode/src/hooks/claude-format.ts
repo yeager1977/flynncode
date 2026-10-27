@@ -83,16 +83,11 @@ const BLOCKING_EVENTS = new Set(["UserPromptSubmit", "Stop", "SubagentStop"])
 // Events where plain stdout is context.
 const TEXT_EVENTS = new Set(["SessionStart", "UserPromptSubmit"])
 
-// HooksRunner.PreToolUseDecision has no `ask` yet; the executor folds it into
-// `undecided` until the runner can force a permission prompt.
-export type Ask = { behavior: "ask"; message?: string; additionalContext?: string }
-export type Decision = HooksRunner.PreToolUseDecision | Ask
-
 // The executor's per-handler result. `block` on an observe result is the
 // reason a UserPromptSubmit, Stop or SubagentStop hook blocked with.
 // `systemMessage` on tool events is for the user, never the model.
 export type Result =
-  | { kind: "decision"; decision: Decision; systemMessage?: string }
+  | { kind: "decision"; decision: HooksRunner.PreToolUseDecision; systemMessage?: string }
   | { kind: "post"; blocked: boolean; reason?: string; additionalContext?: string; systemMessage?: string }
   | { kind: "observe"; observe: HooksRunner.SessionObserve; block?: string }
 
@@ -253,7 +248,7 @@ function readDecision(
   parsed: Record<string, unknown>,
   specific: Record<string, unknown>,
   context: string | undefined,
-): Decision {
+): HooksRunner.PreToolUseDecision {
   const request = event === "PermissionRequest" && isRecord(specific["decision"]) ? specific["decision"] : undefined
   const legacy = parsed["decision"] === "approve" ? "allow" : parsed["decision"] === "block" ? "deny" : undefined
   const behavior = request ? request["behavior"] : (specific["permissionDecision"] ?? legacy)
@@ -263,7 +258,12 @@ function readDecision(
   const updated = request ? request["updatedInput"] : specific["updatedInput"]
   if (behavior === "deny") return { behavior: "deny", message: message ?? "Denied by hook" }
   if (behavior === "ask") {
-    return { behavior: "ask", ...(message && { message }), ...(context && { additionalContext: context }) }
+    return {
+      behavior: "ask",
+      ...(message && { message }),
+      ...(isRecord(updated) && { updatedInput: updated }),
+      ...(context && { additionalContext: context }),
+    }
   }
   if (behavior === "allow") {
     return {

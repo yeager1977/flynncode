@@ -5,6 +5,7 @@ import { SessionID } from "@/session/schema"
 import { QuestionID } from "./schema"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { QuestionV1 } from "@flynncode/schema/question-v1"
+import { HooksRunner } from "@/hooks/runner"
 
 export const Option = QuestionV1.Option
 export type Option = typeof Option.Type
@@ -65,6 +66,7 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const events = yield* EventV2Bridge.Service
+    const hooksRunner = yield* HooksRunner.Service
     const state = yield* InstanceState.make<State>(
       Effect.fn("Question.state")(function* () {
         const state = {
@@ -101,6 +103,14 @@ const layer = Layer.effect(
         tool: input.tool,
       }
       pending.set(id, { info, deferred })
+      // Observe-only and detached, so a slow hook never delays the question.
+      yield* hooksRunner
+        .runNotification({
+          sessionID: input.sessionID,
+          message: input.questions[0]?.question ?? "Flynncode has a question",
+          type: "question",
+        })
+        .pipe(Effect.forkDetach)
       yield* events.publish(Event.Asked, info)
 
       return yield* Effect.ensuring(
@@ -156,6 +166,6 @@ const layer = Layer.effect(
   }),
 )
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [EventV2Bridge.node] })
+export const node = LayerNode.make({ service: Service, layer: layer, deps: [EventV2Bridge.node, HooksRunner.node] })
 
 export * as Question from "."

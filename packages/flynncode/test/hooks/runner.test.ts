@@ -310,3 +310,42 @@ describe("hooks runner payload context", () => {
     }),
   )
 })
+
+describe("hooks runner precedence", () => {
+  test("deny > ask > allow > undecided", () => {
+    const ask: HooksRunner.PreToolUseDecision = { behavior: "ask", message: "check" }
+    const allow: HooksRunner.PreToolUseDecision = { behavior: "allow", updatedInput: { command: "ls" } }
+    const deny: HooksRunner.PreToolUseDecision = { behavior: "deny", message: "no" }
+    expect(HooksRunner.denyWins([allow, ask, { behavior: "undecided" }])).toEqual(ask)
+    expect(HooksRunner.denyWins([ask, deny, allow])).toEqual(deny)
+    expect(HooksRunner.denyWins([{ behavior: "undecided" }, allow])).toEqual(allow)
+  })
+})
+
+const fileAskIt = testEffect(
+  testLayerWithHooks(
+    [
+      {
+        "tool.permission": async (_input, output) => {
+          output.decision = "allow"
+        },
+      },
+    ],
+    {
+      runDecision: (): Effect.Effect<HooksRunner.PreToolUseDecision, never, never> =>
+        Effect.succeed({ behavior: "ask", message: "file hook asks" }),
+      runPostTool: (): Effect.Effect<HooksRunner.PostToolUseOutcome, never, never> => Effect.succeed({ blocked: false }),
+      runObserve: (): Effect.Effect<HooksRunner.SessionObserve, never, never> => Effect.succeed({}),
+    },
+  ),
+)
+
+describe("hooks runner ask", () => {
+  fileAskIt.effect("a file hook's ask beats a plugin allow", () =>
+    Effect.gen(function* () {
+      const runner = yield* HooksRunner.Service
+      const decision = yield* runner.runPreToolUse({ sessionID: "ses_1", tool: "bash", callID: "c1", args: { command: "ls" } })
+      expect(decision).toEqual({ behavior: "ask", message: "file hook asks" })
+    }),
+  )
+})
