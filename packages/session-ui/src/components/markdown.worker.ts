@@ -11,7 +11,13 @@ import {
   type BundledLanguage,
   type ThemedToken,
 } from "shiki"
-import type { MarkdownToken, MarkdownWorkerRequest, MarkdownWorkerResponse } from "./markdown-worker-protocol"
+import {
+  continueText,
+  firstChangedBlock,
+  type MarkdownToken,
+  type MarkdownWorkerRequest,
+  type MarkdownWorkerResponse,
+} from "./markdown-worker-protocol"
 import { createLatestWorkerQueue } from "./markdown-worker-queue"
 import { project, type Projection } from "./markdown-stream"
 
@@ -23,6 +29,7 @@ type Stream = {
 
 const streams = new Map<string, Stream>()
 const projections = new Map<string, Projection>()
+const texts = new Map<string, string>()
 let highlighter: ReturnType<typeof createHighlighter> | undefined
 const highlightQueue = createLatestWorkerQueue<Extract<MarkdownWorkerRequest, { type: "highlight" }>>({
   run: highlight,
@@ -44,6 +51,7 @@ const parser = createMarkdownParser(async (code, language) => {
 
 self.onmessage = (event: MessageEvent<MarkdownWorkerRequest>) => {
   if (event.data.type === "dispose") {
+    texts.delete(event.data.key)
     highlightQueue.dispose(event.data.key)
     projectQueue.dispose(event.data.key)
     return
@@ -53,7 +61,15 @@ self.onmessage = (event: MessageEvent<MarkdownWorkerRequest>) => {
     return
   }
   if (event.data.type === "project") {
-    projectQueue.highlight(event.data)
+    // Rebuild the full text on receipt so a request superseded in the queue never breaks the next append.
+    const text = continueText(texts.get(event.data.key), event.data.offset, event.data.text)
+    if (text === undefined) {
+      texts.delete(event.data.key)
+      post({ type: "error", id: event.data.id, key: event.data.key, message: "Markdown projection is out of sync" })
+      return
+    }
+    texts.set(event.data.key, text)
+    projectQueue.highlight({ ...event.data, offset: 0, text })
     return
   }
 
@@ -70,9 +86,17 @@ async function parse(request: Extract<MarkdownWorkerRequest, { type: "parse" }>)
 
 async function runProject(request: Extract<MarkdownWorkerRequest, { type: "project" }>) {
   try {
-    const projection = project(projections.get(request.key), request.text, request.live)
+    const previous = projections.get(request.key)
+    const projection = project(previous, request.text, request.live)
     projections.set(request.key, projection)
-    post({ type: "project", id: request.id, key: request.key, projection })
+    const first = firstChangedBlock(previous, projection)
+    post({
+      type: "project",
+      id: request.id,
+      key: request.key,
+      firstChangedBlock: first,
+      blocks: projection.blocks.slice(first),
+    })
   } catch (error) {
     post({
       type: "error",

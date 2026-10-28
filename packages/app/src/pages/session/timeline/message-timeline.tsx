@@ -15,7 +15,7 @@ import { createStore, produce } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import { useNavigate } from "@solidjs/router"
 import { useMutation } from "@tanstack/solid-query"
-import { createVirtualizer, defaultRangeExtractor, elementScroll, type VirtualItem } from "@tanstack/solid-virtual"
+import { createVirtualizer, defaultRangeExtractor, type VirtualItem } from "@tanstack/solid-virtual"
 import { Accordion } from "@flynncode/ui/accordion"
 import { Button } from "@flynncode/ui/button"
 import { Card } from "@flynncode/ui/card"
@@ -82,6 +82,7 @@ import { useSync } from "@/context/sync"
 import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
 import { sessionTitle } from "@/utils/session-title"
 import { scheduleConnectedMeasure } from "./measure"
+import { atVirtualEnd, createResizeAnchor, timelineScrollTo } from "./bottom-lock"
 import { observeElementOffsetReconnectAware } from "./observe-element-offset"
 import { UsageLimitCard } from "./usage-limit-card"
 import { createTimelineProjection } from "./projection"
@@ -467,9 +468,11 @@ export function MessageTimeline(props: {
 
   const [toolOpen, setToolOpen] = createStore<Record<string, boolean | undefined>>(cached?.toolOpen ?? {})
   const [renderOverscan, setRenderOverscan] = createSignal(initialMeasurements?.length || coldBottomMount ? 6 : 20)
-  let resizePinnedIndexes: number[] = []
-  let resizePinFrame: number | undefined
   let virtualContent: HTMLDivElement | undefined
+  const resizeAnchor = createResizeAnchor({
+    root: listRoot,
+    shouldAnchorBottom: props.shouldAnchorBottom,
+  })
   const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
     get count() {
       return timelineRows().length
@@ -479,11 +482,7 @@ export function MessageTimeline(props: {
     initialOffset: () => (props.shouldAnchorBottom() ? Number.MAX_SAFE_INTEGER : 0),
     initialMeasurementsCache: initialMeasurements,
     estimateSize: () => timelineFallbackItemSize,
-    scrollToFn: (offset, options, instance) => {
-      // Expose the computed range before core writes an anchor correction so the browser does not clamp it to the old height.
-      if (virtualContent) virtualContent.style.height = `${instance.getTotalSize()}px`
-      elementScroll(offset, options, instance)
-    },
+    scrollToFn: timelineScrollTo(() => virtualContent),
     get getItemKey() {
       const rows = timelineRows()
       return (index: number) => {
@@ -506,50 +505,12 @@ export function MessageTimeline(props: {
       const active = id ? (messageLastRowIndex().get(id) ?? -1) : -1
       const indexes = defaultRangeExtractor({ ...range, overscan: renderOverscan() })
       return filterVirtualIndexes(
-        [...new Set([...resizePinnedIndexes, ...indexes, ...(active < 0 ? [] : [active])])].sort((a, b) => a - b),
+        [...new Set([...resizeAnchor.pinned(), ...indexes, ...(active < 0 ? [] : [active])])].sort((a, b) => a - b),
         range.count,
       )
     },
   })
-  const resizeItem = virtualizer.resizeItem
-  let resizeAnchorScheduled = false
-  const anchorResizedBottom = () => {
-    if (resizeAnchorScheduled || props.hasScrollGesture()) return
-    resizeAnchorScheduled = true
-    queueMicrotask(() => {
-      resizeAnchorScheduled = false
-      if (!props.shouldAnchorBottom() || props.hasScrollGesture()) return
-      virtualizer.scrollToEnd()
-    })
-  }
-  virtualizer.resizeItem = (index, size) => {
-    const item = virtualizer.measurementsCache[index]
-    const previous = item ? (virtualizer.itemSizeCache.get(item.key) ?? item.size) : undefined
-    const root = listRoot()
-    if (root && previous !== undefined && Math.abs(size - previous) > root.clientHeight) {
-      const view = root.getBoundingClientRect()
-      resizePinnedIndexes = [...root.querySelectorAll<HTMLElement>("[data-index]")]
-        .filter((element) => {
-          const rect = element.getBoundingClientRect()
-          return rect.bottom > view.top && rect.top < view.bottom
-        })
-        .map((element) => Number(element.dataset.index))
-      if (resizePinFrame !== undefined) cancelAnimationFrame(resizePinFrame)
-      resizePinFrame = requestAnimationFrame(() => {
-        resizePinFrame = requestAnimationFrame(() => {
-          resizePinFrame = undefined
-          resizePinnedIndexes = []
-        })
-      })
-    }
-    resizeItem(index, size)
-    if (root && props.shouldAnchorBottom()) anchorResizedBottom()
-  }
-  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item) => {
-    if (props.shouldAnchorBottom()) return false
-    const first = virtualizer.range?.startIndex
-    return first !== undefined && item.index < first
-  }
+  resizeAnchor.attach(virtualizer)
   const virtualItemByKey = createMemo(
     () => new Map(virtualizer.getVirtualItems().map((item) => [item.key, item] as const)),
   )
@@ -579,9 +540,12 @@ export function MessageTimeline(props: {
   const maybeAnchorBottom = () => {
     if (timelineRows().length === 0) return
     if (!props.shouldAnchorBottom() || props.hasScrollGesture()) return
-    if (resizePinFrame !== undefined) cancelAnimationFrame(resizePinFrame)
+    resizeAnchor.cancel()
     clearPrependAnchor()
     if (prependAnchorFrame !== undefined) cancelAnimationFrame(prependAnchorFrame)
+    // Runs inside a store update: scrolling to the end reads layout, so skip it when the virtualizer already
+    // followed the change (an append at the end, or no move at all).
+    if (atVirtualEnd(virtualizer)) return
     virtualizer.scrollToEnd()
   }
 
@@ -601,7 +565,7 @@ export function MessageTimeline(props: {
     timelineCache.delete(ownerSessionKey)
     timelineCache.set(ownerSessionKey, { measurements: virtualizer.takeSnapshot(), toolOpen: { ...toolOpen } })
     while (timelineCache.size > 16) timelineCache.delete(timelineCache.keys().next().value!)
-    if (resizePinFrame !== undefined) cancelAnimationFrame(resizePinFrame)
+    resizeAnchor.cancel()
     if (overscanFrame !== undefined) cancelAnimationFrame(overscanFrame)
     props.setRevealMessage?.(() => {})
     props.setScrollToEnd?.(() => {})

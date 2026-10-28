@@ -13,6 +13,7 @@ import { Portal } from "solid-js/web"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { createStore } from "solid-js/store"
 import { useI18n } from "../context/i18n"
+import { layoutReadPhase } from "../hooks/layout-read"
 
 export type ScrollViewThumbVisibility = "hover" | "scroll"
 
@@ -166,20 +167,21 @@ export function ScrollView(props: ScrollViewProps) {
     return local.thumbVisibility === "hover" && isHovered()
   }
 
+  // Scroll and resize only schedule the thumb; its layout reads join the shared frame read phase.
+  const thumbOwner = {}
+  const scheduleThumb = () => layoutReadPhase.schedule(thumbOwner, readThumb)
+
   onCleanup(() => {
     if (scrollIdleTimer !== undefined) clearTimeout(scrollIdleTimer)
+    layoutReadPhase.cancel(thumbOwner)
   })
 
-  const updateThumb = () => {
-    if (!viewportRef) return
+  const readThumb = () => {
+    if (!viewportRef?.isConnected) return
     const { scrollTop, scrollHeight, clientHeight } = viewportRef
 
-    if (scrollHeight <= clientHeight || scrollHeight === 0) {
-      setState("showThumb", false)
-      return
-    }
+    if (scrollHeight <= clientHeight || scrollHeight === 0) return () => setState("showThumb", false)
 
-    setState("showThumb", true)
     const trackPadding = 8
     const trackClientHeight = thumbMount()?.clientHeight || clientHeight
     const trackHeight = trackClientHeight - trackPadding * 2
@@ -197,8 +199,7 @@ export function ScrollView(props: ScrollViewProps) {
     // Ensure thumb stays within bounds (shouldn't be necessary due to math above, but good for safety)
     const boundedTop = trackPadding + Math.max(0, Math.min(top, maxThumbTop))
 
-    setState("thumbHeight", height)
-    setState("thumbTop", boundedTop)
+    return () => setState({ showThumb: true, thumbHeight: height, thumbTop: boundedTop })
   }
 
   onMount(() => {
@@ -208,15 +209,15 @@ export function ScrollView(props: ScrollViewProps) {
 
     createResizeObserver(
       () => [viewportRef, viewportRef.firstElementChild, thumbMount()].filter(Boolean) as HTMLElement[],
-      updateThumb,
+      scheduleThumb,
     )
 
-    updateThumb()
+    scheduleThumb()
   })
 
   createEffect(() => {
     thumbMount()
-    updateThumb()
+    scheduleThumb()
   })
 
   createEffect(() => {
@@ -350,7 +351,7 @@ export function ScrollView(props: ScrollViewProps) {
         class="scroll-view__viewport"
         data-scrollable
         onScroll={(e) => {
-          updateThumb()
+          scheduleThumb()
           markScrolling()
           if (typeof events.onScroll === "function") events.onScroll(e as any)
         }}

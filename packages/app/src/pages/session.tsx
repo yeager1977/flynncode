@@ -35,7 +35,7 @@ import { SelectV2 } from "@flynncode/ui/v2/select-v2"
 import { isScrollKeyTarget, scrollKey, scrollKeyOwner } from "@flynncode/ui/scroll-view"
 import { Tabs } from "@flynncode/ui/tabs"
 import { ButtonV2 } from "@flynncode/ui/v2/button-v2"
-import { createAutoScroll } from "@flynncode/ui/hooks"
+import { createAutoScroll, layoutReadPhase } from "@flynncode/ui/hooks"
 import { previewSelectedLines } from "@flynncode/session-ui/pierre/selection-bridge"
 import { Button } from "@flynncode/ui/button"
 import { DropdownMenu } from "@flynncode/ui/dropdown-menu"
@@ -1764,6 +1764,7 @@ export default function Page() {
     ),
   )
 
+  // Tracks follow mode only. The timeline virtualizer owns the bottom lock, so no content ref is attached.
   const autoScroll = createAutoScroll({
     working: () => true,
     overflowAnchor: "none",
@@ -1779,37 +1780,30 @@ export default function Page() {
     ),
   )
 
-  let scrollStateFrame: number | undefined
-  let scrollStateTarget: HTMLDivElement | undefined
+  const scrollStateOwner = {}
   let fillFrame: number | undefined
 
   const jumpThreshold = (el: HTMLDivElement) => Math.max(400, el.clientHeight)
 
-  const updateScrollState = (el: HTMLDivElement) => {
+  const readScrollState = (el: HTMLDivElement) => {
+    if (!el.isConnected) return
     const max = el.scrollHeight - el.clientHeight
     const distance = max - el.scrollTop
     const overflow = max > 1
     const bottom = !overflow || distance <= 2
     const jump = overflow && distance > jumpThreshold(el)
 
-    if (ui.scroll.overflow === overflow && ui.scroll.bottom === bottom && ui.scroll.jump === jump) return
-    setUi("scroll", { overflow, bottom, jump })
+    return () => {
+      // Content that no longer overflows returns the timeline to follow mode.
+      if (!overflow && autoScroll.userScrolled()) autoScroll.resume()
+      if (ui.scroll.overflow === overflow && ui.scroll.bottom === bottom && ui.scroll.jump === jump) return
+      setUi("scroll", { overflow, bottom, jump })
+    }
   }
 
-  const scheduleScrollState = (el: HTMLDivElement) => {
-    scrollStateTarget = el
-    if (scrollStateFrame !== undefined) return
-
-    scrollStateFrame = requestAnimationFrame(() => {
-      scrollStateFrame = undefined
-
-      const target = scrollStateTarget
-      scrollStateTarget = undefined
-      if (!target) return
-
-      updateScrollState(target)
-    })
-  }
+  // Scroll metrics are read in the shared frame read phase, with the scroll thumb, never inside store updates.
+  const scheduleScrollState = (el: HTMLDivElement) =>
+    layoutReadPhase.schedule(scrollStateOwner, () => readScrollState(el))
 
   const resumeScroll = () => {
     setStore("messageId", undefined)
@@ -2278,7 +2272,7 @@ export default function Page() {
     if (todoTimer !== undefined) window.clearTimeout(todoTimer)
     if (diffFrame !== undefined) cancelAnimationFrame(diffFrame)
     if (diffTimer !== undefined) window.clearTimeout(diffTimer)
-    if (scrollStateFrame !== undefined) cancelAnimationFrame(scrollStateFrame)
+    layoutReadPhase.cancel(scrollStateOwner)
     if (fillFrame !== undefined) cancelAnimationFrame(fillFrame)
   })
 
@@ -2384,7 +2378,6 @@ export default function Page() {
                     centered={centered()}
                     setContentRef={(el) => {
                       content = el
-                      autoScroll.contentRef(el)
 
                       const root = scroller
                       if (root) scheduleScrollState(root)

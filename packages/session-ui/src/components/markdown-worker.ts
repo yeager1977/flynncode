@@ -1,6 +1,8 @@
 import MarkdownWorkerUrl from "./markdown.worker.ts?worker&url"
 import {
+  appendedText,
   applyMarkdownWorkerResponse,
+  mergeProjection,
   shouldReleaseMarkdownWorkerState,
   type MarkdownWorkerRequest,
   type MarkdownWorkerResponse,
@@ -18,6 +20,7 @@ type HighlightPending = {
 
 type ProjectPending = {
   key: string
+  text: string
   resolve: (projection: Projection) => void
   reject: (error: Error) => void
 }
@@ -36,6 +39,10 @@ const parses = new Map<number, ParsePending>()
 const states = new Map<string, MarkdownWorkerState>()
 const keys = new Set<string>()
 const latest = new Map<string, number>()
+// Mirrors of the worker's per-key text and projection: requests carry only appended text and replies only the
+// blocks from the first one that changed.
+const sentTexts = new Map<string, string>()
+const projected = new Map<string, Projection>()
 const transport = createWorkerTransport<Extract<MarkdownWorkerRequest, { type: "highlight" }>>({
   post: (request) => worker!.postMessage(request),
   supersede: (request) => {
@@ -46,7 +53,10 @@ const transport = createWorkerTransport<Extract<MarkdownWorkerRequest, { type: "
   },
 })
 const projectTransport = createWorkerTransport<Extract<MarkdownWorkerRequest, { type: "project" }>>({
-  post: (request) => worker!.postMessage(request),
+  post: (request) => {
+    worker!.postMessage({ ...request, ...appendedText(sentTexts.get(request.key), request.text) })
+    sentTexts.set(request.key, request.text)
+  },
   supersede: (request) => {
     const result = projects.get(request.id)
     if (!result) return
@@ -68,12 +78,14 @@ export function projectMarkdown(key: string, text: string, live: boolean) {
   getWorker()
   const id = ++nextID
   return new Promise<Projection>((resolve, reject) => {
-    projects.set(id, { key, resolve, reject })
-    projectTransport.send({ type: "project", id, key, text, live })
+    projects.set(id, { key, text, resolve, reject })
+    projectTransport.send({ type: "project", id, key, offset: 0, text, live })
   })
 }
 
 export function disposeMarkdownProjection(key: string) {
+  sentTexts.delete(key)
+  projected.delete(key)
   projectTransport.dispose(key)
   projects.forEach((request, id) => {
     if (request.key !== key) return
@@ -132,12 +144,17 @@ function getWorker() {
     }
     if (event.data.type === "project") {
       const result = projects.get(event.data.id)
-      if (!result) {
+      projects.delete(event.data.id)
+      const previous = projected.get(event.data.key)
+      // Only a disposed key can lose its caller or mirror; its reply is stale.
+      if (!result || (!previous && event.data.firstChangedBlock > 0)) {
+        result?.reject(new MarkdownWorkerDisposedError())
         projectTransport.complete(event.data.key, event.data.id)
         return
       }
-      projects.delete(event.data.id)
-      result.resolve(event.data.projection)
+      const projection = mergeProjection(previous, result.text, event.data.firstChangedBlock, event.data.blocks)
+      projected.set(event.data.key, projection)
+      result.resolve(projection)
       projectTransport.complete(event.data.key, event.data.id)
       return
     }
@@ -148,20 +165,22 @@ function getWorker() {
         parsed.reject(new Error(event.data.message))
         return
       }
-      const projected = projects.get(event.data.id)
-      if (projected) {
+      const failed = projects.get(event.data.id)
+      if (failed) {
+        // The worker dropped its copy of the text; the next request resends it whole.
+        sentTexts.delete(failed.key)
         projects.delete(event.data.id)
-        projected.reject(new Error(event.data.message))
-        projectTransport.complete(projected.key, event.data.id)
+        failed.reject(new Error(event.data.message))
+        projectTransport.complete(failed.key, event.data.id)
         return
       }
     }
     if (event.data.type === "superseded") {
-      const projected = projects.get(event.data.id)
-      if (projected) {
+      const superseded = projects.get(event.data.id)
+      if (superseded) {
         projects.delete(event.data.id)
-        projected.reject(new MarkdownWorkerSupersededError())
-        projectTransport.complete(projected.key, event.data.id)
+        superseded.reject(new MarkdownWorkerSupersededError())
+        projectTransport.complete(superseded.key, event.data.id)
         return
       }
     }
@@ -207,6 +226,8 @@ function getWorker() {
     parses.forEach((request) => request.reject(error))
     pending.clear()
     projects.clear()
+    sentTexts.clear()
+    projected.clear()
     parses.clear()
     states.clear()
     keys.clear()

@@ -5,6 +5,7 @@ import {
   type Accessor,
   type ComponentProps,
   createEffect,
+  createMemo,
   createResource,
   createSignal,
   createUniqueId,
@@ -93,7 +94,6 @@ type CopyLabels = {
 }
 
 type CopyButtonState = {
-  setLabels: Setter<CopyLabels>
   setCopied: Setter<boolean>
   dispose: () => void
 }
@@ -113,17 +113,15 @@ function codeUrl(text: string) {
   }
 }
 
-function createCopyButton(labels: CopyLabels) {
+function createCopyButton(labels: Accessor<CopyLabels>) {
   const host = document.createElement("div")
   host.setAttribute("data-slot", "markdown-copy-button")
 
   const state: Partial<CopyButtonState> = {}
   const dispose = render(() => {
-    const [labelState, setLabels] = createSignal(labels, { equals: false })
     const [copied, setCopied] = createSignal(false)
-    state.setLabels = setLabels
     state.setCopied = setCopied
-    return <MarkdownCopyButton labels={labelState} copied={copied} />
+    return <MarkdownCopyButton labels={labels} copied={copied} />
   }, host)
   state.dispose = dispose
   copyButtonState.set(host, state as CopyButtonState)
@@ -150,10 +148,8 @@ function MarkdownCopyButton(props: { labels: Accessor<CopyLabels>; copied: Acces
   )
 }
 
-function setCopyState(host: HTMLElement, labels: CopyLabels, copied: boolean) {
-  const state = copyButtonState.get(host)
-  state?.setLabels(labels)
-  state?.setCopied(copied)
+function setCopyState(host: HTMLElement, copied: boolean) {
+  copyButtonState.get(host)?.setCopied(copied)
   if (copied) {
     host.setAttribute("data-copied", "true")
     return
@@ -205,7 +201,7 @@ function applyCodeMetadata(wrapper: HTMLElement, language: string | undefined) {
   else delete wrapper.dataset.codeKind
 }
 
-function ensureCodeWrapper(block: HTMLPreElement, labels: CopyLabels) {
+function ensureCodeWrapper(block: HTMLPreElement, labels: Accessor<CopyLabels>) {
   const parent = block.parentElement
   if (!parent) return
   const wrapped = parent.getAttribute("data-component") === "markdown-code"
@@ -275,7 +271,7 @@ function markInlineCode(root: HTMLDivElement) {
   }
 }
 
-function decorate(root: HTMLDivElement, labels: CopyLabels) {
+function decorate(root: HTMLDivElement, labels: Accessor<CopyLabels>) {
   const blocks = Array.from(root.querySelectorAll("pre"))
   for (const block of blocks) {
     ensureCodeWrapper(block, labels)
@@ -285,14 +281,8 @@ function decorate(root: HTMLDivElement, labels: CopyLabels) {
   markCodeLinks(root)
 }
 
-function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
+function setupCodeCopy(root: HTMLDivElement) {
   const timeouts = new Map<HTMLElement, ReturnType<typeof setTimeout>>()
-
-  const updateLabel = (button: HTMLElement) => {
-    const labels = getLabels()
-    const copied = button.getAttribute("data-copied") === "true"
-    setCopyState(button, labels, copied)
-  }
 
   const handleClick = async (event: MouseEvent) => {
     const target = event.target
@@ -306,17 +296,11 @@ function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
     const clipboard = navigator?.clipboard
     if (!clipboard) return
     await clipboard.writeText(content)
-    const labels = getLabels()
-    setCopyState(button, labels, true)
+    setCopyState(button, true)
     const existing = timeouts.get(button)
     if (existing) clearTimeout(existing)
-    const timeout = setTimeout(() => setCopyState(button, labels, false), 2000)
+    const timeout = setTimeout(() => setCopyState(button, false), 2000)
     timeouts.set(button, timeout)
-  }
-
-  const buttons = Array.from(root.querySelectorAll('[data-slot="markdown-copy-button"]'))
-  for (const button of buttons) {
-    if (button instanceof HTMLElement) updateLabel(button)
   }
 
   root.addEventListener("click", handleClick)
@@ -376,6 +360,14 @@ export function Markdown(
   const owner = createUniqueId()
   const activeCodeKeys = new Set<string>()
   const completedCode = new Map<string, Extract<RenderedBlock, { mode: "code" }>>()
+  // Unchanged blocks keep their object identity across worker replies, so their render is reused as is.
+  const renderedBlocks = new WeakMap<Block, RenderedBlock>()
+  const appliedBlocks = new WeakMap<Element, RenderedBlock>()
+  // Created once per component; only a locale change relabels the copy buttons.
+  const labels = createMemo(() => ({
+    copy: i18n.t("ui.message.copy"),
+    copied: i18n.t("ui.message.copied"),
+  }))
   let streamed = false
   const [projection] = createResource(
     () => {
@@ -394,6 +386,42 @@ export function Markdown(
     if (value?.text === local.text) return value
     if (value?.text) return value
     return pendingProjection(local.text)
+  }
+  const renderBlock = async (
+    block: Block,
+    index: number,
+    blockKey: string,
+    base: string | undefined,
+  ): Promise<RenderedBlock> => {
+    if (block.mode === "code") {
+      const cached = completedCode.get(blockKey)
+      if (block.complete && cached?.raw === block.raw) return cached
+      const result = await code(block.src, block.language, blockKey, block.complete)
+      const rendered = {
+        key: blockKey,
+        mode: block.mode,
+        raw: block.raw,
+        hash: String(block.raw.length),
+        complete: !!block.complete,
+        ...result,
+      }
+      if (block.complete) completedCode.set(blockKey, rendered)
+      return rendered
+    }
+
+    const key = base ? `${base}:${index}:${block.mode}` : undefined
+    if (key) {
+      const cached = getCachedMarkdown(key)
+      if (cached?.raw === block.raw) {
+        touchCachedMarkdown(key, cached)
+        return { key: blockKey, mode: block.mode, ...cached }
+      }
+    }
+
+    const hash = checksum(block.raw)
+    const safe = sanitizeMarkdown(await parseMarkdown(block.src))
+    if (key && hash) touchCachedMarkdown(key, { raw: block.raw, hash, html: safe })
+    return { key: blockKey, mode: block.mode, raw: block.raw, hash: hash ?? "", html: safe }
   }
   const [html] = createResource(
     () => {
@@ -430,37 +458,12 @@ export function Markdown(
       const base = src.key ?? checksum(src.text)
       return Promise.all(
         src.projection.blocks.map(async (block, index) => {
-          const key = base ? `${base}:${index}:${block.mode}` : undefined
           const blockKey = markdownBlockKey(owner, src.key, index, block.mode)
-
-          if (block.mode === "code") {
-            const cached = completedCode.get(blockKey)
-            if (block.complete && cached?.raw === block.raw) return cached
-            const result = await code(block.src, block.language, blockKey, block.complete)
-            const rendered = {
-              key: blockKey,
-              mode: block.mode,
-              raw: block.raw,
-              hash: String(block.raw.length),
-              complete: !!block.complete,
-              ...result,
-            }
-            if (block.complete) completedCode.set(blockKey, rendered)
-            return rendered
-          }
-
-          if (key) {
-            const cached = getCachedMarkdown(key)
-            if (cached?.raw === block.raw) {
-              touchCachedMarkdown(key, cached)
-              return { key: blockKey, mode: block.mode, ...cached }
-            }
-          }
-
-          const hash = checksum(block.raw)
-          const safe = sanitizeMarkdown(await parseMarkdown(block.src))
-          if (key && hash) touchCachedMarkdown(key, { raw: block.raw, hash, html: safe })
-          return { key: blockKey, mode: block.mode, raw: block.raw, hash: hash ?? "", html: safe }
+          const reused = renderedBlocks.get(block)
+          if (reused?.key === blockKey) return reused
+          const rendered = await renderBlock(block, index, blockKey, base)
+          if (block.mode !== "code" || block.complete) renderedBlocks.set(block, rendered)
+          return rendered
         }),
       )
         .then((blocks) => ({ text: src.text, blocks }) satisfies RenderResult)
@@ -505,31 +508,26 @@ export function Markdown(
       return
     }
 
-    const labels = {
-      copy: i18n.t("ui.message.copy"),
-      copied: i18n.t("ui.message.copied"),
-    }
     const nextCodeKeys = new Set(content.filter((block) => block.mode === "code").map((block) => block.key))
     activeCodeKeys.forEach((key) => {
       if (!nextCodeKeys.has(key)) disposeCode(key)
     })
     activeCodeKeys.clear()
     nextCodeKeys.forEach((key) => activeCodeKeys.add(key))
-    content.forEach((block, index) => updateBlock(container, index, block, labels))
+    content.forEach((block, index) => {
+      const current = container.children.item(index)
+      if (current && appliedBlocks.get(current) === block) return
+      updateBlock(container, index, block, labels)
+      const next = container.children.item(index)
+      if (next) appliedBlocks.set(next, block)
+    })
     while (container.children.length > content.length) {
       const child = container.lastElementChild
       if (!child) break
       disposeCopyButtons(child)
       child.remove()
     }
-    container
-      .querySelectorAll<HTMLElement>('[data-slot="markdown-copy-button"]')
-      .forEach((button) => setCopyState(button, labels, button.dataset.copied === "true"))
-    if (!copyCleanup)
-      copyCleanup = setupCodeCopy(container, () => ({
-        copy: i18n.t("ui.message.copy"),
-        copied: i18n.t("ui.message.copied"),
-      }))
+    if (!copyCleanup) copyCleanup = setupCodeCopy(container)
   })
 
   onCleanup(() => {
@@ -586,7 +584,7 @@ function disposeCode(key: string) {
   disposeStreamingCode(key)
 }
 
-function updateBlock(container: HTMLDivElement, index: number, block: RenderedBlock, labels: CopyLabels) {
+function updateBlock(container: HTMLDivElement, index: number, block: RenderedBlock, labels: Accessor<CopyLabels>) {
   const current = container.children[index]
   if (block.mode === "code") {
     updateCodeBlock(container, current, block, labels)
@@ -636,7 +634,7 @@ function updateCodeBlock(
   container: HTMLDivElement,
   current: Element | undefined,
   block: Extract<RenderedBlock, { mode: "code" }>,
-  labels: CopyLabels,
+  labels: Accessor<CopyLabels>,
 ) {
   const existing = current instanceof HTMLDivElement && current.dataset.markdownKey === block.key ? current : undefined
   const next = existing ?? document.createElement("div")
