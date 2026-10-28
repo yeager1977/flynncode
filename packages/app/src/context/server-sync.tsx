@@ -22,6 +22,7 @@ import {
   loadGlobalConfigQuery,
   loadPathQuery,
   loadProjectsQuery,
+  loadProviderCatalogQuery,
   loadProvidersQuery,
   loadReferencesQuery,
 } from "./global-sync/bootstrap"
@@ -186,6 +187,15 @@ export function seedActiveSessionStatuses(
   }
 }
 
+const PROVIDER_EVENTS = new Set([
+  "config.updated",
+  "catalog.updated",
+  "models-dev.refreshed",
+  "global.disposed",
+  "server.connected",
+  "server.instance.disposed",
+])
+
 function makeQueryOptionsApi(
   scope: ServerScope,
   serverSDK: () => OpencodeClient,
@@ -196,8 +206,9 @@ function makeQueryOptionsApi(
   return {
     globalConfig: () => loadGlobalConfigQuery(scope, serverSDK(), protocol),
     projects: () => loadProjectsQuery(scope, serverAPI.project),
-    providers: (directory: PathKey | null) =>
-      loadProvidersQuery(scope, directory, serverAPI, directory ? sdkFor(directory) : serverSDK(), protocol),
+    // A v1 server has one provider list, so every directory reads it through the server-level client.
+    providers: (directory: PathKey | null) => loadProvidersQuery(scope, directory, serverAPI, serverSDK(), protocol),
+    providerCatalog: () => loadProviderCatalogQuery(scope, serverAPI, serverSDK(), protocol),
     path: (directory: PathKey | null) =>
       loadPathQuery(scope, directory, directory ? sdkFor(directory) : serverSDK(), protocol),
     agents: (directory: PathKey) => loadAgentsQuery(scope, directory, serverAPI.agent, sdkFor(directory), protocol),
@@ -300,10 +311,12 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
 
   const queryClient = useQueryClient()
   const homeSessions = createHomeSessionIndexCache(queryClient, ServerConnection.key(serverSDK.server))
-  const refreshProviders = () =>
-    queryClient.refetchQueries({
-      predicate: (query) => query.queryKey[0] === serverSDK.scope && query.queryKey[2] === "providers",
-    })
+  const providerQueries = {
+    predicate: (query: { queryKey: readonly unknown[] }) =>
+      query.queryKey[0] === serverSDK.scope &&
+      (query.queryKey[2] === "providers" || query.queryKey[2] === "providerCatalog"),
+  }
+  const refreshProviders = () => queryClient.refetchQueries(providerQueries)
 
   let bootedAt = 0
   let bootingRoot = false
@@ -553,6 +566,10 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     }
     homeSessions.refresh(event.type)
     if (eventType === "integration.connection.updated") void refreshProviders()
+    // Provider lists never go stale on their own; these events are what change them. The first connect lands
+    // while the boot fetch is still in flight, and only a reconnect can mean the server changed underneath.
+    if (PROVIDER_EVENTS.has(eventType) && !(eventType === "server.connected" && (recent || bootedAt === 0)))
+      void queryClient.invalidateQueries(providerQueries)
 
     if (directory === "global") {
       // Every connect (boot or reconnect after a server restart) resyncs the
@@ -681,10 +698,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       bootstrap.refetch()
       // Invalidate all provider queries so newly configured custom providers
       // appear immediately in the available provider list across all directories.
-      queryClient.invalidateQueries({ queryKey: [serverSDK.scope, null, "providers"] })
-      queryClient.invalidateQueries({
-        predicate: (query) => query.queryKey[0] === serverSDK.scope && query.queryKey[2] === "providers",
-      })
+      queryClient.invalidateQueries(providerQueries)
     },
   }))
 

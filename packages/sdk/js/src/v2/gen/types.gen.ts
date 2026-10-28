@@ -11167,6 +11167,40 @@ export type ProviderListResponses = {
 
 export type ProviderListResponse = ProviderListResponses[keyof ProviderListResponses]
 
+export type ProviderConnectedData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/provider/connected"
+}
+
+export type ProviderConnectedErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ProviderConnectedError = ProviderConnectedErrors[keyof ProviderConnectedErrors]
+
+export type ProviderConnectedResponses = {
+  /**
+   * Connected providers
+   */
+  200: {
+    all: Array<Provider>
+    default: {
+      [key: string]: string
+    }
+    connected: Array<string>
+  }
+}
+
+export type ProviderConnectedResponse = ProviderConnectedResponses[keyof ProviderConnectedResponses]
+
 export type ProviderAuthData = {
   body?: never
   path?: never

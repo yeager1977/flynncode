@@ -177,6 +177,8 @@ import type {
   PromptInput,
   ProviderAuthErrors,
   ProviderAuthResponses,
+  ProviderConnectedErrors,
+  ProviderConnectedResponses,
   ProviderListErrors,
   ProviderListResponses,
   ProviderOauthAuthorizeErrors,
@@ -3992,6 +3994,36 @@ export class Provider extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<ProviderListResponses, ProviderListErrors, ThrowOnError>({
       url: "/provider",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * List connected providers
+   *
+   * Get only the connected AI providers, with the model fields clients display. Server-only model and provider options and headers are emptied.
+   */
+  public connected<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ProviderConnectedResponses, ProviderConnectedErrors, ThrowOnError>({
+      url: "/provider/connected",
       ...options,
       ...params,
     })

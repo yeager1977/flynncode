@@ -42,7 +42,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-function providerList(input: unknown, key: "all" | "providers") {
+function providerList(input: unknown, key: "all" | "providers" | "connected") {
   if (!isRecord(input)) return []
   if (!Array.isArray(input[key])) return []
   return input[key]
@@ -433,6 +433,117 @@ describe("provider HttpApi", () => {
         provider: { anthropic: { options: { apiKey: "stale-config-secret" } } },
       },
     },
+  )
+
+  it.instance(
+    "serves the provider list with an ETag and answers 304 while it is unchanged",
+    Effect.gen(function* () {
+      const directory = (yield* TestInstance).directory
+      const headers = { "x-opencode-directory": directory }
+      const first = yield* request("/provider", { headers })
+      const second = yield* request("/provider", { headers })
+
+      expect(first.status).toBe(200)
+      expect(first.headers["etag"]).toBeTruthy()
+      expect(first.headers["cache-control"]).toBe("no-cache")
+      expect(second.headers["etag"]).toBe(first.headers["etag"])
+      expect(yield* second.text).toBe(yield* first.text)
+
+      const cached = yield* request("/provider", {
+        headers: { ...headers, "if-none-match": first.headers["etag"] ?? "" },
+      })
+      expect(cached.status).toBe(304)
+      expect(cached.headers["etag"]).toBe(first.headers["etag"])
+      expect(yield* cached.text).toBe("")
+
+      const stale = yield* request("/provider", { headers: { ...headers, "if-none-match": '"stale"' } })
+      expect(stale.status).toBe(200)
+    }),
+    projectOptions,
+  )
+
+  it.instance(
+    "changes the provider list ETag when credentials change",
+    Effect.gen(function* () {
+      const directory = (yield* TestInstance).directory
+      const headers = { "x-opencode-directory": directory }
+      const before = yield* request("/provider", { headers })
+      const beforeBody = yield* before.json
+      expect(isRecord(beforeBody) && Array.isArray(beforeBody.connected) ? beforeBody.connected : []).not.toContain(
+        "anthropic",
+      )
+
+      yield* setEnvScoped("OPENCODE_AUTH_CONTENT", JSON.stringify({ anthropic: { type: "api", key: "etag-key" } }))
+      const after = yield* request("/provider", {
+        headers: { ...headers, "if-none-match": before.headers["etag"] ?? "" },
+      })
+
+      expect(after.status).toBe(200)
+      expect(after.headers["etag"]).not.toBe(before.headers["etag"])
+      const afterBody = yield* after.json
+      expect(isRecord(afterBody) && Array.isArray(afterBody.connected) ? afterBody.connected : []).toContain(
+        "anthropic",
+      )
+    }),
+    projectOptions,
+  )
+
+  it.instance(
+    "serves only connected providers with slim models from /provider/connected",
+    Effect.gen(function* () {
+      const directory = (yield* TestInstance).directory
+      yield* setEnvScoped("OPENCODE_AUTH_CONTENT", JSON.stringify({ anthropic: { type: "api", key: "slim-key" } }))
+      const headers = { "x-opencode-directory": directory }
+      const full = yield* request("/provider", { headers })
+      const slim = yield* request("/provider/connected", { headers })
+
+      expect(slim.status).toBe(200)
+      expect(slim.headers["etag"]).toBeTruthy()
+      expect(slim.headers["etag"]).not.toBe(full.headers["etag"])
+      const fullBody = yield* full.json
+      const slimBody = yield* slim.json
+      if (!isRecord(fullBody) || !isRecord(slimBody)) throw new Error("expected provider list objects")
+      expect(slimBody.connected).toEqual(fullBody.connected)
+      expect(providerList(slimBody, "connected")).toContain("anthropic")
+      expect(providerList(slimBody, "all").map((provider) => (isRecord(provider) ? provider.id : undefined))).toEqual(
+        providerList(slimBody, "connected"),
+      )
+      expect(providerList(fullBody, "all").length).toBeGreaterThan(providerList(slimBody, "all").length)
+      expect(Object.keys(isRecord(slimBody.default) ? slimBody.default : {}).sort()).toEqual(
+        providerList(slimBody, "connected")
+          .filter((id) => typeof id === "string" && isRecord(fullBody.default) && id in fullBody.default)
+          .sort(),
+      )
+
+      const slimAnthropic = providerByID(slimBody, "all", "anthropic")
+      const fullAnthropic = providerByID(fullBody, "all", "anthropic")
+      if (!isRecord(slimAnthropic) || !isRecord(fullAnthropic)) throw new Error("expected anthropic")
+      if (!isRecord(slimAnthropic.models) || !isRecord(fullAnthropic.models)) throw new Error("expected models")
+      expect(Object.keys(slimAnthropic.models)).toEqual(Object.keys(fullAnthropic.models))
+      expect(slimAnthropic.name).toBe(fullAnthropic.name)
+      expect(slimAnthropic.source).toBe(fullAnthropic.source)
+      expect(slimAnthropic.options).toEqual({})
+      const [modelID] = Object.keys(fullAnthropic.models)
+      const slimModel = slimAnthropic.models[modelID]
+      const fullModel = fullAnthropic.models[modelID]
+      if (!isRecord(slimModel) || !isRecord(fullModel)) throw new Error("expected model")
+      expect(slimModel.options).toEqual({})
+      expect(slimModel.headers).toEqual({})
+      expect(slimModel.name).toEqual(fullModel.name)
+      expect(slimModel.cost).toEqual(fullModel.cost)
+      expect(slimModel.limit).toEqual(fullModel.limit)
+      expect(slimModel.capabilities).toEqual(fullModel.capabilities)
+      expect(Object.keys(isRecord(slimModel.variants) ? slimModel.variants : {})).toEqual(
+        Object.keys(isRecord(fullModel.variants) ? fullModel.variants : {}),
+      )
+      expect(JSON.stringify(slimBody).length).toBeLessThan(JSON.stringify(fullBody).length / 10)
+
+      const cached = yield* request("/provider/connected", {
+        headers: { ...headers, "if-none-match": slim.headers["etag"] ?? "" },
+      })
+      expect(cached.status).toBe(304)
+    }),
+    projectOptions,
   )
 
   it.instance(

@@ -12,7 +12,7 @@ import { ExternalLink } from "@/components/external-link"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
-import { useProviders } from "@/hooks/use-providers"
+import { useProviderCatalog } from "@/hooks/use-providers"
 import { type FormState, headerRow, modelRow, validateCustomProvider } from "./dialog-custom-provider-form"
 
 type Props = {
@@ -46,14 +46,14 @@ export function CustomProviderForm(props: { autofocus?: boolean; kind?: "openai"
   const serverSync = useServerSync()
   const serverSDK = useServerSDK()
   const language = useLanguage()
-  const providers = useProviders(() => undefined)
+  const catalog = useProviderCatalog()
 
   // The Anthropic template copies the catalog's capability/cost/limit data
   // into the saved config so claude-model entries don't fall back to sparse
   // defaults (reasoning off, zero limits) under the native Anthropic SDK.
   const anthropic = createMemo(() => {
     if (props.kind !== "anthropic") return undefined
-    const provider = providers.all().get("anthropic")
+    const provider = catalog.all().get("anthropic")
     if (!provider) return undefined
     const models: Record<string, Record<string, unknown>> = {}
     for (const [id, model] of Object.entries(provider.models)) {
@@ -162,7 +162,7 @@ export function CustomProviderForm(props: { autofocus?: boolean; kind?: "openai"
       form,
       t: language.t,
       disabledProviders: serverSync().data.config.disabled_providers ?? [],
-      existingProviderIDs: new Set(serverSync().data.provider.all.keys()),
+      existingProviderIDs: new Set(catalog.all().keys()),
       catalogModels: anthropic()?.models,
     })
     batch(() => {

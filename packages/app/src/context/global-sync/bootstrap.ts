@@ -220,6 +220,8 @@ function warmSessions(input: {
 // A request that never answers must not hide the composer's model control forever.
 const CATALOG_TIMEOUT_MS = 15_000
 
+// The slim list of connected providers. Provider lists change only through config, auth and catalog events, which
+// invalidate these queries, so they never go stale on their own.
 export const loadProvidersQuery = (
   scope: ServerScope,
   directory: string | null,
@@ -230,8 +232,45 @@ export const loadProvidersQuery = (
 ) =>
   queryOptions({
     queryKey: [scope, directory, "providers"],
-    refetchInterval: 5 * 60 * 1000,
+    staleTime: Infinity,
     // isLoading stays true across query retries; the inner retry() already covers transient failures.
+    retry: false,
+    queryFn: (context): Promise<NormalizedProviderListResponse> => {
+      const signal = AbortSignal.any([context.signal, AbortSignal.timeout(timeoutMs)])
+      return untilAborted(
+        signal,
+        retry(async () => {
+          if ((await protocol) === "v1" && legacy) {
+            // A v1 server has one provider list, so directory queries share the server query's request.
+            if (directory !== null) {
+              const server = loadProvidersQuery(scope, null, sdk, legacy, protocol, timeoutMs)
+              const fetching = context.client.getQueryState(server.queryKey)?.fetchStatus === "fetching"
+              return context.client.fetchQuery({ ...server, staleTime: fetching ? 0 : Infinity })
+            }
+            const slim = await legacy.provider.connected(undefined, { signal })
+            if (slim.response?.status !== 404) return normalizeProviderList(slim.data!)
+            // Servers without the slim route still answer the full list.
+            const full = await legacy.provider.list(undefined, { signal })
+            return normalizeProviderList(full.data!)
+          }
+          return loadCurrentProviders(sdk, directory, signal)
+        }),
+      )
+    },
+  })
+
+// Every provider the server knows, connected or not. It is large, so only the connect-provider and manage-models
+// dialogs load it, on demand.
+export const loadProviderCatalogQuery = (
+  scope: ServerScope,
+  sdk: CatalogApi,
+  legacy?: OpencodeClient,
+  protocol?: Promise<ServerProtocol>,
+  timeoutMs = CATALOG_TIMEOUT_MS,
+) =>
+  queryOptions({
+    queryKey: [scope, null, "providerCatalog"],
+    staleTime: Infinity,
     retry: false,
     queryFn: (context) => {
       const signal = AbortSignal.any([context.signal, AbortSignal.timeout(timeoutMs)])
@@ -242,17 +281,21 @@ export const loadProvidersQuery = (
             const result = await legacy.provider.list(undefined, { signal })
             return normalizeProviderList(result.data!)
           }
-          const location = directory ? { location: { directory } } : undefined
-          const [providers, models, defaultModel] = await Promise.all([
-            sdk.provider.list(location, { signal }),
-            sdk.model.list(location, { signal }),
-            sdk.model.default(location, { signal }),
-          ])
-          return normalizeProviderList(providers.data, models.data, defaultModel.data)
+          return loadCurrentProviders(sdk, null, signal)
         }),
       )
     },
   })
+
+async function loadCurrentProviders(sdk: CatalogApi, directory: string | null, signal: AbortSignal) {
+  const location = directory ? { location: { directory } } : undefined
+  const [providers, models, defaultModel] = await Promise.all([
+    sdk.provider.list(location, { signal }),
+    sdk.model.list(location, { signal }),
+    sdk.model.default(location, { signal }),
+  ])
+  return normalizeProviderList(providers.data, models.data, defaultModel.data)
+}
 
 // Protocol detection takes no signal, so racing it keeps a stuck detection from outliving the timeout.
 function untilAborted<T>(signal: AbortSignal, promise: Promise<T>) {

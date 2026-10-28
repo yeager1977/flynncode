@@ -32,6 +32,109 @@ function mapProviderAuthError<A, R>(self: Effect.Effect<A, ProviderAuth.Error, R
   )
 }
 
+type ListInput = {
+  config: { readonly enabled_providers?: readonly string[]; readonly disabled_providers?: readonly string[] }
+  catalog: Record<string, ModelsDev.Provider>
+  connected: Record<ProviderV2.ID, Provider.Info>
+  credentials: Record<string, unknown>
+}
+
+type Serialized = { body: string; etag: string }
+
+type Revision = {
+  input: ListInput
+  credentials: string
+  full?: Serialized
+  slim?: Serialized
+}
+
+// Keyed by the provider state record: it is rebuilt per directory when config, the models.dev catalog or
+// integrations change, so a new record (or new config, catalog or credential set) is a new revision.
+const revisions = new WeakMap<object, Revision>()
+
+function revisionFor(input: ListInput) {
+  const credentials = Object.keys(input.credentials).sort().join("\n")
+  const cached = revisions.get(input.connected)
+  if (
+    cached &&
+    cached.input.config === input.config &&
+    cached.input.catalog === input.catalog &&
+    cached.credentials === credentials
+  )
+    return cached
+  const next: Revision = { input, credentials }
+  revisions.set(input.connected, next)
+  return next
+}
+
+function fullList(input: ListInput): Provider.ListResult {
+  const providers = Object.assign(
+    mapValues(enabledCatalog(input), (item) => Provider.fromModelsDevProvider(item)),
+    input.connected,
+  )
+  return {
+    all: Object.values(providers).map(Provider.toPublicInfo),
+    default: Provider.defaultModelIDs(providers),
+    connected: connectedIDs(input),
+  }
+}
+
+// Only the connected providers, built without touching the rest of the catalog. Options, headers and variant
+// settings are server-side request details that clients never read.
+function slimList(input: ListInput): Provider.ListResult {
+  const catalog = enabledCatalog(input)
+  const connected = connectedIDs(input)
+  const providers = Object.fromEntries(
+    connected.map((id) => [
+      id,
+      Provider.toPublicInfo(input.connected[ProviderV2.ID.make(id)] ?? Provider.fromModelsDevProvider(catalog[id])),
+    ]),
+  )
+  return {
+    all: Object.values(providers).map((item) => ({
+      ...item,
+      options: {},
+      models: mapValues(item.models, (model) => ({
+        ...model,
+        options: {},
+        headers: {},
+        ...(model.variants ? { variants: mapValues(model.variants, () => ({})) } : {}),
+      })),
+    })),
+    default: Provider.defaultModelIDs(providers),
+    connected,
+  }
+}
+
+function enabledCatalog(input: ListInput) {
+  const enabled = input.config.enabled_providers ? new Set(input.config.enabled_providers) : undefined
+  return Object.fromEntries(Object.entries(input.catalog).filter(([key]) => (enabled ? enabled.has(key) : true)))
+}
+
+function connectedIDs(input: ListInput) {
+  const disabled = new Set(input.config.disabled_providers ?? [])
+  return [...new Set([...Object.keys(enabledCatalog(input)), ...Object.keys(input.connected)])].filter(
+    (id) => !disabled.has(id) && (id in input.connected || input.credentials[id]),
+  )
+}
+
+const encodeList = Schema.encodeSync(Provider.ListResult)
+
+function serialize(list: Provider.ListResult): Serialized {
+  const body = JSON.stringify(encodeList(list))
+  return { body, etag: `"${Bun.hash(body).toString(36)}"` }
+}
+
+function respond(request: HttpServerRequest.HttpServerRequest, list: Serialized) {
+  const headers = { etag: list.etag, "cache-control": "no-cache" }
+  const match = (request.headers["if-none-match"] ?? "")
+    .split(",")
+    .map((tag) => tag.trim().replace(/^W\//, ""))
+    .some((tag) => tag === list.etag || tag === "*")
+  if (match) return HttpServerResponse.empty({ status: 304, headers })
+  return HttpServerResponse.text(list.body, { contentType: "application/json", headers })
+}
+
 export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider", (handlers) =>
   Effect.gen(function* () {
     const cfg = yield* Config.Service
@@ -39,26 +142,26 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
     const svc = yield* ProviderAuth.Service
     const authStore = yield* Auth.Service
 
-    const list = Effect.fn("ProviderHttpApi.list")(function* () {
+    const revision = Effect.fn("ProviderHttpApi.revision")(function* () {
       const config = yield* cfg.get()
-      const all = yield* ModelsDev.Service.use((s) => s.get())
-      const disabled = new Set(config.disabled_providers ?? [])
-      const enabled = config.enabled_providers ? new Set(config.enabled_providers) : undefined
-      const filtered: Record<string, (typeof all)[string]> = {}
-      for (const [key, value] of Object.entries(all)) {
-        if (enabled ? enabled.has(key) : true) filtered[key] = value
-      }
+      const catalog = yield* ModelsDev.Service.use((s) => s.get())
       const connected = yield* provider.list()
       const credentials = yield* authStore.all().pipe(Effect.orDie)
-      const providers = Object.assign(
-        mapValues(filtered, (item) => Provider.fromModelsDevProvider(item)),
-        connected,
-      )
-      return {
-        all: Object.values(providers).map(Provider.toPublicInfo),
-        default: Provider.defaultModelIDs(providers),
-        connected: Object.keys(providers).filter((id) => !disabled.has(id) && (id in connected || credentials[id])),
-      }
+      return revisionFor({ config, catalog, connected, credentials })
+    })
+
+    const list = Effect.fn("ProviderHttpApi.list")(function* (ctx: { request: HttpServerRequest.HttpServerRequest }) {
+      const current = yield* revision()
+      current.full ??= serialize(fullList(current.input))
+      return respond(ctx.request, current.full)
+    })
+
+    const connectedList = Effect.fn("ProviderHttpApi.connected")(function* (ctx: {
+      request: HttpServerRequest.HttpServerRequest
+    }) {
+      const current = yield* revision()
+      current.slim ??= serialize(slimList(current.input))
+      return respond(ctx.request, current.slim)
     })
 
     const auth = Effect.fn("ProviderHttpApi.auth")(function* () {
@@ -112,7 +215,8 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
     })
 
     return handlers
-      .handle("list", list)
+      .handleRaw("list", list)
+      .handleRaw("connected", connectedList)
       .handle("auth", auth)
       .handle("usage", usage)
       .handleRaw("authorize", authorizeRaw)

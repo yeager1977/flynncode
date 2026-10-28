@@ -35,7 +35,7 @@ import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
-import { popularProviders, useProviders } from "@/hooks/use-providers"
+import { popularProviders, useProviderCatalog, useProviders } from "@/hooks/use-providers"
 import { completeProviderConnection } from "@/hooks/provider-catalog"
 import { CustomProviderForm } from "./dialog-custom-provider"
 import { decode64 } from "@/utils/base64"
@@ -61,6 +61,7 @@ export const DialogConnectProvider: Component<{
 }> = (props) => {
   const fallback = useProviderConnectController()
   const controller = props.controller ?? fallback
+  const catalog = useProviderCatalog()
   const language = useLanguage()
   const settings = useSettings()
   const newLayout = settings.general.newLayoutDesigns
@@ -84,12 +85,15 @@ export const DialogConnectProvider: Component<{
         </Match>
         <Match when={controller.selected() && controller.selected() !== CUSTOM_ID ? controller.selected() : undefined}>
           {(provider) => (
-            <ProviderConnection
-              provider={provider()}
-              directory={props.directory}
-              onBack={reset}
-              setBack={(handler) => (back.current = handler)}
-            />
+            // A provider picked before the catalog arrives (e.g. from a usage prompt) has nothing to show yet.
+            <Show when={!catalog.loading()}>
+              <ProviderConnection
+                provider={provider()}
+                directory={props.directory}
+                onBack={reset}
+                setBack={(handler) => (back.current = handler)}
+              />
+            </Show>
           )}
         </Match>
         <Match when={true}>
@@ -163,7 +167,7 @@ function ProviderPicker(props: {
   const settings = useSettings()
   if (settings.general.newLayoutDesigns())
     return <ProviderPickerV2 directory={props.directory} onSelect={props.onSelect} onPrepare={props.onPrepare} />
-  const providers = useProviders(() => props.directory?.())
+  const catalog = useProviderCatalog()
   const language = useLanguage()
   const popularGroup = () => language.t("dialog.provider.group.popular")
   const otherGroup = () => language.t("dialog.provider.group.other")
@@ -188,7 +192,7 @@ function ProviderPicker(props: {
         return [
           { id: CUSTOM_ID, name: customLabel() },
           { id: ANTHROPIC_API_ID, name: language.t("dialog.provider.anthropicApi.label") },
-          ...providers.all().values(),
+          ...catalog.all().values(),
         ]
       }}
       filterKeys={["id", "name"]}
@@ -241,7 +245,7 @@ function ProviderPickerV2(props: {
   onSelect: (provider: string) => void
   onPrepare?: () => void
 }) {
-  const providers = useProviders(() => props.directory?.())
+  const catalog = useProviderCatalog()
   const language = useLanguage()
   const [store, setStore] = createStore({
     filter: "",
@@ -254,7 +258,7 @@ function ProviderPickerV2(props: {
   const all = createMemo(() => {
     language.locale()
     const query = store.filter.trim().toLowerCase()
-    const values = [custom(), anthropicApi(), ...providers.all().values()]
+    const values = [custom(), anthropicApi(), ...catalog.all().values()]
     if (!query) return values
     return values.filter((provider) => `${provider.id} ${provider.name}`.toLowerCase().includes(query))
   })
@@ -405,6 +409,7 @@ function ProviderConnection(props: {
   const settings = useSettings()
   const newLayout = settings.general.newLayoutDesigns
   const providers = useProviders(() => props.directory?.())
+  const catalog = useProviderCatalog()
   const directory = () => props.directory?.() ?? decode64(params.dir)
   const location = () => {
     const value = directory()
@@ -422,7 +427,10 @@ function ProviderConnection(props: {
   })
 
   const provider = createMemo(
-    () => providers.all().get(props.provider) ?? serverSync().data.provider.all.get(props.provider)!,
+    () =>
+      catalog.all().get(props.provider) ??
+      providers.all().get(props.provider) ??
+      serverSync().data.provider.all.get(props.provider)!,
   )
   const fallback = createMemo<ConnectMethod[]>(() => [
     {

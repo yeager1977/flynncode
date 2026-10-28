@@ -11,6 +11,7 @@ import {
   loadGlobalConfigQuery,
   loadPathQuery,
   loadProjectsQuery,
+  loadProviderCatalogQuery,
   loadProvidersQuery,
   loadReferencesQuery,
 } from "./bootstrap"
@@ -454,5 +455,104 @@ describe("query keys", () => {
 
     expect(calls).toEqual([{ location: { directory: "/repo" } }])
     expect(result).toHaveLength(1)
+  })
+})
+
+function catalogProvider(id: string) {
+  return {
+    id,
+    name: id,
+    source: "api",
+    env: [],
+    options: {},
+    models: { [`${id}-model`]: { id: `${id}-model`, providerID: id, name: `${id} model`, status: "active" } },
+  }
+}
+
+function legacyProviders(calls: string[], input: { slim?: boolean } = {}) {
+  return {
+    provider: {
+      connected: async () => {
+        calls.push("connected")
+        if (input.slim === false) return { data: undefined, error: {}, response: new Response(null, { status: 404 }) }
+        return {
+          data: { all: [catalogProvider("openai")], connected: ["openai"], default: { openai: "openai-model" } },
+          response: new Response(null, { status: 200 }),
+        }
+      },
+      list: async () => {
+        calls.push("list")
+        return {
+          data: {
+            all: [catalogProvider("openai"), catalogProvider("anthropic"), catalogProvider("google")],
+            connected: ["openai"],
+            default: { openai: "openai-model", anthropic: "anthropic-model", google: "google-model" },
+          },
+          response: new Response(null, { status: 200 }),
+        }
+      },
+    },
+  } as unknown as OpencodeClient
+}
+
+describe("provider queries", () => {
+  const v1 = Promise.resolve("v1" as const)
+
+  test("loads only the connected providers on v1", async () => {
+    const calls: string[] = []
+    const result = await new QueryClient().fetchQuery(
+      loadProvidersQuery(ServerScope.local, null, {} as CatalogApi, legacyProviders(calls), v1),
+    )
+
+    expect(calls).toEqual(["connected"])
+    expect([...result.all.keys()]).toEqual(["openai"])
+    expect(result.connected).toEqual(["openai"])
+  })
+
+  test("falls back to the full provider list when the server has no slim route", async () => {
+    const calls: string[] = []
+    const result = await new QueryClient().fetchQuery(
+      loadProvidersQuery(ServerScope.local, null, {} as CatalogApi, legacyProviders(calls, { slim: false }), v1),
+    )
+
+    expect(calls).toEqual(["connected", "list"])
+    expect(result.connected).toEqual(["openai"])
+  })
+
+  test("shares one provider request per server across directories on v1", async () => {
+    const calls: string[] = []
+    const client = new QueryClient()
+    const legacy = legacyProviders(calls)
+    const query = (directory: string | null) =>
+      client.fetchQuery(loadProvidersQuery(ServerScope.local, directory, {} as CatalogApi, legacy, v1))
+
+    const results = await Promise.all([query(null), query("/a"), query("/b")])
+    await query("/c")
+    await query(null)
+
+    expect(calls).toEqual(["connected"])
+    expect(results.map((result) => [...result.all.keys()])).toEqual([["openai"], ["openai"], ["openai"]])
+
+    await client.invalidateQueries({ predicate: (item) => item.queryKey[2] === "providers" })
+    await query("/d")
+    expect(calls).toEqual(["connected", "connected"])
+  })
+
+  test("does not poll the provider lists", () => {
+    const legacy = legacyProviders([])
+    expect(loadProvidersQuery(ServerScope.local, null, {} as CatalogApi, legacy, v1).refetchInterval).toBeUndefined()
+    expect(loadProvidersQuery(ServerScope.local, "/a", {} as CatalogApi, legacy, v1).refetchInterval).toBeUndefined()
+    expect(loadProviderCatalogQuery(ServerScope.local, {} as CatalogApi, legacy, v1).refetchInterval).toBeUndefined()
+  })
+
+  test("loads the full provider catalog on demand", async () => {
+    const calls: string[] = []
+    const result = await new QueryClient().fetchQuery(
+      loadProviderCatalogQuery(ServerScope.local, {} as CatalogApi, legacyProviders(calls), v1),
+    )
+
+    expect(calls).toEqual(["list"])
+    expect([...result.all.keys()]).toEqual(["openai", "anthropic", "google"])
+    expect(result.connected).toEqual(["openai"])
   })
 })

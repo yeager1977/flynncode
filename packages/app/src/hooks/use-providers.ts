@@ -3,20 +3,10 @@ import { decode64 } from "@/utils/base64"
 import { useParams } from "@solidjs/router"
 import { Iterable, pipe } from "effect"
 import { createEffect, createMemo, type Accessor } from "solid-js"
-import { selectProviderCatalog } from "./provider-catalog"
+import { useQuery } from "@tanstack/solid-query"
+import { selectPopularProviders, selectProviderCatalog } from "./provider-catalog"
 
-export const popularProviders = [
-  "opencode",
-  "opencode-go",
-  "anthropic",
-  "github-copilot",
-  "openai",
-  "google",
-  "ollama-cloud",
-  "openrouter",
-  "vercel",
-]
-const popularProviderSet = new Set(popularProviders)
+export { popularProviders } from "./provider-catalog"
 
 export function useProviders(directory: Accessor<string | undefined>) {
   const serverSync = useServerSync()
@@ -43,13 +33,6 @@ export function useProviders(directory: Accessor<string | undefined>) {
     all: () => providers().all,
     default: () => providers().default,
     defaultModel: () => providers().defaultModel,
-    popular: () =>
-      pipe(
-        providers().all,
-        Iterable.map(([, p]) => p),
-        Iterable.filter((p) => popularProviderSet.has(p.id)),
-        (v) => Array.from(v),
-      ),
     connected: () => {
       const connected = new Set(providers().connected)
       return pipe(
@@ -71,5 +54,18 @@ export function useProviders(directory: Accessor<string | undefined>) {
       ]
       return paid
     },
+  }
+}
+
+// The full catalog, including providers that are not connected. Only the dialogs that connect providers or
+// manage models read it, so it loads on demand; until it arrives they see the connected providers.
+export function useProviderCatalog() {
+  const serverSync = useServerSync()
+  const query = useQuery(() => serverSync().queryOptions.providerCatalog())
+  const all = () => query.data?.all ?? serverSync().data.provider.all
+  return {
+    all,
+    popular: () => selectPopularProviders(all()),
+    loading: () => query.isLoading,
   }
 }

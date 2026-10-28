@@ -4,7 +4,7 @@ import { Switch } from "@flynncode/ui/v2/switch-v2"
 import { useDialog } from "@flynncode/ui/context/dialog"
 import { ProviderIcon } from "@flynncode/ui/provider-icon"
 import { showToast } from "@/utils/toast"
-import { popularProviders, useProviders } from "@/hooks/use-providers"
+import { popularProviders, useProviderCatalog, useProviders } from "@/hooks/use-providers"
 import { createMemo, type Accessor, type Component, For, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useServerProtocol, useServerSDK } from "@/context/server-sdk"
@@ -43,6 +43,7 @@ export const SettingsProvidersV2: Component<{
   const protocol = useServerProtocol()
   const serverSync = useServerSync()
   const providers = useProviders(props.directory)
+  const catalog = useProviderCatalog()
   const providerConnect = useProviderConnectController({ onBack: props.onBack })
 
   const connect = (provider?: string) => {
@@ -75,7 +76,7 @@ export const SettingsProvidersV2: Component<{
 
   const popular = createMemo(() => {
     const connectedIDs = new Set(connected().map((p) => p.id))
-    const items = providers
+    const items = catalog
       .popular()
       .filter((p) => !connectedIDs.has(p.id))
       .slice()

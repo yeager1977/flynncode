@@ -1,4 +1,5 @@
 import { Tabs } from "@kobalte/core/tabs"
+import { useProviderCatalog } from "@/hooks/use-providers"
 import { ButtonV2 } from "@flynncode/ui/v2/button-v2"
 import { SelectV2 } from "@flynncode/ui/v2/select-v2"
 import { Switch } from "@flynncode/ui/v2/switch-v2"
@@ -37,6 +38,7 @@ import "./model-router.css"
 export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) => {
   const language = useLanguage()
   const serverSync = useServerSync()
+  const providerCatalog = useProviderCatalog()
   const models = useModels()
   const agentsQuery = createQuery(() => serverSync().queryOptions.agents(pathKey(props.directory ?? "")))
   const routerConfig = () => serverSync().data.config?.model_router as Record<string, unknown> | undefined
@@ -84,7 +86,7 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
       ...form.providers,
     ])
     ids.delete("model-router")
-    for (const id of ids) add(id, serverSync().data.provider.all.get(id))
+    for (const id of ids) add(id, providerCatalog.all().get(id))
     for (const [id, config] of Object.entries(serverSync().data.config.provider ?? {})) {
       if (id !== "model-router") add(id, config as any)
     }
@@ -93,7 +95,7 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
   const catalog = createMemo(() =>
     routerCatalog(catalogSource(), (providerID, modelID) => models.visible({ providerID, modelID })).map((model) => ({
       ...model,
-      provider: serverSync().data.provider.all.get(model.providerID)?.name ?? model.provider,
+      provider: providerCatalog.all().get(model.providerID)?.name ?? model.provider,
     })),
   )
   // Review is the family's flagship tier; if no connected provider serves it,
@@ -109,7 +111,7 @@ export const SettingsModelRouterV2: Component<{ directory?: string }> = (props) 
     )
       .map((id) => ({
         id,
-        name: serverSync().data.provider.all.get(id)?.name ?? serverSync().data.config.provider?.[id]?.name ?? id,
+        name: providerCatalog.all().get(id)?.name ?? serverSync().data.config.provider?.[id]?.name ?? id,
       }))
       .sort((a, b) => a.name.localeCompare(b.name)),
   )

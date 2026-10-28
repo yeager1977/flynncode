@@ -1,5 +1,22 @@
 import type { NormalizedProviderListResponse } from "@flynncode/session-ui/context"
 
+export const popularProviders = [
+  "opencode",
+  "opencode-go",
+  "anthropic",
+  "github-copilot",
+  "openai",
+  "google",
+  "ollama-cloud",
+  "openrouter",
+  "vercel",
+]
+const popularProviderSet = new Set(popularProviders)
+
+export function selectPopularProviders(all: NormalizedProviderListResponse["all"]) {
+  return [...all.values()].filter((provider) => popularProviderSet.has(provider.id))
+}
+
 const emptyProviderCatalog: NormalizedProviderListResponse = { all: new Map(), connected: [], default: {} }
 
 type DirectoryCatalog = {
