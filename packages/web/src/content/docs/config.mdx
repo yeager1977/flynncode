@@ -812,6 +812,64 @@ Place plugin files in `.opencode/plugins/` or `~/.config/opencode/plugins/`. You
 
 ---
 
+### Status line
+
+The `statusLine` option runs a command of yours and shows what it prints in a thin bar under the prompt, in both the desktop app and the TUI. It uses the same shape as Claude Code's `statusLine` setting, so an existing Claude Code status line script works unchanged.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "statusLine": {
+    "type": "command",
+    "command": "~/.config/flynncode/statusline.sh",
+    "padding": 1
+  }
+}
+```
+
+The server runs the command with session JSON on stdin and shows the first two non-empty lines it prints. For example:
+
+```sh title="~/.config/flynncode/statusline.sh"
+#!/bin/sh
+input=$(cat)
+model=$(echo "$input" | jq -r '.model.display_name')
+dir=$(echo "$input" | jq -r '.workspace.current_dir')
+cost=$(echo "$input" | jq -r '.cost.total_cost_usd')
+used=$(echo "$input" | jq -r '.context.used_tokens')
+branch=$(git -C "$dir" branch --show-current 2>/dev/null)
+printf '\033[1m%s\033[0m  %s \033[32m%s\033[0m  $%.2f  %s tokens\n' \
+  "$model" "$(basename "$dir")" "$branch" "$cost" "$used"
+```
+
+**Trust.** A status line command is reviewed like a [hook](/docs/hooks-reference#trust-and-the-kill-switch), whichever config it comes from. Until you trust it, it does not run and **Settings → Hooks** lists it as _Status line_, awaiting review. Trust is per project and covers the project scripts the command names, so changing the command, or editing a project script it runs, needs trust again. `"hooks": { "disableAllHooks": true }` also turns the status line off.
+
+**Input.** The JSON has Claude Code's fields plus a Flynncode `context` object:
+
+| Field                                                | Value                                                                                                                              |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `hook_event_name`                                    | `"Status"`                                                                                                                         |
+| `session_id`, `cwd`, `version`                       | The session, its working directory and the Flynncode version                                                                       |
+| `transcript_path`                                    | A Claude-format transcript of the session                                                                                          |
+| `model`                                              | `{ id, display_name }` of the model the next turn uses                                                                             |
+| `workspace`                                          | `{ current_dir, project_dir }`                                                                                                     |
+| `output_style`                                       | `{ name }`, the current agent's name                                                                                               |
+| `cost.total_cost_usd`                                | The session's total cost                                                                                                           |
+| `cost.total_duration_ms`                             | Wall time since this Flynncode server first showed the session's status line. Like Claude Code's, it starts again after a restart. |
+| `cost.total_api_duration_ms`                         | Time spent waiting for the model: each finished answer's time minus the time its tools ran                                         |
+| `cost.total_lines_added`, `cost.total_lines_removed` | The session's line changes                                                                                                         |
+| `exceeds_200k_tokens`                                | Whether the input and cache tokens of the last model request exceed 200,000                                                        |
+| `context`                                            | `{ used_tokens, limit }`: the last request's tokens and the model's context limit (`null` when unknown)                            |
+
+The command runs in the session's working directory with the server's environment plus `CLAUDE_PROJECT_DIR`, the same environment hooks get.
+
+**When it runs.** A change to the session's messages, model, agent, folder or run state triggers a run, at most once every 300 ms per session. A change during a run waits for it, and the latest change always gets a run. A run is killed after 5 seconds. Only sessions you have open are watched, so a session in the background does not run your command.
+
+**Output.** Each line is cut to 200 visible characters. ANSI colours (16, 256 and truecolour, foreground and background), bold and dim are shown. Every other escape sequence and control character is removed, including cursor movement, window titles, hyperlinks and clipboard writes. `padding` adds that many spaces before each line. When the command fails, times out or prints nothing, the last good lines stay for up to 60 seconds.
+
+Without a native `statusLine`, Flynncode uses one from Claude Code settings: `~/.claude/settings.json` and `settings.local.json`, then the project's `.claude/settings.json` and `settings.local.json`. `OPENCODE_DISABLE_CLAUDE_HOOKS=1` or `OPENCODE_DISABLE_CLAUDE_CODE=1` turns this off.
+
+---
+
 ### Instructions
 
 You can configure the instructions for the model you're using through the `instructions` option.

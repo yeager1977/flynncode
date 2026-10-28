@@ -331,7 +331,7 @@ A hook is executable code. Flynncode reviews it before running it.
 
 **Bypass flag.** The CLI flag `--dangerously-bypass-hook-trust` (environment equivalent `FLYNNCODE_BYPASS_HOOK_TRUST`) treats every hook as trusted for that one invocation, without writing trust state. It exists for automation; the review flow is preferred for interactive use. The flag is process-memory only and is never inherited by the commands, shells, or nested CLI processes a hook or session spawns.
 
-**Kill switch.** `"hooks": { "disableAllHooks": true }` disables every hook from file configuration - including managed (MDM) policy hooks and Claude Code hooks - and cannot be re-enabled by the bypass flag. In-process plugin hooks are unaffected by this switch. Claude Code hooks have their own switches; see [Sources and switches](#sources-and-switches).
+**Kill switch.** `"hooks": { "disableAllHooks": true }` disables every hook from file configuration - including managed (MDM) policy hooks and Claude Code hooks - and cannot be re-enabled by the bypass flag. It also turns off the [status line](/docs/config#status-line) command. In-process plugin hooks are unaffected by this switch. Claude Code hooks have their own switches; see [Sources and switches](#sources-and-switches).
 
 ---
 
