@@ -8,7 +8,7 @@ import { Runner } from "@/effect/runner"
 import { BackgroundJob } from "@/background/job"
 import { Effect, Latch, Layer, Option, Scope, Context } from "effect"
 import { Session } from "./session"
-import { SessionID } from "./schema"
+import { MessageID, SessionID } from "./schema"
 import { SessionStatus } from "./status"
 
 export interface Interface {
@@ -29,6 +29,13 @@ export interface Interface {
   // instance: the session reads busy here until the turn ends, while the
   // turn's runner stays in the instance the turn started in.
   readonly follow: (sessionID: SessionID) => Effect.Effect<void>
+  // Claims the step (its assistant message) as the one whose tool moves the
+  // session's folder: false when another call of that step already holds
+  // it. Tool calls of one step run concurrently; the check and the claim
+  // happen at once. A turn's claim ends when its runner goes idle.
+  readonly claimStep: (sessionID: SessionID, messageID: MessageID) => Effect.Effect<boolean>
+  // Gives a claimed step back, after its folder switch failed.
+  readonly releaseStep: (sessionID: SessionID, messageID: MessageID) => Effect.Effect<void>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionRunState") {}
@@ -44,6 +51,8 @@ const layer = Layer.effect(
     // caller addresses the session by, so a moved session never runs twice.
     const owners = new Map<SessionID, InstanceContext>()
     const guests = new Map<SessionID, InstanceContext>()
+    // By session: the step whose tool switched, or is switching, its folder.
+    const claims = new Map<SessionID, MessageID>()
 
     const state = yield* InstanceState.make(
       Effect.fn("SessionRunState.state")(function* (ctx) {
@@ -85,6 +94,7 @@ const layer = Layer.effect(
       const next = Runner.make<SessionV1.WithParts>(data.scope, {
         onIdle: Effect.gen(function* () {
           data.runners.delete(sessionID)
+          claims.delete(sessionID)
           if (owners.get(sessionID)?.directory === ctx.directory) owners.delete(sessionID)
           const guest = guests.get(sessionID)
           guests.delete(sessionID)
@@ -174,7 +184,19 @@ const layer = Layer.effect(
       yield* status.set(sessionID, { type: "busy" })
     })
 
-    return Service.of({ assertNotBusy, cancel, ensureRunning, startShell, follow })
+    const claimStep = (sessionID: SessionID, messageID: MessageID) =>
+      Effect.sync(() => {
+        if (claims.get(sessionID) === messageID) return false
+        claims.set(sessionID, messageID)
+        return true
+      })
+
+    const releaseStep = (sessionID: SessionID, messageID: MessageID) =>
+      Effect.sync(() => {
+        if (claims.get(sessionID) === messageID) claims.delete(sessionID)
+      })
+
+    return Service.of({ assertNotBusy, cancel, ensureRunning, startShell, follow, claimStep, releaseStep })
   }),
 )
 

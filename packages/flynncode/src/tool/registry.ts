@@ -14,6 +14,7 @@ import { CronDeleteTool } from "./cron-delete"
 import { ScheduleWakeupTool } from "./schedule-wakeup"
 import { EnterWorktreeTool } from "./enter-worktree"
 import { ExitWorktreeTool } from "./exit-worktree"
+import { WorktreeRemoval } from "@/worktree/removal"
 import { SessionFolderSwitch } from "@/session/folder-switch"
 import { SessionStatus } from "@/session/status"
 import { Project } from "@/project/project"
@@ -551,6 +552,7 @@ export const node = LayerNode.make({
     SessionFolderSwitch.node,
     SessionStatus.node,
     Project.node,
+    WorktreeRemoval.node,
   ],
 })
 

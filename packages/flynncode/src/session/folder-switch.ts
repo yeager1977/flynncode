@@ -11,6 +11,7 @@ import { Context, Effect, Layer, Schema } from "effect"
 import { InstanceStore } from "@/project/instance-store"
 import type { SessionID } from "./schema"
 import { Session } from "./session"
+import { SessionRunState } from "./run-state"
 
 export class FolderNotFoundError extends Schema.TaggedErrorClass<FolderNotFoundError>()("SessionFolderNotFoundError", {
   folder: Schema.String,
@@ -25,7 +26,14 @@ export class TooManyFoldersError extends Schema.TaggedErrorClass<TooManyFoldersE
   count: Schema.Number,
 }) {}
 
-export type Error = FolderNotFoundError | ProjectMismatchError | TooManyFoldersError
+// A reload under a running turn would interrupt it, or leave it running on a
+// disposed instance when the turn already moved, so a busy session's folder
+// is not switched with a reload; the caller asks again once the turn is over.
+export class BusyError extends Schema.TaggedErrorClass<BusyError>()("SessionFolderBusyError", {
+  sessionID: Schema.String,
+}) {}
+
+export type Error = FolderNotFoundError | ProjectMismatchError | TooManyFoldersError | BusyError
 
 export type SwitchInput = {
   sessionID: SessionID
@@ -37,7 +45,7 @@ export type SwitchInput = {
   demote?: boolean
   // Reboot the new primary's instance. Without it a loaded instance keeps
   // running and only picks up the new folder union, so a turn running in it
-  // survives the switch.
+  // survives the switch. Refused with BusyError while the session runs a turn.
   reload?: boolean
 }
 
@@ -61,11 +69,16 @@ const layer = Layer.effect(
     const sessionFolders = yield* SessionFolders.Service
     const liveFolders = yield* SessionFolders.Live
     const instances = yield* InstanceStore.Service
+    const runState = yield* SessionRunState.Service
 
     const exists = (dir: string) => fs.exists(dir).pipe(Effect.orElseSucceed(() => false))
 
     const switchPrimary = Effect.fn("SessionFolderSwitch.switchPrimary")(function* (input: SwitchInput) {
       const info = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+      if (input.reload)
+        yield* runState
+          .assertNotBusy(input.sessionID)
+          .pipe(Effect.mapError(() => new BusyError({ sessionID: input.sessionID })))
       const next = yield* fs.resolve(input.directory)
       if (!(yield* exists(next))) return yield* new FolderNotFoundError({ folder: input.directory })
       // Primary switch keeps Git identity: the new primary must resolve to
@@ -114,5 +127,6 @@ export const node = LayerNode.make({
     SessionFolders.node,
     InstanceStore.node,
     InstanceStore.foldersNode,
+    SessionRunState.node,
   ],
 })

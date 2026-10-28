@@ -1,5 +1,4 @@
 import { LayerNode } from "@flynncode/core/effect/layer-node"
-import { InstanceState } from "@/effect/instance-state"
 import { Context, Effect, Exit, Layer, Option } from "effect"
 import type { HooksRunner } from "@/hooks/runner"
 
@@ -12,7 +11,10 @@ import type { HooksRunner } from "@/hooks/runner"
 // SubagentStop block reaches the model as a continuation prompt. Entries
 // dedupe by equality and the per-session list is capped to bound growth;
 // session removal clears the entry. Store absence (tests, minimal graphs)
-// degrades to report-only.
+// degrades to report-only. Entries are keyed by session alone, not by the
+// folder's instance: a session whose primary folder moves (enter_worktree,
+// exit_worktree, a sidebar switch) keeps its context, and so does a session
+// whose instance was unloaded while idle.
 
 export const MAX_ENTRIES = 100
 
@@ -24,32 +26,25 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/HooksContext") {}
 
-const layer = Layer.effect(
-  Service,
-  Effect.gen(function* () {
-    const state = yield* InstanceState.make<Map<string, Array<string>>>(
-      Effect.fn("HooksContext.state")(() => Effect.succeed(new Map<string, Array<string>>())),
-    )
+const layer = Layer.sync(Service)(() => {
+  const data = new Map<string, Array<string>>()
 
-    const append = Effect.fn("HooksContext.append")(function* (sessionID: string, text: string) {
-      const data = yield* InstanceState.get(state)
+  const append = (sessionID: string, text: string) =>
+    Effect.sync(() => {
       const existing = data.get(sessionID) ?? []
       if (existing.includes(text)) return
       data.set(sessionID, [...existing, text].slice(-MAX_ENTRIES))
     })
 
-    const get = Effect.fn("HooksContext.get")(function* (sessionID: string) {
-      return [...((yield* InstanceState.get(state)).get(sessionID) ?? [])]
-    })
+  const get = (sessionID: string) => Effect.sync(() => [...(data.get(sessionID) ?? [])])
 
-    const clear = Effect.fn("HooksContext.clear")(function* (sessionID: string) {
-      const data = yield* InstanceState.get(state)
+  const clear = (sessionID: string) =>
+    Effect.sync(() => {
       data.delete(sessionID)
     })
 
-    return Service.of({ append, get, clear })
-  }),
-)
+  return Service.of({ append, get, clear })
+})
 
 export const node = LayerNode.make({ service: Service, layer: layer, deps: [] })
 

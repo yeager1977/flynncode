@@ -1,7 +1,7 @@
 import { describe, expect } from "bun:test"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { Effect, Exit, Fiber, Layer } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer } from "effect"
 import { Database } from "@flynncode/core/database/database"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { SessionProjector } from "@flynncode/core/session/projector"
@@ -45,9 +45,14 @@ import { Format } from "@/format"
 import { InstanceStore } from "@/project/instance-store"
 import { InstanceBootstrap } from "@/project/bootstrap-service"
 import { HooksRunner } from "@/hooks/runner"
+import { HooksContext } from "@/hooks/context"
+import { SessionFolderSwitch } from "@/session/folder-switch"
+import { testLayerWithHooks } from "../lib/hooks"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { BackgroundShells } from "@/shell/background/service"
 import { Worktree } from "@/worktree"
+import { WorktreeRemoval } from "@/worktree/removal"
+import { GlobalBus } from "@/bus/global"
 import { disposeSessionWorktree } from "@/worktree/dispose-bound"
 import { tmpdirScoped } from "../fixture/fixture"
 import { pollWithTimeout, testEffect } from "../lib/effect"
@@ -105,62 +110,78 @@ const mcp = Layer.succeed(
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
 const llmServer = LayerNode.make({ service: TestLLMServer, layer: TestLLMServer.layer, deps: [] })
 
-const it = testEffect(
-  LayerNode.compile(
-    LayerNode.group([
-      Plugin.node,
-      SessionPrompt.node,
-      Session.node,
-      SessionProjector.node,
-      MessageV2.node,
-      Snapshot.node,
-      SessionSummary.node,
-      LLM.node,
-      Env.node,
-      Agent.node,
-      Command.node,
-      Permission.node,
-      Config.node,
-      Provider.node,
-      LSP.node,
-      MCP.node,
-      FSUtil.node,
-      BackgroundJob.node,
-      BackgroundShells.node,
-      SessionStatus.node,
-      SessionRunState.node,
-      Database.node,
-      EventV2Bridge.node,
-      Question.node,
-      Todo.node,
-      ToolRegistry.node,
-      Skill.node,
-      Git.node,
-      Ripgrep.node,
-      Format.node,
-      Truncate.node,
-      SessionProcessor.node,
-      Image.node,
-      SessionCompaction.node,
-      SessionRevert.node,
-      Instruction.node,
-      SystemPrompt.node,
-      CrossSpawnSpawner.node,
-      RuntimeFlags.node,
-      Worktree.node,
-      InstanceStore.node,
-      llmServer,
-      HooksRunner.node,
-    ]),
+const nodes = [
+  Plugin.node,
+  SessionPrompt.node,
+  Session.node,
+  SessionProjector.node,
+  MessageV2.node,
+  Snapshot.node,
+  SessionSummary.node,
+  LLM.node,
+  Env.node,
+  Agent.node,
+  Command.node,
+  Permission.node,
+  Config.node,
+  Provider.node,
+  LSP.node,
+  MCP.node,
+  FSUtil.node,
+  BackgroundJob.node,
+  BackgroundShells.node,
+  SessionStatus.node,
+  SessionRunState.node,
+  Database.node,
+  EventV2Bridge.node,
+  Question.node,
+  Todo.node,
+  ToolRegistry.node,
+  Skill.node,
+  Git.node,
+  Ripgrep.node,
+  Format.node,
+  Truncate.node,
+  SessionProcessor.node,
+  Image.node,
+  SessionCompaction.node,
+  SessionRevert.node,
+  Instruction.node,
+  SystemPrompt.node,
+  CrossSpawnSpawner.node,
+  RuntimeFlags.node,
+  Worktree.node,
+  InstanceStore.node,
+  llmServer,
+  HooksRunner.node,
+  HooksContext.node,
+  SessionFolderSwitch.node,
+]
+const replacements = [
+  [LSP.node, lsp],
+  [MCP.node, mcp],
+  [RuntimeFlags.node, RuntimeFlags.layer({ experimentalEventSystem: true })],
+  [InstanceStore.bootstrapNode, noopBootstrap],
+] as const
+const it = testEffect(LayerNode.compile(LayerNode.group(nodes), [...replacements]))
+// A SessionStart hook that stores sticky context for the session.
+const withStartHook = testEffect(
+  LayerNode.compile(LayerNode.group(nodes), [
+    ...replacements,
     [
-      [LSP.node, lsp],
-      [MCP.node, mcp],
-      [RuntimeFlags.node, RuntimeFlags.layer({ experimentalEventSystem: true })],
-      [InstanceStore.bootstrapNode, noopBootstrap],
+      HooksRunner.node,
+      testLayerWithHooks([
+        {
+          "session.start": async (_input, output) => {
+            output.additionalContext = "sticky project rules from SessionStart"
+          },
+        },
+      ]),
     ],
-  ),
+  ]),
 )
 const unix = process.platform !== "win32" ? it.live : it.live.skip
+const unixHooked = process.platform !== "win32" ? withStartHook.live : withStartHook.live.skip
 
 const provider = (url: string) => ({
   $schema: "https://opencode.ai/config.json",
@@ -460,6 +481,135 @@ describe("a folder switch continues the turn", () => {
             expect(yield* worktreeCount(dir)).toBe(1)
             // A safe removal keeps the branch.
             expect((yield* git(dir, "rev-parse", "--verify", "--quiet", `refs/heads/${entered.branch}`)).code).toBe(0)
+            // The tool card shows the final state, and the record is dropped.
+            const card = yield* pollWithTimeout(
+              toolParts(chat.id).pipe(
+                Effect.map((parts) => {
+                  const part = parts.find((item) => item.tool === "exit_worktree")
+                  const shown = part?.state.status === "completed" ? part.state.metadata?.worktree : undefined
+                  return shown && typeof shown === "object" && !("pending" in shown) ? shown : undefined
+                }),
+              ),
+              "the tool card never showed the final state",
+              "10 seconds",
+            )
+            expect(card).toMatchObject({ action: "exit", removed: true })
+            const sessions = yield* Session.Service
+            expect((yield* sessions.get(chat.id)).metadata?.[WorktreeRemoval.KEY]).toBeUndefined()
+          }),
+        )
+      }),
+    60_000,
+  )
+
+  unixHooked(
+    "SessionStart context follows the session into the worktree and back",
+    () =>
+      Effect.gen(function* () {
+        const { dir, llm } = yield* repo
+        yield* inFolder(
+          dir,
+          Effect.gen(function* () {
+            const chat = yield* createSession()
+            yield* llm.tool("enter_worktree", { name: "hooked" })
+            yield* llm.tool("exit_worktree", { action: "keep" })
+            yield* llm.text("done")
+
+            yield* go(chat.id)
+
+            const sent = yield* requests(llm)
+            expect(sent).toHaveLength(3)
+            for (const body of sent) expect(body).toContain("sticky project rules from SessionStart")
+          }),
+        )
+      }),
+    60_000,
+  )
+
+  unix(
+    "a reloading primary switch is refused while the turn runs, and the turn goes on",
+    () =>
+      Effect.gen(function* () {
+        const { dir, llm } = yield* repo
+        const prompt = yield* SessionPrompt.Service
+        const folderSwitch = yield* SessionFolderSwitch.Service
+        yield* inFolder(
+          dir,
+          Effect.gen(function* () {
+            const chat = yield* createSession()
+            yield* llm.tool("enter_worktree", { name: "reload" })
+            yield* llm.hang
+
+            const fiber = yield* go(chat.id).pipe(Effect.forkChild)
+            yield* llm.wait(2)
+            const sessions = yield* Session.Service
+            const worktree = yield* pollWithTimeout(
+              sessions.get(chat.id).pipe(Effect.map((info) => (info.directory !== dir ? info.directory : undefined))),
+              "the session never moved",
+            )
+
+            // The sidebar's switch back to the starting folder, which reloads it.
+            const exit = yield* inFolder(
+              worktree,
+              folderSwitch.switchPrimary({ sessionID: chat.id, directory: dir, demote: true, reload: true }),
+            ).pipe(Effect.exit)
+            expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({ _tag: "SessionFolderBusyError" })
+            expect((yield* sessions.get(chat.id)).directory).toBe(worktree)
+            expect(fiber.pollUnsafe()).toBeUndefined()
+            expect(yield* busyIn(worktree, chat.id)).toBe(true)
+
+            yield* inFolder(worktree, prompt.cancel(chat.id))
+            expect(Exit.isSuccess(yield* Fiber.await(fiber))).toBe(true)
+          }),
+        )
+      }),
+    60_000,
+  )
+
+  unix(
+    "a step that switches and ends the turn still moves it to the new folder",
+    () =>
+      Effect.gen(function* () {
+        const { dir, llm } = yield* repo
+        const permission = yield* Permission.Service
+        const idles: string[] = []
+        yield* inFolder(
+          dir,
+          Effect.gen(function* () {
+            const chat = yield* createSession([...allowAll, { permission: "bash", pattern: "*", action: "ask" }])
+            const on = (event: { directory?: string; payload: { type: string; properties?: unknown } }) => {
+              if (event.payload.type !== SessionStatus.Event.Idle.type) return
+              if (JSON.stringify(event.payload.properties).includes(chat.id)) idles.push(event.directory ?? "")
+            }
+            GlobalBus.on("event", on)
+            yield* Effect.addFinalizer(() => Effect.sync(() => GlobalBus.off("event", on)))
+            // The bash prompt is rejected, which ends the turn after this step.
+            yield* llm.push(
+              parallelTools([
+                ["enter_worktree", { name: "stopped" }],
+                ["bash", { command: "ls", description: "List" }],
+              ]),
+            )
+
+            const fiber = yield* go(chat.id).pipe(Effect.forkChild)
+            const asked = yield* pollWithTimeout(
+              permission.list().pipe(Effect.map((list) => list.find((item) => item.permission === "bash"))),
+              "bash never asked",
+            )
+            yield* permission.reply({ requestID: asked.id, reply: "reject" })
+            yield* Fiber.await(fiber)
+
+            const entered = enteredPath(yield* toolParts(chat.id))
+            const sessions = yield* Session.Service
+            expect((yield* sessions.get(chat.id)).directory).toBe(entered.path)
+            // The session goes idle where it now lives.
+            expect(idles).toEqual([entered.path])
+            expect(yield* busyIn(dir, chat.id)).toBe(false)
+            expect(yield* busyIn(entered.path, chat.id)).toBe(false)
+            const state = yield* SessionRunState.Service
+            yield* inFolder(entered.path, state.assertNotBusy(chat.id))
+            // The model was asked once: the turn ended with that step.
+            expect(yield* requests(llm)).toHaveLength(1)
           }),
         )
       }),

@@ -1,14 +1,13 @@
-import { Cause, Effect, Schedule, Schema, Scope } from "effect"
+import { Effect, Schema } from "effect"
 import { FSUtil } from "@flynncode/core/fs-util"
 import { Tool } from "./tool"
 import DESCRIPTION from "./exit-worktree.txt"
 import { InstanceState } from "@/effect/instance-state"
-import { InstanceStore } from "@/project/instance-store"
-import { Project } from "@/project/project"
 import { Session } from "@/session/session"
 import { SessionFolderSwitch } from "@/session/folder-switch"
-import { SessionStatus } from "@/session/status"
+import { SessionRunState } from "@/session/run-state"
 import { Worktree } from "@/worktree"
+import { WorktreeRemoval } from "@/worktree/removal"
 import { enteredFrom, oncePerStep, requireRoot, requireUnswitched, switchError } from "./worktree/guard"
 
 export const Parameters = Schema.Struct({
@@ -34,29 +33,18 @@ export const ExitWorktreeTool = Tool.define<
   | Session.Service
   | Worktree.Service
   | SessionFolderSwitch.Service
-  | InstanceStore.Service
-  | SessionStatus.Service
-  | Project.Service
-  | Scope.Scope
+  | WorktreeRemoval.Service
+  | SessionRunState.Service
+  | FSUtil.Service
 >(
   "exit_worktree",
   Effect.gen(function* () {
     const sessions = yield* Session.Service
     const worktrees = yield* Worktree.Service
     const folderSwitch = yield* SessionFolderSwitch.Service
-    const store = yield* InstanceStore.Service
-    const status = yield* SessionStatus.Service
-    const project = yield* Project.Service
-    const scope = yield* Scope.Scope
-
-    // Whether a session runs in the worktree's instance. Disposing that
-    // instance cancels its runs, which includes this turn when it started
-    // inside the worktree.
-    const inUse = (directory: string) =>
-      Effect.gen(function* () {
-        if (!(yield* store.loadedDirectories()).has(FSUtil.resolve(directory))) return false
-        return (yield* store.provide({ directory }, status.list())).size > 0
-      })
+    const removals = yield* WorktreeRemoval.Service
+    const runState = yield* SessionRunState.Service
+    const fsys = yield* FSUtil.Service
 
     return {
       description: DESCRIPTION,
@@ -72,14 +60,29 @@ export const ExitWorktreeTool = Tool.define<
               ),
             )
           yield* requireUnswitched(session)
-          const worktree =
-            typeof session.metadata?.worktree === "string" ? session.metadata.worktree : session.directory
-          const instance = yield* InstanceState.context
-          const branch = (yield* worktrees.list().pipe(Effect.orElseSucceed(() => []))).find(
-            (entry) => entry.directory === FSUtil.resolve(worktree),
-          )?.branch
-          const label = branch ? `${worktree} (branch ${branch})` : worktree
           const remove = params.action === "remove"
+          const recorded = session.metadata?.worktree
+          // Removal deletes only the worktree the session recorded entering,
+          // never a folder guessed from where the session happens to be.
+          if (remove && typeof recorded !== "string")
+            return yield* Effect.fail(
+              new Error(
+                "Not removed: this session does not record which worktree it entered, so nothing is deleted. Exit with action keep; the worktree can be removed from the Cleanup page.",
+              ),
+            )
+          const worktree = typeof recorded === "string" ? recorded : session.directory
+          const instance = yield* InstanceState.context
+          const listed = (yield* worktrees.list().pipe(Effect.orElseSucceed(() => []))).find(
+            (entry) => entry.directory === FSUtil.resolve(worktree),
+          )
+          if (remove && listed === undefined && (yield* fsys.existsSafe(worktree)))
+            return yield* Effect.fail(
+              new Error(
+                `Not removed: ${worktree} is not a registered worktree of this project, so nothing is deleted. Exit with action keep.`,
+              ),
+            )
+          const branch = listed?.branch
+          const label = branch ? `${worktree} (branch ${branch})` : worktree
           const loss = remove ? yield* worktrees.losses({ directory: worktree }) : []
           if (loss.length > 0 && params.discard_changes !== true)
             return yield* Effect.fail(
@@ -92,7 +95,9 @@ export const ExitWorktreeTool = Tool.define<
             )
           if (loss.length > 0)
             yield* ctx.ask({
-              permission: "worktree",
+              // Its own key, asked in every approval mode (Permission.ALWAYS_ASK):
+              // allowing worktree entry never allows discarding work.
+              permission: "worktree_discard",
               patterns: [`discard ${label}: ${loss.join("; ")}`],
               // A loss is approved one at a time.
               always: [],
@@ -121,33 +126,20 @@ export const ExitWorktreeTool = Tool.define<
             ),
           })
 
-          const forced = loss.length > 0
-          // Worktree removal runs in the instance of the folder the session is back in:
-          // the worktree service never removes the worktree of the instance it runs in.
-          const removal = store.provide(
-            { directory: moved.next },
-            Effect.gen(function* () {
-              yield* store.disposeDirectory(worktree)
-              const removed = forced
-                ? yield* worktrees.remove({ directory: worktree })
-                : yield* worktrees.disposeIfSafe({ directory: worktree })
-              if (removed) yield* project.removeSandbox(instance.project.id, worktree).pipe(Effect.ignore)
-              return removed
-            }),
-          )
-          const busy = remove && (yield* inUse(worktree))
-          if (busy)
-            yield* inUse(worktree).pipe(
-              Effect.repeat({ schedule: Schedule.spaced("1 second"), while: (running) => running }),
-              Effect.andThen(removal),
-              Effect.catchCause((cause) =>
-                Effect.logWarning("deferred worktree removal failed", { worktree, cause: Cause.pretty(cause) }),
-              ),
-              Effect.forkIn(scope),
-            )
-          const outcome =
-            remove && !busy ? yield* removal.pipe(Effect.catch((error) => Effect.succeed(error.message))) : undefined
-          const removed = outcome === true
+          const request = {
+            path: worktree,
+            home: moved.next,
+            main,
+            forced: loss.length > 0,
+            loss,
+          }
+          // During a turn the worktree's instance is busy: the removal waits,
+          // recorded on the session, until nothing runs there.
+          const busy = remove && (yield* removals.inUse(worktree))
+          if (busy) yield* removals.defer(ctx.sessionID, { ...request, messageID: ctx.messageID, callID: ctx.callID })
+          const outcome = remove && !busy ? yield* removals.run(request) : undefined
+          const removed = outcome?.removed === true
+          const forced = request.forced
 
           const back = moved.fallback
             ? `${from} no longer exists, so the session moved to the project's main folder ${moved.next}.`
@@ -160,9 +152,7 @@ export const ExitWorktreeTool = Tool.define<
                 ? forced
                   ? `Discarded the worktree ${label} and its branch.`
                   : `Removed the worktree ${worktree}${branch ? `; branch ${branch} was kept` : ""}.`
-                : typeof outcome === "string"
-                  ? `Removing the worktree failed (${outcome}); ${label} was kept.`
-                  : `The worktree ${label} was kept: it changed since the check or is still open elsewhere.`
+                : `The worktree ${label} was kept: ${outcome?.reason ?? "it changed since the check or is still open elsewhere"}.`
           return {
             title: `Left worktree ${branch ?? worktree}`,
             metadata: {
@@ -176,7 +166,7 @@ export const ExitWorktreeTool = Tool.define<
             },
             output: [back, fate].join("\n"),
           }
-        }).pipe(oncePerStep(ctx), Effect.orDie),
+        }).pipe(oncePerStep(runState, ctx), Effect.orDie),
     }
   }),
 )

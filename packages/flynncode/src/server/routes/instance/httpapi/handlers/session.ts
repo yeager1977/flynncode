@@ -559,6 +559,14 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
                   }),
                 ),
               SessionFolderLimitError: () => Effect.fail(new HttpApiError.BadRequest({})),
+              SessionFolderBusyError: () =>
+                Effect.fail(
+                  new InvalidRequestError({
+                    message:
+                      "The session is running a turn; switch its primary folder once the turn has finished or been stopped",
+                    field: "primary",
+                  }),
+                ),
             }),
           )
         return { primary: switched.next, extras: switched.extras }

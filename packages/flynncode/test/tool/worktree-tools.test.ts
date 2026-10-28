@@ -1,7 +1,7 @@
 import { describe, expect } from "bun:test"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { Cause, Effect, Exit, Layer } from "effect"
+import { Cause, Deferred, Effect, Exit, Layer, Scope } from "effect"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { Database } from "@flynncode/core/database/database"
 import { SessionProjector } from "@flynncode/core/session/projector"
@@ -10,6 +10,7 @@ import { FSUtil } from "@flynncode/core/fs-util"
 import { Ripgrep } from "@flynncode/core/ripgrep"
 import type { PermissionV1 } from "@flynncode/core/v1/permission"
 import { Agent } from "@/agent/agent"
+import { GlobalBus } from "@/bus/global"
 import { BackgroundJob } from "@/background/job"
 import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -20,6 +21,7 @@ import { InstanceBootstrap } from "@/project/bootstrap-service"
 import { InstanceStore } from "@/project/instance-store"
 import { Project } from "@/project/project"
 import { SessionFolderSwitch } from "@/session/folder-switch"
+import { SessionRunState } from "@/session/run-state"
 import { MessageID, type SessionID } from "@/session/schema"
 import { Session } from "@/session/session"
 import { SessionStatus } from "@/session/status"
@@ -29,6 +31,7 @@ import { Tool } from "@/tool/tool"
 import { Truncate } from "@/tool/truncate"
 import { ALREADY_SWITCHED, NOT_ROOT } from "@/tool/worktree/guard"
 import { Worktree } from "@/worktree"
+import { WorktreeRemoval } from "@/worktree/removal"
 import { pollWithTimeout, testEffect } from "../lib/effect"
 import { tmpdirScoped } from "../fixture/fixture"
 
@@ -52,9 +55,11 @@ const it = testEffect(
       Session.node,
       SessionFolderSwitch.node,
       SessionProjector.node,
+      SessionRunState.node,
       SessionStatus.node,
       Truncate.node,
       Worktree.node,
+      WorktreeRemoval.node,
     ]),
     [[InstanceStore.bootstrapNode, noopBootstrap]],
   ),
@@ -125,6 +130,23 @@ const exists = (target: string) =>
       () => true,
       () => false,
     ),
+  )
+
+// Checking out a.dat runs a required smudge filter that fails, so a new
+// worktree's `git reset --hard` fails while the main checkout stays intact.
+const breakCheckout = (dir: string) =>
+  Effect.gen(function* () {
+    yield* Effect.promise(() => Bun.write(path.join(dir, ".gitattributes"), "*.dat filter=boom\n"))
+    yield* Effect.promise(() => Bun.write(path.join(dir, "a.dat"), "data\n"))
+    yield* git(dir, "add", ".gitattributes", "a.dat")
+    yield* git(dir, "commit", "-m", "filtered")
+    yield* git(dir, "config", "filter.boom.smudge", "false")
+    yield* git(dir, "config", "filter.boom.required", "true")
+  })
+
+const worktreeCount = (dir: string) =>
+  git(dir, "worktree", "list", "--porcelain").pipe(
+    Effect.map((result) => result.text.split("\n").filter((line) => line.startsWith("worktree ")).length),
   )
 
 describe("enter_worktree", () => {
@@ -200,6 +222,55 @@ describe("enter_worktree", () => {
           expect(yield* exists(path.join(dir, ".opencode", "worktrees", "denied"))).toBe(false)
           expect((yield* git(dir, "branch", "--list", "opencode/denied")).text).toBe("")
           expect((yield* sessions.get(session.id)).directory).toBe(dir)
+        }),
+      ),
+    30000,
+  )
+
+  it.live(
+    "a failed checkout fails the call, removes the half-made worktree and leaves the session in place",
+    () =>
+      inRepo((dir) =>
+        Effect.gen(function* () {
+          yield* breakCheckout(dir)
+          const sessions = yield* Session.Service
+          const session = yield* sessions.create({ title: "root", metadata: { keep: "me" } })
+          const t = yield* tools
+          const exit = yield* t.enter.execute({ name: "broken" }, ctx(session.id)).pipe(Effect.exit)
+
+          const message = failure(exit)
+          expect(message).toContain("The worktree could not be created")
+          expect(message).toContain("Checkout failed")
+          const after = yield* sessions.get(session.id)
+          expect(after.directory).toBe(dir)
+          expect(after.metadata).toEqual({ keep: "me" })
+          expect(yield* exists(path.join(dir, ".opencode", "worktrees", "broken"))).toBe(false)
+          expect((yield* git(dir, "branch", "--list", "opencode/broken")).text).toBe("")
+          expect(yield* worktreeCount(dir)).toBe(1)
+        }),
+      ),
+    30000,
+  )
+
+  it.live(
+    "a caller that does not await the checkout still gets the worktree and a Failed event",
+    () =>
+      inRepo((dir) =>
+        Effect.gen(function* () {
+          yield* breakCheckout(dir)
+          const worktrees = yield* Worktree.Service
+          const failed = yield* Deferred.make<string>()
+          const on = (event: { payload: { type: string; properties?: unknown } }) => {
+            if (event.payload.type !== Worktree.Event.Failed.type) return
+            Deferred.doneUnsafe(failed, Effect.succeed(JSON.stringify(event.payload.properties)))
+          }
+          GlobalBus.on("event", on)
+          yield* Effect.addFinalizer(() => Effect.sync(() => GlobalBus.off("event", on)))
+
+          const info = yield* worktrees.makeWorktreeInfo({ name: "background" })
+          yield* worktrees.createFromInfo(info)
+          expect(yield* Deferred.await(failed).pipe(Effect.timeout("10 seconds"))).toContain("smudge")
+          expect(yield* worktrees.remove({ directory: info.directory })).toBe(true)
         }),
       ),
     30000,
@@ -371,7 +442,7 @@ describe("exit_worktree", () => {
   )
 
   it.live(
-    "remove with discard_changes asks under worktree with the loss, then removes the worktree and its branch",
+    "remove with discard_changes asks under worktree_discard with the loss, then removes the worktree and its branch",
     () =>
       inRepo((dir) =>
         Effect.gen(function* () {
@@ -385,7 +456,7 @@ describe("exit_worktree", () => {
           )
 
           expect(asks).toHaveLength(1)
-          expect(asks[0].permission).toBe("worktree")
+          expect(asks[0].permission).toBe("worktree_discard")
           expect(asks[0].patterns).toEqual([`discard ${e.directory} (branch ${e.branch}): 1 uncommitted change`])
           expect((yield* sessions.get(e.session.id)).directory).toBe(dir)
           expect(yield* exists(e.directory)).toBe(false)
@@ -404,14 +475,81 @@ describe("exit_worktree", () => {
           const sessions = yield* Session.Service
           const e = yield* entered("keep-on-deny")
           yield* Effect.promise(() => Bun.write(path.join(e.directory, "notes.txt"), "keep\n"))
-          const ruleset: PermissionV1.Ruleset = [{ permission: "worktree", pattern: "*", action: "deny" }]
+          const ruleset: PermissionV1.Ruleset = [{ permission: "worktree_discard", pattern: "*", action: "deny" }]
           const exit = yield* inFolder(
             e.directory,
             e.tools.exit.execute({ action: "remove", discard_changes: true }, ctx(e.session.id, { ruleset })),
           ).pipe(Effect.exit)
-          expect(failure(exit)).toContain("denied worktree")
+          expect(failure(exit)).toContain("denied worktree_discard")
           expect((yield* sessions.get(e.session.id)).directory).toBe(e.directory)
           expect(yield* exists(path.join(e.directory, "notes.txt"))).toBe(true)
+        }),
+      ),
+    30000,
+  )
+
+  it.live(
+    "remove refuses without a recorded worktree and deletes nothing; keep still leaves",
+    () =>
+      inRepo((dir) =>
+        Effect.gen(function* () {
+          const sessions = yield* Session.Service
+          const e = yield* entered("unrecorded")
+          yield* Effect.promise(() => Bun.write(path.join(e.directory, "notes.txt"), "keep me\n"))
+          const current = yield* sessions.get(e.session.id)
+          yield* sessions.setMetadata({
+            sessionID: e.session.id,
+            metadata: Object.fromEntries(Object.entries(current.metadata ?? {}).filter(([key]) => key !== "worktree")),
+          })
+          const asks: Ask[] = []
+          const exit = yield* inFolder(
+            e.directory,
+            e.tools.exit.execute({ action: "remove", discard_changes: true }, ctx(e.session.id, { asks })),
+          ).pipe(Effect.exit)
+
+          expect(failure(exit)).toContain("does not record which worktree it entered")
+          expect(asks).toEqual([])
+          expect((yield* sessions.get(e.session.id)).directory).toBe(e.directory)
+          expect(yield* exists(path.join(e.directory, "notes.txt"))).toBe(true)
+
+          const kept = yield* inFolder(
+            e.directory,
+            e.tools.exit.execute({ action: "keep" }, ctx(e.session.id, { asks })),
+          )
+          expect(kept.metadata.worktree?.removed).toBe(false)
+          expect((yield* sessions.get(e.session.id)).directory).toBe(dir)
+          expect(yield* exists(path.join(e.directory, "notes.txt"))).toBe(true)
+        }),
+      ),
+    30000,
+  )
+
+  it.live(
+    "remove refuses a recorded folder that is not a registered worktree",
+    () =>
+      inRepo((dir) =>
+        Effect.gen(function* () {
+          const sessions = yield* Session.Service
+          const sub = path.join(dir, "sub")
+          yield* Effect.promise(() => fs.mkdir(sub))
+          yield* Effect.promise(() => Bun.write(path.join(sub, "work.txt"), "precious\n"))
+          const session = yield* sessions.create({ title: "root" })
+          yield* sessions.setDirectory({ sessionID: session.id, directory: sub })
+          yield* sessions.setMetadata({
+            sessionID: session.id,
+            metadata: { worktree: sub, enteredFrom: dir, disposable: true },
+          })
+          const t = yield* tools
+          const asks: Ask[] = []
+          const exit = yield* inFolder(
+            sub,
+            t.exit.execute({ action: "remove", discard_changes: true }, ctx(session.id, { asks })),
+          ).pipe(Effect.exit)
+
+          expect(failure(exit)).toContain("is not a registered worktree of this project")
+          expect(asks).toEqual([])
+          expect((yield* sessions.get(session.id)).directory).toBe(sub)
+          expect(yield* exists(path.join(sub, "work.txt"))).toBe(true)
         }),
       ),
     30000,
@@ -471,6 +609,107 @@ describe("exit_worktree", () => {
   )
 })
 
+describe("pending worktree removal", () => {
+  const entered = (name: string) =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "root" })
+      const t = yield* tools
+      const result = yield* t.enter.execute({ name }, ctx(session.id))
+      return { session, tools: t, directory: result.metadata.worktree!.path, branch: result.metadata.worktree!.branch! }
+    })
+
+  const pendingOf = (sessionID: SessionID) =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      return (yield* sessions.get(sessionID)).metadata?.[WorktreeRemoval.KEY]
+    })
+
+  it.live(
+    "a deferred discard keeps the worktree when more would be lost than was approved",
+    () =>
+      inRepo((dir) =>
+        Effect.gen(function* () {
+          const status = yield* SessionStatus.Service
+          const e = yield* entered("grown")
+          yield* Effect.promise(() => Bun.write(path.join(e.directory, "notes.txt"), "approved loss\n"))
+          yield* inFolder(e.directory, status.set(e.session.id, { type: "busy" }))
+          const asks: Ask[] = []
+          const result = yield* inFolder(
+            e.directory,
+            e.tools.exit.execute({ action: "remove", discard_changes: true }, ctx(e.session.id, { asks })),
+          )
+          expect(asks.map((ask) => ask.patterns)).toEqual([
+            [`discard ${e.directory} (branch ${e.branch}): 1 uncommitted change`],
+          ])
+          expect(result.metadata.worktree).toMatchObject({ removed: false, pending: true })
+          expect(yield* pendingOf(e.session.id)).toMatchObject({
+            [e.directory]: { path: e.directory, forced: true, loss: ["1 uncommitted change"] },
+          })
+
+          // New work appears in the worktree after the user approved the loss.
+          yield* Effect.promise(() => Bun.write(path.join(e.directory, "later.txt"), "not approved\n"))
+          yield* inFolder(e.directory, status.set(e.session.id, { type: "idle" }))
+          yield* pollWithTimeout(
+            pendingOf(e.session.id).pipe(Effect.map((pending) => (pending === undefined ? true : undefined))),
+            "the pending removal never settled",
+            "10 seconds",
+          )
+          expect(yield* exists(path.join(e.directory, "later.txt"))).toBe(true)
+          expect((yield* git(dir, "branch", "--list", e.branch)).text).toContain(e.branch)
+        }),
+      ),
+    30000,
+  )
+
+  it.live(
+    "a removal recorded by an earlier process is completed when the service starts",
+    () =>
+      inRepo((dir) =>
+        Effect.gen(function* () {
+          const sessions = yield* Session.Service
+          const store = yield* InstanceStore.Service
+          const e = yield* entered("restart")
+          yield* inFolder(e.directory, e.tools.exit.execute({ action: "keep" }, ctx(e.session.id)))
+          yield* store.disposeDirectory(e.directory)
+          const latest = yield* sessions.get(e.session.id)
+          yield* sessions.setMetadata({
+            sessionID: e.session.id,
+            metadata: {
+              ...latest.metadata,
+              [WorktreeRemoval.KEY]: {
+                [e.directory]: {
+                  path: e.directory,
+                  home: dir,
+                  main: dir,
+                  forced: false,
+                  loss: [],
+                  messageID: MessageID.ascending(),
+                },
+              },
+            },
+          })
+
+          // A fresh service, as after a restart, finds the record and finishes the removal.
+          yield* Layer.buildWithMemoMap(WorktreeRemoval.layer, yield* Layer.makeMemoMap, yield* Scope.Scope)
+          yield* pollWithTimeout(
+            exists(e.directory).pipe(Effect.map((found) => (found ? undefined : true))),
+            "the recorded removal never ran",
+            "10 seconds",
+          )
+          yield* pollWithTimeout(
+            pendingOf(e.session.id).pipe(Effect.map((pending) => (pending === undefined ? true : undefined))),
+            "the record was never dropped",
+            "10 seconds",
+          )
+          // A safe removal keeps the branch.
+          expect((yield* git(dir, "branch", "--list", e.branch)).text).toContain(e.branch)
+        }),
+      ),
+    30000,
+  )
+})
+
 describe("worktree permission", () => {
   it.live(
     "build asks before worktree actions by default",
@@ -480,6 +719,8 @@ describe("worktree permission", () => {
           const agents = yield* Agent.Service
           const build = yield* agents.get("build")
           expect(Permission.evaluate("worktree", "opencode/x", build.permission).action).toBe("ask")
+          expect(Permission.evaluate("worktree_discard", "discard x", build.permission).action).toBe("ask")
+          expect(Permission.ALWAYS_ASK).toContain("worktree_discard")
         }),
       ),
     30000,

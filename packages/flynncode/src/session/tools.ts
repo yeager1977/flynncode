@@ -236,7 +236,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     // Rule-allowed, "always"-approved and denied calls never reach the
     // prompt, so the reviewer only vets requests that would actually ask.
     const asks =
-      gated.force || (yield* permission.wouldAsk({ permission: req.permission, patterns: req.patterns, ruleset }))
+      gated.force ||
+      (yield* permission.wouldAsk({
+        permission: req.permission,
+        patterns: req.patterns,
+        ruleset,
+        sessionID: input.session.id,
+      }))
     const staticApproval = gated.force
       ? "defer"
       : Reviewer.review({

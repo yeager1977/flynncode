@@ -164,7 +164,9 @@ export interface Interface {
   // Picks a free name, branch and folder; creates nothing.
   readonly makeWorktreeInfo: (options?: { name?: string; detached?: boolean }) => Effect.Effect<Info, Error>
   // The checkout and instance boot run in the background unless `awaitCheckout`
-  // is set, for a caller that works in the folder right away.
+  // is set, for a caller that works in the folder right away: it then fails
+  // with CreateFailedError when the checkout fails, leaving the half-made
+  // worktree for the caller to remove.
   readonly createFromInfo: (
     info: Info,
     startCommand?: string,
@@ -331,8 +333,8 @@ const layer: Layer.Layer<
 
     const boot = Effect.fnUntraced(function* (
       info: Info,
+      checkedOut: Deferred.Deferred<void, CreateFailedError>,
       startCommand?: string,
-      checkedOut: Effect.Effect<unknown> = Effect.void,
     ) {
       const ctx = yield* InstanceState.context
       const workspaceID = yield* InstanceState.workspaceID
@@ -340,9 +342,9 @@ const layer: Layer.Layer<
       const extra = startCommand?.trim()
 
       const populated = yield* git(["reset", "--hard"], { cwd: info.directory })
-      yield* checkedOut
       if (populated.code !== 0) {
         const message = populated.stderr || populated.text || "Failed to populate worktree"
+        yield* Deferred.fail(checkedOut, new CreateFailedError({ message: `Checkout failed: ${message}` }))
         yield* Effect.logError("worktree checkout failed", { directory: info.directory, message })
         GlobalBus.emit("event", {
           directory: info.directory,
@@ -352,6 +354,7 @@ const layer: Layer.Layer<
         })
         return
       }
+      yield* Deferred.succeed(checkedOut, undefined)
 
       const booted = yield* store.load({ directory: info.directory }).pipe(
         Effect.as(true),
@@ -393,11 +396,13 @@ const layer: Layer.Layer<
       yield* carryIncludedFiles(info.directory).pipe(
         Effect.catchCause((cause) => Effect.logWarning("worktree include carry failed", { cause })),
       )
-      const checkedOut = yield* Deferred.make<void>()
-      const done = Deferred.succeed(checkedOut, undefined)
-      yield* boot(info, startCommand, done).pipe(
+      // Settled once the checkout is done: failed when it failed. Only an
+      // awaiting caller reads it; the others learn of a failed checkout
+      // through the Failed event, as before.
+      const checkedOut = yield* Deferred.make<void, CreateFailedError>()
+      yield* boot(info, checkedOut, startCommand).pipe(
         Effect.catchCause((cause) => Effect.logError("worktree bootstrap failed", { cause })),
-        Effect.ensuring(done),
+        Effect.ensuring(Deferred.succeed(checkedOut, undefined)),
         Effect.forkIn(scope),
       )
       if (options?.awaitCheckout) yield* Deferred.await(checkedOut)

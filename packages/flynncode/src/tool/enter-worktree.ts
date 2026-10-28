@@ -1,8 +1,10 @@
 import { Effect, Schema } from "effect"
+import { FSUtil } from "@flynncode/core/fs-util"
 import { Tool } from "./tool"
 import DESCRIPTION from "./enter-worktree.txt"
 import { Session } from "@/session/session"
 import { SessionFolderSwitch } from "@/session/folder-switch"
+import { SessionRunState } from "@/session/run-state"
 import { Worktree } from "@/worktree"
 import { enteredFrom, oncePerStep, requireRoot, requireUnswitched, switchError } from "./worktree/guard"
 
@@ -17,13 +19,14 @@ type Metadata = { worktree?: { action: "enter"; branch?: string; path: string } 
 export const EnterWorktreeTool = Tool.define<
   typeof Parameters,
   Metadata,
-  Session.Service | Worktree.Service | SessionFolderSwitch.Service
+  Session.Service | Worktree.Service | SessionFolderSwitch.Service | SessionRunState.Service
 >(
   "enter_worktree",
   Effect.gen(function* () {
     const sessions = yield* Session.Service
     const worktrees = yield* Worktree.Service
     const folderSwitch = yield* SessionFolderSwitch.Service
+    const runState = yield* SessionRunState.Service
 
     return {
       description: DESCRIPTION,
@@ -50,9 +53,21 @@ export const EnterWorktreeTool = Tool.define<
             metadata: { action: "enter", branch: info.branch, path: info.directory },
           })
           // The next step works in the folder, so its checkout must be in place.
-          yield* worktrees
-            .createFromInfo(info, undefined, { awaitCheckout: true })
-            .pipe(Effect.catch((error) => Effect.fail(worktreeError(error))))
+          // A failed checkout leaves an empty worktree, whose index lists every
+          // tracked file as deleted: it goes again and the session stays put.
+          yield* worktrees.createFromInfo(info, undefined, { awaitCheckout: true }).pipe(
+            Effect.catch((error) =>
+              worktrees.list().pipe(
+                Effect.flatMap((entries) =>
+                  entries.some((entry) => entry.directory === FSUtil.resolve(info.directory))
+                    ? worktrees.remove({ directory: info.directory })
+                    : Effect.void,
+                ),
+                Effect.ignore,
+                Effect.andThen(Effect.fail(worktreeError(error))),
+              ),
+            ),
+          )
           const switched = yield* folderSwitch
             .switchPrimary({ sessionID: ctx.sessionID, directory: info.directory })
             .pipe(
@@ -91,7 +106,7 @@ export const EnterWorktreeTool = Tool.define<
               "Use exit_worktree to go back, keeping or removing the worktree.",
             ].join("\n"),
           }
-        }).pipe(oncePerStep(ctx), Effect.orDie),
+        }).pipe(oncePerStep(runState, ctx), Effect.orDie),
     }
   }),
 )

@@ -9,6 +9,7 @@ import os from "os"
 import { PermissionV1 } from "@flynncode/core/v1/permission"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { HooksRunner } from "@/hooks/runner"
+import type { SessionID } from "@/session/schema"
 
 export const Event = PermissionV1.Event
 
@@ -32,6 +33,8 @@ export type WouldAskInput = {
   permission: string
   patterns: readonly string[]
   ruleset: PermissionV1.Ruleset
+  // Counts the approvals carried here for this session too.
+  sessionID?: SessionID
 }
 
 export interface Interface {
@@ -41,9 +44,10 @@ export interface Interface {
   readonly wouldAsk: (input: WouldAskInput) => Effect.Effect<boolean>
   readonly reply: (input: PermissionV1.ReplyInput) => Effect.Effect<void, PermissionV1.NotFoundError>
   readonly list: () => Effect.Effect<ReadonlyArray<PermissionV1.Request>>
-  // Copies the "always" approvals given in another instance into this one,
-  // for a session whose turn moved here: approvals stay with the session.
-  readonly carry: (from: InstanceContext) => Effect.Effect<void>
+  // Brings the "always" approvals this session gave, or carried, in another
+  // instance into this one, for a session whose turn moved here. They apply
+  // to this session only: approvals other sessions gave never cross folders.
+  readonly carry: (from: InstanceContext, sessionID: SessionID) => Effect.Effect<void>
 }
 
 interface PendingEntry {
@@ -52,9 +56,16 @@ interface PendingEntry {
   forced: boolean
 }
 
+// An "always" approval, with the session that gave it.
+type Approval = PermissionV1.Rule & { sessionID: SessionID }
+
 interface State {
   pending: Map<PermissionV1.ID, PendingEntry>
-  approved: PermissionV1.Rule[]
+  // Shared by every session in the folder, as before folders could change.
+  approved: Approval[]
+  // Approvals a session brought from the folder it moved here from: they
+  // answer that session's requests only.
+  carried: Map<SessionID, PermissionV1.Rule[]>
 }
 
 export function evaluate(permission: string, pattern: string, ...rulesets: PermissionV1.Ruleset[]): PermissionV1.Rule {
@@ -88,8 +99,9 @@ export function wouldAsk(
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Permission") {}
 
-// computer_use and archive always reach the user, whatever the approval mode.
-export const ALWAYS_ASK = ["computer_use", "archive"]
+// These always reach the user, whatever the approval mode: computer_use,
+// archive, and discarding a worktree's unsaved work (exit_worktree).
+export const ALWAYS_ASK = ["computer_use", "archive", "worktree_discard"]
 
 const layer = Layer.effect(
   Service,
@@ -99,9 +111,10 @@ const layer = Layer.effect(
     const state = yield* InstanceState.make<State>(
       Effect.fn("Permission.state")(function* (ctx) {
         void ctx
-        const state = {
+        const state: State = {
           pending: new Map<PermissionV1.ID, PendingEntry>(),
           approved: [],
+          carried: new Map(),
         }
 
         yield* Effect.addFinalizer(() =>
@@ -118,8 +131,10 @@ const layer = Layer.effect(
     )
 
     const ask = Effect.fn("Permission.ask")(function* (input: AskInput) {
-      const { approved, pending } = yield* InstanceState.get(state)
+      const data = yield* InstanceState.get(state)
+      const pending = data.pending
       const { ruleset, approval: approvalRaw, hook, staticApproval, force, ...request } = input
+      const approved = approvals(data, request.sessionID)
       const approval = approvalRaw ?? "manual"
       let needsAsk = force === true
 
@@ -159,7 +174,6 @@ const layer = Layer.effect(
       }
 
       const AUTO_EDIT_PERMISSIONS = ["edit", "read", "glob", "grep", "list"]
-      // computer_use and archive always reach the user, whatever the approval mode.
       if (!ALWAYS_ASK.includes(request.permission)) {
         if (staticApproval === "allow" && !force) return
         // approval "auto" approves only on an explicit LLM auto-reviewer allow
@@ -233,12 +247,14 @@ const layer = Layer.effect(
     })
 
     const wouldAskFor = Effect.fn("Permission.wouldAsk")(function* (input: WouldAskInput) {
-      const { approved } = yield* InstanceState.get(state)
-      return wouldAsk(input.permission, input.patterns, input.ruleset, approved)
+      const data = yield* InstanceState.get(state)
+      return wouldAsk(input.permission, input.patterns, input.ruleset, approvals(data, input.sessionID))
     })
 
     const reply = Effect.fn("Permission.reply")(function* (input: PermissionV1.ReplyInput) {
-      const { approved, pending } = yield* InstanceState.get(state)
+      const data = yield* InstanceState.get(state)
+      const approved = data.approved
+      const pending = data.pending
       const existing = pending.get(input.requestID)
       if (!existing) return yield* new PermissionV1.NotFoundError({ requestID: input.requestID })
 
@@ -278,13 +294,15 @@ const layer = Layer.effect(
           permission: existing.info.permission,
           pattern,
           action: "allow",
+          sessionID: existing.info.sessionID,
         })
       }
 
       for (const [id, item] of pending.entries()) {
         if (item.info.sessionID !== existing.info.sessionID || item.forced) continue
         const ok = item.info.patterns.every(
-          (pattern) => evaluate(item.info.permission, pattern, approved).action === "allow",
+          (pattern) =>
+            evaluate(item.info.permission, pattern, approvals(data, item.info.sessionID)).action === "allow",
         )
         if (!ok) continue
         pending.delete(id)
@@ -302,20 +320,34 @@ const layer = Layer.effect(
       return Array.from(pending.values(), (item) => item.info)
     })
 
-    const carry = Effect.fn("Permission.carry")(function* (from: InstanceContext) {
+    const carry = Effect.fn("Permission.carry")(function* (from: InstanceContext, sessionID: SessionID) {
       const source = yield* InstanceState.get(state).pipe(Effect.provideService(InstanceRef, from))
       const target = yield* InstanceState.get(state)
       if (source === target) return
+      const own = [
+        ...source.approved
+          .filter((rule) => rule.sessionID === sessionID)
+          .map((rule) => ({ permission: rule.permission, pattern: rule.pattern, action: rule.action })),
+        ...(source.carried.get(sessionID) ?? []),
+      ]
+      source.carried.delete(sessionID)
+      const kept = target.carried.get(sessionID) ?? []
       const known = (rule: PermissionV1.Rule) =>
-        target.approved.some(
+        kept.some(
           (item) => item.permission === rule.permission && item.pattern === rule.pattern && item.action === rule.action,
         )
-      target.approved.push(...source.approved.filter((rule) => !known(rule)))
+      target.carried.set(sessionID, [...kept, ...own.filter((rule) => !known(rule))])
     })
 
     return Service.of({ ask, wouldAsk: wouldAskFor, reply, list, carry })
   }),
 )
+
+// The "always" approvals that answer a session's request in a folder: those
+// given there, plus those the session carried in.
+function approvals(state: State, sessionID: SessionID | undefined): PermissionV1.Rule[] {
+  return [...state.approved, ...(sessionID === undefined ? [] : (state.carried.get(sessionID) ?? []))]
+}
 
 function expand(pattern: string): string {
   if (pattern.startsWith("~/")) return os.homedir() + pattern.slice(1)

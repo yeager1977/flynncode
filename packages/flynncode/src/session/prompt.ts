@@ -1295,7 +1295,8 @@ const layer = Layer.effect(
     // carries a drain into the folder a step moved the session to.
     const runLoopOnce: (
       sessionID: SessionID,
-      moved?: { step: number; note: string },
+      // A step moved the session here; `stop` when that step also ended the turn.
+      moved?: { step: number; note: string; stop: boolean },
     ) => Effect.Effect<{
       result: SessionV1.WithParts
       user: SessionV1.User
@@ -1327,6 +1328,9 @@ const layer = Layer.effect(
           drainedMessages = lastUser
           drainedHistory = msgs
           if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
+          // The turn ended in the step that moved it: no further request, so
+          // the note goes unsent; the tool's output already names the folder.
+          if (moved?.stop) break
 
           const lastAssistantMsg = msgs.findLast(
             (msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id,
@@ -1666,12 +1670,15 @@ const layer = Layer.effect(
             Effect.ensuring(instruction.clear(handle.message.id)),
             Effect.onInterrupt(() => finalizeInterruptedAssistant),
           )
-          if (outcome === "break") break
           // A tool moved the session's primary folder (enter_worktree,
           // exit_worktree): the turn goes on in the new folder's instance,
-          // which reloads history like any step.
+          // which reloads history like any step. A step that ends the turn
+          // still moves it, so the Stop hook, the idle status and the next
+          // turn's state are in the folder the session is now in.
           const latest = yield* sessions.get(sessionID).pipe(Effect.orDie)
-          if (latest.directory !== session.directory) return yield* moveTurn(sessionID, latest.directory, step)
+          if (latest.directory !== session.directory)
+            return yield* moveTurn(sessionID, latest.directory, step, outcome === "break")
+          if (outcome === "break") break
           continue
         }
 
@@ -1692,8 +1699,13 @@ const layer = Layer.effect(
 
     // Continues a drain in the folder a step moved the session to. The
     // runner stays where the turn started; the session reads busy here, and
-    // the approvals given where the step ran come along.
-    const moveTurn = Effect.fnUntraced(function* (sessionID: SessionID, directory: string, step: number) {
+    // the approvals this session gave come along, for it alone.
+    const moveTurn = Effect.fnUntraced(function* (
+      sessionID: SessionID,
+      directory: string,
+      step: number,
+      stop: boolean,
+    ) {
       const from = yield* InstanceState.context
       const branch = yield* git.branch(directory)
       const note = `Working directory is now ${directory}${branch ? ` (branch ${branch})` : ""}.`
@@ -1701,8 +1713,8 @@ const layer = Layer.effect(
         { directory },
         Effect.gen(function* () {
           yield* state.follow(sessionID)
-          yield* permission.carry(from)
-          return yield* runLoopOnce(sessionID, { step, note })
+          yield* permission.carry(from, sessionID)
+          return yield* runLoopOnce(sessionID, { step, note, stop })
         }),
       )
     })
@@ -1835,7 +1847,8 @@ const layer = Layer.effect(
             if (yield* hasNewerUser(sessionID, once.user)) continue
             const subagent = Boolean(once.session.parentID)
             if (!endedOnItsOwn(once.result, once.steps)) return once.result
-            if (!(yield* hooksRunner.hasStop({ subagent }))) return once.result
+            // The hook is looked up where it runs: the folder the turn ended in.
+            if (!(yield* there(hooksRunner.hasStop({ subagent })))) return once.result
             const refused = yield* there(runStopHook({ user: once.user, history: once.history, subagent }))
             // Input admitted while the hook ran takes over, with its own agent,
             // model, format and system, and a refused stop is dropped.

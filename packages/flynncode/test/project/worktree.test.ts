@@ -131,17 +131,23 @@ describe("Worktree", () => {
           const test = yield* TestInstance
           const fs = yield* FSUtil.Service
           const svc = yield* Worktree.Service
-          const info = yield* svc.makeWorktreeInfo()
-          const ready = yield* waitReady().pipe(Effect.forkScoped)
-          yield* svc.createFromInfo(info, undefined, { awaitCheckout: true })
+          // Two creations: the entry is written once, not stacked.
+          const first = yield* svc.makeWorktreeInfo()
+          const firstReady = yield* waitReady().pipe(Effect.forkScoped)
+          yield* svc.createFromInfo(first, undefined, { awaitCheckout: true })
+          yield* Fiber.join(firstReady)
+          const second = yield* svc.makeWorktreeInfo()
+          const secondReady = yield* waitReady().pipe(Effect.forkScoped)
+          yield* svc.createFromInfo(second, undefined, { awaitCheckout: true })
+          yield* Fiber.join(secondReady)
 
           expect(yield* fs.existsSafe(path.join(test.directory, ".gitignore"))).toBe(false)
           const exclude = (yield* fs.readFileStringSafe(path.join(test.directory, ".git", "info", "exclude"))) ?? ""
           expect(exclude.split("\n").filter((line) => line === ".opencode/worktrees/")).toHaveLength(1)
           expect(yield* git(test.directory, ["check-ignore", ".opencode/worktrees/x"])).toContain(".opencode/worktrees/x")
 
-          yield* Fiber.join(ready)
-          yield* removeCreatedWorktree(info.directory)
+          yield* removeCreatedWorktree(first.directory)
+          yield* removeCreatedWorktree(second.directory)
         }),
       { git: true },
       30000,

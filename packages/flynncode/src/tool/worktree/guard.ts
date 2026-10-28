@@ -4,6 +4,7 @@ import { InstanceState } from "@/effect/instance-state"
 import type { MessageID, SessionID } from "@/session/schema"
 import type { Session } from "@/session/session"
 import type { SessionFolderSwitch } from "@/session/folder-switch"
+import type { SessionRunState } from "@/session/run-state"
 
 export const NOT_ROOT = "worktree tools are only available in the main session, not in sub-agents"
 export const ALREADY_SWITCHED =
@@ -24,26 +25,15 @@ export const requireUnswitched = Effect.fnUntraced(function* (info: Session.Info
     return yield* Effect.fail(new Error(ALREADY_SWITCHED))
 })
 
-// The step (assistant message) whose worktree tool switches, or switched, each
-// session's folder. Tool calls of one step run concurrently, so the claim is
-// taken before anything else can yield.
-const claims = new Map<SessionID, MessageID>()
-
-// Runs a folder switch as the only one of its step; a failed switch gives the
-// step back.
+// Runs a folder switch as the only one of its step: the step is claimed in
+// the session's run state before anything else can yield, and a failed
+// switch gives it back.
 export const oncePerStep =
-  (ctx: { sessionID: SessionID; messageID: MessageID }) =>
+  (runState: SessionRunState.Interface, ctx: { sessionID: SessionID; messageID: MessageID }) =>
   <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E | Error, R> =>
-    Effect.suspend((): Effect.Effect<A, E | Error, R> => {
-      if (claims.get(ctx.sessionID) === ctx.messageID) return Effect.fail(new Error(ALREADY_SWITCHED))
-      claims.set(ctx.sessionID, ctx.messageID)
-      return effect.pipe(
-        Effect.onError(() =>
-          Effect.sync(() => {
-            if (claims.get(ctx.sessionID) === ctx.messageID) claims.delete(ctx.sessionID)
-          }),
-        ),
-      )
+    Effect.gen(function* () {
+      if (!(yield* runState.claimStep(ctx.sessionID, ctx.messageID))) return yield* Effect.fail(new Error(ALREADY_SWITCHED))
+      return yield* effect.pipe(Effect.onError(() => runState.releaseStep(ctx.sessionID, ctx.messageID)))
     })
 
 // The folder an enter_worktree call left, set only while the session is in that worktree.
@@ -55,5 +45,6 @@ export function enteredFrom(info: Session.Info) {
 export function switchError(error: SessionFolderSwitch.Error) {
   if (error._tag === "SessionFolderNotFoundError") return `${error.folder} does not exist`
   if (error._tag === "SessionFolderProjectMismatchError") return `${error.folder} belongs to another project`
+  if (error._tag === "SessionFolderBusyError") return "the session is running a turn"
   return `the session would have ${error.count} extra folders, more than allowed`
 }

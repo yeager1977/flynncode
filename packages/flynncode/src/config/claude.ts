@@ -95,6 +95,7 @@ export const BUILTIN_PERMISSIONS = new Set([
   "todoread",
   "verify_page",
   "workflow_tool_approval",
+  "worktree_discard",
   "write",
 ])
 

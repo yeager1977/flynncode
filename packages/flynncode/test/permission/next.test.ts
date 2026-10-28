@@ -9,6 +9,7 @@ import { HooksRunner } from "../../src/hooks/runner"
 import { testLayerWithHooks } from "../lib/hooks"
 import { InstanceBootstrap } from "../../src/project/bootstrap"
 import { InstanceStore } from "../../src/project/instance-store"
+import { InstanceState } from "../../src/effect/instance-state"
 import { TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { MessageID, SessionID } from "../../src/session/schema"
@@ -1333,3 +1334,55 @@ test("withTurn - turn allow cannot override a deny", () => {
   const rm = { permission: "bash", patterns: ["rm -rf build"] }
   expect(Permission.evaluate("bash", "rm -rf build", Permission.withTurn(standing, turn, rm)).action).toBe("deny")
 })
+
+it.live("a moved session carries only its own always approvals, which answer it alone", () =>
+  Effect.gen(function* () {
+    const one = yield* tmpdirScoped({ git: true })
+    const two = yield* tmpdirScoped({ git: true })
+    const store = yield* InstanceStore.Service
+    const permission = yield* Permission.Service
+    const mover = SessionID.make("session_mover")
+    const other = SessionID.make("session_other")
+    // Answers a bash prompt for `command` with "always" in `directory`.
+    const approve = (directory: string, sessionID: SessionID, command: string) =>
+      store.provide(
+        { directory },
+        Effect.gen(function* () {
+          const fiber = yield* ask({
+            sessionID,
+            permission: "bash",
+            patterns: [command],
+            metadata: {},
+            always: [command],
+            ruleset: [],
+          }).pipe(Effect.forkScoped)
+          const pending = yield* waitForPending(1)
+          yield* reply({ requestID: pending[0].id, reply: "always" })
+          yield* Fiber.join(fiber)
+        }),
+      )
+    const asks = (directory: string, sessionID: SessionID, command: string) =>
+      store.provide(
+        { directory },
+        permission.wouldAsk({ permission: "bash", patterns: [command], ruleset: [], sessionID }),
+      )
+    const context = (directory: string) => store.provide({ directory }, InstanceState.context)
+
+    yield* approve(one, mover, "make build")
+    yield* approve(one, other, "rm -rf dist")
+    yield* store.provide({ directory: two }, permission.carry(yield* context(one), mover))
+    expect(yield* asks(two, mover, "make build")).toBe(false)
+    // Another session's approval stays in the folder it was given in.
+    expect(yield* asks(two, mover, "rm -rf dist")).toBe(true)
+    // The carried approval answers the session that carried it, nobody else.
+    expect(yield* asks(two, other, "make build")).toBe(true)
+
+    // And back: an approval given in the new folder comes back for this session only.
+    yield* approve(two, mover, "npm test")
+    yield* store.provide({ directory: one }, permission.carry(yield* context(two), mover))
+    expect(yield* asks(one, mover, "npm test")).toBe(false)
+    expect(yield* asks(one, other, "npm test")).toBe(true)
+    // Approvals given in the starting folder still apply there as before.
+    expect(yield* asks(one, other, "make build")).toBe(false)
+  }),
+)

@@ -9,6 +9,7 @@ import { InstanceStore } from "../../src/project/instance-store"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { AppNodeBuilder } from "@flynncode/core/effect/app-node-builder"
 import { SessionID } from "../../src/session/schema"
+import { ConfigClaude } from "../../src/config/claude"
 import { pollWithTimeout, testEffect } from "../lib/effect"
 
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
@@ -257,5 +258,42 @@ it.instance("an always reply to a forced prompt approves only that call", () =>
     expect(next.request.patterns).toEqual(["src/a.ts"])
     yield* Fiber.interrupt(waiting.fiber)
     yield* Fiber.interrupt(next.fiber)
+  }),
+)
+
+it.instance("a worktree discard prompts in every approval mode and under a Claude worktree grant", () =>
+  Effect.gen(function* () {
+    const permission = yield* Permission.Service
+    const request = { permission: "worktree_discard", patterns: ["discard /repo/wt (branch b): 1 uncommitted change"] }
+    // The build agent's defaults, plus a Claude command's `allowed-tools: EnterWorktree, ExitWorktree`.
+    const ruleset = Permission.withTurn(
+      Permission.fromConfig({ "*": "allow", worktree: "ask", worktree_discard: "ask" }),
+      ConfigClaude.allowedToolRules(["EnterWorktree", "ExitWorktree"]).rules,
+      request,
+    )
+    expect(Permission.evaluate("worktree", "opencode/x", ruleset).action).toBe("allow")
+    expect(Permission.evaluate(request.permission, request.patterns[0], ruleset).action).toBe("ask")
+    const modes: Partial<Permission.AskInput>[] = [
+      { approval: "auto", reviewer: "allow" },
+      { staticApproval: "allow" },
+      { approval: "accept-edits" },
+    ]
+    for (const mode of modes) {
+      const fiber = yield* permission
+        .ask({
+          sessionID: SessionID.make("session_test"),
+          ...request,
+          metadata: {},
+          always: [],
+          ruleset,
+          ...mode,
+        })
+        .pipe(Effect.forkScoped)
+      yield* pollWithTimeout(
+        permission.list().pipe(Effect.map((pending) => (pending.length === 1 ? true : undefined))),
+        `a worktree discard never prompted under ${JSON.stringify(mode)}`,
+      )
+      yield* Fiber.interrupt(fiber)
+    }
   }),
 )
