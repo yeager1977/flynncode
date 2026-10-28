@@ -169,9 +169,28 @@ describe("machine sync routes", () => {
     }),
   )
 
+  it.live("keeps the tree root of a peer's retention delete on the tombstone it records", () =>
+    Effect.gen(function* () {
+      yield* seed("ses_member")
+      expect(
+        (yield* request(
+          "/flynncode-sync/delete/ses_member",
+          post({ timeDeleted: 5, root: "ses_tree", expected: seeded }),
+        )).status,
+      ).toBe(200)
+      const manifest = (yield* (yield* request(MachineSyncPaths.manifest)).json) as {
+        tombstones: Array<{ id: string; timeDeleted: number; root?: string }>
+      }
+      expect(manifest.tombstones).toContainEqual({ id: "ses_member", timeDeleted: 5, root: "ses_tree" })
+    }),
+  )
+
   it.live("rejects delete and archive requests with a bad id or timestamp", () =>
     Effect.gen(function* () {
       yield* seed("ses_badreq")
+      expect(
+        (yield* request("/flynncode-sync/delete/ses_badreq", post({ timeDeleted: 1, root: "not-a-session" }))).status,
+      ).toBe(400)
       expect((yield* request("/flynncode-sync/delete/not-a-session", post({ timeDeleted: 1 }))).status).toBe(400)
       expect((yield* request("/flynncode-sync/archive/not-a-session", post({ timeArchived: 1 }))).status).toBe(400)
       expect((yield* request("/flynncode-sync/delete/ses_badreq", post({}))).status).toBe(400)

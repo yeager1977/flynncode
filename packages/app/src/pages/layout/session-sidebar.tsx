@@ -15,7 +15,7 @@ import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useSettingsDialog } from "@/components/settings-dialog"
 import { ProviderUsageMeters } from "@/components/provider-usage-meters"
-import { keepMenu, retentionHint, showPin } from "@/utils/session-retention"
+import { keepMenu, pinLabel, retentionHint } from "@/utils/session-retention"
 import { showToast } from "@/utils/toast"
 import { agentColor, commonAgent } from "@/utils/agent"
 import type { LocalProject } from "@/context/layout"
@@ -49,6 +49,7 @@ export function SessionSidebar(props: {
   onOpenUsage: () => void
   onOpenCleanup: () => void
   kept: (session: Session) => boolean
+  held: (session: Session) => boolean
   expiring: Accessor<readonly SessionRetentionExpiring[] | undefined>
   onKeep: (session: Session, keep: boolean) => void
 }) {
@@ -147,6 +148,7 @@ export function SessionSidebar(props: {
                           onArchive={props.onArchive}
                           onDelete={confirmDelete}
                           kept={props.kept}
+                          held={props.held}
                           expiring={props.expiring}
                           onKeep={props.onKeep}
                           rename={rename}
@@ -377,6 +379,7 @@ function SessionLink(props: {
   onArchive: (session: Session) => void
   onDelete: (session: Session) => void
   kept: (session: Session) => boolean
+  held: (session: Session) => boolean
   expiring: Accessor<readonly SessionRetentionExpiring[] | undefined>
   onKeep: (session: Session, keep: boolean) => void
   rename: RenameState
@@ -511,17 +514,19 @@ function SessionLink(props: {
             }}
           />
         </Show>
-        <Show when={showPin(props.session, kept())}>
-          <TooltipV2 placement="top" value={language.t("session.keep.pinned")}>
-            <span
-              data-action="sidebar-session-pin"
-              role="img"
-              aria-label={language.t("session.keep.pinned")}
-              class="shrink-0 text-v2-icon-icon-muted"
-            >
-              <Icon name="pin" />
-            </span>
-          </TooltipV2>
+        <Show when={pinLabel(props.session, { kept: kept(), held: props.held(props.session) })}>
+          {(label) => (
+            <TooltipV2 placement="top" value={language.t(label())}>
+              <span
+                data-action="sidebar-session-pin"
+                role="img"
+                aria-label={language.t(label())}
+                class="shrink-0 text-v2-icon-icon-muted"
+              >
+                <Icon name="pin" />
+              </span>
+            </TooltipV2>
+          )}
         </Show>
       </MenuV2.Context.Trigger>
       <MenuV2.Context.Portal>

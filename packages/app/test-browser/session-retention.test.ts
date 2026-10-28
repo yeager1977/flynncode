@@ -9,8 +9,8 @@ import {
   keepMenu,
   markNoticeShown,
   noticeShown,
+  pinLabel,
   retentionHint,
-  showPin,
 } from "@/utils/session-retention"
 
 const DAY = 24 * 60 * 60 * 1000
@@ -20,6 +20,7 @@ const retention = (extra: Partial<SessionRetention> = {}): SessionRetention => (
   cleanupPeriodDays: 30,
   expiring: [],
   kept: [],
+  held: [],
   ...extra,
 })
 
@@ -40,11 +41,21 @@ describe("keepMenu", () => {
   })
 })
 
-describe("showPin", () => {
-  test("marks kept root sessions only", () => {
-    expect(showPin({ id: "a" }, true)).toBe(true)
-    expect(showPin({ id: "a" }, false)).toBe(false)
-    expect(showPin({ id: "child", parentID: "root" }, true)).toBe(false)
+describe("pinLabel", () => {
+  test("pins kept root sessions as kept and held ones as held by a schedule", () => {
+    expect(pinLabel({ id: "a" }, { kept: true, held: false })).toBe("session.keep.pinned")
+    expect(pinLabel({ id: "a" }, { kept: false, held: true })).toBe("session.keep.held")
+    expect(pinLabel({ id: "a" }, { kept: true, held: true })).toBe("session.keep.pinned")
+    expect(pinLabel({ id: "a" }, { kept: false, held: false })).toBeUndefined()
+  })
+
+  test("never pins a sub-agent session, which follows its parent", () => {
+    expect(pinLabel({ id: "child", parentID: "root" }, { kept: true, held: true })).toBeUndefined()
+  })
+
+  test("the tooltips read as the spec says", () => {
+    expect(dict["session.keep.pinned"]).toBe("Kept forever")
+    expect(dict["session.keep.held"]).toBe("Held by a schedule")
   })
 })
 

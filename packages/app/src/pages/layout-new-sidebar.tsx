@@ -328,6 +328,7 @@ export function ProjectSidebar() {
       onOpenUsage={() => navigate("/usage")}
       onOpenCleanup={() => navigate("/cleanup")}
       kept={retention.kept}
+      held={retention.held}
       expiring={() => retention.retention()?.expiring}
       onKeep={(session, keep) => void retention.keep(session, keep)}
       onEditProject={showEditProjectDialog}

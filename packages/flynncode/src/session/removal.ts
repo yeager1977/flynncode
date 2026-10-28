@@ -47,18 +47,24 @@ export type DetachedDeps = Pick<Deps, "sessions" | "worktrees" | "project">
  * would be lost. What needs a loaded instance is skipped: SessionEnd hooks and background-job cancellation (retention
  * never deletes a busy tree), disposal of a worktree whose own instance is loaded (the worktree service refuses it),
  * and keep-N worktree retention (it reads the project config). A worktree left behind stays on the Cleanup page and
- * keep-N retention removes it when the project next creates a worktree. `basis` stamps the tombstones (see
- * `SessionProjector.TombstoneBasis`).
+ * keep-N retention removes it when the project next creates a worktree. `latest`, the tree's newest activity, stamps
+ * every member's tombstone together with this root (see `SessionProjector.TombstoneBasis`).
  */
 export const removeDetached = Effect.fn("SessionRemoval.removeDetached")(function* (
   deps: DetachedDeps,
   sessionID: SessionID,
-  basis?: number,
+  latest?: number,
 ) {
   const info = yield* deps.sessions.get(sessionID).pipe(Effect.option)
   yield* deps.sessions
     .remove(sessionID)
-    .pipe(Effect.provideService(InstanceRef, undefined), Effect.provideService(SessionProjector.TombstoneBasis, basis))
+    .pipe(
+      Effect.provideService(InstanceRef, undefined),
+      Effect.provideService(
+        SessionProjector.TombstoneBasis,
+        latest === undefined ? undefined : { latest, root: sessionID },
+      ),
+    )
   if (Option.isSome(info))
     yield* disposeDetached(deps, info.value).pipe(
       Effect.catchCause((cause) => Effect.logWarning("worktree disposal failed", { cause: Cause.pretty(cause) })),

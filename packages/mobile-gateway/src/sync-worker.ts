@@ -30,6 +30,11 @@ export type SyncStatus = {
   phase: SyncPhase
   online: boolean
   lastSuccess: number | null
+  /**
+   * When a cycle last caught up with the peer: every pull it found was applied, none waited for a later batch, a busy
+   * chat or a parent. Session retention deletes nothing until one did within the last day.
+   */
+  lastCaughtUp: number | null
   received: number
   sent: number
   missingDirectories: string[]
@@ -74,6 +79,7 @@ export function initialStatus(): SyncStatus {
     phase: "unpaired",
     online: false,
     lastSuccess: null,
+    lastCaughtUp: null,
     received: 0,
     sent: 0,
     missingDirectories: [],
@@ -201,6 +207,7 @@ export function createSyncWorker(options: {
         action.type === "delete"
           ? await write(`/flynncode-sync/delete/${encodeURIComponent(action.id)}`, {
               timeDeleted: action.timeDeleted,
+              root: action.root,
               expected: expected(action.id),
             })
           : await write(`/flynncode-sync/archive/${encodeURIComponent(action.id)}`, {
@@ -269,6 +276,7 @@ export function createSyncWorker(options: {
         action.type === "delete"
           ? await pushOne(peer, `/flynncode-sync/delete/${encodeURIComponent(action.id)}`, {
               timeDeleted: action.timeDeleted,
+              root: action.root,
               expected: hubExpected(action.id),
             })
           : await pushOne(peer, `/flynncode-sync/archive/${encodeURIComponent(action.id)}`, {
@@ -299,6 +307,9 @@ export function createSyncWorker(options: {
       // Waiting for a parent that is still unresolved is the same as the chat being busy.
       ...deferred.map((id) => ({ id, reason: "local-busy" as const })),
     ]
+    // Caught up: nothing the peer has newer is left waiting, so this machine judges its chats by what the peer has.
+    const caughtUp =
+      pulls.length === received && !actions.some((action) => action.type === "skip") && deferred.length === 0
     const settingsError = await syncSettings(peer)
     await syncPrefs(peer)
     const missing = await read(local("/flynncode-sync/missing"), isMissing)
@@ -307,6 +318,7 @@ export function createSyncWorker(options: {
       phase: "idle",
       online: true,
       lastSuccess: now(),
+      lastCaughtUp: caughtUp ? now() : previous.lastCaughtUp,
       received,
       sent: options.takeSent(),
       missingDirectories: missing.kind === "ok" ? missing.value.directories : previous.missingDirectories,

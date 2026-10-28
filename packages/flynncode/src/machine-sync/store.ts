@@ -1,6 +1,6 @@
 export * as MachineSyncStore from "./store"
 
-import { asc, eq, isNull, lt, max, sql } from "drizzle-orm"
+import { asc, eq, isNull, lt, sql } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Database } from "@flynncode/core/database/database"
 import { migrations } from "@flynncode/core/database/migration.gen"
@@ -23,6 +23,8 @@ import {
 } from "@flynncode/core/session/sql"
 import { GlobalBus, type GlobalEvent } from "@/bus/global"
 import { Project } from "@/project/project"
+import { SessionActivity } from "@/session/activity"
+import { SessionRetentionQuery } from "@/session/retention/query"
 import { Session } from "@/session/session"
 import type { SessionID } from "@/session/schema"
 import { isRecord } from "@/util/record"
@@ -45,13 +47,16 @@ export type ManifestSession = {
   timeUpdated: number
   timeArchived: number | null
   busy: boolean
+  /** Session retention never deletes its tree: `keep: true` or an unlapsed schedule hold in its metadata. */
+  kept: boolean
 }
 
 export type Manifest = {
   schema: string
   app: string
   sessions: ManifestSession[]
-  tombstones: Array<{ id: string; timeDeleted: number }>
+  /** `root` is set on a retention delete only: sync judges that tombstone against the whole tree. */
+  tombstones: Array<{ id: string; timeDeleted: number; root?: string }>
 }
 
 /**
@@ -103,6 +108,8 @@ export interface Interface {
   readonly remove: (input: {
     sessionID: SessionID
     timeDeleted: number
+    /** The tree root of a peer's retention delete, kept on the tombstone so it travels on. */
+    root?: SessionID
     expected: Version | null
   }) => Effect.Effect<void, BusyError | StaleError>
   readonly archive: (input: {
@@ -151,77 +158,25 @@ const layer = Layer.effect(
       return new Set([...busy, ...(yield* execution.active)])
     })
 
-    // A chat's version is its newest content write, not only the session row's
-    // time_updated: the legacy engine touches the session when a prompt is
-    // submitted, then writes the reply into message and part rows without
-    // touching it again, and the V2 engine records inputs and projected
-    // messages in their own rows. Every write to those rows stamps
-    // time_updated (V2 inputs only have time_created), and an apply keeps the
-    // peer's stamps, so both machines compute the same version for the same
-    // content and the tie rule settles. The event log is not consulted: its
-    // rows carry no time, and every V2 event that changes content also writes
-    // one of these rows.
-    const latest = Effect.fn("MachineSyncStore.latest")(function* (sessionID?: SessionID) {
-      const groups = yield* Effect.all([
-        db
-          .select({ id: MessageTable.session_id, time: max(MessageTable.time_updated) })
-          .from(MessageTable)
-          .where(sessionID ? eq(MessageTable.session_id, sessionID) : undefined)
-          .groupBy(MessageTable.session_id)
-          .all(),
-        db
-          .select({ id: PartTable.session_id, time: max(PartTable.time_updated) })
-          .from(PartTable)
-          .where(sessionID ? eq(PartTable.session_id, sessionID) : undefined)
-          .groupBy(PartTable.session_id)
-          .all(),
-        db
-          .select({ id: TodoTable.session_id, time: max(TodoTable.time_updated) })
-          .from(TodoTable)
-          .where(sessionID ? eq(TodoTable.session_id, sessionID) : undefined)
-          .groupBy(TodoTable.session_id)
-          .all(),
-        db
-          .select({ id: SessionFolderTable.session_id, time: max(SessionFolderTable.time_updated) })
-          .from(SessionFolderTable)
-          .where(sessionID ? eq(SessionFolderTable.session_id, sessionID) : undefined)
-          .groupBy(SessionFolderTable.session_id)
-          .all(),
-        db
-          .select({ id: SessionMessageTable.session_id, time: max(SessionMessageTable.time_updated) })
-          .from(SessionMessageTable)
-          .where(sessionID ? eq(SessionMessageTable.session_id, sessionID) : undefined)
-          .groupBy(SessionMessageTable.session_id)
-          .all(),
-        db
-          .select({ id: SessionInputTable.session_id, time: max(SessionInputTable.time_created) })
-          .from(SessionInputTable)
-          .where(sessionID ? eq(SessionInputTable.session_id, sessionID) : undefined)
-          .groupBy(SessionInputTable.session_id)
-          .all(),
-      ]).pipe(Effect.orDie)
-      return groups
-        .flat()
-        .reduce(
-          (times, row) => times.set(row.id, Math.max(times.get(row.id) ?? 0, row.time ?? 0)),
-          new Map<string, number>(),
-        )
-    })
+    // A chat's version is its newest write: the session row, and its content rows (`SessionActivity.content`). The
+    // legacy engine touches the session when a prompt is submitted, then writes the reply into message and part rows
+    // without touching it again, and the V2 engine records inputs and projected messages in their own rows. Every
+    // write to those rows stamps time_updated (V2 inputs only have time_created), and an apply keeps the peer's
+    // stamps, so both machines compute the same version for the same content and the tie rule settles. Session
+    // retention dates a tree by the same rows. The event log is not consulted: its rows carry no time, and every V2
+    // event that changes content also writes one of these rows.
+    const version = sql<number>`max(${SessionTable.time_updated}, ${SessionActivity.content(sql`${SessionTable.id}`)})`
 
     // Only meaningful inside a transaction, where it matches what is written next.
     const current = Effect.fn("MachineSyncStore.current")(function* (sessionID: SessionID) {
       const row = yield* db
-        .select({ time_updated: SessionTable.time_updated, time_archived: SessionTable.time_archived })
+        .select({ time_updated: version, time_archived: SessionTable.time_archived })
         .from(SessionTable)
         .where(eq(SessionTable.id, sessionID))
         .get()
         .pipe(Effect.orDie)
       if (!row) return null
-      const times = yield* latest(sessionID)
-      return {
-        timeUpdated: Math.max(row.time_updated, times.get(sessionID) ?? 0),
-        timeArchived: row.time_archived ?? null,
-      } satisfies Version
+      return { timeUpdated: row.time_updated, timeArchived: row.time_archived ?? null } satisfies Version
     })
 
     // Runs first in every write transaction: a running chat or one that changed
@@ -245,6 +200,7 @@ const layer = Layer.effect(
         )
         .run()
         .pipe(Effect.orDie)
+      const now = Date.now()
       const read = yield* db
         .transaction(() =>
           Effect.gen(function* () {
@@ -253,13 +209,14 @@ const layer = Layer.effect(
                 .select({
                   id: SessionTable.id,
                   parent_id: SessionTable.parent_id,
-                  time_updated: SessionTable.time_updated,
+                  time_updated: version,
                   time_archived: SessionTable.time_archived,
+                  keep: SessionRetentionQuery.keeps(sql`${SessionTable.metadata}`).mapWith(Number),
+                  hold_until: SessionRetentionQuery.holdUntil(sql`${SessionTable.metadata}`).mapWith(Number),
                 })
                 .from(SessionTable)
                 .all()
                 .pipe(Effect.orDie),
-              times: yield* latest(),
               tombstones: yield* db.select().from(SessionTombstoneTable).all().pipe(Effect.orDie),
             }
           }),
@@ -275,13 +232,18 @@ const layer = Layer.effect(
         sessions: read.sessions.map((row) => ({
           id: row.id,
           parentID: row.parent_id ?? null,
-          timeUpdated: Math.max(row.time_updated, read.times.get(row.id) ?? 0),
+          timeUpdated: row.time_updated,
           timeArchived: row.time_archived ?? null,
           busy: active.has(row.id),
+          kept: row.keep === 1 || (row.hold_until ?? 0) > now,
         })),
         tombstones: read.tombstones
           .filter((row) => !live.has(row.id))
-          .map((row) => ({ id: row.id, timeDeleted: row.time_deleted })),
+          .map((row) => ({
+            id: row.id,
+            timeDeleted: row.time_deleted,
+            ...(row.root_id === null ? {} : { root: row.root_id }),
+          })),
       } satisfies Manifest
     })
 
@@ -474,6 +436,7 @@ const layer = Layer.effect(
     const remove = Effect.fn("MachineSyncStore.remove")(function* (input: {
       sessionID: SessionID
       timeDeleted: number
+      root?: SessionID
       expected: Version | null
     }) {
       const row = yield* db
@@ -494,10 +457,15 @@ const layer = Layer.effect(
             yield* tx.delete(SessionTable).where(eq(SessionTable.id, input.sessionID)).run().pipe(Effect.orDie)
             yield* tx
               .insert(SessionTombstoneTable)
-              .values({ id: input.sessionID, time_deleted: input.timeDeleted, time_recorded: Date.now() })
+              .values({
+                id: input.sessionID,
+                time_deleted: input.timeDeleted,
+                time_recorded: Date.now(),
+                root_id: input.root ?? null,
+              })
               .onConflictDoUpdate({
                 target: SessionTombstoneTable.id,
-                set: { time_deleted: input.timeDeleted, time_recorded: Date.now() },
+                set: { time_deleted: input.timeDeleted, time_recorded: Date.now(), root_id: input.root ?? null },
               })
               .run()
               .pipe(Effect.orDie)

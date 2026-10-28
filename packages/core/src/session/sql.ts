@@ -203,13 +203,17 @@ export const SessionContextEpochTable = sqliteTable("session_context_epoch", {
 // deletes its copy instead of pulling the chat back. A peer copy updated after
 // `time_deleted` outranks the tombstone. A manual delete stamps the wall clock;
 // a retention delete stamps the newest activity it judged, plus 1 ms, so it never
-// outranks activity this machine did not see. `time_recorded` is when the row
-// was written (null on rows from before it existed); tombstones recorded more
-// than 30 days ago are pruned when the sync manifest is built.
+// outranks activity this machine did not see. `root_id` is set on a retention
+// delete only: the root of the deleted tree, so sync judges the tombstone
+// against the whole tree on every machine (null for a manual delete, which is
+// judged per session). `time_recorded` is when the row was written (null on
+// rows from before it existed); tombstones recorded more than 30 days ago are
+// pruned when the sync manifest is built.
 export const SessionTombstoneTable = sqliteTable("session_tombstone", {
   id: text().$type<SessionSchema.ID>().primaryKey(),
   time_deleted: integer().notNull(),
   time_recorded: integer(),
+  root_id: text().$type<SessionSchema.ID>(),
 })
 
 // Local only: never part of a machine-sync bundle or the hub sync. No foreign

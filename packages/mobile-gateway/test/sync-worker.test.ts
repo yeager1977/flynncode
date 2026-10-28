@@ -286,6 +286,24 @@ describe("sync worker", () => {
     expect(second.backlog).toBeNull()
   })
 
+  test("counts a cycle as caught up only once no pull is left for later", async () => {
+    const local = fake([])
+    const peer = fake(Array.from({ length: 25 }, (_, index) => session(`ses_${String(index).padStart(2, "0")}`, 10)))
+    const sync = worker({ local, peer })
+    // A cycle that pulled 20 of 25 chats succeeded, but this machine still lacks newer copies.
+    const first = await sync.cycle()
+    expect(first.lastSuccess).toBeNumber()
+    expect(first.lastCaughtUp).toBeNull()
+    const second = await sync.cycle()
+    expect(second.lastCaughtUp).toBeNumber()
+
+    // A chat the peer is running waits for a later cycle: not caught up, and the earlier catch-up stands.
+    peer.manifest.sessions.push({ ...session("ses_busy", 30), busy: true })
+    const third = await sync.cycle()
+    expect(third.skipped).toContainEqual({ id: "ses_busy", reason: "peer-busy" })
+    expect(third.lastCaughtUp).toBe(second.lastCaughtUp)
+  })
+
   test("forwards peer settings to the local server and applies newer peer prefs", async () => {
     const local = fake([])
     const peer = fake([])

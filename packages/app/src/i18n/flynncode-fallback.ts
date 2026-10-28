@@ -351,6 +351,7 @@ const keys = [
   "session.keep.on",
   "session.keep.off",
   "session.keep.pinned",
+  "session.keep.held",
   "session.keep.deletesToday",
   "session.keep.deletesTomorrow",
   "session.keep.deletesInDays",

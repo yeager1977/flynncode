@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "5db174a5-5b9c-40ea-a280-819f97706225",
+  "id": "eee0f4ca-b844-46db-ba8a-4556d84877f8",
   "prevIds": [
-    "b760db15-5248-43a9-88b0-97875d07aae7"
+    "5db174a5-5b9c-40ea-a280-819f97706225"
   ],
   "ddl": [
     {
@@ -1591,6 +1591,16 @@
       "default": null,
       "generated": null,
       "name": "time_recorded",
+      "entityType": "columns",
+      "table": "session_tombstone"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "root_id",
       "entityType": "columns",
       "table": "session_tombstone"
     },

@@ -72,18 +72,22 @@ describe("session tombstones", () => {
       const row = yield* tombstone
       expect(row?.time_deleted).toBeGreaterThanOrEqual(before)
       expect(row?.time_recorded).toBe(row?.time_deleted)
+      // A manual delete is judged per session: no tree root.
+      expect(row?.root_id).toBeNull()
     }),
   )
 
-  it.effect("stamps a provided basis plus 1 ms, and records when the row was written", () =>
+  it.effect("stamps a provided basis plus 1 ms with its tree root, and records when the row was written", () =>
     Effect.gen(function* () {
       yield* seed
       const before = Date.now()
+      const root = SessionV2.ID.make("ses_tombstone_root")
 
-      yield* remove.pipe(Effect.provideService(SessionProjector.TombstoneBasis, 1_000))
+      yield* remove.pipe(Effect.provideService(SessionProjector.TombstoneBasis, { latest: 1_000, root }))
 
       const row = yield* tombstone
       expect(row?.time_deleted).toBe(1_001)
+      expect(row?.root_id).toBe(root)
       expect(row?.time_recorded).toBeGreaterThanOrEqual(before)
     }),
   )

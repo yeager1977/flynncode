@@ -47,6 +47,8 @@ export function useSessionRetention() {
 
   // The loaded session list carries no metadata, so Keep state comes from the snapshot's `kept` list.
   const kept = (session: Session) => overrides[session.id] ?? retention()?.kept.includes(session.id) ?? false
+  // A scheduled job protects the tree: its hold has not lapsed, or the job runs on this machine.
+  const held = (session: Session) => retention()?.held.includes(session.id) ?? false
 
   const keep = async (session: Session, next: boolean) => {
     const ok = await serverSDK()
@@ -60,5 +62,5 @@ export function useSessionRetention() {
     setOverrides(session.id, next)
   }
 
-  return { retention, kept, keep }
+  return { retention, kept, held, keep }
 }

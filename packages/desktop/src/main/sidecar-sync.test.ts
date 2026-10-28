@@ -8,8 +8,10 @@ import {
   parseRelayConfig,
   parseSyncCommand,
   parseSyncStart,
+  retentionSync,
   shutdown,
 } from "./sidecar-sync"
+import { initialStatus } from "@flynncode/mobile-gateway/sync"
 
 const peer = { name: "starship", url: "http://192.168.1.20:4097", token: "a".repeat(64) }
 
@@ -244,5 +246,29 @@ describe("shutdown", () => {
     )
     expect(ran).toEqual(["gateway", "relay", "instances", "listener"])
     expect(failed).toEqual(["gateway", "relay"])
+  })
+})
+
+describe("retentionSync", () => {
+  const start = { machineName: "challenger", phoneAccess: false, paused: false, peer, prefs: null }
+
+  test("a paired machine starts out not caught up, so retention deletes nothing yet", () => {
+    expect(retentionSync({ start })).toEqual({ paired: true, lastCaughtUp: null })
+    expect(retentionSync({ start: { ...start, peer: null } })).toEqual({ paired: false, lastCaughtUp: null })
+  })
+
+  test("a sync the user paused counts as unpaired", () => {
+    expect(retentionSync({ start: { ...start, paused: true } })).toEqual({ paired: false, lastCaughtUp: null })
+    expect(retentionSync({ status: { ...initialStatus(), phase: "paused", lastCaughtUp: 5 } })).toEqual({
+      paired: false,
+      lastCaughtUp: 5,
+    })
+  })
+
+  test("reports when a cycle last caught up, not when one last ran", () => {
+    const status = { ...initialStatus(), phase: "idle" as const, lastSuccess: 9, lastCaughtUp: 4 }
+    expect(retentionSync({ status })).toEqual({ paired: true, lastCaughtUp: 4 })
+    expect(retentionSync({ status: { ...status, phase: "offline" } })).toEqual({ paired: true, lastCaughtUp: 4 })
+    expect(retentionSync({ status: initialStatus() })).toEqual({ paired: false, lastCaughtUp: null })
   })
 })

@@ -16,6 +16,8 @@ import eventSourcedSessionInputMigration from "@flynncode/core/database/migratio
 import contextEpochAgentMigration from "@flynncode/core/database/migration/20260605042240_add_context_epoch_agent"
 import simplifyIntegrationCredentialsMigration from "@flynncode/core/database/migration/20260611192811_lush_chimera"
 import simplifySessionInputMigration from "@flynncode/core/database/migration/20260622202450_simplify_session_input"
+import tombstoneRecordedMigration from "@flynncode/core/database/migration/20261028152423_session_tombstone_recorded"
+import tombstoneRootMigration from "@flynncode/core/database/migration/20261028161358_session_tombstone_root"
 import { AppNodeBuilder } from "@flynncode/core/effect/app-node-builder"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { EventV2 } from "@flynncode/core/event"
@@ -189,6 +191,26 @@ describe("DatabaseMigration", () => {
 
         expect(yield* db.get(sql`SELECT agent FROM session_context_epoch WHERE session_id = 'ses_existing'`)).toEqual({
           agent: "build",
+        })
+      }),
+    )
+  })
+
+  test("adds tombstone recorded time and tree root without touching existing tombstones", async () => {
+    await run(
+      Effect.gen(function* () {
+        const db = yield* makeDb
+        yield* db.run(sql`CREATE TABLE session_tombstone (id text PRIMARY KEY, time_deleted integer NOT NULL)`)
+        yield* db.run(sql`INSERT INTO session_tombstone (id, time_deleted) VALUES ('ses_existing', 1000)`)
+
+        yield* DatabaseMigration.applyOnly(db, [tombstoneRecordedMigration, tombstoneRootMigration])
+
+        // An existing tombstone stays a per-session (manual) delete that expires by its delete time.
+        expect(yield* db.get(sql`SELECT * FROM session_tombstone WHERE id = 'ses_existing'`)).toEqual({
+          id: "ses_existing",
+          time_deleted: 1000,
+          time_recorded: null,
+          root_id: null,
         })
       }),
     )

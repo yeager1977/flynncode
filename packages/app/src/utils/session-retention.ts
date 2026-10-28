@@ -18,8 +18,12 @@ export function keepMenu(session: KeepTarget, kept: boolean) {
   return kept ? ({ key: "session.keep.off", keep: false } as const) : ({ key: "session.keep.on", keep: true } as const)
 }
 
-export function showPin(session: KeepTarget, kept: boolean) {
-  return kept && !session.parentID
+// The pin on a root session that retention never deletes: kept by the owner, or
+// held by a scheduled job on some machine. Keep wins the tooltip when both apply.
+export function pinLabel(session: KeepTarget, state: { kept: boolean; held: boolean }) {
+  if (session.parentID) return
+  if (state.kept) return "session.keep.pinned" as const
+  if (state.held) return "session.keep.held" as const
 }
 
 // `deletesAt` rounds up to whole days. Under a day, or already due and waiting

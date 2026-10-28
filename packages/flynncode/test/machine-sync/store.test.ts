@@ -135,8 +135,8 @@ describe("MachineSyncStore", () => {
       const manifest = yield* store.manifest()
 
       expect(manifest.sessions.toSorted((a, b) => a.id.localeCompare(b.id))).toEqual([
-        { id: "ses_active", parentID: null, timeUpdated: 20, timeArchived: null, busy: false },
-        { id: "ses_archived", parentID: null, timeUpdated: 30, timeArchived: 40, busy: false },
+        { id: "ses_active", parentID: null, timeUpdated: 20, timeArchived: null, busy: false, kept: false },
+        { id: "ses_archived", parentID: null, timeUpdated: 30, timeArchived: 40, busy: false, kept: false },
       ])
       expect(manifest.tombstones.map((tombstone) => tombstone.id)).toEqual(["ses_recent"])
       expect(
@@ -168,6 +168,49 @@ describe("MachineSyncStore", () => {
         .run()
 
       expect((yield* store.manifest()).tombstones).toEqual([{ id: "ses_retained", timeDeleted: expect.any(Number) }])
+    }),
+  )
+
+  it.effect("marks trees retention never deletes, and carries a retention tombstone's root", () =>
+    Effect.gen(function* () {
+      const db = (yield* Database.Service).db
+      const store = yield* MachineSyncStore.Service
+      const metadata = {
+        ses_keep: { keep: true },
+        ses_held: { retentionHold: true, retentionHoldUntil: Date.now() + DAY },
+        ses_lapsed: { retentionHold: true, retentionHoldUntil: Date.now() - 1 },
+        ses_unstamped: { retentionHold: true },
+        ses_plain: { other: 1 },
+      }
+      yield* Effect.forEach(Object.entries(metadata), (entry) =>
+        seed(entry[0]).pipe(
+          Effect.andThen(
+            db
+              .update(SessionTable)
+              .set({ metadata: entry[1] })
+              .where(eq(SessionTable.id, SessionID.make(entry[0])))
+              .run(),
+          ),
+        ),
+      )
+      yield* seed("ses_member")
+      yield* store.remove({
+        sessionID: SessionID.make("ses_member"),
+        timeDeleted: 1234,
+        root: SessionID.make("ses_tree"),
+        expected: version(10),
+      })
+
+      const manifest = yield* store.manifest()
+
+      expect(Object.fromEntries(manifest.sessions.map((session) => [session.id, session.kept]))).toEqual({
+        ses_keep: true,
+        ses_held: true,
+        ses_lapsed: false,
+        ses_unstamped: false,
+        ses_plain: false,
+      })
+      expect(manifest.tombstones).toEqual([{ id: "ses_member", timeDeleted: 1234, root: "ses_tree" }])
     }),
   )
 
@@ -294,7 +337,12 @@ describe("MachineSyncStore", () => {
           .from(SessionTombstoneTable)
           .where(eq(SessionTombstoneTable.id, SessionID.make("ses_gone")))
           .get(),
-      ).toEqual({ id: SessionID.make("ses_gone"), time_deleted: 1234, time_recorded: expect.any(Number) })
+      ).toEqual({
+        id: SessionID.make("ses_gone"),
+        time_deleted: 1234,
+        time_recorded: expect.any(Number),
+        root_id: null,
+      })
       // A peer's old deletion time is kept, and the tombstone lives 30 days from when it arrived.
       expect((yield* store.manifest()).tombstones).toEqual([{ id: "ses_gone", timeDeleted: 1234 }])
       const shelved = yield* db

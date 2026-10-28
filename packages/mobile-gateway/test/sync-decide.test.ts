@@ -190,6 +190,73 @@ describe("retention tombstones", () => {
   })
 })
 
+describe("retention tombstones judged per tree", () => {
+  const DAY = 24 * 60 * 60 * 1000
+  const L = 1_000 * DAY
+  // The laptop deleted tree R (root) + C (sub-agent) as inactive since day L: every member carries L + 1 and root R.
+  const tombstones = [
+    { id: "ses_r", timeDeleted: L + 1, root: "ses_r" },
+    { id: "ses_c", timeDeleted: L + 1, root: "ses_r" },
+  ]
+  const laptop = manifest([], tombstones)
+  const tree = (root: number, child: number, extra: Partial<ManifestSession> = {}) => [
+    session("ses_r", root, extra),
+    session("ses_c", child, { parentID: "ses_r" }),
+  ]
+
+  test("newer activity anywhere in the tree keeps every member on the peer and brings every member back", () => {
+    for (const peer of [tree(L + 10 * DAY, L - 2 * DAY), tree(L, L + 10 * DAY), tree(L, L - 2 * DAY, { kept: true })]) {
+      expect(decide({ local: manifest(peer), peer: laptop })).toEqual([])
+      expect(decidePush({ local: laptop, hub: manifest(peer) })).toEqual([])
+      expect(decide({ local: laptop, peer: manifest(peer) })).toEqual([
+        { type: "pull", id: "ses_r" },
+        { type: "pull", id: "ses_c" },
+      ])
+    }
+  })
+
+  test("a tree nobody touched is deleted whole, with its root on every action", () => {
+    const peer = manifest(tree(L, L - 2 * DAY))
+    const deletes = tombstones.map((tombstone) => ({ type: "delete" as const, ...tombstone }))
+    expect(decide({ local: peer, peer: laptop })).toEqual(deletes)
+    expect(decidePush({ local: laptop, hub: peer })).toEqual(deletes)
+    expect(decide({ local: laptop, peer })).toEqual([])
+  })
+
+  test("a member is kept when its tree is newer on the side that still has the root", () => {
+    // The hub already took the child's delete, but the desktop pushed its newer root first.
+    const hub = manifest([session("ses_r", L + 10 * DAY)], [tombstones[1]!])
+    const stale = manifest(tree(L, L - 2 * DAY))
+    expect(decide({ local: stale, peer: hub })).toEqual([{ type: "pull", id: "ses_r" }])
+  })
+
+  test("a member of a tree running here waits instead of being deleted", () => {
+    const peer = manifest([session("ses_r", L, { busy: true }), session("ses_c", L - 2 * DAY, { parentID: "ses_r" })])
+    expect(decide({ local: peer, peer: laptop })).toEqual([
+      { type: "skip", id: "ses_r", reason: "local-busy" },
+      { type: "skip", id: "ses_c", reason: "local-busy" },
+    ])
+  })
+
+  test("an archived member of a surviving tree comes back to the machine that deleted it", () => {
+    const peer = manifest([
+      session("ses_r", L + 10 * DAY),
+      session("ses_c", L - 2 * DAY, { parentID: "ses_r", timeArchived: L }),
+    ])
+    expect(decide({ local: laptop, peer })).toEqual([
+      { type: "pull", id: "ses_r" },
+      { type: "pull", id: "ses_c" },
+    ])
+  })
+
+  test("a manual delete stays per session: activity elsewhere in the tree does not undo it", () => {
+    const manual = manifest([session("ses_r", L + 10 * DAY)], [{ id: "ses_c", timeDeleted: L + 1 }])
+    const peer = manifest(tree(L + 10 * DAY, L - 2 * DAY))
+    expect(decide({ local: peer, peer: manual })).toEqual([{ type: "delete", id: "ses_c", timeDeleted: L + 1 }])
+    expect(decidePush({ local: manual, hub: peer })).toEqual([{ type: "delete", id: "ses_c", timeDeleted: L + 1 }])
+  })
+})
+
 describe("isManifest", () => {
   test("accepts a manifest and rejects malformed input", () => {
     expect(isManifest(manifest([session("ses_a", 1)], [{ id: "ses_b", timeDeleted: 2 }]))).toBe(true)
@@ -198,5 +265,10 @@ describe("isManifest", () => {
     expect(isManifest(manifest([], [{ id: "ses_b" } as never]))).toBe(false)
     expect(isManifest(manifest([], [{ id: "ses_b", timeDeleted: Number.NaN }]))).toBe(false)
     expect(isManifest(manifest([session("ses_a", Number.POSITIVE_INFINITY)]))).toBe(false)
+    expect(
+      isManifest(manifest([session("ses_a", 1, { kept: true })], [{ id: "ses_b", timeDeleted: 2, root: "ses_a" }])),
+    ).toBe(true)
+    expect(isManifest(manifest([], [{ id: "ses_b", timeDeleted: 2, root: 3 } as never]))).toBe(false)
+    expect(isManifest(manifest([session("ses_a", 1, { kept: "yes" } as never)]))).toBe(false)
   })
 })

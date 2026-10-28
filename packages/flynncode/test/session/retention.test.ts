@@ -20,10 +20,13 @@ import { Database } from "@flynncode/core/database/database"
 import {
   MessageTable,
   PartTable,
+  SessionInputTable,
+  SessionMessageTable,
   SessionScheduleTable,
   SessionTable,
   SessionTombstoneTable,
 } from "@flynncode/core/session/sql"
+import { SessionMessage } from "@flynncode/core/session/message"
 import { SessionExecution } from "@flynncode/core/session/execution"
 import { SessionProjector } from "@flynncode/core/session/projector"
 import { ConfigV1 } from "@flynncode/core/v1/config/config"
@@ -51,7 +54,7 @@ import { SessionStatus } from "@/session/status"
 import { MessageID, PartID, type SessionID } from "@/session/schema"
 import { BackgroundShells } from "@/shell/background/service"
 import { Worktree } from "@/worktree"
-import { decide, decidePush, type Manifest } from "../../../mobile-gateway/src/sync-decide"
+import { decide, decidePush, type Manifest, type ManifestSession } from "../../../mobile-gateway/src/sync-decide"
 import { AccountTest } from "../fake/account"
 import { AuthTest } from "../fake/auth"
 import { NpmTest } from "../fake/npm"
@@ -385,6 +388,7 @@ describe("session retention", () => {
       expect(yield* Effect.promise(() => Bun.file(state).json())).toEqual({
         firstRunAt: now.getTime() + DAY,
         pendingFirstRunCount: 21,
+        pendingPeriodDays: 30,
       })
       expect(yield* first.status()).toMatchObject({ firstRunAt: now.getTime() + DAY, pendingFirstRunCount: 21 })
 
@@ -573,6 +577,7 @@ describe("session retention", () => {
         cleanupPeriodDays: 30,
         expiring: [{ sessionID: soon.id, deletesAt: now.getTime() + 2 * DAY }],
         kept: [kept.id],
+        held: [],
       })
     }),
   )
@@ -674,12 +679,13 @@ describe("session retention across machines", () => {
     return (yield* store.manifest()) as Manifest
   })
 
-  const copy = (id: string, timeUpdated: number) => ({
+  const copy = (id: string, timeUpdated: number, extra: Partial<ManifestSession> = {}): ManifestSession => ({
     id,
     parentID: null,
     timeUpdated,
     timeArchived: null,
     busy: false,
+    ...extra,
   })
 
   it.instance("a stale machine's retention delete never outranks newer activity on a peer", () =>
@@ -692,7 +698,7 @@ describe("session retention across machines", () => {
       const retention = yield* ready({ now: () => new Date(day + 31 * DAY) })
       expect(yield* retention.pass()).toMatchObject({ deleted: 1 })
       const laptop = yield* manifest
-      expect(laptop.tombstones).toEqual([{ id: s.id, timeDeleted: day + 1 }])
+      expect(laptop.tombstones).toEqual([{ id: s.id, timeDeleted: day + 1, root: s.id }])
 
       // Meanwhile the desktop kept working on S (day L + 10); the hub has that copy.
       const hub = { ...laptop, sessions: [copy(s.id, day + 10 * DAY)], tombstones: [] }
@@ -705,10 +711,105 @@ describe("session retention across machines", () => {
 
       // Without newer activity anywhere, the delete still propagates.
       const idle = { ...laptop, sessions: [copy(s.id, day)], tombstones: [] }
-      expect(decidePush({ local: laptop, hub: idle })).toEqual([{ type: "delete", id: s.id, timeDeleted: day + 1 }])
-      expect(decide({ local: idle, peer: { ...idle, sessions: [], tombstones: laptop.tombstones } })).toEqual([
-        { type: "delete", id: s.id, timeDeleted: day + 1 },
+      expect(decidePush({ local: laptop, hub: idle })).toEqual([
+        { type: "delete", id: s.id, timeDeleted: day + 1, root: s.id },
       ])
+      expect(decide({ local: idle, peer: { ...idle, sessions: [], tombstones: laptop.tombstones } })).toEqual([
+        { type: "delete", id: s.id, timeDeleted: day + 1, root: s.id },
+      ])
+    }),
+  )
+
+  it.instance("a retention delete keeps the whole tree wherever any of it is newer, kept or held", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      // Tree R + sub-agent C, last written on the laptop on day L; C's own last write is two days older.
+      const root = yield* sessions.create({ title: "R" })
+      const child = yield* sessions.create({ parentID: root.id, title: "C" })
+      yield* message(child.id)
+      const day = Date.now()
+      yield* age([root.id], day)
+      yield* age([child.id], day - 2 * DAY)
+      const before = yield* manifest
+      expect(before.sessions.map((session) => [session.id, session.timeUpdated]).sort()).toEqual(
+        [
+          [root.id, day],
+          [child.id, day - 2 * DAY],
+        ].sort(),
+      )
+
+      // Day L + 31: the laptop deletes the tree. Every member's tombstone carries the tree's activity and its root.
+      const retention = yield* ready({ now: () => new Date(day + 31 * DAY) })
+      expect(yield* retention.pass()).toMatchObject({ deleted: 1, removed: 2 })
+      const laptop = yield* manifest
+      const tombstones = [root.id, child.id].map((id) => ({ id, timeDeleted: day + 1, root: root.id })).sort()
+      expect(laptop.tombstones.toSorted((a, b) => a.id.localeCompare(b.id))).toEqual(
+        tombstones.toSorted((a, b) => a.id.localeCompare(b.id)),
+      )
+
+      const tree = (rootTime: number, childTime: number, extra: Partial<ManifestSession> = {}): Manifest => ({
+        ...laptop,
+        tombstones: [],
+        sessions: [copy(root.id, rootTime, extra), copy(child.id, childTime, { parentID: root.id })],
+      })
+      const scenarios = {
+        // The desktop kept chatting in R only.
+        rootTouched: tree(day + 10 * DAY, day - 2 * DAY),
+        // The newer activity is in the sub-agent session.
+        childTouched: tree(day, day + 10 * DAY),
+        // The desktop kept the tree, or a schedule holds it there, with nothing newer.
+        kept: tree(day, day - 2 * DAY, { kept: true }),
+      }
+      Object.values(scenarios).forEach((desktop) => {
+        // The laptop does not push the delete, and pulls every member back, parents first.
+        expect(decidePush({ local: laptop, hub: desktop }).filter((action) => action.type === "delete")).toEqual([])
+        expect(decide({ local: laptop, peer: desktop })).toEqual([
+          { type: "pull", id: root.id },
+          { type: "pull", id: child.id },
+        ])
+        // Tombstones that reached the hub delete no member of the desktop's tree.
+        expect(decide({ local: desktop, peer: { ...laptop, sessions: [] } })).toEqual([])
+      })
+
+      // Nobody touched the tree since: it is still deleted whole, everywhere.
+      const idle = tree(day, day - 2 * DAY)
+      const deletes = laptop.tombstones.map((tombstone) => ({ type: "delete" as const, ...tombstone }))
+      expect(decidePush({ local: laptop, hub: idle })).toEqual(deletes)
+      expect(decide({ local: idle, peer: { ...laptop, sessions: [] } })).toEqual(deletes)
+      expect(decide({ local: laptop, peer: idle })).toEqual([])
+    }),
+  )
+
+  it.instance("dates a tree by its newest V2 input exactly as the sync manifest dates the chat", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const sessions = yield* Session.Service
+      const root = yield* sessions.create({ title: "skewed inputs" })
+      const day = Date.now()
+      yield* age([root.id], day - DAY)
+      // Inputs from a peer whose clock ran ahead: the later-admitted one has the older creation time.
+      yield* db
+        .insert(SessionInputTable)
+        .values(
+          [
+            { seq: 1, time: day + 5_000 },
+            { seq: 2, time: day + 3_000 },
+          ].map((input) => ({
+            id: SessionMessage.ID.make(`msg_input_${input.seq}`),
+            session_id: root.id,
+            prompt: { text: "hello" },
+            delivery: "steer" as const,
+            admitted_seq: input.seq,
+            promoted_seq: input.seq,
+            time_created: input.time,
+          })),
+        )
+        .run()
+        .pipe(Effect.orDie)
+
+      const latest = (yield* SessionRetentionQuery.trees(yield* Database.Service, day, root.id))[0]?.latest
+      expect(latest).toBe(day + 5_000)
+      expect((yield* manifest).sessions.find((session) => session.id === root.id)?.timeUpdated).toBe(latest)
     }),
   )
 
@@ -721,14 +822,14 @@ describe("session retention across machines", () => {
       const record = (value: object) => Effect.promise(() => Bun.write(sync, JSON.stringify(value)))
       const retention = yield* ready({ now: () => now })
 
-      yield* record({ paired: true, lastPull: now.getTime() - DAY - 1 })
+      yield* record({ paired: true, lastCaughtUp: now.getTime() - DAY - 1 })
       expect(yield* retention.pass()).toMatchObject({ eligible: 1, deleted: 0, skipped: "sync-stale" })
       // Paired but never synced since this machine recorded it.
       yield* record({ paired: true })
       expect(yield* retention.pass()).toMatchObject({ deleted: 0, skipped: "sync-stale" })
       expect(yield* remaining([root.id])).toEqual([root.id])
 
-      yield* record({ paired: true, lastPull: now.getTime() - 60_000 })
+      yield* record({ paired: true, lastCaughtUp: now.getTime() - 60_000 })
       expect(yield* retention.pass()).toMatchObject({ deleted: 1 })
       expect(yield* remaining([root.id])).toEqual([])
     }),
@@ -738,7 +839,7 @@ describe("session retention across machines", () => {
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const root = yield* sessions.create({ title: "unpaired" })
-      yield* Effect.promise(() => SessionRetention.recordSync({ paired: false, lastPull: null }))
+      yield* Effect.promise(() => SessionRetention.recordSync({ paired: false, lastCaughtUp: null }))
       expect(yield* Effect.promise(() => Bun.file(SessionRetention.defaultSyncPath()).json())).toEqual({
         paired: false,
       })
@@ -767,18 +868,27 @@ describe("session retention across machines", () => {
         runAt: new Date(Date.now() + 60_000),
         now: new Date(),
       })
+      const now = new Date(Date.now() + 40 * DAY)
       // Another machine's job put a hold on this tree; this database has no job for it.
       const sessions = yield* Session.Service
       yield* sessions.updateMetadata({
         sessionID: foreign.root.id,
-        update: (value) => ({ ...value, retentionHold: true }),
+        update: (value) => ({
+          ...value,
+          retentionHold: true,
+          retentionHoldUntil: now.getTime() + SessionRetention.HOLD_MS,
+        }),
       })
-      const now = new Date(Date.now() + 40 * DAY)
       const retention = yield* ready({ now: () => now })
 
       expect(yield* retention.pass()).toMatchObject({ deleted: 0 })
-      expect(yield* metadata(scheduled.root.id)).toMatchObject({ retentionHold: true })
+      expect(yield* metadata(scheduled.root.id)).toMatchObject({
+        retentionHold: true,
+        retentionHoldUntil: now.getTime() + SessionRetention.HOLD_MS,
+      })
       expect((yield* readState).holds).toEqual([scheduled.root.id])
+      // The app shows both as held by a schedule.
+      expect((yield* retention.status()).held.toSorted()).toEqual([scheduled.root.id, foreign.root.id].sort())
 
       // Its last job is gone: this machine set that hold, so the next pass clears it. The foreign hold stays.
       yield* db.delete(SessionScheduleTable).where(eq(SessionScheduleTable.id, job.id)).run().pipe(Effect.orDie)
@@ -787,12 +897,60 @@ describe("session retention across machines", () => {
       ).toMatchObject({ hold: true, scheduled: false })
       expect(yield* retention.pass(new Date())).toMatchObject({ deleted: 0 })
       expect(yield* metadata(scheduled.root.id)).not.toHaveProperty("retentionHold")
+      expect(yield* metadata(scheduled.root.id)).not.toHaveProperty("retentionHoldUntil")
       expect(yield* metadata(foreign.root.id)).toMatchObject({ retentionHold: true })
 
       // A hold without a job here protects the tree like Keep; the released tree is deleted.
       expect(yield* retention.pass()).toMatchObject({ deleted: 1 })
       expect(yield* remaining([...scheduled.ids, ...foreign.ids])).toEqual([...foreign.ids].sort())
       expect((yield* readState).holds).toEqual([])
+    }),
+  )
+})
+
+describe("session retention schedule holds", () => {
+  it.instance("refreshes its hold daily while the job lasts, and a hold nobody refreshes lapses after a week", () =>
+    Effect.gen(function* () {
+      const store = yield* ScheduleStore.Service
+      const { db } = yield* Database.Service
+      const sessions = yield* Session.Service
+      const scheduled = yield* tree("scheduled")
+      const retired = yield* tree("held by a retired machine")
+      const job = yield* store.create({
+        sessionID: scheduled.child.id,
+        kind: "wakeup",
+        prompt: "look again",
+        recurring: false,
+        runAt: new Date(Date.now() + 60_000),
+        now: new Date(),
+      })
+      const now = Date.now() + 40 * DAY
+      // The machine that set this hold, six days ago, was reinstalled: nobody will refresh or clear it.
+      yield* sessions.updateMetadata({
+        sessionID: retired.root.id,
+        update: (value) => ({ ...value, retentionHold: true, retentionHoldUntil: now + DAY }),
+      })
+      const retention = yield* ready({ now: () => new Date(now) })
+      const until = Effect.fnUntraced(function* (id: SessionID) {
+        return (yield* metadata(id)).retentionHoldUntil
+      })
+
+      expect(yield* retention.pass()).toMatchObject({ deleted: 0 })
+      expect(yield* until(scheduled.root.id)).toBe(now + SessionRetention.HOLD_MS)
+      // Checked every pass, rewritten (activity that syncs) only once the hold is a day old.
+      expect(yield* retention.pass(new Date(now + 2 * 60 * 60 * 1000))).toMatchObject({ deleted: 0 })
+      expect(yield* until(scheduled.root.id)).toBe(now + SessionRetention.HOLD_MS)
+      // A week after its last refresh the retired machine's hold has lapsed: that tree is deleted like any other.
+      expect(yield* retention.pass(new Date(now + DAY + 1))).toMatchObject({ deleted: 1 })
+      expect(yield* until(scheduled.root.id)).toBe(now + DAY + 1 + SessionRetention.HOLD_MS)
+      expect(yield* remaining(retired.ids)).toEqual([])
+      expect((yield* retention.status(new Date(now + DAY + 1))).held).toEqual([scheduled.root.id])
+
+      // The job is gone and this machine lost its state file, so it no longer clears the hold it set. It lapses too.
+      yield* db.delete(SessionScheduleTable).where(eq(SessionScheduleTable.id, job.id)).run().pipe(Effect.orDie)
+      const lost = yield* ready({ now: () => new Date(now + DAY + 2 + SessionRetention.HOLD_MS) })
+      expect(yield* lost.pass()).toMatchObject({ deleted: 1 })
+      expect(yield* remaining(scheduled.ids)).toEqual([])
     }),
   )
 })
@@ -845,6 +1003,57 @@ describe("session retention busy trees", () => {
       expect(yield* retention.pass()).toMatchObject({ eligible: 2, deleted: 2 })
       expect(yield* remaining([...unfinished.ids, ...orphaned.ids, ...finished.ids])).toEqual(
         [...unfinished.ids].sort(),
+      )
+    }),
+  )
+  it.instance("skips a tree whose V2 turn waits in another process, by what the database persists", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const waiting = yield* tree("v2 waiting")
+      const queued = yield* tree("v2 queued")
+      const done = yield* tree("v2 done")
+      const assistant = (sessionID: SessionID, seq: number, completed?: number) =>
+        db
+          .insert(SessionMessageTable)
+          .values({
+            id: SessionMessage.ID.make(`msg_v2_${sessionID}_${seq}`),
+            session_id: sessionID,
+            type: "assistant",
+            seq,
+            time_created: Date.now(),
+            time_updated: Date.now(),
+            data: {
+              agent: "build",
+              model: { id: "test-model", providerID: "test" },
+              content: [],
+              time: completed === undefined ? { created: Date.now() } : { created: Date.now(), completed },
+            },
+          } as typeof SessionMessageTable.$inferInsert)
+          .run()
+          .pipe(Effect.orDie)
+      // Another process's V2 turn waits on a permission: its assistant message stays open, and it writes nothing.
+      yield* assistant(waiting.grandchild.id, 1)
+      // An input admitted for a turn that has not started yet.
+      yield* db
+        .insert(SessionInputTable)
+        .values({
+          id: SessionMessage.ID.make(`msg_input_${queued.child.id}`),
+          session_id: queued.child.id,
+          prompt: { text: "next" },
+          delivery: "queue",
+          admitted_seq: 1,
+          time_created: Date.now(),
+        })
+        .run()
+        .pipe(Effect.orDie)
+      // A newer completed V2 assistant message ends an older open one.
+      yield* assistant(done.child.id, 1)
+      yield* assistant(done.child.id, 2, Date.now())
+      const retention = yield* ready({ now: () => new Date(Date.now() + 40 * DAY) })
+
+      expect(yield* retention.pass()).toMatchObject({ eligible: 1, deleted: 1 })
+      expect(yield* remaining([...waiting.ids, ...queued.ids, ...done.ids])).toEqual(
+        [...waiting.ids, ...queued.ids].sort(),
       )
     }),
   )
@@ -940,6 +1149,53 @@ describe("session retention surges", () => {
       expect(yield* retention.pass(new Date(now.getTime() + DAY))).toMatchObject({ deleted: 21 })
       expect(yield* retention.status(new Date(now.getTime() + DAY))).not.toHaveProperty("firstRunAt")
     }),
+  )
+
+  it.instance(
+    "lowering the period again during a delay recounts it, and restarts it with a new notice past the limit",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const now = Date.now() + 40 * DAY
+        const roots = Effect.fnUntraced(function* (count: number, title: string, inactive: number) {
+          const created = yield* Effect.forEach(
+            Array.from({ length: count }, (_, index) => index),
+            (index) => sessions.create({ title: `${title} ${index}` }),
+          )
+          yield* age(
+            created.map((root) => root.id),
+            now - inactive,
+          )
+          return created
+        })
+        yield* roots(21, "ten days", 10 * DAY)
+        const retention = yield* ready({ now: () => new Date(now) })
+        global.current = Effect.succeed({ cleanupPeriodDays: 7 })
+        expect(yield* retention.pass()).toMatchObject({ eligible: 21, deleted: 0, delayedUntil: now + DAY })
+
+        // Trees that age into the announced period only change the count.
+        yield* roots(5, "eight days", 8 * DAY)
+        expect(yield* retention.pass()).toMatchObject({ eligible: 26, delayedUntil: now + DAY })
+        expect(yield* retention.status()).toMatchObject({ firstRunAt: now + DAY, pendingFirstRunCount: 26 })
+
+        // Lowered to 1 day an hour later: 21 more trees are newly eligible, so the delay starts over and is announced.
+        yield* roots(21, "two days", 2 * DAY)
+        global.current = Effect.succeed({ cleanupPeriodDays: 1 })
+        const later = now + 60 * 60 * 1000
+        expect(yield* retention.pass(new Date(later))).toMatchObject({
+          eligible: 47,
+          deleted: 0,
+          delayedUntil: later + DAY,
+        })
+        expect(yield* retention.status(new Date(later))).toMatchObject({
+          firstRunAt: later + DAY,
+          pendingFirstRunCount: 47,
+        })
+
+        // The first delay's time no longer deletes anything; the new one does.
+        expect(yield* retention.pass(new Date(now + DAY))).toMatchObject({ deleted: 0, delayedUntil: later + DAY })
+        expect(yield* retention.pass(new Date(later + DAY))).toMatchObject({ deleted: 47 })
+      }),
   )
 
   it.instance("deletes right away when a lowered period makes 20 or fewer trees newly eligible", () =>

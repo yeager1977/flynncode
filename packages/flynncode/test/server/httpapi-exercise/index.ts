@@ -701,6 +701,7 @@ const scenarios: Scenario[] = [
     object(body)
     array(body.expiring)
     array(body.kept)
+    array(body.held)
     check(body.cleanupPeriodDays === 30, "retention should default to 30 days")
   }),
   http.protected

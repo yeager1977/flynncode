@@ -32,6 +32,19 @@ export type SidecarSyncMessage =
   // Set while the LAN gateway is wanted but could not start (e.g. port busy).
   | { type: "sync-gateway"; error: string | null }
 
+/**
+ * What session retention reads of hub sync (`SessionRetention.recordSync`). A sync the user paused counts as unpaired,
+ * so retention runs: its tombstones carry their basis and are judged per tree when sync resumes. A paired machine
+ * starts out not caught up, and stays so until a cycle leaves no pull for later.
+ */
+export function retentionSync(input: { start: SidecarSyncStart } | { status: SyncStatus }) {
+  if ("start" in input) return { paired: input.start.peer !== null && !input.start.paused, lastCaughtUp: null }
+  return {
+    paired: input.status.phase !== "unpaired" && input.status.phase !== "paused",
+    lastCaughtUp: input.status.lastCaughtUp,
+  }
+}
+
 export function parsePeer(value: unknown): SyncPeer | undefined {
   if (!isRecord(value)) return
   if (typeof value.name !== "string" || typeof value.url !== "string" || typeof value.token !== "string") return

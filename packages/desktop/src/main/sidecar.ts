@@ -12,6 +12,7 @@ import {
   overlayRelaySettings,
   parseSyncCommand,
   parseSyncStart,
+  retentionSync,
   shutdown,
   type RelayConfigUpdate,
   type SidecarSyncCommand,
@@ -112,7 +113,12 @@ async function start(command: StartCommand) {
     // The sidecar lives as long as the app, so it runs the scheduled prompts the app's sessions created, and deletes
     // sessions inactive for longer than `cleanupPeriodDays` while it leads.
     Scheduler.enableLeadership("sidecar")
-    SessionRetention.enable()
+    // Retention reads the sync record before every pass. A paired machine starts out not caught up, so it deletes
+    // nothing until a cycle catches up with the hub; a paused sync counts as unpaired. If the record cannot be
+    // written, a paired machine would read as unpaired, so retention stays off.
+    await SessionRetention.recordSync(retentionSync({ start: command.sync }))
+      .then(() => SessionRetention.enable())
+      .catch(logSyncError)
 
     listener = await Server.listen({
       port: command.port,
@@ -164,10 +170,8 @@ async function start(command: StartCommand) {
       onStatus: (status) => {
         lastSyncStatus = status
         post({ type: "sync-status", status })
-        // Retention skips its passes while a paired machine has not synced for a day.
-        SessionRetention.recordSync({ paired: status.phase !== "unpaired", lastPull: status.lastSuccess }).catch(
-          logSyncError,
-        )
+        // Retention skips its deletions while a paired machine has not caught up with the hub for a day.
+        SessionRetention.recordSync(retentionSync({ status })).catch(logSyncError)
       },
     })
     syncWorker.start()

@@ -1319,6 +1319,7 @@ export const dict = {
   "session.keep.on": "Keep forever",
   "session.keep.off": "Stop keeping",
   "session.keep.pinned": "Kept forever",
+  "session.keep.held": "Held by a schedule",
   "session.keep.deletesToday": "deletes today",
   "session.keep.deletesTomorrow": "deletes tomorrow",
   "session.keep.deletesInDays": "deletes in {{days}} days",

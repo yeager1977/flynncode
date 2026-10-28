@@ -21,6 +21,7 @@ import {
   SessionTombstoneTable,
 } from "./sql"
 import type { DeepMutable } from "../schema"
+import type { SessionSchema } from "./schema"
 
 type DatabaseService = Database.Interface["db"]
 
@@ -30,13 +31,15 @@ const encodeMessage = Schema.encodeSync(SessionMessage.Message)
 export class SessionAlreadyProjected extends Error {}
 
 /**
- * The newest activity a deleter judged a session by, in epoch ms. Provided around `session.deleted` by session
- * retention, it makes the tombstone's `time_deleted` that activity plus 1 ms instead of the wall clock, so sync
- * deletes a peer's copy only when the peer has nothing newer than what this machine saw. Unset for a manual delete.
+ * What a retention delete judged a session tree by: `latest` is the tree's newest activity in epoch ms, `root` its root
+ * session. Provided around `session.deleted` by session retention, it makes every member's tombstone `time_deleted`
+ * that activity plus 1 ms instead of the wall clock and records the root, so sync deletes a peer's copy of the tree
+ * only when the peer has nothing newer anywhere in it. Unset for a manual delete.
  */
-export const TombstoneBasis = Context.Reference<number | undefined>("@flynncode/SessionProjector/TombstoneBasis", {
-  defaultValue: () => undefined,
-})
+export const TombstoneBasis = Context.Reference<{ latest: number; root: SessionSchema.ID } | undefined>(
+  "@flynncode/SessionProjector/TombstoneBasis",
+  { defaultValue: () => undefined },
+)
 
 type Usage = {
   cost: number
@@ -278,11 +281,12 @@ const layer = Layer.effectDiscard(
         // survives. Projectors run inside the publishing fiber, so a basis the deleter provides arrives here.
         const time_recorded = Date.now()
         const basis = yield* TombstoneBasis
-        const time_deleted = basis === undefined ? time_recorded : basis + 1
+        const time_deleted = basis === undefined ? time_recorded : basis.latest + 1
+        const root_id = basis?.root ?? null
         yield* db
           .insert(SessionTombstoneTable)
-          .values({ id: event.data.sessionID, time_deleted, time_recorded })
-          .onConflictDoUpdate({ target: SessionTombstoneTable.id, set: { time_deleted, time_recorded } })
+          .values({ id: event.data.sessionID, time_deleted, time_recorded, root_id })
+          .onConflictDoUpdate({ target: SessionTombstoneTable.id, set: { time_deleted, time_recorded, root_id } })
           .run()
           .pipe(Effect.orDie)
       }),

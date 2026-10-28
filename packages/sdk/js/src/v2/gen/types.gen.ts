@@ -3761,6 +3761,7 @@ export type SessionRetention = {
   pendingFirstRunCount?: number
   expiring: Array<SessionRetentionExpiring>
   kept: Array<string>
+  held: Array<string>
 }
 
 export type SessionStatusLine = {

@@ -1,8 +1,9 @@
 export * as SessionRetentionQuery from "./query"
 
-import { sql } from "drizzle-orm"
+import { sql, type SQL } from "drizzle-orm"
 import { Effect } from "effect"
 import type { Database } from "@flynncode/core/database/database"
+import { SessionActivity } from "@/session/activity"
 import { SessionID } from "@/session/schema"
 
 export type Tree = {
@@ -10,15 +11,20 @@ export type Tree = {
   id: SessionID
   directory: string
   /**
-   * The newest write anywhere in the tree, in epoch milliseconds: session, message, part, todo, folder and V2 message
-   * rows, and the latest V2 input. The same rows machine sync dates a chat by, so a retention tombstone stamped from
-   * it outranks a peer copy only when that copy has nothing newer.
+   * The newest write anywhere in the tree, in epoch milliseconds: the session rows and `SessionActivity.content`. The
+   * same rows machine sync dates a chat by, so a retention tombstone stamped from it outranks a peer copy only when
+   * that copy has nothing newer.
    */
   latest: number
   /** `keep: true` in the root's metadata. */
   keep: boolean
-  /** `retentionHold: true` in the root's metadata: some machine has an unexpired scheduled job in the tree. */
+  /**
+   * A schedule hold that has not lapsed: `retentionHold: true` in the root's metadata, with `retentionHoldUntil` still
+   * ahead. Some machine has an unexpired scheduled job in the tree and refreshes the hold while it does.
+   */
   hold: boolean
+  /** `retentionHoldUntil` of a hold in the root's metadata, lapsed or not (0 when it has none); absent without one. */
+  holdUntil?: number
   /** Some session of the tree has an unexpired scheduled job (cron or wakeup) in this database. */
   scheduled: boolean
   /** The root and every descendant. */
@@ -30,7 +36,7 @@ type Row = {
   directory: string
   latest: number
   keep: number
-  hold: number
+  hold_until: number | null
   scheduled: number
   members: string
 }
@@ -51,19 +57,9 @@ export function statement(now: number, root?: SessionID) {
     SELECT
       tree.root AS id,
       root.directory AS directory,
-      max(max(
-        member.time_updated,
-        coalesce((SELECT max(time_updated) FROM message WHERE session_id = tree.id), 0),
-        coalesce((SELECT max(time_updated) FROM part WHERE session_id = tree.id), 0),
-        coalesce((SELECT max(time_updated) FROM session_message WHERE session_id = tree.id), 0),
-        coalesce((SELECT max(time_updated) FROM todo WHERE session_id = tree.id), 0),
-        coalesce((SELECT max(time_updated) FROM session_folder WHERE session_id = tree.id), 0),
-        coalesce((
-          SELECT time_created FROM session_input WHERE session_id = tree.id ORDER BY admitted_seq DESC LIMIT 1
-        ), 0)
-      )) AS latest,
-      coalesce(json_valid(root.metadata) AND json_type(root.metadata, '$.keep') = 'true', 0) AS keep,
-      coalesce(json_valid(root.metadata) AND json_type(root.metadata, '$.retentionHold') = 'true', 0) AS hold,
+      max(max(member.time_updated, ${SessionActivity.content(sql`tree.id`)})) AS latest,
+      ${keeps(sql`root.metadata`)} AS keep,
+      ${holdUntil(sql`root.metadata`)} AS hold_until,
       max(EXISTS (
         SELECT 1 FROM session_schedule
         WHERE session_id = tree.id AND (expires_at IS NULL OR expires_at > ${now})
@@ -87,19 +83,42 @@ export const trees = Effect.fn("SessionRetentionQuery.trees")(function* (
       directory: row.directory,
       latest: row.latest,
       keep: row.keep === 1,
-      hold: row.hold === 1,
+      hold: row.hold_until !== null && row.hold_until > now,
+      ...(row.hold_until === null ? {} : { holdUntil: row.hold_until }),
       scheduled: row.scheduled === 1,
       members: (JSON.parse(row.members) as string[]).map((id) => SessionID.make(id)),
     }),
   )
 })
 
+/** `keep: true` in a session's metadata, as 0 or 1. */
+export function keeps(metadata: SQL) {
+  return sql`CASE WHEN coalesce(json_valid(${metadata}), 0) THEN coalesce(json_type(${metadata}, '$.keep') = 'true', 0) ELSE 0 END`
+}
+
 /**
- * Whether a member's turn may still be running in some process: its latest assistant message has no completion time.
+ * The `retentionHoldUntil` of a schedule hold in a session's metadata: NULL without `retentionHold: true`, 0 for a hold
+ * without a numeric expiry (it counts as lapsed).
+ */
+export function holdUntil(metadata: SQL) {
+  return sql`CASE
+    WHEN NOT coalesce(json_valid(${metadata}), 0) THEN NULL
+    WHEN coalesce(json_type(${metadata}, '$.retentionHold') = 'true', 0) THEN
+      CASE WHEN json_type(${metadata}, '$.retentionHoldUntil') IN ('integer', 'real')
+        THEN json_extract(${metadata}, '$.retentionHoldUntil') ELSE 0 END
+  END`
+}
+
+/**
+ * Whether a member's turn may still be running or waiting in some process, by what the database persists:
+ * - its latest V1 assistant message has no completion time;
+ * - its latest V2 assistant message has no completion time (a V2 turn waiting on a permission or a question keeps it
+ *   open, whichever process drives it);
+ * - it has a V2 input admitted but not yet promoted into the transcript (a turn is queued for it).
  * A newer assistant message ends an older unfinished one (a crash orphaned it), so only the latest counts. The bound
  * the scheduler puts on this (recent writes) does not fit retention, which only looks at trees idle for days: a turn
- * waiting on a permission or a question writes nothing while it waits. A turn a crash left unfinished keeps its tree
- * until the session runs again.
+ * waiting on a permission or a question writes nothing while it waits. A turn or input a crash left unfinished keeps
+ * its tree until the session runs again.
  */
 export const unfinished = Effect.fn("SessionRetentionQuery.unfinished")(function* (
   database: Database.Interface,
@@ -114,6 +133,13 @@ export const unfinished = Effect.fn("SessionRetentionQuery.unfinished")(function
           ORDER BY time_created DESC, id DESC
           LIMIT 1
         ) = 1
+        OR (
+          SELECT json_extract(data, '$.time.completed') IS NULL FROM session_message
+          WHERE session_id = member.value AND type = 'assistant'
+          ORDER BY seq DESC
+          LIMIT 1
+        ) = 1
+        OR EXISTS (SELECT 1 FROM session_input WHERE session_id = member.value AND promoted_seq IS NULL)
         LIMIT 1`,
     )
     .pipe(Effect.orDie)

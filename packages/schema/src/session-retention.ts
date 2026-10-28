@@ -13,14 +13,16 @@ export const Expiring = Schema.Struct({
 }).annotate({ identifier: "SessionRetentionExpiring" })
 
 // What the app needs for its hints and pin icons. `kept` lists the root sessions whose metadata has `keep: true`,
-// because the session list the app loads carries no metadata. `firstRunAt` and `pendingFirstRunCount` are present
-// only while the first pass that found more than 20 deletable trees is delayed: the trees are deleted at `firstRunAt`.
+// because the session list the app loads carries no metadata. `held` lists the root sessions a scheduled job protects:
+// a schedule hold that has not lapsed, or a job in this database. `firstRunAt` and `pendingFirstRunCount` are present
+// only while a pass that would delete more than 20 trees at once is delayed: the trees are deleted at `firstRunAt`.
 export const Info = Schema.Struct({
   cleanupPeriodDays: PositiveInt,
   firstRunAt: optional(NonNegativeInt),
   pendingFirstRunCount: optional(NonNegativeInt),
   expiring: Schema.Array(Expiring),
   kept: Schema.Array(SessionID),
+  held: Schema.Array(SessionID),
 }).annotate({ identifier: "SessionRetention" })
 export interface Info extends Schema.Schema.Type<typeof Info> {}
 

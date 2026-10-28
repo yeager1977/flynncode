@@ -38,8 +38,12 @@ export const FIRST_RUN_DELAY_MS = DAY
 export const EXPIRING_MS = 3 * DAY
 /** A crashed leader's lock is broken after this long without a heartbeat. */
 export const LOCK_STALE_MS = 60_000
-/** While hub sync is set up, passes are skipped once its last successful cycle is older than this. */
+/** While hub sync is set up, passes delete nothing unless a cycle caught up with the hub within this long. */
 export const SYNC_STALE_MS = DAY
+/** A schedule hold lapses this long after the machine that set it last refreshed it. */
+export const HOLD_MS = 7 * DAY
+/** The machine whose job holds a tree refreshes the hold once it is this old, checking on every pass. */
+export const HOLD_REFRESH_MS = DAY
 
 export type Summary = {
   cleanupPeriodDays: number
@@ -54,7 +58,7 @@ export type Summary = {
   failed: number
   /** Set while a surge is delayed: nothing is deleted before this time. */
   delayedUntil?: number
-  /** Set when the pass deleted nothing because hub sync has not succeeded for `SYNC_STALE_MS`. */
+  /** Set when the pass deleted nothing because hub sync has not caught up within `SYNC_STALE_MS`. */
   skipped?: "sync-stale"
 }
 
@@ -90,10 +94,12 @@ export function enabled() {
 }
 
 // The first-run bookkeeping, the period the last pass ran with, and the trees this machine put a schedule hold on.
-// While a surge is delayed, `firstRunAt` (when it deletes) and `pendingFirstRunCount` are set.
+// While a surge is delayed, `firstRunAt` (when it deletes), `pendingFirstRunCount` and `pendingPeriodDays` (the period
+// the delay was announced under) are set.
 const State = Schema.Struct({
   firstRunAt: Schema.optional(Schema.Finite),
   pendingFirstRunCount: Schema.optional(Schema.Finite),
+  pendingPeriodDays: Schema.optional(Schema.Finite),
   completedAt: Schema.optional(Schema.Finite),
   periodDays: Schema.optional(Schema.Finite),
   holds: Schema.optional(Schema.Array(Schema.String)),
@@ -102,7 +108,7 @@ type State = typeof State.Type
 const decodeState = Schema.decodeUnknownOption(Schema.fromJsonString(State))
 
 // What the desktop's sync worker last reported; see `recordSync`.
-const SyncState = Schema.Struct({ paired: Schema.Boolean, lastPull: Schema.optional(Schema.Finite) })
+const SyncState = Schema.Struct({ paired: Schema.Boolean, lastCaughtUp: Schema.optional(Schema.Finite) })
 const decodeSync = Schema.decodeUnknownOption(Schema.fromJsonString(SyncState))
 
 /** The retention state file: one per database file, so each channel's database has its own. */
@@ -118,12 +124,13 @@ export function defaultSyncPath() {
 const recorded = { text: "" }
 
 /**
- * Records the hub sync worker's state for retention: whether this machine is paired, and when its last sync cycle
- * (pull, then push) completed. The desktop sidecar calls it after every cycle; it writes only on a change. A plain
- * promise, because the sidecar runs on Node outside any Effect runtime.
+ * Records the hub sync worker's state for retention: whether this machine is paired (a paused sync counts as not),
+ * and when a sync cycle last caught up with the hub, leaving no pull for later. The desktop sidecar calls it on start,
+ * so a paired machine is never read as unpaired, and after every cycle; it writes only on a change. A plain promise,
+ * because the sidecar runs on Node outside any Effect runtime.
  */
-export async function recordSync(input: { paired: boolean; lastPull: number | null }) {
-  const text = JSON.stringify(input.lastPull === null ? { paired: input.paired } : input)
+export async function recordSync(input: { paired: boolean; lastCaughtUp: number | null }) {
+  const text = JSON.stringify(input.lastCaughtUp === null ? { paired: input.paired } : input)
   if (text === recorded.text) return
   await mkdir(Global.Path.state, { recursive: true })
   await writeFile(defaultSyncPath(), text)
@@ -219,15 +226,17 @@ export const make = Effect.fn("SessionRetention.make")(function* (options: {
 
   const writeState = (state: State) => fs.writeWithDirs(statePath, JSON.stringify(state)).pipe(Effect.orDie)
 
-  // Hub sync set up but silent for a day: this machine may lack newer copies of what it would delete. An unreadable
-  // record counts as stale; the sidecar rewrites it after its next cycle.
+  // Hub sync set up, but no cycle caught up with the hub in the last day: this machine may lack newer copies of what
+  // it would delete, even while cycles run and pull a backlog 20 chats at a time. An unreadable record counts as
+  // stale; the sidecar rewrites it after its next cycle. No record at all means sync was never set up here: the
+  // sidecar writes one on start.
   const syncStale = Effect.fnUntraced(function* (now: number) {
     const text = yield* fs.readFileStringSafe(syncPath).pipe(Effect.orElseSucceed(() => undefined))
     if (text === undefined) return false
     const sync = decodeSync(text)
     if (Option.isNone(sync)) return true
     if (!sync.value.paired) return false
-    return sync.value.lastPull === undefined || now - sync.value.lastPull > SYNC_STALE_MS
+    return sync.value.lastCaughtUp === undefined || now - sync.value.lastCaughtUp > SYNC_STALE_MS
   })
 
   // Background shells live in this process only. A shell another process runs is not seen here, but its output
@@ -261,16 +270,20 @@ export const make = Effect.fn("SessionRetention.make")(function* (options: {
   })
 
   // Mirrors this database's scheduled jobs into the synced `retentionHold` flag on their trees' roots, so a machine
-  // without the job never deletes the tree. Only holds this machine set are cleared, once its last job there is gone
-  // or expired: a hold synced from a machine whose job still runs is never touched here. Writing the flag counts as
-  // activity, which also carries it to the other machines.
+  // without the job never deletes the tree. The hold carries `retentionHoldUntil`: this machine refreshes it once a
+  // day while a job runs, and it lapses `HOLD_MS` after the last refresh, so a hold whose machine is gone or lost its
+  // state never sticks. Only holds this machine set are cleared, once its last job there is gone or expired: a hold
+  // synced from a machine whose job still runs is never touched here. Writing the flag counts as activity, which also
+  // carries it to the other machines.
   const holds = Effect.fnUntraced(function* (trees: SessionRetentionQuery.Tree[], now: number) {
     const state = yield* readState()
     const mine = new Set(state.holds ?? [])
     const changes = [
-      ...trees.filter((tree) => tree.scheduled && !tree.hold).map((tree) => ({ id: tree.id, hold: true })),
       ...trees
-        .filter((tree) => !tree.scheduled && tree.hold && mine.has(tree.id))
+        .filter((tree) => tree.scheduled && (tree.holdUntil ?? 0) - now < HOLD_MS - HOLD_REFRESH_MS)
+        .map((tree) => ({ id: tree.id, hold: true })),
+      ...trees
+        .filter((tree) => !tree.scheduled && tree.holdUntil !== undefined && mine.has(tree.id))
         .map((tree) => ({ id: tree.id, hold: false })),
     ]
     yield* Effect.forEach(
@@ -281,8 +294,12 @@ export const make = Effect.fn("SessionRetention.make")(function* (options: {
             sessionID: change.id,
             update: (metadata) =>
               change.hold
-                ? { ...metadata, retentionHold: true }
-                : Object.fromEntries(Object.entries(metadata).filter((item) => item[0] !== "retentionHold")),
+                ? { ...metadata, retentionHold: true, retentionHoldUntil: now + HOLD_MS }
+                : Object.fromEntries(
+                    Object.entries(metadata).filter(
+                      (item) => item[0] !== "retentionHold" && item[0] !== "retentionHoldUntil",
+                    ),
+                  ),
           })
           .pipe(
             Effect.catchCause((cause) =>
@@ -333,8 +350,9 @@ export const make = Effect.fn("SessionRetention.make")(function* (options: {
   })
 
   // A surge waits a day so the owner sees what is coming: the first pass that finds more than `FIRST_RUN_LIMIT` trees,
-  // and a pass after `cleanupPeriodDays` was lowered that makes more than `FIRST_RUN_LIMIT` trees newly eligible. A
-  // pass with nothing to delete spends neither, and drops a pending delay that no longer applies.
+  // and a pass after `cleanupPeriodDays` was lowered that makes more than `FIRST_RUN_LIMIT` trees newly eligible, also
+  // while a delay is pending (the delay restarts, with a new notice). A pass with nothing to delete spends neither, and
+  // drops a pending delay that no longer applies.
   const gate = Effect.fnUntraced(function* (due: SessionRetentionQuery.Tree[], now: number, days: number) {
     const state = yield* readState()
     const settled = { completedAt: state.completedAt, periodDays: state.periodDays, holds: state.holds }
@@ -345,6 +363,18 @@ export const make = Effect.fn("SessionRetention.make")(function* (options: {
       if (state.firstRunAt !== undefined || next.periodDays !== state.periodDays) yield* writeState(next)
       return undefined
     }
+    // Under a lower period than the one compared against, the trees that period would not yet delete are newly
+    // eligible: the period a pending delay announced, or else the period the last pass ran with.
+    const before = state.firstRunAt === undefined ? state.periodDays : (state.pendingPeriodDays ?? days)
+    const surge =
+      first && state.firstRunAt === undefined
+        ? due.length
+        : due.filter((tree) => deletesAt(tree, before ?? days) > now).length
+    if (surge > FIRST_RUN_LIMIT) {
+      const firstRunAt = now + FIRST_RUN_DELAY_MS
+      yield* writeState({ ...state, firstRunAt, pendingFirstRunCount: due.length, pendingPeriodDays: days })
+      return firstRunAt
+    }
     if (state.firstRunAt !== undefined && now >= state.firstRunAt) {
       yield* writeState({ ...settled, completedAt: now, periodDays: days })
       return undefined
@@ -352,12 +382,6 @@ export const make = Effect.fn("SessionRetention.make")(function* (options: {
     if (state.firstRunAt !== undefined) {
       if (state.pendingFirstRunCount !== due.length) yield* writeState({ ...state, pendingFirstRunCount: due.length })
       return state.firstRunAt
-    }
-    // Under a lower period than the last pass used, the trees that period would not yet delete are newly eligible.
-    const surge = first ? due.length : due.filter((tree) => deletesAt(tree, state.periodDays ?? days) > now).length
-    if (surge > FIRST_RUN_LIMIT) {
-      yield* writeState({ ...state, firstRunAt: now + FIRST_RUN_DELAY_MS, pendingFirstRunCount: due.length })
-      return now + FIRST_RUN_DELAY_MS
     }
     if (first || state.periodDays !== days)
       yield* writeState({ ...settled, completedAt: first ? now : state.completedAt, periodDays: days })
@@ -439,6 +463,8 @@ export const make = Effect.fn("SessionRetention.make")(function* (options: {
         .map((tree) => ({ sessionID: tree.id, deletesAt: Math.max(deletesAt(tree, days), pending ?? 0) }))
         .toSorted((a, b) => a.deletesAt - b.deletesAt),
       kept: trees.filter((tree) => tree.keep).map((tree) => tree.id),
+      // A local job protects its tree before its hold is written.
+      held: trees.filter((tree) => tree.hold || tree.scheduled).map((tree) => tree.id),
     }
   })
 

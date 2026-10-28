@@ -98,16 +98,24 @@ export const machineSyncRoutes = HttpRouter.use((router) =>
       Effect.gen(function* () {
         const sessionID = decodeSessionID((yield* HttpRouter.params).id)
         const body: unknown = yield* request.json.pipe(Effect.orElseSucceed(() => undefined))
+        // A retention delete names its tree root, so the tombstone is judged per tree wherever it travels.
+        const root = isRecord(body) && body.root !== undefined ? decodeSessionID(body.root) : Option.none()
         if (
           Option.isNone(sessionID) ||
           !isRecord(body) ||
           typeof body.timeDeleted !== "number" ||
           !Number.isInteger(body.timeDeleted) ||
+          (body.root !== undefined && Option.isNone(root)) ||
           !MachineSyncStore.isVersion(body.expected)
         )
           return json({ error: "bad request" }, 400)
         return yield* store
-          .remove({ sessionID: sessionID.value, timeDeleted: body.timeDeleted, expected: body.expected })
+          .remove({
+            sessionID: sessionID.value,
+            timeDeleted: body.timeDeleted,
+            ...(Option.isSome(root) ? { root: root.value } : {}),
+            expected: body.expected,
+          })
           .pipe(
             Effect.as(json({ ok: true })),
             Effect.catchTag("MachineSyncBusyError", () => Effect.succeed(json({ error: "busy" }, 409))),
