@@ -20,3 +20,8 @@ export function initializationReady<A>(state: (() => A | undefined) & { error: u
   initializationData(state)
   return true
 }
+
+// The splash names the sidecar's one-time history database compaction, which can take minutes.
+export function compactingDatabase(progress: { phase: string; state: string } | undefined) {
+  return progress?.phase === "compact" && progress.state === "started"
+}

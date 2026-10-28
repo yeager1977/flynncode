@@ -96,6 +96,7 @@ const require = __cjs_mod__.createRequire(import.meta.url);
     root: "src/renderer",
     build: {
       sourcemap: true,
+      minify: "esbuild",
       rollupOptions: {
         input: {
           main: "src/renderer/index.html",

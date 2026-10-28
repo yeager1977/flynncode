@@ -9,6 +9,7 @@ import type {
   PluginEntry,
 } from "@flynncode/app/components/settings-v2/plugins-types"
 import type { RelayConfigUpdate } from "../main/sidecar-sync"
+import type { MaintenanceProgress } from "../main/sidecar-maintenance"
 export type {
   WslDistroProbe,
   WslInstalledDistro,
@@ -103,6 +104,8 @@ export type ElectronAPI = {
   killSidecar: () => Promise<void>
   installCli: () => Promise<string>
   awaitInitialization: () => Promise<ServerReadyData>
+  // Reports the sidecar's one-time database maintenance (the current state first, then changes).
+  onServerMaintenance: (cb: (progress: MaintenanceProgress) => void) => () => void
   wslServers: WslServersAPI
   updater: UpdaterAPI
   consumeInitialDeepLinks: () => Promise<string[]>

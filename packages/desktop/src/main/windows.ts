@@ -42,6 +42,7 @@ protocol.registerSchemesAsPrivileged([
       standard: true,
       supportFetchAPI: true,
       stream: true,
+      codeCache: true,
     },
   },
 ])

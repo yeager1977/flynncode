@@ -60,7 +60,6 @@ import { legacyDraftTarget } from "@/pages/layout/new-layout-sidebar"
 import { SDKProvider, useSDK } from "@/context/sdk"
 import { WslServersProvider } from "@/wsl/context"
 import DirectoryLayout, { DirectoryDataProvider } from "@/pages/directory-layout"
-import LegacyLayout from "@/pages/layout"
 import NewLayout from "@/pages/layout-new"
 import { DispatchActivityProvider } from "@/pages/dispatch/dispatch-activity"
 import { ErrorPage } from "./pages/error"
@@ -70,9 +69,7 @@ import { createSessionLineage } from "@/pages/session/session-lineage"
 
 import { SessionPage, SessionRouteErrorBoundary, TargetSessionRouteContent } from "@/pages/session"
 import { StartRoute } from "@/pages/start"
-import { UsagePage } from "@/pages/usage"
-import { CleanupPage } from "@/pages/cleanup"
-import { LegacyHome } from "@/pages/home/legacy-home"
+import { CleanupPage, LegacyHome, LegacyLayout, UsagePage } from "@/lazy-pages"
 
 const NewSession = lazy(() => import("@/pages/new-session"))
 

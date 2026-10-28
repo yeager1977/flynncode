@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { initializationData, initializationReady } from "./initialization"
+import { compactingDatabase, initializationData, initializationReady } from "./initialization"
 
 describe("desktop renderer initialization", () => {
   test("throws the original initialization error before rendering server providers", () => {
@@ -69,5 +69,13 @@ describe("desktop renderer initialization", () => {
       ),
     ).toBe(false)
     expect(reads).toBe(0)
+  })
+})
+
+describe("desktop splash maintenance notice", () => {
+  test("names the database compaction only while it runs", () => {
+    expect(compactingDatabase(undefined)).toBe(false)
+    expect(compactingDatabase({ phase: "compact", state: "started" })).toBe(true)
+    expect(compactingDatabase({ phase: "compact", state: "finished" })).toBe(false)
   })
 })

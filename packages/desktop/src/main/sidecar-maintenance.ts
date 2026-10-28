@@ -12,3 +12,16 @@ export function stallTimeoutFor(message: { type: string; phase?: string; state?:
     return SIDECAR_MAINTENANCE_TIMEOUT
   return SIDECAR_START_STALL_TIMEOUT
 }
+
+// Windows open before the sidecar is ready, so a window created mid-compaction asks for the latest
+// progress instead of relying on having seen the broadcast.
+export function createMaintenanceRelay(broadcast: (progress: MaintenanceProgress) => void) {
+  const state = { latest: null as MaintenanceProgress | null }
+  return {
+    latest: () => state.latest,
+    report: (progress: MaintenanceProgress) => {
+      state.latest = progress
+      broadcast(progress)
+    },
+  }
+}

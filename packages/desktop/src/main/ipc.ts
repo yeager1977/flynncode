@@ -12,6 +12,7 @@ import { getQuickEntryEnabled, setQuickEntryEnabled } from "./quick-entry"
 import type { FatalRendererError, ServerReadyData, TitlebarTheme } from "../preload/types"
 import { parsePairInput, type MachineSync } from "./machine-sync"
 import { parsePrefs, parseRelayConfig } from "./sidecar-sync"
+import type { MaintenanceProgress } from "./sidecar-maintenance"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { setForceFocus } from "./debug"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
@@ -100,6 +101,7 @@ type Deps = {
   killSidecar: () => Promise<void> | void
   relaunch: () => void
   awaitInitialization: () => Promise<ServerReadyData>
+  serverMaintenance: () => MaintenanceProgress | null
   consumeInitialDeepLinks: () => Promise<string[]> | string[]
   getDefaultServerUrl: () => Promise<string | null> | string | null
   setDefaultServerUrl: (url: string | null) => Promise<void> | void
@@ -133,6 +135,7 @@ export function registerIpcHandlers(deps: Deps) {
 
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
   ipcMain.handle("await-initialization", () => deps.awaitInitialization())
+  ipcMain.handle("get-server-maintenance", () => deps.serverMaintenance())
   ipcMain.handle("consume-initial-deep-links", () => deps.consumeInitialDeepLinks())
   ipcMain.handle("get-default-server-url", () => deps.getDefaultServerUrl())
   ipcMain.handle("set-default-server-url", (_event: IpcMainInvokeEvent, url: string | null) =>

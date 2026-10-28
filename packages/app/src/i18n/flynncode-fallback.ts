@@ -364,6 +364,7 @@ const keys = [
   "settings.sessionHistory.days.unit",
   "settings.sessionHistory.paused",
   "settings.sessionHistory.toast.updateFailed.title",
+  "startup.database.optimizing",
 ] as const
 
 export const flynncodeFallback = Object.fromEntries(

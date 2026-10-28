@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from "electron"
 import type { ElectronAPI, WslServersEvent } from "./types"
 import type { MachineSyncPrefs, MachineSyncStatus } from "@flynncode/app/machine-sync-types"
 import type { UpdaterState } from "@flynncode/app/updater"
+import type { MaintenanceProgress } from "../main/sidecar-maintenance"
 
 const updaterCallbacks = new Set<(state: UpdaterState) => void>()
 let updaterState: UpdaterState | undefined
@@ -15,6 +16,14 @@ const api: ElectronAPI = {
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
   installCli: () => ipcRenderer.invoke("install-cli"),
   awaitInitialization: () => ipcRenderer.invoke("await-initialization"),
+  onServerMaintenance: (cb) => {
+    const handler = (_: unknown, progress: MaintenanceProgress) => cb(progress)
+    ipcRenderer.on("server-maintenance", handler)
+    void ipcRenderer
+      .invoke("get-server-maintenance")
+      .then((progress: MaintenanceProgress | null) => progress && cb(progress))
+    return () => ipcRenderer.removeListener("server-maintenance", handler)
+  },
   wslServers: {
     getState: () => ipcRenderer.invoke("wsl-servers-get-state"),
     subscribe: (cb) => {

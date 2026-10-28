@@ -1,4 +1,5 @@
 import * as http from "node:http"
+import { enableCompileCache, flushCompileCache } from "node:module"
 import * as tls from "node:tls"
 import { hostname } from "node:os"
 import { createSyncWorker, initialStatus, type SyncStatus, type SyncWorker } from "@flynncode/mobile-gateway/sync"
@@ -35,6 +36,8 @@ type StartCommand = {
   port: number
   password: string
   userDataPath: string
+  // Node's compile cache for the server bundle, under the app's cache path.
+  compileCachePath?: string
   mobile: { password: string; port: number }
   // Relay secrets travel in the start message rather than the sidecar env so
   // they never leak into agent shells, which inherit process.env.
@@ -109,6 +112,8 @@ async function start(command: StartCommand) {
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
+    // Must run before the server bundle is imported: only modules loaded afterwards use the cache.
+    if (command.compileCachePath) enableCompileCache(command.compileCachePath)
     const { Server, Scheduler, SessionRetention } = await import("virtual:opencode-server")
     // The sidecar lives as long as the app, so it runs the scheduled prompts the app's sessions created, and deletes
     // sessions inactive for longer than `cleanupPeriodDays` while it leads.
@@ -176,6 +181,8 @@ async function start(command: StartCommand) {
     })
     syncWorker.start()
     parentPort.postMessage({ type: "ready" })
+    // Node writes the cache only at exit, which a killed sidecar never reaches.
+    if (command.compileCachePath) flushCompileCache()
   } catch (error) {
     parentPort.postMessage({ type: "error", error: serializeError(error) })
     setImmediate(() => process.exit(1))
@@ -439,6 +446,7 @@ function parseCommand(value: unknown): SidecarCommand | undefined {
     port: command.port,
     password: command.password,
     userDataPath: command.userDataPath,
+    compileCachePath: typeof command.compileCachePath === "string" ? command.compileCachePath : undefined,
     mobile: { password: mobilePassword, port: mobilePort },
     relay,
     sync,

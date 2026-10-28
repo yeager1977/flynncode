@@ -23,7 +23,7 @@ import { createEffect, createMemo, createResource, createSignal, onCleanup, Show
 import { render } from "solid-js/web"
 import pkg from "../../package.json"
 import { t } from "./i18n"
-import { initializationData } from "./initialization"
+import { compactingDatabase, initializationData } from "./initialization"
 import { DesktopFirstLaunchOnboarding } from "./onboarding"
 import { resetZoom, setPinchZoomEnabled, webviewZoom, zoomIn, zoomOut } from "./webview-zoom"
 import { windowFullscreen } from "./window-fullscreen"
@@ -355,10 +355,13 @@ window.api.onMenuCommand((id) => {
 listenForDeepLinks()
 listenForQuickEntry()
 
-function LoadingSplash() {
+function LoadingSplash(props: { message?: string }) {
   return (
     <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
       <Splash class="w-16 h-20 opacity-50 animate-pulse" />
+      <Show when={props.message}>
+        {(message) => <div class="mt-4 text-14-regular text-text-weak">{message()}</div>}
+      </Show>
     </div>
   )
 }
@@ -407,6 +410,8 @@ function DesktopRoot(props: { windowState: DesktopWindowState }) {
   function App() {
     const wslServers = useWslServers()
     const language = useLanguage()
+    const [maintenance, setMaintenance] = createSignal<{ phase: string; state: string }>()
+    onCleanup(window.api.onServerMaintenance((progress) => setMaintenance(progress)))
     const ready = createMemo(
       () => !defaultServer.loading && !sidecar.loading && !locale.loading && !wslServers.isLoading,
     )
@@ -432,7 +437,14 @@ function DesktopRoot(props: { windowState: DesktopWindowState }) {
       ServerConnection.Key.make(availableStartupServer(defaultServer.latest, wslServers.data)),
     )
     return (
-      <Show when={ready()} fallback={<LoadingSplash />}>
+      <Show
+        when={ready()}
+        fallback={
+          <LoadingSplash
+            message={compactingDatabase(maintenance()) ? language.t("startup.database.optimizing") : undefined}
+          />
+        }
+      >
         <Show when={effectiveDefaultServer()} keyed>
           {(key) => (
             <AppInterface

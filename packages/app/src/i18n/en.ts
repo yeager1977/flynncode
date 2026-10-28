@@ -1892,6 +1892,7 @@ export const dict = {
   "settings.sessionHistory.days.unit": "days",
   "settings.sessionHistory.paused": "Automatic cleanup is paused until sync catches up",
   "settings.sessionHistory.toast.updateFailed.title": "Failed to update session history",
+  "startup.database.optimizing": "Optimizing history database…",
 
   "settings.rateLimit.section.title": "Rate limits",
   "settings.rateLimit.onLimit.title": "When a model hits a usage limit",

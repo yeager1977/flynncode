@@ -8,7 +8,12 @@ import { getStore } from "./store"
 import { DEFAULT_SERVER_URL_KEY } from "./store-keys"
 import { MOBILE_GATEWAY_PORT } from "./mobile-gateway-launch"
 import { sidecarExecArgv } from "./sidecar-exec-args"
-import { SIDECAR_START_STALL_TIMEOUT, stallTimeoutFor, type MaintenanceMessage } from "./sidecar-maintenance"
+import {
+  SIDECAR_START_STALL_TIMEOUT,
+  stallTimeoutFor,
+  type MaintenanceMessage,
+  type MaintenanceProgress,
+} from "./sidecar-maintenance"
 import { sidecarArguments, sidecarNodeFlags } from "./sidecar-args"
 import { isSyncMessage, type SidecarSyncCommand, type SidecarSyncMessage, type SidecarSyncStart } from "./sidecar-sync"
 
@@ -27,10 +32,12 @@ const SIDECAR_STOP_TIMEOUT = 6_000
 
 type SpawnLocalServerOptions = {
   userDataPath: string
+  compileCachePath: string
   mobilePassword: string
   relay: { token: string; remoteToken: string; url: string }
   sync: SidecarSyncStart
   onSyncMessage?: (message: SidecarSyncMessage) => void
+  onMaintenance?: (progress: MaintenanceProgress) => void
   onStdout?: (message: string) => void
   onStderr?: (message: string) => void
   onExit?: (code: number) => void
@@ -134,6 +141,7 @@ export async function spawnLocalServer(
       if (message.type === "maintenance") {
         getLogger().log("sidecar database maintenance", { phase: message.phase, state: message.state })
         refreshTimeout(stallTimeoutFor(message))
+        options.onMaintenance?.({ phase: message.phase, state: message.state })
         return
       }
       if (message.type === "ready") {
@@ -165,6 +173,7 @@ export async function spawnLocalServer(
       port,
       password,
       userDataPath: options.userDataPath,
+      compileCachePath: options.compileCachePath,
       mobile: { password: options.mobilePassword, port: MOBILE_GATEWAY_PORT },
       relay: options.relay,
       sync: options.sync,

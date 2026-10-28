@@ -8,14 +8,14 @@ import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
 import { app, BrowserWindow, safeStorage } from "electron"
 
-import { Deferred, Effect, Fiber } from "effect"
+import { Deferred, Effect } from "effect"
 import contextMenu from "electron-context-menu"
 
 import type { ServerReadyData } from "../preload/types"
 import { checkAppExists, resolveAppPath } from "./apps"
 import { CHANNEL } from "./constants"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
-import { forwardInitializationFailure } from "./initialization"
+import { forwardInitializationFailure, openBeforeServer } from "./initialization"
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
 import { createMenu } from "./menu"
 import { registerQuickEntryShortcut } from "./quick-entry"
@@ -60,6 +60,7 @@ import type { SidecarSyncCommand } from "./sidecar-sync"
 import { getOrCreateMobilePhonePassword } from "./mobile-password"
 import { generateRelayToken } from "./relay-publisher"
 import { getStore } from "./store"
+import { createMaintenanceRelay } from "./sidecar-maintenance"
 import { createTray, destroyTray, trayActive } from "./tray"
 
 const APP_NAMES: Record<string, string> = {
@@ -317,6 +318,11 @@ const main = Effect.gen(function* () {
   // The sidecar spawns later; commands sent before it exists are dropped
   // (post reports false) because its start message carries the same stored state.
   const sidecar: { post?: (command: SidecarSyncCommand) => boolean } = {}
+  const maintenance = createMaintenanceRelay((progress) =>
+    BrowserWindow.getAllWindows()
+      .filter((win) => !win.isDestroyed())
+      .forEach((win) => win.webContents.send("server-maintenance", progress)),
+  )
   const machineSync = createMachineSync({
     store: syncStore,
     machineName: hostname(),
@@ -339,6 +345,7 @@ const main = Effect.gen(function* () {
       },
       (e) => Effect.runPromise(e),
     ),
+    serverMaintenance: () => maintenance.latest(),
     consumeInitialDeepLinks: () => pendingDeepLinks.splice(0),
     getDefaultServerUrl: () => getDefaultServerUrl(),
     setDefaultServerUrl: (url) => setDefaultServerUrl(url),
@@ -378,7 +385,7 @@ const main = Effect.gen(function* () {
     ),
   )
 
-  const loadingTask = yield* Effect.gen(function* () {
+  const loadServer = Effect.gen(function* () {
     logger.log("sidecar connection started", { version: SIDECAR_VERSION })
 
     ensureLoopbackNoProxy()
@@ -471,10 +478,12 @@ const main = Effect.gen(function* () {
     const { listener, health, post } = yield* Effect.promise(() =>
       spawnLocalServer(host, port, password, {
         userDataPath: app.getPath("userData"),
+        compileCachePath: join(app.getPath("sessionData"), "Sidecar Code Cache"),
         mobilePassword,
         relay,
         sync: readSyncStart(syncStore, hostname()),
         onSyncMessage: (message) => machineSync.handleSidecarMessage(message),
+        onMaintenance: (progress) => maintenance.report(progress),
         onStdout: (message) => writeLog("server", "stdout", { message }),
         onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
         onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),
@@ -502,26 +511,29 @@ const main = Effect.gen(function* () {
     )
 
     logger.log("loading task finished")
-  }).pipe(forwardInitializationFailure(serverReady), Effect.forkChild)
-
-  yield* Fiber.await(loadingTask)
-
-  // The tray icon keeps the app (and its sidecar server, so sessions keep
-  // running) alive once the window is closed.
-  createTray()
-
-  app.on("window-all-closed", () => {
-    if (process.platform === "darwin") return
-    if (trayActive()) return
-    app.quit()
-  })
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length > 0) return
-    restoreMainWindows()
   })
 
-  const windows = restoreMainWindows()
-  if (windows.length) createMenu(menuDeps)
+  yield* openBeforeServer({
+    load: loadServer.pipe(forwardInitializationFailure(serverReady)),
+    open: () => {
+      // The tray icon keeps the app (and its sidecar server, so sessions keep
+      // running) alive once the window is closed.
+      createTray()
+
+      app.on("window-all-closed", () => {
+        if (process.platform === "darwin") return
+        if (trayActive()) return
+        app.quit()
+      })
+      app.on("activate", () => {
+        if (BrowserWindow.getAllWindows().length > 0) return
+        restoreMainWindows()
+      })
+
+      const windows = restoreMainWindows()
+      if (windows.length) createMenu(menuDeps)
+    },
+  })
 })
 
 Effect.runFork(main)

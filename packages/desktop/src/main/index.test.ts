@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Cause, Deferred, Effect, Exit, Fiber } from "effect"
-import { forwardInitializationFailure } from "./initialization"
+import { forwardInitializationFailure, openBeforeServer } from "./initialization"
 
 describe("desktop initialization", () => {
   const failure = new Error("sidecar startup failed")
@@ -32,6 +32,44 @@ describe("desktop initialization", () => {
       }),
     )
 
+    expectFailure(exit)
+  })
+
+  test("opens windows before the server has loaded", async () => {
+    const events: string[] = []
+    const exit = await Effect.runPromise(
+      Effect.gen(function* () {
+        const server = yield* Deferred.make<void>()
+        const startup = yield* openBeforeServer({
+          load: Deferred.await(server).pipe(Effect.tap(() => Effect.sync(() => events.push("server ready")))),
+          open: () => events.push("windows open"),
+        }).pipe(Effect.forkChild)
+        yield* Effect.yieldNow
+        events.push("server starting")
+        yield* Deferred.succeed(server, undefined)
+        return yield* Fiber.join(startup)
+      }),
+    )
+
+    expect(Exit.isSuccess(exit)).toBe(true)
+    expect(events).toEqual(["windows open", "server starting", "server ready"])
+  })
+
+  test("reports a server failure to windows that are already open", () => {
+    const events: string[] = []
+    const exit = Effect.runSync(
+      Effect.gen(function* () {
+        const initialization = yield* Deferred.make<never, unknown>()
+        const startup = yield* openBeforeServer({
+          load: Effect.die(failure).pipe(forwardInitializationFailure(initialization)),
+          open: () => events.push("windows open"),
+        })
+        expect(Exit.isFailure(startup)).toBe(true)
+        return yield* Deferred.await(initialization).pipe(Effect.exit)
+      }),
+    )
+
+    expect(events).toEqual(["windows open"])
     expectFailure(exit)
   })
 })
