@@ -21,11 +21,9 @@ import { Worktree } from "@/worktree"
 import { disposeSettledWorktree } from "@/worktree/dispose-bound"
 import { NamedError } from "@flynncode/core/util/error"
 import { FSUtil } from "@flynncode/core/fs-util"
-import { AbsolutePath } from "@flynncode/core/schema"
-import { ProjectV2 } from "@flynncode/core/project"
 import { normalizeFolders, MaxExtras } from "@flynncode/core/project/folders"
-import { ProjectDirectories } from "@flynncode/core/project/directories"
 import { SessionFolders } from "@flynncode/core/session/folders"
+import { SessionFolderSwitch } from "@/session/folder-switch"
 import { InstanceStore } from "@/project/instance-store"
 import { Cause, Effect, Option, Schema, Scope } from "effect"
 import * as Stream from "effect/Stream"
@@ -84,11 +82,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const worktreeSvc = yield* Worktree.Service
     const project = yield* Project.Service
     const fs = yield* FSUtil.Service
-    const projects = yield* ProjectV2.Service
-    const projectDirectories = yield* ProjectDirectories.Service
     const sessionFolders = yield* SessionFolders.Service
     const liveFolders = yield* SessionFolders.Live
     const instances = yield* InstanceStore.Service
+    const folderSwitch = yield* SessionFolderSwitch.Service
 
     // Dispose-on-archive/delete: a session carrying a disposable worktree
     // binding in its metadata removes that worktree's folder once every
@@ -529,44 +526,35 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         return { primary: info.directory, extras }
       })
       if (ctx.payload.primary !== undefined) {
-        const nextPrimary = yield* fs.resolve(ctx.payload.primary)
-        if (!(yield* exists(nextPrimary))) return yield* notFound(`Folder not found: ${ctx.payload.primary}`)
+        const primary = ctx.payload.primary
+        const nextPrimary = yield* fs.resolve(primary)
+        if (!(yield* exists(nextPrimary))) return yield* notFound(`Folder not found: ${primary}`)
         if (nextPrimary === info.directory) {
           if (ctx.payload.extras === undefined) return yield* folders(ctx)
           return yield* applyExtras(ctx.payload.extras)
         }
-        // Primary switch keeps Git identity: the new primary must resolve to
-        // the same project, otherwise the session would straddle two project
-        // rows, two worktrees, and two drains.
-        const nextProject = yield* projects.resolve(AbsolutePath.make(nextPrimary))
-        if (nextProject.id !== info.projectID) {
-          return yield* new InvalidRequestError({
-            message: `Primary folder must belong to the same project: ${ctx.payload.primary}`,
-            field: "primary",
+        const switched = yield* folderSwitch
+          .switchPrimary({
+            sessionID: ctx.params.sessionID,
+            directory: nextPrimary,
+            extras: ctx.payload.extras,
+            demote: true,
+            reload: true,
           })
-        }
-        const others = (yield* sessionFolders.list(ctx.params.sessionID)).filter(
-          (dir) => dir !== nextPrimary && dir !== info.directory,
-        )
-        const extras =
-          ctx.payload.extras === undefined
-            ? [info.directory, ...others]
-            : normalizeFolders(nextPrimary, yield* Effect.forEach(ctx.payload.extras, (dir) => fs.resolve(dir)))
-        if (extras.length > MaxExtras) return yield* new HttpApiError.BadRequest({})
-        for (const extra of extras) {
-          if (yield* exists(extra)) continue
-          return yield* notFound(`Folder not found: ${extra}`)
-        }
-        yield* session.setDirectory({ sessionID: ctx.params.sessionID, directory: nextPrimary })
-        // The new primary is a directory of this same project, so it joins
-        // the project's directory list; extras stay session-scoped.
-        yield* projectDirectories
-          .create({ directory: AbsolutePath.make(nextPrimary), projectID: info.projectID })
-          .pipe(Effect.ignore)
-        yield* sessionFolders.replace(ctx.params.sessionID, extras)
-        yield* liveFolders.refresh(info.directory)
-        yield* instances.reload({ directory: nextPrimary })
-        return { primary: nextPrimary, extras }
+          .pipe(
+            Effect.catchTags({
+              SessionFolderNotFoundError: (error) => Effect.fail(notFound(`Folder not found: ${error.folder}`)),
+              SessionFolderProjectMismatchError: () =>
+                Effect.fail(
+                  new InvalidRequestError({
+                    message: `Primary folder must belong to the same project: ${primary}`,
+                    field: "primary",
+                  }),
+                ),
+              SessionFolderLimitError: () => Effect.fail(new HttpApiError.BadRequest({})),
+            }),
+          )
+        return { primary: switched.next, extras: switched.extras }
       }
       if (ctx.payload.extras === undefined) return yield* folders(ctx)
       return yield* applyExtras(ctx.payload.extras)

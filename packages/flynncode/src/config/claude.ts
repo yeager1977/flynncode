@@ -35,6 +35,8 @@ export const TOOLS: Record<string, string> = {
   CronList: "schedule",
   CronDelete: "schedule",
   ScheduleWakeup: "schedule",
+  EnterWorktree: "worktree",
+  ExitWorktree: "worktree",
 }
 
 // Request patterns a listed Claude tool covers when it is narrower than its
@@ -66,8 +68,10 @@ export const BUILTIN_PERMISSIONS = new Set([
   "cron_list",
   "doom_loop",
   "enter_plan_mode",
+  "enter_worktree",
   "execute",
   "exit_plan_mode",
+  "exit_worktree",
   "external_directory",
   "invalid",
   "kill_shell",

@@ -202,6 +202,99 @@ describe("session folders HttpApi", () => {
   )
 
   it.instance(
+    "primary switch reboots the new primary's instance and adds it to the project's directories",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const next = path.join(test.directory, "packages", "app")
+        yield* Effect.promise(() => fs.mkdir(next, { recursive: true }))
+        const store = yield* InstanceStore.Service
+        const directories = yield* ProjectDirectories.Service
+        const session = yield* Session.use.create({ title: "switch-reboot" })
+        const projectID = (yield* Session.use.get(session.id)).projectID
+
+        const before = yield* store.load({ directory: next })
+        const response = yield* postFolders(session.id, test.directory, { primary: next })
+        expect(response.status).toBe(200)
+        const after = yield* store.load({ directory: next })
+        expect(after).not.toBe(before)
+        expect(yield* directories.contains({ projectID, directory: AbsolutePath.make(next) })).toBe(true)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "primary switch keeps other extras behind the demoted primary",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const next = path.join(test.directory, "packages", "app")
+        yield* Effect.promise(() => fs.mkdir(next, { recursive: true }))
+        const extra = yield* tmpdirScoped()
+        const session = yield* Session.use.create({ title: "switch-keeps-extras" })
+        expect((yield* postFolders(session.id, test.directory, { extras: [extra, next] })).status).toBe(200)
+
+        const response = yield* postFolders(session.id, test.directory, { primary: next })
+        expect(response.status).toBe(200)
+        expect(yield* response.json).toEqual({ primary: next, extras: [test.directory, extra] })
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "primary switch rejects a missing extra and leaves the session in place",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const next = path.join(test.directory, "packages", "app")
+        yield* Effect.promise(() => fs.mkdir(next, { recursive: true }))
+        const missing = path.join(test.directory, "no-such-folder")
+        const session = yield* Session.use.create({ title: "switch-missing-extra" })
+
+        const response = yield* postFolders(session.id, test.directory, { primary: next, extras: [missing] })
+        expect(response.status).toBe(404)
+        expect(yield* response.json).toMatchObject({ data: { message: `Folder not found: ${missing}` } })
+        expect((yield* Session.use.get(session.id)).directory).toBe(test.directory)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "primary switch rejects a missing primary with its requested path",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const session = yield* Session.use.create({ title: "switch-missing-primary" })
+        const missing = path.join(test.directory, "gone")
+
+        const response = yield* postFolders(session.id, test.directory, { primary: missing })
+        expect(response.status).toBe(404)
+        expect(yield* response.json).toMatchObject({ data: { message: `Folder not found: ${missing}` } })
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "primary switch rejects more than 8 extras",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const next = path.join(test.directory, "packages", "app")
+        yield* Effect.promise(() => fs.mkdir(next, { recursive: true }))
+        const extras = yield* Effect.forEach(
+          Array.from({ length: 9 }, (_, index) => path.join(test.directory, `extra-${index}`)),
+          (dir) => Effect.promise(() => fs.mkdir(dir, { recursive: true })).pipe(Effect.as(dir)),
+        )
+        const session = yield* Session.use.create({ title: "switch-too-many" })
+
+        const response = yield* postFolders(session.id, test.directory, { primary: next, extras })
+        expect(response.status).toBe(400)
+        expect((yield* Session.use.get(session.id)).directory).toBe(test.directory)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
     "combined primary and extras uses provided extras verbatim",
     () =>
       Effect.gen(function* () {

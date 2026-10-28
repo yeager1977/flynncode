@@ -120,6 +120,10 @@ function slugify(input: string) {
     .replace(/-+$/, "")
 }
 
+function count(n: number, noun: string) {
+  return `${n} ${noun}${n === 1 ? "" : "s"}`
+}
+
 function failedRemoves(...chunks: string[]) {
   return chunks.filter(Boolean).flatMap((chunk) =>
     chunk
@@ -165,6 +169,9 @@ export interface Interface {
   // Session archive/delete disposal: removes an idle worktree folder only when
   // nothing would be lost, and always keeps its branch.
   readonly disposeIfSafe: (input: { directory: string }) => Effect.Effect<boolean, Error>
+  // What removing a worktree folder would lose, by the same rule as
+  // disposeIfSafe; empty when nothing would be.
+  readonly losses: (input: { directory: string }) => Effect.Effect<string[]>
   readonly list: () => Effect.Effect<(Omit<Info, "branch"> & { branch?: string })[], Error>
   // Retention sweep: enumerates owned worktrees as enriched entries and
   // removes the keep-N losers through the non-destructive retire path.
@@ -988,24 +995,55 @@ const layer: Layer.Layer<
 
     // The inspection of a worktree whose removal would lose nothing, else undefined.
     const lossless = Effect.fnUntraced(function* (directory: string) {
+      const assessed = yield* assess(directory)
+      return assessed.loss.length === 0 ? assessed.found : undefined
+    })
+
+    // A worktree's inspection plus what removing its folder would lose.
+    const assess = Effect.fnUntraced(function* (directory: string) {
       const inspected = yield* JanitorInspect.inspect(directory)
-      if (inspected.kind !== "worktree") return undefined
+      if (inspected.kind !== "worktree") return { found: undefined, loss: [`${directory} is not a linked git worktree`] }
       const found = yield* WorktreeJanitor.settle(inspected)
-      if (found.dirty > 0 || found.ignored.length > 0 || found.nested.length > 0) return undefined
-      if (found.safe) return found
       // Not merged into the default branch nor pushed: still nothing is lost
       // when another branch, remote-tracking ref or tag reaches every commit.
-      const unique = yield* JanitorInspect.git(found.path, [
-        "rev-list",
-        "--count",
-        "HEAD",
-        "--not",
-        ...(found.branch ? [`--exclude=${found.branch}`] : []),
-        "--branches",
-        "--remotes",
-        "--tags",
-      ])
-      return unique.code === 0 && unique.text === "0" ? found : undefined
+      const unique = found.safe
+        ? { code: 0, text: "0" }
+        : yield* JanitorInspect.git(found.path, [
+            "rev-list",
+            "--count",
+            "HEAD",
+            "--not",
+            ...(found.branch ? [`--exclude=${found.branch}`] : []),
+            "--branches",
+            "--remotes",
+            "--tags",
+          ])
+      const commits = unique.code === 0 ? Number(unique.text) : Number.NaN
+      const loss = [
+        ...(found.dirty > 0 ? [count(found.dirty, "uncommitted change")] : []),
+        ...(found.ignored.length > 0 ? [count(found.ignored.length, "ignored local file")] : []),
+        ...(found.nested.length > 0 ? [`nested repositories (${found.nested.join(", ")})`] : []),
+        ...(Number.isInteger(commits)
+          ? commits > 0
+            ? [`${count(commits, "commit")} not on any other branch, remote or tag`]
+            : []
+          : ["commits that could not be checked against other branches"]),
+      ]
+      return { found, loss }
+    })
+
+    const losses = Effect.fn("Worktree.losses")(function* (input: { directory: string }) {
+      const directory = yield* canonical(input.directory)
+      if (!(yield* fs.exists(directory).pipe(Effect.orDie))) return []
+      return yield* assess(directory).pipe(
+        Effect.map((assessed) => assessed.loss),
+        Effect.provideService(AppProcess.Service, appProcess),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("worktree loss check failed", { directory, cause }).pipe(
+            Effect.as(["unknown work (the worktree could not be inspected)"]),
+          ),
+        ),
+      )
     })
 
     // Hand off a session between two existing worktrees. `from` must be a
@@ -1080,6 +1118,7 @@ const layer: Layer.Layer<
       createDisposable,
       disposeIfIdle,
       disposeIfSafe,
+      losses,
       list,
       remove,
       reset,

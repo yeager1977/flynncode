@@ -127,6 +127,19 @@ describe("ConfigClaude.loadAgents", () => {
     expect(result.agents.planner.options?.claudeTools).toContainEqual({ permission: "schedule", pattern: "*" })
   })
 
+  test("maps the Claude worktree tools onto the worktree permission", async () => {
+    await using tmp = await tmpdir()
+    await writeAgents(tmp.path, {
+      "isolator.md": agentFile({ name: "isolator", description: "Isolates", tools: "Read, EnterWorktree, ExitWorktree" }),
+      "reader.md": agentFile({ name: "reader", description: "Reads", tools: "Read" }),
+    })
+    const result = await ConfigClaude.loadAgents(path.join(tmp.path, ".claude"))
+    expect(result.warnings).toEqual([])
+    expect(result.agents.isolator.permission?.worktree).toBeUndefined()
+    expect(result.agents.reader.permission?.worktree).toBe("deny")
+    expect(result.agents.isolator.options?.claudeTools).toContainEqual({ permission: "worktree", pattern: "*" })
+  })
+
   test("never maps mcp__ tools onto built-in permissions", async () => {
     await using tmp = await tmpdir()
     await writeAgents(tmp.path, {

@@ -12,6 +12,11 @@ import { CronCreateTool } from "./cron-create"
 import { CronListTool } from "./cron-list"
 import { CronDeleteTool } from "./cron-delete"
 import { ScheduleWakeupTool } from "./schedule-wakeup"
+import { EnterWorktreeTool } from "./enter-worktree"
+import { ExitWorktreeTool } from "./exit-worktree"
+import { SessionFolderSwitch } from "@/session/folder-switch"
+import { SessionStatus } from "@/session/status"
+import { Project } from "@/project/project"
 import { ScheduleStore } from "@/schedule/store"
 import { MonitorTool } from "./monitor"
 import { EditTool } from "./edit"
@@ -140,6 +145,8 @@ const layer = Layer.effect(
     const cronList = yield* CronListTool
     const cronDelete = yield* CronDeleteTool
     const scheduleWakeup = yield* ScheduleWakeupTool
+    const enterWorktree = yield* EnterWorktreeTool
+    const exitWorktree = yield* ExitWorktreeTool
     const monitor = yield* MonitorTool
     const globtool = yield* GlobTool
     const writetool = yield* WriteTool
@@ -253,6 +260,8 @@ const layer = Layer.effect(
           cron_list: Tool.init(cronList),
           cron_delete: Tool.init(cronDelete),
           schedule_wakeup: Tool.init(scheduleWakeup),
+          enter_worktree: Tool.init(enterWorktree),
+          exit_worktree: Tool.init(exitWorktree),
           monitor: Tool.init(monitor),
           read: Tool.init(read),
           glob: Tool.init(globtool),
@@ -290,6 +299,8 @@ const layer = Layer.effect(
             tool.cron_list,
             tool.cron_delete,
             tool.schedule_wakeup,
+            tool.enter_worktree,
+            tool.exit_worktree,
             tool.monitor,
             tool.read,
             tool.glob,
@@ -537,6 +548,9 @@ export const node = LayerNode.make({
     Ripgrep.node,
     BackgroundShells.node,
     ScheduleStore.node,
+    SessionFolderSwitch.node,
+    SessionStatus.node,
+    Project.node,
   ],
 })
 

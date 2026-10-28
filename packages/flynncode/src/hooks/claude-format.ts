@@ -28,6 +28,8 @@ const NAMES: Record<string, string> = {
   cron_list: "CronList",
   cron_delete: "CronDelete",
   schedule_wakeup: "ScheduleWakeup",
+  enter_worktree: "EnterWorktree",
+  exit_worktree: "ExitWorktree",
 }
 
 // Parameter names of the translated tools, with the shape of nested objects
@@ -66,6 +68,8 @@ const PARAMS: Record<string, Shape> = {
   cron_list: {},
   cron_delete: { id: true },
   schedule_wakeup: { delaySeconds: true, prompt: true, reason: true },
+  enter_worktree: { name: true },
+  exit_worktree: { action: true, discard_changes: true },
 }
 
 // Tools whose Claude Code input keeps camelCase keys (ScheduleWakeup's `delaySeconds`), passed to hooks unchanged.

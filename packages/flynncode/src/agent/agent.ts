@@ -138,6 +138,8 @@ const layer = Layer.effect(
           // Archiving hides a session from everyone, so it prompts unless the
           // user explicitly allows it (approval modes never auto-approve it).
           archive: "ask",
+          // Entering a worktree moves the session; discarding one loses work.
+          worktree: "ask",
           // mirrors github.com/github/gitignore Node.gitignore pattern for .env files
           read: {
             "*": "allow",

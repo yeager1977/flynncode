@@ -20,6 +20,8 @@ import { Parameters as CronCreateParameters } from "../../src/tool/cron-create"
 import { Parameters as CronListParameters } from "../../src/tool/cron-list"
 import { Parameters as CronDeleteParameters } from "../../src/tool/cron-delete"
 import { Parameters as ScheduleWakeupParameters } from "../../src/tool/schedule-wakeup"
+import { Parameters as EnterWorktreeParameters } from "../../src/tool/enter-worktree"
+import { Parameters as ExitWorktreeParameters } from "../../src/tool/exit-worktree"
 
 const extra = { transcriptPath: "/t.jsonl", permissionMode: "default", cwd: "/work" }
 
@@ -44,7 +46,7 @@ describe("ClaudeFormat tool names", () => {
   })
 
   test("every Claude tool the compat pack maps has a tool id here", () => {
-    const names = ["read", "write", "edit", "multiedit", "bash", "glob", "grep", "webfetch", "websearch", "todowrite", "task", "notebook_edit", "question", "cron_create", "cron_list", "cron_delete", "schedule_wakeup"].map(
+    const names = ["read", "write", "edit", "multiedit", "bash", "glob", "grep", "webfetch", "websearch", "todowrite", "task", "notebook_edit", "question", "cron_create", "cron_list", "cron_delete", "schedule_wakeup", "enter_worktree", "exit_worktree"].map(
       ClaudeFormat.toolName,
     )
     expect(names.toSorted()).toEqual(Object.keys(ConfigClaude.TOOLS).toSorted())
@@ -145,6 +147,8 @@ describe("ClaudeFormat arguments", () => {
     ["cron_list", CronListParameters],
     ["cron_delete", CronDeleteParameters],
     ["schedule_wakeup", ScheduleWakeupParameters],
+    ["enter_worktree", EnterWorktreeParameters],
+    ["exit_worktree", ExitWorktreeParameters],
   ]
   for (const entry of schemas) {
     test(`${entry[0]} parameters round-trip through Claude names`, () => {

@@ -31,6 +31,7 @@ import { Permission } from "@/permission"
 import { AutoReviewer } from "@/permission/auto-reviewer"
 import { Plugin } from "@/plugin"
 import { PluginPtyEnvironment } from "@/plugin/pty-environment"
+import { SessionFolderSwitch } from "@/session/folder-switch"
 import { InstanceStore } from "@/project/instance-store"
 import { SessionFolders } from "@flynncode/core/session/folders"
 import { Project } from "@/project/project"
@@ -320,6 +321,7 @@ export const app = LayerNode.group([
   ProjectCopy.node,
   ProjectDirectories.node,
   SessionFolders.node,
+  SessionFolderSwitch.node,
   PtyTicket.node,
 ])
 
