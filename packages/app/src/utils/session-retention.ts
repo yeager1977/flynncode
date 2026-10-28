@@ -26,6 +26,23 @@ export function pinLabel(session: KeepTarget, state: { kept: boolean; held: bool
   if (state.held) return "session.keep.held" as const
 }
 
+// Retention info is advisory UI state: a server without the route or client method
+// (older build, proxy, mock), a failed request, or a body of the wrong shape all
+// read as "no retention info" instead of throwing into the render tree.
+export async function readSessionRetention(load: () => Promise<{ data?: unknown } | undefined>) {
+  const result = await Promise.resolve()
+    .then(load)
+    .catch(() => undefined)
+  return parseSessionRetention(result?.data)
+}
+
+function parseSessionRetention(data: unknown): SessionRetention | undefined {
+  if (!data || typeof data !== "object") return
+  const value = data as Partial<Record<keyof SessionRetention, unknown>>
+  if (!Array.isArray(value.kept) || !Array.isArray(value.held) || !Array.isArray(value.expiring)) return
+  return data as SessionRetention
+}
+
 // `deletesAt` rounds up to whole days. Under a day, or already due and waiting
 // for the next hourly pass, reads "today".
 export function retentionHint(

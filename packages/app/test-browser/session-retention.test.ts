@@ -11,6 +11,7 @@ import {
   markNoticeShown,
   noticeShown,
   pinLabel,
+  readSessionRetention,
   retentionHint,
 } from "@/utils/session-retention"
 
@@ -170,5 +171,29 @@ describe("notice storage", () => {
     }
     expect(noticeShown(storage)).toBeUndefined()
     expect(() => markNoticeShown(NOW + DAY, storage)).not.toThrow()
+  })
+})
+
+describe("readSessionRetention", () => {
+  test("returns a well-formed snapshot", async () => {
+    const snapshot = retention({ kept: ["a"] })
+    expect(await readSessionRetention(async () => ({ data: snapshot }))).toEqual(snapshot)
+  })
+
+  test("reads as no retention info when the client method is missing", async () => {
+    const client = {} as { session: { retention: { get: () => Promise<{ data?: unknown }> } } }
+    expect(await readSessionRetention(() => client.session.retention.get())).toBeUndefined()
+  })
+
+  test("reads as no retention info when the request rejects or the route is missing", async () => {
+    expect(await readSessionRetention(() => Promise.reject(new Error("network down")))).toBeUndefined()
+    expect(await readSessionRetention(async () => ({ data: undefined }))).toBeUndefined()
+    expect(await readSessionRetention(async () => undefined)).toBeUndefined()
+  })
+
+  test("reads as no retention info for a body of the wrong shape", async () => {
+    expect(await readSessionRetention(async () => ({ data: {} }))).toBeUndefined()
+    expect(await readSessionRetention(async () => ({ data: "<html></html>" }))).toBeUndefined()
+    expect(await readSessionRetention(async () => ({ data: { kept: [], held: [] } }))).toBeUndefined()
   })
 })

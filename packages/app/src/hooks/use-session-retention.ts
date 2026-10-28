@@ -3,6 +3,7 @@ import { createStore, reconcile } from "solid-js/store"
 import type { Session, SessionRetention } from "@flynncode/sdk/v2/client"
 import { useLanguage } from "@/context/language"
 import { useServerSDK } from "@/context/server-sdk"
+import { readSessionRetention } from "@/utils/session-retention"
 import { showToast } from "@/utils/toast"
 
 // One snapshot for the whole sidebar. `GET /session/retention` runs a full tree
@@ -19,11 +20,9 @@ export function useSessionRetention() {
 
   const refresh = async () => {
     const run = ++generation
-    const result = await serverSDK()
-      .client.session.retention.get()
-      .catch(() => undefined)
+    const result = await readSessionRetention(() => serverSDK().client.session.retention.get())
     if (!result || run !== generation) return
-    setRetention(result.data)
+    setRetention(result)
     setOverrides(reconcile({}))
   }
 
@@ -51,8 +50,8 @@ export function useSessionRetention() {
   const held = (session: Session) => retention()?.held.includes(session.id) ?? false
 
   const keep = async (session: Session, next: boolean) => {
-    const ok = await serverSDK()
-      .client.session.keep({ sessionID: session.id, directory: session.directory, keep: next })
+    const ok = await Promise.resolve()
+      .then(() => serverSDK().client.session.keep({ sessionID: session.id, directory: session.directory, keep: next }))
       .then(() => true)
       .catch(() => false)
     if (!ok) {
