@@ -298,7 +298,7 @@ export function resolveTheme(theme: ThemeJson, mode: "dark" | "light") {
   } as Theme
 }
 
-function ansiToRgba(code: number): RGBA {
+export function ansiToRgba(code: number): RGBA {
   // Standard ANSI colors (0-15)
   if (code < 16) {
     const ansiColors = [

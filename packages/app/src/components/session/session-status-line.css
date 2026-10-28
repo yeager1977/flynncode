@@ -1,0 +1,38 @@
+/* The 16 base colours follow the active theme's semantic tokens instead of fixed hexes. */
+[data-component="session-status-line"] {
+  --status-line-ansi-0: var(--text-weaker);
+  --status-line-ansi-1: var(--icon-critical-base);
+  --status-line-ansi-2: var(--icon-success-base);
+  --status-line-ansi-3: var(--icon-warning-base);
+  --status-line-ansi-4: var(--text-interactive-base);
+  --status-line-ansi-5: var(--icon-info-base);
+  --status-line-ansi-6: var(--syntax-constant);
+  --status-line-ansi-7: var(--text-base);
+  --status-line-ansi-8: var(--text-weak);
+  --status-line-ansi-9: color-mix(in srgb, var(--status-line-ansi-1) 75%, white);
+  --status-line-ansi-10: color-mix(in srgb, var(--status-line-ansi-2) 75%, white);
+  --status-line-ansi-11: color-mix(in srgb, var(--status-line-ansi-3) 75%, white);
+  --status-line-ansi-12: color-mix(in srgb, var(--status-line-ansi-4) 75%, white);
+  --status-line-ansi-13: color-mix(in srgb, var(--status-line-ansi-5) 75%, white);
+  --status-line-ansi-14: color-mix(in srgb, var(--status-line-ansi-6) 75%, white);
+  --status-line-ansi-15: var(--text-strong);
+
+  color: var(--text-weak);
+  font-family: var(--font-family-mono);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+[data-component="session-status-line"] [data-slot="status-line-row"] {
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-component="session-status-line"] [data-bold] {
+  font-weight: 700;
+}
+
+[data-component="session-status-line"] [data-dim] {
+  opacity: 0.6;
+}

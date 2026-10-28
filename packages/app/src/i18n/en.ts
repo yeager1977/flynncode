@@ -827,6 +827,7 @@ export const dict = {
   "session.shells.openOutput": "Open full output",
   "session.shells.open.failed": "Could not open the output file.",
   "session.shells.promote.failed": "Could not move this command to the background.",
+  "session.statusline.label": "Status line",
   "session.schedules.title": "Scheduled",
   "session.schedules.chip": "{{count}} scheduled",
   "session.schedules.chip.label": "{{count}} scheduled prompts",

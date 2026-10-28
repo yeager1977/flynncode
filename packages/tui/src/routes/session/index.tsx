@@ -54,6 +54,7 @@ import { DialogForkFromTimeline } from "./dialog-fork-from-timeline"
 import { DialogSessionRename } from "../../component/dialog-session-rename"
 import { Sidebar } from "./sidebar"
 import { SubagentFooter } from "./subagent-footer.tsx"
+import { SessionStatusLine } from "./footer.tsx"
 import { filetype } from "../../util/filetype"
 import parsers from "../../parsers-config"
 import { errorMessage } from "../../util/error"
@@ -1331,6 +1332,7 @@ export function Session() {
                     />
                   </pluginRuntime.Slot>
                 </Show>
+                <SessionStatusLine />
               </box>
             </Show>
             <Toast />

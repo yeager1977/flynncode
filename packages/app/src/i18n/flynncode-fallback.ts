@@ -33,6 +33,7 @@ const keys = [
   "session.shells.openOutput",
   "session.shells.open.failed",
   "session.shells.promote.failed",
+  "session.statusline.label",
   "session.schedules.title",
   "session.schedules.chip",
   "session.schedules.chip.label",

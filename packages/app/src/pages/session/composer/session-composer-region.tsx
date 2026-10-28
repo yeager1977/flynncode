@@ -8,6 +8,7 @@ import { SessionQuestionDock } from "@/pages/session/composer/session-question-d
 import { SessionFollowupDock } from "@/pages/session/composer/session-followup-dock"
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
+import { SessionStatusLine } from "@/components/session/session-status-line"
 import { SessionWaitingTerminalDock } from "@/pages/session/composer/session-waiting-terminal-dock"
 import { SessionSideChatDock } from "@/pages/session/composer/session-side-chat-dock"
 import { useSideChat } from "@/pages/session/composer/session-side-chat-context"
@@ -212,6 +213,7 @@ export function SessionComposerRegion(props: {
                   </Show>
                 </div>
               </Show>
+              <SessionStatusLine sessionID={controller.sessionID()} />
             </div>
           </Show>
         </Show>
