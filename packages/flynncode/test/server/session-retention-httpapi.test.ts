@@ -69,6 +69,7 @@ describe("session retention HttpApi", () => {
         firstRunAt,
         pendingFirstRunCount: 25,
         expiring: [{ sessionID: soon.id, deletesAt: latest + 30 * DAY }],
+        kept: [],
       })
     }),
   )

@@ -463,6 +463,7 @@ describe("session retention", () => {
       expect(yield* retention.status()).toEqual({
         cleanupPeriodDays: 30,
         expiring: [{ sessionID: soon.id, deletesAt: now.getTime() + 2 * DAY }],
+        kept: [kept.id],
       })
     }),
   )

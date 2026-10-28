@@ -348,6 +348,20 @@ const keys = [
   "cleanup.reason.error",
   "cleanup.cleaned.title",
   "cleanup.empty",
+  "session.keep.on",
+  "session.keep.off",
+  "session.keep.pinned",
+  "session.keep.deletesToday",
+  "session.keep.deletesTomorrow",
+  "session.keep.deletesInDays",
+  "session.retention.notice.title",
+  "session.retention.notice.description",
+  "session.retention.notice.action",
+  "settings.sessionHistory.section.title",
+  "settings.sessionHistory.days.title",
+  "settings.sessionHistory.days.description",
+  "settings.sessionHistory.days.unit",
+  "settings.sessionHistory.toast.updateFailed.title",
 ] as const
 
 export const flynncodeFallback = Object.fromEntries(

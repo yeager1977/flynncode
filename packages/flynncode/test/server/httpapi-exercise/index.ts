@@ -700,6 +700,7 @@ const scenarios: Scenario[] = [
   http.protected.get("/session/retention", "session.retention.get").json(200, (body) => {
     object(body)
     array(body.expiring)
+    array(body.kept)
     check(body.cleanupPeriodDays === 30, "retention should default to 30 days")
   }),
   http.protected

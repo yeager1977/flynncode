@@ -1297,6 +1297,17 @@ export const dict = {
   "sidebar.sessions.showMore.other": "Show {{count}} more",
   "sidebar.sessions.showLess": "Show less",
 
+  "session.keep.on": "Keep forever",
+  "session.keep.off": "Stop keeping",
+  "session.keep.pinned": "Kept forever",
+  "session.keep.deletesToday": "deletes today",
+  "session.keep.deletesTomorrow": "deletes tomorrow",
+  "session.keep.deletesInDays": "deletes in {{days}} days",
+  "session.retention.notice.title": "Old sessions will be deleted",
+  "session.retention.notice.description":
+    "Sessions inactive for more than {{days}} days are now deleted automatically. The first pass removes {{count}} and runs {{when}}. Use Keep forever in a session's menu to protect it.",
+  "session.retention.notice.action": "Change setting",
+
   "debugBar.ariaLabel": "Development performance diagnostics",
   "debugBar.na": "n/a",
   "debugBar.nav.label": "NAV",
@@ -1830,6 +1841,13 @@ export const dict = {
   "settings.memory.hint":
     "Global memories are stored in Global.data/memories and are never synced. Project memories live in .opencode/memories/ and can be committed with your repository.",
   "settings.memory.toast.updateFailed.title": "Failed to update memory settings",
+
+  "settings.sessionHistory.section.title": "Session history",
+  "settings.sessionHistory.days.title": "Delete sessions inactive for more than",
+  "settings.sessionHistory.days.description":
+    "A session and its sub-agent sessions are deleted after this many days without activity. Sessions marked Keep forever are never deleted. The minimum is 1 day.",
+  "settings.sessionHistory.days.unit": "days",
+  "settings.sessionHistory.toast.updateFailed.title": "Failed to update session history",
 
   "settings.rateLimit.section.title": "Rate limits",
   "settings.rateLimit.onLimit.title": "When a model hits a usage limit",

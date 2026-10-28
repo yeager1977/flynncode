@@ -16,6 +16,7 @@ import {
   terminalInput,
   useSettings,
 } from "@/context/settings"
+import { cleanupDaysFromConfig } from "@/utils/session-retention"
 import { playSoundPreview, SOUND_OPTIONS } from "@/utils/sound"
 import { memoryFromConfig, memoryToConfig, type MemoryPatch } from "./memory-payload"
 import { createOptimisticToggle, createSoundPreviewController, type ShellOption } from "./general-controller-behavior"
@@ -181,8 +182,24 @@ export function createMemorySettingsController() {
   }
 }
 
+export function createSessionHistorySettingsController() {
+  const serverSync = useServerSync()
+  const days = createMemo(() => cleanupDaysFromConfig(serverSync().data.config))
+  return {
+    days,
+    setDays: (value: number) => {
+      if (value === days()) return Promise.resolve(true)
+      return serverSync()
+        .updateConfig({ cleanupPeriodDays: value })
+        .then(() => true)
+        .catch(() => false)
+    },
+  }
+}
+
 export type PermissionScopeController = ReturnType<typeof createPermissionScopeController>
 export type ShellSettingsController = ReturnType<typeof createShellSettingsController>
 export type AppearanceSettingsController = ReturnType<typeof createAppearanceSettingsController>
 export type SoundSettingsController = ReturnType<typeof createSoundSettingsController>
 export type MemorySettingsController = ReturnType<typeof createMemorySettingsController>
+export type SessionHistorySettingsController = ReturnType<typeof createSessionHistorySettingsController>

@@ -247,6 +247,7 @@ export const make = Effect.fn("SessionRetention.make")(function* (options: {
       expiring: due
         .map((tree) => ({ sessionID: tree.id, deletesAt: Math.max(deletesAt(tree, days), pending ?? 0) }))
         .toSorted((a, b) => a.deletesAt - b.deletesAt),
+      kept: trees.filter((tree) => tree.keep).map((tree) => tree.id),
     }
   })
 

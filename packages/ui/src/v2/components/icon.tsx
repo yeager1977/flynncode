@@ -9,6 +9,10 @@ const icons = {
     viewBox: "0 0 16 16",
     body: `<path d="M7.5 13.3333H1.5V2H6.83333L8.83333 4H14.8333V6M10.1667 11.3333H15.5M12.8333 8.66667V14" stroke="currentColor" stroke-miterlimit="10" stroke-linecap="square"/>`,
   },
+  pin: {
+    viewBox: "0 0 16 16",
+    body: `<path d="M9.5 2.5L13.5 6.5L12 7.5L10.5 9L11 11.5L10 12.5L3.5 6L4.5 5L7 5.5L8.5 4L9.5 2.5ZM6.8 9.2L2.5 13.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>`,
+  },
   folder: {
     viewBox: "0 0 16 16",
     body: `<path d="M2.545 3.364V12.636H13.455V5H8.545L6.909 3.364H2.545Z" stroke="currentColor" stroke-miterlimit="10" stroke-linecap="square"/>`,

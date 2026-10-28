@@ -5,7 +5,7 @@ import { Dialog } from "@flynncode/ui/dialog"
 import { Button } from "@flynncode/ui/button"
 import { useDialog } from "@flynncode/ui/context/dialog"
 import { MenuV2 } from "@flynncode/ui/v2/menu-v2"
-import type { Session } from "@flynncode/sdk/v2/client"
+import type { Session, SessionRetentionExpiring } from "@flynncode/sdk/v2/client"
 import { Icon } from "@flynncode/ui/v2/icon"
 import { TooltipV2 } from "@flynncode/ui/v2/tooltip-v2"
 import { useCommand } from "@/context/command"
@@ -15,6 +15,7 @@ import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useSettingsDialog } from "@/components/settings-dialog"
 import { ProviderUsageMeters } from "@/components/provider-usage-meters"
+import { keepMenu, retentionHint, showPin } from "@/utils/session-retention"
 import { showToast } from "@/utils/toast"
 import { agentColor, commonAgent } from "@/utils/agent"
 import type { LocalProject } from "@/context/layout"
@@ -47,6 +48,9 @@ export function SessionSidebar(props: {
   showingAll: (worktree: string) => boolean
   onOpenUsage: () => void
   onOpenCleanup: () => void
+  kept: (session: Session) => boolean
+  expiring: Accessor<readonly SessionRetentionExpiring[] | undefined>
+  onKeep: (session: Session, keep: boolean) => void
 }) {
   const command = useCommand()
   const language = useLanguage()
@@ -142,6 +146,9 @@ export function SessionSidebar(props: {
                           active={props.activeSessionID() === session.id}
                           onArchive={props.onArchive}
                           onDelete={confirmDelete}
+                          kept={props.kept}
+                          expiring={props.expiring}
+                          onKeep={props.onKeep}
                           rename={rename}
                           commonAgent={commonAgent(group().sessions)}
                         />
@@ -369,6 +376,9 @@ function SessionLink(props: {
   active: boolean
   onArchive: (session: Session) => void
   onDelete: (session: Session) => void
+  kept: (session: Session) => boolean
+  expiring: Accessor<readonly SessionRetentionExpiring[] | undefined>
+  onKeep: (session: Session, keep: boolean) => void
   rename: RenameState
   // The agent the project normally runs on; this row's agent is only shown
   // when it differs.
@@ -413,6 +423,14 @@ function SessionLink(props: {
   // The session's main agent, shown under the title; the server keeps
   // session.agent fresh on every prompt. It is only worth a line when it
   // differs from the agent the project normally runs on.
+  const kept = () => props.kept(props.session)
+  const keepItem = () => keepMenu(props.session, kept())
+  const hintText = () => {
+    const hint = retentionHint(props.expiring(), sessionID(), Date.now())
+    if (!hint) return
+    return hint.days === undefined ? language.t(hint.key) : language.t(hint.key, { days: hint.days })
+  }
+
   const agentLabel = () => {
     const name = props.session.agent
     if (!name || name === props.commonAgent) return undefined
@@ -493,6 +511,18 @@ function SessionLink(props: {
             }}
           />
         </Show>
+        <Show when={showPin(props.session, kept())}>
+          <TooltipV2 placement="top" value={language.t("session.keep.pinned")}>
+            <span
+              data-action="sidebar-session-pin"
+              role="img"
+              aria-label={language.t("session.keep.pinned")}
+              class="shrink-0 text-v2-icon-icon-muted"
+            >
+              <Icon name="pin" />
+            </span>
+          </TooltipV2>
+        </Show>
       </MenuV2.Context.Trigger>
       <MenuV2.Context.Portal>
         <MenuV2.Context.Content
@@ -505,6 +535,17 @@ function SessionLink(props: {
           }}
         >
           <MenuV2.Item onSelect={() => setMenu("pendingRename", true)}>{language.t("common.rename")}</MenuV2.Item>
+          <Show when={keepItem()}>
+            {(item) => (
+              <MenuV2.Item
+                data-action="sidebar-session-keep"
+                shortcut={hintText()}
+                onSelect={() => props.onKeep(props.session, item().keep)}
+              >
+                {language.t(item().key)}
+              </MenuV2.Item>
+            )}
+          </Show>
           <MenuV2.Item onSelect={() => props.onArchive(props.session)}>{language.t("common.archive")}</MenuV2.Item>
           <MenuV2.Item class="text-text-danger-base" onSelect={() => props.onDelete(props.session)}>
             {language.t("common.delete")}

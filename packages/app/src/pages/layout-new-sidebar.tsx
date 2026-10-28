@@ -19,6 +19,8 @@ import { useServer } from "@/context/server"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useTabs } from "@/context/tabs"
+import { useSessionRetention } from "@/hooks/use-session-retention"
+import { useSessionRetentionNotice } from "@/hooks/use-session-retention-notice"
 import { pathKey } from "@/utils/path-key"
 import { sessionHref } from "@/utils/session-route"
 import { showToast } from "@/utils/toast"
@@ -244,6 +246,8 @@ export function ProjectSidebar() {
   )
 
   const listing = createSidebarSessions()
+  const retention = useSessionRetention()
+  useSessionRetentionNotice(retention.retention)
   const archive = async (session: Session) => {
     const ok = await serverSDK()
       .client.session.update({ sessionID: session.id, directory: session.directory, time: { archived: Date.now() } })
@@ -323,6 +327,9 @@ export function ProjectSidebar() {
       onDelete={(session) => void remove(session)}
       onOpenUsage={() => navigate("/usage")}
       onOpenCleanup={() => navigate("/cleanup")}
+      kept={retention.kept}
+      expiring={() => retention.retention()?.expiring}
+      onKeep={(session, keep) => void retention.keep(session, keep)}
       onEditProject={showEditProjectDialog}
       onHideProject={hideProject}
       onUnhideProject={unhideProject}

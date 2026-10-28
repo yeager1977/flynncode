@@ -3760,6 +3760,7 @@ export type SessionRetention = {
   firstRunAt?: number
   pendingFirstRunCount?: number
   expiring: Array<SessionRetentionExpiring>
+  kept: Array<string>
 }
 
 export type SessionStatusLine = {

@@ -18,6 +18,7 @@ import {
   createAppearanceSettingsController,
   createMemorySettingsController,
   createPermissionScopeController,
+  createSessionHistorySettingsController,
   createShellOptions,
   createShellSettingsController,
   createSoundSettingsController,
@@ -25,10 +26,12 @@ import {
   type AppearanceSettingsController,
   type MemorySettingsController,
   type PermissionScopeController,
+  type SessionHistorySettingsController,
   type ShellSettingsController,
   type SoundSettingsController,
 } from "./general-controllers"
 import { minTurnsFromInput } from "./memory-payload"
+import { cleanupDaysFromInput } from "@/utils/session-retention"
 import "./settings-v2.css"
 
 const schemeOptions: ("system" | "light" | "dark")[] = ["system", "light", "dark"]
@@ -275,6 +278,57 @@ const LanguageSetting = () => {
   )
 }
 
+const SessionHistorySection: Component<{ controller: SessionHistorySettingsController }> = (props) => {
+  const language = useLanguage()
+  return (
+    <div class="settings-v2-section">
+      <h3 class="settings-v2-section-title">{language.t("settings.sessionHistory.section.title")}</h3>
+      <SettingsListV2>
+        <SettingsRowV2
+          title={language.t("settings.sessionHistory.days.title")}
+          description={language.t("settings.sessionHistory.days.description")}
+        >
+          <div class="flex w-full items-center gap-2 sm:w-[220px]">
+            {/* Write on commit, like the memory row: one config write per committed value.
+                An invalid draft (below 1, fractional, text) snaps back to the saved value. */}
+            <TextInputV2
+              data-action="settings-session-history-days"
+              type="number"
+              appearance="base"
+              min="1"
+              step="1"
+              value={String(props.controller.days())}
+              onChange={(event) => {
+                const input = event.currentTarget
+                const parsed = cleanupDaysFromInput(input.value)
+                if (parsed === undefined) {
+                  input.value = String(props.controller.days())
+                  return
+                }
+                if (parsed === props.controller.days()) return
+                void props.controller.setDays(parsed).then((ok) => {
+                  if (ok) return
+                  input.value = String(props.controller.days())
+                  showToast({
+                    variant: "error",
+                    title: language.t("settings.sessionHistory.toast.updateFailed.title"),
+                  })
+                })
+              }}
+              spellcheck={false}
+              autocorrect="off"
+              autocomplete="off"
+              autocapitalize="off"
+              aria-label={language.t("settings.sessionHistory.days.title")}
+            />
+            <span class="text-text-weak">{language.t("settings.sessionHistory.days.unit")}</span>
+          </div>
+        </SettingsRowV2>
+      </SettingsListV2>
+    </div>
+  )
+}
+
 const MemorySection: Component<{ controller: MemorySettingsController }> = (props) => {
   const language = useLanguage()
   const apply = (result: Promise<boolean>) => {
@@ -348,6 +402,7 @@ export const SettingsGeneralV2: Component<{
   const appearance = createAppearanceSettingsController()
   const sounds = createSoundSettingsController()
   const memory = createMemorySettingsController()
+  const sessionHistory = createSessionHistorySettingsController()
   const desktop = createMemo(() => platform.platform === "desktop")
 
   const [pinchZoom, { mutate: setPinchZoom }] = createResource(
@@ -629,6 +684,8 @@ export const SettingsGeneralV2: Component<{
         <DisplaySection />
 
         <AdvancedSection />
+
+        <SessionHistorySection controller={sessionHistory} />
 
         <MemorySection controller={memory} />
       </div>
