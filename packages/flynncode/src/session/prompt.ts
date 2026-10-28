@@ -56,6 +56,8 @@ import { decodeDataUrl } from "@/util/data-url"
 import { Process } from "@/util/process"
 import { Cause, Effect, Exit, Latch, Layer, Option, Scope, Context, Schema, Types } from "effect"
 import { InstanceState } from "@/effect/instance-state"
+import { InstanceStore } from "@/project/instance-store"
+import { Git } from "@/git"
 import { TaskTool, type TaskPromptOps } from "@/tool/task"
 import { SessionRunState } from "./run-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -210,6 +212,8 @@ const layer = Layer.effect(
     const hooksRunner = yield* HooksRunner.Service
     const hooksContext = yield* HooksContext.Service
     const database = yield* Database.Service
+    const store = yield* InstanceStore.Service
+    const git = yield* Git.Service
     const { db } = database
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
       return {
@@ -1287,17 +1291,24 @@ const layer = Layer.effect(
 
     // `steps` counts the loop iterations that did work; none means the
     // session was already done. `history` is the last message read, which
-    // ends at `user`.
-    const runLoopOnce: (sessionID: SessionID) => Effect.Effect<{
+    // ends at `user`, and `directory` the folder the drain ended in. `moved`
+    // carries a drain into the folder a step moved the session to.
+    const runLoopOnce: (
+      sessionID: SessionID,
+      moved?: { step: number; note: string },
+    ) => Effect.Effect<{
       result: SessionV1.WithParts
       user: SessionV1.User
       steps: number
       session: Session.Info
       history: SessionV1.WithParts[]
-    }> = Effect.fn("SessionPrompt.runLoopOnce")(function* (sessionID) {
+      directory: string
+    }> = Effect.fn("SessionPrompt.runLoopOnce")(function* (sessionID, moved) {
       const ctx = yield* InstanceState.context
       let structured: unknown
-      let step = 0
+      let step = moved?.step ?? 0
+      // Tells the model about the folder switch, on the next request only.
+      let note = moved?.note
       const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
       // The newer-user message this drain last observed, carried across loop
       // iterations so the post-loop re-check can compare against the right turn.
@@ -1587,6 +1598,7 @@ const layer = Layer.effect(
               system,
               messages: [
                 ...modelMsgs,
+                ...(note ? [{ role: "user" as const, content: note }] : []),
                 ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS_PROMPT }] : []),
               ],
               tools,
@@ -1594,6 +1606,7 @@ const layer = Layer.effect(
               model,
               toolChoice: ProviderTransform.structuredOutputToolChoice(model, format),
             })
+            note = undefined
 
             if (structured !== undefined) {
               handle.message.structured = structured
@@ -1654,6 +1667,11 @@ const layer = Layer.effect(
             Effect.onInterrupt(() => finalizeInterruptedAssistant),
           )
           if (outcome === "break") break
+          // A tool moved the session's primary folder (enter_worktree,
+          // exit_worktree): the turn goes on in the new folder's instance,
+          // which reloads history like any step.
+          const latest = yield* sessions.get(sessionID).pipe(Effect.orDie)
+          if (latest.directory !== session.directory) return yield* moveTurn(sessionID, latest.directory, step)
           continue
         }
 
@@ -1667,9 +1685,27 @@ const layer = Layer.effect(
           steps: step,
           session,
           history: drainedHistory,
+          directory: ctx.directory,
         }
       },
     )
+
+    // Continues a drain in the folder a step moved the session to. The
+    // runner stays where the turn started; the session reads busy here, and
+    // the approvals given where the step ran come along.
+    const moveTurn = Effect.fnUntraced(function* (sessionID: SessionID, directory: string, step: number) {
+      const from = yield* InstanceState.context
+      const branch = yield* git.branch(directory)
+      const note = `Working directory is now ${directory}${branch ? ` (branch ${branch})` : ""}.`
+      return yield* store.provide(
+        { directory },
+        Effect.gen(function* () {
+          yield* state.follow(sessionID)
+          yield* permission.carry(from)
+          return yield* runLoopOnce(sessionID, { step, note })
+        }),
+      )
+    })
 
     // Whether a user message newer than `after` was stored, from the newest
     // one alone: a bounded read, unlike hasNewerUser's history load.
@@ -1780,6 +1816,12 @@ const layer = Layer.effect(
       function* (sessionID: SessionID) {
         // The continuation this drain admitted that no step has answered yet.
         let pending: MessageID | undefined
+        // The folder the last drain ended in when a step moved the session:
+        // later drains and the Stop hook run there.
+        const home = (yield* InstanceState.context).directory
+        let folder: string | undefined
+        const there = <A>(effect: Effect.Effect<A>) =>
+          folder === undefined ? effect : store.provide({ directory: folder }, effect)
         // A drain must not return while steer/queue user messages persisted after
         // the last messages read remain unconsumed — they would sit in the
         // database until some later drain. Rerun the loop when the post-teardown
@@ -1787,13 +1829,14 @@ const layer = Layer.effect(
         // Stop hook refuses the stop.
         return yield* Effect.gen(function* () {
           while (true) {
-            const once = yield* runLoopOnce(sessionID)
+            const once = yield* there(runLoopOnce(sessionID))
+            folder = once.directory === home ? undefined : once.directory
             pending = undefined
             if (yield* hasNewerUser(sessionID, once.user)) continue
             const subagent = Boolean(once.session.parentID)
             if (!endedOnItsOwn(once.result, once.steps)) return once.result
             if (!(yield* hooksRunner.hasStop({ subagent }))) return once.result
-            const refused = yield* runStopHook({ user: once.user, history: once.history, subagent })
+            const refused = yield* there(runStopHook({ user: once.user, history: once.history, subagent }))
             // Input admitted while the hook ran takes over, with its own agent,
             // model, format and system, and a refused stop is dropped.
             if (yield* hasNewerInput(sessionID, once.user)) {
@@ -2240,6 +2283,8 @@ export const node = LayerNode.make({
     CrossSpawnSpawner.node,
     Instruction.node,
     SessionRunState.node,
+    InstanceStore.node,
+    Git.node,
     SessionRevert.node,
     SessionSummary.node,
     Memory.node,

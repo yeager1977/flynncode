@@ -455,7 +455,7 @@ describe("exit_worktree", () => {
           const result = yield* inFolder(e.directory, e.tools.exit.execute({ action: "remove" }, ctx(e.session.id)))
 
           expect((yield* sessions.get(e.session.id)).directory).toBe(dir)
-          expect(result.output).toContain("still in use by this turn")
+          expect(result.output).toContain("still in use, so it is removed once nothing runs in it")
           expect(result.metadata.worktree).toMatchObject({ removed: false, pending: true })
           expect(yield* exists(e.directory)).toBe(true)
 

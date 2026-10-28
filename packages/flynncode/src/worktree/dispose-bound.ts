@@ -1,5 +1,9 @@
 import { Effect } from "effect"
+import { FSUtil } from "@flynncode/core/fs-util"
+import { InstanceState } from "@/effect/instance-state"
+import type { InstanceStore } from "@/project/instance-store"
 import type { Session } from "@/session/session"
+import type { SessionStatus } from "@/session/status"
 import type { Worktree } from "@/worktree"
 import { boundSessions } from "./bound-sessions"
 import { shouldDispose } from "./session-binding"
@@ -23,4 +27,29 @@ export const disposeSettledWorktree = Effect.fn("Worktree.disposeSettledWorktree
   if (!shouldDispose(binding, { archived, running: false })) return undefined
   const removed = yield* input.worktrees.disposeIfSafe({ directory: meta.worktree })
   return removed ? meta.worktree : undefined
+})
+
+// The archive/delete disposal of a session's worktree. A session inside a
+// worktree it entered with enter_worktree runs in that worktree's own
+// instance, which the worktree service never removes while loaded: the
+// instance is unloaded once nothing runs in it, and the disposal runs from the
+// folder the session entered it from (the project's main folder when that is
+// gone).
+export const disposeSessionWorktree = Effect.fn("Worktree.disposeSessionWorktree")(function* (input: {
+  sessions: Session.Interface
+  worktrees: Worktree.Interface
+  store: InstanceStore.Interface
+  status: SessionStatus.Interface
+  fs: FSUtil.Interface
+  info: Session.Info
+}) {
+  const worktree = input.info.metadata?.worktree
+  const from = input.info.metadata?.enteredFrom
+  if (typeof worktree !== "string" || typeof from !== "string") return yield* disposeSettledWorktree(input)
+  const loaded = (yield* input.store.loadedDirectories()).has(FSUtil.resolve(worktree))
+  if (loaded && (yield* input.store.provide({ directory: worktree }, input.status.list())).size > 0) return undefined
+  if (loaded) yield* input.store.disposeDirectory(worktree)
+  const ctx = yield* InstanceState.context
+  const home = (yield* input.fs.existsSafe(from)) ? from : ctx.project.worktree
+  return yield* input.store.provide({ directory: home }, disposeSettledWorktree(input))
 })

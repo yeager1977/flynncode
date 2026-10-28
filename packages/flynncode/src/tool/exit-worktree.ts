@@ -9,7 +9,7 @@ import { Session } from "@/session/session"
 import { SessionFolderSwitch } from "@/session/folder-switch"
 import { SessionStatus } from "@/session/status"
 import { Worktree } from "@/worktree"
-import { enteredFrom, requireRoot, requireUnswitched, switchError } from "./worktree/guard"
+import { enteredFrom, oncePerStep, requireRoot, requireUnswitched, switchError } from "./worktree/guard"
 
 export const Parameters = Schema.Struct({
   action: Schema.Literals(["keep", "remove"]).annotate({
@@ -155,7 +155,7 @@ export const ExitWorktreeTool = Tool.define<
           const fate = !remove
             ? `The worktree ${label} was kept.`
             : busy
-              ? `The worktree ${label} is still in use by this turn, so it is removed once the turn ends${forced ? "" : ", if nothing would be lost by then"}.`
+              ? `The worktree ${label} is still in use, so it is removed once nothing runs in it any more${forced ? "" : ", if nothing would be lost by then"}.`
               : removed
                 ? forced
                   ? `Discarded the worktree ${label} and its branch.`
@@ -176,7 +176,7 @@ export const ExitWorktreeTool = Tool.define<
             },
             output: [back, fate].join("\n"),
           }
-        }).pipe(Effect.orDie),
+        }).pipe(oncePerStep(ctx), Effect.orDie),
     }
   }),
 )

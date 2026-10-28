@@ -1,6 +1,8 @@
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { SessionExecution } from "@flynncode/core/session/execution"
 import { InstanceState } from "@/effect/instance-state"
+import { InstanceRef } from "@/effect/instance-ref"
+import type { InstanceContext } from "@/project/instance-context"
 import { SessionV1 } from "@flynncode/core/v1/session"
 import { Runner } from "@/effect/runner"
 import { BackgroundJob } from "@/background/job"
@@ -23,6 +25,10 @@ export interface Interface {
     work: Effect.Effect<SessionV1.WithParts>,
     ready?: Latch.Latch,
   ) => Effect.Effect<SessionV1.WithParts, Session.BusyError>
+  // A step moved the session's folder and its turn goes on in the current
+  // instance: the session reads busy here until the turn ends, while the
+  // turn's runner stays in the instance the turn started in.
+  readonly follow: (sessionID: SessionID) => Effect.Effect<void>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionRunState") {}
@@ -32,9 +38,15 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const background = yield* BackgroundJob.Service
     const status = yield* SessionStatus.Service
+    // Process-wide, by session: the instance whose runner runs the session's
+    // turn, and the other instance that turn moved the session to. Every call
+    // for a session reaches its runner through `owners`, whichever folder the
+    // caller addresses the session by, so a moved session never runs twice.
+    const owners = new Map<SessionID, InstanceContext>()
+    const guests = new Map<SessionID, InstanceContext>()
 
     const state = yield* InstanceState.make(
-      Effect.fn("SessionRunState.state")(function* () {
+      Effect.fn("SessionRunState.state")(function* (ctx) {
         const scope = yield* Scope.Scope
         const runners = new Map<SessionID, Runner.Runner<SessionV1.WithParts>>()
         // Sessions being cancelled, whose idle transition is an interrupt.
@@ -45,6 +57,8 @@ const layer = Layer.effect(
               concurrency: "unbounded",
               discard: true,
             })
+            for (const sessionID of runners.keys())
+              if (owners.get(sessionID)?.directory === ctx.directory) owners.delete(sessionID)
             runners.clear()
           }),
         )
@@ -52,36 +66,66 @@ const layer = Layer.effect(
       }),
     )
 
+    // Runs `effect` in the instance that owns the session's runner, if any.
+    const inOwner = <A, E, R>(sessionID: SessionID, effect: Effect.Effect<A, E, R>) =>
+      Effect.suspend(() => {
+        const owner = owners.get(sessionID)
+        return owner ? effect.pipe(Effect.provideService(InstanceRef, owner)) : effect
+      })
+
     const runner = Effect.fn("SessionRunState.runner")(function* (
       sessionID: SessionID,
       onInterrupt: Effect.Effect<SessionV1.WithParts>,
     ) {
+      const ctx = yield* InstanceState.context
       const data = yield* InstanceState.get(state)
       const existing = data.runners.get(sessionID)
       if (existing) return existing
+      const here = <A>(effect: Effect.Effect<A>) => effect.pipe(Effect.provideService(InstanceRef, ctx))
       const next = Runner.make<SessionV1.WithParts>(data.scope, {
         onIdle: Effect.gen(function* () {
           data.runners.delete(sessionID)
-          yield* status.set(sessionID, { type: "idle" }, { interrupted: data.cancelling.has(sessionID) })
+          if (owners.get(sessionID)?.directory === ctx.directory) owners.delete(sessionID)
+          const guest = guests.get(sessionID)
+          guests.delete(sessionID)
+          const interrupted = data.cancelling.has(sessionID)
+          if (!guest) return yield* here(status.set(sessionID, { type: "idle" }, { interrupted }))
+          // The turn ended in another folder: the session goes idle where it
+          // now lives, and only drops its busy status where the turn started.
+          yield* here(status.set(sessionID, { type: "idle" }, { quiet: true }))
+          yield* status
+            .set(sessionID, { type: "idle" }, { interrupted })
+            .pipe(Effect.provideService(InstanceRef, guest))
         }),
-        onBusy: status.set(sessionID, { type: "busy" }),
+        onBusy: here(status.set(sessionID, { type: "busy" })),
         onInterrupt,
       })
       data.runners.set(sessionID, next)
+      owners.set(sessionID, ctx)
       return next
     })
 
     const assertNotBusy = Effect.fn("SessionRunState.assertNotBusy")(function* (sessionID: SessionID) {
-      const data = yield* InstanceState.get(state)
+      const data = yield* inOwner(sessionID, InstanceState.get(state))
       const existing = data.runners.get(sessionID)
       if (existing?.busy) yield* busyError(sessionID)
     })
 
     const cancel = Effect.fn("SessionRunState.cancel")(function* (sessionID: SessionID) {
-      yield* cancelBackgroundJobs(background, sessionID)
+      // Background work belongs to the instance it started in, which for a
+      // moved session can be any folder its turn ran in.
+      const places = [yield* InstanceState.context, owners.get(sessionID), guests.get(sessionID)].filter(
+        (ctx, index, all): ctx is InstanceContext =>
+          ctx !== undefined && all.findIndex((other) => other?.directory === ctx.directory) === index,
+      )
+      yield* Effect.forEach(
+        places,
+        (ctx) => cancelBackgroundJobs(background, sessionID).pipe(Effect.provideService(InstanceRef, ctx)),
+        { discard: true },
+      )
       const execution = yield* Effect.serviceOption(SessionExecution.Service)
       if (Option.isSome(execution)) yield* execution.value.interrupt(sessionID)
-      const data = yield* InstanceState.get(state)
+      const data = yield* inOwner(sessionID, InstanceState.get(state))
       const existing = data.runners.get(sessionID)
       if (!existing) {
         yield* status.set(sessionID, { type: "idle" }, { interrupted: true })
@@ -96,7 +140,10 @@ const layer = Layer.effect(
       onInterrupt: Effect.Effect<SessionV1.WithParts>,
       work: Effect.Effect<SessionV1.WithParts>,
     ) {
-      return yield* (yield* runner(sessionID, onInterrupt)).ensureRunning(work)
+      return yield* inOwner(
+        sessionID,
+        runner(sessionID, onInterrupt).pipe(Effect.flatMap((next) => next.ensureRunning(work))),
+      )
     })
 
     const startShell = Effect.fn("SessionRunState.startShell")(function* (
@@ -105,12 +152,29 @@ const layer = Layer.effect(
       work: Effect.Effect<SessionV1.WithParts>,
       ready?: Latch.Latch,
     ) {
-      return yield* (yield* runner(sessionID, onInterrupt))
-        .startShell(work, ready)
-        .pipe(Effect.catchTag("RunnerBusy", () => Effect.fail(busyError(sessionID))))
+      return yield* inOwner(
+        sessionID,
+        runner(sessionID, onInterrupt).pipe(
+          Effect.flatMap((next) => next.startShell(work, ready)),
+          Effect.catchTag("RunnerBusy", () => Effect.fail(busyError(sessionID))),
+        ),
+      )
     })
 
-    return Service.of({ assertNotBusy, cancel, ensureRunning, startShell })
+    const follow = Effect.fn("SessionRunState.follow")(function* (sessionID: SessionID) {
+      const ctx = yield* InstanceState.context
+      const owner = owners.get(sessionID)
+      const previous = guests.get(sessionID)
+      if (previous && previous.directory !== ctx.directory)
+        yield* status
+          .set(sessionID, { type: "idle" }, { quiet: true })
+          .pipe(Effect.provideService(InstanceRef, previous))
+      if (owner === undefined || owner.directory === ctx.directory) guests.delete(sessionID)
+      if (owner !== undefined && owner.directory !== ctx.directory) guests.set(sessionID, ctx)
+      yield* status.set(sessionID, { type: "busy" })
+    })
+
+    return Service.of({ assertNotBusy, cancel, ensureRunning, startShell, follow })
   }),
 )
 

@@ -69,6 +69,7 @@ const fakePermission = Permission.Service.of({
   wouldAsk: () => Effect.succeed(true),
   reply: () => Effect.void,
   list: () => Effect.succeed([]),
+  carry: () => Effect.void,
 } satisfies Permission.Interface)
 
 const fakeTruncate = Truncate.Service.of({
@@ -441,6 +442,7 @@ function autoLayer(
               Effect.succeed(Permission.wouldAsk(input.permission, input.patterns, input.ruleset, approved)),
             reply: () => Effect.void,
             list: () => Effect.succeed([]),
+            carry: () => Effect.void,
           } satisfies Permission.Interface),
         ),
         Layer.succeed(

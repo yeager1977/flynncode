@@ -99,9 +99,15 @@ const layer = Layer.effect(
     const config = yield* Config.Service
 
     const computeDiff = Effect.fn("SessionSummary.computeDiff")(function* (input: { messages: SessionV1.WithParts[] }) {
+      // Snapshots live in one store per checkout. A turn that moved the
+      // session to another folder (enter_worktree) diffs only the steps run
+      // in the folder of its last step.
+      const last = input.messages.findLast((item) => item.info.role === "assistant")?.info
+      const root = last?.role === "assistant" ? last.path.root : undefined
+      const steps = input.messages.filter((item) => item.info.role !== "assistant" || item.info.path.root === root)
       let from: string | undefined
       let to: string | undefined
-      for (const item of input.messages) {
+      for (const item of steps) {
         if (!from) {
           for (const part of item.parts) {
             if (part.type === "step-start" && part.snapshot) {

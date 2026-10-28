@@ -18,8 +18,14 @@ export interface Interface {
   readonly list: () => Effect.Effect<Map<SessionID, Info>>
   // `interrupted` marks an idle transition caused by a cancel or an aborted
   // turn, which the user just asked for, so it does not notify them that the
-  // session is waiting.
-  readonly set: (sessionID: SessionID, status: Info, options?: { interrupted?: boolean }) => Effect.Effect<void>
+  // session is waiting. `quiet` drops an idle session from an instance its
+  // turn moved away from: only the status change is published, while the idle
+  // event and hooks run once, in the instance the session went idle in.
+  readonly set: (
+    sessionID: SessionID,
+    status: Info,
+    options?: { interrupted?: boolean; quiet?: boolean },
+  ) => Effect.Effect<void>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionStatus") {}
@@ -45,7 +51,7 @@ const layer = Layer.effect(
     const set = Effect.fn("SessionStatus.set")(function* (
       sessionID: SessionID,
       status: Info,
-      options?: { interrupted?: boolean },
+      options?: { interrupted?: boolean; quiet?: boolean },
     ) {
       const data = yield* InstanceState.get(state)
       // Update the map before anything can yield, so a busy status set while
@@ -53,7 +59,7 @@ const layer = Layer.effect(
       if (status.type === "idle") data.delete(sessionID)
       if (status.type !== "idle") data.set(sessionID, status)
       yield* events.publish(Event.Status, { sessionID, status })
-      if (status.type !== "idle") return
+      if (status.type !== "idle" || options?.quiet) return
       yield* events.publish(Event.Idle, { sessionID })
       // The observe-only session.idle plugin hook: detached so it never delays
       // the turn, and report-only so its context does not accumulate. The Stop

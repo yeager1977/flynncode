@@ -18,7 +18,7 @@ import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { Project } from "@/project/project"
 import { Worktree } from "@/worktree"
-import { disposeSettledWorktree } from "@/worktree/dispose-bound"
+import { disposeSessionWorktree } from "@/worktree/dispose-bound"
 import { NamedError } from "@flynncode/core/util/error"
 import { FSUtil } from "@flynncode/core/fs-util"
 import { normalizeFolders, MaxExtras } from "@flynncode/core/project/folders"
@@ -96,7 +96,14 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     // Best-effort — the archive/delete already succeeded, so failures here
     // never fail the request.
     const disposeWorktreeOf = Effect.fn("SessionHttpApi.disposeWorktreeOf")(function* (info: Session.Info) {
-      const removed = yield* disposeSettledWorktree({ sessions: session, worktrees: worktreeSvc, info })
+      const removed = yield* disposeSessionWorktree({
+        sessions: session,
+        worktrees: worktreeSvc,
+        store: instances,
+        status: statusSvc,
+        fs,
+        info,
+      })
       if (removed === undefined) return
       const inst = yield* InstanceState.context
       yield* project.removeSandbox(inst.project.id, removed).pipe(Effect.ignore)

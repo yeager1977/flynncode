@@ -108,21 +108,43 @@ describe("Worktree", () => {
     )
 
     it.instance(
-      "ignores the worktree root via info/exclude, not the tracked .gitignore",
+      "creates nothing on disk",
       () =>
         Effect.gen(function* () {
           const test = yield* TestInstance
           const fs = yield* FSUtil.Service
           const svc = yield* Worktree.Service
-          yield* svc.makeWorktreeInfo()
-          yield* svc.makeWorktreeInfo()
+          const info = yield* svc.makeWorktreeInfo()
+
+          expect(yield* fs.existsSafe(path.dirname(info.directory))).toBe(false)
+          expect((yield* fs.readFileStringSafe(path.join(test.directory, ".git", "info", "exclude"))) ?? "").not.toContain(
+            ".opencode/worktrees",
+          )
+        }),
+      { git: true },
+    )
+
+    it.instance(
+      "creating ignores the worktree root via info/exclude, not the tracked .gitignore",
+      () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const fs = yield* FSUtil.Service
+          const svc = yield* Worktree.Service
+          const info = yield* svc.makeWorktreeInfo()
+          const ready = yield* waitReady().pipe(Effect.forkScoped)
+          yield* svc.createFromInfo(info, undefined, { awaitCheckout: true })
 
           expect(yield* fs.existsSafe(path.join(test.directory, ".gitignore"))).toBe(false)
           const exclude = (yield* fs.readFileStringSafe(path.join(test.directory, ".git", "info", "exclude"))) ?? ""
           expect(exclude.split("\n").filter((line) => line === ".opencode/worktrees/")).toHaveLength(1)
           expect(yield* git(test.directory, ["check-ignore", ".opencode/worktrees/x"])).toContain(".opencode/worktrees/x")
+
+          yield* Fiber.join(ready)
+          yield* removeCreatedWorktree(info.directory)
         }),
       { git: true },
+      30000,
     )
 
     it.instance(

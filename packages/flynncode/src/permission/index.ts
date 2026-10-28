@@ -1,6 +1,8 @@
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { ConfigPermissionV1 } from "@flynncode/core/v1/config/permission"
 import { InstanceState } from "@/effect/instance-state"
+import { InstanceRef } from "@/effect/instance-ref"
+import type { InstanceContext } from "@/project/instance-context"
 import { Wildcard } from "@flynncode/core/util/wildcard"
 import { Deferred, Effect, Layer, Context } from "effect"
 import os from "os"
@@ -39,6 +41,9 @@ export interface Interface {
   readonly wouldAsk: (input: WouldAskInput) => Effect.Effect<boolean>
   readonly reply: (input: PermissionV1.ReplyInput) => Effect.Effect<void, PermissionV1.NotFoundError>
   readonly list: () => Effect.Effect<ReadonlyArray<PermissionV1.Request>>
+  // Copies the "always" approvals given in another instance into this one,
+  // for a session whose turn moved here: approvals stay with the session.
+  readonly carry: (from: InstanceContext) => Effect.Effect<void>
 }
 
 interface PendingEntry {
@@ -297,7 +302,18 @@ const layer = Layer.effect(
       return Array.from(pending.values(), (item) => item.info)
     })
 
-    return Service.of({ ask, wouldAsk: wouldAskFor, reply, list })
+    const carry = Effect.fn("Permission.carry")(function* (from: InstanceContext) {
+      const source = yield* InstanceState.get(state).pipe(Effect.provideService(InstanceRef, from))
+      const target = yield* InstanceState.get(state)
+      if (source === target) return
+      const known = (rule: PermissionV1.Rule) =>
+        target.approved.some(
+          (item) => item.permission === rule.permission && item.pattern === rule.pattern && item.action === rule.action,
+        )
+      target.approved.push(...source.approved.filter((rule) => !known(rule)))
+    })
+
+    return Service.of({ ask, wouldAsk: wouldAskFor, reply, list, carry })
   }),
 )
 

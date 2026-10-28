@@ -4,7 +4,7 @@ import DESCRIPTION from "./enter-worktree.txt"
 import { Session } from "@/session/session"
 import { SessionFolderSwitch } from "@/session/folder-switch"
 import { Worktree } from "@/worktree"
-import { enteredFrom, requireRoot, requireUnswitched, switchError } from "./worktree/guard"
+import { enteredFrom, oncePerStep, requireRoot, requireUnswitched, switchError } from "./worktree/guard"
 
 export const Parameters = Schema.Struct({
   name: Schema.optional(Schema.String).annotate({
@@ -49,7 +49,10 @@ export const EnterWorktreeTool = Tool.define<
             always: [],
             metadata: { action: "enter", branch: info.branch, path: info.directory },
           })
-          yield* worktrees.createFromInfo(info).pipe(Effect.catch((error) => Effect.fail(worktreeError(error))))
+          // The next step works in the folder, so its checkout must be in place.
+          yield* worktrees
+            .createFromInfo(info, undefined, { awaitCheckout: true })
+            .pipe(Effect.catch((error) => Effect.fail(worktreeError(error))))
           const switched = yield* folderSwitch
             .switchPrimary({ sessionID: ctx.sessionID, directory: info.directory })
             .pipe(
@@ -88,7 +91,7 @@ export const EnterWorktreeTool = Tool.define<
               "Use exit_worktree to go back, keeping or removing the worktree.",
             ].join("\n"),
           }
-        }).pipe(Effect.orDie),
+        }).pipe(oncePerStep(ctx), Effect.orDie),
     }
   }),
 )

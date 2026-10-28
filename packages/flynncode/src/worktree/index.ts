@@ -14,7 +14,7 @@ import { Glob } from "@flynncode/core/util/glob"
 import { errorMessage } from "../util/error"
 import { GlobalBus } from "@/bus/global"
 import { Git } from "@/git"
-import { Effect, FileSystem, Layer, Option, Path, Schema, Scope, Context } from "effect"
+import { Deferred, Effect, FileSystem, Layer, Option, Path, Schema, Scope, Context } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { FSUtil } from "@flynncode/core/fs-util"
 import { AppProcess } from "@flynncode/core/process"
@@ -161,8 +161,15 @@ function parseStatusZ(text: string) {
 // ---------------------------------------------------------------------------
 
 export interface Interface {
+  // Picks a free name, branch and folder; creates nothing.
   readonly makeWorktreeInfo: (options?: { name?: string; detached?: boolean }) => Effect.Effect<Info, Error>
-  readonly createFromInfo: (info: Info, startCommand?: string) => Effect.Effect<void, Error>
+  // The checkout and instance boot run in the background unless `awaitCheckout`
+  // is set, for a caller that works in the folder right away.
+  readonly createFromInfo: (
+    info: Info,
+    startCommand?: string,
+    options?: { awaitCheckout?: boolean },
+  ) => Effect.Effect<void, Error>
   readonly create: (input?: CreateInput) => Effect.Effect<Info, Error>
   readonly createDisposable: (input: { sessionID: string; name?: string }) => Effect.Effect<Info, Error>
   readonly disposeIfIdle: (input: { directory: string }) => Effect.Effect<boolean, Error>
@@ -269,13 +276,11 @@ const layer: Layer.Layer<
       }
 
       // The configured location is relative to the project root; an absolute
-      // location is honored as-is. When the parent ends up inside the primary
-      // checkout, keep it out of git so `git clean -ffdx` cannot sweep it away.
+      // location is honored as-is.
       const wt = ConfigWorktree.settings(yield* configSvc.get())
-      const inRepo = !pathSvc.isAbsolute(wt.location)
-      const root = inRepo ? pathSvc.join(ctx.worktree, wt.location) : pathSvc.normalize(wt.location)
-      yield* fs.makeDirectory(root, { recursive: true }).pipe(Effect.orDie)
-      if (inRepo) yield* ignoreWorktreeRoot(ctx.worktree, wt.location)
+      const root = pathSvc.isAbsolute(wt.location)
+        ? pathSvc.normalize(wt.location)
+        : pathSvc.join(ctx.worktree, wt.location)
 
       return yield* candidate({
         root,
@@ -304,6 +309,11 @@ const layer: Layer.Layer<
 
     const setup = Effect.fnUntraced(function* (info: Info) {
       const ctx = yield* InstanceState.context
+      // When the configured location sits inside the primary checkout, keep it
+      // out of git so `git clean -ffdx` cannot sweep it away.
+      const location = ConfigWorktree.settings(yield* configSvc.get()).location
+      yield* fs.makeDirectory(pathSvc.dirname(info.directory), { recursive: true }).pipe(Effect.orDie)
+      if (!pathSvc.isAbsolute(location)) yield* ignoreWorktreeRoot(ctx.worktree, location)
       const created = yield* git(
         info.branch
           ? ["worktree", "add", "--no-checkout", "-b", info.branch, info.directory]
@@ -319,13 +329,18 @@ const layer: Layer.Layer<
       yield* project.addSandbox(ctx.project.id, info.directory).pipe(Effect.catch(() => Effect.void))
     })
 
-    const boot = Effect.fnUntraced(function* (info: Info, startCommand?: string) {
+    const boot = Effect.fnUntraced(function* (
+      info: Info,
+      startCommand?: string,
+      checkedOut: Effect.Effect<unknown> = Effect.void,
+    ) {
       const ctx = yield* InstanceState.context
       const workspaceID = yield* InstanceState.workspaceID
       const projectID = ctx.project.id
       const extra = startCommand?.trim()
 
       const populated = yield* git(["reset", "--hard"], { cwd: info.directory })
+      yield* checkedOut
       if (populated.code !== 0) {
         const message = populated.stderr || populated.text || "Failed to populate worktree"
         yield* Effect.logError("worktree checkout failed", { directory: info.directory, message })
@@ -369,15 +384,23 @@ const layer: Layer.Layer<
       yield* runStartScripts(info.directory, { projectID, extra })
     })
 
-    const createFromInfo = Effect.fn("Worktree.createFromInfo")(function* (info: Info, startCommand?: string) {
+    const createFromInfo = Effect.fn("Worktree.createFromInfo")(function* (
+      info: Info,
+      startCommand?: string,
+      options?: { awaitCheckout?: boolean },
+    ) {
       yield* setup(info)
       yield* carryIncludedFiles(info.directory).pipe(
         Effect.catchCause((cause) => Effect.logWarning("worktree include carry failed", { cause })),
       )
-      yield* boot(info, startCommand).pipe(
+      const checkedOut = yield* Deferred.make<void>()
+      const done = Deferred.succeed(checkedOut, undefined)
+      yield* boot(info, startCommand, done).pipe(
         Effect.catchCause((cause) => Effect.logError("worktree bootstrap failed", { cause })),
+        Effect.ensuring(done),
         Effect.forkIn(scope),
       )
+      if (options?.awaitCheckout) yield* Deferred.await(checkedOut)
     })
 
     // Carry gitignored files listed in `<project-root>/.worktreeinclude` from
