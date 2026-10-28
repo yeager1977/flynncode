@@ -60,6 +60,7 @@ import { SessionDiffSweep } from "@/storage/session-diff-sweep"
 import { BackgroundShells } from "@/shell/background/service"
 import { ScheduleStore } from "@/schedule/store"
 import { Scheduler } from "@/schedule/scheduler"
+import { StatusLine } from "@/statusline/service"
 import { ToolRegistry } from "@/tool/registry"
 import { Truncate } from "@/tool/truncate"
 import { Worktree } from "@/worktree"
@@ -120,6 +121,7 @@ import { providerHandlers } from "./handlers/provider"
 import { pullRequestHandlers } from "./handlers/pull-request"
 import { backgroundShellsHandlers } from "./handlers/background-shells"
 import { sessionSchedulesHandlers } from "./handlers/session-schedules"
+import { sessionStatusLineHandlers } from "./handlers/session-statusline"
 import { ptyConnectHandlers, ptyHandlers } from "./handlers/pty"
 import { questionHandlers } from "./handlers/question"
 import { sessionHandlers } from "./handlers/session"
@@ -201,6 +203,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     workspaceHandlers,
     backgroundShellsHandlers,
     sessionSchedulesHandlers,
+    sessionStatusLineHandlers,
   ]),
 )
 
@@ -265,6 +268,8 @@ export const app = LayerNode.group([
   ScheduleStore.node,
   // Polls every 15 s while this graph lives; only the machine-wide leader (an opted-in long-lived server) ticks.
   Scheduler.node,
+  // Process-global: idle until a client asks for a session whose instance has a status line.
+  StatusLine.node,
   Snapshot.node,
   Plugin.node,
   ModelsDev.node,

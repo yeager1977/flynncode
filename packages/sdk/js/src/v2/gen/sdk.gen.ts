@@ -266,6 +266,8 @@ import type {
   SessionShellsStopErrors,
   SessionShellsStopResponses,
   SessionStatusErrors,
+  SessionStatuslineGetErrors,
+  SessionStatuslineGetResponses,
   SessionStatusResponses,
   SessionSummarizeErrors,
   SessionSummarizeResponses,
@@ -4389,6 +4391,44 @@ export class Schedules extends HeyApiClient {
   }
 }
 
+export class Statusline extends HeyApiClient {
+  /**
+   * Get the status line
+   *
+   * Return the last output of the configured status line command for this session, and start a run when it is stale or missing. Later output arrives as session.statusline events.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      SessionStatuslineGetResponses,
+      SessionStatuslineGetErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/statusline",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Session2 extends HeyApiClient {
   /**
    * List sessions
@@ -5411,6 +5451,11 @@ export class Session2 extends HeyApiClient {
   private _schedules?: Schedules
   get schedules(): Schedules {
     return (this._schedules ??= new Schedules({ client: this.client }))
+  }
+
+  private _statusline?: Statusline
+  get statusline(): Statusline {
+    return (this._statusline ??= new Statusline({ client: this.client }))
   }
 }
 

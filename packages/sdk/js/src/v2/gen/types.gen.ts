@@ -96,6 +96,7 @@ export type Event =
   | EventShellBackgroundOutput
   | EventShellBackgroundExited
   | EventSessionScheduleUpdated
+  | EventSessionStatusline
   | EventServerConnected
   | EventGlobalDisposed
   | EventServerInstanceDisposed
@@ -1691,6 +1692,14 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "session.statusline"
+        properties: {
+          sessionID: string
+          lines: Array<string>
+        }
+      }
+    | {
+        id: string
         type: "server.connected"
         properties: {
           [key: string]: unknown
@@ -1997,6 +2006,13 @@ export type McpRemoteConfig = {
  * @deprecated Always uses stretch layout.
  */
 export type LayoutConfig = "auto" | "stretch"
+
+export type StatusLineConfig = {
+  type: "command"
+  command: string
+  padding?: number
+  source?: string
+}
 
 export type ImageAttachmentConfig = {
   auto_resize?: boolean
@@ -2804,6 +2820,7 @@ export type Config = {
   claude_hooks?: {
     disabled?: Array<string>
   }
+  statusLine?: StatusLineConfig
   tools?: {
     [key: string]: boolean
   }
@@ -3724,6 +3741,11 @@ export type SessionSchedule = {
   expiresAt?: number
 }
 
+export type SessionStatusLine = {
+  lines: Array<string>
+  updatedAt?: number
+}
+
 export type UnauthorizedError = {
   _tag: "UnauthorizedError"
   message: string
@@ -4011,6 +4033,7 @@ export type V2Event =
   | ShellBackgroundOutput
   | ShellBackgroundExited
   | SessionScheduleUpdated
+  | SessionStatusline
   | ServerConnected
   | GlobalDisposed
 
@@ -7275,6 +7298,24 @@ export type SessionScheduleUpdated = {
   }
 }
 
+export type SessionStatusline = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.statusline"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    lines: Array<string>
+  }
+}
+
 export type ServerConnected = {
   id: string
   metadata?: {
@@ -8299,6 +8340,15 @@ export type EventSessionScheduleUpdated = {
   type: "session.schedule.updated"
   properties: {
     sessionID: string
+  }
+}
+
+export type EventSessionStatusline = {
+  id: string
+  type: "session.statusline"
+  properties: {
+    sessionID: string
+    lines: Array<string>
   }
 }
 
@@ -13346,6 +13396,40 @@ export type SessionSchedulesDeleteResponses = {
 }
 
 export type SessionSchedulesDeleteResponse = SessionSchedulesDeleteResponses[keyof SessionSchedulesDeleteResponses]
+
+export type SessionStatuslineGetData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/statusline"
+}
+
+export type SessionStatuslineGetErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionStatuslineGetError = SessionStatuslineGetErrors[keyof SessionStatuslineGetErrors]
+
+export type SessionStatuslineGetResponses = {
+  /**
+   * The session's last status line output
+   */
+  200: SessionStatusLine
+}
+
+export type SessionStatuslineGetResponse = SessionStatuslineGetResponses[keyof SessionStatuslineGetResponses]
 
 export type V2HealthGetData = {
   body?: never

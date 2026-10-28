@@ -26,6 +26,16 @@ export const WellKnown = Schema.Struct({
   remote_config: Schema.optional(Schema.Json),
 })
 
+// Claude Code's `statusLine` shape. `source` is set by the loader on a status line read from Claude settings, so the
+// trust check can gate it; the loader strips it from config files, which can never pose as a Claude source.
+export const StatusLine = Schema.Struct({
+  type: Schema.Literal("command"),
+  command: Schema.String,
+  padding: Schema.optional(NonNegativeInt).annotate({ description: "Spaces added before each status line" }),
+  source: Schema.optional(Schema.String),
+}).annotate({ identifier: "StatusLineConfig" })
+export type StatusLine = Schema.Schema.Type<typeof StatusLine>
+
 const LogLevelRef = Schema.Literals(["DEBUG", "INFO", "WARN", "ERROR"]).annotate({
   identifier: "LogLevel",
   description: "Log level",
@@ -218,6 +228,10 @@ export const Info = Schema.Struct({
     }),
   ).annotate({
     description: "Claude Code hooks loaded from Claude settings files and enabled Claude plugins",
+  }),
+  statusLine: Schema.optional(StatusLine).annotate({
+    description:
+      "A command run per session with Claude Code's status JSON on stdin; its first two non-empty stdout lines are shown under the prompt",
   }),
   tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
   attachment: Schema.optional(ConfigAttachmentV1.Info).annotate({

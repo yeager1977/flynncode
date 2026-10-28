@@ -569,6 +569,24 @@ const layer = Layer.effect(
       return Object.keys(loaded.hooks).length > 0 ? loaded.hooks : undefined
     })
 
+    // The Claude Code statusLine of the same settings files, under the same
+    // switches as Claude hooks.
+    const loadClaudeStatusLine = Effect.fnUntraced(function* (ctx: InstanceContext, disabled: ReadonlyArray<string>) {
+      if (flags.disableClaudeHooks) return undefined
+      const user = path.join(Global.Path.home, ".claude")
+      const dirs = yield* claudeDirs(ctx)
+      const loaded = yield* Effect.promise(() =>
+        ConfigClaude.loadStatusLine({
+          home: Global.Path.home,
+          projectDirs: dirs.filter((dir) => dir !== user),
+          projectRoot: ctx.worktree === "/" ? ctx.directory : ctx.worktree,
+          disabled: new Set(disabled),
+        }),
+      )
+      yield* Effect.forEach(loaded.warnings, (warning) => Effect.logWarning(warning))
+      return loaded.statusLine
+    })
+
     const loadInstanceState = Effect.fn("Config.loadInstanceState")(
       function* (ctx: InstanceContext) {
         const auth = yield* authSvc.all().pipe(Effect.orDie)
@@ -823,6 +841,17 @@ const layer = Layer.effect(
         if (result.hooks || claudeHooks) {
           result.hooks = HooksConfig.mergeHooksConfigs(HooksConfig.stripLoaderTags(result.hooks), claudeHooks)
         }
+
+        // A native statusLine wins and never keeps a `source`, which only the
+        // Claude loader may set; without one, Claude settings supply it.
+        const statusLine = result.statusLine
+          ? {
+              type: result.statusLine.type,
+              command: result.statusLine.command,
+              ...(result.statusLine.padding === undefined ? {} : { padding: result.statusLine.padding }),
+            }
+          : yield* loadClaudeStatusLine(ctx, result.claude_hooks?.disabled ?? [])
+        if (statusLine) result.statusLine = statusLine
 
         for (const [name, mode] of Object.entries(result.mode ?? {})) {
           result.agent = mergeDeep(result.agent ?? {}, {

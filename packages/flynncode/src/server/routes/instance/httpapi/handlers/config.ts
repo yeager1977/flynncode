@@ -3,6 +3,7 @@ import { Provider } from "@/provider/provider"
 import { HooksTrust } from "@/hooks/trust"
 import { HooksExecutor, enumerateHooks } from "@/hooks/executor"
 import { HooksManaged } from "@/hooks/managed"
+import { StatusLine } from "@/statusline/service"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import * as InstanceState from "@/effect/instance-state"
 import { FSUtil } from "@flynncode/core/fs-util"
@@ -42,10 +43,21 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
     })
 
     // Configured hooks keyed by their project-bound trust identity, the same
-    // identity the executor checks before running a hook.
+    // identity the executor checks before running a hook. A status line from
+    // Claude settings needs the same review, so it is listed as `StatusLine`.
     const boundHooks = Effect.fn("ConfigHttpApi.boundHooks")(function* () {
       const cfg = yield* configSvc.get()
-      return yield* Effect.forEach(enumerateHooks(cfg.hooks), (item) =>
+      const statusLine = cfg.statusLine?.source
+        ? [
+            {
+              event: "StatusLine",
+              matcher: "",
+              def: StatusLine.hookDef(cfg.statusLine),
+              summary: cfg.statusLine.command,
+            },
+          ]
+        : []
+      return yield* Effect.forEach([...enumerateHooks(cfg.hooks), ...statusLine], (item) =>
         HooksTrust.bindToInstance(item.def).pipe(
           Effect.map((bound) => ({ ...item, bound, hash: HooksTrust.hashDef(bound) })),
         ),

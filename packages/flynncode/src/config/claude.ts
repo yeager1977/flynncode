@@ -8,6 +8,7 @@ import { Wildcard } from "@flynncode/core/util/wildcard"
 import { ConfigAgentV1 } from "@flynncode/core/v1/config/agent"
 import { ConfigCommandV1 } from "@flynncode/core/v1/config/command"
 import { ConfigHooksV1 } from "@flynncode/core/v1/config/hooks"
+import { ConfigV1 } from "@flynncode/core/v1/config/config"
 import type { PermissionV1 } from "@flynncode/core/v1/permission"
 import { HooksConfig } from "@/hooks/config"
 import { isRecord } from "@/util/record"
@@ -364,6 +365,7 @@ type LoadedGroup = { event: string; group: ConfigHooksV1.HookGroup }
 const HOOK_EVENTS = new Set(Object.keys(ConfigHooksV1.Info.fields).filter((key) => key !== "disableAllHooks"))
 const decodeJson = Schema.decodeUnknownOption(Schema.UnknownFromJsonString)
 const decodeHandler = Schema.decodeUnknownOption(ConfigHooksV1.HookHandler)
+const decodeStatusLine = Schema.decodeUnknownOption(ConfigV1.StatusLine)
 
 // Loads Claude Code hooks from `~/.claude/settings{,.local}.json`, the project
 // `.claude/settings{,.local}.json` files and the `hooks/hooks.json` of every
@@ -394,7 +396,8 @@ export async function loadHooks(input: {
     files: [settings, await readJson(path.join(claude, "settings.local.json"))],
     warnings: [],
   }
-  if (hooksDisabled(user.files)) return { hooks: HooksConfig.mergeHooksConfigs(), sources: [], warnings: [], notices: [] }
+  if (hooksDisabled(user.files))
+    return { hooks: HooksConfig.mergeHooksConfigs(), sources: [], warnings: [], notices: [] }
   const plugins = await pluginCandidates(claude, settings.value, env, input.projectRoot)
   const projects = (
     await Promise.all(
@@ -430,6 +433,59 @@ export async function loadHooks(input: {
       ...loaded.flatMap((item) => item.source.warnings.filter((warning) => !item.notices.includes(warning))),
     ],
     notices: loaded.flatMap((item) => item.notices),
+  }
+}
+
+// Claude Code's `statusLine` from the settings files `loadHooks` reads: the
+// user's, then each project `.claude` directory from the root down, with
+// `settings.local.json` after `settings.json`. The last one set wins, as the
+// closest settings win in Claude. It carries its file's source id
+// (`claude:user` or `claude:project:<dir>`) so the trust check can gate it,
+// and `$CLAUDE_PROJECT_DIR` is expanded as in hooks. Sources in `disabled` and
+// sources whose `disableAllHooks` is on (which also turns Claude's status line
+// off) are skipped. A shape other than a command is skipped with a warning;
+// unreadable files already warn when hooks load.
+export async function loadStatusLine(input: {
+  home: string
+  projectDirs: ReadonlyArray<string>
+  projectRoot: string
+  disabled: ReadonlySet<string>
+}) {
+  const claude = path.join(input.home, ".claude")
+  const read = (dir: string) =>
+    Promise.all(["settings.json", "settings.local.json"].map((file) => readJson(path.join(dir, file))))
+  const user = { id: "claude:user", files: await read(claude) }
+  if (hooksDisabled(user.files)) return { statusLine: undefined, warnings: [] }
+  const projects = await Promise.all(
+    input.projectDirs
+      .filter((dir) => dir !== claude)
+      .map(async (dir) => ({ id: `claude:project:${dir}`, files: await read(dir) })),
+  )
+  const parsed = [user, ...projects]
+    .filter((source) => !input.disabled.has(source.id) && !hooksDisabled(source.files))
+    .flatMap((source) =>
+      source.files
+        .filter((file) => isRecord(file.value) && file.value.statusLine !== undefined)
+        .map((file) => ({
+          id: source.id,
+          file: file.file,
+          line: decodeStatusLine(isRecord(file.value) ? file.value.statusLine : undefined),
+        })),
+    )
+  const found = parsed.findLast((item) => Option.isSome(item.line))
+  return {
+    statusLine:
+      found && Option.isSome(found.line)
+        ? {
+            type: "command" as const,
+            command: expandCommand(found.line.value.command, { CLAUDE_PROJECT_DIR: input.projectRoot }),
+            ...(found.line.value.padding === undefined ? {} : { padding: found.line.value.padding }),
+            source: found.id,
+          }
+        : undefined,
+    warnings: parsed
+      .filter((item) => Option.isNone(item.line))
+      .map((item) => `skipped Claude statusLine in ${item.file}: only { type: "command", command } is supported`),
   }
 }
 
@@ -604,17 +660,18 @@ function parseGroup(raw: unknown, where: string, candidate: HookCandidate) {
 
 function expandHandler(handler: ConfigHooksV1.HookHandler, env: Record<string, string>) {
   if (handler.type !== "command") return handler
-  return {
-    ...handler,
-    // Whole names only: $CLAUDE_PROJECT_DIRX is some other variable.
-    command: handler.command.replace(
-      /\$(?:\{(CLAUDE_PLUGIN_ROOT|CLAUDE_PROJECT_DIR)\}|(CLAUDE_PLUGIN_ROOT|CLAUDE_PROJECT_DIR)(?![A-Za-z0-9_]))/g,
-      (match, braced?: string, bare?: string) => {
-        const name = braced ?? bare ?? ""
-        return Object.hasOwn(env, name) ? env[name] : match
-      },
-    ),
-  }
+  return { ...handler, command: expandCommand(handler.command, env) }
+}
+
+function expandCommand(command: string, env: Record<string, string>) {
+  // Whole names only: $CLAUDE_PROJECT_DIRX is some other variable.
+  return command.replace(
+    /\$(?:\{(CLAUDE_PLUGIN_ROOT|CLAUDE_PROJECT_DIR)\}|(CLAUDE_PLUGIN_ROOT|CLAUDE_PROJECT_DIR)(?![A-Za-z0-9_]))/g,
+    (match, braced?: string, bare?: string) => {
+      const name = braced ?? bare ?? ""
+      return Object.hasOwn(env, name) ? env[name] : match
+    },
+  )
 }
 
 // A missing file is no source; an unreadable or invalid one is a warning.
