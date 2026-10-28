@@ -4,7 +4,7 @@ import { and, desc, eq, isNotNull, sql } from "drizzle-orm"
 import { Effect } from "effect"
 import { Database } from "@flynncode/core/database/database"
 import { InstallationVersion } from "@flynncode/core/installation/version"
-import { MessageTable } from "@flynncode/core/session/sql"
+import { MessageTable, PartTable } from "@flynncode/core/session/sql"
 import { ProviderV2 } from "@flynncode/core/provider"
 import { InstanceState } from "@/effect/instance-state"
 import { ClaudeTranscript } from "@/hooks/claude-transcript"
@@ -18,8 +18,18 @@ export const LARGE_CONTEXT = 200_000
  * Claude Code's status line JSON for a session, plus Flynncode's `context`. Runs in the session's instance, which
  * owns the provider catalog and the project. Totals come from the same places the app's session summary and usage
  * meters read: the session's projected cost and line counts, and the newest assistant message that reported tokens.
+ *
+ * Where Flynncode has no exact equivalent of Claude's value:
+ * - `total_duration_ms` is `duration`: wall time since this server process first served the session's status line.
+ *   Claude counts from the start of its own process's session, so a restart resets both.
+ * - `total_api_duration_ms` sums each finished assistant message's time minus the span its tools ran in. Text the
+ *   model streams while tools run is not counted.
+ * - `exceeds_200k_tokens` checks the input and cache tokens of the newest assistant message that reported tokens.
  */
-export const build = Effect.fn("StatusLineInput.build")(function* (session: Session.Info) {
+export const build = Effect.fn("StatusLineInput.build")(function* (
+  session: Session.Info,
+  options: { duration: number },
+) {
   const database = yield* Database.Service
   const providers = yield* Provider.Service
   const ctx = yield* InstanceState.context
@@ -38,7 +48,8 @@ export const build = Effect.fn("StatusLineInput.build")(function* (session: Sess
     .limit(1)
     .get()
     .pipe(Effect.orDie)
-  const tokens = sql<number>`coalesce(${field("tokens.input")}, 0) + coalesce(${field("tokens.output")}, 0) + coalesce(${field("tokens.reasoning")}, 0) + coalesce(${field("tokens.cache.read")}, 0) + coalesce(${field("tokens.cache.write")}, 0)`
+  const context = sql<number>`coalesce(${field("tokens.input")}, 0) + coalesce(${field("tokens.cache.read")}, 0) + coalesce(${field("tokens.cache.write")}, 0)`
+  const tokens = sql<number>`${context} + coalesce(${field("tokens.output")}, 0) + coalesce(${field("tokens.reasoning")}, 0)`
   // The message still streaming has no tokens yet; the meters show the last one that has.
   const usage = yield* database.db
     .select({
@@ -46,6 +57,7 @@ export const build = Effect.fn("StatusLineInput.build")(function* (session: Sess
       modelID: field<string>("modelID"),
       agent: field<string>("agent"),
       tokens,
+      context,
     })
     .from(MessageTable)
     .where(and(eq(MessageTable.session_id, session.id), role("assistant"), sql`${tokens} > 0`))
@@ -53,8 +65,15 @@ export const build = Effect.fn("StatusLineInput.build")(function* (session: Sess
     .limit(1)
     .get()
     .pipe(Effect.orDie)
+  const part = (key: string) => sql`json_extract(${PartTable.data}, ${`$.${key}`})`
+  // Parallel tools overlap, so a message's tool time is the span from the first start to the last end.
+  const tools = sql`(select max(${part("state.time.end")}) - min(${part("state.time.start")}) from ${PartTable} where ${PartTable.message_id} = ${MessageTable.id} and ${part("type")} = 'tool' and ${part("state.time.end")} is not null)`
   const api = yield* database.db
-    .select({ total: sql<number | null>`sum(${field("time.completed")} - ${field("time.created")})` })
+    .select({
+      total: sql<
+        number | null
+      >`sum(max(0, ${field("time.completed")} - ${field("time.created")} - coalesce(${tools}, 0)))`,
+    })
     .from(MessageTable)
     .where(and(eq(MessageTable.session_id, session.id), role("assistant"), isNotNull(field("time.completed"))))
     .get()
@@ -80,12 +99,12 @@ export const build = Effect.fn("StatusLineInput.build")(function* (session: Sess
     output_style: { name: session.agent ?? prompt?.agent ?? usage?.agent ?? "default" },
     cost: {
       total_cost_usd: session.cost ?? 0,
-      total_duration_ms: Math.max(0, Date.now() - session.time.created),
+      total_duration_ms: Math.max(0, options.duration),
       total_api_duration_ms: api?.total ?? 0,
       total_lines_added: session.summary?.additions ?? 0,
       total_lines_removed: session.summary?.deletions ?? 0,
     },
-    exceeds_200k_tokens: used > LARGE_CONTEXT,
+    exceeds_200k_tokens: (usage?.context ?? 0) > LARGE_CONTEXT,
     context: { used_tokens: used, limit: catalog?.limit.context ?? null },
   }
 })

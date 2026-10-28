@@ -49,24 +49,54 @@ const decode =
   (response: HttpClientResponse.HttpClientResponse) =>
     HttpClientResponse.schemaBodyJson(schema)(response).pipe(Effect.orDie)
 
+const listHooks = (dir: string) =>
+  Effect.gen(function* () {
+    return yield* decode(HooksTrustList)(yield* requestInDirectory("/config/hooks/trust", dir))
+  })
+
+const approve = (dir: string, hash: string) =>
+  requestInDirectory("/config/hooks/trust", dir, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ hash }),
+  })
+
+const statusLineEvent = (sessionID: string) =>
+  waitGlobalBusEvent({
+    predicate: (item) =>
+      item.payload.type === SessionStatusLine.Event.Updated.type && item.payload.properties.sessionID === sessionID,
+    timeout: 5_000,
+  }).pipe(Effect.forkChild)
+
 describe("session status line HttpApi", () => {
   it.instance(
-    "a GET without a result starts a run, the event carries its lines and the next GET returns them",
+    "a native status line awaits review, runs once trusted, and the next GET returns its lines",
     () =>
       Effect.gen(function* () {
         const dir = (yield* TestInstance).directory
         const sessions = yield* Session.Service
-        yield* Effect.promise(() => Bun.write(path.join(dir, "status.sh"), "echo '  left'\necho right"))
+        yield* Effect.promise(() =>
+          Bun.write(path.join(dir, "status.sh"), "echo run >> runs.log\necho '  left'\necho right"),
+        )
         const session = yield* sessions.create({ title: "Status route" })
         const get = (sessionID: string) => requestInDirectory(route(SessionStatusLinePaths.get, { sessionID }), dir)
 
-        const event = yield* waitGlobalBusEvent({
-          predicate: (item) => item.payload.type === SessionStatusLine.Event.Updated.type,
-        }).pipe(Effect.forkChild)
-        yield* Effect.yieldNow
+        const entry = (yield* listHooks(dir)).hooks.find((item) => item.event === "StatusLine")
+        expect(entry).toMatchObject({ event: "StatusLine", matcher: "", summary: "sh ./status.sh", trusted: false })
+        expect(entry?.source).toBeUndefined()
+        if (!entry) throw new Error("the status line is not listed")
+
+        // Untrusted: watched, but nothing runs.
         const first = yield* get(session.id)
         expect(first.status).toBe(200)
         expect(yield* decode(SessionStatusLine.Result)(first)).toEqual({ lines: [] })
+        yield* Effect.promise(() => Bun.sleep(400))
+        expect(yield* Effect.promise(() => Bun.file(path.join(dir, "runs.log")).exists())).toBe(false)
+
+        // Trusting it runs the watched session without waiting for a change.
+        const event = yield* statusLineEvent(session.id)
+        yield* Effect.yieldNow
+        expect((yield* approve(dir, entry.hash)).status).toBe(200)
         const published = yield* Fiber.join(event)
         expect(published.directory).toBe(dir)
         // `padding` puts its spaces before each line, after the script's own.
@@ -87,8 +117,7 @@ describe("session status line HttpApi", () => {
       Effect.gen(function* () {
         const dir = (yield* TestInstance).directory
         const sessions = yield* Session.Service
-        const listed = yield* decode(HooksTrustList)(yield* requestInDirectory("/config/hooks/trust", dir))
-        const entry = listed.hooks.find((item) => item.event === "StatusLine")
+        const entry = (yield* listHooks(dir)).hooks.find((item) => item.event === "StatusLine")
         expect(entry).toMatchObject({
           event: "StatusLine",
           matcher: "",
@@ -102,21 +131,9 @@ describe("session status line HttpApi", () => {
         const get = () => requestInDirectory(route(SessionStatusLinePaths.get, { sessionID: session.id }), dir)
         expect(yield* decode(SessionStatusLine.Result)(yield* get())).toEqual({ lines: [] })
 
-        const approved = yield* requestInDirectory("/config/hooks/trust", dir, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ hash: entry.hash }),
-        })
-        expect(approved.status).toBe(200)
-        const event = yield* waitGlobalBusEvent({
-          predicate: (item) =>
-            item.payload.type === SessionStatusLine.Event.Updated.type &&
-            item.payload.properties.sessionID === session.id,
-          // The untrusted run's result is fresh for STALE_MS; a session change runs it again.
-          timeout: 5_000,
-        }).pipe(Effect.forkChild)
+        const event = yield* statusLineEvent(session.id)
         yield* Effect.yieldNow
-        yield* sessions.setTitle({ sessionID: session.id, title: "now trusted" })
+        expect((yield* approve(dir, entry.hash)).status).toBe(200)
         expect((yield* Fiber.join(event)).payload.properties.lines).toEqual(["trusted line"])
       }),
     {

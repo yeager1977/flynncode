@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { ansiCubeRgb, ansiPlainText, parseAnsi } from "@flynncode/ui/theme/ansi"
+import { ansiCubeRgb, ansiPlainText, parseAnsi, sanitizeAnsi } from "@flynncode/ui/theme/ansi"
 import { ansiCssColor } from "@/components/session/session-status-line-color"
 import { createStatusLineSource, statusLineVisible } from "@/hooks/use-session-statusline"
 
@@ -46,6 +46,58 @@ describe("parseAnsi", () => {
     const line = `${ESC}[2K${ESC}[1;5H${ESC}]0;title\u0007${ESC}]8;;http://x${ESC}\\link${ESC}]8;;${ESC}\\${ESC}[4munder\u0000`
     expect(ansiPlainText(line)).toBe("linkunder")
     expect(parseAnsi(line).map((run) => run.text)).toEqual(["linkunder"])
+  })
+
+  test("background colours: 16, bright, 256, truecolour and 49", () => {
+    expect(parseAnsi(`${ESC}[41ma${ESC}[103mb${ESC}[48;5;34mc${ESC}[48;2;10;20;30md${ESC}[49me`)).toEqual([
+      { text: "a", bg: 1, bold: false, dim: false },
+      { text: "b", bg: 11, bold: false, dim: false },
+      { text: "c", bg: 34, bold: false, dim: false },
+      { text: "d", bg: { r: 10, g: 20, b: 30 }, bold: false, dim: false },
+      { text: "e", bold: false, dim: false },
+    ])
+  })
+
+  test("extended colour operands are never read as codes", () => {
+    // 10;20;30 read as codes would be "dim" and foreground black.
+    expect(parseAnsi(`${ESC}[48;2;10;20;30mA`)).toEqual([
+      { text: "A", bg: { r: 10, g: 20, b: 30 }, bold: false, dim: false },
+    ])
+    expect(parseAnsi(`${ESC}[48;5;1mB`)).toEqual([{ text: "B", bg: 1, bold: false, dim: false }])
+    expect(parseAnsi(`${ESC}[58;5;31mC${ESC}[58;2;1;2;3mD`)).toEqual([{ text: "CD", bold: false, dim: false }])
+    expect(parseAnsi(`${ESC}[38:2::1:2:3;48:5:200mE`)).toEqual([
+      { text: "E", fg: { r: 1, g: 2, b: 3 }, bg: 200, bold: false, dim: false },
+    ])
+  })
+
+  test("resets: 0 clears everything, 22, 23, 24 and 39 only their own attributes", () => {
+    expect(parseAnsi(`${ESC}[1;3;4;31;44mA${ESC}[23;24mB${ESC}[39mC${ESC}[22mD${ESC}[0mE`)).toEqual([
+      { text: "AB", fg: 1, bg: 4, bold: true, dim: false },
+      { text: "C", bg: 4, bold: true, dim: false },
+      { text: "D", bg: 4, bold: false, dim: false },
+      { text: "E", bold: false, dim: false },
+    ])
+  })
+
+  test("a powerline-style line keeps each segment's colours", () => {
+    const line = `${ESC}[38;5;15;48;5;24m main ${ESC}[38;5;24;48;5;236m\ue0b0${ESC}[38;5;250;48;5;236m +3 -1 ${ESC}[0m${ESC}[38;5;236m\ue0b0${ESC}[0m`
+    expect(parseAnsi(line)).toEqual([
+      { text: " main ", fg: 15, bg: 24, bold: false, dim: false },
+      { text: "\ue0b0", fg: 24, bg: 236, bold: false, dim: false },
+      { text: " +3 -1 ", fg: 250, bg: 236, bold: false, dim: false },
+      { text: "\ue0b0", fg: 236, bold: false, dim: false },
+    ])
+  })
+
+  test("C1 controls, 8-bit CSI and OSC, and bidi overrides are stripped", () => {
+    expect(ansiPlainText("a\u009b2Jb\u009d0;title\u0007c\u0085d\u202ee\u2066f\u2069g")).toBe("abcdefg")
+    expect(sanitizeAnsi(`${ESC}P1$r${ESC}\\x${ESC}_apc${ESC}\\y\tz`)).toBe("xyz")
+  })
+
+  test("sanitizeAnsi caps visible characters only and keeps escapes whole", () => {
+    expect(sanitizeAnsi(`${ESC}]8;;http://x${ESC}\\${ESC}[31m${"x".repeat(10)}${ESC}[0m`, 4)).toBe(
+      `${ESC}[31mxxxx${ESC}[0m`,
+    )
   })
 
   test("an unknown SGR code is ignored without dropping the text", () => {

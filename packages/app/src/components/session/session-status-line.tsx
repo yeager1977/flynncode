@@ -25,7 +25,10 @@ export function SessionStatusLine(props: { sessionID: string | undefined }) {
                   <span
                     data-bold={run.bold ? "" : undefined}
                     data-dim={run.dim ? "" : undefined}
-                    style={{ color: run.fg === undefined ? undefined : ansiCssColor(run.fg) }}
+                    style={{
+                      color: run.fg === undefined ? undefined : ansiCssColor(run.fg),
+                      "background-color": run.bg === undefined ? undefined : ansiCssColor(run.bg),
+                    }}
                   >
                     {run.text}
                   </span>

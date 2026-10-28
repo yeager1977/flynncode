@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
 import { mkdirSync } from "fs"
 import os from "os"
@@ -21,6 +21,7 @@ import { InstanceStore } from "@/project/instance-store"
 import { Provider } from "@/provider/provider"
 import { Session } from "@/session/session"
 import { MessageID, PartID, type SessionID } from "@/session/schema"
+import { SessionStatus } from "@/session/status"
 import { StatusLine } from "@/statusline/service"
 import { TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
@@ -46,6 +47,7 @@ const it = testEffect(
       Provider.node,
       HooksTrust.node,
       RuntimeFlags.node,
+      SessionStatus.node,
       Database.node,
     ]),
     [[InstanceStore.bootstrapNode, noopBootstrap]],
@@ -128,6 +130,22 @@ const configured = {
   statusLine: { type: "command" as const, command: "sh ./status.sh" },
 }
 
+// Every status line needs trust, native ones included.
+const trustStatusLine = Effect.gen(function* () {
+  const config = yield* Config.Service
+  const trust = yield* HooksTrust.Service
+  const line = (yield* config.get()).statusLine
+  if (!line) return yield* Effect.die(new Error("no status line is configured"))
+  yield* trust.trust(yield* HooksTrust.bindToInstance(StatusLine.hookDef(line)))
+})
+
+const writeConfig = (dir: string, config: object) =>
+  Effect.gen(function* () {
+    yield* Effect.promise(() => Bun.write(path.join(dir, "opencode.json"), JSON.stringify(config)))
+    const service = yield* Config.Service
+    yield* service.invalidate()
+  })
+
 const statusEvents = () => {
   const events: Array<{ sessionID: string; lines: string[] }> = []
   const listener = (event: GlobalEvent) => {
@@ -142,7 +160,10 @@ const statusEvents = () => {
   )
 }
 
-const addMessages = Effect.fn("Test.addMessages")(function* (sessionID: SessionID) {
+const addMessages = Effect.fn("Test.addMessages")(function* (
+  sessionID: SessionID,
+  tokens = { input: 1_000, output: 200, reasoning: 0, cache: { read: 300, write: 0 } },
+) {
   const sessions = yield* Session.Service
   const user = MessageID.ascending()
   yield* sessions.updateMessage({
@@ -155,7 +176,6 @@ const addMessages = Effect.fn("Test.addMessages")(function* (sessionID: SessionI
   } as SessionV1.Info)
   const created = Date.now()
   const assistant = MessageID.ascending()
-  const tokens = { input: 1_000, output: 200, reasoning: 0, cache: { read: 300, write: 0 } }
   yield* sessions.updateMessage({
     id: assistant,
     sessionID,
@@ -180,6 +200,25 @@ const addMessages = Effect.fn("Test.addMessages")(function* (sessionID: SessionI
     cost: 0.25,
     tokens,
   })
+  // Two tools that overlap: 400 ms of the message's 1500 ms is tool time, not model time.
+  yield* Effect.forEach([0, 1], (index) =>
+    sessions.updatePart({
+      id: PartID.ascending(),
+      sessionID,
+      messageID: assistant,
+      type: "tool",
+      callID: `call_${index}`,
+      tool: "bash",
+      state: {
+        status: "completed",
+        input: {},
+        output: "",
+        title: "",
+        metadata: {},
+        time: { start: created + 500 + index * 100, end: created + 800 + index * 100 },
+      },
+    }),
+  )
 })
 
 describe("StatusLine", () => {
@@ -201,6 +240,7 @@ describe("StatusLine", () => {
             String.raw`printf '\n   \nfirst \033[31mred\033[0m\nsecond\nthird\n'`,
           ].join("\n"),
         )
+        yield* trustStatusLine
         const session = yield* sessions.create({ title: "Status input" })
         yield* addMessages(session.id)
         yield* sessions.setSummary({ sessionID: session.id, summary: { additions: 7, deletions: 3, files: 2 } })
@@ -224,8 +264,9 @@ describe("StatusLine", () => {
           output_style: { name: "build" },
           cost: {
             total_cost_usd: 0.25,
-            total_duration_ms: expect.any(Number),
-            total_api_duration_ms: 1_500,
+            // Since this process first served the session; the clock has not moved.
+            total_duration_ms: 0,
+            total_api_duration_ms: 1_100,
             total_lines_added: 7,
             total_lines_removed: 3,
           },
@@ -254,6 +295,7 @@ describe("StatusLine", () => {
             "\n",
           ),
         )
+        yield* trustStatusLine
         const session = yield* sessions.create({ title: "Throttle" })
         yield* service.get(session.id)
         yield* until(() => runs(dir).then((count) => count === 1), "the first run never started")
@@ -308,6 +350,7 @@ describe("StatusLine", () => {
         const clock = manualClock()
         const service = yield* StatusLine.make({ clock })
         yield* script(dir, "echo run >> runs.log\necho run $(wc -l < runs.log)")
+        yield* trustStatusLine
         const session = yield* sessions.create({ title: "Stale" })
         yield* service.get(session.id)
         yield* waitFor(service.get(session.id), (result) => result.lines[0] === "run 1", "the first run never finished")
@@ -332,6 +375,7 @@ describe("StatusLine", () => {
         const clock = manualClock()
         const service = yield* StatusLine.make({ clock })
         yield* script(dir, ["echo run >> runs.log", "sleep 30 &", "echo $! > child.pid", "wait"].join("\n"))
+        yield* trustStatusLine
         const session = yield* sessions.create({ title: "Timeout" })
         yield* service.get(session.id)
         yield* until(() => Bun.file(path.join(dir, "child.pid")).exists(), "the script never started")
@@ -371,6 +415,7 @@ describe("StatusLine", () => {
             "echo good",
           ].join("\n"),
         )
+        yield* trustStatusLine
         const session = yield* sessions.create({ title: "Failures" })
         yield* service.get(session.id)
         yield* until(() => events.length === 1, "no event for the good run")
@@ -462,4 +507,258 @@ describe("StatusLine", () => {
       }),
     { git: true, config: testProviderConfig("http://127.0.0.1:9") },
   )
+
+  it.instance(
+    "every status line needs trust: untrusted is skipped and cleared, trusted runs, a changed command needs trust again",
+    () =>
+      Effect.gen(function* () {
+        const dir = (yield* TestInstance).directory
+        const sessions = yield* Session.Service
+        const events = yield* statusEvents()
+        const clock = manualClock()
+        const service = yield* StatusLine.make({ clock })
+        yield* script(dir, "echo run >> runs.log\necho trusted")
+        const session = yield* sessions.create({ title: "Native trust" })
+
+        expect(yield* service.get(session.id)).toEqual({ lines: [] })
+        yield* pause(300)
+        expect(yield* Effect.promise(() => runs(dir))).toBe(0)
+
+        // Trusting it on the Hooks page refreshes the watched sessions at once.
+        yield* trustStatusLine
+        yield* clock.advance(StatusLine.THROTTLE_MS)
+        yield* service.refresh()
+        yield* until(() => events.length === 1, "the trusted status line never ran")
+        expect(events[0]).toEqual({ sessionID: session.id, lines: ["trusted"] })
+
+        // A different command is a different trust identity: it is skipped, and the old lines are cleared.
+        yield* writeConfig(dir, { ...configured, statusLine: { type: "command", command: "sh ./status.sh --v2" } })
+        yield* clock.advance(StatusLine.THROTTLE_MS)
+        yield* sessions.setTitle({ sessionID: session.id, title: "changed command" })
+        yield* until(() => events.length === 2, "the untrusted command's lines were never cleared")
+        expect(events[1]).toEqual({ sessionID: session.id, lines: [] })
+        expect(yield* Effect.promise(() => runs(dir))).toBe(1)
+
+        yield* trustStatusLine
+        yield* clock.advance(StatusLine.THROTTLE_MS)
+        yield* service.refresh()
+        yield* until(() => events.length === 3, "the trusted new command never ran")
+        expect(events[2]).toEqual({ sessionID: session.id, lines: ["trusted"] })
+        expect(yield* Effect.promise(() => runs(dir))).toBe(2)
+      }),
+    { git: true, config: configured },
+  )
+
+  it.instance(
+    "hooks.disableAllHooks turns the status line off and clears what a watched session showed",
+    () =>
+      Effect.gen(function* () {
+        const dir = (yield* TestInstance).directory
+        const sessions = yield* Session.Service
+        const events = yield* statusEvents()
+        const clock = manualClock()
+        yield* script(dir, "echo run >> runs.log\necho shown")
+        yield* trustStatusLine
+        const session = yield* sessions.create({ title: "Kill switch" })
+        const listeners = GlobalBus.listenerCount("event")
+        const service = yield* StatusLine.make({ clock })
+        yield* service.get(session.id)
+        yield* until(() => events.length === 1, "the status line never ran")
+
+        yield* writeConfig(dir, { ...configured, hooks: { disableAllHooks: true } })
+        expect(yield* service.get(session.id)).toEqual({ lines: [] })
+        expect(events[1]).toEqual({ sessionID: session.id, lines: [] })
+        expect(GlobalBus.listenerCount("event")).toBe(listeners)
+        yield* clock.advance(StatusLine.STALE_MS)
+        yield* sessions.setTitle({ sessionID: session.id, title: "off" })
+        expect(yield* service.get(session.id)).toEqual({ lines: [] })
+        yield* pause(200)
+        expect(yield* Effect.promise(() => runs(dir))).toBe(1)
+      }),
+    { git: true, config: configured },
+  )
+
+  it.instance(
+    "a watch no get renews for WATCH_MS ends once its session is idle",
+    () =>
+      Effect.gen(function* () {
+        const dir = (yield* TestInstance).directory
+        const sessions = yield* Session.Service
+        const status = yield* SessionStatus.Service
+        const clock = manualClock()
+        yield* script(dir, "echo run >> runs.log\necho run $(wc -l < runs.log)")
+        yield* trustStatusLine
+        const session = yield* sessions.create({ title: "Lease" })
+        const listeners = GlobalBus.listenerCount("event")
+        const service = yield* StatusLine.make({ clock })
+        yield* service.get(session.id)
+        yield* until(() => runs(dir).then((count) => count === 1), "the first run never started")
+
+        // Unrenewed but working: the line keeps updating through the turn.
+        yield* clock.advance(StatusLine.THROTTLE_MS)
+        yield* status.set(session.id, { type: "busy" })
+        yield* until(() => runs(dir).then((count) => count === 2), "the busy run never started")
+        yield* clock.advance(StatusLine.WATCH_MS)
+        yield* sessions.setTitle({ sessionID: session.id, title: "still working" })
+        yield* until(() => runs(dir).then((count) => count === 3), "a working session stopped updating")
+
+        // Idle and unrenewed: the watch ends without another run.
+        yield* clock.advance(StatusLine.THROTTLE_MS)
+        yield* status.set(session.id, { type: "idle" })
+        yield* until(() => GlobalBus.listenerCount("event") === listeners, "the expired watch was never dropped")
+        yield* clock.advance(StatusLine.THROTTLE_MS)
+        yield* sessions.setTitle({ sessionID: session.id, title: "nobody watching" })
+        yield* pause(200)
+        expect(yield* Effect.promise(() => runs(dir))).toBe(3)
+
+        // A get starts a new watch.
+        yield* service.get(session.id)
+        yield* until(() => runs(dir).then((count) => count === 4), "a new get never ran it again")
+      }),
+    { git: true, config: configured },
+  )
+
+  it.instance(
+    "watches at most MAX_WATCHED sessions, evicting the least recently requested",
+    () =>
+      Effect.gen(function* () {
+        const dir = (yield* TestInstance).directory
+        const sessions = yield* Session.Service
+        const clock = manualClock()
+        const service = yield* StatusLine.make({ clock })
+        yield* script(dir, "echo run >> runs.log\necho ok")
+        yield* trustStatusLine
+        const created = yield* Effect.forEach(Array.from({ length: StatusLine.MAX_WATCHED + 1 }), (_, index) =>
+          sessions.create({ title: `Watched ${index}` }),
+        )
+        const ids = created.map((session) => session.id)
+        yield* Effect.forEach(ids.slice(0, StatusLine.MAX_WATCHED), (id) => service.get(id))
+        yield* until(
+          () => runs(dir).then((count) => count === StatusLine.MAX_WATCHED),
+          "the watched sessions never ran",
+        )
+        // Renewing the first makes the second the least recently requested.
+        yield* service.get(ids[0])
+        yield* service.get(ids[StatusLine.MAX_WATCHED])
+        yield* until(
+          () => runs(dir).then((count) => count === StatusLine.MAX_WATCHED + 1),
+          "the ninth session never ran",
+        )
+
+        yield* clock.advance(StatusLine.THROTTLE_MS)
+        yield* sessions.setTitle({ sessionID: ids[1], title: "evicted" })
+        yield* pause(200)
+        expect(yield* Effect.promise(() => runs(dir))).toBe(StatusLine.MAX_WATCHED + 1)
+        yield* sessions.setTitle({ sessionID: ids[0], title: "kept" })
+        yield* until(
+          () => runs(dir).then((count) => count === StatusLine.MAX_WATCHED + 2),
+          "the renewed session stopped running",
+        )
+      }),
+    { git: true, config: configured },
+  )
+
+  it.instance(
+    "runs at most MAX_RUNS commands at once across sessions",
+    () =>
+      Effect.gen(function* () {
+        const dir = (yield* TestInstance).directory
+        const sessions = yield* Session.Service
+        const clock = manualClock()
+        const service = yield* StatusLine.make({ clock })
+        const hold = path.join(dir, "hold")
+        yield* script(dir, ["echo run >> runs.log", "while [ -f hold ]; do sleep 0.02; done", "echo ok"].join("\n"))
+        yield* trustStatusLine
+        yield* Effect.promise(() => Bun.write(hold, ""))
+        const created = yield* Effect.forEach([0, 1, 2], (index) => sessions.create({ title: `Limit ${index}` }))
+        yield* Effect.gen(function* () {
+          yield* Effect.forEach(created, (session) => service.get(session.id))
+          yield* until(() => runs(dir).then((count) => count === StatusLine.MAX_RUNS), "the first runs never started")
+          yield* pause(300)
+          expect(yield* Effect.promise(() => runs(dir))).toBe(StatusLine.MAX_RUNS)
+        }).pipe(
+          Effect.ensuring(
+            Effect.promise(() =>
+              Bun.file(hold)
+                .delete()
+                .catch(() => undefined),
+            ),
+          ),
+        )
+        yield* until(() => runs(dir).then((count) => count === 3), "the queued run never started")
+        yield* waitFor(
+          service.get(created[2].id),
+          (result) => result.lines[0] === "ok",
+          "the queued run's lines never arrived",
+        )
+      }),
+    { git: true, config: configured },
+  )
+
+  it.instance(
+    "exceeds_200k_tokens counts the input and cache tokens of the last request",
+    () =>
+      Effect.gen(function* () {
+        const dir = (yield* TestInstance).directory
+        const sessions = yield* Session.Service
+        const clock = manualClock()
+        const service = yield* StatusLine.make({ clock })
+        yield* script(dir, "cat > input.json\necho run >> runs.log\necho ok")
+        yield* trustStatusLine
+        const input = () => Effect.promise(() => Bun.file(path.join(dir, "input.json")).json())
+
+        const output = yield* sessions.create({ title: "Mostly output" })
+        yield* addMessages(output.id, { input: 150_000, output: 60_000, reasoning: 0, cache: { read: 0, write: 0 } })
+        yield* service.get(output.id)
+        yield* until(() => runs(dir).then((count) => count === 1), "the first run never happened")
+        yield* waitFor(service.get(output.id), (result) => result.lines.length > 0, "the first run never finished")
+        expect(yield* input()).toMatchObject({ exceeds_200k_tokens: false, context: { used_tokens: 210_000 } })
+
+        const cached = yield* sessions.create({ title: "Mostly cache" })
+        yield* addMessages(cached.id, {
+          input: 150_000,
+          output: 10,
+          reasoning: 0,
+          cache: { read: 40_000, write: 20_000 },
+        })
+        yield* service.get(cached.id)
+        yield* until(() => runs(dir).then((count) => count === 2), "the second run never happened")
+        yield* waitFor(service.get(cached.id), (result) => result.lines.length > 0, "the second run never finished")
+        expect(yield* input()).toMatchObject({ exceeds_200k_tokens: true })
+      }),
+    { git: true, config: configured },
+  )
+})
+
+describe("StatusLine.parse", () => {
+  const ESC = "\u001b"
+
+  test("keeps SGR and printable text and drops every other escape and control", () => {
+    const line = [
+      `${ESC}[2J${ESC}[H${ESC}[?25l`,
+      `${ESC}]0;title\u0007${ESC}]52;c;Zm9v\u0007`,
+      `${ESC}]8;;http://example.com${ESC}\\link${ESC}]8;;${ESC}\\`,
+      `${ESC}P1$r${ESC}\\${ESC}_apc${ESC}\\${ESC}^pm${ESC}\\`,
+      `${ESC}[48;2;10;20;30m seg ${ESC}[0m`,
+      "\u009b2J\u009d0;t\u0007\u0085",
+      "a\u0000b\u0007c\td\re",
+      "x\u202ey\u2066z\u2069",
+      `${ESC}7${ESC}(B`,
+    ].join("")
+    expect(StatusLine.parse(line, 0)).toEqual([`link${ESC}[48;2;10;20;30m seg ${ESC}[0mabcdexyz`])
+  })
+
+  test("the cap counts visible characters only and never cuts an escape", () => {
+    const hyperlink = StatusLine.parse(`${ESC}]8;;http://example.com/${"p".repeat(300)}${ESC}\\${"x".repeat(250)}`, 0)
+    expect(hyperlink).toEqual(["x".repeat(StatusLine.MAX_CHARS)])
+    const styled = StatusLine.parse(`${ESC}[31m${"y".repeat(199)}${ESC}[1;48;5;4mzz${ESC}[0m`, 2)
+    expect(styled).toEqual([`  ${ESC}[31m${"y".repeat(199)}${ESC}[1;48;5;4mz${ESC}[0m`])
+  })
+
+  test("a line left with nothing visible does not count as one of the two", () => {
+    expect(StatusLine.parse(`${ESC}]0;only a title\u0007\n${ESC}[31m${ESC}[0m\none\ntwo\nthree`, 0)).toEqual([
+      "one",
+      "two",
+    ])
+  })
 })

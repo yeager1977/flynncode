@@ -120,7 +120,8 @@ export const SettingsHooksV2: Component<{ directory?: string }> = (props) => {
             <SettingsRowV2
               title={row.summary}
               description={[
-                row.event,
+                // A status line command is reviewed here like a hook, under its own name.
+                row.event === "StatusLine" ? language.t("settings.hooks.event.statusLine") : row.event,
                 row.matcher,
                 row.source && language.t("settings.hooks.source", { source: row.source }),
               ]

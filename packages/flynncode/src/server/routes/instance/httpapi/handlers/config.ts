@@ -19,6 +19,7 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
     const trustSvc = yield* HooksTrust.Service
     const flags = yield* RuntimeFlags.Service
     const fs = yield* FSUtil.Service
+    const statusLineSvc = yield* StatusLine.Service
 
     const get = Effect.fn("ConfigHttpApi.get")(function* () {
       return yield* configSvc.get()
@@ -43,11 +44,11 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
     })
 
     // Configured hooks keyed by their project-bound trust identity, the same
-    // identity the executor checks before running a hook. A status line from
-    // Claude settings needs the same review, so it is listed as `StatusLine`.
+    // identity the executor checks before running a hook. Every status line
+    // command needs the same review, so it is listed as `StatusLine`.
     const boundHooks = Effect.fn("ConfigHttpApi.boundHooks")(function* () {
       const cfg = yield* configSvc.get()
-      const statusLine = cfg.statusLine?.source
+      const statusLine = cfg.statusLine
         ? [
             {
               event: "StatusLine",
@@ -131,6 +132,7 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
       const found = (yield* boundHooks()).find((item) => item.hash === ctx.payload.hash)
       if (!found) return yield* Effect.fail(new HttpApiError.BadRequest({}))
       yield* trustSvc.trust(found.bound)
+      if (found.event === "StatusLine") yield* statusLineSvc.refresh()
       const listed = yield* hooksEntries()
       const entry = listed.entries.find((item) => item.hash === ctx.payload.hash)
       if (!entry) return yield* Effect.fail(new HttpApiError.BadRequest({}))
@@ -144,6 +146,8 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
       // Managed hooks are trusted by policy and cannot be disabled.
       if (listed.managed(found.def)) return yield* Effect.fail(new HttpApiError.BadRequest({}))
       yield* trustSvc.revoke(ctx.payload.hash)
+      // A revoked status line clears at once instead of on the session's next change.
+      if (found.event === "StatusLine") yield* statusLineSvc.refresh()
       const refreshed = yield* hooksEntries()
       const entry = refreshed.entries.find((item) => item.hash === ctx.payload.hash)
       if (!entry) return yield* Effect.fail(new HttpApiError.BadRequest({}))

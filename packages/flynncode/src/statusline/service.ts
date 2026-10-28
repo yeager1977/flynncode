@@ -1,6 +1,6 @@
 export * as StatusLine from "./service"
 
-import { Cause, Context, Effect, Exit, Layer, Option, Scope } from "effect"
+import { Cause, Context, Effect, Exit, Layer, Option, Scope, Semaphore } from "effect"
 import { Database } from "@flynncode/core/database/database"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import type { ConfigV1 } from "@flynncode/core/v1/config/config"
@@ -8,11 +8,13 @@ import { SessionStatusLine } from "@flynncode/schema/session-statusline"
 import { GlobalBus, type GlobalEvent } from "@/bus/global"
 import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { HooksManaged } from "@/hooks/managed"
 import { HooksTrust } from "@/hooks/trust"
 import { InstanceStore } from "@/project/instance-store"
 import { Provider } from "@/provider/provider"
 import { Session } from "@/session/session"
 import type { SessionID } from "@/session/schema"
+import { SessionStatus } from "@/session/status"
 import { isRecord } from "@/util/record"
 import { StatusLineInput } from "./input"
 
@@ -24,6 +26,12 @@ export const TIMEOUT_MS = 5_000
 export const KEEP_MS = 60_000
 /** A client asking for a session whose last run started longer ago than this starts a new one. */
 export const STALE_MS = 10_000
+/** A watch no GET has renewed for this long ends once its session is idle. */
+export const WATCH_MS = 5 * 60_000
+/** Sessions watched at once in this process; a new one evicts the least recently requested. */
+export const MAX_WATCHED = 8
+/** Commands running at once in this process, across all sessions. */
+export const MAX_RUNS = 2
 export const MAX_LINES = 2
 /** Visible characters per line; SGR codes do not count. */
 export const MAX_CHARS = 200
@@ -41,7 +49,12 @@ const TRIGGERS = new Set([
   "session.status",
 ])
 
-const SGR = /\x1b\[[0-9;]*m/g
+// Kept in step with `sanitizeAnsi` in packages/ui/src/theme/ansi.ts, which clients apply again. In order: SGR (kept),
+// any other CSI, OSC/DCS/SOS/PM/APC strings up to BEL or ST (or the end of the line), a CSI cut short, any other
+// escape, then C0, DEL, C1 and the bidi overrides and isolates. Anything else is one visible character.
+const SGR = /\u001b\[[0-9;:]*m/g
+const TOKEN =
+  /(\u001b\[[0-9;:]*m)|(?:\u001b\[|\u009b)[0-?]*[ -/]*[@-~]|(?:\u001b[\]PX^_]|[\u0090\u0098\u009d-\u009f])[\s\S]*?(?:\u0007|\u001b\\|\u009c|$)|(?:\u001b\[|\u009b)[0-?]*[ -/]*|\u001b[ -/]*[0-~]?|[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]|([\s\S])/gu
 
 export type Clock = {
   readonly now: () => number
@@ -50,10 +63,13 @@ export type Clock = {
 
 export interface Interface {
   /**
-   * The session's last result. A session whose instance has a status line is watched from then on, and a run starts
-   * when none is pending and the last one started more than STALE_MS ago (or never).
+   * The session's last result. A session whose instance has a status line is watched from then on (each get renews
+   * the watch for WATCH_MS), and a run starts when none is pending and the last one started more than STALE_MS ago
+   * (or never).
    */
   readonly get: (sessionID: SessionID) => Effect.Effect<SessionStatusLine.Result, Session.NotFound>
+  /** Runs every watched session again, for a change no session event reports, such as a trust decision. */
+  readonly refresh: () => Effect.Effect<void>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@flynncode/StatusLine") {}
@@ -61,6 +77,11 @@ export class Service extends Context.Service<Service, Interface>()("@flynncode/S
 /** The trust identity of a status line command; the Hooks settings page lists it as the event `StatusLine`. */
 export function hookDef(line: ConfigV1.StatusLine) {
   return HooksTrust.fromHandler("StatusLine", undefined, { type: "command", command: line.command }, line.source)
+}
+
+/** The status line to run: none when unset, or when `hooks.disableAllHooks` turns every hook command off. */
+export function active(cfg: Pick<ConfigV1.Info, "statusLine" | "hooks">) {
+  return cfg.hooks?.disableAllHooks === true ? undefined : cfg.statusLine
 }
 
 type Entry = {
@@ -71,6 +92,8 @@ type Entry = {
   updatedAt?: number
   /** The start of the last run. */
   started?: number
+  /** The last get. */
+  seen: number
   running: boolean
   /** A change arrived since the last run started. */
   dirty: boolean
@@ -82,7 +105,12 @@ type Entry = {
   errors: Set<string>
 }
 
-type Outcome = { kind: "unconfigured" } | { kind: "failed"; error: string } | { kind: "lines"; lines: string[] }
+type Outcome =
+  | { kind: "unconfigured" }
+  | { kind: "expired" }
+  | { kind: "untrusted"; error: string }
+  | { kind: "failed"; error: string }
+  | { kind: "lines"; lines: string[] }
 
 /**
  * Builds the service. It holds per-session results in this process, subscribes to the process-wide bus only while it
@@ -96,9 +124,14 @@ export const make = Effect.fn("StatusLine.make")(function* (options: { clock?: C
   const config = yield* Config.Service
   const trust = yield* HooksTrust.Service
   const flags = yield* RuntimeFlags.Service
+  const status = yield* SessionStatus.Service
   const scope = yield* Scope.Scope
+  const permits = yield* Semaphore.make(MAX_RUNS)
   const runFork = Effect.runForkWith(yield* Effect.context<Database.Service | Provider.Service | Session.Service>())
+  // In least recently requested order: a get moves its entry to the end.
   const entries = new Map<string, Entry>()
+  // When this process first served each session's status line: the start of Claude's `total_duration_ms`.
+  const firstSeen = new Map<string, number>()
 
   const listener = (event: GlobalEvent) => {
     const payload: unknown = event.payload
@@ -111,6 +144,8 @@ export const make = Effect.fn("StatusLine.make")(function* (options: { clock?: C
   }
 
   const watch = (entry: Entry) => {
+    const oldest = entries.size >= MAX_WATCHED ? entries.values().next().value : undefined
+    if (oldest) forget(oldest)
     if (entries.size === 0) GlobalBus.on("event", listener)
     entries.set(entry.sessionID, entry)
   }
@@ -159,37 +194,48 @@ export const make = Effect.fn("StatusLine.make")(function* (options: { clock?: C
       )
     })
 
+  const report = Effect.fnUntraced(function* (entry: Entry, error: string) {
+    if (entry.errors.has(error)) return
+    entry.errors.add(error)
+    yield* Effect.logWarning("status line run failed (logged once per session and error)", {
+      "session.id": entry.sessionID,
+      error,
+    })
+  })
+
   const failed = Effect.fnUntraced(function* (entry: Entry, error: string) {
     entry.failing = true
-    if (!entry.errors.has(error)) {
-      entry.errors.add(error)
-      yield* Effect.logWarning("status line run failed (logged once per session and error)", {
-        "session.id": entry.sessionID,
-        error,
-      })
-    }
+    yield* report(entry, error)
     yield* expire(entry)
   })
 
-  // Only a command from Claude settings needs trust, checked the way a Claude hook's is: per project, covering the
-  // project scripts it names.
+  // Every status line needs trust, whichever config it comes from, checked the way the hooks executor checks a hook:
+  // per project, covering the project scripts it names, with managed hooks and the bypass flag pre-trusted.
   const resolve = Effect.fnUntraced(function* () {
-    const line = (yield* config.get()).statusLine
+    const line = active(yield* config.get())
     if (!line) return undefined
-    if (!line.source || flags.bypassHookTrust) return { line, trusted: true }
-    const bound = yield* HooksTrust.bindToInstance(hookDef(line))
+    const def = hookDef(line)
+    const managed = yield* Effect.serviceOption(HooksManaged.ManagedHooks)
+    if ((Option.isSome(managed) && managed.value.isManaged(def)) || flags.bypassHookTrust)
+      return { line, trusted: true }
+    const bound = yield* HooksTrust.bindToInstance(def)
     return { line, trusted: yield* trust.isTrusted(bound).pipe(Effect.orElseSucceed(() => false)) }
   })
 
-  const attempt = Effect.fnUntraced(function* (session: Session.Info) {
+  const attempt = Effect.fnUntraced(function* (session: Session.Info, entry: Entry) {
+    // An unrenewed watch keeps running only while its session works, so a turn in progress still updates the line.
+    if (clock.now() - entry.seen >= WATCH_MS && (yield* status.get(session.id)).type === "idle")
+      return { kind: "expired" } satisfies Outcome
     const resolved = yield* resolve()
     if (!resolved) return { kind: "unconfigured" } satisfies Outcome
     if (!resolved.trusted)
       return {
-        kind: "failed",
-        error: `skipped untrusted status line from ${resolved.line.source}: ${resolved.line.command}`,
+        kind: "untrusted",
+        error: `skipped untrusted status line${resolved.line.source ? ` from ${resolved.line.source}` : ""}: ${resolved.line.command}`,
       } satisfies Outcome
-    const input = yield* StatusLineInput.build(session)
+    const input = yield* StatusLineInput.build(session, {
+      duration: clock.now() - (firstSeen.get(session.id) ?? clock.now()),
+    })
     const output = yield* exec(
       resolved.line.command,
       JSON.stringify(input),
@@ -210,9 +256,15 @@ export const make = Effect.fn("StatusLine.make")(function* (options: { clock?: C
     const found = yield* sessions.get(entry.sessionID).pipe(Effect.option)
     if (Option.isNone(found)) return forget(entry)
     entry.directory = found.value.directory
-    const outcome: Outcome = yield* instances.provide({ directory: found.value.directory }, attempt(found.value))
+    const outcome: Outcome = yield* instances.provide({ directory: found.value.directory }, attempt(found.value, entry))
+    if (outcome.kind === "expired") return forget(entry)
     if (outcome.kind === "unconfigured") {
       forget(entry)
+      return yield* update(entry, [])
+    }
+    // Watched still, so trusting it on the Hooks page brings it back.
+    if (outcome.kind === "untrusted") {
+      yield* report(entry, outcome.error)
       return yield* update(entry, [])
     }
     if (outcome.kind === "failed") return yield* failed(entry, outcome.error)
@@ -242,24 +294,32 @@ export const make = Effect.fn("StatusLine.make")(function* (options: { clock?: C
       )
     })
 
-  // A failure never escapes: it is logged against the session and the session goes on.
+  // A failure never escapes: it is logged against the session and the session goes on. At most MAX_RUNS commands
+  // run at once; a run waiting for its turn counts as running, so it is not scheduled twice.
   const start = (entry: Entry): Effect.Effect<void, never, Database.Service | Provider.Service | Session.Service> =>
     Effect.suspend(() => {
       if (entries.get(entry.sessionID) !== entry) return Effect.void
-      entry.dirty = false
       entry.running = true
-      entry.started = clock.now()
-      return run(entry).pipe(
-        Effect.catchCause((cause) =>
-          Cause.hasInterruptsOnly(cause) ? Effect.void : failed(entry, String(Cause.squash(cause))),
-        ),
-        Effect.ensuring(
+      return permits
+        .withPermit(
           Effect.suspend(() => {
-            entry.running = false
-            return entry.dirty ? schedule(entry) : Effect.void
+            if (entries.get(entry.sessionID) !== entry) return Effect.void
+            entry.dirty = false
+            entry.started = clock.now()
+            return run(entry)
           }),
-        ),
-      )
+        )
+        .pipe(
+          Effect.catchCause((cause) =>
+            Cause.hasInterruptsOnly(cause) ? Effect.void : failed(entry, String(Cause.squash(cause))),
+          ),
+          Effect.ensuring(
+            Effect.suspend(() => {
+              entry.running = false
+              return entry.dirty ? schedule(entry) : Effect.void
+            }),
+          ),
+        )
     })
 
   // `sh -c` in its own process group, so a timeout kills the whole tree: a grandchild left behind would hold stdout
@@ -269,6 +329,7 @@ export const make = Effect.fn("StatusLine.make")(function* (options: { clock?: C
       Effect.sync(() =>
         Bun.spawn(["sh", "-c", command], {
           cwd,
+          // The hooks executor's policy: the server's environment plus CLAUDE_PROJECT_DIR.
           env: { ...process.env, CLAUDE_PROJECT_DIR: project },
           stdin: new Blob([input]),
           stdout: "pipe",
@@ -298,7 +359,7 @@ export const make = Effect.fn("StatusLine.make")(function* (options: { clock?: C
     const existing = entries.get(sessionID)
     // A broken config reads as no status line; the session itself is not affected.
     const configured = yield* instances.provide({ directory: session.directory }, config.get()).pipe(
-      Effect.map((cfg) => cfg.statusLine !== undefined),
+      Effect.map((cfg) => active(cfg) !== undefined),
       Effect.catchCause((cause) =>
         Effect.logWarning("status line config failed", { "session.id": sessionID, cause: Cause.pretty(cause) }).pipe(
           Effect.as(false),
@@ -306,12 +367,16 @@ export const make = Effect.fn("StatusLine.make")(function* (options: { clock?: C
       ),
     )
     if (!configured) {
-      if (existing) forget(existing)
+      if (!existing) return { lines: [] }
+      forget(existing)
+      yield* update(existing, [])
       return { lines: [] }
     }
+    if (!firstSeen.has(sessionID)) firstSeen.set(sessionID, clock.now())
     const entry = existing ?? {
       sessionID,
       directory: session.directory,
+      seen: clock.now(),
       lines: [],
       running: false,
       dirty: false,
@@ -320,37 +385,48 @@ export const make = Effect.fn("StatusLine.make")(function* (options: { clock?: C
       expiring: false,
       errors: new Set<string>(),
     }
+    if (existing) {
+      existing.seen = clock.now()
+      entries.delete(sessionID)
+      entries.set(sessionID, existing)
+    }
     if (!existing) watch(entry)
     if (!entry.running && !entry.waiting && (entry.started === undefined || clock.now() - entry.started >= STALE_MS))
       runFork(schedule(entry))
     return entry.updatedAt === undefined ? { lines: entry.lines } : { lines: entry.lines, updatedAt: entry.updatedAt }
   })
 
-  return Service.of({ get })
+  const refresh = () => Effect.sync(() => Array.from(entries.values()).forEach((entry) => runFork(schedule(entry))))
+
+  return Service.of({ get, refresh })
 })
 
 /**
- * The first MAX_LINES lines with visible text, each cut to MAX_CHARS visible characters and indented by `padding`
- * spaces. SGR codes are kept and never cut in half.
+ * The first MAX_LINES lines with visible text, sanitized to printable text and SGR, each cut to MAX_CHARS visible
+ * characters and then indented by `padding` spaces.
  */
 export function parse(stdout: string, padding: number) {
   return stdout
-    .split(/\r?\n/)
-    .map((line) => line.trimEnd())
+    .split("\n")
+    .map((line) => sanitize(line, MAX_CHARS).trimEnd())
     .filter((line) => line.replace(SGR, "").trim() !== "")
     .slice(0, MAX_LINES)
-    .map(
-      (line) =>
-        " ".repeat(padding) +
-        (line.match(/\x1b\[[0-9;]*m|[\s\S]/gu) ?? []).reduce(
-          (acc, token) => {
-            if (token.length > 1 && token.startsWith("\x1b[")) return { text: acc.text + token, visible: acc.visible }
-            if (acc.visible >= MAX_CHARS) return acc
-            return { text: acc.text + token, visible: acc.visible + 1 }
-          },
-          { text: "", visible: 0 },
-        ).text,
-    )
+    .map((line) => " ".repeat(padding) + line)
+}
+
+/**
+ * Only printable text and SGR sequences are kept, cut to `limit` visible characters; SGR sequences do not count and
+ * are never cut in half.
+ */
+export function sanitize(line: string, limit: number) {
+  return Array.from(line.matchAll(TOKEN)).reduce(
+    (acc, match) => {
+      if (match[1]) return { text: acc.text + match[1], visible: acc.visible }
+      if (!match[2] || acc.visible >= limit) return acc
+      return { text: acc.text + match[2], visible: acc.visible + 1 }
+    },
+    { text: "", visible: 0 },
+  ).text
 }
 
 // Reads at most MAX_OUTPUT bytes and then lets go of the pipe, so a script that keeps printing gets SIGPIPE instead
@@ -382,6 +458,7 @@ export const node = LayerNode.make({
     Provider.node,
     HooksTrust.node,
     RuntimeFlags.node,
+    SessionStatus.node,
     Database.node,
   ],
 })

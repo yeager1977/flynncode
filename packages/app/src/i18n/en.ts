@@ -1357,6 +1357,7 @@ export const dict = {
   "settings.hooks.status.trusted": "trusted",
   "settings.hooks.status.pending": "pending review",
   "settings.hooks.source": "from {{source}}",
+  "settings.hooks.event.statusLine": "Status line",
   "settings.hooks.claude.title": "Claude Code",
   "settings.hooks.claude.description":
     "Hooks from Claude Code user settings, project .claude settings and plugins enabled in Claude Code. Each hook still needs your trust above. A switch applies in every project.",

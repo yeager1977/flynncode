@@ -96,9 +96,6 @@ export const {
       todo: {
         [sessionID: string]: Todo[]
       }
-      statusline: {
-        [sessionID: string]: string[]
-      }
       message: {
         [sessionID: string]: Message[]
       }
@@ -137,7 +134,6 @@ export const {
       session_status: {},
       session_diff: {},
       todo: {},
-      statusline: {},
       message: {},
       part: {},
       lsp: [],
@@ -169,12 +165,6 @@ export const {
           .relative(path.resolve(project.data.instance.path.worktree), project.data.instance.path.directory)
           .replaceAll("\\", "/"),
       }
-    }
-
-    async function refreshStatusLine(sessionID: string) {
-      const lines = (await sdk.client.session.statusline.get({ sessionID }).catch(() => undefined))?.data?.lines
-      // An event that arrived while this was in flight is newer, so only fill an unset entry.
-      if (lines && store.statusline[sessionID] === undefined) setStore("statusline", sessionID, lines)
     }
 
     function listSessions() {
@@ -274,10 +264,6 @@ export const {
 
         case "todo.updated":
           setStore("todo", event.properties.sessionID, event.properties.todos)
-          break
-
-        case "session.statusline":
-          setStore("statusline", event.properties.sessionID, event.properties.lines)
           break
 
         case "session.diff":
@@ -606,8 +592,6 @@ export const {
           return last.time.completed ? "idle" : "working"
         },
         async sync(sessionID: string) {
-          // Every open of a session re-arms the server's status line run, even when its history is already loaded.
-          void refreshStatusLine(sessionID)
           if (fullSyncedSessions.has(sessionID)) return
           const syncing = syncingSessions.get(sessionID)
           if (syncing) return syncing
