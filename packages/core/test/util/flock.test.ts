@@ -400,6 +400,21 @@ describe("util.flock", () => {
     expect(hit).toBe(true)
   })
 
+  test("reports whether a lease still holds its lock", async () => {
+    await using tmp = await tmpdir()
+    const dir = path.join(tmp.path, "locks")
+    const key = "flock:held"
+    const lease = await Flock.acquire(key, { dir, staleMs: 500, timeoutMs: 0 })
+    expect(await lease.held()).toBe(true)
+
+    // Another contender broke the lock (as after a stall past staleMs) and took it with its own token.
+    await fs.writeFile(path.join(lock(dir, key), "meta.json"), JSON.stringify({ token: "someone-else" }))
+    expect(await lease.held()).toBe(false)
+    await fs.rm(lock(dir, key), { recursive: true, force: true })
+    expect(await lease.held()).toBe(false)
+    await lease.release().catch(() => undefined)
+  })
+
   test("fails clearly on unwritable lock roots", async () => {
     if (process.platform === "win32") return
 

@@ -108,9 +108,11 @@ async function start(command: StartCommand) {
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
-    const { Server, Scheduler } = await import("virtual:opencode-server")
-    // The sidecar lives as long as the app, so it runs the scheduled prompts the app's sessions created.
+    const { Server, Scheduler, SessionRetention } = await import("virtual:opencode-server")
+    // The sidecar lives as long as the app, so it runs the scheduled prompts the app's sessions created, and deletes
+    // sessions inactive for longer than `cleanupPeriodDays` while it leads.
     Scheduler.enableLeadership("sidecar")
+    SessionRetention.enable()
 
     listener = await Server.listen({
       port: command.port,
@@ -162,6 +164,10 @@ async function start(command: StartCommand) {
       onStatus: (status) => {
         lastSyncStatus = status
         post({ type: "sync-status", status })
+        // Retention skips its passes while a paired machine has not synced for a day.
+        SessionRetention.recordSync({ paired: status.phase !== "unpaired", lastPull: status.lastSuccess }).catch(
+          logSyncError,
+        )
       },
     })
     syncWorker.start()

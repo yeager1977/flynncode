@@ -1,6 +1,6 @@
 export * as MachineSyncStore from "./store"
 
-import { asc, eq, isNull, lt, max } from "drizzle-orm"
+import { asc, eq, isNull, lt, max, sql } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Database } from "@flynncode/core/database/database"
 import { migrations } from "@flynncode/core/database/migration.gen"
@@ -233,9 +233,16 @@ const layer = Layer.effect(
     })
 
     const manifest = Effect.fn("MachineSyncStore.manifest")(function* () {
+      // Expiry counts from when the tombstone was written: a retention tombstone's `time_deleted` is the activity it
+      // judged, which is already older than the period.
       yield* db
         .delete(SessionTombstoneTable)
-        .where(lt(SessionTombstoneTable.time_deleted, Date.now() - TOMBSTONE_TTL_MS))
+        .where(
+          lt(
+            sql`coalesce(${SessionTombstoneTable.time_recorded}, ${SessionTombstoneTable.time_deleted})`,
+            Date.now() - TOMBSTONE_TTL_MS,
+          ),
+        )
         .run()
         .pipe(Effect.orDie)
       const read = yield* db
@@ -487,8 +494,11 @@ const layer = Layer.effect(
             yield* tx.delete(SessionTable).where(eq(SessionTable.id, input.sessionID)).run().pipe(Effect.orDie)
             yield* tx
               .insert(SessionTombstoneTable)
-              .values({ id: input.sessionID, time_deleted: input.timeDeleted })
-              .onConflictDoUpdate({ target: SessionTombstoneTable.id, set: { time_deleted: input.timeDeleted } })
+              .values({ id: input.sessionID, time_deleted: input.timeDeleted, time_recorded: Date.now() })
+              .onConflictDoUpdate({
+                target: SessionTombstoneTable.id,
+                set: { time_deleted: input.timeDeleted, time_recorded: Date.now() },
+              })
               .run()
               .pipe(Effect.orDie)
             return found

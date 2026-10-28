@@ -150,6 +150,27 @@ describe("MachineSyncStore", () => {
     }),
   )
 
+  it.effect("expires a tombstone 30 days after it was recorded, whatever time it carries", () =>
+    Effect.gen(function* () {
+      const db = (yield* Database.Service).db
+      const store = yield* MachineSyncStore.Service
+      // A retention tombstone carries the activity it judged, so its time_deleted is already old when written.
+      yield* db
+        .insert(SessionTombstoneTable)
+        .values([
+          { id: SessionID.make("ses_retained"), time_deleted: Date.now() - 90 * DAY, time_recorded: Date.now() - DAY },
+          {
+            id: SessionID.make("ses_expired"),
+            time_deleted: Date.now() - 90 * DAY,
+            time_recorded: Date.now() - 31 * DAY,
+          },
+        ])
+        .run()
+
+      expect((yield* store.manifest()).tombstones).toEqual([{ id: "ses_retained", timeDeleted: expect.any(Number) }])
+    }),
+  )
+
   it.effect("marks sessions busy from session.status events", () =>
     Effect.gen(function* () {
       const store = yield* MachineSyncStore.Service
@@ -273,7 +294,9 @@ describe("MachineSyncStore", () => {
           .from(SessionTombstoneTable)
           .where(eq(SessionTombstoneTable.id, SessionID.make("ses_gone")))
           .get(),
-      ).toEqual({ id: SessionID.make("ses_gone"), time_deleted: 1234 })
+      ).toEqual({ id: SessionID.make("ses_gone"), time_deleted: 1234, time_recorded: expect.any(Number) })
+      // A peer's old deletion time is kept, and the tombstone lives 30 days from when it arrived.
+      expect((yield* store.manifest()).tombstones).toEqual([{ id: "ses_gone", timeDeleted: 1234 }])
       const shelved = yield* db
         .select()
         .from(SessionTable)

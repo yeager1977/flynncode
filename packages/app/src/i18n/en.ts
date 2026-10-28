@@ -173,7 +173,8 @@ export const dict = {
   "provider.connect.toast.connected.title": "{{provider}} connected",
   "provider.connect.toast.connected.description": "{{provider}} models are now available to use.",
   "provider.connect.museImport.action": "Import from Muse CLI",
-  "provider.connect.museImport.loginHint": "Muse CLI is installed but not logged in. Run `muse login`, then reopen this dialog.",
+  "provider.connect.museImport.loginHint":
+    "Muse CLI is installed but not logged in. Run `muse login`, then reopen this dialog.",
   "provider.connect.museImport.retry": "Retry",
   "provider.connect.museImport.failed": "Import failed.",
   "provider.connect.museImport.errorNotFound": "Muse CLI import helper not found. Install muse-opencode-auth first.",
@@ -185,7 +186,8 @@ export const dict = {
   "provider.custom.description.link": "provider config docs",
   "provider.custom.description.suffix": ".",
   "provider.custom.anthropic.title": "Anthropic API",
-  "provider.custom.anthropic.description": "Connects Claude models with your Anthropic API key, other than any signed-in Anthropic subscription.",
+  "provider.custom.anthropic.description":
+    "Connects Claude models with your Anthropic API key, other than any signed-in Anthropic subscription.",
   "provider.custom.field.providerID.label": "Provider ID",
   "provider.custom.field.providerID.placeholder": "myprovider",
   "provider.custom.field.providerID.description": "Lowercase letters, numbers, hyphens, or underscores",
@@ -506,10 +508,12 @@ export const dict = {
   "server.phone.away.title": "Away from home",
   "server.phone.away.direct": "On Tailscale, use this address to reach this computer directly.",
   "server.phone.relay.title": "Needs-input relay",
-  "server.phone.relay.hint": "When this computer sleeps, new approval requests appear on your deepthought host. Approvals still run here.",
+  "server.phone.relay.hint":
+    "When this computer sleeps, new approval requests appear on your deepthought host. Approvals still run here.",
   "server.phone.relay.stopped": "Relay is off. Add your deepthought host in Servers to turn it on.",
   "server.phone.relay.token.label": "Deepthought relay token",
-  "server.phone.relay.token.hint": "Paste your deepthought host's relay token so this computer can publish needs-input notices while you are away.",
+  "server.phone.relay.token.hint":
+    "Paste your deepthought host's relay token so this computer can publish needs-input notices while you are away.",
   "server.phone.relay.token.placeholder": "Paste token",
   "server.phone.relay.token.save": "Save",
   "server.phone.relay.token.saved": "Relay token saved. Needs-input notices will publish to your deepthought host.",
@@ -546,7 +550,8 @@ export const dict = {
   "server.sync.gatewayError": "Sync connection problem: {{error}}",
   "server.sync.code.show": "Show pairing code",
   "server.sync.code.value": "Pairing code: {{code}}",
-  "server.sync.code.hint": "Enter this code on the other computer within {{minutes}} min. This computer: {{name}} ({{addresses}})",
+  "server.sync.code.hint":
+    "Enter this code on the other computer within {{minutes}} min. This computer: {{name}} ({{addresses}})",
   "server.sync.host.label": "Other computer",
   "server.sync.host.placeholder": "starship.local or 192.168.1.20",
   "server.sync.pairCode.label": "Pairing code",
@@ -586,7 +591,8 @@ export const dict = {
   "dialog.releaseNotes.media.alt": "Release preview",
   "dialog.usageExceeded.dontShowAgain": "Don't show again",
   "dialog.metaContributor.title": "Share data with Meta?",
-  "dialog.metaContributor.description": "Muse Spark Contributor models share your prompts and generated content with Meta, and Meta may use them to train future models. Only continue if you're comfortable sending this session's content and context to Meta.",
+  "dialog.metaContributor.description":
+    "Muse Spark Contributor models share your prompts and generated content with Meta, and Meta may use them to train future models. Only continue if you're comfortable sending this session's content and context to Meta.",
 
   "context.breakdown.title": "Context Breakdown",
   "context.breakdown.note": 'Approximate breakdown of input tokens. "Other" includes tool definitions and overhead.',
@@ -894,7 +900,8 @@ export const dict = {
   "session.taskSuggestion.confirm.description": "Creates a new git worktree and opens a session there for: {{title}}",
   "session.taskSuggestion.confirm.action": "Start task",
   "session.taskSuggestion.noWorktree.title": "Can't start a task here",
-  "session.taskSuggestion.noWorktree.description": "Task chips need a git worktree. Open a project inside a git repository to start this in its own session.",
+  "session.taskSuggestion.noWorktree.description":
+    "Task chips need a git worktree. Open a project inside a git repository to start this in its own session.",
   "session.review.addressComments": "Address comments",
   "session.review.addressCommentsDisabled": "Add a line comment before addressing comments",
   "session.review.followUp.turn": "Address these review comments on the last turn.",
@@ -921,9 +928,11 @@ export const dict = {
   "session.review.unstageFile": "Unstage file",
   "session.review.revertFile": "Revert file",
   "session.review.revertFile.title": "Revert file changes?",
-  "session.review.revertFile.description": "Discards every change in {{file}}. This runs git apply -R and cannot be undone.",
+  "session.review.revertFile.description":
+    "Discards every change in {{file}}. This runs git apply -R and cannot be undone.",
   "session.review.revertHunk.title": "Revert hunk?",
-  "session.review.revertHunk.description": "Discards hunk {{index}} in {{file}}. This runs git apply -R and cannot be undone.",
+  "session.review.revertHunk.description":
+    "Discards hunk {{index}} in {{file}}. This runs git apply -R and cannot be undone.",
   "session.review.actions": "Review actions",
   "session.review.preset.uncommitted": "Review uncommitted",
   "session.review.preset.baseBranch": "Review base branch",
@@ -983,18 +992,21 @@ export const dict = {
   "session.subagents.isolatedIn": "Isolated in {{directory}}",
   "toast.worktree.disposed.description": "Disposable worktree removed",
   "session.handoff.movedWithoutSession.title": "Moved without the original session",
-  "session.handoff.movedWithoutSession.description": "The original session could not be found, so a new session was started in the destination workspace.",
+  "session.handoff.movedWithoutSession.description":
+    "The original session could not be found, so a new session was started in the destination workspace.",
   "session.handoff.failed.title": "Could not move the session",
   "session.handoff.failed.description": "Handoff failed: {{message}}",
   "session.handoff.emptyPromptMoved.title": "Moved without the first prompt",
-  "session.handoff.emptyPromptMoved.description": "The original conversation has not loaded, so the new session starts without the first prompt.",
+  "session.handoff.emptyPromptMoved.description":
+    "The original conversation has not loaded, so the new session starts without the first prompt.",
   "session.handoff.toWorktree": "Move session to a worktree",
   "session.handoff.toMain": "Move session to the main checkout",
   "session.handoff.confirm.title": "Move session",
   "session.handoff.confirm.pick": "Destination worktree",
   "session.handoff.confirm.action": "Move",
   "session.handoff.confirm.move": "This session and its uncommitted changes move to {{target}}.",
-  "session.handoff.confirm.restart": "Uncommitted changes are copied to {{target}} and a new session starts there with your first prompt. This session is archived.",
+  "session.handoff.confirm.restart":
+    "Uncommitted changes are copied to {{target}} and a new session starts there with your first prompt. This session is archived.",
   "session.handoff.confirm.open": "Opens a new session in {{target}}.",
   "session.handoff.confirm.create": "Creates a new worktree for this project and opens this session there.",
   "session.new.workspace.runIn": "Run session in",
@@ -1140,7 +1152,8 @@ export const dict = {
   "sidebar.project.forget": "Forget project",
   "sidebar.project.forget.title": "Forget project",
   "sidebar.project.forget.confirm": "Forget {{name}}?",
-  "sidebar.project.forget.description": "Sessions and files stay on disk. The project reappears if you open the folder again.",
+  "sidebar.project.forget.description":
+    "Sessions and files stay on disk. The project reappears if you open the folder again.",
   "sidebar.project.forget.action": "Forget",
   "sidebar.artifacts.title": "Changed files",
   "sidebar.artifacts.toggle": "Toggle changed files",
@@ -1153,7 +1166,8 @@ export const dict = {
   "history.title": "Activity",
   "history.search.placeholder": "Filter activity",
   "history.consent.title": "Screenshots are off",
-  "history.consent.description": "Text history stays on this device. Turn on screenshots for this session to attach pixels.",
+  "history.consent.description":
+    "Text history stays on this device. Turn on screenshots for this session to attach pixels.",
   "history.consent.enable": "Show screenshots for this session",
   "history.consent.disable": "Hide screenshots",
   "history.empty": "No activity yet. Runs, file changes, and approvals will appear here.",
@@ -1233,11 +1247,13 @@ export const dict = {
   "settings.routines.intervalDescription": "Runs repeatedly at this interval when no daily time is set.",
   "settings.routines.rruleDescription": "Overrides the daily time and interval when set.",
   "settings.routines.targetUrl": "Remote host URL",
-  "settings.routines.targetUrlDescription": "Runs the routine on another Flynncode server, like http://192.168.1.50:4096. Leave empty to run it on this server.",
+  "settings.routines.targetUrlDescription":
+    "Runs the routine on another Flynncode server, like http://192.168.1.50:4096. Leave empty to run it on this server.",
   "settings.routines.targetUsername": "Remote username",
   "settings.routines.targetUsernameDescription": "Only if the remote server requires a password.",
   "settings.routines.targetPassword": "Remote password",
-  "settings.routines.targetPasswordDescription": "Stored with the routine and only sent to the remote server. Leave empty to keep the saved password; changing the host clears it.",
+  "settings.routines.targetPasswordDescription":
+    "Stored with the routine and only sent to the remote server. Leave empty to keep the saved password; changing the host clears it.",
   "settings.routines.deleteConfirm.title": "Delete routine",
   "settings.routines.deleteConfirm.body": "Delete {{name}}? This cannot be undone.",
   "settings.routines.manual": "Manual",
@@ -1275,12 +1291,15 @@ export const dict = {
   "preview.action.editConfig": "Edit config",
   "preview.error.actionFailed": "Preview server action failed",
   "preview.settings.title": "Preview servers",
-  "preview.settings.description": "Servers the review browser can start, stop, and verify. Managed servers declare a command; attach-only servers declare a URL.",
+  "preview.settings.description":
+    "Servers the review browser can start, stop, and verify. Managed servers declare a command; attach-only servers declare a URL.",
   "preview.settings.globalToggle": "Apply to all projects",
   "preview.settings.autoVerify": "Auto-verify edited pages",
-  "preview.settings.autoVerifyDescription": "After the agent edits files, the verify_page tool reports the page status for the running server.",
+  "preview.settings.autoVerifyDescription":
+    "After the agent edits files, the verify_page tool reports the page status for the running server.",
   "preview.settings.nativeHost": "Native preview browser",
-  "preview.settings.nativeHostDescription": "Open the review pane in a desktop-native view with real page storage and inspectable elements. Desktop app only; other surfaces keep the sandboxed iframe.",
+  "preview.settings.nativeHostDescription":
+    "Open the review pane in a desktop-native view with real page storage and inspectable elements. Desktop app only; other surfaces keep the sandboxed iframe.",
   "preview.settings.saveFailed": "Could not save preview settings",
   "preview.settings.loadFailed": "Could not load project settings",
   "preview.settings.saved": "Preview settings saved",
@@ -1305,7 +1324,7 @@ export const dict = {
   "session.keep.deletesInDays": "deletes in {{days}} days",
   "session.retention.notice.title": "Old sessions will be deleted",
   "session.retention.notice.description":
-    "Sessions inactive for more than {{days}} days are now deleted automatically. The first pass removes {{count}} and runs {{when}}. Use Keep forever in a session's menu to protect it.",
+    "Sessions inactive for more than {{days}} days are deleted automatically. The next cleanup runs {{when}} and removes {{count}} sessions with their sub-agent sessions. Use Keep forever in a session's menu to protect one.",
   "session.retention.notice.action": "Change setting",
 
   "debugBar.ariaLabel": "Development performance diagnostics",
@@ -1356,7 +1375,8 @@ export const dict = {
   "settings.tab.mcp": "MCP",
   "settings.tab.hooks": "Hooks",
   "settings.hooks.title": "Hooks",
-  "settings.hooks.description": "Lifecycle hooks run commands or MCP tools around tool use, permissions, and sessions. Untrusted hooks never execute until you approve them here.",
+  "settings.hooks.description":
+    "Lifecycle hooks run commands or MCP tools around tool use, permissions, and sessions. Untrusted hooks never execute until you approve them here.",
   "settings.hooks.empty": "No file hooks configured. Add a hooks table to opencode.json or a hooks.json file.",
   "settings.hooks.loading": "Loading hooks...",
   "settings.hooks.pending.one": "{{count}} hook awaiting review",
@@ -1393,7 +1413,8 @@ export const dict = {
   "settings.modelRouter.overrideExplicit.title": "Override explicit agent models",
   "settings.modelRouter.overrideExplicit.description": "Also route agents that have a model set in your config.",
   "settings.modelRouter.legacyAssign.title": "Assign agent models at startup",
-  "settings.modelRouter.legacyAssign.description": "Rewrite agent models when the server starts, instead of resolving Model Router per prompt.",
+  "settings.modelRouter.legacyAssign.description":
+    "Rewrite agent models when the server starts, instead of resolving Model Router per prompt.",
   "settings.modelRouter.providers.title": "Providers",
   "settings.modelRouter.agents.add": "Add agent",
   "settings.modelRouter.weights.title": "Task weights",
@@ -1415,11 +1436,13 @@ export const dict = {
   "settings.modelRouter.unsaved": "Unsaved changes",
   "settings.modelRouter.saveFailed": "Could not save the router. Your changes are still here. Try saving again.",
   "settings.modelRouter.start.title": "Start with the models you want to use",
-  "settings.modelRouter.start.description": "Add models and rate their strengths, then choose what matters for each task. The router will show the best match.",
+  "settings.modelRouter.start.description":
+    "Add models and rate their strengths, then choose what matters for each task. The router will show the best match.",
   "settings.modelRouter.chooseModels": "Choose models",
   "settings.modelRouter.models.title": "Your model pool",
   "settings.modelRouter.models.description": "Compare and tune the models the router can choose from.",
-  "settings.modelRouter.models.empty": "Use Add models to select several at once. New models start with neutral scores you can adjust.",
+  "settings.modelRouter.models.empty":
+    "Use Add models to select several at once. New models start with neutral scores you can adjust.",
   "settings.modelRouter.addModels": "Add models",
   "settings.modelRouter.searchModels": "Search models or providers",
   "settings.modelRouter.noMatches": "No models match your search.",
@@ -1428,7 +1451,8 @@ export const dict = {
   "settings.modelRouter.done": "Done",
   "settings.modelRouter.remove": "Remove",
   "settings.modelRouter.removeNamed": "Remove {{model}}",
-  "settings.modelRouter.scores.help": "These are your ratings, not measured benchmarks. Higher capability and speed are better; a higher price means more expensive.",
+  "settings.modelRouter.scores.help":
+    "These are your ratings, not measured benchmarks. Higher capability and speed are better; a higher price means more expensive.",
   "settings.modelRouter.scale.capability.low": "Less capable",
   "settings.modelRouter.scale.capability.high": "More capable",
   "settings.modelRouter.scale.price.low": "Cheaper",
@@ -1445,24 +1469,33 @@ export const dict = {
   "settings.modelRouter.task.lookup": "Research",
   "settings.modelRouter.task.writing": "Writing",
   "settings.modelRouter.task.long-context": "Long context",
-  "settings.modelRouter.picker.description": "Select models from your configured providers. Each starts with neutral scores of 5 out of 10.",
-  "settings.modelRouter.picker.empty": "No more models are available in this provider scope. Check your providers, or configure models in provider settings.",
+  "settings.modelRouter.picker.description":
+    "Select models from your configured providers. Each starts with neutral scores of 5 out of 10.",
+  "settings.modelRouter.picker.empty":
+    "No more models are available in this provider scope. Check your providers, or configure models in provider settings.",
   "settings.modelRouter.picker.selected": "Selected: {{count}}",
   "settings.modelRouter.picker.selectVisible": "Select visible",
   "settings.modelRouter.picker.addSelected": "Add selected",
   "settings.modelRouter.reviewProviders": "Review providers",
-  "settings.modelRouter.providers.help": "Select providers to include. With none selected, the router automatically uses provider IDs starting with ollama.",
+  "settings.modelRouter.providers.help":
+    "Select providers to include. With none selected, the router automatically uses provider IDs starting with ollama.",
   "settings.modelRouter.providers.automatic": "Use automatic scope",
-  "settings.modelRouter.providers.selected": "Only the selected providers are included. Disabled providers are always excluded.",
-  "settings.modelRouter.providers.default": "Automatic scope: Ollama providers. Other providers are excluded unless you select them here.",
+  "settings.modelRouter.providers.selected":
+    "Only the selected providers are included. Disabled providers are always excluded.",
+  "settings.modelRouter.providers.default":
+    "Automatic scope: Ollama providers. Other providers are excluded unless you select them here.",
   "settings.modelRouter.providers.empty": "Configure or connect a provider in provider settings to include it here.",
   "settings.modelRouter.availability.available": "Available for routing",
-  "settings.modelRouter.availability.provider": "Outside your provider scope. Include this provider in Advanced to use this model.",
+  "settings.modelRouter.availability.provider":
+    "Outside your provider scope. Include this provider in Advanced to use this model.",
   "settings.modelRouter.availability.disabled": "This provider is disabled. The router will skip this model.",
-  "settings.modelRouter.availability.hidden": "This model is hidden in Manage Models. Enable it there to use it for routing.",
-  "settings.modelRouter.availability.missing": "This model is no longer in your global provider configuration. Its saved ratings are preserved.",
+  "settings.modelRouter.availability.hidden":
+    "This model is hidden in Manage Models. Enable it there to use it for routing.",
+  "settings.modelRouter.availability.missing":
+    "This model is no longer in your global provider configuration. Its saved ratings are preserved.",
   "settings.modelRouter.behavior": "Routing behavior",
-  "settings.modelRouter.agents.help": "Choose the kind of work each agent does. Agents sharing a task share its routing priorities.",
+  "settings.modelRouter.agents.help":
+    "Choose the kind of work each agent does. Agents sharing a task share its routing priorities.",
   "settings.modelRouter.agents.routing": "Agent routing",
   "settings.modelRouter.agentRoute": "Agent {{agent}}",
   "settings.modelRouter.agents.empty": "No agents are routed automatically. Add an agent to assign a task.",
@@ -1471,7 +1504,8 @@ export const dict = {
   "settings.modelRouter.taskType": "Task",
   "settings.modelRouter.agentTask": "Task for {{agent}}",
   "settings.modelRouter.priorities.title": "Priorities & preview",
-  "settings.modelRouter.priorities.description": "Choose what matters for each task. Top matches update as you change priorities and model ratings.",
+  "settings.modelRouter.priorities.description":
+    "Choose what matters for each task. Top matches update as you change priorities and model ratings.",
   "settings.modelRouter.priorityLabel": "Priority for {{task}}",
   "settings.modelRouter.priority.recommended": "Recommended",
   "settings.modelRouter.priority.balanced": "Balanced",
@@ -1481,15 +1515,19 @@ export const dict = {
   "settings.modelRouter.priority.custom": "Custom weights",
   "settings.modelRouter.preview.top": "Top match",
   "settings.modelRouter.preview.empty": "No eligible model",
-  "settings.modelRouter.preview.help": "Preview of these settings, not live assignments. Project overrides and explicit agent models may change the final choice.",
-  "settings.modelRouter.preview.paused": "Auto-routing is off. These previews are suggestions; agent models will stay unchanged.",
+  "settings.modelRouter.preview.help":
+    "Preview of these settings, not live assignments. Project overrides and explicit agent models may change the final choice.",
+  "settings.modelRouter.preview.paused":
+    "Auto-routing is off. These previews are suggestions; agent models will stay unchanged.",
   "settings.modelRouter.reviewModels": "Review model pool",
   "settings.modelRouter.taskModel.label": "Model for {{task}}",
-  "settings.modelRouter.taskModel.help": "Pin a model for this task, or leave it automatic to use the best-ranked match.",
+  "settings.modelRouter.taskModel.help":
+    "Pin a model for this task, or leave it automatic to use the best-ranked match.",
   "settings.modelRouter.taskModel.automatic": "Automatic (best match)",
   "settings.modelRouter.models.available": "Available models",
   "settings.modelRouter.models.notScored": "Not scored - neutral 5/5/5",
-  "settings.modelRouter.weights.help": "Fine-tune the relative importance of capability, lower price, and speed. Values are normalized automatically; all zeros gives equal importance. Presets are available on Routing.",
+  "settings.modelRouter.weights.help":
+    "Fine-tune the relative importance of capability, lower price, and speed. Values are normalized automatically; all zeros gives equal importance. Presets are available on Routing.",
   "settings.modelRouter.weights.invalid": "Check the highlighted task weights in Advanced before saving.",
   "settings.modelRouter.reviewWeights": "Review weights",
   "settings.modelRouter.weightLabel": "{{task}}: {{dimension}}",
@@ -1499,7 +1537,8 @@ export const dict = {
   "settings.modelRouter.family.ollama": "Ollama",
   "settings.modelRouter.family.openai": "OpenAI",
   "settings.modelRouter.family.anthropic": "Anthropic",
-  "settings.modelRouter.family.unavailable": "No connected provider serves this family's models. Routing falls back to the first family that has one.",
+  "settings.modelRouter.family.unavailable":
+    "No connected provider serves this family's models. Routing falls back to the first family that has one.",
   "settings.mcp.add": "Add server",
   "settings.mcp.type.local": "Local",
   "settings.mcp.type.remote": "Remote",
@@ -1546,7 +1585,8 @@ export const dict = {
   "settings.mcp.form.error.timeout": "Timeout must be a positive whole number.",
   "settings.mcp.errors.invalid": "Fix the highlighted fields.",
   "settings.mcp.errors.duplicate": "A server with this name already exists.",
-  "settings.mcp.errors.noConfig": "Cannot read the config for {{name}} — it may be defined outside this project's config.",
+  "settings.mcp.errors.noConfig":
+    "Cannot read the config for {{name}} — it may be defined outside this project's config.",
   "settings.mcp.edit.warn": "Saving reconnects this server.",
   "settings.mcp.registry.search": "Search registry…",
   "settings.mcp.registry.title": "MCP registry",
@@ -1582,7 +1622,8 @@ export const dict = {
   "settings.plugins.installed.disable": "Disable",
   "settings.plugins.installed.enable": "Enable",
   "settings.plugins.installed.uninstall": "Uninstall",
-  "settings.plugins.installed.uninstallBody": "Uninstall {{name}} from {{scope}}? It will be removed from the config file.",
+  "settings.plugins.installed.uninstallBody":
+    "Uninstall {{name}} from {{scope}}? It will be removed from the config file.",
   "settings.plugins.installed.recentlyRemoved": "Recently removed",
   "settings.plugins.installed.openConfig": "Open config",
   "settings.plugins.errors.parseFailed": "Cannot read {{path}} — fix or remove it to manage plugins there.",
@@ -1768,7 +1809,8 @@ export const dict = {
   "settings.providers.tag.custom": "Custom",
   "settings.providers.tag.other": "Other",
   "settings.providers.enabled": "Enabled",
-  "settings.providers.enabled.description": "Turn this provider off without removing its key or config. Applies after you quit and restart.",
+  "settings.providers.enabled.description":
+    "Turn this provider off without removing its key or config. Applies after you quit and restart.",
   "settings.providers.vendor.signInClaude": "Sign in with Claude",
   "settings.providers.vendor.signInChatGPT": "Sign in with ChatGPT",
   "settings.models.title": "Models",
@@ -1927,14 +1969,16 @@ export const dict = {
   "session.bulk.selected.one": "{{count}} selected",
   "session.bulk.selected.other": "{{count}} selected",
   "session.bulk.delete.confirm.one": "Delete {{count}} session? This cannot be undone. Child sessions are deleted too.",
-  "session.bulk.delete.confirm.other": "Delete {{count}} sessions? This cannot be undone. Child sessions are deleted too.",
+  "session.bulk.delete.confirm.other":
+    "Delete {{count}} sessions? This cannot be undone. Child sessions are deleted too.",
   "session.bulk.archive.confirm.one": "Archive {{count}} session? It will be hidden.",
   "session.bulk.archive.confirm.other": "Archive {{count}} sessions? They will be hidden.",
   "session.bulk.cleanup.match.one": "{{count}} session not updated in {{period}}.",
   "session.bulk.cleanup.match.other": "{{count}} sessions not updated in {{period}}.",
   "session.bulk.cleanup.skipped.one": "{{count}} skipped because it is open or running.",
   "session.bulk.cleanup.skipped.other": "{{count}} skipped because they are open or running.",
-  "session.bulk.cleanup.scopeHome": "Sessions from every directory on this server are included, not only the ones listed here.",
+  "session.bulk.cleanup.scopeHome":
+    "Sessions from every directory on this server are included, not only the ones listed here.",
   "session.bulk.cleanup.scopeProject": "Only sessions from {{project}} and its worktrees are included.",
   "session.bulk.failed.one": "Could not finish. {{count}} session was not changed.",
   "session.bulk.failed.other": "Could not finish. {{count}} sessions were not changed.",
@@ -2060,7 +2104,8 @@ export const dict = {
   "session.ci.notifications.failed": "CI checks failed",
   "session.ci.notifications.description": "PR #{{number}}: {{checks}}",
   "session.ci.settings.autoArchive": "Auto-archive after PR close",
-  "session.ci.settings.autoArchiveDescription": "Archive this session automatically once its pull request is merged or closed.",
+  "session.ci.settings.autoArchiveDescription":
+    "Archive this session automatically once its pull request is merged or closed.",
   "session.ci.toast.archived": "Session archived after PR close",
   "session.ci.requiresGh": "This feature needs the GitHub CLI. Install gh to see pull request checks.",
   "session.ci.requiresGh.docsLink": "Install gh",

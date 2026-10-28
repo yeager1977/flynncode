@@ -59,10 +59,16 @@ export namespace Flock {
     acquired: true
     startHeartbeat: (intervalMs?: number) => void
     release: () => Promise<void>
+    held: () => Promise<boolean>
   }
 
   export interface Lease {
     release: () => Promise<void>
+    /**
+     * Whether the lock is still this lease's: false once another contender broke it as stale, for example after this
+     * process stalled longer than `staleMs`.
+     */
+    held: () => Promise<boolean>
     [Symbol.asyncDispose]: () => Promise<void>
   }
 
@@ -264,10 +270,19 @@ export namespace Flock {
       await rm(lockDir, { recursive: true, force: true })
     }
 
+    const held = () =>
+      readFile(metaPath, "utf8")
+        .then((raw) => {
+          const parsed: unknown = JSON.parse(raw)
+          return typeof parsed === "object" && parsed !== null && "token" in parsed && parsed.token === token
+        })
+        .catch(() => false)
+
     return {
       acquired: true,
       startHeartbeat,
       release,
+      held,
     }
   }
 
@@ -333,6 +348,7 @@ export namespace Flock {
     const release = () => lock.release()
     return {
       release,
+      held: () => lock.held(),
       [Symbol.asyncDispose]() {
         return release()
       },

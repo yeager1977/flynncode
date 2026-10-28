@@ -5,7 +5,7 @@ import { useLanguage } from "@/context/language"
 import { firstRunNotice, markNoticeShown, noticeShown } from "@/utils/session-retention"
 import { showToast } from "@/utils/toast"
 
-// Tells the owner once, in this app profile, that a delayed first cleanup is pending.
+// Tells the owner once per delayed cleanup, in this app profile, that it is pending.
 export function useSessionRetentionNotice(retention: Accessor<SessionRetention | undefined>) {
   const language = useLanguage()
   const openSettings = useSettingsDialog("general")
@@ -15,8 +15,8 @@ export function useSessionRetentionNotice(retention: Accessor<SessionRetention |
   createEffect(() => {
     const notice = firstRunNotice(retention(), shown())
     if (!notice) return
-    setShown(true)
-    markNoticeShown()
+    setShown(notice.firstRunAt)
+    markNoticeShown(notice.firstRunAt)
     showToast({
       title: language.t("session.retention.notice.title"),
       description: language.t("session.retention.notice.description", {

@@ -169,7 +169,10 @@ export function createMemorySettingsController() {
       .updateConfig({ memory: memoryToConfig(serverSync().data.config.memory, patch) })
       .then(() => true)
       .catch(() => false)
-  const toggle = createOptimisticToggle(() => memory().enabled, (checked) => save({ enabled: checked }))
+  const toggle = createOptimisticToggle(
+    () => memory().enabled,
+    (checked) => save({ enabled: checked }),
+  )
   return {
     saving: toggle.saving,
     enabled: toggle.value,

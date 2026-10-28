@@ -14,6 +14,10 @@ declare module "virtual:opencode-server" {
   export namespace Scheduler {
     export const enableLeadership: typeof import("../../../flynncode/dist/types/src/node").Scheduler.enableLeadership
   }
+  export namespace SessionRetention {
+    export const enable: typeof import("../../../flynncode/dist/types/src/node").SessionRetention.enable
+    export const recordSync: typeof import("../../../flynncode/dist/types/src/node").SessionRetention.recordSync
+  }
   export namespace Config {
     export const get: typeof import("../../../flynncode/dist/types/src/node").Config.get
     export type Info = import("../../../flynncode/dist/types/src/node").Config.Info

@@ -103,15 +103,20 @@ describe("cleanupDaysFromConfig", () => {
 describe("firstRunNotice", () => {
   const pending = retention({ firstRunAt: NOW + DAY, pendingFirstRunCount: 25 })
 
-  test("shows once for a delayed first pass", () => {
-    expect(firstRunNotice(pending, false)).toEqual({ count: 25, days: 30, firstRunAt: NOW + DAY })
+  test("shows once for a delayed pass", () => {
+    expect(firstRunNotice(pending, undefined)).toEqual({ count: 25, days: 30, firstRunAt: NOW + DAY })
   })
 
   test("stays hidden once shown, with no delayed pass, or before the data loads", () => {
-    expect(firstRunNotice(pending, true)).toBeUndefined()
-    expect(firstRunNotice(retention(), false)).toBeUndefined()
-    expect(firstRunNotice(retention({ firstRunAt: NOW + DAY, pendingFirstRunCount: 0 }), false)).toBeUndefined()
-    expect(firstRunNotice(undefined, false)).toBeUndefined()
+    expect(firstRunNotice(pending, NOW + DAY)).toBeUndefined()
+    expect(firstRunNotice(retention(), undefined)).toBeUndefined()
+    expect(firstRunNotice(retention({ firstRunAt: NOW + DAY, pendingFirstRunCount: 0 }), undefined)).toBeUndefined()
+    expect(firstRunNotice(undefined, undefined)).toBeUndefined()
+  })
+
+  test("shows again for a later delay, such as after the period was lowered", () => {
+    const later = retention({ firstRunAt: NOW + 9 * DAY, pendingFirstRunCount: 30 })
+    expect(firstRunNotice(later, NOW + DAY)).toEqual({ count: 30, days: 30, firstRunAt: NOW + 9 * DAY })
   })
 })
 
@@ -122,9 +127,14 @@ describe("notice storage", () => {
       getItem: (key: string) => store.get(key) ?? null,
       setItem: (key: string, v: string) => void store.set(key, v),
     }
-    expect(noticeShown(storage)).toBe(false)
-    markNoticeShown(storage)
-    expect(noticeShown(storage)).toBe(true)
+    expect(noticeShown(storage)).toBeUndefined()
+    markNoticeShown(NOW + DAY, storage)
+    expect(noticeShown(storage)).toBe(NOW + DAY)
+    // A profile that saw a notice before delays were remembered by time shows the next one once.
+    store.set("flynncode.session-retention.notice-shown", "1")
+    expect(
+      firstRunNotice(retention({ firstRunAt: NOW + DAY, pendingFirstRunCount: 25 }), noticeShown(storage)),
+    ).toBeDefined()
   })
 
   test("survives storage that throws: the notice shows, remembering fails quietly", () => {
@@ -136,7 +146,7 @@ describe("notice storage", () => {
         throw new Error("blocked")
       },
     }
-    expect(noticeShown(storage)).toBe(false)
-    expect(() => markNoticeShown(storage)).not.toThrow()
+    expect(noticeShown(storage)).toBeUndefined()
+    expect(() => markNoticeShown(NOW + DAY, storage)).not.toThrow()
   })
 })

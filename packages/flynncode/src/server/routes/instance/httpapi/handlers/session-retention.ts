@@ -23,14 +23,19 @@ export const sessionRetentionHandlers = HttpApiBuilder.group(InstanceHttpApi, "s
           const current = yield* mapStorageNotFound(sessions.get(ctx.params.sessionID))
           // Keep is read from the root only; sub-agent sessions follow their parent.
           if (current.parentID) return yield* new HttpApiError.BadRequest({})
-          // Read, spread, set: every other metadata key (worktree bindings, folders) is kept as stored.
-          const rest = Object.fromEntries(Object.entries(current.metadata ?? {}).filter(([key]) => key !== "keep"))
-          yield* sessions.setMetadata({
-            sessionID: current.id,
-            metadata: ctx.payload.keep ? { ...rest, keep: true } : rest,
-          })
+          // Under the session's write lock: every other metadata key (worktree bindings, folders, the schedule
+          // hold) is kept as stored.
+          const updated = yield* mapStorageNotFound(
+            sessions.updateMetadata({
+              sessionID: current.id,
+              update: (metadata) => {
+                const rest = Object.fromEntries(Object.entries(metadata).filter(([key]) => key !== "keep"))
+                return ctx.payload.keep ? { ...rest, keep: true } : rest
+              },
+            }),
+          )
           yield* SessionRetention.publishUpdated()
-          return yield* mapStorageNotFound(sessions.get(current.id))
+          return updated
         }),
       )
   }),

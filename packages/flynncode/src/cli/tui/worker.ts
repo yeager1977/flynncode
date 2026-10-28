@@ -12,6 +12,7 @@ import { Effect } from "effect"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Scheduler } from "@/schedule/scheduler"
+import { SessionRetention } from "@/session/retention/service"
 
 // Before anything builds the runtime: take the hook-trust bypass handed over
 // by the TUI thread into memory so spawned processes never inherit it.
@@ -20,6 +21,8 @@ RuntimeFlags.adoptBypassHookTrustEnv()
 // The TUI worker lives as long as the TUI, so it runs the scheduled prompts TUIs created, through the in-process
 // `Server.Default` or a listener. `flynncode run` never opts in.
 Scheduler.enableLeadership("tui")
+// It also deletes sessions inactive for longer than `cleanupPeriodDays` while it leads.
+SessionRetention.enable()
 
 Heap.start()
 

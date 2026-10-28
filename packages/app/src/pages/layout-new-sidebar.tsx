@@ -423,9 +423,7 @@ function DialogForgetProject(props: { name: string; onCancel: () => void; onConf
         <span class="text-14-regular text-v2-text-text-base">
           {language.t("sidebar.project.forget.confirm", { name: props.name })}
         </span>
-        <span class="text-12-regular text-v2-text-text-muted">
-          {language.t("sidebar.project.forget.description")}
-        </span>
+        <span class="text-12-regular text-v2-text-text-muted">{language.t("sidebar.project.forget.description")}</span>
       </DialogBody>
       <DialogFooter>
         <ButtonV2 type="button" variant="neutral" onClick={props.onCancel}>

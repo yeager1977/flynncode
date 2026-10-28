@@ -245,7 +245,8 @@ export default {
       yield* tx.run(`
         CREATE TABLE \`session_tombstone\` (
           \`id\` text PRIMARY KEY,
-          \`time_deleted\` integer NOT NULL
+          \`time_deleted\` integer NOT NULL,
+          \`time_recorded\` integer
         );
       `)
       yield* tx.run(`

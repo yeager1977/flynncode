@@ -168,6 +168,28 @@ describe("decidePush", () => {
   })
 })
 
+// Session retention stamps its tombstones with the newest activity it judged plus 1 ms, not the deletion time.
+describe("retention tombstones", () => {
+  const DAY = 24 * 60 * 60 * 1000
+  const L = 1_000 * DAY
+  // The laptop last synced on day L, then deleted S on day L + 31 as inactive since L.
+  const laptop = manifest([], [{ id: "ses_s", timeDeleted: L + 1 }])
+
+  test("a stale machine's delete neither pushes over nor deletes a copy worked on since", () => {
+    // The desktop worked on S on day L + 10, and the hub has that copy.
+    const hub = manifest([session("ses_s", L + 10 * DAY)])
+    expect(decidePush({ local: laptop, hub })).toEqual([])
+    expect(decide({ local: laptop, peer: hub })).toEqual([{ type: "pull", id: "ses_s" }])
+    expect(decide({ local: hub, peer: laptop })).toEqual([])
+  })
+
+  test("still deletes a copy nobody touched since", () => {
+    const hub = manifest([session("ses_s", L)])
+    expect(decidePush({ local: laptop, hub })).toEqual([{ type: "delete", id: "ses_s", timeDeleted: L + 1 }])
+    expect(decide({ local: hub, peer: laptop })).toEqual([{ type: "delete", id: "ses_s", timeDeleted: L + 1 }])
+  })
+})
+
 describe("isManifest", () => {
   test("accepts a manifest and rejects malformed input", () => {
     expect(isManifest(manifest([session("ses_a", 1)], [{ id: "ses_b", timeDeleted: 2 }]))).toBe(true)

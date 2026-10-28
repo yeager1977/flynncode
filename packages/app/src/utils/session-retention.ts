@@ -51,10 +51,11 @@ export function cleanupDaysFromConfig(config: Pick<Config, "cleanupPeriodDays"> 
   return config?.cleanupPeriodDays ?? DEFAULT_CLEANUP_DAYS
 }
 
-// The notice is for a delayed first pass only: `firstRunAt` and a pending count
-// are present while it waits.
-export function firstRunNotice(retention: SessionRetention | undefined, shown: boolean) {
-  if (shown || !retention || retention.firstRunAt === undefined) return
+// The notice is for a delayed cleanup only (the first one, or one after the
+// period was lowered): `firstRunAt` and a pending count are present while it
+// waits. `shownFor` is the delay already announced, so a later one shows again.
+export function firstRunNotice(retention: SessionRetention | undefined, shownFor: number | undefined) {
+  if (!retention || retention.firstRunAt === undefined || retention.firstRunAt === shownFor) return
   const count = retention.pendingFirstRunCount ?? 0
   if (count <= 0) return
   return { count, days: retention.cleanupPeriodDays, firstRunAt: retention.firstRunAt }
@@ -62,15 +63,16 @@ export function firstRunNotice(retention: SessionRetention | undefined, shown: b
 
 export function noticeShown(storage: NoticeStorage = localStorage) {
   try {
-    return storage.getItem(NOTICE_KEY) === "1"
+    const value = Number(storage.getItem(NOTICE_KEY) ?? Number.NaN)
+    return Number.isFinite(value) ? value : undefined
   } catch {
-    return false
+    return
   }
 }
 
-export function markNoticeShown(storage: NoticeStorage = localStorage) {
+export function markNoticeShown(firstRunAt: number, storage: NoticeStorage = localStorage) {
   try {
-    storage.setItem(NOTICE_KEY, "1")
+    storage.setItem(NOTICE_KEY, String(firstRunAt))
   } catch {
     // Storage can be blocked or full. The notice then returns on the next launch, only while the delay lasts.
   }

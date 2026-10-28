@@ -1,6 +1,7 @@
 export { Config } from "@/config/config"
 export { Server } from "./server/server"
 export { Scheduler } from "./schedule/scheduler"
+export { SessionRetention } from "./session/retention/service"
 export { InstanceRuntime } from "./project/instance-runtime"
 export { bootstrap } from "./cli/bootstrap"
 export { Database } from "@flynncode/core/database/database"

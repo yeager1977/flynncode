@@ -3,6 +3,7 @@ import { PermissionV1 } from "@flynncode/core/v1/permission"
 import { Slug } from "@flynncode/core/util/slug"
 import { SessionV1 } from "@flynncode/core/v1/session"
 import { serviceUse } from "@flynncode/core/effect/service-use"
+import { KeyedMutex } from "@flynncode/core/effect/keyed-mutex"
 import path from "path"
 import { BackgroundJob } from "@/background/job"
 import { Decimal } from "decimal.js"
@@ -34,12 +35,13 @@ import { InstanceState } from "@/effect/instance-state"
 import { Snapshot } from "@/snapshot"
 import { ProjectV2 } from "@flynncode/core/project"
 import { WorkspaceV2 } from "@flynncode/core/workspace"
+import { Location } from "@flynncode/core/location"
 import { SessionID, MessageID, PartID } from "./schema"
 
 import type { Provider } from "@/provider/provider"
 import { Global } from "@flynncode/core/global"
 import { Effect, Layer, Option, Context, Schema, Types } from "effect"
-import { NonNegativeInt, optional } from "@flynncode/core/schema"
+import { AbsolutePath, NonNegativeInt, optional } from "@flynncode/core/schema"
 import { normalizeFolders, MaxExtras } from "@flynncode/core/project/folders"
 import { SessionFolders } from "@flynncode/core/session/folders"
 import { FSUtil } from "@flynncode/core/fs-util"
@@ -230,6 +232,7 @@ const Model = Schema.Struct({
 })
 
 export const Metadata = Schema.Record(Schema.String, Schema.Any)
+export type Metadata = typeof Metadata.Type
 
 export const Info = Schema.Struct({
   id: SessionID,
@@ -460,6 +463,11 @@ export interface Interface {
   readonly setDirectory: (input: { sessionID: SessionID; directory: string }) => Effect.Effect<void>
   readonly setArchived: (input: { sessionID: SessionID; time?: number }) => Effect.Effect<void>
   readonly setMetadata: (input: typeof SetMetadataInput.Type) => Effect.Effect<void>
+  /** Reads the metadata and writes `update`'s result under the session's write lock; other keys stay as stored. */
+  readonly updateMetadata: (input: {
+    sessionID: SessionID
+    update: (metadata: Metadata) => Metadata
+  }) => Effect.Effect<Info, NotFound>
   readonly setAgentModel: (input: {
     sessionID: SessionID
     agent: string
@@ -688,6 +696,20 @@ const layer: Layer.Layer<
       return rows.map(fromRow)
     })
 
+    const detachedLocation = Effect.fnUntraced(function* (session: Info) {
+      const project = yield* db
+        .select({ worktree: ProjectTable.worktree })
+        .from(ProjectTable)
+        .where(eq(ProjectTable.id, session.projectID))
+        .get()
+        .pipe(Effect.orDie)
+      if (!project) return undefined
+      return new Location.Info({
+        directory: AbsolutePath.make(session.directory),
+        project: { id: session.projectID, directory: AbsolutePath.make(project.worktree) },
+      })
+    })
+
     const remove: Interface["remove"] = Effect.fnUntraced(function* (sessionID: SessionID) {
       const session = yield* get(sessionID)
       try {
@@ -699,6 +721,9 @@ const layer: Layer.Layer<
         )
 
         if (hasInstance) yield* cancelBackgroundJobs(background, sessionID)
+        // Without an instance (session retention, a folder that is gone) the delete is still routed to the session's
+        // folder, so its clients drop it.
+        const location = hasInstance ? undefined : yield* detachedLocation(session)
         const kids = yield* children(sessionID)
         for (const child of kids) {
           yield* remove(child.id)
@@ -707,7 +732,11 @@ const layer: Layer.Layer<
         if ((yield* schedules.removeSession(sessionID)) > 0)
           yield* ScheduleStore.publishUpdated({ directory: session.directory, sessionID })
 
-        yield* events.publish(SessionV1.Event.Deleted, { sessionID, info: session })
+        yield* events.publish(
+          SessionV1.Event.Deleted,
+          { sessionID, info: session },
+          location ? { location } : undefined,
+        )
         // SessionEnd is always synchronous with a 3s cap; output is advisory only.
         // Stored hook context is cleared and background hook fibers are cancelled.
         const maybeEndHooks = yield* Effect.serviceOption(HooksRunner.Service)
@@ -843,7 +872,15 @@ const layer: Layer.Layer<
       return session
     })
 
-    const patch = (sessionID: SessionID, info: Patch) =>
+    // `patch` reads the whole session and writes it back, so two concurrent writes to one session would drop each
+    // other's change. One lock per session serializes this process's writes; `updateMetadata` reads inside the same
+    // lock, so a change to one metadata key keeps every key another writer of this process set. Writers in other
+    // processes are not covered.
+    const writes = KeyedMutex.makeUnsafe<SessionID>()
+
+    const patch = (sessionID: SessionID, info: Patch) => writes.withLock(sessionID)(write(sessionID, info))
+
+    const write = (sessionID: SessionID, info: Patch) =>
       Effect.gen(function* () {
         const current = yield* get(sessionID)
         const next = {
@@ -883,6 +920,22 @@ const layer: Layer.Layer<
 
     const setMetadata = Effect.fn("Session.setMetadata")(function* (input: typeof SetMetadataInput.Type) {
       yield* patch(input.sessionID, { metadata: input.metadata, time: { updated: Date.now() } }).pipe(Effect.orDie)
+    })
+
+    const updateMetadata = Effect.fn("Session.updateMetadata")(function* (input: {
+      sessionID: SessionID
+      update: (metadata: Metadata) => Metadata
+    }) {
+      return yield* writes.withLock(input.sessionID)(
+        Effect.gen(function* () {
+          const current = yield* get(input.sessionID)
+          yield* write(input.sessionID, {
+            metadata: input.update({ ...current.metadata }),
+            time: { updated: Date.now() },
+          })
+          return yield* get(input.sessionID)
+        }),
+      )
     })
 
     const setAgentModel = Effect.fn("Session.setAgentModel")(function* (input: {
@@ -1037,6 +1090,7 @@ const layer: Layer.Layer<
       setDirectory,
       setArchived,
       setMetadata,
+      updateMetadata,
       setAgentModel,
       setPermission,
       setRevert,
