@@ -8,6 +8,7 @@ import {
   createEffect,
   createMemo,
   createResource,
+  on,
   onCleanup,
   type ParentProps,
   Show,
@@ -20,7 +21,8 @@ import { useSync } from "@/context/sync"
 import { decode64 } from "@/utils/base64"
 import { Schema } from "effect"
 import type { ServerConnection } from "@/context/server"
-import { sessionHref } from "@/utils/session-route"
+import { legacySessionHref, sessionHref } from "@/utils/session-route"
+import { sessionFollowHref } from "@/pages/session/session-follow"
 import { useServerSync } from "@/context/server-sync"
 
 export function DirectoryDataProvider(
@@ -66,6 +68,34 @@ export function DirectoryDataProvider(
     const path = location.pathname.slice(slug().length + 1)
     navigate(`/${base64Encode(next)}${path}${location.search}${location.hash}`, { replace: true })
   })
+
+  // The classic route encodes the directory, so a session whose folder the
+  // agent switched (enter_worktree/exit_worktree) must be followed there. The
+  // session store is server-wide, so streaming carries over; the target route
+  // only re-binds the directory-scoped providers. The server-scoped route
+  // derives its directory from the session and follows on its own.
+  createEffect(
+    on(
+      () => {
+        const id = params.id
+        if (props.draftID || props.server?.() || !id) return undefined
+        return { id, directory: serverSync().session.lineage.peek(id)?.session.directory }
+      },
+      (next, previous) => {
+        if (!next || next.id !== previous?.id) return
+        const target = sessionFollowHref({
+          routeDirectory: directory(),
+          sessionID: next.id,
+          from: previous.directory,
+          to: next.directory,
+          href: (session) => legacySessionHref(session.directory, session.id),
+        })
+        if (!target || !next.directory) return
+        serverSync().child(next.directory, { bootstrap: true })
+        navigate(`${target}${location.search}${location.hash}`, { replace: true })
+      },
+    ),
+  )
 
   createResource(
     () => params.id,

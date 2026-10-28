@@ -66,6 +66,7 @@ import { ToolStatusTitle } from "./tool-status-title"
 import { patchFiles } from "./apply-patch-file"
 import { partDefaultOpen } from "./part-default-open"
 import { toolSearchCard } from "./tool-search-card"
+import { worktreeDivider } from "./worktree-divider"
 import { animate } from "motion"
 import { attached, inline, kind, typeLabel } from "./message-file"
 import { readPartText } from "./message-part-text"
@@ -2218,6 +2219,26 @@ ToolRegistry.register({
     return <BasicTool {...props} icon="mcp" trigger={{ title: title(), subtitle: subtitle() }} hideDetails />
   },
 })
+
+// Entering or leaving a worktree is one compact line in the transcript, like
+// the scheduled-prompt and hook dividers; a failed or refused call keeps the
+// ordinary card so its message stays readable.
+for (const name of ["enter_worktree", "exit_worktree"]) {
+  ToolRegistry.register({
+    name,
+    render(props) {
+      const i18n = useI18n()
+      const divider = createMemo(() => (props.status === "completed" ? worktreeDivider(props.metadata) : undefined))
+      const title = () => {
+        const value = divider()
+        if (value) return i18n.t(value.key, value.params)
+        return i18n.t(name === "enter_worktree" ? "ui.tool.worktree.enter" : "ui.tool.worktree.exit")
+      }
+
+      return <BasicTool {...props} icon="branch" trigger={{ title: title() }} hideDetails={divider() !== undefined} />
+    },
+  })
+}
 
 const SHELL_PROMOTE_AFTER_MS = 10_000
 
