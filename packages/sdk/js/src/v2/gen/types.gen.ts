@@ -97,6 +97,7 @@ export type Event =
   | EventShellBackgroundExited
   | EventSessionScheduleUpdated
   | EventSessionStatusline
+  | EventSessionRetentionUpdated
   | EventServerConnected
   | EventGlobalDisposed
   | EventServerInstanceDisposed
@@ -1700,6 +1701,13 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "session.retention.updated"
+        properties: {
+          [key: string]: unknown
+        }
+      }
+    | {
+        id: string
         type: "server.connected"
         properties: {
           [key: string]: unknown
@@ -2062,6 +2070,7 @@ export type Config = {
     ignore?: Array<string>
   }
   snapshot?: boolean
+  cleanupPeriodDays?: number
   plugin?: Array<
     | string
     | [
@@ -3741,6 +3750,18 @@ export type SessionSchedule = {
   expiresAt?: number
 }
 
+export type SessionRetentionExpiring = {
+  sessionID: string
+  deletesAt: number
+}
+
+export type SessionRetention = {
+  cleanupPeriodDays: number
+  firstRunAt?: number
+  pendingFirstRunCount?: number
+  expiring: Array<SessionRetentionExpiring>
+}
+
 export type SessionStatusLine = {
   lines: Array<string>
   updatedAt?: number
@@ -4034,6 +4055,7 @@ export type V2Event =
   | ShellBackgroundExited
   | SessionScheduleUpdated
   | SessionStatusline
+  | SessionRetentionUpdated
   | ServerConnected
   | GlobalDisposed
 
@@ -7316,6 +7338,23 @@ export type SessionStatusline = {
   }
 }
 
+export type SessionRetentionUpdated = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.retention.updated"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    [key: string]: unknown
+  }
+}
+
 export type ServerConnected = {
   id: string
   metadata?: {
@@ -8349,6 +8388,14 @@ export type EventSessionStatusline = {
   properties: {
     sessionID: string
     lines: Array<string>
+  }
+}
+
+export type EventSessionRetentionUpdated = {
+  id: string
+  type: "session.retention.updated"
+  properties: {
+    [key: string]: unknown
   }
 }
 
@@ -13396,6 +13443,70 @@ export type SessionSchedulesDeleteResponses = {
 }
 
 export type SessionSchedulesDeleteResponse = SessionSchedulesDeleteResponses[keyof SessionSchedulesDeleteResponses]
+
+export type SessionRetentionGetData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/retention"
+}
+
+export type SessionRetentionGetErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type SessionRetentionGetError = SessionRetentionGetErrors[keyof SessionRetentionGetErrors]
+
+export type SessionRetentionGetResponses = {
+  /**
+   * The retention period and the sessions due for deletion
+   */
+  200: SessionRetention
+}
+
+export type SessionRetentionGetResponse = SessionRetentionGetResponses[keyof SessionRetentionGetResponses]
+
+export type SessionKeepData = {
+  body?: {
+    keep: boolean
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/keep"
+}
+
+export type SessionKeepErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionKeepError = SessionKeepErrors[keyof SessionKeepErrors]
+
+export type SessionKeepResponses = {
+  /**
+   * The updated session
+   */
+  200: Session
+}
+
+export type SessionKeepResponse = SessionKeepResponses[keyof SessionKeepResponses]
 
 export type SessionStatuslineGetData = {
   body?: never

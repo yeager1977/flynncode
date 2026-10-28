@@ -60,6 +60,7 @@ import { SessionDiffSweep } from "@/storage/session-diff-sweep"
 import { BackgroundShells } from "@/shell/background/service"
 import { ScheduleStore } from "@/schedule/store"
 import { Scheduler } from "@/schedule/scheduler"
+import { SessionRetention } from "@/session/retention/service"
 import { StatusLine } from "@/statusline/service"
 import { ToolRegistry } from "@/tool/registry"
 import { Truncate } from "@/tool/truncate"
@@ -121,6 +122,7 @@ import { providerHandlers } from "./handlers/provider"
 import { pullRequestHandlers } from "./handlers/pull-request"
 import { backgroundShellsHandlers } from "./handlers/background-shells"
 import { sessionSchedulesHandlers } from "./handlers/session-schedules"
+import { sessionRetentionHandlers } from "./handlers/session-retention"
 import { sessionStatusLineHandlers } from "./handlers/session-statusline"
 import { ptyConnectHandlers, ptyHandlers } from "./handlers/pty"
 import { questionHandlers } from "./handlers/question"
@@ -203,6 +205,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     workspaceHandlers,
     backgroundShellsHandlers,
     sessionSchedulesHandlers,
+    sessionRetentionHandlers,
     sessionStatusLineHandlers,
   ]),
 )
@@ -268,6 +271,8 @@ export const app = LayerNode.group([
   ScheduleStore.node,
   // Polls every 15 s while this graph lives; only the machine-wide leader (an opted-in long-lived server) ticks.
   Scheduler.node,
+  // Hourly from 5 minutes after launch; only the database's leader (an opted-in long-lived server) deletes.
+  SessionRetention.node,
   // Process-global: idle until a client asks for a session whose instance has a status line.
   StatusLine.node,
   Snapshot.node,

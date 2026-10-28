@@ -51,6 +51,13 @@ describe("getWorkspaceRouteSessionID", () => {
     expect(getWorkspaceRouteSessionID(url)).toBeNull()
   })
 
+  // Retention belongs to this machine's database, so a workspace never proxies it.
+  test("returns null for /session/retention, which is served locally", () => {
+    const url = new URL("http://localhost/session/retention")
+    expect(getWorkspaceRouteSessionID(url)).toBeNull()
+    expect(isLocalWorkspaceRoute("GET", "/session/retention")).toBe(true)
+  })
+
   test("returns null for non-session paths", () => {
     const url = new URL("http://localhost/config")
     expect(getWorkspaceRouteSessionID(url)).toBeNull()

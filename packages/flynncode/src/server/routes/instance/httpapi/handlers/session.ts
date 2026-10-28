@@ -10,6 +10,7 @@ import { SessionCompaction } from "@/session/compaction"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionPrompt } from "@/session/prompt"
 import { HooksRunner } from "@/hooks/runner"
+import { SessionRemoval } from "@/session/removal"
 import { SessionRevert } from "@/session/revert"
 import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
@@ -18,7 +19,6 @@ import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { Project } from "@/project/project"
 import { Worktree } from "@/worktree"
-import { disposeSessionWorktree } from "@/worktree/dispose-bound"
 import { NamedError } from "@flynncode/core/util/error"
 import { FSUtil } from "@flynncode/core/fs-util"
 import { normalizeFolders, MaxExtras } from "@flynncode/core/project/folders"
@@ -87,30 +87,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const instances = yield* InstanceStore.Service
     const folderSwitch = yield* SessionFolderSwitch.Service
 
-    // Dispose-on-archive/delete: a session carrying a disposable worktree
-    // binding in its metadata removes that worktree's folder once every
-    // session bound to it is archived (or gone), no loaded instance runs
-    // there, and nothing would be lost (clean, every commit reachable from
-    // another ref). The task branch is kept; a kept worktree shows on the
-    // Cleanup page.
-    // Best-effort — the archive/delete already succeeded, so failures here
-    // never fail the request.
-    const disposeWorktreeOf = Effect.fn("SessionHttpApi.disposeWorktreeOf")(function* (info: Session.Info) {
-      const removed = yield* disposeSessionWorktree({
-        sessions: session,
-        worktrees: worktreeSvc,
-        store: instances,
-        status: statusSvc,
-        fs,
-        info,
-      })
-      if (removed === undefined) return
-      const inst = yield* InstanceState.context
-      yield* project.removeSandbox(inst.project.id, removed).pipe(Effect.ignore)
-      // Keep-N retention also runs when sessions archive, not only on
-      // worktree creation; best-effort like the dispose above.
-      yield* worktreeSvc.retire.pipe(Effect.ignore)
-    })
+    const removal = { sessions: session, worktrees: worktreeSvc, store: instances, status: statusSvc, fs, project }
 
     const list = Effect.fn("SessionHttpApi.list")(function* (ctx: { query: typeof ListQuery.Type }) {
       const directory = ctx.query.directory ? yield* InstanceState.directory : undefined
@@ -232,15 +209,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     })
 
     const remove = Effect.fn("SessionHttpApi.remove")(function* (ctx: { params: { sessionID: SessionID } }) {
-      // Read before removal: the binding lives in the session's metadata.
-      // Tolerate unreadable (broken) sessions; remove must still work for them.
-      const info = yield* session.get(ctx.params.sessionID).pipe(Effect.option)
-      yield* SessionError.mapStorageNotFound(session.remove(ctx.params.sessionID))
-      // catchCause, not ignore: a defect in disposal must not turn the completed delete into a 500.
-      if (Option.isSome(info))
-        yield* disposeWorktreeOf(info.value).pipe(
-          Effect.catchCause((cause) => Effect.logWarning("worktree disposal failed", { cause: Cause.pretty(cause) })),
-        )
+      yield* SessionError.mapStorageNotFound(SessionRemoval.remove(removal, ctx.params.sessionID))
       return true
     })
 
@@ -264,7 +233,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       if (ctx.payload.time?.archived !== undefined) {
         yield* session.setArchived({ sessionID: ctx.params.sessionID, time: ctx.payload.time.archived })
         yield* session.get(ctx.params.sessionID).pipe(
-          Effect.flatMap(disposeWorktreeOf),
+          Effect.flatMap((info) => SessionRemoval.disposeWorktree(removal, info)),
           Effect.catchCause((cause) => Effect.logWarning("worktree disposal failed", { cause: Cause.pretty(cause) })),
         )
         // Archived sessions drop out of the instance's attached-folder union.

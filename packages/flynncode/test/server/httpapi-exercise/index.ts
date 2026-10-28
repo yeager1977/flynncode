@@ -697,6 +697,29 @@ const scenarios: Scenario[] = [
       array(body.lines)
       check(body.lines.length === 0, "a session without a status line should have no lines")
     }),
+  http.protected.get("/session/retention", "session.retention.get").json(200, (body) => {
+    object(body)
+    array(body.expiring)
+    check(body.cleanupPeriodDays === 30, "retention should default to 30 days")
+  }),
+  http.protected
+    .patch("/session/{sessionID}/keep", "session.keep")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Keep me" }))
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/keep", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { keep: true },
+    }))
+    .json(
+      200,
+      (body) => {
+        object(body)
+        object(body.metadata)
+        check(body.metadata.keep === true, "a kept session should carry keep in its metadata")
+      },
+      "status",
+    ),
   // Destructive route: the auth probe targets a job that cannot exist, so a probe that got through would cancel nothing.
   http.protected
     .delete("/session/{sessionID}/schedules/{jobID}", "session.schedules.delete")

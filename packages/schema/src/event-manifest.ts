@@ -24,6 +24,7 @@ import { Reference } from "./reference"
 import { ServerEvent } from "./server-event"
 import { SessionCompactionEvent } from "./session-compaction-event"
 import { SessionEvent } from "./session-event"
+import { SessionRetention } from "./session-retention"
 import { SessionSchedule } from "./session-schedule"
 import { SessionStatusLine } from "./session-statusline"
 import { SessionStatusEvent } from "./session-status-event"
@@ -86,6 +87,7 @@ export const Definitions = Event.inventory(
   ...ShellBackground.Event.Definitions,
   ...SessionSchedule.Event.Definitions,
   ...SessionStatusLine.Event.Definitions,
+  ...SessionRetention.Event.Definitions,
   ...ServerEvent.Definitions,
 )
 export const Latest = Event.latest(Definitions)

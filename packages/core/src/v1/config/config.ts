@@ -73,6 +73,10 @@ export const Info = Schema.Struct({
     description:
       "Enable or disable snapshot tracking. When false, filesystem snapshots are not recorded and undoing or reverting will not undo/redo file changes. Defaults to true.",
   }),
+  cleanupPeriodDays: Schema.optional(PositiveInt).annotate({
+    description:
+      "Delete a session and its sub-agent sessions after this many days without activity, unless kept (default: 30, minimum: 1). Deletions sync to paired machines like a manual delete",
+  }),
   plugin: Schema.optional(Schema.mutable(Schema.Array(ConfigPluginV1.Spec))),
   share: Schema.optional(Schema.Literals(["manual", "auto", "disabled"])).annotate({
     description:

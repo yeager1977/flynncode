@@ -10,6 +10,7 @@ import { ComputerUseExecutor } from "@/computer-use"
 import { Question } from "@/question"
 import { BackgroundShellsApi } from "./groups/background-shells"
 import { SessionSchedulesApi } from "./groups/session-schedules"
+import { SessionRetentionApi } from "./groups/session-retention"
 import { SessionStatusLineApi } from "./groups/session-statusline"
 import { ConfigApi } from "./groups/config"
 import { ComputerUseApi } from "./groups/computer-use"
@@ -88,6 +89,7 @@ export const InstanceHttpApi = HttpApi.make("opencode-instance")
   .addHttpApi(WorkspaceApi)
   .addHttpApi(BackgroundShellsApi)
   .addHttpApi(SessionSchedulesApi)
+  .addHttpApi(SessionRetentionApi)
   .addHttpApi(SessionStatusLineApi)
   .middleware(SchemaErrorMiddleware)
 

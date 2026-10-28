@@ -5,6 +5,7 @@ import { EventV2 } from "@flynncode/core/event"
 import { Installation } from "@/installation"
 import { readRoutineRuns } from "@/plugin/routines"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
+import { SessionRetention } from "@/session/retention/service"
 import { InstallationVersion } from "@flynncode/core/installation/version"
 import { Effect, Queue } from "effect"
 import * as Stream from "effect/Stream"
@@ -79,6 +80,8 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     const configUpdate = Effect.fn("GlobalHttpApi.configUpdate")(function* (ctx) {
       const result = yield* config.updateGlobal(ctx.payload)
       if (result.changed) bridge.fork(disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true, deferBusy: true }))
+      // The next pass reads the new period; clients refetch their deletion hints now.
+      if (result.changed && ctx.payload.cleanupPeriodDays !== undefined) yield* SessionRetention.publishUpdated()
       return result.info
     })
 

@@ -237,6 +237,8 @@ import type {
   SessionGetResponses,
   SessionInitErrors,
   SessionInitResponses,
+  SessionKeepErrors,
+  SessionKeepResponses,
   SessionListErrors,
   SessionListResponses,
   SessionMessageErrors,
@@ -247,6 +249,8 @@ import type {
   SessionPromptAsyncResponses,
   SessionPromptErrors,
   SessionPromptResponses,
+  SessionRetentionGetErrors,
+  SessionRetentionGetResponses,
   SessionRevertErrors,
   SessionRevertResponses,
   SessionSchedulesDeleteErrors,
@@ -4391,6 +4395,38 @@ export class Schedules extends HeyApiClient {
   }
 }
 
+export class Retention extends HeyApiClient {
+  /**
+   * Get session retention
+   *
+   * Return cleanupPeriodDays, the root sessions whose trees are deleted within 3 days, and a delayed first run. Changes arrive as session.retention.updated events.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionRetentionGetResponses, SessionRetentionGetErrors, ThrowOnError>({
+      url: "/session/retention",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Statusline extends HeyApiClient {
   /**
    * Get the status line
@@ -5438,6 +5474,45 @@ export class Session2 extends HeyApiClient {
     })
   }
 
+  /**
+   * Keep a session
+   *
+   * Set or clear `keep` in a root session's metadata, keeping the rest of it. A kept session and its sub-agent sessions are never deleted for inactivity. 400 for a sub-agent session.
+   */
+  public keep<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      keep?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "keep" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<SessionKeepResponses, SessionKeepErrors, ThrowOnError>({
+      url: "/session/{sessionID}/keep",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
   private _folders?: Folders
   get folders2(): Folders {
     return (this._folders ??= new Folders({ client: this.client }))
@@ -5451,6 +5526,11 @@ export class Session2 extends HeyApiClient {
   private _schedules?: Schedules
   get schedules(): Schedules {
     return (this._schedules ??= new Schedules({ client: this.client }))
+  }
+
+  private _retention?: Retention
+  get retention(): Retention {
+    return (this._retention ??= new Retention({ client: this.client }))
   }
 
   private _statusline?: Statusline
