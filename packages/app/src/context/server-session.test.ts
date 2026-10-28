@@ -1400,6 +1400,22 @@ describe("server session", () => {
     expect(store.data.message.child).toEqual([latest])
   })
 
+  test("pages older history 50 messages at a time", async () => {
+    const latest = userMessage("message-2", { time: { created: 2 } })
+    const older = userMessage("message-1")
+    const client = messageClient(
+      response([{ info: latest, parts: [] }], "older"),
+      response([{ info: older, parts: [] }]),
+    )
+    const store = createServerSession(client)
+    await store.sync("child")
+
+    await store.history.loadMore("child")
+
+    expect(client.requests[1]).toEqual({ sessionID: "child", limit: 50, before: "older" })
+    expect(store.data.message.child).toEqual([older, latest])
+  })
+
   test("does not scan cached messages for user roots during history prepend", async () => {
     const guard = { active: false }
     const latest = new Proxy(userMessage("message-2", { time: { created: 2 } }), {

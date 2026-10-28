@@ -9,6 +9,8 @@ function setup(input: { offset: number; anchored: boolean; margin?: number }) {
   document.body.append(root)
   const writes: number[] = []
   const layout = { reads: 0 }
+  const changes = { count: 0 }
+  const anchor = createResizeAnchor({ shouldAnchorBottom: () => input.anchored })
   const options: VirtualizerOptions<HTMLDivElement, HTMLDivElement> = {
     count: 5,
     estimateSize: () => 60,
@@ -19,9 +21,12 @@ function setup(input: { offset: number; anchored: boolean; margin?: number }) {
     scrollEndThreshold: 80,
     scrollMargin: input.margin ?? 0,
     getScrollElement: () => root,
-    scrollToFn: timelineScrollTo(() => content),
+    scrollToFn: anchor.scrollTo(timelineScrollTo(() => content)),
     observeElementRect: () => {},
     observeElementOffset: () => {},
+    onChange: () => {
+      changes.count += 1
+    },
   }
   const virtualizer = new Virtualizer(options)
   // Happy DOM has no layout: report the virtual content height, count every read like a forced layout, and record
@@ -38,16 +43,29 @@ function setup(input: { offset: number; anchored: boolean; margin?: number }) {
       return 200
     },
   })
+  const rect = root.getBoundingClientRect.bind(root)
+  root.getBoundingClientRect = () => {
+    layout.reads += 1
+    return rect()
+  }
+  const query = root.querySelectorAll.bind(root)
+  root.querySelectorAll = ((selector: string) => {
+    layout.reads += 1
+    return query(selector)
+  }) as typeof root.querySelectorAll
   root.scrollTo = ((target: ScrollToOptions) => writes.push(target.top ?? 0)) as typeof root.scrollTo
-  createResizeAnchor({ root: () => root, shouldAnchorBottom: () => input.anchored }).attach(virtualizer)
+  anchor.attach(virtualizer)
   virtualizer._willUpdate()
   virtualizer.getVirtualItems()
   writes.length = 0
   layout.reads = 0
+  changes.count = 0
   return {
     virtualizer,
+    anchor,
     writes,
     layout,
+    changes,
     append() {
       virtualizer.setOptions({ ...options, count: 6 })
       virtualizer._willUpdate()
@@ -63,10 +81,36 @@ describe("timeline bottom lock", () => {
     const view = setup({ offset: 100, anchored: true })
 
     view.virtualizer.resizeItem(4, 110)
+    await settle()
     view.virtualizer.resizeItem(4, 180)
     await settle()
 
     expect(view.writes).toEqual([150, 220])
+    expect(view.layout.reads).toBe(0)
+    view.dispose()
+  })
+
+  test("measurements reported together write the scroll position and notify once, after the batch", async () => {
+    const view = setup({ offset: 100, anchored: true })
+
+    view.virtualizer.resizeItem(3, 100)
+    view.virtualizer.resizeItem(4, 180)
+    expect(view.writes).toEqual([])
+    expect(view.changes.count).toBe(0)
+    await settle()
+
+    expect(view.writes).toEqual([260])
+    expect(view.changes.count).toBe(1)
+    expect(view.layout.reads).toBe(0)
+    view.dispose()
+  })
+
+  test("a jump larger than the viewport pins the rows on screen without reading layout", () => {
+    const view = setup({ offset: 0, anchored: false })
+
+    view.virtualizer.resizeItem(4, 500)
+
+    expect(view.anchor.pinned()).toEqual([0, 1, 2, 3])
     expect(view.layout.reads).toBe(0)
     view.dispose()
   })

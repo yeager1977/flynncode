@@ -15,7 +15,7 @@ import type {
 } from "@flynncode/sdk/v2/client"
 import { expect, type Page } from "@playwright/test"
 import { Schema } from "effect"
-import { mockOpenCodeServer } from "../../utils/mock-server"
+import { mockOpenCodeServer, type MockServerConfig } from "../../utils/mock-server"
 import { installSseTransport } from "../../utils/sse-transport"
 import { expectSessionTitle } from "../../utils/waits"
 
@@ -98,6 +98,9 @@ export async function setupTimeline(
     deviceScaleFactor?: number
     seedHistory?: boolean
     protocol?: "v1" | "v2"
+    // Serve the messages in pages (newest first) instead of all at once.
+    paged?: boolean
+    beforeMessagesResponse?: MockServerConfig["beforeMessagesResponse"]
   } = {},
 ) {
   const sessions = input.sessions ?? [session()]
@@ -121,9 +124,8 @@ export async function setupTimeline(
     provider: provider(),
     sessions,
     sessionStatus: { [sessionID]: initialStatus },
-    pageMessages: () => ({
-      items: messages,
-    }),
+    pageMessages: (_sessionID, limit, before) => (input.paged ? pageOf(messages, limit, before) : { items: messages }),
+    beforeMessagesResponse: input.beforeMessagesResponse,
   })
   await page.addInitScript((settings) => {
     localStorage.setItem(
@@ -298,6 +300,17 @@ export async function waitForVisualSettle(page: Page, selectors: string[], stabl
     },
     { selectors, stableFrames },
   )
+}
+
+function pageOf(messages: TimelineMessage[], limit: number, before?: string) {
+  const end = before
+    ? Math.max(
+        0,
+        messages.findIndex((message) => message.info.id === before),
+      )
+    : messages.length
+  const start = Math.max(0, end - limit)
+  return { items: messages.slice(start, end), cursor: start > 0 ? messages[start]!.info.id : undefined }
 }
 
 export function historyMessages(count: number): TimelineMessage[] {

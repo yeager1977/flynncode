@@ -1851,46 +1851,34 @@ export default function Page() {
     },
   )
 
-  let captureHistoryAnchor = () => {}
-  let restoreHistoryAnchor = (_done: boolean) => {}
+  // Set by the timeline's history sentinel: the top of the loaded history is within about two screens.
+  let historyNearTop = false
+  let refreshHistorySentinel = () => {}
   const historyRequests = new Set<string>()
-  let historyContinuationFrame: number | undefined
   const loadOlder = async () => {
     const owner = sessionOwnership.capture()
     if (historyLoading() || historyRequests.has(owner.key)) return
     historyRequests.add(owner.key)
     const before = timeline.messages().length
     try {
-      await timeline.history.loadOlder({
-        before: () => owner.run(captureHistoryAnchor),
-        after: (done) => owner.run(() => restoreHistoryAnchor(done)),
-      })
+      await timeline.history.loadOlder()
     } finally {
       historyRequests.delete(owner.key)
     }
     if (!owner.current() || timeline.messages().length <= before) return
-    if (!autoScroll.userScrolled() || !scroller || scroller.scrollTop >= 200 || !historyMore()) return
-    if (historyContinuationFrame !== undefined) cancelAnimationFrame(historyContinuationFrame)
-    historyContinuationFrame = requestAnimationFrame(() => {
-      historyContinuationFrame = undefined
-      owner.run(onHistoryScroll)
-    })
+    // The sentinel reports only changes; observing it again reports where it is now, so a page that still leaves
+    // the reader near the top loads the next one.
+    refreshHistorySentinel()
   }
   const onHistoryScroll = () => {
-    if (
-      historyRequests.has(sessionOwnership.key()) ||
-      historyLoading() ||
-      !autoScroll.userScrolled() ||
-      !scroller ||
-      scroller.scrollTop >= 200
-    )
-      return
+    if (historyRequests.has(sessionOwnership.key()) || historyLoading() || !autoScroll.userScrolled()) return
+    if (!historyNearTop || !historyMore()) return
     void loadOlder()
   }
-
-  onCleanup(() => {
-    if (historyContinuationFrame !== undefined) cancelAnimationFrame(historyContinuationFrame)
-  })
+  const onHistoryNearTop = (near: boolean) => {
+    historyNearTop = near
+    onHistoryScroll()
+  }
 
   fill = () => {
     if (fillFrame !== undefined) return
@@ -2371,6 +2359,7 @@ export default function Page() {
                     hasScrollGesture={hasScrollGesture}
                     onUserScroll={markUserScroll}
                     onHistoryScroll={onHistoryScroll}
+                    onHistoryNearTop={onHistoryNearTop}
                     onAutoScrollInteraction={autoScroll.handleInteraction}
                     shouldAnchorBottom={() =>
                       !location.hash && !store.messageId && !ui.pendingMessage && !autoScroll.userScrolled()
@@ -2383,9 +2372,8 @@ export default function Page() {
                       if (root) scheduleScrollState(root)
                     }}
                     userMessages={visibleUserMessages()}
-                    setHistoryAnchor={(handlers) => {
-                      captureHistoryAnchor = handlers.capture
-                      restoreHistoryAnchor = handlers.restore
+                    setHistoryRefresh={(fn) => {
+                      refreshHistorySentinel = fn
                     }}
                     anchor={anchor}
                     setRevealMessage={(fn) => {

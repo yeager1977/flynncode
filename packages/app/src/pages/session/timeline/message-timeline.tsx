@@ -299,6 +299,8 @@ export function MessageTimeline(props: {
   hasScrollGesture: () => boolean
   onUserScroll: () => void
   onHistoryScroll: () => void
+  // Reports whether the top of the loaded history is within about two screens of the viewport.
+  onHistoryNearTop: (near: boolean) => void
   onAutoScrollInteraction: (event: MouseEvent) => void
   shouldAnchorBottom: () => boolean
   centered: boolean
@@ -307,7 +309,8 @@ export function MessageTimeline(props: {
   anchor: (id: string) => string
   setRevealMessage?: (fn: (id: string) => void) => void
   setScrollToEnd?: (fn: () => void) => void
-  setHistoryAnchor?: (handlers: { capture: () => void; restore: (done: boolean) => void }) => void
+  // Receives a function that makes the history sentinel report its current position again.
+  setHistoryRefresh?: (fn: () => void) => void
 }) {
   let touchGesture: number | undefined
 
@@ -406,73 +409,10 @@ export function MessageTimeline(props: {
   const timelineRowByKey = projection.rowByKey
   const timelineRows = projection.rows
 
-  let prependAnchor: { key: string; offset: number } | undefined
-  let prependAnchorFrame: number | undefined
-  let prependLoading = false
-  const clearPrependAnchor = () => {
-    prependLoading = false
-    prependAnchor = undefined
-    if (prependAnchorFrame === undefined) return
-    cancelAnimationFrame(prependAnchorFrame)
-    prependAnchorFrame = undefined
-  }
-  const capturePrependAnchor = () => {
-    prependLoading = true
-    updatePrependAnchor()
-  }
-  const updatePrependAnchor = () => {
-    const root = listRoot()
-    if (!root) return
-    const view = root.getBoundingClientRect()
-    const anchor = [...root.querySelectorAll<HTMLElement>("[data-timeline-key]")]
-      .map((element) => ({ element, rect: element.getBoundingClientRect() }))
-      .filter((item) => item.rect.bottom > view.top && item.rect.top < view.bottom)
-      .sort((a, b) => a.rect.top - b.rect.top)[0]
-    if (!anchor) return
-    if (!anchor.element.dataset.timelineKey) return
-    prependAnchor = { key: anchor.element.dataset.timelineKey, offset: anchor.rect.top - view.top }
-  }
-  const restorePrependAnchor = (done: boolean) => {
-    if (done) prependLoading = false
-    applyPrependAnchor()
-  }
-  const applyPrependAnchor = () => {
-    const root = listRoot()
-    if (!root || !prependAnchor) return
-    if (prependAnchorFrame !== undefined) cancelAnimationFrame(prependAnchorFrame)
-    let frames = 0
-    let stable = 0
-    const apply = () => {
-      prependAnchorFrame = undefined
-      const anchor = prependAnchor
-      if (!anchor) return
-      const element = root.querySelector<HTMLElement>(`[data-timeline-key="${CSS.escape(anchor.key)}"]`)
-      const delta = element
-        ? element.getBoundingClientRect().top - root.getBoundingClientRect().top - anchor.offset
-        : undefined
-      if (delta !== undefined && Math.abs(delta) > 0.5) {
-        root.scrollTop += delta
-        stable = 0
-      } else {
-        stable += 1
-      }
-      frames += 1
-      if (stable >= 30 || frames >= 180) {
-        if (!prependLoading) prependAnchor = undefined
-        return
-      }
-      prependAnchorFrame = requestAnimationFrame(apply)
-    }
-    prependAnchorFrame = requestAnimationFrame(apply)
-  }
-
   const [toolOpen, setToolOpen] = createStore<Record<string, boolean | undefined>>(cached?.toolOpen ?? {})
   const [renderOverscan, setRenderOverscan] = createSignal(initialMeasurements?.length || coldBottomMount ? 6 : 20)
   let virtualContent: HTMLDivElement | undefined
-  const resizeAnchor = createResizeAnchor({
-    root: listRoot,
-    shouldAnchorBottom: props.shouldAnchorBottom,
-  })
+  const resizeAnchor = createResizeAnchor({ shouldAnchorBottom: props.shouldAnchorBottom })
   const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
     get count() {
       return timelineRows().length
@@ -482,7 +422,7 @@ export function MessageTimeline(props: {
     initialOffset: () => (props.shouldAnchorBottom() ? Number.MAX_SAFE_INTEGER : 0),
     initialMeasurementsCache: initialMeasurements,
     estimateSize: () => timelineFallbackItemSize,
-    scrollToFn: timelineScrollTo(() => virtualContent),
+    scrollToFn: resizeAnchor.scrollTo(timelineScrollTo(() => virtualContent)),
     get getItemKey() {
       const rows = timelineRows()
       return (index: number) => {
@@ -522,7 +462,31 @@ export function MessageTimeline(props: {
       virtualizer.scrollToIndex(index, { align: "center" })
     })
     props.setScrollToEnd?.(() => virtualizer.scrollToEnd())
-    props.setHistoryAnchor?.({ capture: capturePrependAnchor, restore: restorePrependAnchor })
+  })
+
+  // Older history starts loading when its top comes within about two screens, so a page lands before the reader
+  // reaches it. The observer reads no layout on the main thread.
+  const [historySentinel, setHistorySentinel] = createSignal<HTMLDivElement>()
+  createEffect(() => {
+    const root = listRoot()
+    const sentinel = historySentinel()
+    if (!root || !sentinel) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries.at(-1)
+        if (entry) props.onHistoryNearTop(entry.isIntersecting)
+      },
+      { root, rootMargin: "200% 0px 0px 0px" },
+    )
+    observer.observe(sentinel)
+    props.setHistoryRefresh?.(() => {
+      observer.unobserve(sentinel)
+      observer.observe(sentinel)
+    })
+    onCleanup(() => {
+      observer.disconnect()
+      props.setHistoryRefresh?.(() => {})
+    })
   })
 
   let overscanFrame: number | undefined
@@ -541,8 +505,6 @@ export function MessageTimeline(props: {
     if (timelineRows().length === 0) return
     if (!props.shouldAnchorBottom() || props.hasScrollGesture()) return
     resizeAnchor.cancel()
-    clearPrependAnchor()
-    if (prependAnchorFrame !== undefined) cancelAnimationFrame(prependAnchorFrame)
     // Runs inside a store update: scrolling to the end reads layout, so skip it when the virtualizer already
     // followed the change (an append at the end, or no move at all).
     if (atVirtualEnd(virtualizer)) return
@@ -561,7 +523,6 @@ export function MessageTimeline(props: {
   })
 
   onCleanup(() => {
-    clearPrependAnchor()
     timelineCache.delete(ownerSessionKey)
     timelineCache.set(ownerSessionKey, { measurements: virtualizer.takeSnapshot(), toolOpen: { ...toolOpen } })
     while (timelineCache.size > 16) timelineCache.delete(timelineCache.keys().next().value!)
@@ -569,7 +530,6 @@ export function MessageTimeline(props: {
     if (overscanFrame !== undefined) cancelAnimationFrame(overscanFrame)
     props.setRevealMessage?.(() => {})
     props.setScrollToEnd?.(() => {})
-    props.setHistoryAnchor?.({ capture: () => {}, restore: () => {} })
   })
 
   const [title, setTitle] = createStore({
@@ -594,7 +554,6 @@ export function MessageTimeline(props: {
   }
 
   const handleListWheel = (event: WheelEvent & { currentTarget: HTMLDivElement }) => {
-    if (!prependLoading) clearPrependAnchor()
     const root = event.currentTarget
     const delta = normalizeWheelDelta({
       deltaY: event.deltaY,
@@ -606,7 +565,6 @@ export function MessageTimeline(props: {
   }
 
   const handleListTouchStart = (event: TouchEvent) => {
-    if (!prependLoading) clearPrependAnchor()
     touchGesture = event.touches[0]?.clientY
   }
 
@@ -632,7 +590,6 @@ export function MessageTimeline(props: {
   }
 
   const handleListPointerDown = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
-    if (!prependLoading) clearPrependAnchor()
     props.onMarkScrollGesture(event.target)
   }
 
@@ -646,12 +603,10 @@ export function MessageTimeline(props: {
     if (!key) return
     if (!isScrollKeyTarget(event.target, key)) return
     if (scrollKeyOwner(event.currentTarget, event.target, key) !== event.currentTarget) return
-    if (!prependLoading) clearPrependAnchor()
     props.onMarkScrollGesture(event.currentTarget)
   }
 
   const handleListScroll = (event: Event & { currentTarget: HTMLDivElement }) => {
-    if (prependLoading) updatePrependAnchor()
     props.onScheduleScrollState(event.currentTarget)
     props.onHistoryScroll()
     if (!props.hasScrollGesture()) return
@@ -1417,17 +1372,9 @@ export function MessageTimeline(props: {
     const [ready, setReady] = createSignal(initialItem.size <= timelineFallbackItemSize || !asyncFile())
     let contentMeasureFrame: number | undefined
 
+    // Sizes are cached by row key, so an index shift (older rows prepended) needs no re-measure; the
+    // ResizeObserver reads the current `data-index` when the row's size changes.
     onMount(() => virtualizer.measureElement(element))
-
-    createEffect(
-      on(
-        () => item().index,
-        () => {
-          virtualizer.measureElement(element)
-        },
-        { defer: true },
-      ),
-    )
 
     onCleanup(() => {
       if (contentMeasureFrame !== undefined) cancelAnimationFrame(contentMeasureFrame)
@@ -2013,6 +1960,12 @@ export function MessageTimeline(props: {
             width: "100%",
           }}
         >
+          <div
+            ref={setHistorySentinel}
+            data-timeline-history-sentinel
+            aria-hidden="true"
+            class="absolute top-0 left-0 w-full h-px pointer-events-none"
+          />
           <For each={virtualRowKeys()}>{(rowKey) => <VirtualTimelineRow rowKey={rowKey} />}</For>
           <Show when={timelineRows().length > 0}>
             <div

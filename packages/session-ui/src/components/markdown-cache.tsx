@@ -8,8 +8,13 @@ export type MarkdownCacheEntry = {
   html: string
 }
 
-const max = 200
+// Finished blocks are kept by size, not count, so re-mounted rows of a long session find their sanitized HTML
+// instead of falling back to plain text. Sizes count two bytes per UTF-16 code unit.
+export const markdownCacheBytes = 16 * 1024 * 1024
 const cache = new Map<string, MarkdownCacheEntry>()
+let bytes = 0
+const size = (key: string, value: MarkdownCacheEntry) =>
+  (key.length + value.raw.length + value.hash.length + value.html.length) * 2
 const config = {
   USE_PROFILES: { html: true, mathMl: true },
   SANITIZE_NAMED_PROPS: true,
@@ -42,14 +47,20 @@ export function getCachedMarkdown(key: string) {
 }
 
 export function touchCachedMarkdown(key: string, value: MarkdownCacheEntry) {
-  cache.delete(key)
+  const previous = cache.get(key)
+  if (previous) {
+    cache.delete(key)
+    bytes -= size(key, previous)
+  }
+  const next = size(key, value)
+  if (next > markdownCacheBytes) return
   cache.set(key, value)
-
-  if (cache.size <= max) return
-
-  const first = cache.keys().next().value
-  if (!first) return
-  cache.delete(first)
+  bytes += next
+  for (const [oldest, entry] of cache) {
+    if (bytes <= markdownCacheBytes) return
+    cache.delete(oldest)
+    bytes -= size(oldest, entry)
+  }
 }
 
 export async function preloadMarkdown(text: string, cacheKey: string) {
