@@ -362,6 +362,7 @@ const keys = [
   "settings.sessionHistory.days.title",
   "settings.sessionHistory.days.description",
   "settings.sessionHistory.days.unit",
+  "settings.sessionHistory.paused",
   "settings.sessionHistory.toast.updateFailed.title",
 ] as const
 

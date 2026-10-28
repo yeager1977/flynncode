@@ -42,6 +42,12 @@ export function retentionHint(
   return { key: "session.keep.deletesInDays", days } as const
 }
 
+// Hub sync is set up but has not caught up within a day, so retention passes
+// delete nothing; the settings row says cleanup is paused until it does.
+export function cleanupPaused(retention: Pick<SessionRetention, "syncStale"> | undefined) {
+  return retention?.syncStale === true
+}
+
 // The server schema (a positive integer) stays the authority; this only keeps an
 // invalid draft from being written.
 export function cleanupDaysFromInput(text: string) {

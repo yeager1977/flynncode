@@ -1890,6 +1890,7 @@ export const dict = {
   "settings.sessionHistory.days.description":
     "A session and its sub-agent sessions are deleted after this many days without activity. Sessions marked Keep forever are never deleted. The minimum is 1 day.",
   "settings.sessionHistory.days.unit": "days",
+  "settings.sessionHistory.paused": "Automatic cleanup is paused until sync catches up",
   "settings.sessionHistory.toast.updateFailed.title": "Failed to update session history",
 
   "settings.rateLimit.section.title": "Rate limits",

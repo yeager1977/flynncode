@@ -1,4 +1,13 @@
-import { decide, decidePush, isManifest, type Manifest, type ManifestSession, type SyncAction } from "./sync-decide.ts"
+import {
+  decide,
+  decidePush,
+  isManifest,
+  voids,
+  type Manifest,
+  type ManifestSession,
+  type PushAction,
+  type SyncAction,
+} from "./sync-decide.ts"
 import type { SyncPeer, SyncPrefs } from "./sync-gate.ts"
 import { signedRequest } from "./sync-sign.ts"
 
@@ -198,16 +207,47 @@ export function createSyncWorker(options: {
     const pulls = actions.filter((action): action is Extract<SyncAction, { type: "pull" }> => action.type === "pull")
     const pullIDs = new Set(pulls.map((pull) => pull.id))
     ;[...state.stuck].filter((id) => !pullIDs.has(id)).forEach((id) => state.stuck.delete(id))
-    const batch = pullOrder(pulls, peerManifest.value, state.stuck).slice(0, BATCH_SIZE)
+    // A whole tree is pulled in one cycle, so no machine is left holding part of one (see `pullOrder`).
+    const batch = pullOrder(pulls, peerManifest.value, state.stuck).reduce<Array<{ type: "pull"; id: string }>>(
+      (taken, tree) => (taken.length === 0 || taken.length + tree.length <= BATCH_SIZE ? [...taken, ...tree] : taken),
+      [],
+    )
     // Requests run one at a time so a big first sync never floods either side.
     const results: Array<{ id: string; outcome: string }> = []
+    // Survival is sticky: every retention tombstone of a tree that survived here or on the peer is dropped at once, so
+    // nothing here deletes those members again, whatever order they come back in.
+    for (const root of voids({ local: localManifest.value, peer: peerManifest.value })) {
+      const outcome = await write(`/flynncode-sync/void/${encodeURIComponent(root)}`, {})
+      if (outcome === LOCAL_UNAVAILABLE) return localDown(previous)
+      if (outcome !== "applied") results.push({ id: root, outcome })
+    }
+    // A retention delete removes its tree's members here in one transaction that re-checks the whole tree, so a write
+    // that lands after the manifest was read keeps every member, not only the one it touched.
+    const trees = Map.groupBy(
+      actions.filter(
+        (action): action is Extract<SyncAction, { type: "delete" }> & { root: string } =>
+          action.type === "delete" && action.root !== undefined,
+      ),
+      (action) => action.root,
+    )
+    for (const [root, members] of trees) {
+      const outcome = await write(`/flynncode-sync/delete-tree/${encodeURIComponent(root)}`, {
+        members: members.map((action) => ({
+          id: action.id,
+          timeDeleted: action.timeDeleted,
+          expected: expected(action.id),
+        })),
+      })
+      if (outcome === LOCAL_UNAVAILABLE) return localDown(previous)
+      results.push(...members.map((action) => ({ id: action.id, outcome })))
+    }
     for (const action of actions) {
       if (action.type !== "delete" && action.type !== "archive") continue
+      if (action.type === "delete" && action.root !== undefined) continue
       const outcome =
         action.type === "delete"
           ? await write(`/flynncode-sync/delete/${encodeURIComponent(action.id)}`, {
               timeDeleted: action.timeDeleted,
-              root: action.root,
               expected: expected(action.id),
             })
           : await write(`/flynncode-sync/archive/${encodeURIComponent(action.id)}`, {
@@ -254,38 +294,91 @@ export function createSyncWorker(options: {
     const hubExpected = (id: string) => version(hubSeen.get(id))
     const pushed: Array<{ id: string; outcome: string }> = []
     const pushSkips: SyncStatus["skipped"] = []
-    let pushAbort: { abort: "unreachable" | "unauthorized" | "paused" | "clock" } | undefined = undefined
-    for (const action of pushActions.slice(0, BATCH_SIZE)) {
-      if (pushAbort) break
-      if (action.type === "skip") {
-        pushSkips.push({ id: action.id, reason: action.reason })
-        continue
-      }
-      if (action.type === "push") {
-        const localBundle = await read(local(`/flynncode-sync/session/${encodeURIComponent(action.id)}`), isRecord)
-        if (localBundle.kind !== "ok") continue
-        const result = await pushOne(peer, "/flynncode-sync/apply", {
-          bundle: localBundle.value,
-          expected: hubExpected(action.id),
-        })
-        if ("abort" in result) pushAbort = result
-        else pushed.push({ id: action.id, outcome: result.outcome })
-        continue
-      }
+    // Set by the first push the hub refused for the whole cycle (unreachable, unauthorized, paused, clock).
+    const halted: { by?: { abort: "unreachable" | "unauthorized" | "paused" | "clock" } } = {}
+    pushActions.forEach((action) => {
+      if (action.type === "skip") pushSkips.push({ id: action.id, reason: action.reason })
+    })
+    const outgoing = pushActions.filter((action) => action.type !== "skip")
+    // One push, delete or archive on the hub; undefined when the local chat is gone or the cycle must end.
+    const send = async (action: (typeof outgoing)[number]) => {
       const result =
-        action.type === "delete"
-          ? await pushOne(peer, `/flynncode-sync/delete/${encodeURIComponent(action.id)}`, {
-              timeDeleted: action.timeDeleted,
-              root: action.root,
-              expected: hubExpected(action.id),
-            })
-          : await pushOne(peer, `/flynncode-sync/archive/${encodeURIComponent(action.id)}`, {
-              timeArchived: action.timeArchived,
-              expected: hubExpected(action.id),
-            })
-      if ("abort" in result) pushAbort = result
-      else pushed.push({ id: action.id, outcome: result.outcome })
+        action.type === "push"
+          ? await (async () => {
+              const localBundle = await read(
+                local(`/flynncode-sync/session/${encodeURIComponent(action.id)}`),
+                isRecord,
+              )
+              if (localBundle.kind !== "ok") return undefined
+              return pushOne(peer, "/flynncode-sync/apply", {
+                bundle: localBundle.value,
+                expected: hubExpected(action.id),
+              })
+            })()
+          : action.type === "delete"
+            ? await pushOne(peer, `/flynncode-sync/delete/${encodeURIComponent(action.id)}`, {
+                timeDeleted: action.timeDeleted,
+                root: action.root,
+                expected: hubExpected(action.id),
+              })
+            : await pushOne(peer, `/flynncode-sync/archive/${encodeURIComponent(action.id)}`, {
+                timeArchived: action.timeArchived,
+                expected: hubExpected(action.id),
+              })
+      if (!result) return undefined
+      if ("abort" in result) {
+        halted.by = result
+        return undefined
+      }
+      pushed.push({ id: action.id, outcome: result.outcome })
+      return result.outcome
     }
+    // Retention deletes and the return of a surviving tree are never split by the batch: half a tree on the hub is
+    // what lets a deleting machine delete the rest again.
+    const whole = (action: (typeof outgoing)[number]) =>
+      (action.type === "delete" && action.root !== undefined) || (action.type === "push" && action.tree !== undefined)
+    for (const action of outgoing.filter((item) => item.type === "delete" && item.root !== undefined)) {
+      if (halted.by) break
+      await send(action)
+    }
+    // A surviving tree goes back evidence first. The rest follows in the same cycle only once every piece of evidence
+    // reached the hub and the hub dropped the deletion; otherwise it waits, since the deleting machine would delete it
+    // again.
+    const unproven = new Set<string>()
+    const evidence = outgoing.filter(
+      (item): item is Extract<PushAction, { type: "push" }> & { tree: string } =>
+        item.type === "push" && item.evidence === true && item.tree !== undefined,
+    )
+    for (const action of evidence) {
+      if (halted.by) break
+      if ((await send(action)) !== "applied") unproven.add(action.tree)
+    }
+    const proving = new Set(evidence.map((action) => action.tree).filter((tree) => !unproven.has(tree)))
+    if (!halted.by && proving.size > 0) {
+      const after = await read(remote(peer, "/flynncode-sync/manifest"), isManifest)
+      const left =
+        after.kind === "ok"
+          ? new Set(
+              after.value.tombstones.flatMap((tombstone) => (tombstone.root === undefined ? [] : [tombstone.root])),
+            )
+          : undefined
+      proving.forEach((tree) => {
+        if (!left || left.has(tree)) unproven.add(tree)
+      })
+    }
+    const rest = [
+      ...outgoing.filter((item) => item.type === "push" && item.tree !== undefined && item.evidence !== true),
+      ...outgoing.filter((item) => !whole(item)).slice(0, BATCH_SIZE),
+    ]
+    for (const action of rest) {
+      if (halted.by) break
+      if (action.type === "push" && action.tree !== undefined && unproven.has(action.tree)) {
+        pushSkips.push({ id: action.id, reason: "local-busy" })
+        continue
+      }
+      await send(action)
+    }
+    const pushAbort = halted.by
     if (pushAbort) {
       if (pushAbort.abort === "unauthorized")
         return { ...previous, phase: "unauthorized", online: true, backlog: null, received, consecutiveFailures: 0 }
@@ -509,24 +602,24 @@ export function createSyncWorker(options: {
   }
 }
 
-// Never-stuck chat families come first, stuck ones after. A family is a pulled
-// chat plus its pulled ancestors, kept in decide's parents-first order so a
-// child never precedes its parent in the batch.
+// The pulls grouped by tree: never-stuck trees first, stuck ones after. A tree
+// is every pulled chat under one top session of the peer's manifest, kept in
+// decide's parents-first order so a child never precedes its parent. The batch
+// takes whole trees only, so a machine never holds part of a tree another
+// machine's retention could judge without the rest.
 function pullOrder(pulls: Array<{ type: "pull"; id: string }>, peer: Manifest, stuck: Set<string>) {
   const parents = new Map(peer.sessions.map((item) => [item.id, item.parentID]))
-  const pulling = new Set(pulls.map((pull) => pull.id))
   // A hostile peer manifest may contain parent cycles; stop at the first repeat.
   const root = (id: string, seen = new Set<string>()): string => {
     const parentID = parents.get(id)
-    if (!parentID || !pulling.has(parentID) || seen.has(parentID)) return id
+    if (!parentID || !parents.has(parentID) || seen.has(parentID)) return id
     return root(parentID, seen.add(id))
   }
-  const families = Map.groupBy(pulls, (pull) => root(pull.id))
-  const ordered = [...families.values()]
+  const trees = [...Map.groupBy(pulls, (pull) => root(pull.id)).values()]
   return [
-    ...ordered.filter((family) => !family.some((pull) => stuck.has(pull.id))),
-    ...ordered.filter((family) => family.some((pull) => stuck.has(pull.id))),
-  ].flat()
+    ...trees.filter((tree) => !tree.some((pull) => stuck.has(pull.id))),
+    ...trees.filter((tree) => tree.some((pull) => stuck.has(pull.id))),
+  ]
 }
 
 type Version = { timeUpdated: number; timeArchived: number | null }

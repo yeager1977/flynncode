@@ -286,7 +286,16 @@ const SessionHistorySection: Component<{ controller: SessionHistorySettingsContr
       <SettingsListV2>
         <SettingsRowV2
           title={language.t("settings.sessionHistory.days.title")}
-          description={language.t("settings.sessionHistory.days.description")}
+          description={
+            <>
+              {language.t("settings.sessionHistory.days.description")}
+              <Show when={props.controller.paused()}>
+                <span data-slot="settings-session-history-paused" class="mt-1 block">
+                  {language.t("settings.sessionHistory.paused")}
+                </span>
+              </Show>
+            </>
+          }
         >
           <div class="flex w-full items-center gap-2 sm:w-[220px]">
             {/* Write on commit, like the memory row: one config write per committed value.

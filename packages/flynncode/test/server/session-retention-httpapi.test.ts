@@ -71,6 +71,7 @@ describe("session retention HttpApi", () => {
         expiring: [{ sessionID: soon.id, deletesAt: latest + 30 * DAY }],
         kept: [],
         held: [],
+        syncStale: false,
       })
     }),
   )

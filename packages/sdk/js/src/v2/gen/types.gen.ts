@@ -3762,6 +3762,7 @@ export type SessionRetention = {
   expiring: Array<SessionRetentionExpiring>
   kept: Array<string>
   held: Array<string>
+  syncStale: boolean
 }
 
 export type SessionStatusLine = {

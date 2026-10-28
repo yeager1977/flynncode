@@ -578,6 +578,7 @@ describe("session retention", () => {
         expiring: [{ sessionID: soon.id, deletesAt: now.getTime() + 2 * DAY }],
         kept: [kept.id],
         held: [],
+        syncStale: false,
       })
     }),
   )
@@ -951,6 +952,105 @@ describe("session retention schedule holds", () => {
       const lost = yield* ready({ now: () => new Date(now + DAY + 2 + SessionRetention.HOLD_MS) })
       expect(yield* lost.pass()).toMatchObject({ deleted: 1 })
       expect(yield* remaining(scheduled.ids)).toEqual([])
+    }),
+  )
+})
+
+describe("session retention hold writes", () => {
+  it.instance("wait for a fresh caught-up sync, patch only the metadata, and never outrank a newer peer copy", () =>
+    Effect.gen(function* () {
+      const store = yield* ScheduleStore.Service
+      const { db } = yield* Database.Service
+      const sync = yield* MachineSyncStore.Service
+      const scheduled = yield* tree("scheduled")
+      yield* store.create({
+        sessionID: scheduled.child.id,
+        kind: "wakeup",
+        prompt: "look again",
+        recurring: false,
+        runAt: new Date(Date.now() + 60_000),
+        now: new Date(),
+      })
+      const day = Date.now() - 40 * DAY
+      yield* age(scheduled.ids, day)
+      yield* db
+        .update(SessionTable)
+        .set({ metadata: { other: 1 }, time_updated: day })
+        .where(eq(SessionTable.id, scheduled.root.id))
+        .run()
+        .pipe(Effect.orDie)
+      const now = Date.now()
+      const record = (value: object) =>
+        Effect.gen(function* () {
+          const file = yield* syncPath
+          yield* Effect.promise(() => Bun.write(file, JSON.stringify(value)))
+        })
+      const retention = yield* ready({ now: () => new Date(now) })
+
+      // Paired, and the last caught-up cycle is older than a few minutes: no hold is written on this copy.
+      yield* record({ paired: true, lastCaughtUp: now - SessionRetention.HOLD_SYNC_FRESH_MS - 1 })
+      expect(yield* retention.pass()).toMatchObject({ deleted: 0 })
+      expect(yield* metadata(scheduled.root.id)).toEqual({ other: 1 })
+      // The job still keeps the tree from every retention tombstone here, through the manifest.
+      expect((yield* sync.manifest()).sessions.find((item) => item.id === scheduled.child.id)?.scheduled).toBe(true)
+
+      // Right after a caught-up cycle: the hold is written. Another process renamed the chat meanwhile.
+      yield* db
+        .update(SessionTable)
+        .set({ title: "renamed elsewhere", time_updated: day })
+        .where(eq(SessionTable.id, scheduled.root.id))
+        .run()
+        .pipe(Effect.orDie)
+      yield* record({ paired: true, lastCaughtUp: now - 60_000 })
+      expect(yield* retention.pass()).toMatchObject({ deleted: 0 })
+      expect(yield* metadata(scheduled.root.id)).toEqual({
+        other: 1,
+        retentionHold: true,
+        retentionHoldUntil: now + SessionRetention.HOLD_MS,
+      })
+      const row = yield* db
+        .select()
+        .from(SessionTable)
+        .where(eq(SessionTable.id, scheduled.root.id))
+        .get()
+        .pipe(Effect.orDie)
+      expect(row?.title).toBe("renamed elsewhere")
+      // The copy's sync version moves 1 ms past its newest write, not to now: a peer's newer messages still win.
+      const version = (yield* sync.manifest()).sessions.find((item) => item.id === scheduled.root.id)?.timeUpdated
+      expect(version).toBe(day + 1)
+      const manifest = (yield* sync.manifest()) as Manifest
+      const peer = {
+        ...manifest,
+        sessions: manifest.sessions.map((item) =>
+          item.id === scheduled.root.id ? { ...item, timeUpdated: day + 5 } : item,
+        ),
+      }
+      expect(decide({ local: manifest, peer })).toEqual([{ type: "pull", id: scheduled.root.id }])
+      // The messages were never touched.
+      const messages = yield* db
+        .select({ time_updated: MessageTable.time_updated })
+        .from(MessageTable)
+        .where(eq(MessageTable.session_id, scheduled.grandchild.id))
+        .all()
+        .pipe(Effect.orDie)
+      expect(messages.map((item) => item.time_updated)).toEqual([day])
+    }),
+  )
+
+  it.instance("reports a stale sync to the app, so it can say cleanup is paused", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      yield* sessions.create({ title: "waiting" })
+      const now = new Date(Date.now() + 40 * DAY)
+      const file = yield* syncPath
+      const retention = yield* ready({ now: () => now })
+      expect((yield* retention.status()).syncStale).toBe(false)
+      // A pull that always fails keeps every cycle from catching up.
+      yield* Effect.promise(() =>
+        Bun.write(file, JSON.stringify({ paired: true, lastCaughtUp: now.getTime() - 2 * DAY })),
+      )
+      expect((yield* retention.status()).syncStale).toBe(true)
+      expect(yield* retention.pass()).toMatchObject({ deleted: 0, skipped: "sync-stale" })
     }),
   )
 })

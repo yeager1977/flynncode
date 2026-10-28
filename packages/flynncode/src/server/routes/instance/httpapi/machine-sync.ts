@@ -18,6 +18,8 @@ export const MachineSyncPaths = {
   session: "/flynncode-sync/session/:id",
   apply: "/flynncode-sync/apply",
   delete: "/flynncode-sync/delete/:id",
+  deleteTree: "/flynncode-sync/delete-tree/:root",
+  voidTree: "/flynncode-sync/void/:root",
   archive: "/flynncode-sync/archive/:id",
   missing: "/flynncode-sync/missing",
   settings: "/flynncode-sync/settings",
@@ -121,6 +123,43 @@ export const machineSyncRoutes = HttpRouter.use((router) =>
             Effect.catchTag("MachineSyncBusyError", () => Effect.succeed(json({ error: "busy" }, 409))),
             Effect.catchTag("MachineSyncStaleError", () => Effect.succeed(json({ error: "stale" }, 409))),
           )
+      }),
+    )
+
+    // Loopback only, from this machine's sync worker: the gateway never forwards it.
+    yield* router.add("POST", MachineSyncPaths.deleteTree, (request) =>
+      Effect.gen(function* () {
+        const root = decodeSessionID((yield* HttpRouter.params).root)
+        const body: unknown = yield* request.json.pipe(Effect.orElseSucceed(() => undefined))
+        const members =
+          isRecord(body) && Array.isArray(body.members) && body.members.length > 0
+            ? body.members.map((member) => {
+                if (!isRecord(member) || typeof member.timeDeleted !== "number" || !Number.isInteger(member.timeDeleted))
+                  return undefined
+                if (!MachineSyncStore.isVersion(member.expected)) return undefined
+                const sessionID = decodeSessionID(member.id)
+                if (Option.isNone(sessionID)) return undefined
+                return { sessionID: sessionID.value, timeDeleted: member.timeDeleted, expected: member.expected }
+              })
+            : []
+        if (Option.isNone(root) || members.length === 0 || members.some((member) => member === undefined))
+          return json({ error: "bad request" }, 400)
+        return yield* store
+          .removeTree({ root: root.value, members: members.filter((member) => member !== undefined) })
+          .pipe(
+            Effect.as(json({ ok: true })),
+            Effect.catchTag("MachineSyncBusyError", () => Effect.succeed(json({ error: "busy" }, 409))),
+            Effect.catchTag("MachineSyncStaleError", () => Effect.succeed(json({ error: "stale" }, 409))),
+          )
+      }),
+    )
+
+    // Loopback only, from this machine's sync worker: the tree survived, so its retention tombstones go for good.
+    yield* router.add("POST", MachineSyncPaths.voidTree, () =>
+      Effect.gen(function* () {
+        const root = decodeSessionID((yield* HttpRouter.params).root)
+        if (Option.isNone(root)) return json({ error: "bad request" }, 400)
+        return yield* store.voidTree(root.value).pipe(Effect.as(json({ ok: true })))
       }),
     )
 

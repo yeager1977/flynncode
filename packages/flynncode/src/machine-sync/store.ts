@@ -49,6 +49,8 @@ export type ManifestSession = {
   busy: boolean
   /** Session retention never deletes its tree: `keep: true` or an unlapsed schedule hold in its metadata. */
   kept: boolean
+  /** An unexpired scheduled job in this database: a retention tombstone never deletes this machine's copy of its tree. */
+  scheduled: boolean
 }
 
 export type Manifest = {
@@ -112,6 +114,17 @@ export interface Interface {
     root?: SessionID
     expected: Version | null
   }) => Effect.Effect<void, BusyError | StaleError>
+  /**
+   * Deletes the members of one tree a peer's retention deleted, in one transaction. It is refused whole when any member
+   * changed since the worker read the manifest, or when the tree here has activity at or after the deletion's basis,
+   * is kept or held, or has a job: a write that lands after the manifest read keeps every member, not only its own.
+   */
+  readonly removeTree: (input: {
+    root: SessionID
+    members: Array<{ sessionID: SessionID; timeDeleted: number; expected: Version | null }>
+  }) => Effect.Effect<void, BusyError | StaleError>
+  /** Drops every retention tombstone that names `root`: the tree survived, and nothing here deletes it again. */
+  readonly voidTree: (root: SessionID) => Effect.Effect<void>
   readonly archive: (input: {
     sessionID: SessionID
     timeArchived: number
@@ -187,6 +200,84 @@ const layer = Layer.effect(
       if (!sameVersion(now, expected)) return yield* new StaleError({ sessionID })
     })
 
+    // Whether the trees holding these sessions here, walked up to their tops and down to every member, have a member
+    // written at or after `since`, kept, held or with a job in this database: what keeps a tree from a retention delete.
+    const touched = Effect.fn("MachineSyncStore.touched")(function* (ids: string[], since: number) {
+      const now = Date.now()
+      const row = yield* db
+        .get<{ found: number }>(
+          sql`WITH RECURSIVE up(id, parent_id) AS (
+              SELECT id, parent_id FROM session WHERE id IN (SELECT value FROM json_each(${JSON.stringify(ids)}))
+              UNION
+              SELECT session.id, session.parent_id FROM session JOIN up ON session.id = up.parent_id
+            ), down(id) AS (
+              SELECT id FROM up
+              UNION
+              SELECT session.id FROM session JOIN down ON session.parent_id = down.id
+            )
+            SELECT 1 AS found FROM down JOIN session ON session.id = down.id
+            WHERE max(session.time_updated, ${SessionActivity.content(sql`down.id`)}) >= ${since}
+              OR ${SessionRetentionQuery.keeps(sql`session.metadata`)} = 1
+              OR coalesce(${SessionRetentionQuery.holdUntil(sql`session.metadata`)}, 0) > ${now}
+              OR ${SessionRetentionQuery.scheduled(sql`down.id`, now)}
+            LIMIT 1`,
+        )
+        .pipe(Effect.orDie)
+      return row !== undefined
+    })
+
+    // The retention deletion a chat being applied belongs to here: its own tombstone's root, or that of the nearest
+    // ancestor this database deleted, walking up through the ancestors it still has.
+    const deletionOf = Effect.fn("MachineSyncStore.deletionOf")(function* (session: SessionRow) {
+      const row = yield* db
+        .get<{ root_id: SessionID }>(
+          sql`WITH RECURSIVE up(id, parent_id) AS (
+              SELECT ${session.id}, ${session.parent_id}
+              UNION
+              SELECT session.id, session.parent_id FROM session JOIN up ON session.id = up.parent_id
+            )
+            SELECT root_id FROM session_tombstone
+            WHERE root_id IS NOT NULL AND (id IN (SELECT id FROM up) OR id IN (SELECT parent_id FROM up))
+            ORDER BY id = ${session.id} DESC
+            LIMIT 1`,
+        )
+        .pipe(Effect.orDie)
+      if (!row) return undefined
+      const members = yield* db
+        .select({ id: SessionTombstoneTable.id, time_deleted: SessionTombstoneTable.time_deleted })
+        .from(SessionTombstoneTable)
+        .where(eq(SessionTombstoneTable.root_id, row.root_id))
+        .all()
+        .pipe(Effect.orDie)
+      return { root: row.root_id, members }
+    })
+
+    // Deletes one chat and records its tombstone; the caller runs it inside its transaction, after `admit`.
+    const erase = Effect.fn("MachineSyncStore.erase")(function* (
+      sessionID: SessionID,
+      timeDeleted: number,
+      root: SessionID | undefined,
+    ) {
+      const found = yield* db.select().from(SessionTable).where(eq(SessionTable.id, sessionID)).get().pipe(Effect.orDie)
+      yield* db
+        .delete(EventSequenceTable)
+        .where(eq(EventSequenceTable.aggregate_id, sessionID))
+        .run()
+        .pipe(Effect.orDie)
+      yield* db.delete(SessionTable).where(eq(SessionTable.id, sessionID)).run().pipe(Effect.orDie)
+      const recorded = Date.now()
+      yield* db
+        .insert(SessionTombstoneTable)
+        .values({ id: sessionID, time_deleted: timeDeleted, time_recorded: recorded, root_id: root ?? null })
+        .onConflictDoUpdate({
+          target: SessionTombstoneTable.id,
+          set: { time_deleted: timeDeleted, time_recorded: recorded, root_id: root ?? null },
+        })
+        .run()
+        .pipe(Effect.orDie)
+      return found
+    })
+
     const manifest = Effect.fn("MachineSyncStore.manifest")(function* () {
       // Expiry counts from when the tombstone was written: a retention tombstone's `time_deleted` is the activity it
       // judged, which is already older than the period.
@@ -213,6 +304,7 @@ const layer = Layer.effect(
                   time_archived: SessionTable.time_archived,
                   keep: SessionRetentionQuery.keeps(sql`${SessionTable.metadata}`).mapWith(Number),
                   hold_until: SessionRetentionQuery.holdUntil(sql`${SessionTable.metadata}`).mapWith(Number),
+                  scheduled: SessionRetentionQuery.scheduled(sql`${SessionTable.id}`, now).mapWith(Number),
                 })
                 .from(SessionTable)
                 .all()
@@ -236,6 +328,7 @@ const layer = Layer.effect(
           timeArchived: row.time_archived ?? null,
           busy: active.has(row.id),
           kept: row.keep === 1 || (row.hold_until ?? 0) > now,
+          scheduled: row.scheduled === 1,
         })),
         tombstones: read.tombstones
           .filter((row) => !live.has(row.id))
@@ -375,6 +468,7 @@ const layer = Layer.effect(
                 .where(eq(PartTable.session_id, sessionID))
                 .all(),
             }
+            const deletion = yield* deletionOf(incoming.session)
             if (!present && incoming.project)
               yield* tx.insert(ProjectTable).values(incoming.project).onConflictDoNothing().run()
             yield* tx.delete(EventSequenceTable).where(eq(EventSequenceTable.aggregate_id, sessionID)).run()
@@ -415,6 +509,18 @@ const layer = Layer.effect(
             yield* Effect.forEach(chunks(incoming.events), (rows) => tx.insert(EventTable).values(rows).run(), {
               discard: true,
             })
+            // Learning from a pull or a push: a member the deletion never judged, or a tree here now newer than its
+            // basis, kept, held or scheduled, makes the whole tree survive. Every tombstone of that deletion goes at
+            // once, so no member of it is deleted again here, and none of them travels on to delete a peer's copy.
+            if (
+              deletion &&
+              (!deletion.members.some((member) => member.id === sessionID) ||
+                (yield* touched([sessionID], Math.min(...deletion.members.map((member) => member.time_deleted)))))
+            )
+              yield* tx
+                .delete(SessionTombstoneTable)
+                .where(eq(SessionTombstoneTable.root_id, deletion.root))
+                .run()
             return shown
           }),
         )
@@ -440,40 +546,43 @@ const layer = Layer.effect(
       expected: Version | null
     }) {
       const row = yield* db
-        .transaction((tx) =>
+        .transaction(() =>
           Effect.gen(function* () {
             yield* admit(input.sessionID, input.expected)
-            const found = yield* tx
-              .select()
-              .from(SessionTable)
-              .where(eq(SessionTable.id, input.sessionID))
-              .get()
-              .pipe(Effect.orDie)
-            yield* tx
-              .delete(EventSequenceTable)
-              .where(eq(EventSequenceTable.aggregate_id, input.sessionID))
-              .run()
-              .pipe(Effect.orDie)
-            yield* tx.delete(SessionTable).where(eq(SessionTable.id, input.sessionID)).run().pipe(Effect.orDie)
-            yield* tx
-              .insert(SessionTombstoneTable)
-              .values({
-                id: input.sessionID,
-                time_deleted: input.timeDeleted,
-                time_recorded: Date.now(),
-                root_id: input.root ?? null,
-              })
-              .onConflictDoUpdate({
-                target: SessionTombstoneTable.id,
-                set: { time_deleted: input.timeDeleted, time_recorded: Date.now(), root_id: input.root ?? null },
-              })
-              .run()
-              .pipe(Effect.orDie)
-            return found
+            // A retention delete is judged by the whole tree here, as `removeTree` does.
+            if (input.root !== undefined && (yield* touched([input.sessionID, input.root], input.timeDeleted)))
+              return yield* new StaleError({ sessionID: input.sessionID })
+            return yield* erase(input.sessionID, input.timeDeleted, input.root)
           }),
         )
         .pipe(Effect.catchTag("SqlError", (error) => Effect.die(error)))
       if (row) emit("session.deleted", row)
+    })
+
+    const removeTree = Effect.fn("MachineSyncStore.removeTree")(function* (input: {
+      root: SessionID
+      members: Array<{ sessionID: SessionID; timeDeleted: number; expected: Version | null }>
+    }) {
+      const rows = yield* db
+        .transaction(() =>
+          Effect.gen(function* () {
+            yield* Effect.forEach(input.members, (member) => admit(member.sessionID, member.expected), { discard: true })
+            const since = Math.min(...input.members.map((member) => member.timeDeleted))
+            if (yield* touched([...input.members.map((member) => member.sessionID), input.root], since))
+              return yield* new StaleError({ sessionID: input.root })
+            return yield* Effect.forEach(input.members, (member) =>
+              erase(member.sessionID, member.timeDeleted, input.root),
+            )
+          }),
+        )
+        .pipe(Effect.catchTag("SqlError", (error) => Effect.die(error)))
+      rows.forEach((row) => {
+        if (row) emit("session.deleted", row)
+      })
+    })
+
+    const voidTree = Effect.fn("MachineSyncStore.voidTree")(function* (root: SessionID) {
+      yield* db.delete(SessionTombstoneTable).where(eq(SessionTombstoneTable.root_id, root)).run().pipe(Effect.orDie)
     })
 
     const archive = Effect.fn("MachineSyncStore.archive")(function* (input: {
@@ -527,7 +636,17 @@ const layer = Layer.effect(
       return (yield* running()).size === 0
     })
 
-    return Service.of({ manifest, bundle, apply, remove, archive, missingDirectories, idle })
+    return Service.of({
+      manifest,
+      bundle,
+      apply,
+      remove,
+      removeTree,
+      voidTree,
+      archive,
+      missingDirectories,
+      idle,
+    })
   }),
 )
 

@@ -16,7 +16,8 @@ import {
   terminalInput,
   useSettings,
 } from "@/context/settings"
-import { cleanupDaysFromConfig } from "@/utils/session-retention"
+import { useSessionRetention } from "@/hooks/use-session-retention"
+import { cleanupDaysFromConfig, cleanupPaused } from "@/utils/session-retention"
 import { playSoundPreview, SOUND_OPTIONS } from "@/utils/sound"
 import { memoryFromConfig, memoryToConfig, type MemoryPatch } from "./memory-payload"
 import { createOptimisticToggle, createSoundPreviewController, type ShellOption } from "./general-controller-behavior"
@@ -187,9 +188,11 @@ export function createMemorySettingsController() {
 
 export function createSessionHistorySettingsController() {
   const serverSync = useServerSync()
+  const retention = useSessionRetention()
   const days = createMemo(() => cleanupDaysFromConfig(serverSync().data.config))
   return {
     days,
+    paused: () => cleanupPaused(retention.retention()),
     setDays: (value: number) => {
       if (value === days()) return Promise.resolve(true)
       return serverSync()

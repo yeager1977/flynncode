@@ -17,6 +17,7 @@ import {
   PartTable,
   SessionInputTable,
   SessionMessageTable,
+  SessionScheduleTable,
   SessionTable,
   SessionTombstoneTable,
 } from "@flynncode/core/session/sql"
@@ -135,8 +136,24 @@ describe("MachineSyncStore", () => {
       const manifest = yield* store.manifest()
 
       expect(manifest.sessions.toSorted((a, b) => a.id.localeCompare(b.id))).toEqual([
-        { id: "ses_active", parentID: null, timeUpdated: 20, timeArchived: null, busy: false, kept: false },
-        { id: "ses_archived", parentID: null, timeUpdated: 30, timeArchived: 40, busy: false, kept: false },
+        {
+          id: "ses_active",
+          parentID: null,
+          timeUpdated: 20,
+          timeArchived: null,
+          busy: false,
+          kept: false,
+          scheduled: false,
+        },
+        {
+          id: "ses_archived",
+          parentID: null,
+          timeUpdated: 30,
+          timeArchived: 40,
+          busy: false,
+          kept: false,
+          scheduled: false,
+        },
       ])
       expect(manifest.tombstones.map((tombstone) => tombstone.id)).toEqual(["ses_recent"])
       expect(
@@ -585,6 +602,158 @@ describe("MachineSyncStore with a failing project lookup", () => {
       expect(failure._tag).toBe("MachineSyncApplyError")
       expect(failure._tag === "MachineSyncApplyError" ? failure.message : "").toContain("project lookup exploded")
       expect(JSON.stringify(yield* store.bundle(SessionID.make("ses_lookup")))).toBe(JSON.stringify(before))
+    }),
+  )
+})
+
+// A session tree for retention cases: each id seeded at `time`, each child under the one before it.
+const chain = Effect.fn("test.machineSync.chain")(function* (ids: string[], time = 10) {
+  const db = (yield* Database.Service).db
+  yield* Effect.forEach(ids, (id, index) =>
+    seed(id, time).pipe(
+      Effect.andThen(
+        index === 0
+          ? Effect.void
+          : db
+              .update(SessionTable)
+              // time_updated has an $onUpdate default; keep the seeded time.
+              .set({ parent_id: SessionID.make(ids[index - 1]!), time_updated: time })
+              .where(eq(SessionTable.id, SessionID.make(id)))
+              .run(),
+      ),
+    ),
+  )
+})
+
+const tombstoned = Effect.fn("test.machineSync.tombstoned")(function* () {
+  const store = yield* MachineSyncStore.Service
+  return (yield* store.manifest()).tombstones.map((tombstone) => tombstone.id).sort()
+})
+
+describe("MachineSyncStore retention deletes", () => {
+  it.effect("a member written after the manifest was read keeps every member of the tree", () =>
+    Effect.gen(function* () {
+      const db = (yield* Database.Service).db
+      const store = yield* MachineSyncStore.Service
+      yield* chain(["ses_r", "ses_c", "ses_g"])
+      // The worker read the manifest (every member at version 10); then the user wrote in the root.
+      const seen = version(10)
+      yield* db
+        .update(MessageTable)
+        .set({ time_updated: 30 })
+        .where(eq(MessageTable.session_id, SessionID.make("ses_r")))
+        .run()
+      const member = (id: string) => ({ sessionID: SessionID.make(id), timeDeleted: 11, expected: seen })
+      const root = SessionID.make("ses_r")
+
+      // The deletes of the untouched sub-agent sessions still match their own versions, but the tree is newer now.
+      expect(
+        (yield* store.removeTree({ root, members: [member("ses_c"), member("ses_g")] }).pipe(Effect.flip))._tag,
+      ).toBe("MachineSyncStaleError")
+      expect(
+        (yield* store
+          .removeTree({ root, members: [member("ses_r"), member("ses_c"), member("ses_g")] })
+          .pipe(Effect.flip))._tag,
+      ).toBe("MachineSyncStaleError")
+      // A delete pushed one member at a time is judged by the tree too, as on the hub.
+      expect(
+        (yield* store
+          .remove({ sessionID: SessionID.make("ses_g"), timeDeleted: 11, root, expected: seen })
+          .pipe(Effect.flip))._tag,
+      ).toBe("MachineSyncStaleError")
+      expect((yield* store.manifest()).sessions.map((session) => session.id).sort()).toEqual([
+        "ses_c",
+        "ses_g",
+        "ses_r",
+      ])
+      expect(yield* tombstoned()).toEqual([])
+    }),
+  )
+
+  it.effect("a tree untouched since the basis is deleted whole, and a job here keeps it", () =>
+    Effect.gen(function* () {
+      const db = (yield* Database.Service).db
+      const store = yield* MachineSyncStore.Service
+      yield* chain(["ses_r", "ses_c"])
+      yield* chain(["ses_s", "ses_d"])
+      yield* db
+        .insert(SessionScheduleTable)
+        .values({
+          id: "sch_test",
+          session_id: SessionID.make("ses_d"),
+          kind: "wakeup",
+          prompt: "look again",
+          recurring: false,
+          next_run_at: Date.now() + DAY,
+          time_created: Date.now(),
+        })
+        .run()
+      const members = (ids: string[]) =>
+        ids.map((id) => ({ sessionID: SessionID.make(id), timeDeleted: 11, expected: version(10) }))
+
+      expect(
+        Object.fromEntries((yield* store.manifest()).sessions.map((session) => [session.id, session.scheduled])),
+      ).toEqual({ ses_r: false, ses_c: false, ses_s: false, ses_d: true })
+      expect(
+        (yield* store
+          .removeTree({ root: SessionID.make("ses_s"), members: members(["ses_s", "ses_d"]) })
+          .pipe(Effect.flip))._tag,
+      ).toBe("MachineSyncStaleError")
+      yield* store.removeTree({ root: SessionID.make("ses_r"), members: members(["ses_r", "ses_c"]) })
+      expect((yield* store.manifest()).sessions.map((session) => session.id).sort()).toEqual(["ses_d", "ses_s"])
+      expect((yield* store.manifest()).tombstones.toSorted((a, b) => a.id.localeCompare(b.id))).toEqual([
+        { id: "ses_c", timeDeleted: 11, root: "ses_r" },
+        { id: "ses_r", timeDeleted: 11, root: "ses_r" },
+      ])
+    }),
+  )
+
+  it.effect("learns from a pull or a push that a tree survived, and voids the whole deletion at once", () =>
+    Effect.gen(function* () {
+      const store = yield* MachineSyncStore.Service
+      yield* chain(["ses_r", "ses_c", "ses_g"])
+      const copies = yield* Effect.forEach(["ses_r", "ses_c", "ses_g"], (id) => store.bundle(SessionID.make(id)))
+      const [root, child, grandchild] = copies.map((copy) => {
+        if (!copy) throw new Error("seeded session missing")
+        return copy
+      })
+      const members = ["ses_r", "ses_c", "ses_g"].map((id) => ({
+        sessionID: SessionID.make(id),
+        timeDeleted: 11,
+        expected: version(10),
+      }))
+      yield* store.removeTree({ root: SessionID.make("ses_r"), members })
+      expect(yield* tombstoned()).toEqual(["ses_c", "ses_g", "ses_r"])
+
+      // An untouched member coming back is no evidence: only its own tombstone goes.
+      yield* store.apply({ bundle: grandchild!, expected: null })
+      expect(yield* tombstoned()).toEqual(["ses_c", "ses_r"])
+      // A member written since the deletion's basis: the tree survived, so every tombstone of the deletion goes.
+      yield* store.apply({ bundle: { ...child!, session: { ...child!.session, time_updated: 20 } }, expected: null })
+      expect(yield* tombstoned()).toEqual([])
+      yield* store.apply({ bundle: root!, expected: null })
+
+      // A member the deletion never judged (unknown to the deleter) voids it too.
+      yield* store.removeTree({
+        root: SessionID.make("ses_r"),
+        members: ["ses_r", "ses_c", "ses_g"].map((id) => ({
+          sessionID: SessionID.make(id),
+          timeDeleted: 21,
+          expected: id === "ses_c" ? version(20) : version(10),
+        })),
+      })
+      expect(yield* tombstoned()).toEqual(["ses_c", "ses_g", "ses_r"])
+      const stranger = { ...grandchild!, session: { ...grandchild!.session, id: SessionID.make("ses_n") } }
+      yield* store.apply({
+        bundle: {
+          ...stranger,
+          session: { ...stranger.session, parent_id: SessionID.make("ses_r") },
+          messages: [],
+          parts: [],
+        },
+        expected: null,
+      })
+      expect(yield* tombstoned()).toEqual([])
     }),
   )
 })

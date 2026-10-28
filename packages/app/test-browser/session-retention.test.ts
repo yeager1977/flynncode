@@ -5,6 +5,7 @@ import {
   DEFAULT_CLEANUP_DAYS,
   cleanupDaysFromConfig,
   cleanupDaysFromInput,
+  cleanupPaused,
   firstRunNotice,
   keepMenu,
   markNoticeShown,
@@ -21,6 +22,7 @@ const retention = (extra: Partial<SessionRetention> = {}): SessionRetention => (
   expiring: [],
   kept: [],
   held: [],
+  syncStale: false,
   ...extra,
 })
 
@@ -108,6 +110,15 @@ describe("cleanupDaysFromConfig", () => {
     expect(cleanupDaysFromConfig(undefined)).toBe(30)
     expect(cleanupDaysFromConfig({})).toBe(30)
     expect(cleanupDaysFromConfig({ cleanupPeriodDays: 7 })).toBe(7)
+  })
+})
+
+describe("cleanupPaused", () => {
+  test("says cleanup is paused only while sync has not caught up", () => {
+    expect(cleanupPaused(retention({ syncStale: true }))).toBe(true)
+    expect(cleanupPaused(retention())).toBe(false)
+    expect(cleanupPaused(undefined)).toBe(false)
+    expect(dict["settings.sessionHistory.paused"]).toBe("Automatic cleanup is paused until sync catches up")
   })
 })
 

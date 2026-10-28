@@ -16,6 +16,7 @@ export const Expiring = Schema.Struct({
 // because the session list the app loads carries no metadata. `held` lists the root sessions a scheduled job protects:
 // a schedule hold that has not lapsed, or a job in this database. `firstRunAt` and `pendingFirstRunCount` are present
 // only while a pass that would delete more than 20 trees at once is delayed: the trees are deleted at `firstRunAt`.
+// `syncStale` is true while hub sync is set up and has not caught up within a day: passes delete nothing until it does.
 export const Info = Schema.Struct({
   cleanupPeriodDays: PositiveInt,
   firstRunAt: optional(NonNegativeInt),
@@ -23,6 +24,7 @@ export const Info = Schema.Struct({
   expiring: Schema.Array(Expiring),
   kept: Schema.Array(SessionID),
   held: Schema.Array(SessionID),
+  syncStale: Schema.Boolean,
 }).annotate({ identifier: "SessionRetention" })
 export interface Info extends Schema.Schema.Type<typeof Info> {}
 

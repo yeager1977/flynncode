@@ -1,8 +1,9 @@
 export * as SessionRetentionQuery from "./query"
 
-import { sql, type SQL } from "drizzle-orm"
+import { and, eq, isNull, or, sql, type SQL } from "drizzle-orm"
 import { Effect } from "effect"
 import type { Database } from "@flynncode/core/database/database"
+import { SessionTable } from "@flynncode/core/session/sql"
 import { SessionActivity } from "@/session/activity"
 import { SessionID } from "@/session/schema"
 
@@ -60,10 +61,7 @@ export function statement(now: number, root?: SessionID) {
       max(max(member.time_updated, ${SessionActivity.content(sql`tree.id`)})) AS latest,
       ${keeps(sql`root.metadata`)} AS keep,
       ${holdUntil(sql`root.metadata`)} AS hold_until,
-      max(EXISTS (
-        SELECT 1 FROM session_schedule
-        WHERE session_id = tree.id AND (expires_at IS NULL OR expires_at > ${now})
-      )) AS scheduled,
+      max(${scheduled(sql`tree.id`, now)}) AS scheduled,
       json_group_array(tree.id) AS members
     FROM tree
     JOIN session member ON member.id = tree.id
@@ -90,6 +88,17 @@ export const trees = Effect.fn("SessionRetentionQuery.trees")(function* (
     }),
   )
 })
+
+/**
+ * Whether a session has an unexpired scheduled job (cron or wakeup) in this database, as 0 or 1. Jobs never sync, so
+ * this protects only this machine's copy.
+ */
+export function scheduled(sessionID: SQL, now: number) {
+  return sql`EXISTS (
+    SELECT 1 FROM session_schedule
+    WHERE session_id = ${sessionID} AND (expires_at IS NULL OR expires_at > ${now})
+  )`
+}
 
 /** `keep: true` in a session's metadata, as 0 or 1. */
 export function keeps(metadata: SQL) {
@@ -144,4 +153,37 @@ export const unfinished = Effect.fn("SessionRetentionQuery.unfinished")(function
     )
     .pipe(Effect.orDie)
   return row !== undefined
+})
+
+/**
+ * Sets a schedule hold on a session (`until`, the new `retentionHoldUntil`) or clears it (undefined), touching nothing
+ * else: one statement patches the metadata JSON in place, so it keeps every key any writer set, in any process, and
+ * never rewrites the session row from an earlier read or touches message content. The chat's sync version moves 1 ms
+ * past its newest write here, so the hold reaches every machine that has this copy, yet never makes this copy newer
+ * than a write it has not seen: a peer's newer messages still win the whole-chat comparison. Returns the updated row,
+ * or undefined for a missing session or unreadable metadata.
+ */
+export const hold = Effect.fn("SessionRetentionQuery.hold")(function* (
+  database: Database.Interface,
+  sessionID: SessionID,
+  until: number | undefined,
+) {
+  return yield* database.db
+    .update(SessionTable)
+    .set({
+      metadata:
+        until === undefined
+          ? sql`json_remove(${SessionTable.metadata}, '$.retentionHold', '$.retentionHoldUntil')`
+          : sql`json_set(coalesce(${SessionTable.metadata}, '{}'), '$.retentionHold', json('true'), '$.retentionHoldUntil', ${until})`,
+      time_updated: sql`max(${SessionTable.time_updated}, ${SessionActivity.content(sql`${SessionTable.id}`)}) + 1`,
+    })
+    .where(
+      and(
+        eq(SessionTable.id, sessionID),
+        or(isNull(SessionTable.metadata), sql`coalesce(json_valid(${SessionTable.metadata}), 0)`),
+      ),
+    )
+    .returning()
+    .get()
+    .pipe(Effect.orDie)
 })

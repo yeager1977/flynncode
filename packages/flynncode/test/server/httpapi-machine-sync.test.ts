@@ -172,16 +172,62 @@ describe("machine sync routes", () => {
   it.live("keeps the tree root of a peer's retention delete on the tombstone it records", () =>
     Effect.gen(function* () {
       yield* seed("ses_member")
+      // The tree here was written after the deletion's basis: the whole tree survives it.
+      const refused = yield* request(
+        "/flynncode-sync/delete/ses_member",
+        post({ timeDeleted: 5, root: "ses_tree", expected: seeded }),
+      )
+      expect(refused.status).toBe(409)
+      expect(yield* refused.json).toEqual({ error: "stale" })
       expect(
         (yield* request(
           "/flynncode-sync/delete/ses_member",
-          post({ timeDeleted: 5, root: "ses_tree", expected: seeded }),
+          post({ timeDeleted: 11, root: "ses_tree", expected: seeded }),
         )).status,
       ).toBe(200)
       const manifest = (yield* (yield* request(MachineSyncPaths.manifest)).json) as {
         tombstones: Array<{ id: string; timeDeleted: number; root?: string }>
       }
-      expect(manifest.tombstones).toContainEqual({ id: "ses_member", timeDeleted: 5, root: "ses_tree" })
+      expect(manifest.tombstones).toContainEqual({ id: "ses_member", timeDeleted: 11, root: "ses_tree" })
+
+      // The tree survived elsewhere: every tombstone of that deletion goes at once.
+      expect((yield* request("/flynncode-sync/void/ses_tree", post({}))).status).toBe(200)
+      const after = (yield* (yield* request(MachineSyncPaths.manifest)).json) as { tombstones: Array<{ id: string }> }
+      expect(after.tombstones.map((tombstone) => tombstone.id)).not.toContain("ses_member")
+    }),
+  )
+
+  it.live("deletes a peer's retention-deleted tree in one transaction, or none of it", () =>
+    Effect.gen(function* () {
+      yield* seed("ses_treeroot")
+      yield* seed("ses_treeleaf")
+      const members = (timeDeleted: number, root = seeded) => [
+        { id: "ses_treeroot", timeDeleted, expected: root },
+        { id: "ses_treeleaf", timeDeleted, expected: seeded },
+      ]
+      // The root changed after the worker read the manifest: no member is deleted.
+      const stale = yield* request(
+        "/flynncode-sync/delete-tree/ses_treeroot",
+        post({ members: members(11, { timeUpdated: 9, timeArchived: null }) }),
+      )
+      expect(stale.status).toBe(409)
+      const kept = (yield* (yield* request(MachineSyncPaths.manifest)).json) as { sessions: Array<{ id: string }> }
+      expect(kept.sessions.map((session) => session.id)).toEqual(expect.arrayContaining(["ses_treeroot", "ses_treeleaf"]))
+
+      expect((yield* request("/flynncode-sync/delete-tree/ses_treeroot", post({ members: members(11) }))).status).toBe(
+        200,
+      )
+      const manifest = (yield* (yield* request(MachineSyncPaths.manifest)).json) as {
+        sessions: Array<{ id: string }>
+        tombstones: Array<{ id: string; timeDeleted: number; root?: string }>
+      }
+      expect(manifest.sessions.map((session) => session.id)).not.toContain("ses_treeleaf")
+      expect(manifest.tombstones).toContainEqual({ id: "ses_treeleaf", timeDeleted: 11, root: "ses_treeroot" })
+      expect((yield* request("/flynncode-sync/delete-tree/ses_treeroot", post({ members: [] }))).status).toBe(400)
+      expect((yield* request("/flynncode-sync/delete-tree/not-a-session", post({ members: members(11) }))).status).toBe(
+        400,
+      )
+      expect((yield* request("/flynncode-sync/void/not-a-session", post({}))).status).toBe(400)
     }),
   )
 

@@ -286,6 +286,22 @@ describe("sync worker", () => {
     expect(second.backlog).toBeNull()
   })
 
+  test("never splits a tree across batches: it is pulled whole, after or instead of smaller ones", async () => {
+    const local = fake([])
+    const tree = [
+      session("ses_root", 10),
+      ...Array.from({ length: 25 }, (_, index) => session(`ses_sub${String(index).padStart(2, "0")}`, 10, "ses_root")),
+    ]
+    const peer = fake([session("ses_alone", 10), ...tree])
+    const sync = worker({ local, peer })
+    // The lone chat fits; the 26-session tree would not fit beside it, so it waits for a batch of its own.
+    await sync.cycle()
+    expect(local.applied).toEqual(["ses_alone"])
+    await sync.cycle()
+    expect(local.applied.length).toBe(27)
+    expect(local.applied.slice(1, 2)).toEqual(["ses_root"])
+  })
+
   test("counts a cycle as caught up only once no pull is left for later", async () => {
     const local = fake([])
     const peer = fake(Array.from({ length: 25 }, (_, index) => session(`ses_${String(index).padStart(2, "0")}`, 10)))

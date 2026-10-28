@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { decide, decidePush, isManifest, type Manifest, type ManifestSession } from "../src/sync-decide.ts"
+import { decide, decidePush, isManifest, voids, type Manifest, type ManifestSession } from "../src/sync-decide.ts"
 
 const manifest = (sessions: ManifestSession[], tombstones: Manifest["tombstones"] = []): Manifest => ({
   schema: "20261008_session_tombstone",
@@ -158,7 +158,12 @@ describe("decide", () => {
   })
 })
 
-const base = (sessions: Manifest["sessions"], tombstones: Manifest["tombstones"] = []): Manifest => ({ schema: "s1", app: "a1", sessions, tombstones })
+const base = (sessions: Manifest["sessions"], tombstones: Manifest["tombstones"] = []): Manifest => ({
+  schema: "s1",
+  app: "a1",
+  sessions,
+  tombstones,
+})
 
 describe("decidePush", () => {
   test("pushes local-newer chat, ignores hub-newer and equal", () => {
@@ -254,6 +259,85 @@ describe("retention tombstones judged per tree", () => {
     const peer = manifest(tree(L + 10 * DAY, L - 2 * DAY))
     expect(decide({ local: peer, peer: manual })).toEqual([{ type: "delete", id: "ses_c", timeDeleted: L + 1 }])
     expect(decidePush({ local: manual, hub: peer })).toEqual([{ type: "delete", id: "ses_c", timeDeleted: L + 1 }])
+  })
+})
+
+describe("surviving trees", () => {
+  const DAY = 24 * 60 * 60 * 1000
+  const L = 1_000 * DAY
+  const deleted = (ids: string[], root = "ses_r") => ids.map((id) => ({ id, timeDeleted: L + 1, root }))
+
+  test("the deleting machine voids every tombstone of a tree that survived, and never deletes it again", () => {
+    const laptop = manifest([], deleted(["ses_r", "ses_c", "ses_g"]))
+    // The hub has only the root back, newer: the whole deletion is void, not just the root's tombstone.
+    const hub = manifest([session("ses_r", L + 10 * DAY)])
+    expect(voids({ local: laptop, peer: hub })).toEqual(["ses_r"])
+    expect(decidePush({ local: laptop, hub })).toEqual([])
+    // A tree nobody touched is not voided.
+    const untouched = manifest([
+      session("ses_r", L),
+      session("ses_c", L, { parentID: "ses_r" }),
+      session("ses_g", L, { parentID: "ses_c" }),
+    ])
+    expect(voids({ local: laptop, peer: untouched })).toEqual([])
+  })
+
+  test("the evidence goes to the hub first and the rest of the tree after it, unbatched", () => {
+    const desktop = manifest([
+      session("ses_c", L, { parentID: "ses_r" }),
+      session("ses_g", L + 10 * DAY, { parentID: "ses_c" }),
+      session("ses_r", L),
+    ])
+    const hub = manifest([], deleted(["ses_r", "ses_c", "ses_g"]))
+    expect(decidePush({ local: desktop, hub })).toEqual([
+      { type: "push", id: "ses_g", tree: "ses_r", evidence: true },
+      { type: "push", id: "ses_r", tree: "ses_r" },
+      { type: "push", id: "ses_c", tree: "ses_r" },
+    ])
+    // Kept only by a job on this machine: nothing the deleter can see, so the tree stays here until its hold syncs.
+    const scheduled = manifest([session("ses_r", L, { scheduled: true }), session("ses_c", L, { parentID: "ses_r" })])
+    expect(decide({ local: scheduled, peer: hub })).toEqual([])
+    expect(decidePush({ local: scheduled, hub })).toEqual([])
+  })
+
+  test("while the evidence is running, the members the hub lacks wait with it", () => {
+    const desktop = manifest([
+      session("ses_r", L + 10 * DAY, { busy: true }),
+      session("ses_c", L, { parentID: "ses_r" }),
+    ])
+    const hub = manifest([], deleted(["ses_r", "ses_c"]))
+    expect(decidePush({ local: desktop, hub })).toEqual([{ type: "skip", id: "ses_r", reason: "local-busy" }])
+  })
+
+  test("a side that lacks a member keeps the tree: an unknown member was never judged", () => {
+    // The laptop never had G; the hub has the whole tree, untouched.
+    const laptop = manifest([], deleted(["ses_r", "ses_c"]))
+    const hub = manifest([
+      session("ses_r", L),
+      session("ses_c", L, { parentID: "ses_r" }),
+      session("ses_g", L, { parentID: "ses_c" }),
+    ])
+    expect(decidePush({ local: laptop, hub })).toEqual([])
+    expect(voids({ local: laptop, peer: hub })).toEqual(["ses_r"])
+    expect(decide({ local: laptop, peer: hub }).map((action) => action.id)).toEqual(["ses_r", "ses_c", "ses_g"])
+  })
+
+  test("a newer grandchild whose parent this side lacks keeps its root", () => {
+    const desktop = manifest([session("ses_r", L), session("ses_g", L + 10 * DAY, { parentID: "ses_c" })])
+    const hub = manifest([], deleted(["ses_r", "ses_c", "ses_g"]))
+    expect(decide({ local: desktop, peer: hub })).toEqual([])
+    expect(decidePush({ local: desktop, hub }).map((action) => action.id)).toEqual(["ses_g", "ses_r"])
+  })
+
+  test("an archived chat travels with its tree, and stays local otherwise", () => {
+    const here = manifest([session("ses_r", 10)])
+    const peer = manifest([
+      session("ses_r", 10),
+      session("ses_c", 10, { parentID: "ses_r", timeArchived: 11 }),
+      session("ses_x", 10, { timeArchived: 11 }),
+    ])
+    expect(decide({ local: here, peer })).toEqual([{ type: "pull", id: "ses_c" }])
+    expect(decidePush({ local: peer, hub: here })).toEqual([{ type: "push", id: "ses_c" }])
   })
 })
 

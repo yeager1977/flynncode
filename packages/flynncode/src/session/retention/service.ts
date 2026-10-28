@@ -44,6 +44,11 @@ export const SYNC_STALE_MS = DAY
 export const HOLD_MS = 7 * DAY
 /** The machine whose job holds a tree refreshes the hold once it is this old, checking on every pass. */
 export const HOLD_REFRESH_MS = DAY
+/**
+ * Hold writes wait for a sync cycle that caught up with the hub within this long, so this machine writes them on a
+ * copy that has everything the hub had. Sync cycles run every minute.
+ */
+export const HOLD_SYNC_FRESH_MS = 10 * 60 * 1000
 
 export type Summary = {
   cleanupPeriodDays: number
@@ -226,18 +231,26 @@ export const make = Effect.fn("SessionRetention.make")(function* (options: {
 
   const writeState = (state: State) => fs.writeWithDirs(statePath, JSON.stringify(state)).pipe(Effect.orDie)
 
-  // Hub sync set up, but no cycle caught up with the hub in the last day: this machine may lack newer copies of what
-  // it would delete, even while cycles run and pull a backlog 20 chats at a time. An unreadable record counts as
-  // stale; the sidecar rewrites it after its next cycle. No record at all means sync was never set up here: the
-  // sidecar writes one on start.
-  const syncStale = Effect.fnUntraced(function* (now: number) {
+  // How long ago hub sync last caught up: 0 when sync is not set up here (no record) or not paired (a paused sync
+  // counts as not paired; the sidecar writes a record on start), Infinity for a paired machine that never caught up
+  // since it recorded that, or an unreadable record (the sidecar rewrites it after its next cycle).
+  const behind = Effect.fnUntraced(function* (now: number) {
     const text = yield* fs.readFileStringSafe(syncPath).pipe(Effect.orElseSucceed(() => undefined))
-    if (text === undefined) return false
+    if (text === undefined) return 0
     const sync = decodeSync(text)
-    if (Option.isNone(sync)) return true
-    if (!sync.value.paired) return false
-    return sync.value.lastCaughtUp === undefined || now - sync.value.lastCaughtUp > SYNC_STALE_MS
+    if (Option.isNone(sync)) return Number.POSITIVE_INFINITY
+    if (!sync.value.paired) return 0
+    return sync.value.lastCaughtUp === undefined ? Number.POSITIVE_INFINITY : now - sync.value.lastCaughtUp
   })
+
+  // Hub sync set up, but no cycle caught up with the hub in the last day: this machine may lack newer copies of what
+  // it would delete, even while cycles run and pull a backlog 20 chats at a time.
+  const syncStale = Effect.fnUntraced(function* (now: number) {
+    return (yield* behind(now)) > SYNC_STALE_MS
+  })
+
+  // The pass that last warned about a stale sync, so the warning is logged once a day while it lasts.
+  const warned = { at: Number.NEGATIVE_INFINITY }
 
   // Background shells live in this process only. A shell another process runs is not seen here, but its output
   // notifications write parts into the session, and its turn's assistant message stays unfinished.
@@ -273,42 +286,46 @@ export const make = Effect.fn("SessionRetention.make")(function* (options: {
   // without the job never deletes the tree. The hold carries `retentionHoldUntil`: this machine refreshes it once a
   // day while a job runs, and it lapses `HOLD_MS` after the last refresh, so a hold whose machine is gone or lost its
   // state never sticks. Only holds this machine set are cleared, once its last job there is gone or expired: a hold
-  // synced from a machine whose job still runs is never touched here. Writing the flag counts as activity, which also
-  // carries it to the other machines.
+  // synced from a machine whose job still runs is never touched here.
+  //
+  // Hold writes run only right after a sync cycle caught up with the hub (`HOLD_SYNC_FRESH_MS`), and patch the
+  // metadata alone (`SessionRetentionQuery.hold`): a hold never rewrites the session row from a stale read, never
+  // touches messages, and never makes this copy newer than another machine's newer messages. Until sync catches up the
+  // job's own tree is still safe here: a local job keeps it from retention, and a peer's retention tombstone never
+  // deletes it (the manifest marks it `scheduled`).
   const holds = Effect.fnUntraced(function* (trees: SessionRetentionQuery.Tree[], now: number) {
+    if ((yield* behind(now)) > HOLD_SYNC_FRESH_MS) return trees
     const state = yield* readState()
     const mine = new Set(state.holds ?? [])
     const changes = [
       ...trees
         .filter((tree) => tree.scheduled && (tree.holdUntil ?? 0) - now < HOLD_MS - HOLD_REFRESH_MS)
-        .map((tree) => ({ id: tree.id, hold: true })),
+        .map((tree) => ({ id: tree.id, until: now + HOLD_MS })),
       ...trees
         .filter((tree) => !tree.scheduled && tree.holdUntil !== undefined && mine.has(tree.id))
-        .map((tree) => ({ id: tree.id, hold: false })),
+        .map((tree) => ({ id: tree.id, until: undefined })),
     ]
     yield* Effect.forEach(
       changes,
       (change) =>
-        sessions
-          .updateMetadata({
-            sessionID: change.id,
-            update: (metadata) =>
-              change.hold
-                ? { ...metadata, retentionHold: true, retentionHoldUntil: now + HOLD_MS }
-                : Object.fromEntries(
-                    Object.entries(metadata).filter(
-                      (item) => item[0] !== "retentionHold" && item[0] !== "retentionHoldUntil",
-                    ),
-                  ),
-          })
-          .pipe(
-            Effect.catchCause((cause) =>
-              Effect.logWarning("session retention could not update a schedule hold", {
-                "session.id": change.id,
-                cause: Cause.pretty(cause),
-              }),
-            ),
+        SessionRetentionQuery.hold(database, change.id, change.until).pipe(
+          Effect.tap((row) =>
+            Effect.sync(() => {
+              if (!row) return
+              GlobalBus.emit("event", {
+                directory: row.directory,
+                project: row.project_id,
+                payload: { type: "session.updated", properties: { sessionID: row.id, info: Session.fromRow(row) } },
+              })
+            }),
           ),
+          Effect.catchCause((cause) =>
+            Effect.logWarning("session retention could not update a schedule hold", {
+              "session.id": change.id,
+              cause: Cause.pretty(cause),
+            }),
+          ),
+        ),
       { discard: true },
     )
     const wanted = trees.filter((tree) => tree.scheduled).map((tree) => tree.id)
@@ -394,6 +411,15 @@ export const make = Effect.fn("SessionRetention.make")(function* (options: {
     const days = yield* period()
     const due = yield* eligible(trees, now, days)
     const stale = yield* syncStale(now)
+    // Paused until sync catches up: say so once a day, since a chat that always fails to sync keeps it paused for good.
+    if (stale && now - warned.at >= DAY) {
+      warned.at = now
+      yield* Effect.logWarning(
+        "automatic session cleanup is paused until hub sync catches up: no sync cycle has applied everything the hub has in the last day; a chat that keeps failing to sync, or stays busy, holds it back (see the Sync settings)",
+        { eligible: due.length },
+      )
+    }
+    if (!stale) warned.at = Number.NEGATIVE_INFINITY
     const delayedUntil = stale ? undefined : yield* gate(due, now, days)
     const results = stale || delayedUntil !== undefined ? [] : yield* removeAll(due, now, days, leads)
     const removed = results.flatMap((exit) => (Exit.isSuccess(exit) && exit.value > 0 ? [exit.value] : []))
@@ -465,6 +491,8 @@ export const make = Effect.fn("SessionRetention.make")(function* (options: {
       kept: trees.filter((tree) => tree.keep).map((tree) => tree.id),
       // A local job protects its tree before its hold is written.
       held: trees.filter((tree) => tree.hold || tree.scheduled).map((tree) => tree.id),
+      // Passes delete nothing until hub sync catches up; the app says cleanup is paused.
+      syncStale: yield* syncStale(now),
     }
   })
 
