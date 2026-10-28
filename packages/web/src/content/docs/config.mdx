@@ -643,6 +643,37 @@ Note that disabling snapshots means changes made by the agent cannot be rolled b
 
 ---
 
+### Session history
+
+Flynncode deletes sessions you have not used for a while. `cleanupPeriodDays` sets how long, like Claude Code's setting of the same name: a session and its sub-agent sessions are deleted once nothing in them has changed for that many days. It is a whole number of days, 30 by default, and at least 1. An invalid value fails config validation, and nothing is deleted until it is fixed.
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "cleanupPeriodDays": 90
+}
+```
+
+Set it in the global config. **Settings → General → Session history** writes it for you, and the next check uses the new value.
+
+**Activity.** Any write to the session or one of its sub-agent sessions counts: prompts, replies, tool output, todos and attached folders. Archived sessions are treated like the others.
+
+**Never deleted:**
+
+- **Kept sessions.** Choose **Keep forever** in a session's menu (top-level sessions only; sub-agent sessions follow their parent). A kept session shows a pin. Changing Keep counts as activity, so **Stop keeping** starts a fresh period.
+- **Scheduled sessions.** A session with a scheduled prompt that has not expired (a loop, cron job or wakeup) is kept. The computer that holds the job also marks the session (`retentionHold` in its metadata), and the mark syncs, so your other computers keep it too. The mark is removed within an hour of the last job ending.
+- **Busy sessions.** A session whose turn is running, waiting for a permission or an answer, or running a background shell is kept. So is a session whose last reply never finished, for example after a crash, until it is used again.
+
+**When it runs.** The desktop app and the TUI check 5 minutes after they start, then every hour. Each check deletes at most 50 sessions, the longest unused first, and only one process per database checks at a time. `flynncode serve`, `web`, `acp` and `run` never delete sessions on their own, and neither does a sync hub. A deleted session goes the same way as one you delete yourself: its task worktree is removed only when nothing would be lost, and otherwise stays on the Cleanup page.
+
+**Big cleanups wait a day.** When the first cleanup would delete more than 20 sessions, or lowering `cleanupPeriodDays` makes more than 20 sessions due at once, the cleanup waits 24 hours and the app shows a notice with the count and the time. Raise the setting or keep sessions during that day to protect them. Within 3 days of its deletion, a session's menu shows when it will be deleted next to **Keep forever**.
+
+**With hub sync.** A cleanup deletes sessions on your other computers too, like a manual delete, so the computer with the shortest period sets the limit for all of them. A cleanup only removes another computer's copy when that copy has no activity newer than what the deleting computer saw: a computer that was offline never deletes a session you kept working on elsewhere, and gets it back on its next sync. While sync is set up but has not completed in the last 24 hours, cleanups are skipped.
+
+**Keep a session before its last day.** Keep reaches your other computers only when the session syncs. A computer that has not seen your Keep yet and reaches the end of the period first deletes its copy, and the session disappears from your other computers until the kept copy syncs back from the computer where you kept it. An archived session does not sync back. A Keep can also be lost when another computer changes the same session before the next sync, since whole sessions sync and the newer copy wins. Check that the pin is still there after the next sync.
+
+---
+
 ### Autoupdate
 
 Flynncode will automatically download any new updates when it starts up. You can disable this with the `autoupdate` option.
