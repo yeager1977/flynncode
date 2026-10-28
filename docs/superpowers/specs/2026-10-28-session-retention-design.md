@@ -1,7 +1,7 @@
 # Session Retention Design
 
 Date: 2026-10-28
-Status: implemented (7c86fdf727, 859d9ef1e6), with the final-review fixes for running across machines (c18a1df579) and the re-review fixes that make sync deletions tree-atomic
+Status: implemented (7c86fdf727, 859d9ef1e6), with the final-review fixes for running across machines (c18a1df579), the re-review fixes that make sync deletions tree-atomic (ea3fc3689e), and the second re-review fixes that make a surviving tree converge without re-deletes
 
 ## Problem
 
@@ -17,7 +17,7 @@ The 2026-10-25 work made the history database prune its own redundant rows (`202
   - Archive stays hide-only.
 - **A Keep toggle.** Marking a session "Keep forever" exempts its whole tree.
 - **Deletions propagate like a manual delete.** An automatically deleted session is deleted on every synced machine, through the same tombstone path. Keep travels with the session, so a kept session is safe everywhere. The machine with the shortest period effectively sets the limit.
-  - A retention tombstone never outranks activity the deleting machine did not see, anywhere in the tree, and never deletes a tree that is kept or held where it lands (see [Sync](#sync)).
+  - A retention tombstone never outranks activity the deleting machine did not see, anywhere in the tree, and never deletes a tree that is kept, held or scheduled where it lands (see [Sync](#sync)). Once a tree survives a deletion, it survives it for good, on every machine.
 
 ## Design
 
@@ -84,6 +84,7 @@ The 2026-10-25 work made the history database prune its own redundant rows (`202
   - Toggling Keep counts as activity, so "Stop keeping" grants a fresh period.
   - Only the new-layout sidebar has the menu item, pin, hint and notice.
 - **Settings:** General settings gets a "Session history" row: "Delete sessions inactive for more than [30] days". The number field has a minimum of 1 and writes `cleanupPeriodDays` to the global Flynncode config. The next pass uses the new value.
+  - While hub sync is stale (see [Sync](#sync)), the row adds "Automatic cleanup is paused until sync catches up".
 - **Heads-up:** for a session tree within 3 days of deletion, the menu shows a faint "deletes in N days" hint next to "Keep forever".
 - **Surge protection:** a pass waits 24 hours when it would delete a surge:
   - the first pass that finds anything to delete, when it finds more than 20 trees;
@@ -100,11 +101,12 @@ The 2026-10-25 work made the history database prune its own redundant rows (`202
 
 ### API
 
-- **Hint data:** `GET /session/retention` (SDK `client.session.retention.get`) returns `{ cleanupPeriodDays, firstRunAt?, pendingFirstRunCount?, expiring: Array<{ sessionID, deletesAt }>, kept: string[], held: string[] }`.
+- **Hint data:** `GET /session/retention` (SDK `client.session.retention.get`) returns `{ cleanupPeriodDays, firstRunAt?, pendingFirstRunCount?, expiring: Array<{ sessionID, deletesAt }>, kept: string[], held: string[], syncStale: boolean }`.
   - `expiring` lists non-exempt root sessions due within 3 days. While a delay is pending, `deletesAt` is at least `firstRunAt`.
   - `kept` lists the root sessions with `keep: true`. The app's session list carries no metadata, so the sidebar reads Keep from here. A Keep set on another machine shows after the next retention event.
   - `held` lists the root sessions a schedule protects: a hold that has not lapsed, or an unexpired job in this database (before its hold is written).
-  - The app uses it for the hints, the pins and the notice.
+  - `syncStale` is true while passes skip their deletions because hub sync has not caught up (see [Sync](#sync)).
+  - The app uses it for the hints, the pins, the notice and the settings row.
   - It is served locally and never proxied to a workspace.
 - **Keep toggle:** `PATCH /session/{id}/keep { keep: boolean }` (SDK `client.session.keep`).
   - It returns the updated session, 400 for a sub-agent session and 404 for a missing one.
@@ -116,7 +118,7 @@ The 2026-10-25 work made the history database prune its own redundant rows (`202
 
 - **Problem:** scheduled jobs (`session_schedule`) are local to one database and never sync.
 - **Hold:** while a tree has an unexpired job in this database, the leader sets `retentionHold: true` and `retentionHoldUntil` (now + 7 days) in the root's metadata. The flags sync with the session, and every machine treats an unlapsed hold like Keep.
-- **Refresh and expiry:** the leader checks its holds on every hourly pass and rewrites one once it is a day old, so a hold whose job lasts never lapses. Each rewrite is activity, so it is written daily rather than hourly to keep the chat from re-syncing every hour.
+- **Refresh and expiry:** the leader checks its holds on every hourly pass and rewrites one once it is a day old, so a hold whose job lasts never lapses. Each rewrite moves the chat's sync version, so it is written daily rather than hourly to keep the chat from re-syncing every hour.
   - A hold lapses 7 days after its last refresh. Then it no longer protects the tree anywhere, even if its flags stay in the metadata.
   - This covers a hold whose machine was retired or reinstalled, lost its state file (`holds`), or holds a one-shot wakeup that never fires: such a hold used to stay forever.
   - A hold synced from another machine is never refreshed or cleared here.
@@ -124,11 +126,15 @@ The 2026-10-25 work made the history database prune its own redundant rows (`202
   - It clears only holds it set. The roots it holds are recorded in the state file's `holds`.
   - When jobs on two machines hold one tree and one ends, the other machine sets the hold again on its next pass.
 - **Timing:** the leader reconciles holds at the start of every pass, so a hold appears or clears within an hour.
-  - Writing the flags counts as activity, which also carries them to the other machines.
   - A tree is new or active when its job is created, so the hour's lag does not expose it.
-- **Writes:** holds are written through `Session.updateMetadata`, like Keep.
+- **Writes are merge-safe** (`SessionRetentionQuery.hold`):
+  - **Only after a fresh sync:** hold writes (set, refresh, clear) run only when hub sync is not set up, or a sync cycle caught up with the hub within the last 10 minutes (`HOLD_SYNC_FRESH_MS`). A machine that wakes after a day asleep writes no hold before its first caught-up cycle has pulled what the others wrote.
+  - **Metadata only:** one SQL statement patches `retentionHold` and `retentionHoldUntil` into the stored metadata JSON. `Session.updateMetadata` is not used: it publishes the whole session from an earlier read, and its projector rewrites the whole row, which could undo a title, a sync apply or another process's write that landed in between. The statement touches no message, part or other column.
+  - **Never newer than unseen writes:** the statement sets the session's `time_updated` to the chat's newest write here plus 1 ms, not to the wall clock. The hold reaches every machine that has this copy (its version is 1 ms newer), but it cannot make this copy newer than messages another machine wrote that this one has not pulled: under the whole-chat rule those messages are newer and win, and the refresh is simply redone on the next day's pass on the merged copy. So a hold write never overwrites another machine's newer messages.
+  - The writes emit `session.updated` on the GlobalBus so open clients redraw.
+  - **Until sync catches up** the job's tree is still safe on this machine: the job exempts it from retention here, and the sync manifest marks its sessions `scheduled`, so no peer's retention tombstone deletes this machine's copy (see [Sync](#sync)).
 - **UI:** held trees show the Keep pin with the tooltip "Held by a schedule" (see [What the user sees](#what-the-user-sees)).
-- **Gap:** a machine that only runs `serve` has no retention leader, so its jobs set no hold.
+- **Gap:** a machine that only runs `serve` has no retention leader, so its jobs set no hold. Its manifest still marks the job's sessions `scheduled`, so its own copy is never deleted by sync.
 
 ### Sync
 
@@ -137,18 +143,34 @@ The 2026-10-25 work made the history database prune its own redundant rows (`202
   - Mechanism: `SessionProjector.TombstoneBasis` (`{ latest, root }`) is provided around the delete. Projectors run inside the publishing fiber, so every member's tombstone carries the basis and the root.
   - The sync manifest lists a tombstone's `root` when it has one, and a peer's delete carries it to the tombstone the receiver writes, so it travels on through the hub.
   - Manual deletes keep the wall-clock time, no root, and the per-session rule below.
-- **Tree-atomic judgement:** a retention tombstone is judged against the whole tree, never one session.
-  - **Its tree, on each side:** the tree holding the deleted session or the root the tombstone names. Each side finds it from its own manifest, walking `parentID` up to the topmost session it has.
-  - **Survives:** on either side, that tree is kept (Keep or an unlapsed hold in a member's metadata, which the manifest reports as `kept`) or has a member whose sync version is at or after `time_deleted`. The basis is the deleter's newest activity plus 1 ms, so such a version is activity the deleter never saw.
-  - When a tree survives, every member survives with it, on every machine:
-    - `decide` on a peer deletes no member of the tree (and a member of a tree running there waits, like a running session);
-    - `decidePush` does not push any member's delete to the hub;
-    - the deleting machine's `decide` pulls every member back, parents first, an archived member included.
-    - A peer that took a member's delete before the tree's newer copy arrived pushes its own copy back, since the hub no longer has it.
-  - A tree nobody touched since, and that nobody keeps, is still deleted whole everywhere.
+- **Tree-atomic judgement** (`sync-decide.ts`, `retention`): a retention deletion is judged against its whole tree, never one session.
+  - **A deletion's tree, on each side:** every session that side has whose topmost present ancestor is the root the tombstones name, or a member one of the deletion's tombstones covers, or whose missing parent is such a member. So a side that lacks a middle session (it has the grandchild G but not its parent C) still places G in the tree.
+  - **Basis:** the oldest `time_deleted` among the deletion's tombstones on either side.
+  - **Survives** when, on either side:
+    - a member is kept (Keep or an unlapsed hold in its metadata, which the manifest reports as `kept`), or its sync version is at or after the basis: activity the deleter never saw;
+    - a member has an unexpired scheduled job on that machine (the manifest's `scheduled`). This protects only that machine's own copy: it is no evidence for the others until the job's hold syncs;
+    - or a side that holds the tree (has a member, or a tombstone of the deletion) lacks a member the other side knows: no session and no tombstone of any kind for it. An unknown member is one the deleter never judged, so it counts as survival.
+  - A tree nobody touched since, that nobody keeps, holds or schedules, and that both sides know whole, is still deleted whole everywhere.
   - **Manual deletes stay per session:** a peer copy updated after `time_deleted` outranks that session's tombstone only. A deleted sub-agent session therefore does not come back because its root was used later.
   - **Why per tree:** the basis is per tree, but most sub-agent sessions are older than their root's latest activity. Judged per session, a tree active on a peer kept its root and lost every untouched sub-agent session on every machine (and newer activity in a sub-agent session lost the root), leaving task parts pointing at nothing and orphans hidden from the UI.
-  - **Rollout:** `decide` and `decidePush` run in the desktop's sync worker, so the rule ships in the deb; the migration changes the sync schema id, so every machine and the hub must run this build (see [Deploying](#deploying)).
+- **Survival is sticky and whole-tree.** A machine that learns a deletion's tree survived drops every tombstone of that deletion (`root_id` = the root) in one step, and so never deletes those members again for it:
+  - **From a manifest comparison:** at the start of every cycle the sync worker asks its local server to void each local deletion whose tree survives (`voids`, then `POST /flynncode-sync/void/:root`, loopback only). `decide` and `decidePush` already treat those tombstones as void in the same cycle.
+  - **From a pull or a push:** `MachineSyncStore.apply` finds the deletion the incoming chat belongs to (its own tombstone, or the nearest deleted ancestor's). If the deletion never judged that chat, or the chat's tree here is now newer than the basis, kept, held or scheduled, every tombstone of the deletion goes in the same transaction. This is how the hub learns: it has no worker, and the gateway forwards no new route to it.
+  - **Archived members travel with their tree:** a peer-archived chat missing here is pulled when its parent is here or comes in the same cycle, and a local archived chat the hub lacks is pushed when its parent is on the hub or goes there in the same cycle. A deleting machine also pulls back every member of a tree it voids in that cycle, an archived root included. Archived chats outside a tree still stay local.
+- **A surviving tree goes back to the hub evidence first** (`decidePush`, `returnTree`). For a surviving tree the hub still holds the deletion's tombstones for:
+  - If the hub itself shows the tree newer or kept, every member just goes back.
+  - Otherwise the members that carry the evidence go first: written at or after the basis, kept, or unknown to the deleter. One of them on the hub makes the hub drop the whole deletion, and makes the deleting machine see the survival and void its own tombstones; a member joins its tree on either side through its own or its parent's tombstone, so it needs no ancestors.
+  - The sync worker sends that evidence outside the 20-chat batch, then re-reads the hub's manifest. Only when every piece of evidence was applied and the hub no longer holds the deletion's tombstones does the rest of the tree follow, in the same cycle and also outside the batch. Otherwise the rest waits for the next cycle, since the deleting machine would delete half a tree again.
+  - With no evidence to send (the tree survives on this machine only for a local job), or while a piece of evidence is running, the members the hub lacks stay here.
+  - **Result:** a surviving tree of any size is back on the hub in one cycle of the machine that has it, and on the deleting machine in its next cycle. Before this, the peer pushed a tree 20 members at a time in table order, the deleter deleted every batch that did not yet contain the evidence, and a tree with 20 or more members ahead of its evidence looped push/delete every minute for up to 30 days while starving the peer's other pushes.
+- **Retention deletes are never split:**
+  - **Pushes:** the deleting machine pushes a deletion's member deletes to the hub outside the 20-chat batch.
+  - **On a spoke:** the sync worker applies a peer's retention deletes for one tree in one local transaction (`MachineSyncStore.removeTree`, `POST /flynncode-sync/delete-tree/:root`, loopback only). It is refused whole when any member changed since the worker read the manifest, or when the whole tree here (walked up to its top and down to every member) has activity at or after the basis, is kept or held, or has a job.
+  - **On the hub:** the per-member delete route (`POST /flynncode-sync/delete/:id`, unchanged on the wire) re-checks the whole tree the same way for a delete that carries a `root`, and answers `stale` when it survives.
+  - **Write after the manifest read (re-check chosen over sticky survival):** a write that lands in any member after the worker read its manifest keeps every member: the tree transaction re-reads the whole tree under the same lock it deletes with. Relying on sticky survival on the next cycle would not do: the untouched members would already be gone from every machine by then.
+  - **Pulls:** the sync worker's batch takes whole trees only (every pulled chat under one top session of the peer's manifest). A tree larger than the batch is pulled alone, whole, in one cycle. A machine therefore never holds part of a tree because a batch was cut, which is what used to let a machine use a root it had pulled without its sub-agent sessions while another machine deleted them.
+- **What stays possible:** a member is lost everywhere only when the machines that had it judged the tree untouched and deleted it, while the machine that kept using the tree never had that member: its pull failed persistently, or the member was created while that machine was away for longer than the retention period. The surviving machine keeps the rest of the tree, and its task part points at nothing. A machine whose pull keeps failing is not caught up, so its own retention is paused, but that does not stop the others.
+- **Rollout:** `decide`, `voids` and `decidePush` run in the desktop's sync worker, and the voiding apply and the tree re-check in each server, the hub's included, so the rule ships in the deb and the hub image (see [Deploying](#deploying)).
 - **Tombstone expiry:** `session_tombstone.time_recorded` (migration `20261028152423_session_tombstone_recorded`) records when the row was written.
   - Tombstones are pruned 30 days after `time_recorded`, or after `time_deleted` for rows from before the column existed.
   - Without it, a retention tombstone, whose basis is already older than the period, would be pruned at once.
@@ -158,6 +180,7 @@ The 2026-10-25 work made the history database prune its own redundant rows (`202
   - The sync worker keeps `SyncStatus.lastCaughtUp` in memory. After every cycle the sidecar calls `SessionRetention.recordSync({ paired, lastCaughtUp })`, which writes `Global.Path.state/session-retention-sync-<database name>.json` when the value changes. Every process that leads retention on that database, the TUI included, reads it.
   - **On start**, before it enables retention, the sidecar records `{ paired, lastCaughtUp: null }`: a paired machine counts as stale until its first cycle catches up, never as unpaired. If that write fails, retention stays off. A record that says paired without `lastCaughtUp`, or an unreadable record, counts as stale.
   - **No record at all** means sync was never set up on this machine (a TUI-only install), and passes run.
+  - **Reported:** while passes skip for a stale sync, the leader logs a warning once a day ("automatic session cleanup is paused until hub sync catches up", naming a chat that keeps failing to sync or stays busy as the usual cause), and `GET /session/retention` returns `syncStale: true`, so the settings row says "Automatic cleanup is paused until sync catches up". A pull that always fails, for example a bundle that never applies, keeps a machine stale for good; this makes it visible instead of silent.
   - **Paused sync** counts as unpaired, so passes run while the user has paused sync. This is safe: the deletions stay local until sync resumes, and their tombstones carry the basis and are judged per tree then. A tombstone pruned after 30 days paused no longer propagates, and the hub's copy simply comes back.
 - **Whole-chat conflicts:**
   - Sync replaces a whole chat with the newer copy. A Keep or hold set on machine A is lost if machine B writes the same session again before the next cycle: B's newer copy, without the flag, wins on A.
@@ -172,11 +195,12 @@ The 2026-10-25 work made the history database prune its own redundant rows (`202
 - **Clock skew:** a tree whose latest activity is in the future is treated as active.
 - **Sync (accepted risks):**
   - **Unsynced Keep:** a Keep that has not synced yet does not stop a machine with an older copy from deleting its own copy of the tree.
-    - The machine that set the Keep never deletes the tree: a retention tombstone never deletes a tree kept where it lands. Its copy survives and syncs back, and every machine that deleted it pulls the whole tree back.
+    - The machine that set the Keep never deletes the tree: a retention tombstone never deletes a tree kept where it lands. Its copy goes back to the hub, evidence first, and every machine that deleted it pulls the whole tree back, archived members included.
     - Until then the session is missing on the machines that deleted it.
-    - An archived kept session is not pushed back (archived chats stay local), so only the machine that kept it still has it.
   - **Lost Keep:** a Keep can be lost to a whole-chat conflict (see [Sync](#sync)). The tree is then deleted like any other.
   - **Activity not seen:** a deletion never removes another machine's tree that has activity the deleting machine did not see, anywhere in the tree: the basis and the per-tree judgement keep it, and the deleting machine gets it back. The stale-sync skip keeps a machine that is behind from deleting at all, so this costs a re-download only in the rare case that remains (activity written after the last caught-up cycle).
+  - **Unknown members cost a round trip:** a tree that survives only because one side lacked a member comes back whole to the deleting machine, which deletes it again, now whole, on a later pass.
+  - **Partial trees:** see "What stays possible" under [Sync](#sync).
   - Both remaining risks are documented as "Keep a session before its last day".
 
 ## Testing
@@ -213,20 +237,26 @@ All tests use the real database and an injectable clock, with no mocks.
     - `decide` unit cases: a member kept when the tree is newer on the side that still has the root, a running tree waits, an archived member comes back, and a manual delete stays per session.
     - The manifest marks kept and held trees (not a lapsed or unstamped hold), and tombstones carry their root through the sync delete route.
     - A V2 input admitted out of time order dates the tree exactly as the manifest dates the chat.
-    - A stale sync skips the pass, and an unpaired machine runs. A cycle with pulls left for later, or a pull skipped as busy, does not count as caught up. The sidecar records a paired machine as not caught up on start, and a paused sync as unpaired.
+    - A stale sync skips the pass, and an unpaired machine runs. A cycle with pulls left for later, or a pull skipped as busy, does not count as caught up. The sidecar records a paired machine as not caught up on start, and a paused sync as unpaired. `GET /session/retention` reports `syncStale`, and the settings row says cleanup is paused (app helper and copy, browser suite).
     - A schedule sets a hold with an expiry, which protects the tree like Keep, is refreshed once a day, and only the machine that set it clears it. A hold nobody refreshes lapses after 7 days, and the tree is deleted.
+    - Hold writes wait for a caught-up sync within 10 minutes, patch only the metadata (a title written meanwhile by another writer stays, messages are untouched), and move the version to the chat's newest write plus 1 ms, so a peer copy with newer messages still wins `decide`. The manifest marks a session with a local job `scheduled`.
+    - Through the real sync worker (`sync-retention-e2e.test.ts`, whose stores mirror the server's apply, delete, tree-delete and void): a 26-session tree whose newer copy is the root, last in the desktop's table order, and one whose newer copy is its 25th sub-agent session, both converge within two rounds (in fact one) with no member deleted again anywhere and no tombstone left; an evidence push the hub refuses keeps the rest of the tree on the desktop with nothing re-deleted, and the tree converges once it goes through; a newer grandchild whose parent the desktop never had keeps its root everywhere; a machine that lacks a member never deletes it from the others and takes the whole tree back; an archived member goes back to the machine that deleted it. With the previous `sync-decide.ts` and `sync-worker.ts`, all five new cases fail.
+    - `decide`/`decidePush` unit cases: the deleter voids every tombstone of a surviving deletion; evidence goes first and the rest after it; a tree kept only by a local job is neither deleted nor pushed; running evidence holds the tree back; a lacking side keeps the tree; a newer grandchild without its parent keeps the root; an archived chat travels with its tree. The worker pulls a tree larger than the batch whole.
+    - Store: a write after the manifest read refuses the tree delete whole (also for a delete pushed one member at a time); a tree with a local job is refused; an untouched member coming back voids nothing, a newer one or one the deletion never judged voids the whole deletion; the routes validate `delete-tree` and `void`.
     - Expired tombstones are pruned by recorded time.
 
 ## Deploying
 
-The migration `20261028161358_session_tombstone_root` changes the sync schema id (the newest migration id). A spoke and the hub on different schema ids stop every cycle at `phase: "mismatch"` before deciding anything, so nothing is deleted or applied, but nothing syncs either until both run this build. Roll out in this order:
+The tree-atomic fix (ea3fc3689e) added the migration `20261028161358_session_tombstone_root`, which changed the sync schema id (the newest migration id). A spoke and the hub on different schema ids stop every cycle at `phase: "mismatch"` before deciding anything, so nothing is deleted or applied, but nothing syncs either until both run a build with it. The convergence fix that followed adds **no migration**: the schema id is unchanged, so a build from before it and a build with it sync with each other without a mismatch. That makes the order below matter more, not less: an old spoke still pushes a surviving tree 20 members at a time and an old hub neither drops a deletion when the evidence arrives nor re-checks the tree on a delete.
+
+Roll out in this order:
 
 1. **Back up the hub PVC.** Run the sync hub's backup CronJob by hand and confirm the backup completed.
 2. **Rebuild and roll out the hub image from the same commit as the debs.**
-   - Server image `flynncode-sync-hub` from `packages/flynncode/Dockerfile.hub`. It carries both tombstone migrations, which run on boot, and the hub exclusion from retention.
-   - Gateway image `flynncode-sync-gateway` from `packages/mobile-gateway/Dockerfile.hub`, from the same commit. It only forwards the delete body, which now carries `root`, so a rebuild is optional but keeps the images in step.
+   - Server image `flynncode-sync-hub` from `packages/flynncode/Dockerfile.hub`. It carries both tombstone migrations, which run on boot, the hub exclusion from retention, the voiding apply and the tree re-check on deletes.
+   - Gateway image `flynncode-sync-gateway` from `packages/mobile-gateway/Dockerfile.hub`, from the same commit. It only forwards the hub routes, which did not change (the new `delete-tree` and `void` routes are loopback only and never forwarded), so a rebuild is optional but keeps the images in step.
    - Keep `SYNC_HUB_MODE=1` in `k8s/sync-hub/statefulset.yaml`. It keeps the hub out of retention and makes it accept the spokes' writes.
-3. **Install the deb on every machine.** Build it from that commit in `packages/desktop` with `OPENCODE_CHANNEL=dev` (`bun run build`, then `bun run package:linux --linux deb`) and check `InstallationChannel = "dev"` in its `app.asar`. A machine still on the old build shows "mismatch" and does not sync until it is upgraded; do not leave an old and a new build running against the hub for long.
+3. **Install the deb on every machine.** Build it from that commit in `packages/desktop` with `OPENCODE_CHANNEL=dev` (`bun run build`, then `bun run package:linux --linux deb`) and check `InstallationChannel = "dev"` in its `app.asar`. A machine on a build from before the tree-atomic migration shows "mismatch" and does not sync until it is upgraded. A machine on a build between that migration and this fix keeps syncing, with the old push/delete loop for large surviving trees: upgrade every machine in one go, and do not leave such a build running against the hub.
 4. **If a later fix adds another migration, rebuild the hub image again from that commit** before handing out debs, and repeat steps 1 to 3.
 
 ## Out of scope
