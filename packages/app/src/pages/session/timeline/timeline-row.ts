@@ -1,6 +1,6 @@
 import type { SnapshotFileDiff } from "@flynncode/sdk/v2"
 import type { PartGroup } from "@flynncode/session-ui/message-part"
-import { Data, Equal } from "effect"
+import { Data } from "effect"
 
 export type SummaryDiff = SnapshotFileDiff & { file: string }
 
@@ -96,9 +96,5 @@ export namespace TimelineRow {
       case "TaskSuggestion":
         return `task-suggestion:${row.userMessageID}:${row.title}`
     }
-  }
-
-  export function equals(a: TimelineRow, b: TimelineRow) {
-    return Equal.equals(a, b)
   }
 }

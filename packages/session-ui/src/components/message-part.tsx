@@ -69,7 +69,7 @@ import { toolSearchCard } from "./tool-search-card"
 import { worktreeDivider } from "./worktree-divider"
 import { animate } from "motion"
 import { attached, inline, kind, typeLabel } from "./message-file"
-import { readPartText } from "./message-part-text"
+import { hasPartText, readPartText } from "./message-part-text"
 import { SessionProgressIndicatorV2 } from "../v2/components/session-progress-indicator-v2"
 
 async function writeClipboard(text: string): Promise<boolean> {
@@ -654,7 +654,7 @@ function sameRef(a: PartRef, b: PartRef) {
   return a.messageID === b.messageID && a.partID === b.partID
 }
 
-function sameGroup(a: PartGroup, b: PartGroup) {
+export function sameGroup(a: PartGroup, b: PartGroup) {
   if (a === b) return true
   if (a.key !== b.key) return false
   if (a.type !== b.type) return false
@@ -728,8 +728,8 @@ export function renderable(part: PartType, showReasoningSummaries = true) {
     if (part.tool === "question") return part.state.status !== "pending" && part.state.status !== "running"
     return true
   }
-  if (part.type === "text") return !!part.text?.trim()
-  if (part.type === "reasoning") return showReasoningSummaries && !!part.text?.trim()
+  if (part.type === "text") return hasPartText(part)
+  if (part.type === "reasoning") return showReasoningSummaries && hasPartText(part)
   return !!PART_MAPPING[part.type]
 }
 

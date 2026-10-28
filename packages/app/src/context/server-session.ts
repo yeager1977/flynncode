@@ -229,6 +229,8 @@ export function createServerSession(
     delete cache.part[messageID]
   }
   const seen = new Set<string>()
+  const unopened = new Set<string>()
+  const eventTouches = new Set<string>()
   const infoSeen = new Set<string>()
   const pinned = new Map<string, number>()
   const generations = new Map<string, object>()
@@ -529,10 +531,38 @@ export function createServerSession(
         .map(([sessionID]) => sessionID),
     ])
 
-  const touch = (sessionID: string) =>
+  const touch = (sessionID: string) => {
+    unopened.delete(sessionID)
+    bump(seen, sessionID)
+  }
+
+  // Moves a session to the most recent end of an LRU. Building the protected set is costly, so it only
+  // happens when the LRU overflows.
+  const bump = (lru: Set<string>, sessionID: string) => {
+    lru.delete(sessionID)
+    lru.add(sessionID)
+    if (lru.size <= SESSION_CACHE_LIMIT) return
     evict(
-      pickSessionCacheEvictions({ seen, keep: sessionID, limit: SESSION_CACHE_LIMIT, preserve: protectedSessions() }),
+      pickSessionCacheEvictions({
+        seen: lru,
+        keep: sessionID,
+        limit: SESSION_CACHE_LIMIT,
+        preserve: protectedSessions(),
+      }),
     )
+  }
+
+  // Events touch the cache once per session after the synchronous flush that delivered them. Sessions the
+  // user never opened (such as sub-agents) go to their own bounded LRU, so they never evict viewed ones.
+  const touchFromEvent = (sessionID: string) => {
+    if (eventTouches.size === 0) queueMicrotask(flushEventTouches)
+    eventTouches.add(sessionID)
+  }
+  const flushEventTouches = () => {
+    const sessionIDs = [...eventTouches]
+    eventTouches.clear()
+    sessionIDs.forEach((sessionID) => bump(seen.has(sessionID) ? seen : unopened, sessionID))
+  }
 
   const fetchMessages = async (sessionID: string, limit: number, before?: string, onAttempt?: () => void) => {
     if (messageApi && (await options?.protocol) !== "v1") {
@@ -986,7 +1016,7 @@ export function createServerSession(
   const apply = (event: { type: string; properties?: unknown }) => {
     const eventID = eventSessionID(event)
     if (eventID) {
-      touch(eventID)
+      touchFromEvent(eventID)
       if (
         !data.info[eventID] &&
         event.type !== "session.created" &&
@@ -1408,6 +1438,7 @@ export function createServerSession(
     evict(sessionID: string) {
       if (protectedSessions().has(sessionID)) return
       seen.delete(sessionID)
+      unopened.delete(sessionID)
       evict([sessionID])
     },
     pin(sessionID: string) {

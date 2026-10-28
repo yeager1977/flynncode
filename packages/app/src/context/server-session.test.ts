@@ -1606,7 +1606,7 @@ describe("server session", () => {
     expect(ctx.get).toEqual([])
   })
 
-  test("preserves pinned session content under server-wide cache pressure", () => {
+  test("preserves pinned session content under server-wide cache pressure", async () => {
     const ctx = setup({})
     ctx.store.pin("active")
     ctx.store.optimistic.add({
@@ -1637,6 +1637,70 @@ describe("server session", () => {
     }
 
     expect(ctx.store.data.message.active?.map((message) => message.id)).toEqual(["message"])
+    await Promise.resolve()
     expect(ctx.store.data.session_status["session-0"]).toBeUndefined()
+  })
+
+  describe("session cache touches", () => {
+    const viewed = Array.from({ length: 40 }, (_, index) => `viewed-${index}`)
+    const status = (sessionID: string) => ({
+      type: "session.status",
+      properties: { sessionID, status: { type: "idle" } },
+    })
+    const open = async (ctx: ReturnType<typeof setup>, sessionIDs: string[]) => {
+      for (const sessionID of sessionIDs) await ctx.store.sync(sessionID)
+    }
+    const cached = (ctx: ReturnType<typeof setup>, sessionIDs: string[]) =>
+      sessionIDs.filter((sessionID) => ctx.store.data.message[sessionID] !== undefined)
+
+    test("events for sessions the user never opened do not evict viewed sessions", async () => {
+      const ctx = setup(Object.fromEntries(viewed.map((id) => [id, session(id)])))
+      await open(ctx, viewed)
+
+      for (let index = 0; index < 5; index++) {
+        ctx.store.remember(session(`subagent-${index}`, "viewed-39"))
+        ctx.store.apply(status(`subagent-${index}`))
+      }
+      await Promise.resolve()
+
+      expect(cached(ctx, viewed)).toEqual(viewed)
+    })
+
+    test("keeps the cache of unopened sessions bounded", async () => {
+      const ctx = setup({})
+      const subagents = Array.from({ length: 45 }, (_, index) => `subagent-${index}`)
+
+      subagents.forEach((sessionID) => {
+        ctx.store.remember(session(sessionID, "root"))
+        ctx.store.apply(status(sessionID))
+      })
+      await Promise.resolve()
+
+      expect(subagents.filter((sessionID) => ctx.store.data.session_status[sessionID] !== undefined)).toEqual(
+        subagents.slice(5),
+      )
+    })
+
+    test("an event keeps a viewed session most recently used", async () => {
+      const ctx = setup(Object.fromEntries([...viewed, "viewed-40"].map((id) => [id, session(id)])))
+      await open(ctx, viewed)
+
+      ctx.store.apply(status("viewed-0"))
+      ctx.store.apply(status("viewed-0"))
+      await Promise.resolve()
+      await open(ctx, ["viewed-40"])
+
+      expect(cached(ctx, ["viewed-0", "viewed-1"])).toEqual(["viewed-0"])
+    })
+
+    test("opening a session moves it from the unopened cache to the viewed cache", async () => {
+      const ctx = setup(Object.fromEntries([...viewed, "subagent"].map((id) => [id, session(id)])))
+      ctx.store.apply(status("subagent"))
+      await open(ctx, ["subagent", ...viewed.slice(1)])
+
+      expect(cached(ctx, ["subagent"])).toEqual(["subagent"])
+      await open(ctx, [viewed[0]!])
+      expect(cached(ctx, ["subagent", "viewed-1"])).toEqual(["viewed-1"])
+    })
   })
 })
