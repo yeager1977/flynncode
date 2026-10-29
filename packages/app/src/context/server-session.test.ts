@@ -95,6 +95,49 @@ function messageClient(...responses: Array<MessageResponse | Promise<MessageResp
   })
 }
 
+const ids = (messages: readonly Message[] | undefined) => messages?.map((message) => message.id) ?? []
+
+// A server holding a session's user messages, paged newest-first like the real one: `before` is the oldest id of
+// the previous page.
+function historyServer(count: number) {
+  const id = (n: number) => `message-${String(n).padStart(3, "0")}`
+  const messages: Message[] = []
+  const write = (more: number) => {
+    const start = messages.length + 1
+    for (let n = start; n < start + more; n++) messages.push(userMessage(id(n), { time: { created: 1_000 + n } }))
+  }
+  write(count)
+  const requests: unknown[] = []
+  const waiting = new Map<number, () => void>()
+  const client = {
+    session: {
+      get: async () => ({ data: session("child", "root") }),
+      messages: async (input: { limit: number; before?: string }) => {
+        requests.push(input)
+        waiting.get(requests.length)?.()
+        const older = messages.filter((message) => !input.before || message.id < input.before)
+        const page = older.slice(-input.limit)
+        return response(
+          page.map((info) => ({ info, parts: [] })),
+          older.length > page.length ? page[0]?.id : undefined,
+        )
+      },
+    },
+  } as unknown as OpencodeClient
+  return {
+    messages,
+    requests,
+    write,
+    ids: (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, index) => id(from + index)),
+    client: Object.assign(client, {
+      requested(total: number) {
+        if (requests.length >= total) return Promise.resolve()
+        return new Promise<void>((resolve) => waiting.set(total, resolve))
+      },
+    }),
+  }
+}
+
 function rootMessageClient(
   pages: Array<MessageResponse | Promise<MessageResponse>>,
   roots: Array<SingleMessageResponse | Promise<SingleMessageResponse>>,
@@ -437,15 +480,19 @@ describe("server session", () => {
     const unrelated = userMessage("message-0", { time: { created: 0 } })
     const user = userMessage("message-1")
     const assistants = [assistantMessage("message-2", user.id), assistantMessage("message-3", user.id)]
+    // The cached assistant keeps the replacement page within the loaded history.
     const client = rootMessageClient(
       [
-        response([{ info: unrelated, parts: [] }]),
+        response([
+          { info: unrelated, parts: [] },
+          { info: assistants[0]!, parts: [] },
+        ]),
         response(
           assistants.map((info) => ({ info, parts: [] })),
           "older",
         ),
       ],
-      [singleResponse(user)],
+      [singleResponse(user), singleResponse(user)],
     )
     const store = createServerSession(client)
     await store.sync("child")
@@ -453,7 +500,7 @@ describe("server session", () => {
     await store.sync("child", { force: true })
 
     expect(client.requests).toHaveLength(2)
-    expect(client.rootRequests).toHaveLength(1)
+    expect(client.rootRequests).toHaveLength(2)
     expect(store.data.message.child).toEqual([unrelated, user, ...assistants])
   })
 
@@ -462,8 +509,14 @@ describe("server session", () => {
     const cached = userMessage("message-3", { time: { created: 3 } })
     const assistant = assistantMessage("message-4", user.id)
     const client = rootMessageClient(
-      [response([{ info: cached, parts: [] }]), response([{ info: assistant, parts: [] }], "older")],
-      [singleResponse(user)],
+      [
+        response([
+          { info: cached, parts: [] },
+          { info: assistant, parts: [] },
+        ]),
+        response([{ info: assistant, parts: [] }], "older"),
+      ],
+      [singleResponse(user), singleResponse(user)],
     )
     const store = createServerSession(client)
     await store.sync("child")
@@ -480,7 +533,13 @@ describe("server session", () => {
     const freshPart = { ...stalePart, text: "fresh" }
     const assistant = assistantMessage("message-2", stale.id)
     const client = rootMessageClient(
-      [response([{ info: stale, parts: [stalePart] }]), response([{ info: assistant, parts: [] }], "older")],
+      [
+        response([
+          { info: stale, parts: [stalePart] },
+          { info: assistant, parts: [] },
+        ]),
+        response([{ info: assistant, parts: [] }], "older"),
+      ],
       [singleResponse(fresh, [freshPart])],
     )
     const store = createServerSession(client)
@@ -501,7 +560,13 @@ describe("server session", () => {
     const pending = textPart(stale.id, { id: "pending", text: "pending" })
     const assistant = assistantMessage("message-2", stale.id)
     const client = rootMessageClient(
-      [response([{ info: stale, parts: [confirmed] }]), response([{ info: assistant, parts: [] }], "older")],
+      [
+        response([
+          { info: stale, parts: [confirmed] },
+          { info: assistant, parts: [] },
+        ]),
+        response([{ info: assistant, parts: [] }], "older"),
+      ],
       [singleResponse(fresh, [refreshed])],
     )
     const store = createServerSession(client)
@@ -1420,6 +1485,78 @@ describe("server session", () => {
     expect(store.history.more("child")).toBe(true)
     await store.history.loadMore("child")
     expect(client.requests[3]).toEqual({ sessionID: "child", limit: 50, before: "oldest" })
+  })
+
+  test("a forced refresh after missed events fills the gap back to the loaded history", async () => {
+    const server = historyServer(60)
+    const store = createServerSession(server.client)
+    await store.sync("child", { messageLimit: 1 })
+    await store.history.loadMore("child")
+    expect(ids(store.data.message.child)).toEqual(server.ids(10, 60))
+
+    // The stream drops (the phone sleeps, the network blips) while the agent writes four more messages.
+    server.write(4)
+    await store.sync("child", { force: true, messageLimit: 2 })
+
+    expect(ids(store.data.message.child)).toEqual(server.ids(10, 64))
+    expect(server.requests.at(-1)).toEqual({ sessionID: "child", limit: 50, before: "message-063" })
+    await store.history.loadMore("child")
+    expect(server.requests.at(-1)).toEqual({ sessionID: "child", limit: 50, before: "message-010" })
+    expect(ids(store.data.message.child)).toEqual(server.ids(1, 64))
+    expect(store.history.more("child")).toBe(false)
+  })
+
+  test("a forced refresh that cannot reach the loaded history pages on from where it stopped", async () => {
+    const server = historyServer(3)
+    const store = createServerSession(server.client)
+    await store.sync("child", { messageLimit: 1 })
+    await store.history.loadMore("child", 1)
+
+    server.write(600)
+    await store.sync("child", { force: true, messageLimit: 20 })
+
+    const loaded = ids(store.data.message.child)
+    expect(loaded.slice(0, 2)).toEqual(server.ids(2, 3))
+    expect(store.history.more("child")).toBe(true)
+    while (store.history.more("child")) await store.history.loadMore("child")
+    expect(ids(store.data.message.child)).toEqual(server.ids(1, 603))
+  })
+
+  test("a reconnect marks loaded sessions stale and live events do not make them fresh", async () => {
+    const server = historyServer(3)
+    const store = createServerSession(server.client)
+    store.apply({ type: "server.connected", properties: {} })
+    await store.sync("child", { messageLimit: 1 })
+    await store.history.loadMore("child", 1)
+    expect(store.fresh("child", 15_000)).toBe(true)
+
+    store.apply({ type: "server.connected", properties: {} })
+    server.write(30)
+    const latest = server.messages.at(-1)!
+    store.apply({ type: "message.updated", properties: { sessionID: "child", info: latest } })
+    await Promise.resolve()
+
+    expect(store.fresh("child", 15_000)).toBe(false)
+    expect(store.shouldPrefetch("child", 20)).toBe(true)
+    // The revisit's forced refresh reaches back to what was held before the reconnect, not the live event.
+    await store.sync("child", { force: true })
+    expect(ids(store.data.message.child)).toEqual(server.ids(1, 33))
+    expect(store.fresh("child", 15_000)).toBe(true)
+  })
+
+  test("a reconnect reloads the routed session and fills its gap", async () => {
+    const server = historyServer(3)
+    const store = createServerSession(server.client)
+    store.apply({ type: "server.connected", properties: {} })
+    await store.sync("child", { messageLimit: 1 })
+    store.pin("child")
+
+    server.write(25)
+    store.apply({ type: "server.connected", properties: {} })
+    await server.client.requested(3)
+    await store.sync("child")
+
+    expect(ids(store.data.message.child)).toEqual(server.ids(1, 28))
   })
 
   test("keeps the loaded content of an archived session that keeps receiving updates", async () => {

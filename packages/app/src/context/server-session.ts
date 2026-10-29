@@ -29,6 +29,8 @@ const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 const initialMessagePageSize = 20
 const historyMessagePageSize = 50
+// How many older pages a newest-page reload reads to reach the history already held before giving up.
+const gapPageLimit = 10
 const sessionInfoLimit = 2_048
 const emptyIDs: ReadonlySet<string> = new Set()
 
@@ -132,6 +134,13 @@ function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) {
   }
 }
 
+function oldestMessage(messages: readonly Message[]) {
+  return messages.reduce<Message | undefined>(
+    (oldest, message) => (!oldest || compareMessages(message, oldest) < 0 ? message : oldest),
+    undefined,
+  )
+}
+
 function runInflight(map: Map<string, Promise<void>>, key: string, task: () => Promise<void>) {
   const pending = map.get(key)
   if (pending) return pending
@@ -233,6 +242,10 @@ export function createServerSession(
   const eventTouches = new Set<string>()
   const infoSeen = new Set<string>()
   const pinned = new Map<string, number>()
+  // Per session, the newest message held when events may have been lost (a reconnect or a server dispose). The
+  // next newest-page reload must reach it, or the messages written in between would be missing.
+  const trusted = new Map<string, Message>()
+  const stream = { connected: false }
   const generations = new Map<string, object>()
   const generation = (sessionID: string) => {
     const current = generations.get(sessionID)
@@ -493,6 +506,7 @@ export function createServerSession(
       pendingParts.delete(sessionID)
       orphanParts.delete(sessionID)
       removedMessages.delete(sessionID)
+      trusted.delete(sessionID)
     })
     setData(
       produce((draft) => {
@@ -573,6 +587,31 @@ export function createServerSession(
       )
   }
 
+  // Events may have been lost while the stream was down or the server disposed its instances, so no loaded session
+  // can be trusted as current. Dropping `at` makes a revisit reload it, and keeps live events from marking it fresh
+  // again; the routed (pinned) sessions reload now. Each reload fills the gap back to the newest message held here.
+  // An optimistic message the server has not confirmed may never reach it, so it cannot mark the held history's end.
+  const newestHeld = (sessionID: string) =>
+    data.message[sessionID]?.findLast((message) => {
+      const item = optimistic.get(sessionID)?.get(message.id)
+      return !item || item.confirmedMessage === true
+    })
+
+  const distrustLoaded = () => {
+    const loaded = Object.keys(meta.limit).filter((sessionID) => data.message[sessionID] !== undefined)
+    loaded.forEach((sessionID) => {
+      const newest = newestHeld(sessionID)
+      if (newest && !trusted.has(sessionID)) trusted.set(sessionID, newest)
+    })
+    setMeta(
+      "at",
+      produce((draft) => loaded.forEach((sessionID) => delete draft[sessionID])),
+    )
+    loaded
+      .filter((sessionID) => pinned.has(sessionID))
+      .forEach((sessionID) => void sync(sessionID, { force: true }).catch(() => {}))
+  }
+
   const fetchMessages = async (sessionID: string, limit: number, before?: string, onAttempt?: () => void) => {
     if (messageApi && (await options?.protocol) !== "v1") {
       const request = (cursor?: string) =>
@@ -617,6 +656,33 @@ export function createServerSession(
       sourceMode: before ? ("older" as const) : ("latest" as const),
       cursor: response.response.headers.get("x-next-cursor") ?? undefined,
       complete: !response.response.headers.get("x-next-cursor"),
+    }
+  }
+
+  // Reads the newest page, then older pages until they reach `reach`, the newest message already held. A reload that
+  // stops short of it would leave a hole between the new page and the history it keeps. `reached` is false when it
+  // gave up after `gapPageLimit` pages; history paging then continues from the last page read.
+  const fetchLatest = async (sessionID: string, limit: number, reach: Message | undefined, onAttempt: () => void) => {
+    const pages = [await fetchMessages(sessionID, limit, undefined, onAttempt)]
+    const short = () => {
+      const page = pages.at(-1)!
+      const first = oldestMessage(page.session)
+      return !!reach && !page.complete && !!first && compareMessages(first, reach) > 0
+    }
+    // Only the first request resets the load's event tracking: events seen since then must still win over the
+    // older pages' snapshots.
+    while (short() && pages.length <= gapPageLimit && pages.at(-1)!.cursor)
+      pages.push(await fetchMessages(sessionID, historyMessagePageSize, pages.at(-1)!.cursor))
+    const last = pages.at(-1)!
+    const source = pages.flatMap((page) => (page.source ? [page.source] : []))
+    return {
+      ...pages[0]!,
+      session: pages.flatMap((page) => page.session).sort(compareMessages),
+      part: pages.flatMap((page) => page.part),
+      source: source.length > 0 ? source.toReversed().flat() : undefined,
+      cursor: last.cursor,
+      complete: last.complete,
+      reached: !short(),
     }
   }
 
@@ -788,12 +854,18 @@ export function createServerSession(
     messageLoads.set(sessionID, load)
     setMeta("loading", sessionID, true)
     let applied = false
+    // Only history loaded by pages is contiguous; messages that arrived by events alone may sit anywhere.
+    const reach =
+      mode === "prepend" || meta.limit[sessionID] === undefined
+        ? undefined
+        : (trusted.get(sessionID) ?? newestHeld(sessionID))
     try {
-      const page = await fetchMessages(sessionID, limit, before, () => resetMessageLoad(sessionID, load))
-      const first = page.session.reduce<Message | undefined>(
-        (oldest, message) => (!oldest || compareMessages(message, oldest) < 0 ? message : oldest),
-        undefined,
-      )
+      const onAttempt = () => resetMessageLoad(sessionID, load)
+      const page =
+        mode === "prepend"
+          ? { ...(await fetchMessages(sessionID, limit, before, onAttempt)), reached: true }
+          : await fetchLatest(sessionID, limit, reach, onAttempt)
+      const first = oldestMessage(page.session)
       if (generations.get(sessionID) !== active) return
 
       const parents = [] as Awaited<ReturnType<typeof fetchMessage>>[]
@@ -850,10 +922,12 @@ export function createServerSession(
       const preserveUnfetched =
         mode === "prepend" ||
         (!result.complete && (!first || ((message: Message) => compareMessages(message, first) < 0)))
-      // When a newest-page reload keeps older history, the history cursor must stay where that history ends.
+      // When a newest-page reload reaches and keeps older history, the history cursor must stay where that history
+      // ends.
       const oldest = data.message[sessionID]?.[0]
       const deeper =
         mode !== "prepend" &&
+        page.reached &&
         !result.complete &&
         !!first &&
         !!oldest &&
@@ -866,6 +940,7 @@ export function createServerSession(
         preserveUnfetched,
         mode !== "prepend",
       )
+      if (mode !== "prepend" && trusted.get(sessionID) === reach) trusted.delete(sessionID)
       applied = true
     } finally {
       if (!applied && generations.get(sessionID) === active && messageLoads.get(sessionID) === load) {
@@ -1045,6 +1120,15 @@ export function createServerSession(
         void resolve(eventID).catch(() => {})
     }
     switch (event.type) {
+      case "server.connected":
+      case "global.disposed":
+        // The first connect is the boot connect; nothing was held before it.
+        if (event.type === "server.connected" && !stream.connected) {
+          stream.connected = true
+          return
+        }
+        distrustLoaded()
+        return
       case "session.created":
         remember((event.properties as { info: Session }).info)
         return
