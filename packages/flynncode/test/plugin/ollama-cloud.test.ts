@@ -119,8 +119,19 @@ describe("plugin.ollama-cloud provider models hook", () => {
     expect(beam?.api).toEqual({ id: "beam", url: "https://ollama.com/v1", npm: "@ai-sdk/openai-compatible" })
     expect(beam?.capabilities.toolcall).toBe(true)
     expect(beam?.capabilities.reasoning).toBe(true)
+    // Ollama's OpenAI-compatible API carries reasoning under the reasoning field.
+    expect(beam?.capabilities.interleaved).toEqual({ field: "reasoning" })
     // Existing catalog entries keep their identity and pricing.
     expect(models?.["glm-5.3-flash"]).toBe(catalogModel)
+  })
+
+  test("leaves interleaved off for models without thinking", async () => {
+    const fetchImpl = (async () =>
+      new Response(JSON.stringify({ models: [{ name: "plain", capabilities: ["completion"] }] }))) as unknown as typeof fetch
+    const plugin = await OllamaCloudUsagePlugin({} as never, { fetchImpl })
+    const models = await plugin.provider?.models?.(provider, { auth: { type: "api", key: "k" } } as never)
+    expect(models?.["plain"]?.capabilities.reasoning).toBe(false)
+    expect(models?.["plain"]?.capabilities.interleaved).toBe(false)
   })
 
   test("keeps the catalog on failures and short polls", async () => {

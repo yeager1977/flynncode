@@ -120,7 +120,8 @@ function stubModel(input: {
       toolcall: input.tools,
       input: { text: true, audio: false, image: false, video: false, pdf: false },
       output: { text: true, audio: false, image: false, video: false, pdf: false },
-      interleaved: false,
+      // Ollama's OpenAI-compatible API returns and accepts reasoning under this field.
+      interleaved: input.reasoning ? { field: "reasoning" } : false,
     },
     release_date: "",
     variants: {},
