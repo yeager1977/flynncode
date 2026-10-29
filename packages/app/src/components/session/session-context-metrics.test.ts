@@ -96,4 +96,34 @@ describe("getSessionContext", () => {
 
     expect(ctx).toBeUndefined()
   })
+
+  test("resolves a provider that is no longer connected through the lookup", () => {
+    const messages = [user("u1"), assistant("a1", { input: 300, output: 100, reasoning: 0, read: 0, write: 0 }, 0)]
+    const catalog = {
+      id: "openai",
+      name: "OpenAI",
+      models: { "gpt-4.1": { name: "GPT-4.1", limit: { context: 1000 } } },
+    }
+    const asked: string[] = []
+    const ctx = getSessionContext(messages, [], (providerID) => {
+      asked.push(providerID)
+      return catalog
+    })
+
+    expect(asked).toEqual(["openai"])
+    expect(ctx?.providerLabel).toBe("OpenAI")
+    expect(ctx?.modelLabel).toBe("GPT-4.1")
+    expect(ctx?.limit).toBe(1000)
+    expect(ctx?.usage).toBe(40)
+  })
+
+  test("does not look up a provider the connected list already has", () => {
+    const messages = [assistant("a1", { input: 300, output: 100, reasoning: 0, read: 0, write: 0 }, 0)]
+    const listed = { id: "openai", models: { "gpt-4.1": { name: "GPT-4.1", limit: { context: 1000 } } } }
+    const ctx = getSessionContext(messages, [listed], () => {
+      throw new Error("looked up")
+    })
+
+    expect(ctx?.limit).toBe(1000)
+  })
 })

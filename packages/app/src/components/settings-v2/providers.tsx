@@ -1,3 +1,4 @@
+import { ProviderCatalogStatus } from "@/components/provider-catalog-status"
 import { ButtonV2 } from "@flynncode/ui/v2/button-v2"
 import { Tag } from "@flynncode/ui/v2/badge-v2"
 import { Switch } from "@flynncode/ui/v2/switch-v2"
@@ -291,6 +292,7 @@ export const SettingsProvidersV2: Component<{
 
         <div class="settings-v2-section">
           <h3 class="settings-v2-section-title">{language.t("settings.providers.section.popular")}</h3>
+          <ProviderCatalogStatus catalog={catalog} />
           <SettingsListV2>
             <For each={popular()}>
               {(item) => (

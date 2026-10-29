@@ -13,9 +13,11 @@ import {
   loadProjectsQuery,
   loadProviderCatalogQuery,
   loadProvidersQuery,
+  loadDirectoryProvidersQuery,
   loadReferencesQuery,
 } from "./bootstrap"
 import type { State, VcsCache } from "./types"
+import { hasOwnProviderConfig } from "./provider-config"
 import { ServerScope } from "@/utils/server-scope"
 import type { ServerApi } from "@/utils/server"
 
@@ -536,6 +538,38 @@ describe("provider queries", () => {
     await client.invalidateQueries({ predicate: (item) => item.queryKey[2] === "providers" })
     await query("/d")
     expect(calls).toEqual(["connected", "connected"])
+  })
+
+  test("a directory whose config changes providers reads its own list", async () => {
+    const calls: string[] = []
+    const directoryCalls: string[] = []
+    const client = new QueryClient()
+    const shared = await client.fetchQuery(
+      loadProvidersQuery(ServerScope.local, "/a", {} as CatalogApi, legacyProviders(calls), v1),
+    )
+    const own = await client.fetchQuery(
+      loadDirectoryProvidersQuery(ServerScope.local, "/project", legacyProviders(directoryCalls)),
+    )
+
+    expect(calls).toEqual(["connected"])
+    expect(directoryCalls).toEqual(["connected"])
+    expect([...shared.all.keys()]).toEqual(["openai"])
+    expect([...own.all.keys()]).toEqual(["openai"])
+    expect(loadDirectoryProvidersQuery(ServerScope.local, "/project", legacyProviders([])).queryKey[2]).toBe(
+      "providers",
+    )
+  })
+
+  test("only a config that sets provider keys gives a directory its own provider list", () => {
+    const global = { provider: { ollama: { name: "Ollama" } }, disabled_providers: ["openai"] }
+
+    expect(hasOwnProviderConfig(global, global)).toBe(false)
+    expect(hasOwnProviderConfig({ ...global, username: "flynn" }, global)).toBe(false)
+    expect(hasOwnProviderConfig({ ...global, disabled_providers: ["openai", "anthropic"] }, global)).toBe(true)
+    expect(hasOwnProviderConfig({ ...global, enabled_providers: ["ollama"] }, global)).toBe(true)
+    expect(
+      hasOwnProviderConfig({ ...global, provider: { ...global.provider, local: { name: "Local" } } }, global),
+    ).toBe(true)
   })
 
   test("does not poll the provider lists", () => {

@@ -5,6 +5,9 @@ import { dict } from "./en"
 // before their own entries, so a real translation always wins and English shows
 // otherwise. Remove a key here once every locale translates it.
 const keys = [
+  "dialog.provider.catalog.loading",
+  "dialog.provider.catalog.error",
+  "dialog.provider.catalog.retry",
   "session.plan.title",
   "session.plan.approveAcceptEdits",
   "session.plan.approveManual",

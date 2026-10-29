@@ -9,6 +9,7 @@ import { AppNodeBuilder } from "@flynncode/core/effect/app-node-builder"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { MoveSession } from "@flynncode/core/control-plane/move-session"
 import { Auth } from "../../src/auth"
+import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { Config } from "../../src/config/config"
 import { Installation } from "../../src/installation"
 import { Project } from "../../src/project/project"
@@ -36,6 +37,7 @@ const apiLayer = HttpRouter.serve(
 ).pipe(
   Layer.provideMerge(NodeHttpServer.layerTest),
   Layer.provide(Layer.mock(Auth.Service)({})),
+  Layer.provide(Layer.mock(EventV2Bridge.Service)({})),
   Layer.provide(Layer.mock(Config.Service)({})),
   Layer.provide(Layer.mock(MoveSession.Service)({})),
   Layer.provide(Layer.mock(Installation.Service)({})),

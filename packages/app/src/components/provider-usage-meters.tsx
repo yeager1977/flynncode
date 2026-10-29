@@ -37,7 +37,7 @@ export function ProviderUsageMeters(props: {
     return serverSync().session.data.message[sessionID] ?? []
   })
 
-  const context = createMemo(() => getSessionContext(messages(), [...providers.all().values()]))
+  const context = createMemo(() => getSessionContext(messages(), [...providers.all().values()], providers.lookup))
 
   const rows = createMemo(() => {
     const engaged = context()

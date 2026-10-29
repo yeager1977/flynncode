@@ -64,6 +64,8 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
     onSessionHref?: SessionHrefFn
     onShellPromote?: ShellPromoteFn
     planMode?: PlanModeControl
+    // Resolves a provider the connected list leaves out, such as one a past message used before it was removed.
+    lookupProvider?: (providerID: string) => Provider | undefined
   }) => {
     return {
       get store() {
@@ -79,6 +81,12 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
       sessionHref: props.onSessionHref,
       promoteShell: props.onShellPromote,
       planMode: props.planMode,
+      model(providerID: string, modelID: string) {
+        return (
+          props.data.provider?.all?.get(providerID)?.models?.[modelID] ??
+          props.lookupProvider?.(providerID)?.models?.[modelID]
+        )
+      },
     }
   },
 })

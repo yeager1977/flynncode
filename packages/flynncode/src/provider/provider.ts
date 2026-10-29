@@ -20,7 +20,8 @@ import { iife } from "@/util/iife"
 import { Global } from "@flynncode/core/global"
 import path from "path"
 import { pathToFileURL } from "url"
-import { Effect, Layer, Context, Schema, Types, Stream } from "effect"
+import { Effect, Layer, Context, Schema, Types, Stream, Queue } from "effect"
+import { unwatchFile, watchFile } from "fs"
 
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
@@ -50,6 +51,11 @@ const OPENAI_HEADER_TIMEOUT_DEFAULT = 300_000
 // (e.g. Ollama pulls) surface without an instance reload. Matches the app's
 // 5-minute provider poll.
 const PROVIDER_STATE_TTL = "5 minutes"
+// auth.json is replaced by rename, so it is watched by polling its stat; one stat call every two seconds.
+const CREDENTIAL_WATCH_INTERVAL_MS = 2_000
+// The last announced credential set. A process can build more than one provider layer (the HTTP server and the app
+// runtime each build their own), and sharing it means each change is announced once.
+const credentials = { keys: new Set<string>() }
 
 function wrapSSE(res: Response, ms: number, ctl: AbortController) {
   if (typeof ms !== "number" || ms <= 0) return res
@@ -2227,12 +2233,55 @@ const layer = Layer.effect(
       Effect.forkScoped({ startImmediately: true }),
     )
 
+    // Stored credentials decide which providers are connected. This server's auth routes announce their own
+    // changes, but other processes sharing the data dir (the CLI's `auth login`, a TUI, another server) write
+    // auth.json directly. Watch it and announce a changed credential set the same way, so clients refresh their
+    // provider lists without polling. Token refreshes keep the set and stay quiet; the event handler below keeps
+    // `credentials` current, so changes this server already announced are not announced twice.
+    const readCredentialKeys = Effect.suspend(() => auth.all()).pipe(
+      Effect.map((all) => new Set(Object.keys(all))),
+      Effect.catchCause(() => Effect.succeed(credentials.keys)),
+    )
+    const announceCredentials = Effect.gen(function* () {
+      const keys = yield* readCredentialKeys
+      const changed = [...keys.symmetricDifference(credentials.keys)]
+      credentials.keys = keys
+      yield* Effect.forEach(
+        changed,
+        (id) => events.publish(Integration.Event.ConnectionUpdated, { integrationID: Integration.ID.make(id) }),
+        { discard: true },
+      )
+    })
+
     // Integration connections move the connected set (vendor sign-in and
     // sign-out). Invalidate immediately instead of waiting for the TTL or
     // models.dev; layer-init fibers have no InstanceRef, so invalidateCurrent
     // drops every directory's cached state (same as the models.dev hook).
     yield* events.subscribe(Integration.Event.ConnectionUpdated).pipe(
-      Stream.runForEach(() => InstanceState.invalidateCurrent(state)),
+      Stream.runForEach(() =>
+        InstanceState.invalidateCurrent(state).pipe(
+          Effect.andThen(readCredentialKeys),
+          Effect.tap((keys) => Effect.sync(() => (credentials.keys = keys))),
+        ),
+      ),
+      Effect.forkScoped({ startImmediately: true }),
+    )
+
+    yield* readCredentialKeys.pipe(
+      Effect.tap((keys) => Effect.sync(() => (credentials.keys = keys))),
+      Effect.andThen(
+        Stream.callback<void>((queue) =>
+          Effect.acquireRelease(
+            Effect.sync(() => {
+              const listener = () => Queue.offerUnsafe(queue, undefined)
+              watchFile(Auth.file, { interval: CREDENTIAL_WATCH_INTERVAL_MS, persistent: false }, listener)
+              return listener
+            }),
+            (listener) => Effect.sync(() => unwatchFile(Auth.file, listener)),
+          ),
+        ).pipe(Stream.runForEach(() => announceCredentials)),
+      ),
+      Effect.catchCause((cause) => Effect.logWarning("credential watch stopped", { cause })),
       Effect.forkScoped({ startImmediately: true }),
     )
 

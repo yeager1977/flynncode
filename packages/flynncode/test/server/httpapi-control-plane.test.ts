@@ -7,6 +7,7 @@ import { MoveSession } from "@flynncode/core/control-plane/move-session"
 import { AbsolutePath } from "@flynncode/core/schema"
 import { SessionV2 } from "@flynncode/core/session"
 import { Auth } from "../../src/auth"
+import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { Config } from "../../src/config/config"
 import { Installation } from "../../src/installation"
 import { ServerAuth } from "../../src/server/auth"
@@ -39,6 +40,7 @@ const apiLayer = HttpRouter.serve(
 ).pipe(
   Layer.provideMerge(NodeHttpServer.layerTest),
   Layer.provide(Layer.mock(Auth.Service)({})),
+  Layer.provide(Layer.mock(EventV2Bridge.Service)({})),
   Layer.provide(Layer.mock(WorktreeJanitor.Service)({})),
   Layer.provide(Layer.mock(Config.Service)({})),
   Layer.provide(Layer.mock(Installation.Service)({})),

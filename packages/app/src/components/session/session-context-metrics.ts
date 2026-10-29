@@ -38,11 +38,17 @@ const lastAssistantWithTokens = (messages: Message[]) => {
   }
 }
 
-const build = (messages: Message[] = [], providers: Provider[] = []): Context | undefined => {
+const build = (
+  messages: Message[] = [],
+  providers: Provider[] = [],
+  lookup?: (providerID: string) => Provider | undefined,
+): Context | undefined => {
   const message = lastAssistantWithTokens(messages)
   if (!message) return undefined
 
-  const provider = providers.find((item) => item.id === message.providerID)
+  const listed = providers.find((item) => item.id === message.providerID)
+  // A provider that is no longer connected is missing from the list; the lookup resolves it from the full catalog.
+  const provider = listed?.models[message.modelID] ? listed : (lookup?.(message.providerID) ?? listed)
   const model = provider?.models[message.modelID]
   const limit = model?.limit.context
   const total = tokenTotal(message)
@@ -60,6 +66,10 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Context | 
   }
 }
 
-export function getSessionContext(messages: Message[] = [], providers: Provider[] = []) {
-  return build(messages, providers)
+export function getSessionContext(
+  messages: Message[] = [],
+  providers: Provider[] = [],
+  lookup?: (providerID: string) => Provider | undefined,
+) {
+  return build(messages, providers, lookup)
 }

@@ -31,6 +31,8 @@ export function useProviders(directory: Accessor<string | undefined>) {
 
   return {
     all: () => providers().all,
+    // Resolves a provider missing from `all`, such as one a past message used before it was disconnected.
+    lookup: (providerID: string) => serverSync().lookupProvider(providerID),
     default: () => providers().default,
     defaultModel: () => providers().defaultModel,
     connected: () => {
@@ -67,5 +69,7 @@ export function useProviderCatalog() {
     all,
     popular: () => selectPopularProviders(all()),
     loading: () => query.isLoading,
+    failed: () => query.isError,
+    retry: () => void query.refetch(),
   }
 }

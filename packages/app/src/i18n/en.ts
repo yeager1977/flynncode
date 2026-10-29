@@ -108,6 +108,9 @@ export const dict = {
 
   "dialog.provider.search.placeholder": "Search providers",
   "dialog.provider.empty": "No providers found",
+  "dialog.provider.catalog.loading": "Loading all providers…",
+  "dialog.provider.catalog.error": "Couldn't load the full provider list.",
+  "dialog.provider.catalog.retry": "Retry",
   "dialog.provider.group.popular": "Popular",
   "dialog.provider.group.other": "Other",
   "dialog.provider.custom.label": "Custom OpenAI-compatible provider",

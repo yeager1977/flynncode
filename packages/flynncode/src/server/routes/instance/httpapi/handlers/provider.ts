@@ -11,6 +11,8 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { ProviderAuthApiError } from "../groups/provider"
 import { ProviderV2 } from "@flynncode/core/provider"
+import { Integration } from "@flynncode/core/integration"
+import { EventV2Bridge } from "@/event-v2-bridge"
 
 function mapProviderAuthError<A, R>(self: Effect.Effect<A, ProviderAuth.Error, R>) {
   return self.pipe(
@@ -141,6 +143,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
     const provider = yield* Provider.Service
     const svc = yield* ProviderAuth.Service
     const authStore = yield* Auth.Service
+    const events = yield* EventV2Bridge.Service
 
     const revision = Effect.fn("ProviderHttpApi.revision")(function* () {
       const config = yield* cfg.get()
@@ -204,6 +207,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       params: { providerID: ProviderV2.ID }
       payload: ProviderAuth.CallbackInput
     }) {
+      const existing = yield* authStore.get(ctx.params.providerID).pipe(Effect.orDie)
       yield* mapProviderAuthError(
         svc.callback({
           providerID: ctx.params.providerID,
@@ -211,6 +215,11 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
           code: ctx.payload.code,
         }),
       )
+      // A sign-in that adds a provider changes the connected set every client lists.
+      if (!existing && (yield* authStore.get(ctx.params.providerID).pipe(Effect.orDie)))
+        yield* events.publish(Integration.Event.ConnectionUpdated, {
+          integrationID: Integration.ID.make(ctx.params.providerID),
+        })
       return true
     })
 

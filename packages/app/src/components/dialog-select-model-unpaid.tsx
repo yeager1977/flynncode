@@ -1,3 +1,4 @@
+import { ProviderCatalogStatus } from "@/components/provider-catalog-status"
 import { Button } from "@flynncode/ui/button"
 import { useDialog } from "@flynncode/ui/context/dialog"
 import { Dialog } from "@flynncode/ui/dialog"
@@ -91,6 +92,7 @@ export const DialogSelectModelUnpaid: Component<{ model?: ModelState }> = (props
           <div class="w-full flex flex-col items-start gap-4 px-1.5 pt-4 pb-4">
             <div class="px-2 text-14-medium text-text-base">{language.t("dialog.model.unpaid.addMore.title")}</div>
             <div class="w-full">
+              <ProviderCatalogStatus catalog={catalog} />
               <List
                 class="w-full px-3"
                 key={(p) => p.id}

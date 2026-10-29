@@ -123,6 +123,7 @@ export function DirectoryDataProvider(
             onNavigateToSession={(sessionID: string) => navigate(href(sessionID))}
             onSessionHref={href}
             onShellPromote={promoteShell}
+            lookupProvider={serverSync().lookupProvider}
           >
             {props.children}
           </PlanAwareDataProvider>

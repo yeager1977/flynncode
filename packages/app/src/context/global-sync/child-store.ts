@@ -1,7 +1,7 @@
-import { createRoot, createSignal, getOwner, onCleanup, runWithOwner, type Owner } from "solid-js"
+import { createMemo, createRoot, createSignal, getOwner, onCleanup, runWithOwner, type Owner } from "solid-js"
 import { createStore, type SetStoreFunction, type Store } from "solid-js/store"
 import { Persist, persisted } from "@/utils/persist"
-import type { VcsInfo } from "@flynncode/sdk/v2/client"
+import type { Config, VcsInfo } from "@flynncode/sdk/v2/client"
 import {
   DIR_IDLE_TTL_MS,
   MAX_DIR_STORES,
@@ -17,6 +17,7 @@ import { canDisposeDirectory, pickDirectoriesToEvict } from "./eviction"
 import { useQuery } from "@tanstack/solid-query"
 import { QueryOptionsApi } from "../server-sync"
 import { directoryKey, type DirectoryKey } from "./utils"
+import { hasOwnProviderConfig } from "./provider-config"
 import { NormalizedProviderListResponse } from "@flynncode/session-ui/context"
 import type { ServerScope } from "@/utils/server-scope"
 
@@ -33,6 +34,7 @@ export function createChildStoreManager(input: {
   queryOptions: QueryOptionsApi
   global: {
     provider: NormalizedProviderListResponse
+    readonly config: Config
   }
 }) {
   const children: Record<string, [Store<State>, SetStoreFunction<State>]> = {}
@@ -195,10 +197,6 @@ export function createChildStoreManager(input: {
           const mcpQuery = useQuery(() => ({ ...input.queryOptions.mcp(key), enabled: mcpEnabled() }))
           const mcpResourceQuery = useQuery(() => ({ ...input.queryOptions.mcpResources(key), enabled: mcpEnabled() }))
           const lspQuery = useQuery(() => ({ ...input.queryOptions.lsp(key), enabled: instanceQueriesEnabled() }))
-          const providerQuery = useQuery(() => ({
-            ...input.queryOptions.providers(key),
-            enabled: instanceQueriesEnabled(),
-          }))
           const referenceQuery = useQuery(() => ({
             ...input.queryOptions.references(key),
             enabled: instanceQueriesEnabled(),
@@ -262,6 +260,13 @@ export function createChildStoreManager(input: {
             part: {},
             part_text_accum_delta: {},
           })
+          // Directories share the server's provider list unless their config changes it. The store's provider
+          // getters read this query lazily.
+          const ownProviders = createMemo((): boolean => hasOwnProviderConfig(child[0].config, input.global.config))
+          const providerQuery = useQuery(() => ({
+            ...(ownProviders() ? input.queryOptions.directoryProviders(key) : input.queryOptions.providers(key)),
+            enabled: instanceQueriesEnabled(),
+          }))
           children[key] = child
           disposers.set(key, dispose)
           mcpToggles.set(key, setMcpEnabled)

@@ -247,17 +247,43 @@ export const loadProvidersQuery = (
               const fetching = context.client.getQueryState(server.queryKey)?.fetchStatus === "fetching"
               return context.client.fetchQuery({ ...server, staleTime: fetching ? 0 : Infinity })
             }
-            const slim = await legacy.provider.connected(undefined, { signal })
-            if (slim.response?.status !== 404) return normalizeProviderList(slim.data!)
-            // Servers without the slim route still answer the full list.
-            const full = await legacy.provider.list(undefined, { signal })
-            return normalizeProviderList(full.data!)
+            return loadConnectedProviders(legacy, signal)
           }
           return loadCurrentProviders(sdk, directory, signal)
         }),
       )
     },
   })
+
+// A project whose config adds, enables or disables providers lists different providers than the server default, so
+// on v1 its directory reads its own slim list through its directory client.
+export const loadDirectoryProvidersQuery = (
+  scope: ServerScope,
+  directory: string,
+  legacy: OpencodeClient,
+  timeoutMs = CATALOG_TIMEOUT_MS,
+) =>
+  queryOptions({
+    // Typed like the shared providers key, so a directory can switch between the two queries.
+    queryKey: [scope, directory, "providers", "own"] as (string | null)[],
+    staleTime: Infinity,
+    retry: false,
+    queryFn: (context): Promise<NormalizedProviderListResponse> => {
+      const signal = AbortSignal.any([context.signal, AbortSignal.timeout(timeoutMs)])
+      return untilAborted(
+        signal,
+        retry(() => loadConnectedProviders(legacy, signal)),
+      )
+    },
+  })
+
+async function loadConnectedProviders(legacy: OpencodeClient, signal: AbortSignal) {
+  const slim = await legacy.provider.connected(undefined, { signal })
+  if (slim.response?.status !== 404) return normalizeProviderList(slim.data!)
+  // Servers without the slim route still answer the full list.
+  const full = await legacy.provider.list(undefined, { signal })
+  return normalizeProviderList(full.data!)
+}
 
 // Every provider the server knows, connected or not. It is large, so only the connect-provider and manage-models
 // dialogs load it, on demand.

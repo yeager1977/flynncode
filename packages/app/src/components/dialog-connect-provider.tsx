@@ -7,6 +7,7 @@ import { IconButton } from "@flynncode/ui/icon-button"
 import { List, type ListRef } from "@flynncode/ui/list"
 import { ProviderIcon } from "@flynncode/ui/provider-icon"
 import { Spinner } from "@flynncode/ui/spinner"
+import { ProviderCatalogStatus } from "@/components/provider-catalog-status"
 import { Tag } from "@flynncode/ui/tag"
 import { TextField } from "@flynncode/ui/text-field"
 import { ButtonV2 } from "@flynncode/ui/v2/button-v2"
@@ -86,7 +87,7 @@ export const DialogConnectProvider: Component<{
         <Match when={controller.selected() && controller.selected() !== CUSTOM_ID ? controller.selected() : undefined}>
           {(provider) => (
             // A provider picked before the catalog arrives (e.g. from a usage prompt) has nothing to show yet.
-            <Show when={!catalog.loading()}>
+            <Show when={!catalog.loading()} fallback={<ProviderCatalogStatus catalog={catalog} />}>
               <ProviderConnection
                 provider={provider()}
                 directory={props.directory}
@@ -181,62 +182,65 @@ function ProviderPicker(props: {
   }
 
   return (
-    <List
-      class="px-3"
-      search={{ placeholder: language.t("dialog.provider.search.placeholder"), autofocus: true }}
-      emptyMessage={language.t("dialog.provider.empty")}
-      activeIcon="plus-small"
-      key={(x) => x?.id}
-      items={() => {
-        language.locale()
-        return [
-          { id: CUSTOM_ID, name: customLabel() },
-          { id: ANTHROPIC_API_ID, name: language.t("dialog.provider.anthropicApi.label") },
-          ...catalog.all().values(),
-        ]
-      }}
-      filterKeys={["id", "name"]}
-      groupBy={(x) => (popularProviders.includes(x.id) ? popularGroup() : otherGroup())}
-      sortBy={(a, b) => {
-        if (a.id === CUSTOM_ID) return -1
-        if (b.id === CUSTOM_ID) return 1
-        if (a.id === ANTHROPIC_API_ID) return -1
-        if (b.id === ANTHROPIC_API_ID) return 1
-        if (popularProviders.includes(a.id) && popularProviders.includes(b.id))
-          return popularProviders.indexOf(a.id) - popularProviders.indexOf(b.id)
-        return a.name.localeCompare(b.name)
-      }}
-      sortGroupsBy={(a, b) => {
-        const popular = popularGroup()
-        if (a.category === popular && b.category !== popular) return -1
-        if (b.category === popular && a.category !== popular) return 1
-        return 0
-      }}
-      onSelect={(x) => {
-        if (!x) return
-        props.onSelect(x.id)
-      }}
-    >
-      {(i) => (
-        <div class="px-1.25 w-full flex items-center gap-x-3">
-          <ProviderIcon data-slot="list-item-extra-icon" id={i.id} />
-          <span>{i.name}</span>
-          <Show when={i.id === "opencode"}>
-            <div class="text-14-regular text-text-weak">{language.t("dialog.provider.opencode.tagline")}</div>
-          </Show>
-          <Show when={i.id === CUSTOM_ID}>
-            <Tag>{language.t("settings.providers.tag.custom")}</Tag>
-          </Show>
-          <Show when={i.id === "opencode"}>
-            <Tag>{language.t("dialog.provider.tag.recommended")}</Tag>
-          </Show>
-          <Show when={note(i.id)}>{(value) => <div class="text-14-regular text-text-weak">{value()}</div>}</Show>
-          <Show when={i.id === "opencode-go"}>
-            <Tag>{language.t("dialog.provider.tag.recommended")}</Tag>
-          </Show>
-        </div>
-      )}
-    </List>
+    <>
+      <ProviderCatalogStatus catalog={catalog} />
+      <List
+        class="px-3"
+        search={{ placeholder: language.t("dialog.provider.search.placeholder"), autofocus: true }}
+        emptyMessage={language.t("dialog.provider.empty")}
+        activeIcon="plus-small"
+        key={(x) => x?.id}
+        items={() => {
+          language.locale()
+          return [
+            { id: CUSTOM_ID, name: customLabel() },
+            { id: ANTHROPIC_API_ID, name: language.t("dialog.provider.anthropicApi.label") },
+            ...catalog.all().values(),
+          ]
+        }}
+        filterKeys={["id", "name"]}
+        groupBy={(x) => (popularProviders.includes(x.id) ? popularGroup() : otherGroup())}
+        sortBy={(a, b) => {
+          if (a.id === CUSTOM_ID) return -1
+          if (b.id === CUSTOM_ID) return 1
+          if (a.id === ANTHROPIC_API_ID) return -1
+          if (b.id === ANTHROPIC_API_ID) return 1
+          if (popularProviders.includes(a.id) && popularProviders.includes(b.id))
+            return popularProviders.indexOf(a.id) - popularProviders.indexOf(b.id)
+          return a.name.localeCompare(b.name)
+        }}
+        sortGroupsBy={(a, b) => {
+          const popular = popularGroup()
+          if (a.category === popular && b.category !== popular) return -1
+          if (b.category === popular && a.category !== popular) return 1
+          return 0
+        }}
+        onSelect={(x) => {
+          if (!x) return
+          props.onSelect(x.id)
+        }}
+      >
+        {(i) => (
+          <div class="px-1.25 w-full flex items-center gap-x-3">
+            <ProviderIcon data-slot="list-item-extra-icon" id={i.id} />
+            <span>{i.name}</span>
+            <Show when={i.id === "opencode"}>
+              <div class="text-14-regular text-text-weak">{language.t("dialog.provider.opencode.tagline")}</div>
+            </Show>
+            <Show when={i.id === CUSTOM_ID}>
+              <Tag>{language.t("settings.providers.tag.custom")}</Tag>
+            </Show>
+            <Show when={i.id === "opencode"}>
+              <Tag>{language.t("dialog.provider.tag.recommended")}</Tag>
+            </Show>
+            <Show when={note(i.id)}>{(value) => <div class="text-14-regular text-text-weak">{value()}</div>}</Show>
+            <Show when={i.id === "opencode-go"}>
+              <Tag>{language.t("dialog.provider.tag.recommended")}</Tag>
+            </Show>
+          </div>
+        )}
+      </List>
+    </>
   )
 }
 
@@ -326,6 +330,7 @@ function ProviderPickerV2(props: {
       </div>
       <div class="relative min-h-0 flex-1">
         <div class="flex size-full min-h-0 flex-col gap-4 overflow-y-auto pb-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <ProviderCatalogStatus catalog={catalog} />
           <For
             each={[
               { title: language.t("dialog.provider.group.popular"), items: popular },
@@ -426,11 +431,12 @@ function ProviderConnection(props: {
     timer.current = undefined
   })
 
+  // Without the catalog (it failed to load), an unconnected provider is still named by its ID.
   const provider = createMemo(
     () =>
       catalog.all().get(props.provider) ??
       providers.all().get(props.provider) ??
-      serverSync().data.provider.all.get(props.provider)!,
+      serverSync().data.provider.all.get(props.provider) ?? { id: props.provider, name: props.provider },
   )
   const fallback = createMemo<ConnectMethod[]>(() => [
     {
@@ -904,9 +910,7 @@ function ProviderConnection(props: {
         <Show
           when={importStore.loggedIn}
           fallback={
-            <div class="text-14-regular text-text-base">
-              {language.t("provider.connect.museImport.loginHint")}
-            </div>
+            <div class="text-14-regular text-text-base">{language.t("provider.connect.museImport.loginHint")}</div>
           }
         >
           <div class="flex flex-col items-start gap-2">

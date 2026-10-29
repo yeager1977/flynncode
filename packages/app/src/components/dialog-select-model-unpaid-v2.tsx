@@ -1,3 +1,4 @@
+import { ProviderCatalogStatus } from "@/components/provider-catalog-status"
 import { DialogBody, DialogHeader, DialogTitle, DialogV2 } from "@flynncode/ui/v2/dialog-v2"
 import { Icon } from "@flynncode/ui/v2/icon"
 import { ProviderIcon } from "@flynncode/ui/provider-icon"
@@ -125,6 +126,7 @@ export const DialogSelectModelUnpaidV2: Component<{ model?: ModelState }> = (pro
                   {language.t("dialog.model.unpaid.addMore.title")}
                 </div>
               </div>
+              <ProviderCatalogStatus catalog={catalog} class="w-full" />
               <div class="grid w-full grid-cols-1 gap-y-1.5 gap-x-2 sm:grid-cols-2">
                 <For
                   each={[...catalog.popular()]

@@ -24,9 +24,11 @@ import {
   loadProjectsQuery,
   loadProviderCatalogQuery,
   loadProvidersQuery,
+  loadDirectoryProvidersQuery,
   loadReferencesQuery,
 } from "./global-sync/bootstrap"
 import { createChildStoreManager } from "./global-sync/child-store"
+import { createProviderLookup } from "./global-sync/provider-lookup"
 import { applyDirectoryEvent, applyGlobalEvent } from "./global-sync/event-reducer"
 import { estimateRootSessionTotal, loadRootSessions, loadRootSessionsV1 } from "./global-sync/session-load"
 import { trimSessions } from "./global-sync/session-trim"
@@ -191,10 +193,17 @@ const PROVIDER_EVENTS = new Set([
   "config.updated",
   "catalog.updated",
   "models-dev.refreshed",
+  "integration.connection.updated",
   "global.disposed",
-  "server.connected",
   "server.instance.disposed",
 ])
+
+// Provider lists never go stale on their own; these events are what change them. The server announces a provider
+// connected or removed anywhere (another window, the TUI, the CLI, the phone) with `integration.connection.updated`.
+// A reconnect may follow a server restart or missed events; the boot connect lands while the boot fetch is in flight.
+export function changesProviderLists(eventType: string, reconnect: boolean) {
+  return PROVIDER_EVENTS.has(eventType) || (eventType === "server.connected" && reconnect)
+}
 
 function makeQueryOptionsApi(
   scope: ServerScope,
@@ -208,6 +217,7 @@ function makeQueryOptionsApi(
     projects: () => loadProjectsQuery(scope, serverAPI.project),
     // A v1 server has one provider list, so every directory reads it through the server-level client.
     providers: (directory: PathKey | null) => loadProvidersQuery(scope, directory, serverAPI, serverSDK(), protocol),
+    directoryProviders: (directory: PathKey) => loadDirectoryProvidersQuery(scope, directory, sdkFor(directory)),
     providerCatalog: () => loadProviderCatalogQuery(scope, serverAPI, serverSDK(), protocol),
     path: (directory: PathKey | null) =>
       loadPathQuery(scope, directory, directory ? sdkFor(directory) : serverSDK(), protocol),
@@ -259,6 +269,9 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   const [configQuery, providerQuery, pathQuery] = useQueries(() => ({
     queries: [queryOptionsApi.globalConfig(), queryOptionsApi.providers(null), queryOptionsApi.path(null)],
   }))
+  const lookupProvider = createProviderLookup((enabled) =>
+    useQuery(() => ({ ...queryOptionsApi.providerCatalog(), enabled: enabled() })),
+  )
   const activeSessionsQuery = useQuery(() =>
     loadActiveSessionsQuery(serverSDK.scope, {
       active: async () => {
@@ -407,6 +420,9 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     queryOptions: queryOptionsApi,
     global: {
       provider: globalStore.provider,
+      get config() {
+        return globalStore.config
+      },
     },
   })
 
@@ -565,11 +581,8 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       homeSessions.apply(event)
     }
     homeSessions.refresh(event.type)
-    if (eventType === "integration.connection.updated") void refreshProviders()
-    // Provider lists never go stale on their own; these events are what change them. The first connect lands
-    // while the boot fetch is still in flight, and only a reconnect can mean the server changed underneath.
-    if (PROVIDER_EVENTS.has(eventType) && !(eventType === "server.connected" && (recent || bootedAt === 0)))
-      void queryClient.invalidateQueries(providerQueries)
+    // Invalidation refetches only the lists in use; the full catalog waits until a dialog reads it again.
+    if (changesProviderLists(eventType, !recent && bootedAt !== 0)) void queryClient.invalidateQueries(providerQueries)
 
     if (directory === "global") {
       // Every connect (boot or reconnect after a server restart) resyncs the
@@ -716,6 +729,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     disableMcp: children.disableMcp,
     queryOptions: queryOptionsApi,
     refreshProviders,
+    lookupProvider,
     // bootstrap,
     updateConfig: updateConfigMutation.mutateAsync,
     project: projectApi,

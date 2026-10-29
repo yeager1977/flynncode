@@ -8,6 +8,8 @@ import { TestInstance } from "../fixture/fixture"
 import { markPluginDependenciesReady } from "../fixture/plugin"
 import { testEffect } from "../lib/effect"
 import { httpApiLayer, request } from "./httpapi-layer"
+import { GlobalBus, type GlobalEvent } from "../../src/bus/global"
+import { Auth } from "../../src/auth"
 
 const testStateLayer = Layer.effectDiscard(
   Effect.acquireRelease(
@@ -242,6 +244,29 @@ function writeProviderModelsMutationPlugin(dir: string) {
         "",
       ].join("\n"),
     )
+  })
+}
+
+// Records the provider IDs announced by `integration.connection.updated`, which clients refresh their provider
+// lists on.
+function connectionEvents() {
+  return Effect.acquireRelease(
+    Effect.sync(() => {
+      const seen: string[] = []
+      const listener = (event: GlobalEvent) => {
+        if (event.payload?.type === "integration.connection.updated") seen.push(event.payload.properties.integrationID)
+      }
+      GlobalBus.on("event", listener)
+      return { seen, listener }
+    }),
+    (input) => Effect.sync(() => GlobalBus.off("event", input.listener)),
+  ).pipe(Effect.map((input) => input.seen))
+}
+
+function waitFor(check: () => boolean, timeout = 8_000) {
+  return Effect.promise(async () => {
+    const start = Date.now()
+    while (!check() && Date.now() - start < timeout) await Bun.sleep(25)
   })
 }
 
@@ -484,6 +509,59 @@ describe("provider HttpApi", () => {
       expect(isRecord(afterBody) && Array.isArray(afterBody.connected) ? afterBody.connected : []).toContain(
         "anthropic",
       )
+    }),
+    projectOptions,
+  )
+
+  it.instance(
+    "announces a provider connected or removed through the auth routes",
+    Effect.gen(function* () {
+      const seen = yield* connectionEvents()
+      const put = () =>
+        request("/auth/announce-route", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ type: "api", key: "announce-key" }),
+        })
+
+      expect((yield* put()).status).toBe(200)
+      yield* waitFor(() => seen.includes("announce-route"))
+      expect(seen).toEqual(["announce-route"])
+
+      // A token refresh rewrites the entry without changing the connected set.
+      expect((yield* put()).status).toBe(200)
+      expect((yield* request("/auth/announce-route", { method: "DELETE" })).status).toBe(200)
+      yield* waitFor(() => seen.length > 1)
+      expect(seen).toEqual(["announce-route", "announce-route"])
+    }),
+    projectOptions,
+  )
+
+  it.instance(
+    "announces credentials written to auth.json by another process",
+    Effect.gen(function* () {
+      const seen = yield* connectionEvents()
+      const original = yield* Effect.promise(() =>
+        Bun.file(Auth.file)
+          .text()
+          .catch(() => undefined),
+      )
+      yield* Effect.addFinalizer(() =>
+        Effect.promise(() =>
+          original === undefined
+            ? Bun.file(Auth.file)
+                .delete()
+                .catch(() => {})
+            : Bun.write(Auth.file, original),
+        ),
+      )
+      const stored = JSON.parse(original ?? "{}")
+      yield* Effect.promise(() =>
+        Bun.write(Auth.file, JSON.stringify({ ...stored, "announce-file": { type: "api", key: "file-key" } })),
+      )
+
+      yield* waitFor(() => seen.includes("announce-file"))
+      expect(seen).toEqual(["announce-file"])
     }),
     projectOptions,
   )

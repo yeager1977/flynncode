@@ -1,3 +1,4 @@
+import { ProviderCatalogStatus } from "@/components/provider-catalog-status"
 import { Button } from "@flynncode/ui/button"
 import { useDialog } from "@flynncode/ui/context/dialog"
 import { ProviderIcon } from "@flynncode/ui/provider-icon"
@@ -219,6 +220,7 @@ const SettingsProvidersContent: Component<{ onBack?: () => void }> = (props) => 
 
         <div class="flex flex-col gap-1">
           <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.providers.section.popular")}</h3>
+          <ProviderCatalogStatus catalog={catalog} />
           <SettingsList>
             <For each={popular()}>
               {(item) => (

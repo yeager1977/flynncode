@@ -10,7 +10,13 @@ import type {
 import { QueryClient } from "@tanstack/solid-query"
 import { canDisposeDirectory, pickDirectoriesToEvict } from "./global-sync/eviction"
 import { estimateRootSessionTotal, loadRootSessions } from "./global-sync/session-load"
-import { loadActiveSessionsQuery, loadMcpQuery, loadMcpResourcesQuery, seedActiveSessionStatuses } from "./server-sync"
+import {
+  changesProviderLists,
+  loadActiveSessionsQuery,
+  loadMcpQuery,
+  loadMcpResourcesQuery,
+  seedActiveSessionStatuses,
+} from "./server-sync"
 import { ServerScope } from "@/utils/server-scope"
 import { createServerSession } from "./server-session"
 import type { ServerApi } from "@/utils/server"
@@ -99,6 +105,20 @@ describe("active session query", () => {
       message: "retrying",
       next: 10,
     })
+  })
+})
+
+describe("provider list events", () => {
+  test("a provider connected or removed elsewhere refreshes the provider lists", () => {
+    expect(changesProviderLists("integration.connection.updated", false)).toBe(true)
+    expect(changesProviderLists("config.updated", false)).toBe(true)
+    expect(changesProviderLists("global.disposed", false)).toBe(true)
+  })
+
+  test("a reconnect refreshes the provider lists, the boot connect does not", () => {
+    expect(changesProviderLists("server.connected", true)).toBe(true)
+    expect(changesProviderLists("server.connected", false)).toBe(false)
+    expect(changesProviderLists("message.part.updated", true)).toBe(false)
   })
 })
 
