@@ -423,6 +423,9 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       get config() {
         return globalStore.config
       },
+      get configReady() {
+        return configQuery.isSuccess
+      },
     },
   })
 

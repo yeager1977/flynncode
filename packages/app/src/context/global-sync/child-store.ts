@@ -35,6 +35,7 @@ export function createChildStoreManager(input: {
   global: {
     provider: NormalizedProviderListResponse
     readonly config: Config
+    readonly configReady: boolean
   }
 }) {
   const children: Record<string, [Store<State>, SetStoreFunction<State>]> = {}
@@ -262,7 +263,9 @@ export function createChildStoreManager(input: {
           })
           // Directories share the server's provider list unless their config changes it. The store's provider
           // getters read this query lazily.
-          const ownProviders = createMemo((): boolean => hasOwnProviderConfig(child[0].config, input.global.config))
+          const ownProviders = createMemo(
+            (): boolean => input.global.configReady && hasOwnProviderConfig(child[0].config, input.global.config),
+          )
           const providerQuery = useQuery(() => ({
             ...(ownProviders() ? input.queryOptions.directoryProviders(key) : input.queryOptions.providers(key)),
             enabled: instanceQueriesEnabled(),

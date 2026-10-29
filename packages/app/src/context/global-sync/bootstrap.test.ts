@@ -570,6 +570,8 @@ describe("provider queries", () => {
     expect(
       hasOwnProviderConfig({ ...global, provider: { ...global.provider, local: { name: "Local" } } }, global),
     ).toBe(true)
+    // A directory whose config has not loaded yet shares the server list.
+    expect(hasOwnProviderConfig({}, global)).toBe(false)
   })
 
   test("does not poll the provider lists", () => {

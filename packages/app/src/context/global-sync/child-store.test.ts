@@ -92,7 +92,7 @@ describe("createChildStoreManager", () => {
       onDispose() {},
       translate: (key) => key,
       queryOptions: queryOptionsApi,
-      global: { provider, config: {} },
+      global: { provider, config: {}, configReady: true },
     })
 
     Array.from({ length: 30 }, (_, index) => `/pinned-${index}`).forEach((directory) => {
@@ -125,7 +125,7 @@ describe("createChildStoreManager", () => {
         onDispose() {},
         translate: (key) => key,
         queryOptions: queryOptionsApi,
-        global: { provider, config: {} },
+        global: { provider, config: {}, configReady: true },
       })
     })
 
@@ -157,7 +157,7 @@ describe("createChildStoreManager", () => {
         onDispose() {},
         translate: (key) => key,
         queryOptions: queryOptionsApi,
-        global: { provider, config: {} },
+        global: { provider, config: {}, configReady: true },
       })
     })
 
@@ -192,7 +192,7 @@ describe("createChildStoreManager", () => {
         onDispose() {},
         translate: (key) => key,
         queryOptions: queryOptionsApi,
-        global: { provider, config: {} },
+        global: { provider, config: {}, configReady: true },
       })
     })
 
@@ -241,7 +241,7 @@ describe("createChildStoreManager", () => {
         onDispose() {},
         translate: (key) => key,
         queryOptions: queryOptionsApi,
-        global: { provider, config: {} },
+        global: { provider, config: {}, configReady: true },
       })
     })
 
