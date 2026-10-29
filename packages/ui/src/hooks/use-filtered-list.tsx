@@ -26,6 +26,8 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
   const search = {
     controller: undefined as AbortController | undefined,
     timer: undefined as ReturnType<typeof setTimeout> | undefined,
+    // Enter pressed before the typed filter's results arrived; it selects once they do.
+    enter: false,
   }
   onCleanup(() => {
     clearTimeout(search.timer)
@@ -104,12 +106,24 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
     list.setActive(props.key(all[0]))
   }
 
+  const selectActive = () => {
+    const selectedIndex = flat().findIndex((x) => props.key(x) === list.active())
+    const selected = flat()[selectedIndex]
+    if (selected) props.onSelect?.(selected, selectedIndex)
+  }
+
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Enter" && !event.isComposing) {
       event.preventDefault()
-      const selectedIndex = flat().findIndex((x) => props.key(x) === list.active())
-      const selected = flat()[selectedIndex]
-      if (selected) props.onSelect?.(selected, selectedIndex)
+      // Enter right after typing must pick from what was typed, not from the previous query's results: run the
+      // pending search now and select when it settles.
+      if (store.filter !== store.query || grouped.loading) {
+        search.enter = true
+        clearTimeout(search.timer)
+        setStore("query", store.filter)
+        return
+      }
+      selectActive()
     } else if (event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
       if (event.key === "n" || event.key === "p") {
         event.preventDefault()
@@ -129,10 +143,14 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
   createEffect(
     on(grouped, () => {
       reset()
+      if (!search.enter || grouped.loading) return
+      search.enter = false
+      selectActive()
     }),
   )
 
   const onInput = (value: string) => {
+    search.enter = false
     clearTimeout(search.timer)
     setStore("filter", value)
     if (!props.debounce) {
@@ -149,6 +167,7 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
     reset,
     refetch,
     clear: () => {
+      search.enter = false
       clearTimeout(search.timer)
       setStore({ filter: "", query: "" })
     },

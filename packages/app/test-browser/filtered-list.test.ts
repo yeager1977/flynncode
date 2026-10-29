@@ -6,6 +6,7 @@ type Request = { query: string; signal?: AbortSignal; resolve: (items: string[])
 
 function mount(debounce?: number) {
   const requests: Request[] = []
+  const selected: string[] = []
   const owner = { dispose: () => {} }
   const list = createRoot((dispose) => {
     owner.dispose = dispose
@@ -14,11 +15,14 @@ function mount(debounce?: number) {
         query ? new Promise<string[]>((resolve) => requests.push({ query, signal, resolve })) : ["agent", "reference"],
       key: (item) => item,
       skipFilter: () => true,
+      onSelect: (item) => item && selected.push(item),
       debounce,
     })
   })
-  return { list, requests, dispose: () => owner.dispose() }
+  return { list, requests, selected, dispose: () => owner.dispose() }
 }
+
+const enter = () => new KeyboardEvent("keydown", { key: "Enter" })
 
 describe("filtered list search", () => {
   test("waits for a typing pause before searching", async () => {
@@ -67,6 +71,33 @@ describe("filtered list search", () => {
     const view = mount()
     view.list.onInput("x")
     expect(view.requests.map((request) => request.query)).toEqual(["x"])
+    view.dispose()
+  })
+
+  test("Enter right after typing selects from the typed query's results", async () => {
+    const view = mount(150)
+    await Bun.sleep(10)
+    expect(view.list.flat()).toEqual(["agent", "reference"])
+
+    view.list.onInput("bui")
+    view.list.onKeyDown(enter())
+    expect(view.selected).toEqual([])
+    expect(view.requests.map((request) => request.query)).toEqual(["bui"])
+
+    view.requests[0]?.resolve(["build.ts", "builder.ts"])
+    await Bun.sleep(10)
+    expect(view.selected).toEqual(["build.ts"])
+    view.dispose()
+  })
+
+  test("Enter on settled results selects at once", async () => {
+    const view = mount(0)
+    view.list.onInput("a")
+    view.requests[0]?.resolve(["a-file"])
+    await Bun.sleep(10)
+
+    view.list.onKeyDown(enter())
+    expect(view.selected).toEqual(["a-file"])
     view.dispose()
   })
 })

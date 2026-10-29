@@ -1852,8 +1852,7 @@ export default function Page() {
   )
 
   // Set by the timeline's history sentinel: the top of the loaded history is within about two screens.
-  let historyNearTop = false
-  let refreshHistorySentinel = () => {}
+  const historySentinel = { near: false, refresh: () => {} }
   const historyRequests = new Set<string>()
   const loadOlder = async () => {
     const owner = sessionOwnership.capture()
@@ -1868,15 +1867,15 @@ export default function Page() {
     if (!owner.current() || timeline.messages().length <= before) return
     // The sentinel reports only changes; observing it again reports where it is now, so a page that still leaves
     // the reader near the top loads the next one.
-    refreshHistorySentinel()
+    historySentinel.refresh()
   }
   const onHistoryScroll = () => {
     if (historyRequests.has(sessionOwnership.key()) || historyLoading() || !autoScroll.userScrolled()) return
-    if (!historyNearTop || !historyMore()) return
+    if (!historySentinel.near || !historyMore()) return
     void loadOlder()
   }
   const onHistoryNearTop = (near: boolean) => {
-    historyNearTop = near
+    historySentinel.near = near
     onHistoryScroll()
   }
 
@@ -2373,7 +2372,7 @@ export default function Page() {
                     }}
                     userMessages={visibleUserMessages()}
                     setHistoryRefresh={(fn) => {
-                      refreshHistorySentinel = fn
+                      historySentinel.refresh = fn
                     }}
                     anchor={anchor}
                     setRevealMessage={(fn) => {

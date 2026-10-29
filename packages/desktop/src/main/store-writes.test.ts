@@ -57,3 +57,18 @@ test("flushes one store or all stores on demand", () => {
     ["b.dat", { k: "2" }],
   ])
 })
+
+test("writes buffered values before a delete or clear, so a migration cannot lose both copies", () => {
+  const { writes, store } = setup(10_000)
+  store.set("opencode.notification.dat", "notification", "moved")
+  store.set("opencode.global.dat", "notification", "stale")
+
+  store.settle("opencode.global.dat", "notification")
+
+  expect(writes).toEqual([["opencode.notification.dat", { notification: "moved" }]])
+  store.set("a.dat", "k", "1")
+  store.set("b.dat", "k", "2")
+  store.settle("b.dat")
+  expect(writes.at(-1)).toEqual(["a.dat", { k: "1" }])
+  expect(store.pending("b.dat", "k")).toBeUndefined()
+})

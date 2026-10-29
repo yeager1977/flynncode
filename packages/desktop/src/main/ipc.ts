@@ -409,12 +409,12 @@ export function registerIpcHandlers(deps: Deps) {
     writes.set(name, key, value)
   })
   ipcMain.handle("store-delete", (_event: IpcMainInvokeEvent, name: string, key: string) => {
-    writes.drop(name, key)
+    writes.settle(name, key)
     getStore(name).delete(key)
     void removeStoreFileIfEmpty(name)
   })
   ipcMain.handle("store-clear", (_event: IpcMainInvokeEvent, name: string) => {
-    writes.drop(name)
+    writes.settle(name)
     getStore(name).clear()
     void removeStoreFileIfEmpty(name)
   })

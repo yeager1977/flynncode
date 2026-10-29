@@ -30,19 +30,21 @@ export function timelineScrollTo(content: () => HTMLDivElement | undefined): Tim
 // Inside a batch the virtualizer state updates immediately, while its adjustment scroll write and its view
 // notification are deferred to one flush after the batch, still before the frame paints. Nothing here reads layout.
 export function createResizeAnchor(input: { shouldAnchorBottom: () => boolean }) {
-  let pinned: number[] = []
-  let frame: number | undefined
-  let measuring = false
-  let pending: { scroll?: () => void; notify?: () => void } | undefined
+  const state = {
+    pinned: [] as number[],
+    frame: undefined as number | undefined,
+    measuring: false,
+    pending: undefined as { scroll?: () => void; notify?: () => void } | undefined,
+  }
   const flush = () => {
-    const batch = pending
-    pending = undefined
+    const batch = state.pending
+    state.pending = undefined
     batch?.scroll?.()
     batch?.notify?.()
   }
   const defer = (work: { scroll?: () => void; notify?: () => void }) => {
-    if (!pending) queueMicrotask(flush)
-    pending = { ...pending, ...work }
+    if (!state.pending) queueMicrotask(flush)
+    state.pending = { ...state.pending, ...work }
   }
   const attach = (virtualizer: TimelineVirtualizer) => {
     const resizeItem = virtualizer.resizeItem
@@ -50,7 +52,7 @@ export function createResizeAnchor(input: { shouldAnchorBottom: () => boolean })
     const core = virtualizer as unknown as { notify: (sync: boolean) => void }
     const notify = core.notify
     core.notify = (sync) => {
-      if (!measuring) return notify(sync)
+      if (!state.measuring) return notify(sync)
       defer({ notify: () => notify(sync) })
     }
     virtualizer.resizeItem = (index, size) => {
@@ -59,18 +61,25 @@ export function createResizeAnchor(input: { shouldAnchorBottom: () => boolean })
       const viewport = virtualizer.scrollRect?.height ?? 0
       const range = virtualizer.range
       if (range && previous !== undefined && Math.abs(size - previous) > viewport) {
-        pinned = Array.from({ length: range.endIndex - range.startIndex + 1 }, (_, offset) => range.startIndex + offset)
-        if (frame !== undefined) cancelAnimationFrame(frame)
-        frame = requestAnimationFrame(() => {
-          frame = requestAnimationFrame(() => {
-            frame = undefined
-            pinned = []
+        state.pinned = Array.from(
+          { length: range.endIndex - range.startIndex + 1 },
+          (_, offset) => range.startIndex + offset,
+        )
+        if (state.frame !== undefined) cancelAnimationFrame(state.frame)
+        state.frame = requestAnimationFrame(() => {
+          state.frame = requestAnimationFrame(() => {
+            state.frame = undefined
+            state.pinned = []
           })
         })
       }
-      measuring = true
-      resizeItem(index, size)
-      measuring = false
+      // A throwing measurement must not leave later notifies and scroll writes deferred forever.
+      state.measuring = true
+      try {
+        resizeItem(index, size)
+      } finally {
+        state.measuring = false
+      }
     }
     virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item) => {
       if (input.shouldAnchorBottom()) return false
@@ -85,16 +94,16 @@ export function createResizeAnchor(input: { shouldAnchorBottom: () => boolean })
     scrollTo:
       (scrollTo: TimelineScrollTo): TimelineScrollTo =>
       (offset, options, instance) => {
-        if (measuring && options.adjustments !== undefined) {
+        if (state.measuring && options.adjustments !== undefined) {
           defer({ scroll: () => scrollTo(offset, options, instance) })
           return
         }
-        if (pending) pending.scroll = undefined
+        if (state.pending) state.pending.scroll = undefined
         scrollTo(offset, options, instance)
       },
-    pinned: () => pinned,
+    pinned: () => state.pinned,
     cancel: () => {
-      if (frame !== undefined) cancelAnimationFrame(frame)
+      if (state.frame !== undefined) cancelAnimationFrame(state.frame)
     },
   }
 }

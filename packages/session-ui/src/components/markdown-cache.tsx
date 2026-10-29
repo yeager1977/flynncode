@@ -12,7 +12,7 @@ export type MarkdownCacheEntry = {
 // instead of falling back to plain text. Sizes count two bytes per UTF-16 code unit.
 export const markdownCacheBytes = 16 * 1024 * 1024
 const cache = new Map<string, MarkdownCacheEntry>()
-let bytes = 0
+const usage = { bytes: 0 }
 const size = (key: string, value: MarkdownCacheEntry) =>
   (key.length + value.raw.length + value.hash.length + value.html.length) * 2
 const config = {
@@ -50,16 +50,17 @@ export function touchCachedMarkdown(key: string, value: MarkdownCacheEntry) {
   const previous = cache.get(key)
   if (previous) {
     cache.delete(key)
-    bytes -= size(key, previous)
+    usage.bytes -= size(key, previous)
   }
   const next = size(key, value)
   if (next > markdownCacheBytes) return
   cache.set(key, value)
-  bytes += next
+  usage.bytes += next
+  // Map order is insertion order and a touch re-inserts, so the first entries are the least recently used.
   for (const [oldest, entry] of cache) {
-    if (bytes <= markdownCacheBytes) return
+    if (usage.bytes <= markdownCacheBytes) return
     cache.delete(oldest)
-    bytes -= size(oldest, entry)
+    usage.bytes -= size(oldest, entry)
   }
 }
 

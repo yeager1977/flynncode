@@ -105,6 +105,22 @@ describe("timeline bottom lock", () => {
     view.dispose()
   })
 
+  test("a measurement that throws leaves later scroll writes immediate", () => {
+    const view = setup({ offset: 100, anchored: false })
+    const adjust = view.virtualizer.shouldAdjustScrollPositionOnItemSizeChange
+    view.virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => {
+      throw new Error("measure failed")
+    }
+
+    expect(() => view.virtualizer.resizeItem(0, 120)).toThrow("measure failed")
+    view.virtualizer.shouldAdjustScrollPositionOnItemSizeChange = adjust
+    view.virtualizer.options.scrollToFn(140, { adjustments: 40 }, view.virtualizer)
+
+    // Written at once (offset plus adjustment), not deferred to a flush that a stuck batch would never schedule.
+    expect(view.writes).toEqual([180])
+    view.dispose()
+  })
+
   test("a jump larger than the viewport pins the rows on screen without reading layout", () => {
     const view = setup({ offset: 0, anchored: false })
 
