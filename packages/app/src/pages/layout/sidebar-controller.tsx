@@ -46,6 +46,7 @@ import {
 import { ProjectDragOverlay, SortableProject, type ProjectSidebarContext } from "./sidebar-project"
 import { SidebarArtifacts } from "./sidebar-artifacts-section"
 import { adjacentProject, adjacentSession, adjacentUnseenSession } from "./sidebar-navigation"
+import { createNeighbourWarmup, NEIGHBOUR_PREFETCH_MESSAGES } from "./sidebar-prefetch"
 
 // How a layout routes the sidebar's navigation. The classic layout maps
 // sessions and new sessions to `/:dir/session` URLs; the new layout opens them
@@ -74,10 +75,9 @@ export type SidebarHost = {
 
 export type SidebarVariant = "classic" | "v2"
 
-const PREFETCH_CHUNK = 200
 const PREFETCH_CONCURRENCY = 2
 const PREFETCH_PENDING_LIMIT = 10
-const PREFETCH_SPAN = 4
+const PREFETCH_SPAN = 1
 const PREFETCH_MAX_SESSIONS_PER_DIR = 10
 
 type PrefetchQueue = {
@@ -449,7 +449,7 @@ export function createSidebarController(host: SidebarHost) {
 
   async function prefetchMessages(directory: string, sessionID: string, token: number) {
     await serverSync()
-      .session.prefetch(sessionID, PREFETCH_CHUNK)
+      .session.prefetch(sessionID, NEIGHBOUR_PREFETCH_MESSAGES)
       .catch(() => {})
     if (prefetchToken.value !== token) return
     for (const stale of markPrefetched(directory, sessionID)) serverSync().session.evict(stale)
@@ -479,7 +479,7 @@ export function createSidebarController(host: SidebarHost) {
     const directory = session.directory
     if (!directory) return
 
-    const cached = untrack(() => !serverSync().session.shouldPrefetch(session.id, PREFETCH_CHUNK))
+    const cached = untrack(() => !serverSync().session.shouldPrefetch(session.id, NEIGHBOUR_PREFETCH_MESSAGES))
     if (cached) return
 
     const q = queueFor(directory)
@@ -521,21 +521,11 @@ export function createSidebarController(host: SidebarHost) {
     }
   }
 
-  createEffect(() => {
-    if (!host.routedDir()) return
-    const sessions = currentSessions()
-    if (sessions.length === 0) return
-
-    const current = host.sessionID()
-    const index = current ? sessions.findIndex((s) => s.id === current) : 0
-    if (index === -1) return
-
-    if (!current) {
-      const first = sessions[index]
-      if (first) prefetchSession(first, "high")
-    }
-
-    warm(sessions, index)
+  createNeighbourWarmup({
+    enabled: () => !!host.routedDir(),
+    sessionID: host.sessionID,
+    sessions: currentSessions,
+    warm: (session) => prefetchSession(session, "high"),
   })
 
   const openWarm = (target: { session: Session; index: number } | undefined) => {

@@ -34,7 +34,8 @@ type TurnCompleteNotification = NotificationBase & {
 
 type ErrorNotification = NotificationBase & {
   type: "error"
-  error: EventSessionError["properties"]["error"]
+  // Only the name and a bounded message are kept; full provider errors can carry whole response bodies.
+  error?: { name: string; data: { message?: string } }
 }
 
 export type Notification = TurnCompleteNotification | ErrorNotification
@@ -57,11 +58,25 @@ type NotificationIndex = {
 const MAX_NOTIFICATIONS = 500
 const NOTIFICATION_TTL_MS = 1000 * 60 * 60 * 24 * 30
 
-function pruneNotifications(list: Notification[]) {
-  const cutoff = Date.now() - NOTIFICATION_TTL_MS
+const MAX_ERROR_MESSAGE = 200
+
+export function trimNotifications(list: Notification[], now = Date.now()) {
+  const cutoff = now - NOTIFICATION_TTL_MS
   const pruned = list.filter((n) => n.time >= cutoff)
-  if (pruned.length <= MAX_NOTIFICATIONS) return pruned
-  return pruned.slice(pruned.length - MAX_NOTIFICATIONS)
+  return pruned.slice(Math.max(0, pruned.length - MAX_NOTIFICATIONS)).map(trimNotification)
+}
+
+function trimNotification(notification: Notification): Notification {
+  if (notification.type !== "error" || !notification.error) return notification
+  const data: Record<string, unknown> = notification.error.data ?? {}
+  const message = typeof data.message === "string" ? data.message.slice(0, MAX_ERROR_MESSAGE) : undefined
+  // Keep already-trimmed entries by identity; the notification index matches entries by reference.
+  const trimmed =
+    Object.keys(notification.error).length === 2 &&
+    Object.keys(data).every((key) => key === "message") &&
+    data.message === message
+  if (trimmed) return notification
+  return { ...notification, error: { name: notification.error.name, data: message === undefined ? {} : { message } } }
 }
 
 function createNotificationIndex(): NotificationIndex {
@@ -235,7 +250,7 @@ function createServerNotificationState(input: {
   const currentSession = input.sessionID
 
   const [store, setStore, _, ready] = persisted(
-    Persist.serverGlobal(serverSDK().scope, "notification", ["notification.v1"]),
+    Persist.notification(serverSDK().scope),
     createStore({
       list: [] as Notification[],
     }),
@@ -297,15 +312,16 @@ function createServerNotificationState(input: {
     if (!ready()) return
     if (meta.pruned) return
     meta.pruned = true
-    const list = pruneNotifications(store.list)
+    const list = trimNotifications(store.list)
     batch(() => {
       setStore("list", list)
       setIndex(reconcile(buildNotificationIndex(list), { merge: false }))
     })
   })
 
-  const append = (notification: Notification) => {
-    const list = pruneNotifications([...store.list, notification])
+  const append = (input: Notification) => {
+    const notification = trimNotification(input)
+    const list = trimNotifications([...store.list, notification])
     const keep = new Set(list)
     const removed = store.list.filter((n) => !keep.has(n))
 

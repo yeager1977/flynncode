@@ -158,8 +158,41 @@ function setCopyState(host: HTMLElement, copied: boolean) {
 }
 
 function disposeCopyButton(host: HTMLElement) {
-  copyButtonState.get(host)?.dispose()
+  const state = copyButtonState.get(host)
   copyButtonState.delete(host)
+  if (state) disposeWhenIdle(state.dispose)
+}
+
+// Every copy button is its own Solid root (tooltip + icon button). When a turn starts, the previous turn's
+// rows leave the virtualized range and dozens of these roots are torn down inside the turn-start task. The
+// buttons are already detached at that point, so their roots are disposed in idle time instead.
+const idleDisposals = { queue: [] as (() => void)[], scheduled: false }
+
+function disposeWhenIdle(dispose: () => void) {
+  idleDisposals.queue.push(dispose)
+  if (idleDisposals.scheduled) return
+  idleDisposals.scheduled = true
+  whenIdle(runIdleDisposals)
+}
+
+function runIdleDisposals(deadline?: IdleDeadline) {
+  const budget = performance.now() + Math.max(4, deadline?.timeRemaining() ?? 8)
+  while (idleDisposals.queue.length > 0 && performance.now() < budget) {
+    idleDisposals.queue.shift()?.()
+  }
+  if (idleDisposals.queue.length > 0) {
+    whenIdle(runIdleDisposals)
+    return
+  }
+  idleDisposals.scheduled = false
+}
+
+function whenIdle(run: (deadline?: IdleDeadline) => void) {
+  if (typeof requestIdleCallback === "function") {
+    requestIdleCallback(run, { timeout: 1000 })
+    return
+  }
+  setTimeout(run, 16)
 }
 
 function disposeCopyButtons(root: Element) {

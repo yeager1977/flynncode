@@ -7,7 +7,7 @@ import { useSpring } from "@flynncode/ui/motion-spring"
 import { TextReveal } from "@flynncode/ui/text-reveal"
 import { TextStrikethrough } from "@flynncode/ui/text-strikethrough"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
-import { Index, Show, createEffect, createMemo, on } from "solid-js"
+import { Index, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
@@ -86,6 +86,18 @@ export function SessionTodoDock(props: {
   const turn = createMemo(() => Math.max(0, Math.min(1, value())))
   const full = createMemo(() => Math.max(78, store.height))
   let contentRef: HTMLDivElement | undefined
+  // The dock opens when a turn starts; mounting every todo row (checkbox, strikethrough) in that same task
+  // lengthens the turn-start long task, so the rows mount once the browser is idle.
+  const [listReady, setListReady] = createSignal(false)
+  onMount(() => {
+    if (typeof window.requestIdleCallback !== "function") {
+      const timer = window.setTimeout(() => setListReady(true), 0)
+      onCleanup(() => window.clearTimeout(timer))
+      return
+    }
+    const handle = window.requestIdleCallback(() => setListReady(true), { timeout: 200 })
+    onCleanup(() => window.cancelIdleCallback(handle))
+  })
 
   createEffect(() => {
     const el = contentRef
@@ -215,7 +227,9 @@ export function SessionTodoDock(props: {
             opacity: `${Math.max(0, Math.min(1, 1 - hide()))}`,
           }}
         >
-          <TodoList todos={props.todos} />
+          <Show when={listReady()}>
+            <TodoList todos={props.todos} />
+          </Show>
         </div>
       </div>
     </Dynamic>

@@ -4,7 +4,7 @@ import { batch, createMemo, onCleanup, type Accessor } from "solid-js"
 import { createStore, type SetStoreFunction } from "solid-js/store"
 import type { FileSelection } from "@/context/file"
 import type { CommentElement } from "@/utils/comment-note"
-import { Persist, persisted } from "@/utils/persist"
+import { flushDraftWrites, Persist, persisted } from "@/utils/persist"
 import type { ServerScope } from "@/utils/server-scope"
 import type { BlobReference } from "@/utils/draft-store"
 import type { Platform } from "@/context/platform"
@@ -243,6 +243,8 @@ function createPromptStateValue(store: PromptStore, setStore: SetStoreFunction<P
       setLifecycle("generation", generation => generation + 1)
       pending.clear()
       actions.reset()
+      // A submitted prompt must not come back as a draft if the app closes before the write pause ends.
+      flushDraftWrites()
     },
     attachmentScope: () => {
       const generation = lifecycle.generation

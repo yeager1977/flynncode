@@ -10,6 +10,11 @@ import { readFileSync } from "node:fs"
 const source = readFileSync(new URL("./session-todo-dock.tsx", import.meta.url), "utf8")
 
 describe("SessionTodoDock", () => {
+  test("todo rows mount after the turn-start task, when the browser is idle", () => {
+    expect(source).toContain("window.requestIdleCallback(() => setListReady(true)")
+    expect(source).toMatch(/<Show when=\{listReady\(\)\}>\s*<TodoList todos=\{props.todos\} \/>/)
+  })
+
   test("todo rows render as distinct inset task chips", () => {
     expect(source).toContain(
       '"rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-02 px-2 py-1.5": true',

@@ -29,6 +29,7 @@ import {
 import type { UpdaterController } from "./updater-controller"
 import { createUpdaterSubscriptions } from "./updater-subscriptions"
 import { createDesktopDraftStore } from "./draft-store"
+import { createStoreWrites } from "./store-writes"
 import { nativeT } from "./native-translations"
 import { registerPluginManager } from "./plugin-manager"
 import type { VendorStatus } from "./vendor-keychain"
@@ -129,9 +130,21 @@ export function registerIpcHandlers(deps: Deps) {
   const drafts = createDesktopDraftStore(join(app.getPath("userData"), "drafts.sqlite"))
   const updaterSubscriptions = createUpdaterSubscriptions()
   app.once("will-quit", updaterSubscriptions.clear)
-  app.on("before-quit", () => drafts.flush())
-  app.once("will-quit", () => drafts.close())
-  app.on("browser-window-created", (_event, win) => win.on("session-end", () => drafts.flush()))
+  const writes = createStoreWrites((name, values) => getStore(name).set(values))
+  app.on("before-quit", () => {
+    drafts.flush()
+    writes.flush()
+  })
+  app.once("will-quit", () => {
+    writes.flush()
+    drafts.close()
+  })
+  app.on("browser-window-created", (_event, win) =>
+    win.on("session-end", () => {
+      drafts.flush()
+      writes.flush()
+    }),
+  )
 
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
   ipcMain.handle("await-initialization", () => deps.awaitInitialization())
@@ -385,8 +398,7 @@ export function registerIpcHandlers(deps: Deps) {
   })
   ipcMain.handle("store-get", (_event: IpcMainInvokeEvent, name: string, key: string) => {
     try {
-      const store = getStore(name)
-      const value = store.get(key)
+      const value = writes.pending(name, key) ?? getStore(name).get(key)
       if (value === undefined || value === null) return null
       return typeof value === "string" ? value : JSON.stringify(value)
     } catch {
@@ -394,23 +406,25 @@ export function registerIpcHandlers(deps: Deps) {
     }
   })
   ipcMain.handle("store-set", (_event: IpcMainInvokeEvent, name: string, key: string, value: string) => {
-    getStore(name).set(key, value)
+    writes.set(name, key, value)
   })
   ipcMain.handle("store-delete", (_event: IpcMainInvokeEvent, name: string, key: string) => {
+    writes.drop(name, key)
     getStore(name).delete(key)
     void removeStoreFileIfEmpty(name)
   })
   ipcMain.handle("store-clear", (_event: IpcMainInvokeEvent, name: string) => {
+    writes.drop(name)
     getStore(name).clear()
     void removeStoreFileIfEmpty(name)
   })
   ipcMain.handle("store-keys", (_event: IpcMainInvokeEvent, name: string) => {
-    const store = getStore(name)
-    return Object.keys(store.store)
+    writes.flush(name)
+    return Object.keys(getStore(name).store)
   })
   ipcMain.handle("store-length", (_event: IpcMainInvokeEvent, name: string) => {
-    const store = getStore(name)
-    return Object.keys(store.store).length
+    writes.flush(name)
+    return Object.keys(getStore(name).store).length
   })
   ipcMain.handle("draft-get", (_event, key: string) => drafts.get(key))
   ipcMain.handle("draft-set", (_event, key: string, value: string) => drafts.set(key, value))

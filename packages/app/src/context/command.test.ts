@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   activeCommandRegistrations,
   addCommandRegistration,
+  changedCatalogEntries,
   commandPaletteOptions,
   resolveKeybindOption,
   type CommandOption,
@@ -66,5 +67,32 @@ describe("resolveKeybindOption", () => {
     const contextual = { id: "terminal.close", title: "Close terminal", when: () => false }
 
     expect(resolveKeybindOption([fallback, contextual], new KeyboardEvent("keydown"))).toBe(fallback)
+  })
+})
+
+describe("changedCatalogEntries", () => {
+  const current = {
+    "session.new": { title: "New session", category: "Session", keybind: "mod+n", slash: "new" },
+    "session.undo": { title: "Undo", description: "Undo the last turn" },
+  }
+
+  test("returns nothing when the registered catalog is unchanged, so it is not persisted again", () => {
+    const next = {
+      "session.new": { title: "New session", category: "Session", keybind: "mod+n", slash: "new" },
+      "session.undo": { title: "Undo", description: "Undo the last turn" },
+    }
+    expect(changedCatalogEntries(current, next)).toEqual({})
+  })
+
+  test("returns only new or changed entries", () => {
+    const next = {
+      "session.new": { title: "New session", category: "Session", keybind: "mod+shift+n", slash: "new" },
+      "session.undo": { title: "Undo", description: "Undo the last turn" },
+      "file.open": { title: "Open file" },
+    }
+    expect(changedCatalogEntries(current, next)).toEqual({
+      "session.new": next["session.new"],
+      "file.open": next["file.open"],
+    })
   })
 })

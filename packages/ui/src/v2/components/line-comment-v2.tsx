@@ -57,7 +57,7 @@ export function LineCommentV2(props: LineCommentV2Props) {
 }
 
 export type LineCommentEditorV2Mention = {
-  items: (query: string) => string[] | Promise<string[]>
+  items: (query: string, signal?: AbortSignal) => string[] | Promise<string[]>
 }
 
 export interface LineCommentEditorV2Props extends Omit<ComponentProps<"div">, "children" | "onInput" | "onSubmit"> {
@@ -153,16 +153,17 @@ export function LineCommentEditorV2(props: LineCommentEditorV2Props) {
   }
 
   const mention = useFilteredList<{ path: string }>({
-    items: async (query) => {
+    items: async (query, signal) => {
       if (!local.mention) return []
       if (!query.trim()) return []
-      const paths = await local.mention.items(query)
+      const paths = await local.mention.items(query, signal)
       return paths.map((path) => ({ path }))
     },
     key: (item) => item.path,
     filterKeys: ["path"],
     skipFilter: () => true,
     onSelect: selectMention,
+    debounce: 150,
   })
 
   const syncMention = () => {

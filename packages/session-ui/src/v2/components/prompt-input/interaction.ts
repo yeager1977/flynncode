@@ -75,7 +75,10 @@ export function createPromptInputV2Controller(input: {
   history?: PromptInputV2History
   commands: Accessor<PromptInputV2Suggestion[]>
   context: Accessor<PromptInputV2Suggestion[]>
-  searchContextFiles: (query: string) => PromptInputV2Suggestion[] | Promise<PromptInputV2Suggestion[]>
+  searchContextFiles: (
+    query: string,
+    signal?: AbortSignal,
+  ) => PromptInputV2Suggestion[] | Promise<PromptInputV2Suggestion[]>
   openAttachment?: (attachment: PromptInputV2Attachment) => void
   openContext?: (key: string) => void
   onContextRemove?: (item: PromptInputV2Comment) => void
@@ -122,12 +125,12 @@ export function createPromptInputV2Controller(input: {
     attachments.pick(() => fileInput?.click())
   }
   const contextList = useFilteredList<PromptInputV2Suggestion>({
-    items: async (query) => {
+    items: async (query, signal) => {
       const fixed = input.context().filter((item) => item.kind !== "file")
       const recent = input.context().filter((item) => item.kind === "file" && item.recent)
       if (!query.trim()) return [...fixed, ...recent]
       const seen = new Set(recent.map((item) => item.id))
-      const files = (await input.searchContextFiles(query)).filter((item) => !seen.has(item.id))
+      const files = (await input.searchContextFiles(query, signal)).filter((item) => !seen.has(item.id))
       return [...fixed, ...recent, ...files]
     },
     key: (item) => item.id,
@@ -144,6 +147,7 @@ export function createPromptInputV2Controller(input: {
       const order = ["reference", "agent", "resource", "recent", "file"]
       return order.indexOf(a.category) - order.indexOf(b.category)
     },
+    debounce: 150,
   })
   const commandList = useFilteredList<PromptInputV2Suggestion>({
     items: () => input.commands(),

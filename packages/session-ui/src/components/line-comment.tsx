@@ -187,7 +187,7 @@ export type LineCommentEditorProps = Omit<LineCommentAnchorProps, "children" | "
   cancelLabel?: string
   submitLabel?: string
   mention?: {
-    items: (query: string) => string[] | Promise<string[]>
+    items: (query: string, signal?: AbortSignal) => string[] | Promise<string[]>
   }
 }
 
@@ -232,16 +232,17 @@ export const LineCommentEditor = (props: LineCommentEditorProps) => {
   }
 
   const mention = useFilteredList<{ path: string }>({
-    items: async (query) => {
+    items: async (query, signal) => {
       if (!split.mention) return []
       if (!query.trim()) return []
-      const paths = await split.mention.items(query)
+      const paths = await split.mention.items(query, signal)
       return paths.map((path) => ({ path }))
     },
     key: (item) => item.path,
     filterKeys: ["path"],
     skipFilter: () => true,
     onSelect: selectMention,
+    debounce: 150,
   })
 
   const focus = () => refs.textarea?.focus()

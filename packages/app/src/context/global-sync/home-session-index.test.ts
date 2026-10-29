@@ -194,4 +194,24 @@ describe("Home V2 session index", () => {
     expect(queryClient.getQueryData(cache.indexKey)).toBeUndefined()
     expect(cache.sessions({ sessions, eventSequence: 0 }, undefined).map((item) => item.id)).toEqual(["b"])
   })
+
+  test("leaves the root index untouched for child session updates", () => {
+    const queryClient = new QueryClient()
+    const cache = createHomeSessionIndexCache(queryClient, "server")
+    const sessions = [{ id: "a", time: { created: 1, updated: 1 } }] as Session[]
+    const index = { sessions, eventSequence: 0 }
+    queryClient.setQueryData(cache.indexKey, index)
+    const events = queryClient.getQueryData<unknown>(cache.eventsKey)
+
+    cache.apply({
+      type: "session.updated",
+      properties: {
+        sessionID: "child",
+        info: { id: "child", parentID: "a", time: { created: 1, updated: 2 } } as Session,
+      },
+    })
+
+    expect(queryClient.getQueryData<unknown>(cache.indexKey)).toBe(index)
+    expect(queryClient.getQueryData<unknown>(cache.eventsKey)).toBe(events)
+  })
 })

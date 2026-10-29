@@ -1,11 +1,12 @@
 import fuzzysort from "fuzzysort"
 import { entries, flatMap, groupBy, map, pipe } from "remeda"
-import { createEffect, createMemo, createResource, on } from "solid-js"
+import { createEffect, createMemo, createResource, on, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createList } from "solid-list"
 
 export interface FilteredListProps<T> {
-  items: T[] | ((filter: string) => T[] | Promise<T[]>)
+  // `signal` aborts when a newer filter supersedes this one or the list is disposed.
+  items: T[] | ((filter: string, signal: AbortSignal) => T[] | Promise<T[]>)
   key: (item: T) => string
   filterKeys?: string[]
   current?: T
@@ -15,19 +16,35 @@ export interface FilteredListProps<T> {
   skipFilter?: (item: T) => boolean
   onSelect?: (value: T | undefined, index: number) => void
   noInitialSelection?: boolean
+  // Milliseconds of typing pause before the filter reaches `items`, for searches that hit the server.
+  debounce?: number
 }
 
 export function useFilteredList<T>(props: FilteredListProps<T>) {
-  const [store, setStore] = createStore<{ filter: string }>({ filter: "" })
+  // `filter` is what the user typed; `query` is what has been searched (after the debounce).
+  const [store, setStore] = createStore<{ filter: string; query: string }>({ filter: "", query: "" })
+  const search = {
+    controller: undefined as AbortController | undefined,
+    timer: undefined as ReturnType<typeof setTimeout> | undefined,
+  }
+  onCleanup(() => {
+    clearTimeout(search.timer)
+    search.controller?.abort()
+  })
 
   type Group = { category: string; items: [T, ...T[]] }
   const empty: Group[] = []
 
   const [grouped, { refetch }] = createResource(
-    () => ({
-      filter: store.filter,
-      items: typeof props.items === "function" ? props.items(store.filter) : props.items,
-    }),
+    () => {
+      search.controller?.abort()
+      const controller = new AbortController()
+      search.controller = controller
+      return {
+        filter: store.query,
+        items: typeof props.items === "function" ? props.items(store.query, controller.signal) : props.items,
+      }
+    },
     async ({ filter, items }) => {
       const query = filter ?? ""
       const needle = query.toLowerCase()
@@ -116,7 +133,13 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
   )
 
   const onInput = (value: string) => {
+    clearTimeout(search.timer)
     setStore("filter", value)
+    if (!props.debounce) {
+      setStore("query", value)
+      return
+    }
+    search.timer = setTimeout(() => setStore("query", value), props.debounce)
   }
 
   return {
@@ -125,7 +148,10 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
     flat,
     reset,
     refetch,
-    clear: () => setStore("filter", ""),
+    clear: () => {
+      clearTimeout(search.timer)
+      setStore({ filter: "", query: "" })
+    },
     onKeyDown,
     onInput,
     active: list.active,

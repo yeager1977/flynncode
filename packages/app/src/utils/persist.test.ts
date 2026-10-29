@@ -205,6 +205,20 @@ describe("persist localStorage resilience", () => {
     })
   })
 
+  test("notification target lives in its own store and migrates out of the global store", () => {
+    expect(Persist.notification(ServerScope.local)).toEqual({
+      storage: "opencode.notification.dat",
+      key: "notification",
+      legacy: ["notification.v1"],
+      legacyStorageNames: ["opencode.global.dat"],
+    })
+    expect(Persist.notification("https://debian.example" as ServerScope)).toEqual({
+      storage: "opencode.notification.dat",
+      key: "https://debian.example\0notification",
+      legacyStorageNames: ["opencode.global.dat"],
+    })
+  })
+
   test("server global target cannot collide when scope and key contain colons", () => {
     expect(Persist.serverGlobal("a:b" as ServerScope, "c")).not.toEqual(Persist.serverGlobal("a" as ServerScope, "b:c"))
   })

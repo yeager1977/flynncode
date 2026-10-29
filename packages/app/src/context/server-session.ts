@@ -562,6 +562,15 @@ export function createServerSession(
     const sessionIDs = [...eventTouches]
     eventTouches.clear()
     sessionIDs.forEach((sessionID) => bump(seen.has(sessionID) ? seen : unopened, sessionID))
+    // A loaded session that receives live events is current; without this a session streaming in the
+    // background looks stale after 15 s and is re-downloaded on revisit or neighbour warm-up.
+    const now = Date.now()
+    const live = sessionIDs.filter((sessionID) => meta.at[sessionID] !== undefined && now - meta.at[sessionID] >= 1_000)
+    if (live.length > 0)
+      setMeta(
+        "at",
+        produce((draft) => live.forEach((sessionID) => (draft[sessionID] = now))),
+      )
   }
 
   const fetchMessages = async (sessionID: string, limit: number, before?: string, onAttempt?: () => void) => {
@@ -841,9 +850,18 @@ export function createServerSession(
       const preserveUnfetched =
         mode === "prepend" ||
         (!result.complete && (!first || ((message: Message) => compareMessages(message, first) < 0)))
+      // When a newest-page reload keeps older history, the history cursor must stay where that history ends.
+      const oldest = data.message[sessionID]?.[0]
+      const deeper =
+        mode !== "prepend" &&
+        !result.complete &&
+        !!first &&
+        !!oldest &&
+        compareMessages(oldest, first) < 0 &&
+        (meta.cursor[sessionID] !== undefined || meta.complete[sessionID] === true)
       applyMessagePage(
         sessionID,
-        result,
+        deeper ? { ...result, cursor: meta.cursor[sessionID], complete: meta.complete[sessionID] ?? false } : result,
         messageLoads.get(sessionID) === load ? load : undefined,
         preserveUnfetched,
         mode !== "prepend",
@@ -872,7 +890,8 @@ export function createServerSession(
         resolve(sessionID, options),
         cached && !options?.force
           ? Promise.resolve()
-          : loadMessages(sessionID, options?.messageLimit ?? meta.limit[sessionID] ?? initialMessagePageSize),
+          : // A forced refresh re-reads the newest page only; older pages already loaded are kept.
+            loadMessages(sessionID, options?.messageLimit ?? initialMessagePageSize),
       ])
     })
   }
@@ -1031,8 +1050,11 @@ export function createServerSession(
         return
       case "session.updated": {
         const info = (event.properties as { info: Session }).info
+        const wasArchived = !!data.info[info.id]?.time.archived
         remember(info)
-        if (info.time.archived) evict([info.id])
+        // Drop content when a session gets archived. An archived session the user has open and keeps
+        // prompting stays archived on every update; evicting it then rebuilt the whole timeline each turn.
+        if (info.time.archived && !wasArchived) evict([info.id])
         return
       }
       case "session.deleted": {

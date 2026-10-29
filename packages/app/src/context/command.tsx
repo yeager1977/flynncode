@@ -1,6 +1,6 @@
 import { createSimpleContext } from "@flynncode/ui/context"
 import { useDialog } from "@flynncode/ui/context/dialog"
-import { type Accessor, createEffect, createMemo, onCleanup, onMount } from "solid-js"
+import { type Accessor, createEffect, createMemo, onCleanup, onMount, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { useLanguage } from "@/context/language"
@@ -253,6 +253,28 @@ export function formatKeybindKeys(config: string, t?: (key: KeyLabel) => string)
   return formatKeybindParts(config, t)
 }
 
+// Entries of `next` that are missing from or differ in `current`. The catalog store merges, so writing
+// only these keeps the stored result identical.
+export function changedCatalogEntries(
+  current: Record<string, CommandCatalogItem>,
+  next: Record<string, CommandCatalogItem>,
+) {
+  return Object.fromEntries(
+    Object.entries(next).filter(([id, item]) => {
+      const stored = current[id]
+      return (
+        !stored ||
+        stored.title !== item.title ||
+        stored.description !== item.description ||
+        stored.category !== item.category ||
+        stored.keybind !== item.keybind ||
+        stored.slash !== item.slash ||
+        stored.hidden !== item.hidden
+      )
+    }),
+  )
+}
+
 function isEditableTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false
   if (target.isContentEditable) return true
@@ -310,20 +332,22 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
     createEffect(() => {
       if (!catalogReady()) return
 
-      setCatalog(
-        registered().reduce((acc, opt) => {
-          const id = actionId(opt.id)
-          if (opt.title)
-            acc[id] = {
-              title: opt.title,
-              description: opt.description,
-              category: opt.category,
-              keybind: opt.keybind,
-              slash: opt.slash,
-            }
-          return acc
-        }, {} as CommandCatalog),
-      )
+      const next = registered().reduce((acc, opt) => {
+        const id = actionId(opt.id)
+        if (opt.title)
+          acc[id] = {
+            title: opt.title,
+            description: opt.description,
+            category: opt.category,
+            keybind: opt.keybind,
+            slash: opt.slash,
+          }
+        return acc
+      }, {} as CommandCatalog)
+      // Registrations churn when a session turns busy or idle (disabled flags), which the catalog does not
+      // store; writing it anyway re-serializes and persists the whole catalog at every turn start and end.
+      const changed = untrack(() => changedCatalogEntries(catalog, next))
+      if (Object.keys(changed).length > 0) setCatalog(changed)
     })
 
     const catalogOptions = createMemo(() => Object.entries(catalog).map(([id, meta]) => ({ id, ...meta })))

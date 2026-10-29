@@ -661,7 +661,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     onInput: atOnInput,
     onKeyDown: atOnKeyDown,
   } = useFilteredList<AtOption>({
-    items: async (query) => {
+    items: async (query, signal) => {
       const references = referenceList()
       const agents = agentList()
       const mcpResources = mcpResourceList()
@@ -669,7 +669,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       const seen = new Set(open)
       const pinned: AtOption[] = open.map((path) => ({ type: "file", path, display: path, recent: true }))
       if (!query.trim()) return [...references, ...agents, ...mcpResources, ...pinned]
-      const paths = await files.searchFilesAndDirectories(query)
+      const paths = await files.searchFilesAndDirectories(query, signal)
       const fileOptions: AtOption[] = paths
         .filter((path) => !seen.has(path))
         .map((path) => ({ type: "file", path, display: path }))
@@ -696,6 +696,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       return rank(a.category) - rank(b.category)
     },
     onSelect: handleAtSelect,
+    debounce: 150,
   })
 
   const slashCommands = createMemo<SlashCommand[]>(() => {

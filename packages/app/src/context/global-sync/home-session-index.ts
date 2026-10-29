@@ -103,6 +103,14 @@ export function createHomeSessionIndexCache(queryClient: QueryClient, server: st
     },
     apply(event: HomeSessionEvent) {
       if (!queryClient.getQueryState(indexKey)) return
+      // Child sessions are never in the root index; their updates (every step of a running
+      // subagent) must not republish it and rebuild the Home and sidebar lists.
+      const info = event.properties.info
+      if (
+        info.parentID &&
+        !queryClient.getQueryData<HomeSessionIndex>(indexKey)?.sessions.some((session) => session.id === info.id)
+      )
+        return
       const next = appendHomeSessionEvent(queryClient.getQueryData<HomeSessionEvents>(eventsKey), event)
       if (queryClient.isFetching({ queryKey: indexKey, exact: true }) > 0) {
         queryClient.setQueryData(eventsKey, next)

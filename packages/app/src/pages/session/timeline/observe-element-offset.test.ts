@@ -59,6 +59,65 @@ test("reports a divergent native offset once and ignores equal offsets and unrel
   route.remove()
 })
 
+test("reports the offset when the route returns under a different parent", async () => {
+  const route = document.createElement("section")
+  const viewport = document.createElement("div")
+  const other = document.createElement("div")
+  route.append(viewport)
+  document.body.append(route, other)
+  const instance = {
+    scrollElement: viewport,
+    targetWindow: window,
+    scrollOffset: 79_400,
+    options: { horizontal: false, isRtl: false, isScrollingResetDelay: 0, useScrollendEvent: false },
+  } as unknown as Virtualizer<HTMLDivElement, HTMLDivElement>
+  const calls: number[] = []
+  const cleanup = observeElementOffsetReconnectAware(instance, (offset) => {
+    calls.push(offset)
+    instance.scrollOffset = offset
+  })
+
+  route.remove()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  other.append(route)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await frames(3)
+
+  expect(calls).toEqual([0])
+  cleanup?.()
+  route.remove()
+  other.remove()
+})
+
+test("ignores mutations inside the scroll element and unrelated subtrees", async () => {
+  const route = document.createElement("section")
+  const viewport = document.createElement("div")
+  const sibling = document.createElement("div")
+  route.append(viewport, sibling)
+  document.body.append(route)
+  const instance = {
+    scrollElement: viewport,
+    targetWindow: window,
+    scrollOffset: 79_400,
+    options: { horizontal: false, isRtl: false, isScrollingResetDelay: 0, useScrollendEvent: false },
+  } as unknown as Virtualizer<HTMLDivElement, HTMLDivElement>
+  const calls: number[] = []
+  const cleanup = observeElementOffsetReconnectAware(instance, (offset) => calls.push(offset))
+
+  const token = document.createElement("span")
+  viewport.append(token)
+  token.remove()
+  const nested = document.createElement("div")
+  sibling.append(nested)
+  nested.remove()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await frames(2)
+
+  expect(calls).toEqual([])
+  cleanup?.()
+  route.remove()
+})
+
 test("keeps checking until stale reset-delay callbacks can no longer win", async () => {
   const route = document.createElement("section")
   const viewport = document.createElement("div")

@@ -44,21 +44,33 @@ export function observeElementOffsetReconnectAware<TScrollElement extends Elemen
     }
     frame = targetWindow.requestAnimationFrame(check)
   }
+  // Only the scroll element's ancestors can detach it, so watch their child lists instead of the whole page
+  // (a subtree observer gets a record for every token appended while code streams). While detached, the
+  // element can come back under any parent, so watch the whole root until it reconnects.
+  const watch = () => {
+    observer.disconnect()
+    if (removed) {
+      observer.observe(root, { childList: true, subtree: true })
+      return
+    }
+    ancestors(element, root).forEach((node) => observer.observe(node, { childList: true }))
+  }
   const observer = new targetWindow.MutationObserver((records) => {
     if (!active) return
-    records.forEach((record) => {
-      if (record.target === element || element.contains(record.target)) return
-      if (mutationNodesContainElement(record.removedNodes, element)) {
-        removed = true
-        clearCheck()
-      }
-      if (!removed || !element.isConnected || !mutationNodesContainElement(record.addedNodes, element)) return
+    const detached = records.some((record) => mutationNodesContainElement(record.removedNodes, element))
+    const wasRemoved = removed
+    if (detached) {
+      removed = true
+      clearCheck()
+    }
+    if (removed && element.isConnected) {
       removed = false
       startCheck()
-    })
+    }
+    if (detached || wasRemoved !== removed) watch()
   })
   // Session routes are replaced below persistent main; body is the fallback for isolated hosts.
-  observer.observe(root, { childList: true, subtree: true })
+  watch()
 
   return () => {
     active = false
@@ -70,4 +82,13 @@ export function observeElementOffsetReconnectAware<TScrollElement extends Elemen
 
 export function mutationNodesContainElement(nodes: Iterable<Node>, element: Element) {
   return [...nodes].some((node) => node === element || node.contains(element))
+}
+
+function ancestors(element: Element, root: Element) {
+  const nodes: Node[] = []
+  for (let node = element.parentNode; node; node = node.parentNode) {
+    nodes.push(node)
+    if (node === root) break
+  }
+  return nodes
 }

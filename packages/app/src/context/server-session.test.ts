@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, setSystemTime, test } from "bun:test"
 import type { retry } from "@flynncode/core/util/retry"
 import type { OpenCodeEvent, SessionApi } from "@opencode-ai/client/promise"
 import type { Message, OpencodeClient, Part, Session } from "@flynncode/sdk/v2/client"
@@ -1398,6 +1398,78 @@ describe("server session", () => {
     await loading
 
     expect(store.data.message.child).toEqual([latest])
+  })
+
+  test("a forced refresh fetches the first page and keeps the loaded history cursor", async () => {
+    const older = userMessage("message-1")
+    const latest = userMessage("message-2", { time: { created: 2 } })
+    const client = messageClient(
+      response([{ info: latest, parts: [] }], "older"),
+      response([{ info: older, parts: [] }], "oldest"),
+      response([{ info: latest, parts: [] }], "older"),
+      response([]),
+    )
+    const store = createServerSession(client)
+    await store.sync("child")
+    await store.history.loadMore("child")
+
+    await store.sync("child", { force: true })
+
+    expect(client.requests[2]).toEqual({ sessionID: "child", limit: 20 })
+    expect(store.data.message.child).toEqual([older, latest])
+    expect(store.history.more("child")).toBe(true)
+    await store.history.loadMore("child")
+    expect(client.requests[3]).toEqual({ sessionID: "child", limit: 50, before: "oldest" })
+  })
+
+  test("keeps the loaded content of an archived session that keeps receiving updates", async () => {
+    const user = userMessage("message-1")
+    const archived = { ...session("child", "root"), time: { created: 1, updated: 1, archived: 1 } }
+    const store = createServerSession(messageClient(response([{ info: user, parts: [] }])))
+    store.apply({ type: "session.updated", properties: { sessionID: "child", info: archived } })
+    await store.sync("child")
+
+    store.apply({
+      type: "session.updated",
+      properties: { sessionID: "child", info: { ...archived, time: { ...archived.time, updated: 2 } } },
+    })
+
+    expect(store.data.message.child).toEqual([user])
+  })
+
+  test("drops the loaded content of a session when it becomes archived", async () => {
+    const user = userMessage("message-1")
+    const store = createServerSession(messageClient(response([{ info: user, parts: [] }])))
+    await store.sync("child")
+
+    store.apply({
+      type: "session.updated",
+      properties: {
+        sessionID: "child",
+        info: { ...session("child", "root"), time: { created: 1, updated: 2, archived: 2 } },
+      },
+    })
+
+    expect(store.data.message.child).toBeUndefined()
+  })
+
+  test("live events keep a loaded session fresh", async () => {
+    const user = userMessage("message-1")
+    setSystemTime(new Date(1_000_000))
+    try {
+      const store = createServerSession(messageClient(response([{ info: user, parts: [] }])))
+      await store.sync("child")
+      setSystemTime(new Date(1_020_000))
+      expect(store.fresh("child", 15_000)).toBe(false)
+
+      store.apply({ type: "message.part.updated", properties: { part: textPart(user.id) } })
+      await Promise.resolve()
+
+      expect(store.fresh("child", 15_000)).toBe(true)
+      expect(store.shouldPrefetch("child", 20)).toBe(false)
+    } finally {
+      setSystemTime()
+    }
   })
 
   test("pages older history 50 messages at a time", async () => {

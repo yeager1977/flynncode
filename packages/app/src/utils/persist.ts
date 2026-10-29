@@ -1,7 +1,7 @@
 import { Platform, usePlatform } from "@/context/platform"
 import { makePersisted, type AsyncStorage, type SyncStorage } from "@solid-primitives/storage"
 import { checksum } from "@flynncode/core/util/encode"
-import { createResource, type Accessor } from "solid-js"
+import { createResource, getOwner, onCleanup, type Accessor } from "solid-js"
 import type { SetStoreFunction, Store } from "solid-js/store"
 import { pathKey } from "@/utils/path-key"
 import { ScopedKey, ServerScope, type ServerScope as ServerScopeValue } from "@/utils/server-scope"
@@ -26,6 +26,7 @@ export type PersistTarget = {
 
 const LEGACY_STORAGE = "default.dat"
 const GLOBAL_STORAGE = "opencode.global.dat"
+const NOTIFICATION_STORAGE = "opencode.notification.dat"
 const WINDOW_STORAGE = "opencode.window"
 const LOCAL_PREFIX = "opencode."
 const fallback = new Map<string, boolean>()
@@ -498,6 +499,12 @@ export const Persist = {
   draft(draftID: string, key: string, legacy?: string[]): PersistTarget {
     return { storage: draftStorage(draftID), key: `draft:${key}`, legacy }
   },
+  // Notifications change on every finished turn; keeping them out of the global store means those
+  // writes no longer re-serialize (and, on desktop, rewrite) every other global setting.
+  notification(scope: ServerScopeValue): PersistTarget {
+    const target = Persist.serverGlobal(scope, "notification", ["notification.v1"])
+    return { ...target, storage: NOTIFICATION_STORAGE, legacyStorageNames: [GLOBAL_STORAGE] }
+  },
   serverGlobal(scope: ServerScopeValue, key: string, legacy?: string[]): PersistTarget {
     if (scope === ServerScope.local) return Persist.global(key, legacy)
     return { storage: GLOBAL_STORAGE, key: ScopedKey.from(scope, key) }
@@ -541,8 +548,12 @@ export function removePersisted(
   target: { draft?: boolean; storage?: string; legacyStorageNames?: string[]; key: string },
   platform?: Platform,
 ) {
+  if (target.draft) {
+    // A pending write would otherwise bring the removed draft back when it fires or its owner is disposed.
+    ;[...pendingDraftWrites].filter((write) => write.id === draftWriteID(target)).forEach((write) => write.cancel())
+  }
   if (target.draft && platform?.draftStore) {
-    void platform.draftStore.removeItem(`${target.storage ?? "default"}:${target.key}`)
+    void platform.draftStore.removeItem(draftWriteID(target))
   }
   const isDesktop = platform?.platform === "desktop" && !!platform.storage
 
@@ -681,7 +692,7 @@ export function persisted<T>(
     return api
   })()
 
-  const [state, setState, init] = makePersisted(store, { name: config.key, storage })
+  const [state, setPersisted, init] = makePersisted(store, { name: config.key, storage })
 
   const isAsync = init instanceof Promise
   const [ready] = createResource(
@@ -692,13 +703,71 @@ export function persisted<T>(
     },
     { initialValue: !isAsync },
   )
+  const isReady = () => (ready.loading ? false : ready.latest === true)
 
   return [
     state,
-    setState,
+    draft ? deferDraftWrites(draftWriteID(config), store[1], setPersisted, isReady) : setPersisted,
     init,
-    Object.assign(() => (ready.loading ? false : ready.latest === true), {
+    Object.assign(isReady, {
       promise: init instanceof Promise ? init : undefined,
     }),
   ]
+}
+
+const DRAFT_WRITE_DELAY = 300
+const pendingDraftWrites = new Set<{ id: string; flush: () => void; cancel: () => void }>()
+const draftFlushEvents = { registered: false }
+
+// Writes every draft edit that is still waiting for its typing pause.
+export function flushDraftWrites() {
+  ;[...pendingDraftWrites].forEach((write) => write.flush())
+}
+
+function draftWriteID(target: { storage?: string; key: string }) {
+  return `${target.storage ?? "default"}:${target.key}`
+}
+
+// Persisting a draft serializes the whole prompt store and encodes it for the draft store, so per-keystroke
+// writes are batched until typing pauses. Pending writes are flushed on submit (prompt reset), blur and unload.
+function deferDraftWrites<T>(id: string, set: SetStoreFunction<T>, persist: SetStoreFunction<T>, ready: () => boolean) {
+  registerDraftFlushEvents()
+  const pending = { timer: undefined as ReturnType<typeof setTimeout> | undefined }
+  const cancel = () => {
+    clearTimeout(pending.timer)
+    pending.timer = undefined
+    pendingDraftWrites.delete(write)
+  }
+  const flush = () => {
+    if (pending.timer === undefined) return
+    cancel()
+    // Re-setting the current state is a no-op for the store; the persisted setter then serializes and writes it.
+    persist((value) => value)
+  }
+  const write = { id, flush, cancel }
+  if (getOwner()) onCleanup(flush)
+  return ((...args: unknown[]) => {
+    ;(set as (...args: unknown[]) => void)(...args)
+    // Before hydration finishes, write through so the persisted setter knows the draft changed and a late
+    // stored value cannot overwrite it.
+    if (!ready()) {
+      persist((value) => value)
+      return
+    }
+    clearTimeout(pending.timer)
+    pending.timer = setTimeout(flush, DRAFT_WRITE_DELAY)
+    pendingDraftWrites.add(write)
+  }) as SetStoreFunction<T>
+}
+
+function registerDraftFlushEvents() {
+  if (draftFlushEvents.registered || typeof window === "undefined") return
+  draftFlushEvents.registered = true
+  window.addEventListener("pagehide", flushDraftWrites)
+  window.addEventListener("beforeunload", flushDraftWrites)
+  // Capture-phase focusout covers the composer losing focus without wiring each editor.
+  document.addEventListener("focusout", flushDraftWrites, true)
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushDraftWrites()
+  })
 }
