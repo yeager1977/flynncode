@@ -1,1 +1,1 @@
-- User prefers receiving runnable builds as .deb install files rather than source-only changes
+- Completed builds should be left in the Downloads folder.
