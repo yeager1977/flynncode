@@ -1496,8 +1496,8 @@ const layer = Layer.effect(
             const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
             const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
             const promptOps = yield* ops()
-            // `session` is fetched once per run, but tool_search loads tools mid-turn, so read
-            // the loaded set fresh each step, unioned with the tool_search results in `msgs` so a
+            // `session` is fetched once per run, but mcp_tool_search loads tools mid-turn, so read
+            // the loaded set fresh each step, unioned with the mcp_tool_search results in `msgs` so a
             // failed metadata write never hides a tool loaded earlier in this run.
             const mcpPlan = yield* SessionTools.mcpPlan({
               agent,
@@ -1516,7 +1516,7 @@ const layer = Layer.effect(
               Effect.provideService(Config.Service, config),
               Effect.provideService(RuntimeFlags.Service, flags),
             )
-            // tool_search stays for as long as deferral is active, even once every listed tool is
+            // mcp_tool_search stays for as long as deferral is active, even once every listed tool is
             // loaded, so it never disappears while the deferred block still points at it.
             const toolSearch =
               mcpPlan.listed.length === 0

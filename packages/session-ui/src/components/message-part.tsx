@@ -2192,9 +2192,12 @@ ToolRegistry.register({
   },
 })
 
-ToolRegistry.register({
-  name: "tool_search",
-  render(props) {
+// Histories recorded before the rename still say tool_search; render both
+// with the same compact card.
+for (const name of ["mcp_tool_search", "tool_search"]) {
+  ToolRegistry.register({
+    name,
+    render(props) {
     const i18n = useI18n()
     const card = createMemo(() => toolSearchCard(props.metadata, props.input))
     const title = () => {
@@ -2215,8 +2218,9 @@ ToolRegistry.register({
     }
 
     return <BasicTool {...props} icon="mcp" trigger={{ title: title(), subtitle: subtitle() }} hideDetails />
-  },
-})
+    },
+  })
+}
 
 // Entering or leaving a worktree is one compact line in the transcript, like
 // the scheduled-prompt and hook dividers; a failed or refused call keeps the

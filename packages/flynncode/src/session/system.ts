@@ -184,7 +184,7 @@ const layer = Layer.effect(
             ? undefined
             : [
                 "<deferred_mcp_tools>",
-                'These MCP tools are deferred: only their names are listed. Load a tool with tool_search (query "select:<name>" or keywords) before calling it; loaded tools stay available for the rest of the session.',
+                'These MCP tools are deferred: only their names are listed. Load a tool with mcp_tool_search (query "select:<name>" or keywords) before calling it; loaded tools stay available for the rest of the session.',
                 ...groups.flatMap(([server, items]) => [
                   `  <server name="${server}">`,
                   ...(items ?? [])

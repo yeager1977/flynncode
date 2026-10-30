@@ -309,7 +309,7 @@ describe("deferred MCP tools", () => {
       yield* ask(session.id, "hello")
 
       const [first] = yield* requests()
-      expect(first?.tools).toContain("tool_search")
+      expect(first?.tools).toContain("mcp_tool_search")
       expect(first?.tools.filter((name) => ALL.includes(name))).toEqual([])
       const end = "</deferred_mcp_tools>"
       const block = first?.system.slice(
@@ -319,7 +319,7 @@ describe("deferred MCP tools", () => {
       expect(block).toBe(
         [
           "<deferred_mcp_tools>",
-          'These MCP tools are deferred: only their names are listed. Load a tool with tool_search (query "select:<name>" or keywords) before calling it; loaded tools stay available for the rest of the session.',
+          'These MCP tools are deferred: only their names are listed. Load a tool with mcp_tool_search (query "select:<name>" or keywords) before calling it; loaded tools stay available for the rest of the session.',
           '  <server name="alpha">',
           ...ids("alpha", 9).map((id) => `    ${id}`),
           "  </server>",
@@ -332,11 +332,11 @@ describe("deferred MCP tools", () => {
     }),
   )
 
-  it.instance("loads a tool with tool_search and calls it in the same turn, then keeps it loaded", () =>
+  it.instance("loads a tool with mcp_tool_search and calls it in the same turn, then keeps it loaded", () =>
     Effect.gen(function* () {
       const { llm } = yield* setup()
       const session = yield* start()
-      yield* llm.tool("tool_search", { query: "select:alpha_tool_03" })
+      yield* llm.tool("mcp_tool_search", { query: "select:alpha_tool_03" })
       yield* llm.tool("alpha_tool_03", { note: "hi" })
       yield* llm.text("done")
       yield* ask(session.id, "use alpha tool 3")
@@ -345,7 +345,7 @@ describe("deferred MCP tools", () => {
       expect(turn).toHaveLength(3)
       expect(turn[0]?.tools).not.toContain("alpha_tool_03")
       expect(turn[1]?.tools).toContain("alpha_tool_03")
-      expect(turn[1]?.tools).toContain("tool_search")
+      expect(turn[1]?.tools).toContain("mcp_tool_search")
       expect(turn[1]?.tools).not.toContain("alpha_tool_04")
       // The deferred block ignores the loaded set so the prompt prefix stays cache-stable.
       expect(turn[1]?.system).toBe(turn[0]?.system)
@@ -372,7 +372,7 @@ describe("deferred MCP tools", () => {
       yield* ask(session.id, "after compaction")
       const last = (yield* requests()).at(-1)
       expect(last?.tools).toContain("alpha_tool_03")
-      expect(last?.tools).toContain("tool_search")
+      expect(last?.tools).toContain("mcp_tool_search")
     }),
   )
 
@@ -380,7 +380,7 @@ describe("deferred MCP tools", () => {
     Effect.gen(function* () {
       const { llm } = yield* setup()
       const session = yield* start([{ permission: "alpha_tool_01", pattern: "*", action: "deny" }])
-      yield* llm.tool("tool_search", { query: "select:alpha_tool_01" })
+      yield* llm.tool("mcp_tool_search", { query: "select:alpha_tool_01" })
       yield* llm.text("done")
       yield* ask(session.id, "load the denied tool")
 
@@ -389,7 +389,7 @@ describe("deferred MCP tools", () => {
       expect(turn[0]?.system).toContain("alpha_tool_02")
       expect(turn[1]?.tools).not.toContain("alpha_tool_01")
       const parts = yield* toolParts(session.id)
-      expect(output(parts.find((part) => part.tool === "tool_search"))).toContain("no such tool: alpha_tool_01")
+      expect(output(parts.find((part) => part.tool === "mcp_tool_search"))).toContain("no such tool: alpha_tool_01")
       const sessions = yield* Session.Service
       expect(McpLoaded.get(yield* sessions.get(session.id))).toEqual([])
     }),
@@ -428,7 +428,7 @@ describe("deferred MCP tools", () => {
       expect(kids).toHaveLength(1)
       expect(McpLoaded.get(kids[0]!)).toEqual([])
       const [child, after] = yield* requests()
-      expect(child?.tools).toContain("tool_search")
+      expect(child?.tools).toContain("mcp_tool_search")
       expect(child?.tools).not.toContain("alpha_tool_03")
       expect(after?.tools).toContain("alpha_tool_03")
     }),
@@ -445,7 +445,7 @@ describe("deferred MCP tools", () => {
       const parts = yield* toolParts(session.id)
       const hint = output(parts.find((part) => part.tool === "invalid"))
       expect(hint).toBe(
-        'Tool zeta_tool_02 is not loaded. Load it first with tool_search (query: "select:zeta_tool_02"), then call it again.',
+        'Tool zeta_tool_02 is not loaded. Load it first with mcp_tool_search (query: "select:zeta_tool_02"), then call it again.',
       )
       expect(hint).toBe(notLoaded("zeta_tool_02"))
     }),
@@ -459,7 +459,7 @@ describe("deferred MCP tools", () => {
       yield* ask(session.id, "hello")
 
       const [first] = yield* requests()
-      expect(first?.tools).not.toContain("tool_search")
+      expect(first?.tools).not.toContain("mcp_tool_search")
       expect(first?.tools.filter((name) => ALL.includes(name))).toEqual(ALL)
       expect(first?.system).not.toContain("<deferred_mcp_tools>")
 
@@ -474,15 +474,15 @@ describe("deferred MCP tools", () => {
     }),
   )
 
-  it.instance("does not defer when the agent may not call tool_search", () =>
+  it.instance("does not defer when the agent may not call mcp_tool_search", () =>
     Effect.gen(function* () {
       const { llm } = yield* setup()
-      const session = yield* start([{ permission: "tool_search", pattern: "*", action: "deny" }])
+      const session = yield* start([{ permission: "mcp_tool_search", pattern: "*", action: "deny" }])
       yield* llm.text("done")
       yield* ask(session.id, "hello")
 
       const [first] = yield* requests()
-      expect(first?.tools).not.toContain("tool_search")
+      expect(first?.tools).not.toContain("mcp_tool_search")
       expect(first?.tools.filter((name) => ALL.includes(name))).toEqual(ALL)
       expect(first?.system).not.toContain("<deferred_mcp_tools>")
     }),
@@ -509,7 +509,7 @@ describe("deferred MCP tools", () => {
       yield* ask(session.id, "hello")
 
       const [first] = yield* requests()
-      expect(first?.tools).not.toContain("tool_search")
+      expect(first?.tools).not.toContain("mcp_tool_search")
       expect(first?.system).not.toContain("<deferred_mcp_tools>")
       const plan = yield* planFor(Effect.die("the loaded set must not be read in code mode"))
       expect(plan.listed).toEqual([])
@@ -524,7 +524,7 @@ describe("deferred MCP tools", () => {
       yield* ask(session.id, "hello")
 
       const [first] = yield* requests()
-      expect(first?.tools).not.toContain("tool_search")
+      expect(first?.tools).not.toContain("mcp_tool_search")
       expect(first?.tools.filter((name) => ALL.includes(name))).toEqual(ALL)
       expect(first?.system).not.toContain("<deferred_mcp_tools>")
       const plan = yield* planFor(Effect.die("the loaded set must not be read when deferral is off"))
@@ -544,7 +544,7 @@ describe("deferred MCP tools", () => {
         ),
         () => database.db.run(sql`DROP TRIGGER IF EXISTS fail_mcp_loaded`).pipe(Effect.orDie),
       )
-      yield* llm.tool("tool_search", { query: "select:alpha_tool_03" })
+      yield* llm.tool("mcp_tool_search", { query: "select:alpha_tool_03" })
       yield* llm.tool("alpha_tool_03", { note: "hi" })
       yield* llm.text("done")
       yield* ask(session.id, "use alpha tool 3")
@@ -576,7 +576,7 @@ describe("deferred MCP tools", () => {
 
       const first = (yield* requests()).at(-1)
       expect(first?.tools).toContain("alpha_tool_03")
-      expect(first?.tools).toContain("tool_search")
+      expect(first?.tools).toContain("mcp_tool_search")
       expect(first?.tools).not.toContain("zeta_tool_02")
       expect(yield* loaded(session.id)).toEqual(["alpha_tool_03", "zeta_tool_02"])
 
@@ -601,7 +601,7 @@ describe("deferred MCP tools", () => {
       yield* ask(session.id, "hello")
 
       const [first] = yield* requests()
-      expect(first?.tools).toContain("tool_search")
+      expect(first?.tools).toContain("mcp_tool_search")
       expect(first?.tools.filter((name) => ALL.includes(name))).toEqual(ids("alpha", 9))
       expect(first?.system).toContain('<server name="zeta">')
       expect(first?.system).not.toContain('<server name="alpha">')
@@ -613,25 +613,25 @@ describe("deferred MCP tools", () => {
     }),
   )
 
-  it.instance("threshold zero defers every tool and keeps tool_search once all are loaded", () =>
+  it.instance("threshold zero defers every tool and keeps mcp_tool_search once all are loaded", () =>
     Effect.gen(function* () {
       const { llm } = yield* setup({
         config: { experimental: { mcp_defer_threshold: 0 } },
         sizes: { alpha: 1, zeta: 1 },
       })
       const session = yield* start()
-      yield* llm.tool("tool_search", { query: "select:alpha_tool_00,zeta_tool_00" })
+      yield* llm.tool("mcp_tool_search", { query: "select:alpha_tool_00,zeta_tool_00" })
       yield* llm.text("done")
       yield* ask(session.id, "load everything")
 
       const [first, second] = yield* requests()
-      expect(first?.tools).toContain("tool_search")
+      expect(first?.tools).toContain("mcp_tool_search")
       expect(first?.tools).not.toContain("alpha_tool_00")
       expect(first?.tools).not.toContain("zeta_tool_00")
       expect(first?.system).toContain("    alpha_tool_00")
       expect(first?.system).toContain("    zeta_tool_00")
-      // Every deferral-eligible tool is loaded, yet tool_search and the block stay unchanged.
-      expect(second?.tools).toContain("tool_search")
+      // Every deferral-eligible tool is loaded, yet mcp_tool_search and the block stay unchanged.
+      expect(second?.tools).toContain("mcp_tool_search")
       expect(second?.tools).toContain("alpha_tool_00")
       expect(second?.tools).toContain("zeta_tool_00")
       expect(second?.system).toBe(first?.system)
@@ -642,7 +642,7 @@ describe("deferred MCP tools", () => {
     Effect.gen(function* () {
       const { llm } = yield* setup()
       const session = yield* start([{ permission: "alpha_tool_03", pattern: "*", action: "ask" }])
-      yield* llm.tool("tool_search", { query: "select:alpha_tool_03" })
+      yield* llm.tool("mcp_tool_search", { query: "select:alpha_tool_03" })
       yield* llm.tool("alpha_tool_03", { note: "hi" })
       yield* llm.text("done")
       const running = yield* ask(session.id, "use alpha tool 3").pipe(Effect.forkChild)

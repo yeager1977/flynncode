@@ -41,8 +41,12 @@ const SUGGESTIONS = 5
  * it can only list and load tools the agent may see.
  */
 export function make(input: { deferred: ReadonlyArray<Entry> }) {
+  // Named mcp_tool_search (not tool_search): the OpenAI Responses converter
+  // maps the name tool_search to its native file-search tool and replays
+  // history calls as argument-less tool_search_call items, which the server
+  // rejects. See message-v2.ts for the matching history rewrite.
   return Tool.define<typeof Parameters, Metadata, Session.Service>(
-    "tool_search",
+    "mcp_tool_search",
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const index = input.deferred.map(indexEntry)

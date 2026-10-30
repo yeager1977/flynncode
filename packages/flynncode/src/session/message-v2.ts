@@ -292,7 +292,21 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
             type: "step-start",
           })
         if (part.type === "tool") {
-          toolNames.add(part.tool)
+          // Histories recorded before the rename call the deferred-MCP loader
+          // "tool_search". The OpenAI Responses converter mistakes that name for
+          // its native file-search tool and replays the call as an
+          // arguments-less tool_search_call, which the server rejects. Rewrite
+          // those calls to the renamed tool so old histories keep working.
+          // The input shape check keeps this narrow: OpenAI's native input has
+          // no query field, ours requires one.
+          const tool =
+            part.tool === "tool_search" &&
+            typeof part.state.input === "object" &&
+            part.state.input !== null &&
+            typeof (part.state.input as Record<string, unknown>).query === "string"
+              ? "mcp_tool_search"
+              : part.tool
+          toolNames.add(tool)
           if (part.state.status === "completed") {
             const outputText = part.state.time.compacted
               ? "[Old tool result content cleared]"
@@ -317,7 +331,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
                 : outputText
 
             assistantMessage.parts.push({
-              type: ("tool-" + part.tool) as `tool-${string}`,
+              type: ("tool-" + tool) as `tool-${string}`,
               state: "output-available",
               toolCallId: part.callID,
               input: part.state.input,
@@ -330,7 +344,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
             const output = part.state.metadata?.interrupted === true ? part.state.metadata.output : undefined
             if (typeof output === "string") {
               assistantMessage.parts.push({
-                type: ("tool-" + part.tool) as `tool-${string}`,
+                type: ("tool-" + tool) as `tool-${string}`,
                 state: "output-available",
                 toolCallId: part.callID,
                 input: part.state.input,
@@ -340,7 +354,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
               })
             } else {
               assistantMessage.parts.push({
-                type: ("tool-" + part.tool) as `tool-${string}`,
+                type: ("tool-" + tool) as `tool-${string}`,
                 state: "output-error",
                 toolCallId: part.callID,
                 input: part.state.input,
@@ -354,7 +368,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
           // Anthropic/Claude APIs require every tool_use to have a corresponding tool_result
           if (part.state.status === "pending" || part.state.status === "running")
             assistantMessage.parts.push({
-              type: ("tool-" + part.tool) as `tool-${string}`,
+              type: ("tool-" + tool) as `tool-${string}`,
               state: "output-error",
               toolCallId: part.callID,
               input: part.state.input,

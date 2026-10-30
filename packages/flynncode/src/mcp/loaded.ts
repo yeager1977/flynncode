@@ -7,10 +7,10 @@ import type { SessionID } from "@/session/schema"
 import { McpCatalog } from "./catalog"
 
 // setMetadata replaces the whole metadata object, so read-merge-write must not
-// interleave: parallel tool_search calls would otherwise drop each other's ids.
+// interleave: parallel mcp_tool_search calls would otherwise drop each other's ids.
 const lock = Semaphore.makeUnsafe(1)
 
-/** Deferred MCP tool ids this session has loaded through tool_search. */
+/** Deferred MCP tool ids this session has loaded through mcp_tool_search. */
 export function get(session: Pick<Session.Info, "metadata">) {
   const value = session.metadata?.mcpLoaded
   if (!Array.isArray(value)) return []
@@ -40,7 +40,7 @@ export function prune(sessions: Session.Interface, sessionID: SessionID, keep: (
 
 /**
  * The loaded set for one provider step: the persisted set plus every id that a completed
- * tool_search call in `messages` loaded, so a failed metadata write or session read never hides a
+ * mcp_tool_search call in `messages` loaded, so a failed metadata write or session read never hides a
  * tool the model has just loaded. Persistently drops only ids whose server is connected and no
  * longer lists them; ids of disconnected or failed servers stay persisted and come back on
  * reconnect. The result may hold ids that do not exist right now: the planner only looks at
@@ -58,13 +58,13 @@ export function current(input: {
   )
 }
 
-/** Ids loaded by completed tool_search calls in `messages`. */
+/** Ids loaded by completed mcp_tool_search calls in `messages`. Histories recorded before the rename still say tool_search. */
 export function fromMessages(messages: ReadonlyArray<SessionV1.WithParts>) {
   return messages
     .flatMap((message) => message.parts)
     .flatMap((part) =>
       part.type === "tool" &&
-      part.tool === "tool_search" &&
+      (part.tool === "mcp_tool_search" || part.tool === "tool_search") &&
       part.state.status === "completed" &&
       Array.isArray(part.state.metadata.loaded)
         ? part.state.metadata.loaded.filter((id: unknown): id is string => typeof id === "string")

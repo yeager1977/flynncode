@@ -84,7 +84,7 @@ const run = (deferred: ReturnType<typeof entry>[], args: { query: string; max_re
     return { result, session: yield* sessions.get(session.id) }
   })
 
-describe("tool.tool_search", () => {
+describe("tool.mcp_tool_search", () => {
   it.instance("select: loads exact names with description and schema", () =>
     Effect.gen(function* () {
       const out = yield* run(catalog, { query: "select:browser_click,github_list_issues" })
@@ -249,7 +249,7 @@ describe("McpLoaded", () => {
     }),
   )
 
-  it.instance("tool_search keeps worktree and sandbox metadata", () =>
+  it.instance("mcp_tool_search keeps worktree and sandbox metadata", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const session = yield* sessions.create({ title: "child" })

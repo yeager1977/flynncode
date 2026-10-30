@@ -4,7 +4,7 @@ export type ToolSearchCard =
   | { kind: "loaded"; count: number; names: string[]; more: number }
   | { kind: "none"; query: string }
 
-/** Summarises a `tool_search` result (`metadata: { query, loaded }`) for the compact card. */
+/** Summarises an `mcp_tool_search` result (`metadata: { query, loaded }`) for the compact card. */
 export function toolSearchCard(metadata: Record<string, unknown>, input: Record<string, unknown> = {}): ToolSearchCard {
   const loaded = Array.isArray(metadata.loaded)
     ? metadata.loaded.filter((id): id is string => typeof id === "string")

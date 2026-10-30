@@ -879,7 +879,7 @@ export const mcpPlan = Effect.fn("SessionTools.mcpPlan")(function* (input: {
   const tools = yield* mcp.tools()
   const clients = Object.entries(yield* mcp.clients())
   const ruleset = Permission.merge(input.agent.permission, input.permission ?? [])
-  const hidden = Permission.disabled([...Object.keys(tools), "tool_search"], ruleset)
+  const hidden = Permission.disabled([...Object.keys(tools), "mcp_tool_search"], ruleset)
   const visible = Object.keys(tools).filter((id) => !hidden.has(id))
   // Tool ids sanitize the server name, so map back through the client instead of parsing the id.
   const serverOf = (id: string) => clients.find((entry) => entry[1] === tools[id]?.client)?.[0] ?? id
@@ -893,8 +893,8 @@ export const mcpPlan = Effect.fn("SessionTools.mcpPlan")(function* (input: {
     ),
     serverOf,
     threshold: cfg.experimental?.mcp_defer_threshold ?? 15,
-    // Deferring behind a tool_search the agent may not call would strand the tools.
-    disabled: flags.disableMcpDefer || flags.experimentalCodeMode || hidden.has("tool_search"),
+    // Deferring behind an mcp_tool_search the agent may not call would strand the tools.
+    disabled: flags.disableMcpDefer || flags.experimentalCodeMode || hidden.has("mcp_tool_search"),
   }
   const plan = (loaded: ReadonlySet<string>) =>
     Effect.try({ try: () => McpDefer.plan({ ...base, loaded }), catch: (cause) => cause })

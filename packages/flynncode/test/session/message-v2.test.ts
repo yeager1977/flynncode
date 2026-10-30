@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { SessionV1 } from "@flynncode/core/v1/session"
-import { APICallError } from "ai"
+import { APICallError, generateText, tool } from "ai"
+import { createOpenAI } from "@ai-sdk/openai"
+import { z } from "zod"
 import { MessageV2 } from "../../src/session/message-v2"
 import { ProviderTransform } from "@/provider/transform"
 import type { Provider } from "@/provider/provider"
@@ -1725,5 +1727,100 @@ describe("session.message-v2.latest", () => {
 
     expect(state.tasks).toHaveLength(1)
     expect(state.tasks[0]).toMatchObject({ type: "subtask", prompt: "inspect" })
+  })
+})
+
+describe("session.message-v2 legacy tool_search rename", () => {
+  // Sessions recorded before the rename carry tool:"tool_search" parts. The
+  // OpenAI Responses converter maps that name to its native file-search tool
+  // and emits tool_search_call items without arguments, which the server
+  // rejects ("Missing required parameter: 'input[N].arguments'").
+  const legacyHistory = (): SessionV1.WithParts[] => [
+    {
+      info: userInfo("m-user"),
+      parts: [
+        {
+          ...basePart("m-user", "p1"),
+          type: "text",
+          text: "go",
+        },
+      ] as SessionV1.Part[],
+    },
+    {
+      info: assistantInfo("m-assistant", "m-user", undefined, {
+        providerID: "other",
+        modelID: "other-model",
+      }),
+      parts: [
+        {
+          ...basePart("m-assistant", "t1"),
+          type: "tool",
+          tool: "tool_search",
+          callID: "call_old_search",
+          state: {
+            status: "completed",
+            input: { query: "select:alpha_tool", max_results: 10 },
+            output: "## alpha_tool\nA tool.\n\nLoaded: alpha_tool.",
+            title: "Loaded 1 MCP tool",
+            metadata: { query: "select:alpha_tool", loaded: ["alpha_tool"] },
+            time: { start: 0, end: 1 },
+          },
+        },
+      ] as SessionV1.Part[],
+    },
+  ]
+
+  test("renames legacy tool_search history calls to mcp_tool_search", async () => {
+    const messages = await MessageV2.toModelMessages(legacyHistory(), model)
+    const calls = messages.flatMap((message) =>
+      message.role === "assistant" && Array.isArray(message.content)
+        ? message.content.filter((part) => typeof part !== "string" && part.type === "tool-call")
+        : [],
+    )
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({
+      toolCallId: "call_old_search",
+      toolName: "mcp_tool_search",
+      input: { query: "select:alpha_tool", max_results: 10 },
+    })
+  })
+
+  test("legacy tool_search history converts to valid OpenAI Responses input", async () => {
+    const messages = await MessageV2.toModelMessages(legacyHistory(), model)
+    let captured: { input?: Array<Record<string, unknown>> } | undefined
+    const fetchImpl = (async (_url: string | URL, init?: RequestInit) => {
+      captured = JSON.parse(String(init?.body))
+      const sse = [
+        `data: {"type":"response.created","sequence_number":1,"response":{"id":"resp_test","created_at":1,"model":"m","service_tier":null}}`,
+        `data: {"type":"response.output_item.added","sequence_number":2,"output_index":0,"item":{"type":"message","id":"msg_1"}}`,
+        `data: {"type":"response.output_text.delta","sequence_number":3,"item_id":"msg_1","delta":"hi","logprobs":null}`,
+        `data: {"type":"response.output_item.done","sequence_number":4,"output_index":0,"item":{"type":"message","id":"msg_1"}}`,
+        `data: {"type":"response.completed","sequence_number":5,"response":{"incomplete_details":null,"service_tier":null,"usage":{"input_tokens":1,"input_tokens_details":{"cached_tokens":null},"output_tokens":1,"output_tokens_details":{"reasoning_tokens":null}}}}`,
+        `data: [DONE]`,
+      ].join("\n\n")
+      return new Response(sse, { headers: { "content-type": "text/event-stream" } })
+    }) as unknown as typeof fetch
+    const metaLike = createOpenAI({ apiKey: "test", fetch: fetchImpl, baseURL: "https://example.com/v1" })
+    // The stub only needs to capture the request; response parsing is irrelevant here.
+    await generateText({
+      model: metaLike.responses("meta-test"),
+      messages,
+      tools: {
+        mcp_tool_search: tool({
+          description: "loads deferred tools",
+          inputSchema: z.object({ query: z.string(), max_results: z.number().optional() }),
+          execute: async () => ({ ok: true }),
+        }),
+      },
+    }).catch(() => undefined)
+    const input = captured?.input ?? []
+    expect(input.length).toBeGreaterThan(0)
+    expect(input.filter((item) => item.type === "tool_search_call")).toEqual([])
+    for (const item of input) {
+      if (item.type === "function_call") expect(typeof item.arguments).toBe("string")
+    }
+    expect(
+      input.find((item) => item.type === "function_call" && item.name === "mcp_tool_search"),
+    ).toMatchObject({ call_id: "call_old_search" })
   })
 })
