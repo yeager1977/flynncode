@@ -9,6 +9,7 @@ import { AppNodeBuilder } from "@flynncode/core/effect/app-node-builder"
 import { mkdirSync } from "fs"
 import os from "os"
 import path from "path"
+import { pathToFileURL } from "url"
 import { Global } from "@flynncode/core/global"
 import { Config } from "@/config/config"
 import { ConfigClaude } from "@/config/claude"
@@ -125,6 +126,69 @@ async function fakeProject(root: string) {
 }
 
 describe("ConfigClaude.loadHooks", () => {
+  test("loads Claude settings and enabled plugin hooks under Node", async () => {
+    await using home = await tmpdir()
+    await using project = await tmpdir()
+    await using empty = await tmpdir()
+    const claude = await fakeClaude(home.path)
+    const dir = await fakeProject(project.path)
+    const node = Bun.which("node")
+    if (!node) throw new Error("Node is required for the Claude hooks runtime compatibility test")
+    const entry = path.join(home.path, "claude.mjs")
+    const build = Bun.spawn(
+      [
+        process.execPath,
+        "build",
+        path.join(import.meta.dir, "../../src/config/claude.ts"),
+        "--target=node",
+        "--format=esm",
+        `--outfile=${entry}`,
+      ],
+      { stdout: "pipe", stderr: "pipe" },
+    )
+    const [buildOutput, buildError, buildCode] = await Promise.all([
+      new Response(build.stdout).text(),
+      new Response(build.stderr).text(),
+      build.exited,
+    ])
+    if (buildCode !== 0) throw new Error(`Claude hooks bundle failed: ${buildOutput}\n${buildError}`)
+    const child = Bun.spawn(
+      [
+        node,
+        "--disable-warning=ExperimentalWarning",
+        "--input-type=module",
+        "-e",
+        `
+      import { loadHooks } from ${JSON.stringify(pathToFileURL(entry).href)}
+      if (typeof Bun !== "undefined") throw new Error("Expected Node without Bun")
+      const loaded = await loadHooks({ home: ${JSON.stringify(home.path)}, projectDirs: [${JSON.stringify(dir)}], projectRoot: ${JSON.stringify(project.path)}, disabled: new Set() })
+      const missing = await loadHooks({ home: ${JSON.stringify(empty.path)}, projectDirs: [], projectRoot: ${JSON.stringify(empty.path)}, disabled: new Set() })
+      console.log(JSON.stringify({ loaded, missing }))
+    `,
+      ],
+      { stdout: "pipe", stderr: "pipe" },
+    )
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ])
+    expect({ code, stderr }).toEqual({ code: 0, stderr: "" })
+    const result = JSON.parse(stdout)
+    expect(result.loaded.warnings).toEqual([])
+    expect(result.loaded.sources.map((source: { id: string }) => source.id)).toEqual([
+      "claude:user",
+      `claude:project:${dir}`,
+      "claude:plugin:alpha@market",
+    ])
+    expect(result.loaded.hooks.Stop.map((group: { hooks: { command: string }[] }) => group.hooks[0].command)).toEqual([
+      `"${project.path}/stop.sh" --strict`,
+      `${claude.alpha}/hooks/run.cmd judge`,
+    ])
+    expect(result.missing.hooks).toEqual({})
+    expect(result.missing.warnings).toEqual([])
+  })
+
   test("loads user, project and enabled plugin hooks with tags, env and expanded variables", async () => {
     await using home = await tmpdir()
     await using project = await tmpdir()

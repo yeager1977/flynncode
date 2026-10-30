@@ -2,6 +2,7 @@ export * as ConfigClaude from "./claude"
 
 import path from "path"
 import { existsSync } from "fs"
+import { readFile } from "fs/promises"
 import { Exit, Option, Schema } from "effect"
 import { Glob } from "@flynncode/core/util/glob"
 import { Wildcard } from "@flynncode/core/util/wildcard"
@@ -553,7 +554,7 @@ async function pluginCandidates(claude: string, settings: unknown, env: Record<s
         return { ...base, files: [], warnings: [`skipped Claude plugin ${name}: install path ${root} is missing`] }
       }
       const hooks = path.join(root, "hooks", "hooks.json")
-      if (!(await Bun.file(hooks).exists())) return undefined
+      if (!existsSync(hooks)) return undefined
       return {
         ...base,
         env: {
@@ -676,9 +677,8 @@ function expandCommand(command: string, env: Record<string, string>) {
 
 // A missing file is no source; an unreadable or invalid one is a warning.
 async function readJson(file: string): Promise<JsonFile> {
-  const handle = Bun.file(file)
-  if (!(await handle.exists())) return { file, value: undefined, warnings: [] }
-  const text = await handle.text().catch(() => undefined)
+  if (!existsSync(file)) return { file, value: undefined, warnings: [] }
+  const text = await readFile(file, "utf8").catch(() => undefined)
   if (text === undefined) return { file, value: undefined, warnings: [`skipped Claude settings ${file}: unreadable`] }
   const value = decodeJson(text)
   if (Option.isNone(value))

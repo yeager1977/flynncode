@@ -13,6 +13,7 @@ import { ProviderAuthApiError } from "../groups/provider"
 import { ProviderV2 } from "@flynncode/core/provider"
 import { Integration } from "@flynncode/core/integration"
 import { EventV2Bridge } from "@/event-v2-bridge"
+import { createHash } from "node:crypto"
 
 function mapProviderAuthError<A, R>(self: Effect.Effect<A, ProviderAuth.Error, R>) {
   return self.pipe(
@@ -124,7 +125,7 @@ const encodeList = Schema.encodeSync(Provider.ListResult)
 
 function serialize(list: Provider.ListResult): Serialized {
   const body = JSON.stringify(encodeList(list))
-  return { body, etag: `"${Bun.hash(body).toString(36)}"` }
+  return { body, etag: `"${createHash("sha256").update(body).digest("hex")}"` }
 }
 
 function respond(request: HttpServerRequest.HttpServerRequest, list: Serialized) {
