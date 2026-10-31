@@ -25,6 +25,9 @@ function modelKey(model: ModelKey) {
   return `${model.providerID}:${model.modelID}`
 }
 
+export const isFreeModel = (model: { provider: { id: string }; cost?: { input: number } }) =>
+  model.provider.id === "opencode" && (!model.cost || model.cost.input === 0)
+
 // The router (server plugin) cannot read this client-side visibility store,
 // so the mirror it consumes is explicit hides as `model_router.excludeModels`.
 export function visibilityExcludeKeys(
@@ -144,7 +147,8 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
         mapValues((models) =>
           pipe(
             models,
-            groupBy((x) => x.family),
+            // A free model shares its family and release date with its paid twin, so group them apart.
+            groupBy((x) => `${x.family}:${isFreeModel(x)}`),
             values(),
             (groups) =>
               groups.flatMap((g) => {
@@ -159,6 +163,17 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
     )
 
     const latestSet = createMemo(() => new Set(latest().map((x) => modelKey(x))))
+
+    // OpenCode's free models (Big Pickle) stay on offer long after release, so they are listed regardless of age or a
+    // newer free model in the same family.
+    const freeSet = createMemo(
+      () =>
+        new Set(
+          available()
+            .filter(isFreeModel)
+            .map((x) => modelKey({ providerID: x.provider.id, modelID: x.id })),
+        ),
+    )
 
     const visibility = createMemo(() => {
       const map = new Map<string, Visibility>()
@@ -190,7 +205,7 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
       const state = visibility().get(key)
       if (state === "hide") return false
       if (state === "show") return true
-      if (latestSet().has(key)) return true
+      if (latestSet().has(key) || freeSet().has(key)) return true
       const date = release().get(key)
       if (!date?.isValid) return true
       return false

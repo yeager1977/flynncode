@@ -8,6 +8,7 @@ import { useDialog } from "@flynncode/ui/context/dialog"
 import { useTheme } from "@flynncode/ui/theme"
 import { createMemo, onCleanup, onMount, type Component, For, Show } from "solid-js"
 import { useLocal } from "@/context/local"
+import { isFreeModel } from "@/context/models"
 import { useProviderCatalog } from "@/hooks/use-providers"
 import { decode64 } from "@/utils/base64"
 import { useLanguage } from "@/context/language"
@@ -30,9 +31,7 @@ export const DialogSelectModelUnpaidV2: Component<{ model?: ModelState }> = (pro
     const c = model.current()
     return c ? `${c.provider.id}:${c.id}` : undefined
   })
-  const isFree = (item: ReturnType<ModelState["list"]>[number]) =>
-    item.provider.id === "opencode" && (!item.cost || item.cost.input === 0)
-  const freeModels = createMemo(() => model.list().filter(isFree))
+  const freeModels = createMemo(() => model.list().filter(isFreeModel))
 
   const openProviders = (provider?: string) => {
     void import("./dialog-connect-provider").then((x) => {
@@ -95,7 +94,7 @@ export const DialogSelectModelUnpaidV2: Component<{ model?: ModelState }> = (pro
                     <ModelTooltip
                       model={{ ...item, name: displayModelName(item.name) }}
                       latest={item.latest}
-                      free={isFree(item)}
+                      free={isFreeModel(item)}
                       v2
                     />
                   }
