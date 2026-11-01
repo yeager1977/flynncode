@@ -1,6 +1,7 @@
 export * as BackgroundRegistry from "./registry"
 
 import fs from "fs/promises"
+import timers from "timers/promises"
 import path from "path"
 
 // `pgid` is the leader's pid (it leads its own group because it is spawned detached); `start` is the group's start
@@ -142,7 +143,7 @@ async function memberStarts(pgid: number) {
 
 async function waitWhile(condition: () => Promise<boolean>) {
   const deadline = Date.now() + TERM_WAIT_MS
-  while (Date.now() < deadline && (await condition())) await Bun.sleep(POLL_MS)
+  while (Date.now() < deadline && (await condition())) await timers.setTimeout(POLL_MS)
 }
 
 async function ownerAlive(pid: number, start: string) {
@@ -160,9 +161,7 @@ async function stat(pid: number, field: number) {
 
 // The comm field may contain spaces and parens, so fields are split after the last ")", where field 3 begins.
 async function fields(pid: number) {
-  const text = await Bun.file(`/proc/${pid}/stat`)
-    .text()
-    .catch(() => undefined)
+  const text = await fs.readFile(`/proc/${pid}/stat`, "utf8").catch(() => undefined)
   if (!text) return undefined
   return text
     .slice(text.lastIndexOf(")") + 1)
@@ -221,6 +220,6 @@ function isEntry(value: unknown): value is Entry {
 async function write(file: string, entries: Entry[]) {
   await fs.mkdir(path.dirname(file), { recursive: true })
   const temp = `${file}.${process.pid}.tmp`
-  await Bun.write(temp, JSON.stringify(entries))
+  await fs.writeFile(temp, JSON.stringify(entries))
   await fs.rename(temp, file)
 }

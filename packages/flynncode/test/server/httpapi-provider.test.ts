@@ -552,7 +552,7 @@ describe("provider HttpApi", () => {
             ? Bun.file(Auth.file)
                 .delete()
                 .catch(() => {})
-            : Bun.write(Auth.file, original),
+            : Bun.write(Auth.file, original).then(() => undefined),
         ),
       )
       const stored = JSON.parse(original ?? "{}")

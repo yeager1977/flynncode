@@ -47,7 +47,7 @@ export const sync = Effect.fn("ClaudeTranscript.sync")(function* (input: {
     Effect.catchCause((cause) =>
       Effect.logWarning("claude transcript sync failed", { sessionID: input.sessionID, cause: Cause.pretty(cause) }).pipe(
         // A failed append can still leave an earlier good file behind.
-        Effect.andThen(Effect.promise(() => Bun.file(file).exists())),
+        Effect.andThen(Effect.promise(() => exists(file))),
         Effect.map((exists) => (exists ? file : "")),
       ),
     ),
@@ -120,7 +120,7 @@ const write = Effect.fn("ClaudeTranscript.write")(function* (
   yield* Effect.promise(() => (pending.rebuild ? fs.writeFile(file, text) : fs.appendFile(file, text)))
   const last = settled.at(-1)
   if (last) {
-    yield* Effect.promise(() => Bun.write(cursorPath(id), `${last.info.id}\n${chained.at(-1)?.uuid ?? parent ?? ""}`))
+    yield* Effect.promise(() => fs.writeFile(cursorPath(id), `${last.info.id}\n${chained.at(-1)?.uuid ?? parent ?? ""}`))
     return
   }
   // A rebuild with nothing settled must not keep a cursor into the old file.
@@ -130,11 +130,9 @@ const write = Effect.fn("ClaudeTranscript.write")(function* (
 // The cursor, or undefined when the file must be rebuilt.
 const readCursor = (id: string, file: string) =>
   Effect.promise(async () => {
-    const text = await Bun.file(cursorPath(id))
-      .text()
-      .catch(() => "")
+    const text = await fs.readFile(cursorPath(id), "utf8").catch(() => "")
     const lines = text.split("\n")
-    if (lines.length < 2 || lines[0] === "" || !(await Bun.file(file).exists())) return undefined
+    if (lines.length < 2 || lines[0] === "" || !(await exists(file))) return undefined
     return { id: lines[0], uuid: lines[1] || null }
   })
 
@@ -209,5 +207,12 @@ function blocks(message: SessionV1.WithParts, names: Map<string, string>) {
       : []),
   ]
 }
+
+// Matches Bun.file().exists(): only a regular file counts.
+const exists = (file: string) =>
+  fs.stat(file).then(
+    (info) => info.isFile(),
+    () => false,
+  )
 
 export * as ClaudeTranscript from "./claude-transcript"

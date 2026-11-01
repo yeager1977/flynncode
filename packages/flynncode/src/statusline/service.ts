@@ -1,5 +1,7 @@
 export * as StatusLine from "./service"
 
+import { spawn, type ChildProcess } from "child_process"
+import type { Readable } from "stream"
 import { Cause, Context, Effect, Exit, Layer, Option, Scope, Semaphore } from "effect"
 import { Database } from "@flynncode/core/database/database"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
@@ -326,20 +328,22 @@ export const make = Effect.fn("StatusLine.make")(function* (options: { clock?: C
   // open. Resolves undefined on timeout.
   const exec = (command: string, input: string, cwd: string, project: string) =>
     Effect.acquireUseRelease(
-      Effect.sync(() =>
-        Bun.spawn(["sh", "-c", command], {
+      // node:child_process, not Bun.spawn: the desktop app runs this server under Node.
+      Effect.sync(() => {
+        const proc = spawn("sh", ["-c", command], {
           cwd,
           // The hooks executor's policy: the server's environment plus CLAUDE_PROJECT_DIR.
           env: { ...process.env, CLAUDE_PROJECT_DIR: project },
-          stdin: new Blob([input]),
-          stdout: "pipe",
-          stderr: "pipe",
+          stdio: ["pipe", "pipe", "pipe"],
           detached: true,
-        }),
-      ),
+        })
+        proc.stdin.on("error", () => undefined)
+        proc.stdin.end(input)
+        return proc
+      }),
       (proc) =>
         Effect.raceFirst(
-          Effect.promise(() => Promise.all([capped(proc.stdout), capped(proc.stderr), proc.exited])).pipe(
+          Effect.promise(() => Promise.all([capped(proc.stdout), capped(proc.stderr), exited(proc)])).pipe(
             Effect.map((result) => ({ stdout: result[0], stderr: result[1], code: result[2] })),
           ),
           clock.sleep(TIMEOUT_MS).pipe(Effect.as(undefined)),
@@ -347,7 +351,7 @@ export const make = Effect.fn("StatusLine.make")(function* (options: { clock?: C
       (proc, exit) =>
         Exit.isSuccess(exit) && exit.value !== undefined
           ? Effect.void
-          : Effect.try({ try: () => process.kill(-proc.pid, "SIGKILL"), catch: () => "no group" }).pipe(
+          : Effect.try({ try: () => process.kill(-(proc.pid ?? 0), "SIGKILL"), catch: () => "no group" }).pipe(
               // No process groups (Windows) or the group is already gone.
               Effect.catch(() => Effect.try({ try: () => proc.kill("SIGKILL"), catch: () => "gone" })),
               Effect.ignore,
@@ -431,18 +435,30 @@ export function sanitize(line: string, limit: number) {
 
 // Reads at most MAX_OUTPUT bytes and then lets go of the pipe, so a script that keeps printing gets SIGPIPE instead
 // of filling memory.
-async function capped(stream: ReadableStream<Uint8Array>) {
-  const reader = stream.getReader()
-  const chunks: Uint8Array[] = []
-  const pump = async (size: number): Promise<void> => {
-    const next = await reader.read()
-    if (next.done) return
-    chunks.push(next.value)
-    if (size + next.value.length >= MAX_OUTPUT) return reader.cancel()
-    return pump(size + next.value.length)
-  }
-  await pump(0)
-  return Buffer.concat(chunks).toString("utf8")
+function capped(stream: Readable) {
+  return new Promise<string>((resolve) => {
+    const chunks: Buffer[] = []
+    const state = { size: 0 }
+    const done = () => resolve(Buffer.concat(chunks).toString("utf8"))
+    stream.on("data", (chunk: Buffer) => {
+      chunks.push(chunk)
+      state.size += chunk.length
+      if (state.size < MAX_OUTPUT) return
+      stream.destroy()
+      done()
+    })
+    stream.on("end", done)
+    stream.on("close", done)
+    stream.on("error", done)
+  })
+}
+
+// "error" fires instead of "close" when the shell cannot be started.
+function exited(proc: ChildProcess) {
+  return new Promise<number | null>((resolve) => {
+    proc.on("close", (code) => resolve(code))
+    proc.on("error", () => resolve(null))
+  })
 }
 
 /** The process-global service: idle (no subscription, no timers) until a client asks for a configured session. */
