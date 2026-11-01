@@ -872,3 +872,86 @@ unix(
   { git: true },
   30_000,
 )
+
+unix(
+  "a turn that ends announcing its next step is nudged to carry on",
+  () =>
+    Effect.gen(function* () {
+      const { llm, chat, sessions } = yield* setup({})
+      yield* llm.text("The core works, so the test helper is wrong. Fixing:")
+      yield* llm.text("Fixed the helper; the tests pass.")
+
+      const result = yield* go(chat.id)
+
+      const sent = yield* requests(llm)
+      expect(sent).toHaveLength(2)
+      expect(sent[1]).toContain("announced a next step but ended the turn")
+      expect(result.parts.some((part) => part.type === "text" && part.text === "Fixed the helper; the tests pass.")).toBe(
+        true,
+      )
+      const users = (yield* sessions.messages({ sessionID: chat.id })).filter((item) => item.info.role === "user")
+      expect(users).toHaveLength(2)
+      const nudge = users[1]!.parts.flatMap((part) => (part.type === "text" ? [part] : []))
+      expect(nudge.every((part) => part.synthetic === true)).toBe(true)
+      expect(nudge[0]?.metadata).toEqual({ autoContinue: true })
+    }),
+  { git: true },
+  30_000,
+)
+
+unix(
+  "auto-continue stops nudging after 3 nudges for one prompt",
+  () =>
+    Effect.gen(function* () {
+      const { llm, chat } = yield* setup({})
+      yield* Effect.forEach([1, 2, 3, 4, 5], () => llm.text("Now I'll write the plan."), { discard: true })
+
+      yield* go(chat.id)
+
+      expect(yield* requests(llm)).toHaveLength(4)
+      const status = yield* SessionStatus.Service
+      expect((yield* status.get(chat.id)).type).toBe("idle")
+    }),
+  { git: true },
+  30_000,
+)
+
+unix(
+  "a finished answer or a question is not nudged",
+  () =>
+    Effect.gen(function* () {
+      const { llm, chat } = yield* setup({})
+      yield* llm.text("Want me to roll it out to QA as well?")
+      yield* llm.text("All done: the deb is in Downloads.")
+
+      yield* go(chat.id)
+      yield* go(chat.id, "again")
+
+      expect(yield* requests(llm)).toHaveLength(2)
+    }),
+  { git: true },
+  30_000,
+)
+
+unix(
+  "a Stop hook that refuses the stop wins over auto-continue",
+  () =>
+    Effect.gen(function* () {
+      const { directory: dir } = yield* TestInstance
+      const stops = path.join(dir, "stops.jsonl")
+      const { llm, chat } = yield* setup({
+        hooks: { Stop: [{ hooks: [command(blockOnce(stops, path.join(dir, "stop.flag"), "run the tests first"))] }] },
+      })
+      yield* llm.text("Fixing:")
+      yield* llm.text("Tests run and pass.")
+
+      yield* go(chat.id)
+
+      const sent = yield* requests(llm)
+      expect(sent).toHaveLength(2)
+      expect(sent[1]).toContain("run the tests first")
+      expect(sent[1]).not.toContain("announced a next step")
+    }),
+  { git: true },
+  30_000,
+)

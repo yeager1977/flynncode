@@ -137,6 +137,32 @@ export function peerHeaderFrom(text: string) {
 const MAX_STOP_CONTINUATIONS = 8
 // Real prompts whose forced-continuation count is kept; the oldest is dropped.
 const MAX_COUNTED_PROMPTS = 256
+// Nudges per user prompt for turns that ended right after announcing their
+// next step; past that the stop is allowed.
+const MAX_AUTO_CONTINUATIONS = 3
+const AUTO_CONTINUE_TEXT =
+  "Your last message announced a next step but ended the turn without doing it. Carry on with that step now. If you are actually waiting on the user, say so in one line and stop."
+const INTENT =
+  /^(?:(?:now|next|then|ok(?:ay)?|good|great|right)[,.!]?\s+)?(?:let me|let['’]s|i['’]ll now|i will now|now i['’]ll|next i['’]ll|moving on to|proceeding (?:to|with)|starting (?:on|with))\b/i
+
+// A final message that announces a next step instead of finishing or asking:
+// some models end the turn on "Fixing:" or "Now I'll write the plan." with no
+// tool call. It ends on a colon or ellipsis, or its short last paragraph opens
+// with an intent phrase. Questions and "Let me know..." sign-offs never count.
+export function announcedNextStep(message: SessionV1.WithParts) {
+  if (message.info.role !== "assistant" || message.info.finish !== "stop") return false
+  if (message.parts.some((part) => part.type === "tool")) return false
+  const text = message.parts
+    .flatMap((part) => (part.type === "text" && !part.synthetic ? [part.text] : []))
+    .join("\n\n")
+    .trim()
+    .replace(/[*_`\s]+$/, "")
+  if (text === "" || text.endsWith("?")) return false
+  if (/(?::|…|\.\.\.)$/.test(text)) return true
+  const last = text.split(/\n\s*\n/).pop()!.trim()
+  if (last.length > 160 || /^let me know\b/i.test(last)) return false
+  return INTENT.test(last)
+}
 
 // A prompt a person sent: a user message with non-synthetic text, a file, an
 // agent or a subtask. Stop-hook continuations, compaction follow-ups,
@@ -1735,6 +1761,8 @@ const layer = Layer.effect(
     // keep counting across synthetic inputs (compaction follow-ups, background
     // notifications, peer replies) and across drains of the same prompt.
     const stopContinuations = new Map<string, number>()
+    // Auto-continue nudges per real prompt, counted the same way.
+    const autoContinuations = new Map<string, number>()
 
     // The latest real prompt. A compaction can leave it out of the loaded
     // history; it is then looked up newest-first.
@@ -1773,19 +1801,51 @@ const layer = Layer.effect(
         })
         return undefined
       }
-      return { event, reason: stop.reason ?? "Blocked by hook", prompt, forced }
+      const reason = stop.reason ?? "Blocked by hook"
+      return {
+        text: `${event} hook feedback:\n${reason}`,
+        metadata: { hook: event, reason },
+        prompt,
+        forced,
+        counts: stopContinuations,
+      }
     })
 
-    // Admits a Stop hook's reason as a synthetic user message, without a
-    // UserPromptSubmit hook, and counts it against the real prompt. It answers
-    // the same prompt, so it keeps that prompt's agent, model, format, system
-    // and turn permissions.
+    // When no Stop hook refused the stop: a turn that ended right after
+    // announcing its next step is nudged to carry on.
+    const autoContinuation = Effect.fnUntraced(function* (input: {
+      user: SessionV1.User
+      history: SessionV1.WithParts[]
+      result: SessionV1.WithParts
+    }) {
+      if (flags.disableAutoContinue || !announcedNextStep(input.result)) return undefined
+      const prompt = yield* lastRealUser(input.user.sessionID, input.history)
+      const forced = autoContinuations.get(prompt) ?? 0
+      if (forced >= MAX_AUTO_CONTINUATIONS) return undefined
+      yield* Effect.logInfo("auto-continuing a turn that stopped after announcing a next step", {
+        "session.id": input.user.sessionID,
+        continuations: forced,
+      })
+      return {
+        text: AUTO_CONTINUE_TEXT,
+        metadata: { autoContinue: true },
+        prompt,
+        forced,
+        counts: autoContinuations,
+      }
+    })
+
+    // Admits a continuation (a Stop hook's reason or an auto-continue nudge)
+    // as a synthetic user message, without a UserPromptSubmit hook, and counts
+    // it against the real prompt. It answers the same prompt, so it keeps that
+    // prompt's agent, model, format, system and turn permissions.
     const admitContinuation = Effect.fnUntraced(function* (input: {
       user: SessionV1.User
-      event: string
-      reason: string
+      text: string
+      metadata: Record<string, unknown>
       prompt: string
       forced: number
+      counts: Map<string, number>
     }) {
       const message = yield* createUserMessage({
         sessionID: input.user.sessionID,
@@ -1799,16 +1859,16 @@ const layer = Layer.effect(
           {
             type: "text",
             synthetic: true,
-            text: `${input.event} hook feedback:\n${input.reason}`,
-            metadata: { hook: input.event, reason: input.reason },
+            text: input.text,
+            metadata: input.metadata,
           },
         ],
       }).pipe(Effect.orDie)
       yield* sessions.touch(input.user.sessionID)
-      stopContinuations.delete(input.prompt)
-      stopContinuations.set(input.prompt, input.forced + 1)
-      const oldest = stopContinuations.keys().next()
-      if (stopContinuations.size > MAX_COUNTED_PROMPTS && !oldest.done) stopContinuations.delete(oldest.value)
+      input.counts.delete(input.prompt)
+      input.counts.set(input.prompt, input.forced + 1)
+      const oldest = input.counts.keys().next()
+      if (input.counts.size > MAX_COUNTED_PROMPTS && !oldest.done) input.counts.delete(oldest.value)
       return message.info.id
     })
 
@@ -1848,16 +1908,21 @@ const layer = Layer.effect(
             const subagent = Boolean(once.session.parentID)
             if (!endedOnItsOwn(once.result, once.steps)) return once.result
             // The hook is looked up where it runs: the folder the turn ended in.
-            if (!(yield* there(hooksRunner.hasStop({ subagent })))) return once.result
-            const refused = yield* there(runStopHook({ user: once.user, history: once.history, subagent }))
+            const hooked = yield* there(hooksRunner.hasStop({ subagent }))
+            const refused = hooked
+              ? yield* there(runStopHook({ user: once.user, history: once.history, subagent }))
+              : undefined
+            const continuation =
+              refused ?? (yield* autoContinuation({ user: once.user, history: once.history, result: once.result }))
+            if (!hooked && !continuation) return once.result
             // Input admitted while the hook ran takes over, with its own agent,
-            // model, format and system, and a refused stop is dropped.
+            // model, format and system, and a continuation is dropped.
             if (yield* hasNewerInput(sessionID, once.user)) {
-              if (refused) yield* Effect.logInfo("stop hook continuation dropped for newer input", { "session.id": sessionID })
+              if (continuation) yield* Effect.logInfo("stop continuation dropped for newer input", { "session.id": sessionID })
               continue
             }
-            if (!refused) return once.result
-            yield* admitContinuation({ user: once.user, ...refused }).pipe(
+            if (!continuation) return once.result
+            yield* admitContinuation({ user: once.user, ...continuation }).pipe(
               Effect.tap((id) =>
                 Effect.sync(() => {
                   pending = id
