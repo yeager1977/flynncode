@@ -64,7 +64,7 @@ it.instance("identical snapshots coalesce concurrent and repeated inference", ()
   yield* Fiber.join(work)
   yield* curate.extractFor(session.id, history)
   expect(yield* Ref.get(control.calls)).toBe(1)
-}))
+}), { git: true })
 
 it.instance("an old completion cannot overwrite a newer history or resurrect an older snapshot", () => Effect.gen(function* () {
   const sessions = yield* Session.Service
@@ -83,7 +83,7 @@ it.instance("an old completion cannot overwrite a newer history or resurrect an 
   expect((yield* memory.load()).map(item => item.content).join("\n")).toContain("new convention")
   expect((yield* memory.load()).map(item => item.content).join("\n")).not.toContain("old convention")
   expect(yield* Ref.get(control.calls)).toBe(2)
-}))
+}), { git: true })
 
 it.instance("shared topics reconcile against concurrent sessions and explicit edits", () => Effect.gen(function* () {
   const sessions = yield* Session.Service
@@ -101,7 +101,7 @@ it.instance("shared topics reconcile against concurrent sessions and explicit ed
   yield* Fiber.join(work)
   expect((yield* memory.load()).map(item => item.content).join("\n")).toContain("explicit edit")
   expect(yield* Ref.get(control.calls)).toBe(2)
-}))
+}), { git: true })
 
 it.instance("distinct sessions and topics are not deduped together", () => Effect.gen(function* () {
   const sessions = yield* Session.Service
@@ -114,7 +114,7 @@ it.instance("distinct sessions and topics are not deduped together", () => Effec
   yield* Effect.all([curate.extractFor(a.id, yield* add(a.id, "OLD")), curate.extractFor(b.id, yield* add(b.id, "OTHER"))], { concurrency: "unbounded" })
   expect(yield* Ref.get(control.calls)).toBe(2)
   expect(yield* memory.load()).toHaveLength(2)
-}))
+}), { git: true })
 
 it.instance("cancellation releases in-flight snapshot ownership", () => Effect.gen(function* () {
   const sessions = yield* Session.Service
@@ -130,7 +130,7 @@ it.instance("cancellation releases in-flight snapshot ownership", () => Effect.g
   expect(yield* Ref.get(control.calls)).toBe(2)
   const memory = yield* Memory.Service
   expect(yield* memory.load()).toHaveLength(1)
-}))
+}), { git: true })
 
 it.instance("instance disposal interrupts pending inference and prevents persistence", () => Effect.gen(function* () {
   const sessions = yield* Session.Service
@@ -146,4 +146,4 @@ it.instance("instance disposal interrupts pending inference and prevents persist
   yield* store.dispose(instance)
   expect(Exit.isFailure(yield* Fiber.await(work))).toBe(true)
   expect(yield* memory.load()).toEqual([])
-}))
+}), { git: true })

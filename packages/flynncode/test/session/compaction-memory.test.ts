@@ -199,6 +199,7 @@ describe("session memory triggers", () => {
       const prompt = (capture.calls[0]?.messages as [{ role: string; content: string }])[0]?.content ?? ""
       expect(prompt).toContain("prefer bun over node everywhere")
     }),
+    { git: true },
   )
 
   it.instance(
@@ -226,6 +227,7 @@ describe("session memory triggers", () => {
       expect(capture.calls.length).toBe(0)
       expect(yield* (yield* Memory.Service).load()).toEqual([])
     }),
+    { git: true },
   )
 
   it.instance(
@@ -244,6 +246,7 @@ describe("session memory triggers", () => {
       yield* waitForMemory("always use bun")
       expect(capture.calls.length).toBeGreaterThanOrEqual(1)
     }),
+    { git: true },
   )
 
   it.instance(
@@ -262,6 +265,7 @@ describe("session memory triggers", () => {
       expect(capture.calls.length).toBe(0)
       expect(yield* (yield* Memory.Service).load()).toEqual([])
     }),
+    { git: true },
   )
 
   it.instance(
@@ -296,5 +300,6 @@ describe("session memory triggers", () => {
       expect(loaded[0]?.content).toContain("always use bun")
       expect(capture.calls.length).toBe(1)
     }),
+    { git: true },
   )
 })

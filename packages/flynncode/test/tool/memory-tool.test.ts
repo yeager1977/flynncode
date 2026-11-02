@@ -158,6 +158,7 @@ describe("tool.memory", () => {
         expect(asks[0].patterns).toEqual(["project"])
         expect(asks[0].always).toEqual(["project"])
       }).pipe(Effect.provide(enabledLayer(dir))),
+      { git: true },
     ),
   )
 
@@ -178,6 +179,7 @@ describe("tool.memory", () => {
         expect(body).toContain("[redacted:github]")
         expect(body).not.toContain("ghp_abcdefghij1234567890")
       }).pipe(Effect.provide(enabledLayer(dir))),
+      { git: true },
     ),
   )
 
@@ -210,6 +212,7 @@ describe("tool.memory", () => {
         yield* replyAlways(projectPending[0]?.id, "once")
         yield* Fiber.join(other)
       }).pipe(Effect.provide(enabledLayer(dir))),
+      { git: true },
     ),
   )
 
@@ -230,6 +233,7 @@ describe("tool.memory", () => {
         const missing = yield* def.execute({ action: "remove", scope: "project", slug: "tmp-key" }, testCtx)
         expect(missing.output).toContain("No memory")
       }).pipe(Effect.provide(enabledLayer(dir))),
+      { git: true },
     ),
   )
 
@@ -262,6 +266,7 @@ describe("tool.memory", () => {
         expect(Exit.isFailure(noScope)).toBe(true)
         expect(asks).toEqual([])
       }).pipe(Effect.provide(enabledLayer(dir))),
+      { git: true },
     ),
   )
 })

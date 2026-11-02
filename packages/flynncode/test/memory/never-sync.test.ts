@@ -60,6 +60,7 @@ describe("Memory never-synced guarantees", () => {
           memoryLayer({ home: dir, config: `${dir}-config`, data: `${dir}-data` }),
         ),
       ),
+      { git: true },
     ),
   )
 })

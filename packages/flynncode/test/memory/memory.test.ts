@@ -94,6 +94,7 @@ describe("Memory", () => {
         const list = yield* svc.list()
         expect(list.length).toBe(0)
       }).pipe(Effect.provide(memoryLayer(undefined, { home: dir, config: dir, data: dir }))),
+      { git: true },
     ),
   )
 
@@ -111,6 +112,7 @@ describe("Memory", () => {
         expect(loaded[0].filepath.endsWith("a.md")).toBe(true)
         expect(loaded[1].content).toContain("[redacted:github]")
       }).pipe(Effect.provide(memoryLayer({ enabled: true }, { home: dir, config: dir, data: dir }))),
+      { git: true },
     ),
   )
 
@@ -130,6 +132,7 @@ describe("Memory", () => {
         const body = yield* fs.readFileString(target)
         expect(body).toContain("[redacted:github]")
       }).pipe(Effect.provide(memoryLayer({ enabled: true }, { home: dir, config: dir, data: dir }))),
+      { git: true },
     ),
   )
 
@@ -148,6 +151,7 @@ describe("Memory", () => {
         expect(yield* svc.remove({ scope: "project", slug: "test-runner" })).toBe(true)
         expect(yield* svc.load()).toEqual([])
       }).pipe(Effect.provide(memoryLayer({ enabled: true }, { home: dir, config: dir, data: dir }))),
+      { git: true },
     ),
   )
 
@@ -194,6 +198,7 @@ describe("Memory", () => {
         const fs = yield* FileSystem.FileSystem
         expect(yield* fs.readFileString(target)).toContain("Use ripgrep.")
       }).pipe(Effect.provide(memoryLayer({ enabled: true }, { home: dir, config: dir, data: dir }))),
+      { git: true },
     ),
   )
 })
