@@ -97,6 +97,61 @@ describe("buildExtractionPrompt with existing topics", () => {
   test("omits the existing-topics section for an empty memories dir", () => {
     expect(MemoryExtract.buildExtractionPrompt({ conversation: "prefers bun" })).not.toContain("Existing topics")
   })
+
+  test("shows the newest end of a topic too long for its budget", () => {
+    const text = [...Array.from({ length: 40 }, (_, i) => `- old fact number ${i}`), "- newest fact"].join("\n")
+    const prompt = MemoryExtract.buildExtractionPrompt({ conversation: "prefers bun", existing: [{ slug: "big", text }] })
+    expect(prompt).toContain("- newest fact")
+    expect(prompt).not.toContain("- old fact number 0\n")
+  })
+})
+
+describe("tail", () => {
+  test("returns short text unchanged apart from trailing whitespace", () => {
+    expect(MemoryExtract.tail("- a\n- b\n", 100)).toBe("- a\n- b")
+  })
+
+  test("keeps whole lines from the bottom", () => {
+    expect(MemoryExtract.tail("- oldest\n- middle\n- newest", 17)).toBe("- middle\n- newest")
+  })
+
+  test("never resumes with an older line after one did not fit", () => {
+    expect(MemoryExtract.tail("- a\n- a much longer middle line\n- end", 10)).toBe("- end")
+  })
+
+  test("cuts a single over-long last line from its start", () => {
+    expect(MemoryExtract.tail("- old\n- 0123456789", 5)).toBe("56789")
+  })
+
+  test("returns nothing for a zero limit", () => {
+    expect(MemoryExtract.tail("- a", 0)).toBe("")
+  })
+})
+
+describe("compression", () => {
+  test("the prompt asks for a budget under the cap and lets later lines win", () => {
+    const prompt = MemoryExtract.buildCompressionPrompt({ slug: "big", text: "- a\n- b", cap: 4000 })
+    expect(prompt).toContain("at most 3000 characters")
+    expect(prompt).toMatch(/keep the later one/)
+    expect(prompt).toContain("- a\n- b")
+  })
+
+  test("accepts a bullet-list reply within the cap", () => {
+    expect(MemoryExtract.settleCompression({ text: "- a\n- b\n- c", reply: "\n- merged a and b\n- c\n", cap: 100 })).toBe(
+      "- merged a and b\n- c",
+    )
+  })
+
+  test("falls back to the newest lines for an empty, oversized, or prose reply", () => {
+    const text = Array.from({ length: 20 }, (_, i) => `- fact ${i}`).join("\n")
+    const fallback = MemoryExtract.tail(text, 75)
+    expect(fallback.endsWith("- fact 19")).toBe(true)
+    expect(MemoryExtract.settleCompression({ text, reply: "", cap: 100 })).toBe(fallback)
+    expect(MemoryExtract.settleCompression({ text, reply: `- ${"x".repeat(200)}`, cap: 100 })).toBe(fallback)
+    expect(MemoryExtract.settleCompression({ text, reply: "Here is the compressed topic:\n- a", cap: 100 })).toBe(
+      fallback,
+    )
+  })
 })
 
 describe("curateTopics", () => {

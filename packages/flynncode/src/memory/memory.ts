@@ -7,6 +7,7 @@ import { Config } from "@/config/config"
 import { ConfigMemoryV1 } from "@flynncode/core/v1/config/memory"
 import { InstanceState } from "@/effect/instance-state"
 import { MemoryRedact } from "./redact"
+import { MemoryExtract } from "./extract"
 
 export interface LoadedMemory {
   filepath: string
@@ -128,7 +129,7 @@ const layer = Layer.effect(
       const out: LoadedMemory[] = []
       for (const filepath of files) {
         const raw = yield* fs.readFileString(filepath).pipe(Effect.catch(() => Effect.succeed("")))
-        const redacted = MemoryRedact.redactSecrets(raw).slice(0, cap)
+        const redacted = MemoryExtract.tail(MemoryRedact.redactSecrets(raw), cap)
         if (redacted.trim()) out.push({ filepath, content: `Memory from: ${filepath}\n${redacted}` })
       }
       return out

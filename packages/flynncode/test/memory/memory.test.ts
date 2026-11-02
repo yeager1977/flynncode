@@ -143,6 +143,21 @@ describe("Memory", () => {
     ),
   )
 
+  it.live("loads the newest lines of a file over max_chars_per_file", () =>
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          const memdir = path.join(dir, ".opencode", "memories")
+          yield* write(path.join(memdir, "a.md"), "- oldest fact\n- middle fact\n- newest fact\n")
+          const loaded = yield* (yield* Memory.Service).load()
+          expect(loaded[0].content).toBe(`Memory from: ${path.join(memdir, "a.md")}\n- middle fact\n- newest fact`)
+        }).pipe(
+          Effect.provide(memoryLayer({ enabled: true, max_chars_per_file: 30 }, { home: dir, config: dir, data: dir })),
+        ),
+      { git: true },
+    ),
+  )
+
   it.live("append sanitizes traversal and redacts", () =>
     provideTmpdirInstance((dir) =>
       Effect.gen(function* () {

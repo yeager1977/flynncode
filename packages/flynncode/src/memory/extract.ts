@@ -41,9 +41,10 @@ export function buildExtractionPrompt(input: {
 function renderExisting(existing: readonly { slug: string; text: string }[]) {
   const rendered = existing.reduce(
     (acc, topic) => {
-      const body = topic.text
-        .trim()
-        .slice(0, Math.max(0, Math.min(MAX_EXISTING_CHARS_PER_TOPIC, MAX_EXISTING_CHARS - acc.used)))
+      const body = tail(
+        topic.text.trimStart(),
+        Math.max(0, Math.min(MAX_EXISTING_CHARS_PER_TOPIC, MAX_EXISTING_CHARS - acc.used)),
+      )
       return {
         used: acc.used + body.length,
         blocks: [...acc.blocks, body ? `SLUG: ${topic.slug}\n${body}` : `SLUG: ${topic.slug}`],
@@ -52,6 +53,48 @@ function renderExisting(existing: readonly { slug: string; text: string }[]) {
     { used: 0, blocks: [] as string[] },
   )
   return rendered.blocks.join("\n\n")
+}
+
+// Topics grow by appending, so a file's newest facts are at the bottom. Keeps
+// whole lines from the end within `limit`; only a last line that alone is
+// over the limit gets cut, keeping its end.
+export function tail(text: string, limit: number) {
+  if (limit <= 0) return ""
+  const lines = text.trimEnd().split("\n")
+  const kept = lines.reduceRight(
+    (acc, line) =>
+      acc.full || acc.used + line.length + 1 > limit + 1
+        ? { ...acc, full: true }
+        : { used: acc.used + line.length + 1, lines: [line, ...acc.lines], full: false },
+    { used: 0, lines: [] as string[], full: false },
+  )
+  if (kept.lines.length) return kept.lines.join("\n")
+  return (lines.at(-1) ?? "").slice(-limit)
+}
+
+// Compression rewrites a topic to this share of max_chars_per_file, leaving
+// room for a few appends before the topic has to be compressed again.
+const COMPRESSED_SHARE = 0.75
+
+export function buildCompressionPrompt(input: { slug: string; text: string; cap: number }) {
+  return [
+    `Compress the memory topic "${input.slug}" to at most ${Math.floor(input.cap * COMPRESSED_SHARE)} characters.`,
+    "Merge lines that say the same thing, drop filler, and keep concrete paths, commands, names, dates, and numbers.",
+    "Lines are in the order they were learned: when two lines conflict, keep the later one and drop the earlier.",
+    "Never add facts the topic does not state. Never include secrets.",
+    "Reply with only the bullets, one per line, each starting with '- '.",
+    "Topic:",
+    input.text,
+  ].join("\n\n")
+}
+
+// Takes the model's rewrite when it is a bullet list within the cap; a failed,
+// empty, oversized, or prose reply falls back to dropping the oldest lines.
+export function settleCompression(input: { text: string; reply: string; cap: number }) {
+  const reply = input.reply.trim()
+  const lines = reply.split("\n").filter((line) => line.trim())
+  if (reply && reply.length <= input.cap && lines.every((line) => line.trimStart().startsWith("- "))) return reply
+  return tail(input.text, Math.floor(input.cap * COMPRESSED_SHARE))
 }
 
 const MAX_TOPIC_BLOCKS = 5

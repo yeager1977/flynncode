@@ -90,44 +90,61 @@ const layer = Layer.effect(
           .getModel(lastUser.info.model.providerID, lastUser.info.model.modelID)
           .pipe(Effect.catch(() => Effect.succeed(undefined)))))
       if (!mdl) return
-      const text = yield* llm
-        .stream({
-          agent: ag,
-          user: lastUser.info,
-          system: [],
-          small: true,
-          tools: {},
-          model: mdl,
-          sessionID,
-          retries: 2,
-          messages: [
-            {
-              role: "user",
-              content: MemoryExtract.buildExtractionPrompt({
-                conversation,
-                existing: existing.map((topic) => ({ slug: topic.slug, text: MemoryRedact.redactSecrets(topic.text) })),
-              }),
-            },
-          ],
-        })
-        .pipe(
-          Stream.filter(LLMEvent.is.textDelta),
-          Stream.map((e) => e.text),
-          Stream.mkString,
-          Effect.catch(() => Effect.succeed("")),
-        )
+      const user = lastUser.info
+      const ask = (content: string) =>
+        llm
+          .stream({
+            agent: ag,
+            user,
+            system: [],
+            small: true,
+            tools: {},
+            model: mdl,
+            sessionID,
+            retries: 2,
+            messages: [{ role: "user", content }],
+          })
+          .pipe(
+            Stream.filter(LLMEvent.is.textDelta),
+            Stream.map((e) => e.text),
+            Stream.mkString,
+            Effect.catch(() => Effect.succeed("")),
+          )
+      const text = yield* ask(
+        MemoryExtract.buildExtractionPrompt({
+          conversation,
+          existing: existing.map((topic) => ({ slug: topic.slug, text: MemoryRedact.redactSecrets(topic.text) })),
+        }),
+      )
       const cleaned = text.trim()
       if (!cleaned || cleaned === "NOTHING TO REMEMBER") return
       if (!current()) return
       const globals = yield* memory.snapshot("global")
-      yield* memory.reconcile({
-        scope: "project", before, current,
-        topics: MemoryExtract.curateTopics({
-          topics: MemoryExtract.parseExtractionTopics(cleaned).map(topic => ({ slug: topic.slug, text: MemoryRedact.redactSecrets(topic.text) })),
-          existing,
-          room: settings.max_files - globals.size - before.size,
-        }),
+      const curated = MemoryExtract.curateTopics({
+        topics: MemoryExtract.parseExtractionTopics(cleaned).map(topic => ({ slug: topic.slug, text: MemoryRedact.redactSecrets(topic.text) })),
+        existing,
+        room: settings.max_files - globals.size - before.size,
       })
+      // Appending grows topics; one past max_chars_per_file would lose its
+      // oldest lines at load time, so compress it while writing instead.
+      const topics = yield* Effect.forEach(curated, (topic) =>
+        topic.text.length <= settings.max_chars_per_file
+          ? Effect.succeed(topic)
+          : ask(
+              MemoryExtract.buildCompressionPrompt({
+                slug: topic.slug,
+                text: MemoryRedact.redactSecrets(topic.text),
+                cap: settings.max_chars_per_file,
+              }),
+            ).pipe(
+              Effect.map((reply) => ({
+                slug: topic.slug,
+                text: MemoryExtract.settleCompression({ text: topic.text, reply, cap: settings.max_chars_per_file }),
+              })),
+            ),
+      )
+      if (!current()) return
+      yield* memory.reconcile({ scope: "project", before, current, topics })
     })
 
     const extractFor = Effect.fn("SessionMemoryCurate.extractFor")(function* (sessionID: SessionID, all: SessionV1.WithParts[]) {
