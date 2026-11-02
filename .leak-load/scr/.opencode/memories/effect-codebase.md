@@ -1,1 +1,0 @@
-- The flynncode codebase uses the Effect-TS library (e.g. Layer.effect) throughout its src tree.

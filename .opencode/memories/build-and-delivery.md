@@ -1,0 +1,6 @@
+- Finish work with an installable .deb; the user installs it with `sudo apt install` from ~/Downloads, so leave a copy there.
+- Pipeline: `packages/desktop/scripts/build-customer-deb.sh` (detached, logs into packages/desktop/.buildtmp) runs `OPENCODE_CHANNEL=dev` build + `package:linux --linux deb` in place. Always build before packaging — package:linux packs the existing out/ without rebuilding.
+- The prepackage:linux hook (scripts/prepare.ts) stamps a fresh 1.18.34-dev-<UTC timestamp> per build so installs never look stale; electron-builder 26 rejects a version override in the config.
+- Output lands in packages/desktop/dist/flynncode-desktop-linux-amd64.deb (and is copied to the repo root).
+- Verify before handoff: `TMPDIR=<repo-disk dir> dpkg-deb -f <deb> Version` shows a fresh timestamp; `grep -a -o 'InstallationChannel = [^;]\{0,20\}' <app.asar>` = "dev"; `resources/flynncode-cli --version` is fresh. A non-dev channel opens an empty DB and the owner's history "disappears".
+- Coordinate with peer sessions before rebuilding so fixes from several sessions land in one build.

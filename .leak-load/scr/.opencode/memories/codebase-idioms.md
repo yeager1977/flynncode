@@ -1,1 +1,0 @@
-- The codebase uses Effect-TS; grep for patterns like "Layer.effect" when searching sources.

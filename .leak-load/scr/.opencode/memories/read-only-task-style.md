@@ -1,2 +1,0 @@
-- Reading tasks in flyncode are explicitly read-only ("do not modify anything")
-- Expected responses are kept brief, e.g. one sentence covering the files read

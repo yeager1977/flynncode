@@ -1,0 +1,5 @@
+- A `Set` inside a Solid `createStore` is not reactive — use a plain array and `includes`.
+- Solid's `<For>` reuses a row only when the item is the same reference. The sidebar session list re-fetches fresh objects, so `stableSessions` (packages/app/src/pages/layout/sidebar-sessions.ts) keeps the previous object when the row would render the same; rename state lives above the list, keyed by session id.
+- Interactive terminal handoff needs the app to match the shell tool's exposed id `bash`, not `shell` (packages/flynncode/src/tool/shell/id.ts); a subagent's wait surfaces in the main session through a composer card that polls the server's live PTY list.
+- Use bun for tests, from package dirs (never repo root).
+- To recover lost feature wiring, extract a known-good deb's app.asar with `bunx @electron/asar` (npx fails: "asar: not found") and grep for feature strings before re-deriving by hand.

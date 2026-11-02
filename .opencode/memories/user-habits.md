@@ -1,1 +1,0 @@
-- Expects agents to be verified/committed proactively ("commit them", "go") rather than awaiting detailed instructions.

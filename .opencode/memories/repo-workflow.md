@@ -1,2 +1,0 @@
-- Merge completed work to the `dev` branch by default.
-- Commit fixes proactively when they address confirmed issues.

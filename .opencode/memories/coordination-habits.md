@@ -1,1 +1,0 @@
-- Peer work can live in stashes/untracked files; pull only relevant files from stashes, never pop unrelated WIP into in-flight merges

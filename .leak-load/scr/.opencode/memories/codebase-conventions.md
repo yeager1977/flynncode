@@ -1,1 +1,0 @@
-- The flynncode package uses the Effect-TS library (grep target "Layer.effect" in src/) with organized modules: index.ts entrypoint, server/server.ts, session/prompt.ts, plugin/loader.ts.

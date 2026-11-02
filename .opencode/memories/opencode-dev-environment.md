@@ -1,2 +1,0 @@
-- Dev database lives at `.local/share/opencode-dev.db`; compaction/cleanup should target that file.
-- User can kill/restart the app at any time; assume the process may be killed without warning.

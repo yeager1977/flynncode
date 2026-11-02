@@ -22,7 +22,7 @@ These landed via the sessions in this repo (commits on dev since 16a556b9c4):
 
 ## Part 2 — What's new in Codex (Changelog, latest) that Flynncode lacks
 
-Desktop-app and high-leverage changes only (full detail in research_notes):
+Desktop-app and high-leverage changes only (full detail in docs/research/notes):
 
 1. **GPT-6.1 Sol default** (`26.159.1`, Sep 29) — bundled-catalog default model; also GPT-6 Sol/Luna tiers; Free/Go get Luna. Flynncode's OMO catalog already leads with GPT-6; consider adding `gpt-6.1-sol` rungs (the OMO catalog currently stops at 6.1-Sol? — verify against models.dev; the rungs list `gpt-6-sol`/`gpt-5.6-sol`).
 2. **Pets + Quick Chat** (`26.908`, Sep 11) — floating companion with instant chat (Enter to send, `@` files, `$` skills), appshot to floating controls. Flynncode: no analogue (deliberate — the 9/30 note skipped Pets; keep skipping).

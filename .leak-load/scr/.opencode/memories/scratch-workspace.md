@@ -1,1 +1,0 @@
-- /home/yeager1977/GitHub/flynncode/.leak-load/scr is used as a scratch dir for note files (notes-<round>.md).

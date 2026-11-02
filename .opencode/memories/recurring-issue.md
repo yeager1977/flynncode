@@ -1,1 +1,0 @@
-- Server keeps crashing/disconnecting from sessions; `/loop` command reported as not implemented despite prior instructions.

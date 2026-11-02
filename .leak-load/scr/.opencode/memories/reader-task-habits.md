@@ -1,1 +1,0 @@
-- Reader-style work rounds are read-only unless explicitly asked to write; respect "No modifications" constraints.

@@ -1,1 +1,0 @@
-- Sub-task work is not cleaned up when finished; completed tasks linger in the right-hand view — fix task list cleanup behavior.

@@ -1,2 +1,0 @@
-- Project root is /home/yeager1977/GitHub/flynncode; main package at packages/flynncode (src/index.ts is the entrypoint)
-- Scratch/notes dir is /home/yeager1977/GitHub/flynncode/.leak-load/scr

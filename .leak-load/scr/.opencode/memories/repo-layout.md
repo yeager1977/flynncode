@@ -1,2 +1,0 @@
-- Work centers on /home/yeager1977/GitHub/flynncode, monorepo with packages/flynncode/src containing server, session, and plugin modules.
-- Scratch/notes files go under /home/yeager1977/GitHub/flynncode/.leak-load/scr/.

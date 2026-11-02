@@ -1,1 +1,0 @@
-- Frequent session disconnects / server crashes are a recurring issue; treat crash resilience and cleanup of finished sub-task views as priorities.

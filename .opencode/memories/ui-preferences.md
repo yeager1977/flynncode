@@ -1,1 +1,0 @@
-- Session list should display agent names (at least the main agent's) under the session heading

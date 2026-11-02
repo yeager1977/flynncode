@@ -1,1 +1,0 @@
-"Layer.effect" occurs 79 times across 74 files in packages/flynncode/src — the standard idiom defining Effect service Layers.

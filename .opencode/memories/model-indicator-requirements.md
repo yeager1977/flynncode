@@ -1,1 +1,0 @@
-- Task chips and main task views must label the actual provider/model performing work, since subagents can run on different models than the main task

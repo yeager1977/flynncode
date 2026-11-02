@@ -1,0 +1,4 @@
+- Integration branch is `dev`; merge all finished feature work there.
+- Several agent sessions share this one working tree. Stage explicit paths only (never `git add -A`), keep commits scoped, and re-check the branch before committing. A peer once ran a raw `git reset` and wiped all uncommitted tracked edits (untracked files survived) — after building something, ask the owner to commit to fence it off. Have parallel agents do code work and leave commits serialized.
+- Don't commit over a peer's in-flight merge.
+- Stashes park unrelated WIP (stash@{1}: task-card + router WIP; stash@{2}: subscription UA). Hand-apply only the relevant hunks/files; never pop a whole stash.

@@ -1,1 +1,0 @@
-- Delegated file analysis is done via the task tool spawning a "general" subagent, with results summarized back to the user.

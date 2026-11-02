@@ -1,0 +1,6 @@
+- The user runs the installed /opt/Flynncode Dev Electron app (dev channel), not a dev server — repo changes reach it only after rebuild + reinstall.
+- Active user config: ~/.config/flynncode/opencode.jsonc. ~/.config/opencode is legacy; don't read or write it. Tests asserting ~/.config/opencode are stale.
+- Data stays in ~/.local/share/opencode by design: session DB opencode-dev.db (+ -shm/-wal) and auth.json (ollama-cloud, anthropic, xai, openai, meta). Probe read-only with bun:sqlite; never print key values.
+- `muse-opencode-auth` syncs/verifies provider keys and writes timestamped auth.json.bak-<ts> backups; don't log key values.
+- The dev DB grows without bound: the v2 event log stores full part payloads (15.3 GB / 1.26M events seen, mostly message.part.updated). Freelist is 0, so VACUUM won't help; the fix is capping/deduping payloads at write time. Don't rewrite or vacuum the owner's DB without asking.
+- App can take 10+ minutes to load after a restart (long-lived cloudflared tunnels, many workspace *.dat states); changing settings can stall sessions.

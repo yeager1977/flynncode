@@ -1,1 +1,0 @@
-- The project is an Flynncode mobile connector for iOS, based on the user's GitHub repo `doza62/opencode-mobile`.

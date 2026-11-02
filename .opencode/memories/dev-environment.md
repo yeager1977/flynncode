@@ -1,3 +1,0 @@
-- User works against an opencode hub/server with a mobile connector (iOS app), frequently requesting builds and .deb install files.
-- Repo uses `commit` and `merge to dev` workflow at end of work sessions.
-- Related mobile project lives at GitHub `doza62/opencode-mobile`.

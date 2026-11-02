@@ -1,0 +1,7 @@
+- User writes informally with typos and terse imperatives ("go", "yes, keep going", "delete it", "just build it"); infer intent and act.
+- Once a multi-step plan is approved, keep working through it in order without stopping to re-confirm; offer to continue through a queue of related bugs.
+- User reports tool-call and session issues as they happen (e.g. apply_patch unavailable, MCP add failures) and expects each fixed so it doesn't recur.
+- After a crash fix, check the logs to confirm the fix matches what was claimed, then deliver an installable build — a described fix is not done.
+- Commit fixes once confirmed ("commit them"); merge completed work to `dev`. Don't push without asking.
+- User often runs commands in terminal panes; use read_terminal to see output that wasn't echoed to the transcript.
+- The assistant may kill/restart the app itself while debugging; assume the app can be killed at any time.

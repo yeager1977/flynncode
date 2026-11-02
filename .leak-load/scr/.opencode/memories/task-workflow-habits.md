@@ -1,1 +1,0 @@
-- User runs short, scoped read-only exploration rounds (list/read/grep/summarize) and occasionally requests delegated research via the task tool with a general-purpose subagent.

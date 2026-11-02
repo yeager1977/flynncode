@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-09
 **Status:** Approved (approach B — phased sub-projects, one branch)
-**Source research:** `reports/Claude Codex gaps for Flynncode.md` (prior-session deliverable, committed to this branch) plus the current-session gap survey of the Flynncode tree against the October 2026 Claude Code and Codex feature sets.
+**Source research:** `docs/research/reports/Claude Codex gaps for Flynncode.md` (prior-session deliverable, committed to this branch) plus the current-session gap survey of the Flynncode tree against the October 2026 Claude Code and Codex feature sets.
 
 ## Goal
 

@@ -1,1 +1,4 @@
-- I integrated the opencode iOS mobile app as the mobile connector; reference repo is GitHub `doza62/opencode-mobile`.
+- The mobile connector targets the opencode iOS app at github.com/doza62/opencode-mobile.
+- Phone access goes through packages/mobile-gateway (/m, port 4297, upstream 4096).
+- Mobile UI must support multiple task lists without losing them and file-tree traversal deeper than one level.
+- packages/mobile-gateway test/sync-e2e.test.ts has 2 pre-existing settings-sync failures ("syncs chats both ways..." and "newer settings and prefs flow back...") unrelated to launcher/app work.

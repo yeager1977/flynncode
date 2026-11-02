@@ -1,1 +1,0 @@
-- Flynncode spikes memory and crashes the desktop repeatedly; investigate memory usage before shipping fresh builds.

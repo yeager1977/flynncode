@@ -1,2 +1,0 @@
-- Merge completed work to the dev branch as the integration target
-- Commit fixes once their purpose is confirmed with the user

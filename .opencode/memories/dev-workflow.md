@@ -1,2 +1,0 @@
-- Deliverables are provided as builds plus a deb file for installation.
-- Work happens on opencode sessions; repeated server crashes/disconnects and `/loop` command not being implemented are known pain points.

@@ -1,1 +1,0 @@
-- Leave built artifacts in the Downloads folder when work is complete.

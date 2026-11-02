@@ -1,1 +1,0 @@
-- The `/loop` command was intended to be implemented in the rpb etl session but is not yet done.

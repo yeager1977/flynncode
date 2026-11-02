@@ -1,1 +1,0 @@
-- Completed builds should be left in the Downloads folder.

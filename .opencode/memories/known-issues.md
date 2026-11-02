@@ -1,0 +1,5 @@
+- Recurring: server/session crashes and disconnects; slow startup after restart; parallel agent launch failures; DB bloat. Treat crash resilience and startup time as priorities.
+- Incoming user requests should steer (interrupt) a running model, not just queue.
+- The superpowers plugin tells every session to use `apply_patch`, but the v1 registry only exposes it to gpt- models; fixed by stating the real editing tools in the system prompt (SystemPrompt.editingTools in src/session/llm/request.ts).
+- A `/loop` command was assigned to the rob-etl session and is still not implemented there.
+- Ensure the sandbox "full-access" grant works in Flynncode config.

@@ -1,0 +1,4 @@
+- Never write to /tmp: it is a quota-limited tmpfs charged to the user's memory cgroup and writes fail with EDQUOT ("Disk quota exceeded"), including logs. Build, stage and log in place on the repo disk; point TMPDIR at a repo-disk dir for tools that need temp space (package:linux, dpkg-deb). Worktrees go under the repo's .worktrees/, not /tmp.
+- The box has ~59Gi RAM and a permanent 64G swap file at /swap.img; keep that setup when suggesting swap changes. Past desktop freezes were swap thrash, not kernel OOM.
+- Before launching parallel agents, check for runaway processes and free memory. Orphaned `bun test` watchers (seen at 3GB RSS, 100% CPU for 6h+) and stray pytest runs have starved the box before; the launcher itself was healthy.
+- Kill dev backends, vite servers, agent-browser/Chromium and build processes right after each verification (they survive via setsid); never stack repro instances.
