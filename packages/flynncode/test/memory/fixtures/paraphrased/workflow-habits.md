@@ -1,0 +1,2 @@
+- User merges work to `dev` branch when fixes are complete
+- User prefers fixes be committed when issues are confirmed ("commit them")

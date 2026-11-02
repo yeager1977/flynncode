@@ -34,7 +34,7 @@ const llm = Layer.effect(LLM.Service, Effect.gen(function* () {
     yield* Deferred.succeed(control.started, undefined)
     const prompt = JSON.stringify(input.messages)
     if (!prompt.includes("NEW")) yield* Deferred.await(control.release)
-    return LLMEvent.textDelta({ id: "memory", text: prompt.includes("OTHER") ? "SLUG: other\n- other topic" : prompt.includes("NEW") ? "SLUG: convention\n- new convention" : "SLUG: convention\n- old convention" })
+    return LLMEvent.textDelta({ id: "memory", text: prompt.includes("OTHER") ? "SLUG: formatting\n- format with prettier" : prompt.includes("NEW") ? "SLUG: convention\n- run tests with bun" : "SLUG: convention\n- run tests with vitest" })
   })) })
 })).pipe(Layer.provideMerge(transport))
 const it = testEffect(Layer.mergeAll(LayerNode.compile(LayerNode.group([
@@ -80,8 +80,8 @@ it.instance("an old completion cannot overwrite a newer history or resurrect an 
   yield* Deferred.succeed(control.release, undefined)
   yield* Fiber.join(work)
   yield* curate.extractFor(session.id, old)
-  expect((yield* memory.load()).map(item => item.content).join("\n")).toContain("new convention")
-  expect((yield* memory.load()).map(item => item.content).join("\n")).not.toContain("old convention")
+  expect((yield* memory.load()).map(item => item.content).join("\n")).toContain("run tests with bun")
+  expect((yield* memory.load()).map(item => item.content).join("\n")).not.toContain("run tests with vitest")
   expect(yield* Ref.get(control.calls)).toBe(2)
 }), { git: true })
 

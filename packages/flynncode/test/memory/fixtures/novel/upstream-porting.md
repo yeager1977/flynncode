@@ -1,0 +1,1 @@
+- Take upstream opencode changes via selective hand-ports from anomalyco/opencode; a full merge is ruled out.

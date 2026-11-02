@@ -1,0 +1,7 @@
+- Task chips and the main timeline must label the provider/model actually doing the work (from assistant messages), not the picker selection.
+- Subagent model rule (owner request 2026-10-19, don't revert): the v1 `task` tool ignores the LLM's `model` argument unless it resumes a task_id whose last run hit a usage limit, onto a different model; otherwise subagents use the calling message's model. LLMs copy stale `model` values, which pinned subagents to the pre-switch model. Mid-run model changes must reach subagents.
+- Users still want to pick any available model for a subagent explicitly, not only on limit resets.
+- `model_router.enabled` is false in the user config, so router taskModels/legacyAssign entries are inert; dispatch relies on explicitly specified agent models. `small_model` is pinned to ollama-cloud/glm-5.3-flash for title/summary/review helpers.
+- Router work aims to cut token usage and surface usage in the UI.
+- Model lists update live via provider hooks (src/plugin/ollama-cloud.ts polls ollama.com /api/tags; muse.ts polls api.meta.ai /v1/models), merged over the models.dev snapshot on each provider-state rebuild.
+- Wanted: filter the OpenRouter list to free models; let the model selector choose which server runs a job. OpenAI verbosity settings behave differently from other effort settings.

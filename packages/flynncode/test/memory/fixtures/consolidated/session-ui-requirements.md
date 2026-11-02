@@ -1,0 +1,6 @@
+- New sessions must replace their timestamp name with a real title, and must appear in the session list right away.
+- Finished sub-agent work must be removed from the right-hand view, not left lingering.
+- UI refreshes must not destroy in-progress interactions (rename, archive, open context menu). The right-click session menu needs archive and delete.
+- Show agent names in the session list under the session heading (at least the main agent); "build" appearing on every session was flagged as a problem.
+- When a model asks the user to run a terminal command, surface it obviously in the main session with a link.
+- Wanted: a system tray icon so the server keeps running while the UI window is opened/closed.

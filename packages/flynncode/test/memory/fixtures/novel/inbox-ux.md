@@ -1,0 +1,1 @@
+- The inbox hides messages unless scrolled, and the send box takes too much of the screen.

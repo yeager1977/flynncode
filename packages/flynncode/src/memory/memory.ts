@@ -108,6 +108,12 @@ const layer = Layer.effect(
         found.push(...entries.toSorted().map((filepath) => ({ scope: entry.scope, filepath })))
       }
       const limit = (yield* settings()).max_files
+      if (found.length > limit)
+        yield* Effect.logWarning("memory files exceed max_files; the rest are not loaded into context", {
+          max_files: limit,
+          found: found.length,
+          skipped: found.slice(limit).map((entry) => entry.filepath),
+        })
       return found.slice(0, limit)
     })
 

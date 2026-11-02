@@ -1,0 +1,1 @@
+- Never alias imports or use star imports; import the module's exported namespace by name.

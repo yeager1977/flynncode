@@ -1,0 +1,1 @@
+- Sidebar projects can be hidden, shown, or forgotten; hidden state lives in the layout store.

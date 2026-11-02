@@ -1,0 +1,1 @@
+- The mobile connector should target the Flynncode iOS mobile app from GitHub repo doza62/opencode-mobile.

@@ -1,0 +1,1 @@
+- In Effect generators, bind services to named variables before calling methods; no nested service yields.

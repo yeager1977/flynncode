@@ -1,0 +1,1 @@
+- The sync hub runs on the deepthought microk8s cluster (namespace 4mgrowing, NodePort 32097); use LAN NodePort, not Tailscale.

@@ -1,0 +1,4 @@
+- Provider usage meters (ollama, anthropic, openai, grok, muse) are always visible bottom-left of the main window next to Open Project / Settings.
+- One ring per provider with three concentric sub-rings: context, session, weekly — for all providers, not just anthropic. Refresh about every minute and on click.
+- Circles reflect the current session (context + percent used), not account-wide totals.
+- Also wanted: a page listing every enabled provider's current limits and usage.

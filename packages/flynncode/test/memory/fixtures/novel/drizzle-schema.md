@@ -1,0 +1,1 @@
+- Drizzle tables use snake_case field names so column names need no string overrides.

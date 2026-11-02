@@ -1,0 +1,2 @@
+- User approves multi-step plans with short go-aheads ("yes, keep going", "go") and expects continuous, batched execution without pausing between approved tasks.
+- User often runs commands directly in terminal panes; prefer `read_terminal` to capture output that wasn't echoed to the transcript.

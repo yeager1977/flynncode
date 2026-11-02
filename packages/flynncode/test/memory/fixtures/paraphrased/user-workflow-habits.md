@@ -1,0 +1,2 @@
+- User prefers autonomous continuation: "continue", "just build it", "yes go" — proceed with next steps rather than pausing for confirmation.
+- User reports tool-call and session issues incrementally and expects fixes applied directly (e.g., "fix it so this doesn't happen").

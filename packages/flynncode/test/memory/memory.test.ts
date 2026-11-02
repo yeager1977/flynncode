@@ -1,6 +1,6 @@
 import { describe, expect } from "bun:test"
 import path from "path"
-import { Effect, FileSystem, Layer } from "effect"
+import { Effect, FileSystem, Layer, Logger } from "effect"
 import { badArgument } from "effect/PlatformError"
 import { CrossSpawnSpawner } from "@flynncode/core/cross-spawn-spawner"
 import { Memory } from "../../src/memory/memory"
@@ -112,6 +112,33 @@ describe("Memory", () => {
         expect(loaded[0].filepath.endsWith("a.md")).toBe(true)
         expect(loaded[1].content).toContain("[redacted:github]")
       }).pipe(Effect.provide(memoryLayer({ enabled: true }, { home: dir, config: dir, data: dir }))),
+      { git: true },
+    ),
+  )
+
+  it.live("warns instead of silently dropping memories past max_files", () =>
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          const memdir = path.join(dir, ".opencode", "memories")
+          yield* Effect.forEach(["a", "b", "c"], (name) => write(path.join(memdir, `${name}.md`), `- fact ${name}`))
+          const messages: unknown[] = []
+          const svc = yield* Memory.Service
+          const loaded = yield* svc.load().pipe(
+            Effect.provide(
+              Logger.layer([
+                Logger.make<unknown, void>((options) => {
+                  messages.push(options.message)
+                }),
+              ]),
+            ),
+          )
+          expect(loaded.map((item) => path.basename(item.filepath))).toEqual(["a.md", "b.md"])
+          expect(messages).toContainEqual([
+            "memory files exceed max_files; the rest are not loaded into context",
+            { max_files: 2, found: 3, skipped: [path.join(memdir, "c.md")] },
+          ])
+        }).pipe(Effect.provide(memoryLayer({ enabled: true, max_files: 2 }, { home: dir, config: dir, data: dir }))),
       { git: true },
     ),
   )

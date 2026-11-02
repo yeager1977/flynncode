@@ -1,0 +1,1 @@
+- The user tends to approve long-running work with short "yes, keep going" / "go" replies and expects execution to continue without stopping for repeated confirmation; pre-approved background tasks may be used.

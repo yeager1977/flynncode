@@ -1,0 +1,4 @@
+- Project is Flynncode (~/GitHub/flynncode), the user's fork of opencode. Server package is packages/flynncode; the opencode → flynncode rename has happened — don't revert it (see AGENTS.md "Rename Status").
+- Recurring goal: make the agent work and feel like Claude Code — feature parity (hooks, MCP tools, worktrees, spawning sessions from discovered items as cards), UI responsiveness, and session management.
+- Recurring cleanup goal: Flynncode must not leave artifacts behind — history DB cleanup/retention aligned with Claude Code, worktree cleanup, stale backups under ~/.local/share/opencode.
+- Main repo owns the `dev` branch; build and commit there, never from /tmp copies.

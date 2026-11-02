@@ -1,0 +1,1 @@
+Writes to /tmp (tmpfs) fail with EDQUOT "Disk quota exceeded" — /tmp is unusable for large writes (worktrees, deb extraction, build temp). Build and stage everything in place on the repo disk (packages/desktop/dist works). For tools with temp-file needs (dpkg-deb), point TMPDIR at a repo-disk dir. Worktree checkouts go on the repo disk, not /tmp.

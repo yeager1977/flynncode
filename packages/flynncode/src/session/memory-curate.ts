@@ -1,3 +1,4 @@
+import path from "path"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
 import { SessionV1 } from "@flynncode/core/v1/session"
 import { ConfigMemoryV1 } from "@flynncode/core/v1/config/memory"
@@ -75,6 +76,11 @@ const layer = Layer.effect(
         .slice(0, 6000)
       if (!conversation.trim()) return
       const before = yield* memory.snapshot("project")
+      // Only kebab-named files round-trip through Memory.target, so only they
+      // can be reused or extended as topics; the rest still count toward max_files.
+      const existing = [...before]
+        .map(([filepath, text]) => ({ slug: path.basename(filepath, ".md"), text }))
+        .filter((topic) => /^[a-z0-9-]+$/.test(topic.slug))
       const ag = yield* agents.get("summary").pipe(Effect.catch(() => Effect.succeed(undefined)))
       if (!ag) return
       const mdl = ((yield* provider.getSmallModel(lastUser.info.model.providerID).pipe(
@@ -94,7 +100,15 @@ const layer = Layer.effect(
           model: mdl,
           sessionID,
           retries: 2,
-          messages: [{ role: "user", content: MemoryExtract.buildExtractionPrompt({ conversation }) }],
+          messages: [
+            {
+              role: "user",
+              content: MemoryExtract.buildExtractionPrompt({
+                conversation,
+                existing: existing.map((topic) => ({ slug: topic.slug, text: MemoryRedact.redactSecrets(topic.text) })),
+              }),
+            },
+          ],
         })
         .pipe(
           Stream.filter(LLMEvent.is.textDelta),
@@ -105,9 +119,14 @@ const layer = Layer.effect(
       const cleaned = text.trim()
       if (!cleaned || cleaned === "NOTHING TO REMEMBER") return
       if (!current()) return
+      const globals = yield* memory.snapshot("global")
       yield* memory.reconcile({
         scope: "project", before, current,
-        topics: MemoryExtract.parseExtractionTopics(cleaned).map(topic => ({ slug: topic.slug, text: MemoryRedact.redactSecrets(topic.text) })),
+        topics: MemoryExtract.curateTopics({
+          topics: MemoryExtract.parseExtractionTopics(cleaned).map(topic => ({ slug: topic.slug, text: MemoryRedact.redactSecrets(topic.text) })),
+          existing,
+          room: settings.max_files - globals.size - before.size,
+        }),
       })
     })
 

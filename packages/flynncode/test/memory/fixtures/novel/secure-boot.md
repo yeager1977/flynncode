@@ -1,0 +1,1 @@
+- After a hard power-off, check MOK enrollment first: Secure Boot rejects DKMS modules and external monitors vanish.

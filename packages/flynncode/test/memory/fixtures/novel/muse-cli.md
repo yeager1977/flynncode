@@ -1,0 +1,1 @@
+- Muse CLI uses device-code login; META_API_KEY takes precedence over stored credentials.

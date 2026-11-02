@@ -1,0 +1,1 @@
+- packages/app Playwright e2e must use system Chrome (channel "chrome"); the registry has no ubuntu26.04 browser builds.

@@ -1,0 +1,1 @@
+The dev SQLite database and auth store live under `~/.local/share/opencode/`: `opencode-dev.db` (+ -shm/-wal) and `auth.json` (provider credentials per provider id: ollama-cloud, anthropic, xai, openai, meta). Probe them read-only with bun:sqlite; never print token/key values.
