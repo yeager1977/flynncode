@@ -17,6 +17,17 @@ import { mergeDeep } from "remeda"
 
 const USER_AGENT = `opencode/${InstallationVersion}`
 
+// opencode.ai's Console reads the User-Agent on opencode-gateway requests to apply client
+// policies and gates its free models (`*-free`) on the current upstream desktop identity;
+// the legacy `opencode/<version>` shape is rejected with "no longer supports free models".
+// The fork presents the upstream desktop's identity for gateway traffic, so keep
+// GATEWAY_VERSION aligned with upstream's latest desktop release when syncing.
+const GATEWAY_VERSION = "2.2.5"
+
+function gatewayUserAgent(client: string) {
+  return `opencode/latest/${GATEWAY_VERSION}/${client}`
+}
+
 type PrepareInput = {
   readonly user: SessionV1.User
   readonly sessionID: string
@@ -195,7 +206,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
             "x-opencode-session": input.sessionID,
             "x-opencode-request": input.user.id,
             "x-opencode-client": input.flags.client,
-            "User-Agent": USER_AGENT,
+            "User-Agent": gatewayUserAgent(input.flags.client),
           }
         : {
             "x-session-affinity": input.sessionID,
