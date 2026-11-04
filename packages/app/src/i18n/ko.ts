@@ -1202,20 +1202,6 @@ export const dict = {
 
   "command.logs.export": "로그 내보내기",
 
-  "help.tabs.toast.ariaLabel": "탭을 소개합니다. 탭으로 작업과 활성 세션을 정리하세요",
-  "help.tabs.toast.dismiss": "탭 정보 닫기",
-  "help.tabs.title": "탭 소개",
-  "help.tabs.description": "탭으로 작업과 활성 세션을 정리하세요",
-  "help.tabs.date": "7월 14일",
-  "help.tabs.introduction": "이제 Flynncode Desktop은 탭을 중심으로 구성됩니다.",
-  "help.tabs.sessions":
-    "탭에서 새 세션을 시작하거나 프로젝트에서 기존 세션을 여세요. 새로운 작업을 시작할 때 새 탭을 열고, 작업을 마치면 닫으세요.",
-  "help.tabs.organize":
-    "탭을 몇 개 열어 두면 활성 세션을 더 쉽게 정리할 수 있습니다. 탭을 계속 열어 둘 예정이라면 기억하기 쉬운 이름으로 바꾸세요.",
-  "help.tabs.home": "새 홈 화면에서 모든 세션과 프로젝트를 확인할 수 있습니다. 세션을 선택하면 탭에서 열립니다.",
-  "help.tabs.persistence": "앱을 다시 열어도 탭은 그대로 열려 있습니다.",
-  "help.tabs.worktrees":
-    "새 디자인은 아직 Git Worktrees를 지원하지 않지만 곧 지원할 예정입니다. 이전 레이아웃을 계속 사용하려면 설정에서 레이아웃을 전환할 수 있습니다. 단, 몇 주 후에는 새 레이아웃이 영구 적용됩니다.",
 
   "desktop.menu.app": "Flynncode",
   "desktop.menu.file": "파일",

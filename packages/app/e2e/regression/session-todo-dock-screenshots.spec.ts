@@ -365,7 +365,7 @@ async function setupMock(
   })
   await page.addInitScript(
     ({ directory, dirBase64, server, sessionID, rtl }) => {
-      localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true, shouldDisplayTabsToast: false } }))
+      localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
       localStorage.setItem("opencode.global.dat:language", JSON.stringify({ locale: rtl ? "fa" : "en" }))
       localStorage.setItem(
         "opencode.global.dat:server",

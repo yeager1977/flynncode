@@ -578,22 +578,6 @@ export const dict = {
   "wsl.onboarding.desktopVersion": "application de bureau {{version}}",
   "wsl.onboarding.versionMismatch": "La version installée ne correspond pas à celle de l'application de bureau.",
   "wsl.onboarding.adding": "Ajout...",
-  "help.tabs.toast.ariaLabel":
-    "Présentation des onglets. Organisez votre travail et vos sessions actives à l'aide d'onglets",
-  "help.tabs.toast.dismiss": "Ignorer les informations sur les onglets",
-  "help.tabs.title": "Présentation des onglets",
-  "help.tabs.description": "Organisez votre travail et vos sessions actives à l'aide d'onglets",
-  "help.tabs.date": "14 juillet",
-  "help.tabs.introduction": "Flynncode Desktop s'articule désormais autour d'onglets.",
-  "help.tabs.sessions":
-    "Démarrez une nouvelle session dans un onglet ou ouvrez une session existante depuis l'un de vos projets. Ouvrez un nouvel onglet lorsque vous commencez une nouvelle tâche et fermez-le une fois celle-ci terminée.",
-  "help.tabs.organize":
-    "Garder quelques onglets ouverts facilite l'organisation de vos sessions actives. Si vous comptez les conserver, renommez-les pour pouvoir les reconnaître facilement.",
-  "help.tabs.home":
-    "Vous trouverez toutes vos sessions et tous vos projets sur le nouvel écran d'accueil. La sélection d'une session l'ouvre dans un onglet.",
-  "help.tabs.persistence": "Lorsque vous rouvrez l'application, vos onglets sont toujours ouverts.",
-  "help.tabs.worktrees":
-    "La nouvelle interface ne prend pas encore en charge les arbres de travail Git, mais cette fonctionnalité sera bientôt disponible. Si vous préférez continuer à utiliser la mise en page précédente, vous pouvez changer de mise en page dans les paramètres. N'oubliez pas que la nouvelle mise en page deviendra définitive dans quelques semaines.",
   "dialog.project.edit.title": "Modifier le projet",
   "dialog.project.edit.name": "Nom",
   "dialog.project.edit.icon": "Icône",

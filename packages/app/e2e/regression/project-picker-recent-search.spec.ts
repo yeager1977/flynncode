@@ -11,10 +11,11 @@ const worktrees = NAMES.map((name) => `/opencode-demo/${name}`)
 // dialog hands every recent project to the list filter instead of a pre-truncated slice.
 const OUTSIDE_CAP = "foxtrot-docs"
 
-// Dialog rows carry data-directory-path; the sidebar project list does not, so this
-// scopes assertions to the picker instead of matching the sidebar entry of the same name.
-const rows = (page: Page) => page.locator("[data-directory-path]")
-const row = (page: Page, name: string) => page.locator(`[data-directory-path*="${name}"]`)
+// Every row is scoped to the picker dialog, so the sidebar's own project sections (which list the same six
+// projects) can never be counted as a picker row.
+const picker = (page: Page) => page.getByRole("dialog", { name: "Open project", exact: true })
+const rows = (page: Page) => picker(page).locator("[data-directory-path]")
+const row = (page: Page, name: string) => picker(page).locator(`[data-directory-path*="${name}"]`)
 
 async function openProjectDialog(page: Page) {
   await mockOpenCodeServer(page, {
@@ -36,11 +37,14 @@ async function openProjectDialog(page: Page) {
     )
   }, worktrees)
   await page.goto("/")
-  const add = page.getByRole("button", { name: "Add project" }).first()
-  await expectAppVisible(add)
-  await add.click()
+  // There is no Home page in the current layout: the sidebar footer is the way into the picker.
+  const open = page
+    .getByRole("navigation", { name: "Projects and sessions" })
+    .getByRole("button", { name: "Open project", exact: true })
+  await expectAppVisible(open)
+  await open.click()
   await expect(rows(page)).toHaveCount(5)
-  return page.getByRole("textbox").last()
+  return picker(page).getByRole("textbox", { name: "Search folders", exact: true })
 }
 
 test("searches every recent project, not just the five most recent", async ({ page }) => {

@@ -149,6 +149,8 @@ test("keeps the review tree and terminal sized when both panels are open", async
   await page.goto(`/${base64Encode(directory)}/session/${sessionID}`)
   await expectSessionTitle(page, title)
   await expect(page.locator("#review-panel")).toBeVisible()
+  // A session with no stored review mode starts on its last turn, which has no diffs here, so pick the working tree.
+  await selectMode(page, "Last turn changes", "Git changes")
   await expectTree(page, 8, "git-0.ts")
 
   await selectMode(page, "Git changes", "Branch changes")

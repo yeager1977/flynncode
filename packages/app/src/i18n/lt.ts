@@ -568,21 +568,6 @@ export const dict = {
   "wsl.onboarding.desktopVersion": "darbalaukis {{version}}",
   "wsl.onboarding.versionMismatch": "Įdiegta versija neatitinka darbalaukio programos versijos.",
   "wsl.onboarding.adding": "Pridedama...",
-  "help.tabs.toast.ariaLabel": "Pristatome Tab. Tvarkykite savo darbą ir aktyvias sesijas naudodami skirtukus",
-  "help.tabs.toast.dismiss": "Atsisakyti Tabs informacijos",
-  "help.tabs.title": "Pristatome Tab",
-  "help.tabs.description": "Tvarkykite savo darbą ir aktyvias sesijas naudodami skirtukus",
-  "help.tabs.date": "liepos 14 d",
-  "help.tabs.introduction": "Flynncode Desktop dabar sukurtas iš skirtukų.",
-  "help.tabs.sessions":
-    "Pradėkite naują seansą skirtuke arba atidarykite esamą seansą iš bet kurio savo projekto. Atidarykite naują skirtuką, kai pradedate ką nors naujo, ir uždarykite, kai baigsite.",
-  "help.tabs.organize":
-    "Jei atidarysite kelis skirtukus, bus lengviau organizuoti aktyvias sesijas. Pervardykite skirtukus į kažką įsimintino, jei planuojate juos palikti.",
-  "help.tabs.home":
-    "Visas savo sesijas ir projektus rasite naujajame Home ekrane. Pasirinkus sesiją, ji atidaroma skirtuke.",
-  "help.tabs.persistence": "Kai iš naujo atidarote programą, skirtukai vis dar yra atidaryti.",
-  "help.tabs.worktrees":
-    "Naujasis dizainas dar nepalaiko Git Worktrees, jis pasirodys netrukus. Taigi, jei norite ir toliau naudoti ankstesnį išdėstymą, galite perjungti išdėstymus nustatymuose. Tiesiog nepamirškite, kad naujasis išdėstymas taps nuolatinis po kelių savaičių.",
   "server.row.noUsername": "jokio vartotojo vardo",
   "dialog.project.edit.title": "Redaguoti projektą",
   "dialog.project.edit.name": "Vardas",

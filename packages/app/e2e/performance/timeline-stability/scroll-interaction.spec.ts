@@ -65,6 +65,8 @@ test("keeps moving upward while drag-selecting above the timeline", async ({ pag
       )
     })
   })
+  // A virtualized row can be remounted between the visibility check and the measurement, so wait for a box.
+  await expect.poll(() => text.boundingBox()).not.toBeNull()
   const textBox = await text.boundingBox()
   const scrollBox = await scroller.boundingBox()
   expect(textBox).not.toBeNull()

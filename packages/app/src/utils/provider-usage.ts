@@ -24,30 +24,24 @@ export function orderedWindows(windows: UsageWindow[]): UsageWindow[] {
   return [...percent, ...counts]
 }
 
-// The reported window closest to its limit; the number worth watching.
-export function bindingWindow(windows: UsageWindow[]): UsageWindow | undefined {
-  return orderedWindows(windows)
-    .filter((window) => window.percent !== undefined)
-    .sort((a, b) => (b.percent ?? 0) - (a.percent ?? 0))[0]
-}
-
-// One meter row per enabled provider: every connected provider shows, plus
+// One row per enabled provider: every connected provider shows, plus
 // any provider that reports usage on its own, router excluded, name-sorted.
 export function usageEntries(
   input: {
     connected: Array<{ id: string; name: string }>
     usage: UsageMap | undefined
-    extraIDs?: string[]
   },
 ): Array<{ providerID: string; name: string; windows: UsageWindow[] }> {
   const rows = new Map<string, { providerID: string; name: string; windows: UsageWindow[] }>()
-  for (const id of input.extraIDs ?? []) {
-    if (id === ROUTER_PROVIDER_ID || rows.has(id)) continue
-    rows.set(id, { providerID: id, name: id, windows: [] })
-  }
   for (const provider of input.connected) {
     if (provider.id === ROUTER_PROVIDER_ID || rows.has(provider.id)) continue
-    rows.set(provider.id, { providerID: provider.id, name: provider.name, windows: [] })
+    // A connected provider that also reports usage carries its windows; the loop below only adds the others.
+    const windows = input.usage?.[provider.id]?.windows
+    rows.set(provider.id, {
+      providerID: provider.id,
+      name: provider.name,
+      windows: Array.isArray(windows) ? windows : [],
+    })
   }
   if (input.usage) {
     for (const entry of Object.entries(input.usage)) {

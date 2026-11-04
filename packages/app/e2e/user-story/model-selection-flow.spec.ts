@@ -69,12 +69,17 @@ test("creates a session in a new project, connects Flynncode Go, and selects its
   })
 
   await page.goto("/")
-  const addProject = page.locator('[data-action="home-add-project-row"]')
-  await expectAppVisible(addProject)
-  await addProject.click()
+  // The new layout has no home page: the sidebar is the project browser, so the project is opened from there and the
+  // session is started from the same sidebar.
+  // The sidebar renders in the desktop rail and in the mobile drawer; only the visible one is clickable.
+  const openProject = page.locator('[data-action="sidebar-open-project"]').filter({ visible: true })
+  await expectAppVisible(openProject)
+  await openProject.click()
   await page.locator("[data-directory-path]").click()
 
-  await page.locator('[data-action="home-new-session"]').click()
+  const newSession = page.locator('[data-action="sidebar-new-session"]').filter({ visible: true })
+  await expect(newSession).toBeEnabled()
+  await newSession.click()
   await expectAppVisible(page.locator('[data-component="prompt-input-v2"]'))
 
   const modelControl = page.locator('[data-action="prompt-model"]')

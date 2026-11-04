@@ -3,7 +3,8 @@ import { base64Encode } from "@flynncode/core/util/encode"
 import { fixture, pageMessages } from "./session-timeline.fixture"
 import { trackPageErrors, expectNoSmokeErrors } from "../utils/errors"
 import { mockOpenCodeServer } from "../utils/mock-server"
-import { APP_READY_TIMEOUT, expectAppVisible, expectSessionTitle } from "../utils/waits"
+import { installSseTransport } from "../utils/sse-transport"
+import { expectAppVisible, expectSessionTitle } from "../utils/waits"
 
 const forbiddenText = ["Load details", "Show earlier steps"]
 
@@ -32,6 +33,9 @@ test.describe("smoke: session timeline", () => {
 
   test("keeps the visible message fixed while prepending history", async ({ page }) => {
     const requests: { before?: string; phase: "start" | "end"; at: number }[] = []
+    // The mock's default event stream ends after every delivery and the app reconnects and reloads the routed session
+    // each time, which keeps history paging from ever starting. A real server holds one stream open.
+    await holdEventStreamOpen(page)
     await mockOpenCodeServer(page, {
       sessions: fixture.sessions,
       provider: fixture.provider,
@@ -116,6 +120,7 @@ test.describe("smoke: session timeline", () => {
   })
 
   test("paints cached session tabs at the latest message", async ({ page }) => {
+    await holdEventStreamOpen(page)
     await mockOpenCodeServer(page, {
       sessions: fixture.sessions,
       provider: fixture.provider,
@@ -124,26 +129,11 @@ test.describe("smoke: session timeline", () => {
       pageMessages: (sessionID) => ({ items: fixture.messages[sessionID as keyof typeof fixture.messages] ?? [] }),
     })
     await configureSmokePage(page, fixture.directory)
-    await page.addInitScript(
-      ({ dirBase64, sourceID, targetID }) => {
-        localStorage.setItem(
-          "opencode.window.browser.dat:tabs",
-          JSON.stringify(
-            [sourceID, targetID].map((sessionId) => ({
-              type: "session",
-              server: "http://127.0.0.1:4096",
-              dirBase64,
-              sessionId,
-            })),
-          ),
-        )
-      },
-      { dirBase64: base64Encode(fixture.directory), sourceID: fixture.sourceID, targetID: fixture.targetID },
-    )
 
-    await page.goto(`/${base64Encode(fixture.directory)}/session/${fixture.targetID}`)
-    await expectSessionTitle(page, fixture.expected.targetTitle)
-    await switchTitlebarSession(page, fixture.sourceID, fixture.expected.sourceTitle)
+    await navigateToSession(page, fixture.directory, fixture.targetID, fixture.expected.targetTitle)
+    // The target must be loaded and painted before leaving it, or switching back would not be a cached revisit.
+    await waitForTimelineStable(page)
+    await switchSidebarSession(page, fixture.sourceID, fixture.expected.sourceTitle)
 
     const destination = fixture.messages[fixture.targetID].map((message) => message.info.id)
     const last = fixture.expected.targetMessageIDs.at(-1)!
@@ -216,7 +206,7 @@ test.describe("smoke: session timeline", () => {
       { destination, last },
     )
 
-    await switchTitlebarSession(page, fixture.targetID, fixture.expected.targetTitle)
+    await switchSidebarSession(page, fixture.targetID, fixture.expected.targetTitle)
     await page.waitForFunction(() =>
       (
         window as Window & { __sessionTabPaint?: { samples: Array<{ ids: string[] }> } }
@@ -242,6 +232,7 @@ test.describe("smoke: session timeline", () => {
   })
 
   test("paints a cold session tab at the latest message", async ({ page }) => {
+    await holdEventStreamOpen(page)
     await mockOpenCodeServer(page, {
       sessions: fixture.sessions,
       provider: fixture.provider,
@@ -250,24 +241,7 @@ test.describe("smoke: session timeline", () => {
       pageMessages: (sessionID) => ({ items: fixture.messages[sessionID as keyof typeof fixture.messages] ?? [] }),
     })
     await configureSmokePage(page, fixture.directory)
-    await page.addInitScript(
-      ({ dirBase64, sourceID, targetID }) => {
-        localStorage.setItem(
-          "opencode.window.browser.dat:tabs",
-          JSON.stringify(
-            [sourceID, targetID].map((sessionId) => ({
-              type: "session",
-              server: "http://127.0.0.1:4096",
-              dirBase64,
-              sessionId,
-            })),
-          ),
-        )
-      },
-      { dirBase64: base64Encode(fixture.directory), sourceID: fixture.sourceID, targetID: fixture.targetID },
-    )
-    await page.goto(`/${base64Encode(fixture.directory)}/session/${fixture.sourceID}`)
-    await expectSessionTitle(page, fixture.expected.sourceTitle)
+    await navigateToSession(page, fixture.directory, fixture.sourceID, fixture.expected.sourceTitle)
     const last = fixture.expected.targetMessageIDs.at(-1)!
     const destination = fixture.messages[fixture.targetID].map((message) => message.info.id)
     await page.evaluate(
@@ -301,7 +275,7 @@ test.describe("smoke: session timeline", () => {
       { destination, last },
     )
 
-    await switchTitlebarSession(page, fixture.targetID, fixture.expected.targetTitle)
+    await switchSidebarSession(page, fixture.targetID, fixture.expected.targetTitle)
     await page.waitForFunction(() =>
       (window as Window & { __coldTabSamples?: Array<{ destination: boolean }> }).__coldTabSamples?.some(
         (sample) => sample.destination,
@@ -321,6 +295,7 @@ test.describe("smoke: session timeline", () => {
 
   test("renders seeded timeline in order while paging through history", async ({ page }) => {
     const errors = trackPageErrors(page)
+    await holdEventStreamOpen(page)
     await mockOpenCodeServer(page, {
       sessions: fixture.sessions,
       provider: fixture.provider,
@@ -330,10 +305,9 @@ test.describe("smoke: session timeline", () => {
     })
     await configureSmokePage(page, fixture.directory)
 
-    await selectHomeProject(page, fixture.project.name)
     await navigateToSession(page, fixture.directory, fixture.sourceID, fixture.expected.sourceTitle)
     await expectSessionReady(page)
-    await navigateToSession(page, fixture.directory, fixture.targetID, fixture.expected.targetTitle)
+    await switchSidebarSession(page, fixture.targetID, fixture.expected.targetTitle)
     const expectedPartIDs = fixture.expected.targetPartIDs
     const expectedMessageIDs = fixture.expected.targetMessageIDs
     await expectSessionTimelineReady(page, expectedPartIDs, expectedMessageIDs, errors)
@@ -710,28 +684,24 @@ function expectCompleteScroll(
   expect(expectedPartIDs.length).toBe(331)
 }
 
-async function selectHomeProject(page: Page, projectName: string) {
-  await page.goto("/")
-  const row = page
-    .locator('[data-component="home-project-row"]')
-    .filter({ hasText: new RegExp(projectName, "i") })
-    .first()
-  await expectAppVisible(row)
-  await row.click()
-  await expect(row).toHaveAttribute("data-selected", "", { timeout: APP_READY_TIMEOUT })
-  await expect(page).toHaveURL(/\/$/)
-}
-
 async function navigateToSession(page: Page, directory: string, sessionId: string, expectedTitle: string) {
   await page.goto(`/${base64Encode(directory)}/session/${sessionId}`)
   await expectSessionTitle(page, expectedTitle)
 }
 
-async function switchTitlebarSession(page: Page, sessionID: string, title: string) {
+// A live server keeps its event stream open. The mock's default body ends at once, so the app would reconnect every
+// ~250 ms and each `server.connected` after the first reloads the routed session, which a live connection never does.
+async function holdEventStreamOpen(page: Page) {
+  await installSseTransport(page, { server: fixture.serverKey, retry: 20 })
+}
+
+// Sessions open by plain client-side navigation. The sidebar lists them as links, so a click switches the route
+// without reloading the app, and a session opened earlier keeps the messages it already loaded.
+async function switchSidebarSession(page: Page, sessionID: string, title: string) {
   const href = `/server/${base64Encode(fixture.serverKey)}/session/${sessionID}`
-  const tab = page.locator(`[data-slot="titlebar-tabs"] a[href="${href}"]`).first()
-  await expect(tab).toBeVisible()
-  await tab.click()
+  const link = page.getByRole("navigation", { name: "Projects and sessions" }).locator(`a[href="${href}"]`)
+  await expectAppVisible(link)
+  await link.click()
   await expectSessionTitle(page, title)
 }
 

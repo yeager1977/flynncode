@@ -556,22 +556,6 @@ export const dict = {
   "wsl.onboarding.desktopVersion": "escriptori {{version}}",
   "wsl.onboarding.versionMismatch": "La versió instal·lada no coincideix amb la versió de l'aplicació d'escriptori.",
   "wsl.onboarding.adding": "S'està afegint...",
-  "help.tabs.toast.ariaLabel":
-    "Presentació de les pestanyes. Organitza el teu treball i les sessions actives amb pestanyes",
-  "help.tabs.toast.dismiss": "Ignora la informació de les pestanyes",
-  "help.tabs.title": "Presentació de les pestanyes",
-  "help.tabs.description": "Organitza el teu treball i les sessions actives amb pestanyes",
-  "help.tabs.date": "14 de juliol",
-  "help.tabs.introduction": "Flynncode L'escriptori ara està construït al voltant de pestanyes.",
-  "help.tabs.sessions":
-    "Inicieu una sessió nova en una pestanya o obriu una sessió existent des de qualsevol dels vostres projectes. Obre una pestanya nova quan comencis una cosa nova i tanca-la quan hagis acabat.",
-  "help.tabs.organize":
-    "Mantenir unes quantes pestanyes obertes facilita l'organització de les sessions actives. Canvieu el nom de les pestanyes a alguna cosa memorable si teniu previst mantenir-les.",
-  "help.tabs.home":
-    "Trobareu totes les sessions i els projectes a la nova pantalla d'inici. En seleccionar una sessió, s'obre en una pestanya.",
-  "help.tabs.persistence": "Quan torneu a obrir l'aplicació, les vostres pestanyes encara estan obertes.",
-  "help.tabs.worktrees":
-    "El nou disseny encara no és compatible amb Git Worktrees, arribarà aviat. Per tant, si preferiu continuar utilitzant el disseny anterior, podeu canviar entre els dissenys a Configuració. Tingueu en compte que el nou disseny esdevindrà permanent d'aquí a unes setmanes.",
   "server.row.noUsername": "sense nom d'usuari",
   "dialog.project.edit.title": "Edita el projecte",
   "dialog.project.edit.name": "Nom",

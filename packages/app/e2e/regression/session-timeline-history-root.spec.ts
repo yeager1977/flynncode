@@ -17,8 +17,10 @@ import { mockOpenCodeServer } from "../utils/mock-server"
 import { installSseTransport } from "../utils/sse-transport"
 import { expectSessionTitle } from "../utils/waits"
 
+// These mirror `initialMessagePageSize` and `historyMessagePageSize` in src/context/server-session.ts, the page
+// sizes the app asks the server for: the newest page first, then older pages.
 const initialPageSize = 20
-const historyPageSize = 200
+const historyPageSize = 50
 const assistants = Array.from({ length: initialPageSize + 1 }, (_, index) =>
   assistantMessage([textPart(`prt_history_root_${index}`, `Assistant response ${index}`)], {
     id: `msg_${String(index + 1001).padStart(4, "0")}_history_root_assistant`,

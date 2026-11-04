@@ -556,21 +556,6 @@ export const dict = {
   "wsl.onboarding.desktopVersion": "desktop {{version}}",
   "wsl.onboarding.versionMismatch": "A versão instalada não corresponde à versão do aplicativo para desktop.",
   "wsl.onboarding.adding": "Adicionando...",
-  "help.tabs.toast.ariaLabel": "Apresentamos as abas. Organize seu trabalho e suas sessões ativas com abas",
-  "help.tabs.toast.dismiss": "Dispensar informações sobre as abas",
-  "help.tabs.title": "Apresentamos as abas",
-  "help.tabs.description": "Organize seu trabalho e suas sessões ativas com abas",
-  "help.tabs.date": "14 de julho",
-  "help.tabs.introduction": "Agora, o Flynncode Desktop é organizado em abas.",
-  "help.tabs.sessions":
-    "Inicie uma nova sessão em uma aba ou abra uma sessão existente de qualquer um dos seus projetos. Abra uma nova aba quando começar algo novo e feche-a quando terminar.",
-  "help.tabs.organize":
-    "Manter algumas abas abertas facilita a organização das sessões ativas. Renomeie as abas com nomes fáceis de lembrar se pretende mantê-las abertas.",
-  "help.tabs.home":
-    "Você encontrará todas as suas sessões e projetos na nova tela Início. Ao selecionar uma sessão, ela será aberta em uma aba.",
-  "help.tabs.persistence": "Quando você reabrir o aplicativo, suas abas ainda estarão abertas.",
-  "help.tabs.worktrees":
-    "O novo design ainda não oferece suporte a Git Worktrees, mas esse recurso estará disponível em breve. Se preferir continuar usando o layout anterior, você poderá alternar entre os layouts nas Configurações. Lembre-se apenas de que o novo layout se tornará permanente em algumas semanas.",
   "dialog.project.edit.title": "Editar projeto",
   "dialog.project.edit.name": "Nome",
   "dialog.project.edit.icon": "Ícone",

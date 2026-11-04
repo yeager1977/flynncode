@@ -1,41 +1,24 @@
 import { expect, test, type Page, type Route } from "@playwright/test"
 import { base64Encode } from "@flynncode/core/util/encode"
 import { currentSession } from "../utils/mock-server"
+import { expectSessionTitle } from "../utils/waits"
 
 const serverA = "http://127.0.0.1:4096"
 const serverB = "http://127.0.0.1:4097"
 const sessionA = session("ses_server_a", "C:/server-a", "Server A session")
 const sessionB = session("ses_server_b", "/home/server-b", "Server B session")
 
-test("closing the active server's last tab opens the remaining server tab", async ({ page }) => {
+// Sessions have no tabs to close, so a remote session is reached by its server-keyed route alone.
+test("a session on another server loads only from that server", async ({ page }) => {
   const requests: string[] = []
   await mockServers(page, requests)
-  await page.addInitScript(
-    ({ serverB, sessionA, sessionB }) => {
-      localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
-      localStorage.setItem("opencode.global.dat:server", JSON.stringify({ list: [serverB] }))
-      localStorage.setItem(
-        "opencode.window.browser.dat:tabs",
-        JSON.stringify([
-          { type: "session", server: "http://127.0.0.1:4096", sessionId: sessionA },
-          { type: "session", server: serverB, sessionId: sessionB },
-        ]),
-      )
-    },
-    { serverB, sessionA: sessionA.id, sessionB: sessionB.id },
-  )
+  await configureServers(page)
 
-  const hrefA = `/server/${base64Encode(serverA)}/session/${sessionA.id}`
-  const hrefB = `/server/${base64Encode(serverB)}/session/${sessionB.id}`
-  await page.goto(hrefA)
-  await expect(page.getByText(sessionA.title).first()).toBeVisible()
+  // Server A is the app's active server; the route names server B's session.
+  await page.goto(sessionHref(serverB, sessionB.id))
+  await expectSessionTitle(page, sessionB.title)
 
-  const tabA = page.locator(`[data-titlebar-tab-slot]:has(a[href="${hrefA}"])`)
-  await tabA.locator('[data-slot="tab-close"] button').click()
-
-  await expect(page).toHaveURL(new RegExp(`${hrefB.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`))
   await expect.poll(() => requests.some((url) => url.startsWith(`${serverB}/api/session/${sessionB.id}`))).toBe(true)
-  await expect(page.getByText(sessionB.title).first()).toBeVisible()
   const sessionBRequests = requests.filter((url) => url.includes(`/session/${sessionB.id}`))
   expect(sessionBRequests.every((url) => url.startsWith(serverB))).toBe(true)
   expect(
@@ -46,23 +29,15 @@ test("closing the active server's last tab opens the remaining server tab", asyn
   ).toBe(true)
 })
 
-test("legacy session routes preserve an existing tab's server", async ({ page }) => {
+// A legacy `/:dir/session/:id` link names no server. Persisted session tabs used to pick one, but they are purged on
+// load now (nothing creates them), so the link opens on the active server.
+test("legacy session routes open the session on the active server", async ({ page }) => {
   await mockServers(page, [])
-  await page.addInitScript(
-    ({ serverB, sessionB }) => {
-      localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
-      localStorage.setItem("opencode.global.dat:server", JSON.stringify({ list: [serverB] }))
-      localStorage.setItem(
-        "opencode.window.browser.dat:tabs",
-        JSON.stringify([{ type: "session", server: serverB, sessionId: sessionB }]),
-      )
-    },
-    { serverB, sessionB: sessionB.id },
-  )
+  await configureServers(page)
 
-  const hrefB = `/server/${base64Encode(serverB)}/session/${sessionB.id}`
-  await page.goto(`/${base64Encode(sessionB.directory)}/session/${sessionB.id}`)
-  await expect(page).toHaveURL(new RegExp(`${hrefB.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`))
+  await page.goto(`/${base64Encode(sessionA.directory)}/session/${sessionA.id}`)
+  await expect(page).toHaveURL(sessionHref(serverA, sessionA.id))
+  await expectSessionTitle(page, sessionA.title)
 })
 
 function session(id: string, directory: string, title: string) {
@@ -75,6 +50,17 @@ function session(id: string, directory: string, title: string) {
     version: "dev",
     time: { created: 1, updated: 1 },
   }
+}
+
+function sessionHref(server: string, sessionID: string) {
+  return `/server/${base64Encode(server)}/session/${sessionID}`
+}
+
+async function configureServers(page: Page) {
+  await page.addInitScript((serverB) => {
+    localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
+    localStorage.setItem("opencode.global.dat:server", JSON.stringify({ list: [serverB] }))
+  }, serverB)
 }
 
 async function mockServers(page: Page, requests: string[]) {
@@ -96,14 +82,27 @@ async function mockServers(page: Page, requests: string[]) {
     if (url.pathname === `/session/${current.id}`) return json(route, current)
     if (/^\/session\/[^/]+$/.test(url.pathname)) return json(route, { name: "NotFoundError" }, 404)
     if (url.pathname === `/session/${current.id}/message`) return json(route, [])
-    if (/^\/session\/[^/]+\/(children|todo|diff)$/.test(url.pathname)) return json(route, [])
-    if (["/skill", "/command", "/lsp", "/formatter", "/permission", "/question", "/vcs/diff"].includes(url.pathname))
+    if (/^\/session\/[^/]+\/(children|todo|diff|shells|schedules)$/.test(url.pathname)) return json(route, [])
+    if (
+      ["/skill", "/command", "/lsp", "/formatter", "/permission", "/question", "/vcs/diff", "/pty/shells"].includes(
+        url.pathname,
+      )
+    )
       return json(route, [])
     if (["/global/config", "/config", "/provider/auth", "/mcp"].includes(url.pathname)) return json(route, {})
-    if (url.pathname === "/provider")
+    if (url.pathname === "/provider" || url.pathname === "/provider/connected")
       return json(route, { all: [], connected: [], default: { providerID: "", modelID: "" } })
+    if (url.pathname === "/api/provider" || url.pathname === "/api/model" || url.pathname === "/api/agent")
+      return json(route, { data: [] })
+    if (url.pathname === "/api/model/default") return json(route, { data: null })
+    if (["/api/command", "/api/reference", "/api/permission/request", "/api/question/request"].includes(url.pathname))
+      return json(route, { location: { directory: current.directory }, data: [] })
+    if (url.pathname === "/api/mcp") return json(route, { location: { directory: current.directory }, data: [] })
+    if (url.pathname === "/api/mcp/resource")
+      return json(route, { location: { directory: current.directory }, data: { resources: [], templates: [] } })
+    if (url.pathname === "/api/pty/shells") return json(route, { location: { directory: current.directory }, data: [] })
     if (url.pathname === "/agent") return json(route, [{ name: "build", mode: "primary" }])
-    if (url.pathname === "/project" || url.pathname === "/project/current") {
+    if (url.pathname === "/project" || url.pathname === "/project/current" || url.pathname === "/api/project") {
       const project = {
         id: current.projectID,
         worktree: current.directory,
@@ -111,17 +110,11 @@ async function mockServers(page: Page, requests: string[]) {
         time: { created: 1, updated: 1 },
         sandboxes: [],
       }
-      return json(route, url.pathname === "/project" ? [project] : project)
+      return json(route, url.pathname === "/project/current" ? project : [project])
     }
-    if (url.pathname === "/path")
-      return json(route, {
-        state: current.directory,
-        config: current.directory,
-        worktree: current.directory,
-        directory: current.directory,
-        home: current.directory,
-      })
-    if (url.pathname === "/api/path")
+    if (url.pathname === "/api/project/current")
+      return json(route, { id: current.projectID, directory: current.directory })
+    if (url.pathname === "/path" || url.pathname === "/api/path")
       return json(route, {
         state: current.directory,
         config: current.directory,

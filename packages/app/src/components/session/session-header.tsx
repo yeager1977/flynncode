@@ -8,7 +8,6 @@ import { Keybind } from "@flynncode/ui/keybind"
 import { Spinner } from "@flynncode/ui/spinner"
 import { showToast } from "@/utils/toast"
 import { Tooltip, TooltipKeybind } from "@flynncode/ui/tooltip"
-import { ProviderUsageMeters } from "../provider-usage-meters"
 import { getFilename } from "@flynncode/core/util/path"
 import { base64Encode } from "@flynncode/core/util/encode"
 import { useNavigate } from "@solidjs/router"
@@ -653,7 +652,6 @@ export function SessionHeader() {
                     </div>
                   </Show>
                   <div class="flex items-center gap-1">
-                    <ProviderUsageMeters />
                     <Show when={status()}>
                       <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
                         <StatusPopover />
@@ -796,7 +794,6 @@ function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
 
   return (
     <div class="flex items-center gap-2">
-      <ProviderUsageMeters />
       <Show when={props.state.statusVisible}>
         <Tooltip placement="bottom" value={props.state.statusLabel}>
           <StatusPopoverV2 />

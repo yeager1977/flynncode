@@ -148,12 +148,17 @@ async function openReview(page: Page) {
 
   await page.goto(`/${base64Encode(directory)}/session/${sessionID}`)
   await expectSessionTitle(page, title)
-  const changes = page.getByRole("tab", { name: "Changes" })
+  await page.getByRole("tab", { name: "Changes" }).click()
+  // The review mode starts on the last turn, which has no diffs here and requests none from git; picking the working
+  // tree diff is what requests it.
   const diffResponse = page.waitForResponse(
     (response) =>
       response.request().method() === "GET" && response.ok() && new URL(response.url()).pathname === "/api/vcs/diff",
   )
-  await changes.click()
+  await page.getByRole("button", { name: "Last turn changes", exact: true }).click()
+  const mode = page.getByRole("option", { name: "Git changes", exact: true })
+  await expect(mode).toBeVisible()
+  await mode.click()
   expect((await (await diffResponse).json()).data).toHaveLength(1)
   await expect(page.getByRole("tab", { selected: true })).toHaveAccessibleName(/Files Changed/)
 
@@ -166,4 +171,8 @@ async function openReview(page: Page) {
   await trigger.click()
   await expect(file.getByRole("button", { expanded: true })).toBeVisible()
   await expect(file.getByText("export const value = 'after'", { exact: true })).toBeVisible()
+  // The diff first renders plain lines, then re-renders them with syntax highlighting, which replaces the line
+  // elements and drops any hover or selection made in between. Only the highlighted render has the string literal as
+  // its own token, so wait for it before the tests interact with the lines.
+  await expect(file.getByText("'after'", { exact: true })).toBeVisible()
 }

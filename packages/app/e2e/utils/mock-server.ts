@@ -1,11 +1,25 @@
 import type { Page, Route } from "@playwright/test"
 
-const emptyList = new Set(["/skill", "/command", "/lsp", "/formatter", "/vcs/status", "/vcs/diff"])
+// Routes the app reads as arrays. An unmocked route answers `{}`, and a list reader that gets an object instead of an
+// array throws and blanks the page, so every list route the app polls needs an entry here or a handler below.
+const emptyList = new Set([
+  "/skill",
+  "/command",
+  "/lsp",
+  "/formatter",
+  "/vcs/status",
+  "/vcs/diff",
+  "/pty/shells",
+  "/preview/servers",
+])
 const emptyObject = new Set(["/global/config", "/config", "/provider/auth", "/mcp", "/experimental/resource"])
 
 export interface MockServerConfig {
   protocol?: "v1" | "v2"
   provider: unknown | (() => unknown)
+  // Body of `GET /provider`, the full catalog the app loads on demand for providers that are no longer connected.
+  // Defaults to `provider`; set it only when the catalog must differ from the connected list.
+  providerCatalog?: unknown
   integrationMethods?: Record<string, unknown[]>
   onConnectKey?: (input: { integrationID: string; body: unknown }) => void
   onInstanceDispose?: () => void
@@ -28,6 +42,9 @@ export interface MockServerConfig {
   fileContent?: (path: string) => unknown | Promise<unknown>
   findFiles?: (input: { query: string; dirs?: string; limit?: number }) => unknown | Promise<unknown>
   sessionStatus?: Record<string, unknown> | (() => Record<string, unknown>)
+  // Body of `GET /provider/usage`: the usage map keyed by provider id, `{ [providerID]: { windows: [...] } }`. The
+  // legacy v1 route sends it bare and the SDK client exposes it as `result.data`. A function is called per request.
+  providerUsage?: unknown | (() => unknown | Promise<unknown>)
 }
 
 export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
@@ -78,11 +95,19 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
       return json(route, { healthy: true, version: "2.0.0", pid: 1 })
     if (path === "/experimental/capabilities") return json(route, { backgroundSubagents: true })
     if (path === "/provider")
-      return json(route, typeof config.provider === "function" ? config.provider() : config.provider)
+      return json(
+        route,
+        config.providerCatalog ?? (typeof config.provider === "function" ? config.provider() : config.provider),
+      )
     // The v1 connected-provider slim route has the same shape as /provider in the test fixtures.
     if (path === "/provider/connected")
       return json(route, typeof config.provider === "function" ? config.provider() : config.provider)
     if (path === "/provider/auth") return json(route, config.integrationMethods ?? {})
+    if (path === "/provider/usage")
+      return json(
+        route,
+        typeof config.providerUsage === "function" ? await config.providerUsage() : (config.providerUsage ?? {}),
+      )
     const legacyAuth = path.match(/^\/auth\/([^/]+)$/)?.[1]
     if (legacyAuth && route.request().method() === "PUT") {
       config.onConnectKey?.({ integrationID: legacyAuth, body: route.request().postDataJSON() })
@@ -181,6 +206,9 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
     if (path === "/api/vcs/status") return json(route, { location: location(config), data: [] })
     if (path === "/api/vcs/diff") return json(route, { location: location(config), data: config.vcsDiff ?? [] })
     if (path === "/api/pty/shells") return json(route, { location: location(config), data: [] })
+    // The v2 catalog is three requests. The app normalizes them together, so an object without `data` throws.
+    if (path === "/api/provider" || path === "/api/model") return json(route, { location: location(config), data: [] })
+    if (path === "/api/model/default") return json(route, { location: location(config), data: null })
     if (/^\/api\/pty\/[^/]+\/connect-token$/.test(path))
       return json(route, { location: location(config), data: { ticket: "e2e-ticket", expires_in: 60 } })
     if (emptyObject.has(path)) return json(route, {})
@@ -275,7 +303,7 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
 
     const todoMatch = path.match(/^\/session\/([^/]+)\/todo$/)
     if (todoMatch) return json(route, config.todos?.(todoMatch[1]!) ?? [])
-    if (/^\/session\/[^/]+\/(children|diff)$/.test(path)) return json(route, [])
+    if (/^\/session\/[^/]+\/(children|diff|shells|schedules)$/.test(path)) return json(route, [])
 
     const currentMessagesMatch = path.match(/^\/api\/session\/([^/]+)\/message$/)
     if (currentMessagesMatch) {

@@ -21,7 +21,7 @@ export function UsagePage() {
   const providers = useProviders(() => undefined)
   const usage = useProviderUsage()
 
-  const rows = createMemo(() => usageEntries({ connected: providers.connected(), usage: usage.data }))
+  const rows = createMemo(() => usageEntries({ connected: providers.connected(), usage: usage.data() }))
   const connected = createMemo(() => new Set(providers.connected().map((provider) => provider.id)))
 
   return (

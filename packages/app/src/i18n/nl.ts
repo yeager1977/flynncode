@@ -571,21 +571,6 @@ export const dict = {
   "wsl.onboarding.desktopVersion": "desktop {{version}}",
   "wsl.onboarding.versionMismatch": "De geïnstalleerde versie komt niet overeen met de versie van de desktop-app.",
   "wsl.onboarding.adding": "Toevoegen...",
-  "help.tabs.toast.ariaLabel": "Introductie van tabbladen. Organiseer je werk en actieve sessies met tabbladen",
-  "help.tabs.toast.dismiss": "Informatie over tabbladen sluiten",
-  "help.tabs.title": "Introductie van tabbladen",
-  "help.tabs.description": "Organiseer je werk en actieve sessies met tabbladen",
-  "help.tabs.date": "14 juli",
-  "help.tabs.introduction": "Flynncode Desktop is nu opgebouwd rond tabbladen.",
-  "help.tabs.sessions":
-    "Start een nieuwe sessie in een tabblad of open een bestaande sessie vanuit een van je projecten. Open een nieuw tabblad wanneer je aan iets nieuws begint en sluit het wanneer je klaar bent.",
-  "help.tabs.organize":
-    "Met enkele geopende tabbladen kun je je actieve sessies gemakkelijker organiseren. Geef tabbladen een herkenbare naam als je ze geopend wilt houden.",
-  "help.tabs.home":
-    "Je vindt al je sessies en projecten op het nieuwe startscherm. Wanneer je een sessie selecteert, wordt deze in een tabblad geopend.",
-  "help.tabs.persistence": "Wanneer je de app opnieuw opent, zijn je tabbladen nog steeds geopend.",
-  "help.tabs.worktrees":
-    "Het nieuwe ontwerp ondersteunt Git-worktrees nog niet, maar die ondersteuning komt binnenkort. Als je liever de vorige lay-out blijft gebruiken, kun je in Instellingen tussen de lay-outs schakelen. Houd er rekening mee dat de nieuwe lay-out over enkele weken permanent wordt.",
   "server.row.noUsername": "geen gebruikersnaam",
   "dialog.project.edit.title": "Project bewerken",
   "dialog.project.edit.name": "Naam",

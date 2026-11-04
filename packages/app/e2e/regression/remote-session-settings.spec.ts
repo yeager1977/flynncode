@@ -2,6 +2,7 @@ import { base64Encode } from "@flynncode/core/util/encode"
 import { expect, test, type Page, type Route } from "@playwright/test"
 import { installSseTransport } from "../utils/sse-transport"
 import { currentSession } from "../utils/mock-server"
+import { expectSessionTitle } from "../utils/waits"
 
 const serverA = "http://127.0.0.1:4096"
 const serverB = "http://127.0.0.1:4097"
@@ -16,8 +17,8 @@ test("session settings use the remote server context", async ({ page }) => {
   await mockServers(page, permissionRequests)
   await configureServers(page)
 
-  await page.goto(`/server/${base64Encode(serverB)}/session/${sessionB.id}`)
-  await expect(page.getByText(sessionB.title).first()).toBeVisible()
+  await page.goto(sessionHref(serverB, sessionB.id))
+  await expectSessionTitle(page, sessionB.title)
   await page.keyboard.press("Control+,")
 
   const dialog = page.locator(".settings-v2-dialog")
@@ -51,16 +52,24 @@ test("auto-accept responds for an unfocused server session", async ({ page }) =>
     retry: 20,
   })
   await mockServers(page, permissionRequests, permissionResponses)
-  await configureServers(page, [
-    { type: "session", server: serverA, sessionId: sessionA.id },
-    { type: "session", server: serverB, sessionId: sessionB.id },
-  ])
+  await configureServers(page, directoryA)
 
-  const hrefB = `/server/${base64Encode(serverB)}/session/${sessionB.id}`
-  await page.goto(`/server/${base64Encode(serverA)}/session/${sessionA.id}`)
-  await expect(page.getByText(sessionA.title).first()).toBeVisible()
+  // Server A stays the app's active server, so the sidebar lists its sessions, while the route shows server B's
+  // session: that leaves A as the unfocused server. History lets the test leave A for B without reloading the app.
+  const hrefA = sessionHref(serverA, sessionA.id)
+  const hrefB = sessionHref(serverB, sessionB.id)
+  await page.goto(hrefB)
+  await expectSessionTitle(page, sessionB.title)
+  await page
+    .getByRole("navigation", { name: "Projects and sessions" })
+    .getByRole("link", { name: sessionA.title, exact: true })
+    .click()
+  await expect(page).toHaveURL(hrefA)
+  await expectSessionTitle(page, sessionA.title)
   await page.keyboard.press("Control+,")
   const autoAccept = page.locator(".settings-v2-dialog").locator('[data-action="settings-auto-accept-permissions"]')
+  await expect(autoAccept.getByRole("switch")).toBeEnabled()
+  permissionRequests.length = 0
   await autoAccept.locator('[data-slot="switch-control"]').click()
   await expect(autoAccept.getByRole("switch")).toBeChecked()
   await expect
@@ -73,9 +82,9 @@ test("auto-accept responds for an unfocused server session", async ({ page }) =>
     .toBe(true)
   await page.keyboard.press("Escape")
 
-  await page.locator(`[data-titlebar-tab-slot]:has(a[href="${hrefB}"])`).click()
-  await expect(page).toHaveURL(new RegExp(`${hrefB.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`))
-  await expect(page.getByText(sessionB.title).first()).toBeVisible()
+  await page.goBack()
+  await expect(page).toHaveURL(hrefB)
+  await expectSessionTitle(page, sessionB.title)
   await transport.waitForConnection()
 
   await transport.send({
@@ -150,15 +159,27 @@ type PermissionResponse = {
   body: unknown
 }
 
-async function configureServers(page: Page, tabs: { type: "session"; server: string; sessionId: string }[] = []) {
+// Server B is a remote server. `project` is a directory to open on the app's own server (A, the "local" scope), which
+// lists that project's sessions in the sidebar.
+async function configureServers(page: Page, project?: string) {
   await page.addInitScript(
-    ({ serverB, tabs }) => {
+    ({ project, serverB }) => {
       localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
-      localStorage.setItem("opencode.global.dat:server", JSON.stringify({ list: [serverB] }))
-      localStorage.setItem("opencode.window.browser.dat:tabs", JSON.stringify(tabs))
+      localStorage.setItem(
+        "opencode.global.dat:server",
+        JSON.stringify({
+          list: [serverB],
+          projects: { local: project ? [{ worktree: project, expanded: true }] : [] },
+          lastProject: { local: project },
+        }),
+      )
     },
-    { serverB, tabs },
+    { project, serverB },
   )
+}
+
+function sessionHref(server: string, sessionID: string) {
+  return `/server/${base64Encode(server)}/session/${sessionID}`
 }
 
 async function mockServers(page: Page, permissionRequests: string[], permissionResponses: PermissionResponse[] = []) {
@@ -223,7 +244,9 @@ async function mockServers(page: Page, permissionRequests: string[], permissionR
     if (["/skill", "/command", "/lsp", "/formatter", "/question", "/vcs/diff", "/pty/shells"].includes(url.pathname))
       return json(route, [])
     if (["/global/config", "/config", "/provider/auth", "/mcp"].includes(url.pathname)) return json(route, {})
-    if (url.pathname === "/provider") return json(route, provider(remote ? "server-b" : "server-a"))
+    // The connected list the app reads is the slim route; the full catalog answers the same fixture.
+    if (url.pathname === "/provider" || url.pathname === "/provider/connected")
+      return json(route, provider(remote ? "server-b" : "server-a"))
     if (url.pathname === "/agent") return json(route, [{ name: "build", mode: "primary" }])
     if (url.pathname === "/project" || url.pathname === "/project/current") {
       const project = {

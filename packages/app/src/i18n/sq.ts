@@ -552,21 +552,6 @@ export const dict = {
   "wsl.onboarding.desktopVersion": "desktop {{version}}",
   "wsl.onboarding.versionMismatch": "Versioni i instaluar nuk përputhet me versionin e aplikacionit desktop.",
   "wsl.onboarding.adding": "Po shtohet...",
-  "help.tabs.toast.ariaLabel": "Prezantimi i skedave. Organizoni punën tuaj dhe seancat aktive me skeda",
-  "help.tabs.toast.dismiss": "Hiq informacionin e skedave",
-  "help.tabs.title": "Prezantimi i skedave",
-  "help.tabs.description": "Organizoni punën tuaj dhe seancat aktive me skeda",
-  "help.tabs.date": "14 korrik",
-  "help.tabs.introduction": "Flynncode Desktop tani është ndërtuar rreth skedave.",
-  "help.tabs.sessions":
-    "Filloni një sesion të ri në një skedë ose hapni një sesion ekzistues nga ndonjë prej projekteve tuaja. Hapni një skedë të re kur filloni diçka të re dhe mbylleni kur të keni mbaruar.",
-  "help.tabs.organize":
-    "Mbajtja e disa skedave të hapura e bën më të lehtë organizimin e seancave tuaja aktive. Riemërtoni skedat në diçka të paharrueshme nëse planifikoni t'i mbani ato përreth.",
-  "help.tabs.home":
-    "Do t'i gjeni të gjitha seancat dhe projektet tuaja në ekranin e ri Home. Zgjedhja e një sesioni e hap atë në një skedë.",
-  "help.tabs.persistence": "Kur rihapni aplikacionin, skedat tuaja janë ende të hapura.",
-  "help.tabs.worktrees":
-    'Dizajni i ri nuk mbështet ende Git Worktrees, ai vjen së shpejti. Pra, nëse preferoni të vazhdoni të përdorni paraqitjen e mëparshme, mund të kaloni midis paraqitjeve te "Cilësimet". Vetëm mbani në mend se faqosja e re do të bëhet e përhershme brenda disa javësh.',
   "server.row.noUsername": "asnjë emër përdoruesi",
   "dialog.project.edit.title": "Redakto projektin",
   "dialog.project.edit.name": "Emri",

@@ -1,3 +1,5 @@
+import { createStore } from "solid-js/store"
+
 // The sidebar renames a session in an input inside the row. A refresh of the
 // session list re-creates the row, so the rename state lives here, keyed by
 // session id, and outlives the row.
@@ -14,30 +16,34 @@ export type RenameState = {
 }
 
 export function createRenameState(): RenameState {
-  const drafts = new Map<string, string>()
-  const titles = new Map<string, string>()
+  // A store, not Maps: rows read this in JSX, and only a store tells them to re-render when a rename starts or the
+  // draft changes. An entry holds `undefined` once removed, so an emptied draft ("") still counts as renaming.
+  const [state, setState] = createStore({
+    drafts: {} as Record<string, string | undefined>,
+    titles: {} as Record<string, string | undefined>,
+  })
 
   return {
     start(sessionID, title) {
-      drafts.set(sessionID, title)
+      setState("drafts", sessionID, title)
     },
     stop(sessionID) {
-      drafts.delete(sessionID)
+      setState("drafts", sessionID, undefined)
     },
     setDraft(sessionID, draft) {
-      drafts.set(sessionID, draft)
+      setState("drafts", sessionID, draft)
     },
     setOptimisticTitle(sessionID, title) {
-      titles.set(sessionID, title)
+      setState("titles", sessionID, title)
     },
     clearOptimisticTitle(sessionID) {
-      titles.delete(sessionID)
+      setState("titles", sessionID, undefined)
     },
     synced(sessionID, title) {
-      if (titles.get(sessionID) === title) titles.delete(sessionID)
+      if (state.titles[sessionID] === title) setState("titles", sessionID, undefined)
     },
-    renaming: (sessionID) => drafts.has(sessionID),
-    draft: (sessionID) => drafts.get(sessionID),
-    optimisticTitle: (sessionID) => titles.get(sessionID),
+    renaming: (sessionID) => state.drafts[sessionID] !== undefined,
+    draft: (sessionID) => state.drafts[sessionID],
+    optimisticTitle: (sessionID) => state.titles[sessionID],
   }
 }

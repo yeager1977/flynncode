@@ -19,15 +19,17 @@ test("restores review mode and selected file per session", async ({ page }) => {
   await expectSessionTitle(page, titleA)
   await page.getByRole("button", { name: "Toggle review" }).click()
 
-  await selectMode(page, "Git changes", "Branch changes")
+  // A session with no stored mode reviews its last turn, which has no diffs here, so each session picks its own mode.
+  await selectMode(page, "Last turn changes", "Branch changes")
   await selectFile(page, "beta.ts")
 
   await switchSession(page, titleB)
-  await expect(page.getByRole("button", { name: "Git changes" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Last turn changes", exact: true })).toBeVisible()
+  await selectMode(page, "Last turn changes", "Git changes")
   await selectFile(page, "gamma.ts")
 
   await switchSession(page, titleA)
-  await expect(page.getByRole("button", { name: "Branch changes" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Branch changes", exact: true })).toBeVisible()
   await expectSelectedFile(page, "beta.ts")
   await selectMode(page, "Branch changes", "Git changes")
   await expectSelectedFile(page, "alpha.ts")
@@ -36,17 +38,20 @@ test("restores review mode and selected file per session", async ({ page }) => {
 
   await page.reload()
   await expectSessionTitle(page, titleA)
-  await expect(page.getByRole("button", { name: "Branch changes" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Branch changes", exact: true })).toBeVisible()
   await expectSelectedFile(page, "beta.ts")
 
   await switchSession(page, titleB)
-  await expect(page.getByRole("button", { name: "Git changes" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Git changes", exact: true })).toBeVisible()
   await expectSelectedFile(page, "gamma.ts")
 })
 
 async function selectMode(page: Page, current: string, next: string) {
-  await page.getByRole("button", { name: current }).click()
-  await page.getByRole("option", { name: next }).dispatchEvent("click")
+  await page.getByRole("button", { name: current, exact: true }).click()
+  const option = page.getByRole("option", { name: next, exact: true })
+  await expect(option).toBeVisible()
+  await option.click()
+  await expect(page.getByRole("button", { name: next, exact: true })).toBeVisible()
 }
 
 async function selectFile(page: Page, file: string) {
@@ -58,8 +63,12 @@ async function expectSelectedFile(page: Page, file: string) {
   await expect(page.locator('[data-slot="session-review-v2-file-name"]')).toHaveText(file)
 }
 
+// Sessions open by plain navigation from the sidebar session list; the titlebar tab strip is no longer mounted.
 async function switchSession(page: Page, title: string) {
-  await page.locator("[data-titlebar-tab-slot]", { hasText: title }).click()
+  await page
+    .getByRole("navigation", { name: "Projects and sessions" })
+    .getByRole("link", { name: title, exact: true })
+    .click()
   await expectSessionTitle(page, title)
 }
 
@@ -107,23 +116,17 @@ async function setup(page: Page) {
       ),
     }),
   )
-  await page.addInitScript(
-    ({ directory, server, sessions }) => {
-      localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
-      localStorage.setItem(
-        "opencode.global.dat:server",
-        JSON.stringify({
-          projects: { local: [{ worktree: directory, expanded: true }] },
-          lastProject: { local: directory },
-        }),
-      )
-      localStorage.setItem(
-        "opencode.window.browser.dat:tabs",
-        JSON.stringify(sessions.map((sessionId: string) => ({ type: "session", server, sessionId }))),
-      )
-    },
-    { directory, server, sessions: [sessionA, sessionB] },
-  )
+  // The project is seeded so the sidebar session list shows both sessions.
+  await page.addInitScript((directory) => {
+    localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
+    localStorage.setItem(
+      "opencode.global.dat:server",
+      JSON.stringify({
+        projects: { local: [{ worktree: directory, expanded: true }] },
+        lastProject: { local: directory },
+      }),
+    )
+  }, directory)
 }
 
 function session(id: string, title: string, created: number) {

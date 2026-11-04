@@ -567,21 +567,6 @@ export const dict = {
   "wsl.onboarding.desktopVersion": "radna površina {{version}}",
   "wsl.onboarding.versionMismatch": "Instalirana verzija ne odgovara verziji aplikacije za stolna računala.",
   "wsl.onboarding.adding": "Dodavanje...",
-  "help.tabs.toast.ariaLabel": "Predstavljamo Tabs. Organizirajte svoj rad i aktivne sesije pomoću kartica",
-  "help.tabs.toast.dismiss": "Odbaci Tab informacije",
-  "help.tabs.title": "Predstavljamo Tabs",
-  "help.tabs.description": "Organizirajte svoj rad i aktivne sesije pomoću kartica",
-  "help.tabs.date": "14. srpnja",
-  "help.tabs.introduction": "Radna površina Flynncode sada je izgrađena oko kartica.",
-  "help.tabs.sessions":
-    "Započnite novu sesiju na kartici ili otvorite postojeću sesiju iz bilo kojeg od svojih projekata. Otvorite novu karticu kada započnete nešto novo i zatvorite je kada završite.",
-  "help.tabs.organize":
-    "Održavanje nekoliko otvorenih kartica olakšava organiziranje vaših aktivnih sesija. Preimenujte kartice u nešto nezaboravno ako ih planirate zadržati.",
-  "help.tabs.home":
-    "Sve svoje sesije i projekte pronaći ćete na novom Home zaslonu. Odabirom sesije otvara se u kartici.",
-  "help.tabs.persistence": "Kada ponovno otvorite aplikaciju, vaše kartice su i dalje otvorene.",
-  "help.tabs.worktrees":
-    "Novi dizajn još ne podržava Git Worktrees, uskoro će biti dostupan. Dakle, ako biste radije nastavili koristiti prethodni izgled, možete se prebacivati ​​između izgleda u Postavkama. Samo imajte na umu da će novi izgled postati trajan za nekoliko tjedana.",
   "server.row.noUsername": "nema korisničkog imena",
   "dialog.project.edit.title": "Uredi projekt",
   "dialog.project.edit.name": "Ime",

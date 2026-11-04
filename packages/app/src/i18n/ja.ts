@@ -570,21 +570,6 @@ export const dict = {
   "wsl.onboarding.versionMismatch": "インストールされているバージョンがデスクトップアプリのバージョンと一致しません。",
   "wsl.onboarding.adding": "追加中...",
 
-  "help.tabs.toast.ariaLabel": "タブのご紹介。タブを使って作業と進行中のセッションを整理できます",
-  "help.tabs.toast.dismiss": "タブに関する案内を閉じる",
-  "help.tabs.title": "タブのご紹介",
-  "help.tabs.description": "タブを使って作業と進行中のセッションを整理できます",
-  "help.tabs.date": "7月14日",
-  "help.tabs.introduction": "Flynncode Desktopでタブを中心とした操作ができるようになりました。",
-  "help.tabs.sessions":
-    "新しいセッションをタブで開始したり、プロジェクトから既存のセッションを開いたりできます。新しい作業を始めるときは新しいタブを開き、作業が終わったら閉じます。",
-  "help.tabs.organize":
-    "複数のタブを開いておくと、進行中のセッションを整理しやすくなります。タブを残しておく場合は、覚えやすい名前に変更できます。",
-  "help.tabs.home":
-    "新しいホーム画面には、すべてのセッションとプロジェクトが表示されます。セッションを選択するとタブで開きます。",
-  "help.tabs.persistence": "アプリを再度開いたときも、タブは開いたままです。",
-  "help.tabs.worktrees":
-    "新しいデザインはまだGitワークツリーに対応していませんが、近日中に対応する予定です。以前のレイアウトを引き続き使用する場合は、設定でレイアウトを切り替えることができます。新しいレイアウトは数週間後に標準となる予定です。",
   "dialog.project.edit.title": "プロジェクトを編集",
   "dialog.project.edit.name": "名前",
   "dialog.project.edit.icon": "アイコン",

@@ -40,3 +40,8 @@ tsconfig.tsbuildinfo
 /.playwright-mcp
 k8s/sync-hub/secret.yaml
 .leak-load/scr/.git
+/.opencode
+/packages
+/packages
+/packages/app
+flynncode-desktop-linux-amd64.deb

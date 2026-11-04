@@ -604,21 +604,6 @@ export const dict = {
   "wsl.onboarding.versionMismatch": "Kurulu sürüm masaüstü uygulamasının sürümüyle eşleşmiyor.",
   "wsl.onboarding.adding": "Ekleniyor...",
 
-  "help.tabs.toast.ariaLabel": "Sekmelerle tanışın. Çalışmalarınızı ve etkin oturumlarınızı sekmelerle düzenleyin",
-  "help.tabs.toast.dismiss": "Sekmeler bilgilerini kapat",
-  "help.tabs.title": "Sekmelerle tanışın",
-  "help.tabs.description": "Çalışmalarınızı ve etkin oturumlarınızı sekmelerle düzenleyin",
-  "help.tabs.date": "14 Temmuz",
-  "help.tabs.introduction": "Flynncode Desktop artık sekmeler üzerine kurulu.",
-  "help.tabs.sessions":
-    "Bir sekmede yeni oturum başlatın veya projelerinizden mevcut bir oturumu açın. Yeni bir işe başlarken yeni sekme açın, işiniz bittiğinde sekmeyi kapatın.",
-  "help.tabs.organize":
-    "Birkaç sekmeyi açık tutmak, etkin oturumlarınızı düzenlemenizi kolaylaştırır. Sekmeleri açık tutmayı planlıyorsanız onlara akılda kalıcı adlar verin.",
-  "help.tabs.home":
-    "Tüm oturumlarınızı ve projelerinizi yeni Ana Sayfa ekranında bulabilirsiniz. Bir oturum seçtiğinizde oturum bir sekmede açılır.",
-  "help.tabs.persistence": "Uygulamayı yeniden açtığınızda sekmeleriniz açık kalır.",
-  "help.tabs.worktrees":
-    "Yeni tasarım henüz Git Worktrees'i desteklemiyor; bu özellik yakında kullanıma sunulacak. Önceki düzeni kullanmaya devam etmek isterseniz Ayarlar'da düzenler arasında geçiş yapabilirsiniz. Yeni düzenin birkaç hafta içinde kalıcı olacağını unutmayın.",
 
   "dialog.project.edit.title": "Projeyi düzenle",
   "dialog.project.edit.name": "Ad",

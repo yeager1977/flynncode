@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test"
 import { mockOpenCodeServer } from "../utils/mock-server"
+import { installSseTransport } from "../utils/sse-transport"
 import { expectAppVisible, expectSessionTitle } from "../utils/waits"
 import {
   analyzeVisualObservations,
@@ -21,6 +22,8 @@ type Message = {
   info: Record<string, unknown> & { id: string; role: "user" | "assistant" }
   parts: Record<string, unknown>[]
 }
+
+type StreamEvent = { directory: string; payload: Record<string, unknown> }
 
 const messages = [...Array.from({ length: 8 }, (_, index) => turn(index, false)).flat(), ...turn(10, true)]
 
@@ -45,21 +48,22 @@ test.describe("regression: session timeline context group resize", () => {
   })
 
   test("paints a stable exploring to explored transition", async ({ page }) => {
-    const events: { directory: string; payload: Record<string, unknown> }[] = []
     await page.setViewportSize({ width: 1400, height: 900 })
-    await mockServer(page, events, [
+    const transport = await mockServer(page, [
       ...Array.from({ length: 8 }, (_, index) => turn(index, false)).flat(),
       ...turn(10, true, "running"),
     ])
     await configurePage(page)
 
     await page.goto(`/${base64Encode(directory)}/session/${sessionID}`)
+    await transport.waitForConnection()
     await expectSessionTitle(page, title)
     const devtools = await page.context().newCDPSession(page)
     await devtools.send("Emulation.setCPUThrottlingRate", { rate: 4 })
-    const context = page.locator(`[data-timeline-part-ids="${contextIDs.join(",")}"]`).first()
+    const context = page.locator(`[data-timeline-part-ids="${contextIDs.join(",")}"]`)
+    const status = context.locator('[data-component="tool-status-title"]')
     await expectAppVisible(context)
-    await expect(context.locator('[data-component="tool-status-title"]')).toHaveAttribute("aria-label", "Exploring")
+    await expect(status).toHaveAttribute("aria-label", "Exploring")
 
     const contextSelector = `[data-timeline-part-ids="${contextIDs.join(",")}"]`
     const regions = defineVisualRegions({
@@ -74,31 +78,28 @@ test.describe("regression: session timeline context group resize", () => {
       },
     })
     await startVisualProbe(page, regions)
-    for (const [index, delay] of [120, 350, 80, 500].entries()) {
-      events.push({
+    // The stream delivers the completions in order. The collapsed group shows nothing for the first three, so
+    // there is no state to wait for between events; the label flips once, when the last tool completes.
+    for (const [index, completion] of [
+      { tool: "read", input: { filePath: "src/recent-a.ts" } },
+      { tool: "glob", input: { path: directory, pattern: "**/*.ts" } },
+      { tool: "grep", input: { path: directory, pattern: "Explored" } },
+      { tool: "list", input: { path: "src" } },
+    ].entries()) {
+      await transport.send({
         directory,
         payload: {
           type: "message.part.updated",
           properties: {
-            part: contextTool(
-              contextIDs[index]!,
-              id("msg_assistant", 10),
-              ["read", "glob", "grep", "list"][index]!,
-              [
-                { filePath: "src/recent-a.ts" },
-                { path: directory, pattern: "**/*.ts" },
-                { path: directory, pattern: "Explored" },
-                { path: "src" },
-              ][index]!,
-            ),
+            part: contextTool(contextIDs[index], id("msg_assistant", 10), completion.tool, completion.input),
           },
         },
       })
-      await page.waitForTimeout(delay)
     }
 
-    await expect(context.locator('[data-component="tool-status-title"]')).toHaveAttribute("aria-label", "Explored")
-    await page.waitForTimeout(700)
+    await expect(status).toHaveAttribute("aria-label", "Explored")
+    // `data-ready` is "true" while the title animates between its two labels and "false" once the swap has settled.
+    await expect(status).toHaveAttribute("data-ready", "false")
     const trace = await stopVisualProbe<keyof typeof regions>(page)
     const labels = trace.samples
       .map((sample) => sample.regions.status?.label)
@@ -308,20 +309,22 @@ function contextTool(
   }
 }
 
-async function mockServer(
-  page: Page,
-  events: { directory: string; payload: Record<string, unknown> }[] = [],
-  fixtureMessages = messages,
-) {
+// A real server keeps its event stream open, so tests stream through a persistent transport. The mock's finite
+// `events` bodies end after one delivery and the app reconnects; each reconnect (`server.connected`) reloads the
+// routed session from the snapshot below, which still has every tool running, so streamed completions are undone.
+async function mockServer(page: Page, fixtureMessages = messages) {
+  const transport = await installSseTransport<StreamEvent>(page, {
+    server: `http://${process.env.PLAYWRIGHT_SERVER_HOST ?? "127.0.0.1"}:${process.env.PLAYWRIGHT_SERVER_PORT ?? "4096"}`,
+    retry: 20,
+  })
   await mockOpenCodeServer(page, {
     directory,
     project: project(),
     provider: provider(),
     sessions: [session()],
     pageMessages: () => ({ items: fixtureMessages }),
-    events: () => events.splice(0, 1),
-    eventRetry: 50,
   })
+  return transport
 }
 
 async function settle(page: Page) {

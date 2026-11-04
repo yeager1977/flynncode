@@ -23,7 +23,7 @@ type EventPayload = {
 
 test.use({ viewport: { width: 1440, height: 900 }, reducedMotion: "no-preference" })
 
-test("animates todo lifecycle without replaying it across session tabs", async ({ page }) => {
+test("animates todo lifecycle without replaying it across sessions", async ({ page }) => {
   test.setTimeout(90_000)
   const events: EventPayload[] = []
   const todos: Record<string, typeof activeTodos> = { [sourceID]: [], [otherID]: [] }
@@ -57,7 +57,6 @@ test("animates todo lifecycle without replaying it across session tabs", async (
       default: { providerID: "opencode", modelID: "claude-opus-4-6" },
     },
     sessions: [session(sourceID, sourceTitle, 1700000000000), session(otherID, otherTitle, 1700000001000)],
-    sessionStatus: { [sourceID]: { type: "busy" } },
     pageMessages: () => ({ items: [] }),
     events: () => events.splice(0, 1),
     eventRetry: 16,
@@ -90,8 +89,11 @@ test("animates todo lifecycle without replaying it across session tabs", async (
   await switchSession(page, sourceID, sourceTitle)
   const openSamples = (await returningOpen).filter((sample) => sample.present)
   expect(openSamples.length).toBeGreaterThan(0)
-  expect(openSamples[0]!.opacity).toBeGreaterThan(0.98)
-  expect(openSamples[0]!.height).toBeGreaterThan(70)
+  // Returning must not replay the opening: from its first frame the dock is fully opaque and its header is never
+  // clipped. The todo rows mount once the browser is idle, so the dock may start as its header alone, then settles open.
+  expect(openSamples.filter((sample) => sample.opacity <= 0.98)).toEqual([])
+  expect(openSamples.filter((sample) => sample.height < sample.header)).toEqual([])
+  expect(openSamples.at(-1)!.height).toBeGreaterThan(70)
   await expect(dock.locator('[data-state="in_progress"]')).toHaveCount(1)
 
   const completedTodos = activeTodos.map((todo) => ({ ...todo, status: "completed" }))
@@ -137,24 +139,17 @@ function todoEvent(sessionID: string, next: typeof activeTodos): EventPayload {
 }
 
 async function configurePage(page: Page) {
-  const server = `http://${process.env.PLAYWRIGHT_SERVER_HOST ?? "127.0.0.1"}:${process.env.PLAYWRIGHT_SERVER_PORT ?? "4096"}`
-  await page.addInitScript(
-    ({ directory, dirBase64, server, sessionIDs }) => {
-      localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
-      localStorage.setItem(
-        "opencode.global.dat:server",
-        JSON.stringify({
-          projects: { local: [{ worktree: directory, expanded: true }] },
-          lastProject: { local: directory },
-        }),
-      )
-      localStorage.setItem(
-        "opencode.window.browser.dat:tabs",
-        JSON.stringify(sessionIDs.map((sessionId) => ({ type: "session", server, dirBase64, sessionId }))),
-      )
-    },
-    { directory, dirBase64: base64Encode(directory), server, sessionIDs: [sourceID, otherID] },
-  )
+  await page.addInitScript((directory) => {
+    localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
+    // The open project is what lists both sessions in the sidebar.
+    localStorage.setItem(
+      "opencode.global.dat:server",
+      JSON.stringify({
+        projects: { local: [{ worktree: directory, expanded: true }] },
+        lastProject: { local: directory },
+      }),
+    )
+  }, directory)
 }
 
 function sessionHref(sessionID: string) {
@@ -162,25 +157,29 @@ function sessionHref(sessionID: string) {
   return `/server/${base64Encode(server)}/session/${sessionID}`
 }
 
+// Sessions have no tabs; the sidebar lists them and a click routes to one without reloading the app.
 async function switchSession(page: Page, sessionID: string, title: string) {
-  const href = sessionHref(sessionID)
-  const tab = page.locator(`[data-slot="titlebar-tabs"] a[href="${href}"]`).first()
-  await expect(tab).toBeVisible()
-  await tab.click()
+  const link = page
+    .getByRole("navigation", { name: "Projects and sessions" })
+    .getByRole("link", { name: title, exact: true })
+  await expect(link).toHaveAttribute("href", sessionHref(sessionID))
+  await link.click()
   await expectSessionTitle(page, title)
 }
 
 function sampleDock(page: Page, duration: number) {
   return page.evaluate(async (duration) => {
-    const samples: { present: boolean; height: number; opacity: number }[] = []
+    const samples: { present: boolean; height: number; header: number; opacity: number }[] = []
     const start = performance.now()
     while (performance.now() - start < duration) {
       const dock = document.querySelector<HTMLElement>('[data-component="session-todo-dock"]')
       const clip = dock?.parentElement?.parentElement
-      const label = dock?.querySelector<HTMLElement>('[data-action="session-todo-toggle"] span[aria-label]')
+      const header = dock?.querySelector<HTMLElement>('[data-action="session-todo-toggle"]')
+      const label = header?.querySelector<HTMLElement>("span[aria-label]")
       samples.push({
         present: !!dock,
         height: clip?.getBoundingClientRect().height ?? 0,
+        header: header?.getBoundingClientRect().height ?? 0,
         opacity: label ? Number.parseFloat(getComputedStyle(label).opacity) : 0,
       })
       await new Promise(requestAnimationFrame)

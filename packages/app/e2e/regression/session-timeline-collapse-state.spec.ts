@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { mockOpenCodeServer } from "../utils/mock-server"
+import { installSseTransport } from "../utils/sse-transport"
 import { expectAppVisible, expectSessionTitle } from "../utils/waits"
 
 const directory = "C:/Flynncode/TimelineStateRegression"
@@ -102,11 +103,11 @@ const assistantMessage = {
 
 test.describe("regression: session timeline local row state", () => {
   test("keeps a manually collapsed tool collapsed when later assistant content streams", async ({ page }) => {
-    const events: EventPayload[] = []
-    await mockServer(page, events)
+    const transport = await mockServer(page)
     await configurePage(page)
 
     await page.goto(`/${base64Encode(directory)}/session/${sessionID}`)
+    await transport.waitForConnection()
     await expectSessionTitle(page, title)
 
     const wrapper = page.locator(`[data-timeline-part-id="${editPartID}"]`).first()
@@ -119,7 +120,7 @@ test.describe("regression: session timeline local row state", () => {
     await wrapper.locator('[data-slot="collapsible-trigger"]').first().click()
     await expectExpanded(wrapper, false)
 
-    events.push({
+    await transport.send({
       directory,
       payload: {
         type: "message.part.updated",
@@ -127,7 +128,7 @@ test.describe("regression: session timeline local row state", () => {
       },
     })
 
-    await expect(page.locator(`[data-timeline-part-id="${textPartID}"]`).first()).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator(`[data-timeline-part-id="${textPartID}"]`)).toBeVisible()
 
     expect(await readToolState(page)).toEqual({
       expanded: false,
@@ -137,12 +138,12 @@ test.describe("regression: session timeline local row state", () => {
   })
 
   test("does not remount an edit diff when sibling parts or diff counts update", async ({ page }) => {
-    const events: EventPayload[] = []
     await installDiffProbe(page)
-    await mockServer(page, events)
+    const transport = await mockServer(page)
     await configurePage(page)
 
     await page.goto(`/${base64Encode(directory)}/session/${sessionID}`)
+    await transport.waitForConnection()
     await expectSessionTitle(page, title)
 
     const wrapper = page.locator(`[data-timeline-part-id="${editPartID}"]`).first()
@@ -151,7 +152,7 @@ test.describe("regression: session timeline local row state", () => {
     await expectAppVisible(file)
     await markDiffProbe(page)
 
-    events.push({
+    await transport.send({
       directory,
       payload: {
         type: "message.part.updated",
@@ -159,7 +160,7 @@ test.describe("regression: session timeline local row state", () => {
       },
     })
 
-    await expect(page.locator(`[data-timeline-part-id="${textPartID}"]`).first()).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator(`[data-timeline-part-id="${textPartID}"]`)).toBeVisible()
     const siblingProbe = await readDiffProbe(page)
     expect(siblingProbe).toEqual({
       fileMarker: "before",
@@ -171,7 +172,7 @@ test.describe("regression: session timeline local row state", () => {
     })
 
     await markDiffProbe(page)
-    events.push({
+    await transport.send({
       directory,
       payload: {
         type: "message.part.updated",
@@ -179,9 +180,9 @@ test.describe("regression: session timeline local row state", () => {
       },
     })
 
-    await expect(wrapper.locator('[data-slot="diff-changes-additions"]').filter({ hasText: "+2" }).first()).toBeVisible(
-      { timeout: 10_000 },
-    )
+    await expect(
+      wrapper.locator('[data-slot="diff-changes-additions"]').filter({ hasText: "+2" }).first(),
+    ).toBeVisible()
     expect(await readDiffProbe(page)).toEqual({
       fileMarker: "before",
       frameMarker: "before",
@@ -193,7 +194,6 @@ test.describe("regression: session timeline local row state", () => {
   })
 
   test("keeps a sticky edit header aligned with a multi-hunk diff", async ({ page }) => {
-    const events: EventPayload[] = []
     const lines = Array.from({ length: 1_000 }, (_, index) => `export const value${index} = ${index}\n`).join("")
     const after = [100, 300, 500, 700, 900].reduce(
       (result, index) =>
@@ -216,7 +216,7 @@ test.describe("regression: session timeline local row state", () => {
         },
       },
     }
-    await mockServer(page, events, [userMessage, { ...assistantMessage, parts: [part] }])
+    await mockServer(page, [userMessage, { ...assistantMessage, parts: [part] }])
     await configurePage(page)
 
     await page.goto(`/${base64Encode(directory)}/session/${sessionID}`)
@@ -385,16 +385,22 @@ function readExpanded(element: Element) {
   return !!content && content.getBoundingClientRect().height > 0
 }
 
-async function mockServer(page: Page, events: EventPayload[], messages = [userMessage, assistantMessage]) {
+// A real server keeps its event stream open, so tests stream through a persistent transport. The mock's finite
+// `events` bodies end after one delivery and the app reconnects; each reconnect (`server.connected`) reloads the
+// routed session from the snapshot below, which never contains the parts a test streams in, so they would vanish.
+async function mockServer(page: Page, messages = [userMessage, assistantMessage]) {
+  const transport = await installSseTransport<EventPayload>(page, {
+    server: `http://${process.env.PLAYWRIGHT_SERVER_HOST ?? "127.0.0.1"}:${process.env.PLAYWRIGHT_SERVER_PORT ?? "4096"}`,
+    retry: 20,
+  })
   await mockOpenCodeServer(page, {
     directory,
     project: project(),
     provider: provider(),
     sessions: [session()],
     pageMessages: () => ({ items: messages }),
-    events: () => events.splice(0, 1),
-    eventRetry: 16,
   })
+  return transport
 }
 
 function project() {

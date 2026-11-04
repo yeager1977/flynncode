@@ -20,7 +20,6 @@ const settings: Settings = {
     mobileTitlebarPosition: "top",
     newLayoutDesigns: true,
     layoutTransitionEligible: false,
-    shouldDisplayTabsToast: true,
   },
   appearance: { fontSize: 14, mono: "", sans: "", terminal: "" },
   keybinds: { "file.attach": "mod+u" },
@@ -44,7 +43,6 @@ describe("syncableSections", () => {
     expect(Object.keys(sections).sort()).toEqual(["appearance", "general", "keybinds", "notifications", "sounds"])
     expect(sections.general).not.toHaveProperty("newLayoutDesigns")
     expect(sections.general).not.toHaveProperty("layoutTransitionEligible")
-    expect(sections.general).not.toHaveProperty("shouldDisplayTabsToast")
     expect(sections.general).toHaveProperty("showTerminal", true)
   })
 })
@@ -73,7 +71,6 @@ describe("mergePeerSections", () => {
     })
     expect(merged.general?.showTerminal).toBe(false)
     expect(merged.general?.newLayoutDesigns).toBe(true)
-    expect(merged.general?.shouldDisplayTabsToast).toBe(true)
     expect(merged.appearance?.fontSize).toBe(18)
     expect(merged.keybinds).toEqual({})
     expect(merged.sounds).toBeUndefined()

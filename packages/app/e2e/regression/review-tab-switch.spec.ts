@@ -18,10 +18,10 @@ const PROBE = "original"
 
 test.use({ viewport: { width: 1440, height: 900 } })
 
-// The v2 review pane's diff data is workspace-scoped: switching between session
-// tabs in the same workspace must update its parameters reactively instead of
+// The v2 review pane's diff data is workspace-scoped: switching between sessions
+// in the same workspace must update its parameters reactively instead of
 // tearing the pane down and remounting it (which flickers).
-test("keeps the v2 review pane mounted when switching session tabs in a workspace", async ({ page }) => {
+test("keeps the v2 review pane mounted when switching sessions in a workspace", async ({ page }) => {
   await setup(page)
 
   await page.goto(sessionHref(sessionA))
@@ -34,18 +34,23 @@ test("keeps the v2 review pane mounted when switching session tabs in a workspac
   await expect(reviewTabPanel).toHaveAttribute("id", "session-side-panel-review-tabpanel")
   const review = page.locator('#review-panel [data-component="session-review-v2"]')
   await expectAppVisible(review)
+  // The review mode is per session and starts on the last turn, which has no diffs here; the working tree diff
+  // is the one with files.
+  await selectMode(page, "Last turn changes", "Git changes")
   await expectAppVisible(page.getByRole("button", { name: "generated-0000.ts" }))
   await writeProbe(page)
 
-  await switchTab(page, titleB)
-  await expectSessionTitle(page, titleB)
+  await switchSession(page, titleB)
   await expectAppVisible(review)
+  await expect(page.getByRole("button", { name: "Last turn changes", exact: true })).toBeVisible()
+  expect(await readProbe(page)).toBe(PROBE)
+  await selectMode(page, "Last turn changes", "Git changes")
   await expectAppVisible(page.getByRole("button", { name: "generated-0000.ts" }))
   expect(await readProbe(page)).toBe(PROBE)
 
-  await switchTab(page, titleA)
-  await expectSessionTitle(page, titleA)
+  await switchSession(page, titleA)
   await expectAppVisible(review)
+  await expect(page.getByRole("button", { name: "Git changes", exact: true })).toBeVisible()
   await expectAppVisible(page.getByRole("button", { name: "generated-0000.ts" }))
   expect(await readProbe(page)).toBe(PROBE)
 
@@ -60,8 +65,21 @@ test("keeps the v2 review pane mounted when switching session tabs in a workspac
 
 type Probed = HTMLElement & { __e2eProbe?: string }
 
-async function switchTab(page: Page, title: string) {
-  await page.locator("[data-titlebar-tab-slot]", { hasText: title }).click()
+// Sessions open by plain navigation from the sidebar session list; the titlebar tab strip is no longer mounted.
+async function switchSession(page: Page, title: string) {
+  await page
+    .getByRole("navigation", { name: "Projects and sessions" })
+    .getByRole("link", { name: title, exact: true })
+    .click()
+  await expectSessionTitle(page, title)
+}
+
+async function selectMode(page: Page, current: string, next: string) {
+  await page.getByRole("button", { name: current, exact: true }).click()
+  const option = page.getByRole("option", { name: next, exact: true })
+  await expect(option).toBeVisible()
+  await option.click()
+  await expect(page.getByRole("button", { name: next, exact: true })).toBeVisible()
 }
 
 async function writeProbe(page: Page) {
@@ -101,23 +119,17 @@ async function setup(page: Page) {
     pageMessages: () => ({ items: [] }),
   })
 
-  await page.addInitScript(
-    ({ directory, server, sessions }) => {
-      localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
-      localStorage.setItem(
-        "opencode.global.dat:server",
-        JSON.stringify({
-          projects: { local: [{ worktree: directory, expanded: true }] },
-          lastProject: { local: directory },
-        }),
-      )
-      localStorage.setItem(
-        "opencode.window.browser.dat:tabs",
-        JSON.stringify(sessions.map((sessionId: string) => ({ type: "session", server, sessionId }))),
-      )
-    },
-    { directory, server, sessions: [sessionA, sessionB] },
-  )
+  // The project is seeded so the sidebar session list shows both sessions.
+  await page.addInitScript((directory) => {
+    localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
+    localStorage.setItem(
+      "opencode.global.dat:server",
+      JSON.stringify({
+        projects: { local: [{ worktree: directory, expanded: true }] },
+        lastProject: { local: directory },
+      }),
+    )
+  }, directory)
 }
 
 function session(id: string, title: string, created: number) {

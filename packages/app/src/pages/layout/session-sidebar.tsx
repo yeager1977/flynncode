@@ -14,7 +14,6 @@ import { useNotification } from "@/context/notification"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useSettingsDialog } from "@/components/settings-dialog"
-import { ProviderUsageMeters } from "@/components/provider-usage-meters"
 import { keepMenu, pinLabel, retentionHint } from "@/utils/session-retention"
 import { showToast } from "@/utils/toast"
 import { agentColor, commonAgent } from "@/utils/agent"
@@ -188,9 +187,6 @@ export function SessionSidebar(props: {
         />
       </div>
       <div class="flex flex-col gap-0.5 p-2 border-t border-v2-border-border-muted">
-        {/* Usage rings stay visible here with the project actions: context of
-            the open session plus the engaged provider's quota windows. */}
-        <ProviderUsageMeters variant="rings" sessionID={props.activeSessionID} row />
         <SidebarRow
           icon="status"
           label={language.t("usage.page.title")}

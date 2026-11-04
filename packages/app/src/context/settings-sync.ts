@@ -11,7 +11,6 @@ export const LOCAL_GENERAL_KEYS = [
   "layoutTransitionEligible",
   "agentVisibilityInitialized",
   "newInterfaceNoticeDismissed",
-  "shouldDisplayTabsToast",
 ] as const
 
 export function syncableSections(settings: Settings): Record<string, unknown> {

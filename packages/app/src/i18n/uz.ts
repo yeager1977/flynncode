@@ -554,21 +554,6 @@ export const dict = {
   "wsl.onboarding.desktopVersion": "ish stoli {{version}}",
   "wsl.onboarding.versionMismatch": "Oʻrnatilgan versiya ish stoli ilovasi versiyasiga mos kelmaydi.",
   "wsl.onboarding.adding": "Qo'shilmoqda...",
-  "help.tabs.toast.ariaLabel": "Tablar bilan tanishtirish. Yorliqlar bilan ish va faol seanslaringizni tashkil qiling",
-  "help.tabs.toast.dismiss": "Yorliqlar ma'lumotlarini o'chirish",
-  "help.tabs.title": "Tablar bilan tanishtirish",
-  "help.tabs.description": "Yorliqlar bilan ish va faol seanslaringizni tashkil qiling",
-  "help.tabs.date": "14 iyul",
-  "help.tabs.introduction": "Flynncode Desktop endi yorliqlar atrofida qurilgan.",
-  "help.tabs.sessions":
-    "Yorliqda yangi seansni boshlang yoki loyihalaringizdan mavjud sessiyani oching. Yangi ishni boshlaganingizda yangi varaqni oching va ish tugagach, uni yoping.",
-  "help.tabs.organize":
-    "Bir nechta yorliqlarni ochiq saqlash sizning faol seanslaringizni tashkil qilishni osonlashtiradi. Yorliqlar nomlarini esda qolarli qilib o'zgartiring, agar siz ularni atrofingizda saqlamoqchi bo'lsangiz.",
-  "help.tabs.home":
-    "Siz barcha seanslaringiz va loyihalaringizni yangi Home ekranida topasiz. Seansni tanlash uni yorliqda ochadi.",
-  "help.tabs.persistence": "Ilovani qayta ochganingizda, yorliqlaringiz hali ham ochiq.",
-  "help.tabs.worktrees":
-    "Yangi dizayn hali Git Worktrees-ni qo'llab-quvvatlamaydi, u tez orada chiqadi. Shunday qilib, agar siz avvalgi tartibdan foydalanishni davom ettirmoqchi boʻlsangiz, Sozlamalar orqali tartiblar oʻrtasida almashishingiz mumkin. Shuni yodda tutingki, yangi tartib bir necha hafta ichida doimiy bo'ladi.",
   "server.row.noUsername": "foydalanuvchi nomi yo'q",
   "dialog.project.edit.title": "Loyihani tahrirlash",
   "dialog.project.edit.name": "Ism",

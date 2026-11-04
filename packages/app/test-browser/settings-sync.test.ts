@@ -24,7 +24,6 @@ const settings: Settings = {
     mobileTitlebarPosition: "top",
     newLayoutDesigns: true,
     layoutTransitionEligible: false,
-    shouldDisplayTabsToast: true,
   },
   appearance: { fontSize: 14, mono: "", sans: "", terminal: "" },
   keybinds: { "file.attach": "mod+u" },
@@ -117,7 +116,6 @@ describe("createSettingsSync", () => {
     const { pushed, store, setStore, clock, dispose } = setup()
     clock.now = 2_000
     setStore("general", "newLayoutDesigns", false)
-    setStore("general", "shouldDisplayTabsToast", false)
     setStore("permissions", "autoApprove", false)
     setStore("cleanup", "autoArchiveAfterPrClose", false)
     expect(store.syncUpdatedAt).toBe(5)

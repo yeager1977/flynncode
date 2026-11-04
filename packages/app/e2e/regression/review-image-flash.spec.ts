@@ -25,7 +25,9 @@ test("clicking an image file in the v2 review pane does not blank the panel", as
 })
 
 async function openReview(page: Page) {
-  await page.setViewportSize({ width: 960, height: 900 })
+  // The sidebar is open by default and takes 344px, so the review pane needs a wide window to leave room for both
+  // its file tree and the preview the probe samples at the center of the pane.
+  await page.setViewportSize({ width: 1440, height: 900 })
   await page.addInitScript(() => {
     localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
   })
@@ -139,7 +141,17 @@ async function openReview(page: Page) {
   await expectSessionTitle(page, title)
   await page.getByRole("button", { name: "Toggle review" }).click()
   await expectAppVisible(page.locator('#review-panel [data-component="session-review-v2"]'))
+  // The review mode starts on the last turn, which has no diffs here; the image is in the working tree diff.
+  await selectMode(page, "Last turn changes", "Git changes")
   await expectAppVisible(page.getByRole("button", { name: /preview\.png/ }))
+}
+
+async function selectMode(page: Page, current: string, next: string) {
+  await page.getByRole("button", { name: current, exact: true }).click()
+  const option = page.getByRole("option", { name: next, exact: true })
+  await expect(option).toBeVisible()
+  await option.click()
+  await expect(page.getByRole("button", { name: next, exact: true })).toBeVisible()
 }
 
 async function installReviewFlashProbe(page: Page) {

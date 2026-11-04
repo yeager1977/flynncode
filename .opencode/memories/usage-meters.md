@@ -1,4 +1,7 @@
-- Provider usage meters (ollama, anthropic, openai, grok, muse) are always visible bottom-left of the main window next to Open Project / Settings.
-- One ring per provider with three concentric sub-rings: context, session, weekly — for all providers, not just anthropic. Refresh about every minute and on click.
-- Circles reflect the current session (context + percent used), not account-wide totals.
-- Also wanted: a page listing every enabled provider's current limits and usage.
+- Owner direction 2026-11-04 (supersedes the earlier "always-visible rings" requirement; do not bring the rings back): usage lives in a global titlebar **Usage** button (`packages/app/src/components/usage-menu.tsx`, mounted in `pages/layout-new.tsx`) whose dropdown shows the open chat's current model usage (context fill, tokens, cost, other models used in the chat) and the account limits of exactly OpenAI, Anthropic and Ollama.com. The button itself shows the current model's context percent so it is visible without opening the menu.
+- The bottom-left sidebar circles and the header usage strip were removed. The sidebar "Usage" row and the `/usage` page stay.
+- Usage is fetched only while the menu (or the /usage page) is open; there is no background polling timer.
+- Data: `GET /provider/usage`. Real windows exist only for anthropic (OAuth), openai (ChatGPT OAuth) and ollama-cloud (API key, request counts only, no percent). xAI and Meta have no usage endpoint.
+- Why the old meters were removed beyond being useless: `ProviderUsageMeters` read a polling solid-query's `.data` in a memo, which made the session timeline jump to the top at the first 60s poll (see engineering-gotchas: solid-query reads and Suspense).
+- Current-chat model usage must be visible inline in the session; a header "Usage" button opens a dropdown covering OpenAI, Anthropic and Ollama.com usage.
+- User finds passive/ambient usage indicators (the old bottom-left circles) useless — usage UI must be explicit and on-demand.

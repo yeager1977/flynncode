@@ -330,6 +330,9 @@ test("invalid weights remain editable across tabs and can be discarded", async (
   const { router, state } = await openRouter(page)
   await router.getByRole("tab", { name: "Advanced", exact: true }).click()
   const weight = router.getByRole("textbox", { name: "Coding: Capability", exact: true })
+  // Discard restores whatever the router starts with, so read that instead of encoding the product's default.
+  const original = await weight.inputValue()
+  expect(original).toMatch(/^\d(\.\d+)?$/)
   await weight.fill("-")
   await expect(weight).toHaveAttribute("aria-invalid", "true")
   await expect(router.getByRole("button", { name: "Save", exact: true })).toBeDisabled()
@@ -337,7 +340,7 @@ test("invalid weights remain editable across tabs and can be discarded", async (
   await router.getByRole("tab", { name: "Advanced", exact: true }).click()
   await expect(weight).toHaveValue("-")
   await router.getByRole("button", { name: "Discard", exact: true }).click()
-  await expect(weight).toHaveValue("0.6")
+  await expect(weight).toHaveValue(original)
   await expect(weight).not.toHaveAttribute("aria-invalid", "true")
   expect(state.writes).toEqual([])
 })
@@ -348,6 +351,10 @@ for (const action of ["discard", "undo"] as const) {
     const { router, state } = await openRouter(page)
     await router.getByRole("tab", { name: "Advanced", exact: true }).click()
     const weight = router.getByRole("textbox", { name: "Coding: Capability", exact: true })
+    // The draft counts as undone when it is typed back to the starting value, whatever the product's default is.
+    const original = await weight.inputValue()
+    expect(original).toMatch(/^\d(\.\d+)?$/)
+    expect(["0.8", "0.2"]).not.toContain(original)
     await weight.fill("0.8")
     state.config.model_router = { taskWeights: { coding: { capability: 0.2, price: 0.3, speed: 0.5 } } }
     state.config.provider = {
@@ -363,7 +370,7 @@ for (const action of ["discard", "undo"] as const) {
     await expect(router.getByRole("checkbox", { name: "External provider", exact: true })).toBeEnabled()
     await expect(weight).toHaveValue("0.8")
     if (action === "discard") await router.getByRole("button", { name: "Discard", exact: true }).click()
-    if (action === "undo") await weight.fill("0.6")
+    if (action === "undo") await weight.fill(original)
     await expect(weight).toHaveValue("0.2")
     await expect(router.getByRole("button", { name: "Save", exact: true })).toBeDisabled()
     expect(state.writes).toEqual([])

@@ -1282,21 +1282,6 @@ export const dict = {
   "desktop.picker.error.notSelected": "Tiedostovalitsimessa ei valittu tiedostoa",
   "desktop.picker.error.sizeLimit": "Valitut liitteet ylittävät {{limit}} Mt:n rajan",
   "command.logs.export": "Vie lokit",
-  "help.tabs.toast.ariaLabel": "Esittelyssä välilehdet. Järjestä työsi ja aktiiviset istuntosi välilehtien avulla",
-  "help.tabs.toast.dismiss": "Sulje välilehtien tiedot",
-  "help.tabs.title": "Esittelyssä välilehdet",
-  "help.tabs.description": "Järjestä työsi ja aktiiviset istuntosi välilehtien avulla",
-  "help.tabs.date": "14. heinäkuuta",
-  "help.tabs.introduction": "Flynncode Desktop perustuu nyt välilehtiin.",
-  "help.tabs.sessions":
-    "Aloita uusi istunto välilehdessä tai avaa olemassa oleva istunto mistä tahansa projektistasi. Avaa uusi välilehti, kun aloitat jotain uutta, ja sulje se, kun olet valmis.",
-  "help.tabs.organize":
-    "Muutaman välilehden pitäminen avoinna helpottaa aktiivisten istuntojen järjestämistä. Nimeä välilehdet helposti muistettaviksi, jos aiot pitää ne avoinna.",
-  "help.tabs.home":
-    "Kaikki istuntosi ja projektisi ovat uudessa etusivunäkymässä. Istunnon valitseminen avaa sen välilehteen.",
-  "help.tabs.persistence": "Kun avaat sovelluksen uudelleen, välilehtesi ovat yhä avoinna.",
-  "help.tabs.worktrees":
-    "Uusi ulkoasu ei vielä tue Git-työpuita, mutta tuki on tulossa pian. Jos haluat jatkaa aiemman ulkoasun käyttöä, voit vaihtaa ulkoasua asetuksissa. Huomaa kuitenkin, että uudesta ulkoasusta tulee pysyvä muutaman viikon kuluttua.",
   "command.permissions.projectDefault": "Accept all for this project",
   "command.permissions.sessionOverride": "Override for this session",
   "common.discard": "Discard",

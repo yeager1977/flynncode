@@ -551,22 +551,6 @@ export const dict = {
   "wsl.onboarding.desktopVersion": "iş stoly {{version}}",
   "wsl.onboarding.versionMismatch": "Gurlan wersiýa iş stoly programma wersiýasyna gabat gelenok.",
   "wsl.onboarding.adding": "Goşmak ...",
-  "help.tabs.toast.ariaLabel":
-    "Salgylar bilen tanyşdyrmak. Işleriňizi we işjeň sessiýalaryňyzy bellikler bilen tertipläň",
-  "help.tabs.toast.dismiss": "Salgylar baradaky maglumatlary aýyryň",
-  "help.tabs.title": "Salgylar bilen tanyşdyrmak",
-  "help.tabs.description": "Işleriňizi we işjeň sessiýalaryňyzy bellikler bilen tertipläň",
-  "help.tabs.date": "14-nji iýul",
-  "help.tabs.introduction": "Flynncode Desktop indi goýmalaryň töwereginde guruldy.",
-  "help.tabs.sessions":
-    "Salgyda täze sessiýa başlaň ýa-da islendik taslamaňyzdan bar bolan sessiýany açyň. Täze bir zat başlanyňyzda täze tab açyň we gutaranyňyzdan soň ýapyň.",
-  "help.tabs.organize":
-    "Birnäçe goýmany açyk saklamak, işjeň sessiýalaryňyzy tertipleşdirmegi aňsatlaşdyrýar. Tablisalary ýatda saklamagy meýilleşdirýän bolsaňyz, ýatdan çykmajak bir zadyň adyny üýtgediň.",
-  "help.tabs.home":
-    "Xhli sessiýalaryňyzy we taslamalaryňyzy täze Home ekranynda tapyp bilersiňiz. Sessiýany saýlamak ony goýmada açýar.",
-  "help.tabs.persistence": "Programmany açanyňyzda, goýmalar henizem açyk.",
-  "help.tabs.worktrees":
-    "Täze dizaýn entek Git Worktrees-i goldamaýar, ýakyn wagtda çykar. Şonuň üçin öňki tertibi ulanmagy dowam etdirmek isleseňiz, Sazlamalardaky düzülişleriň arasynda geçip bilersiňiz. Täze düzülişiň birnäçe hepdeden hemişelik boljakdygyny ýadyňyzdan çykarmaň.",
   "server.row.noUsername": "ulanyjy ady ýok",
   "dialog.project.edit.title": "Taslamany redaktirläň",
   "dialog.project.edit.name": "Ady",

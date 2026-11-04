@@ -39,7 +39,12 @@ test("shows the not found fallback when the viewed session is deleted", async ({
   })
 
   await expect(page.getByText("This session cannot be found")).toBeVisible()
-  await expect(page.getByRole("button", { name: "Close Tab", exact: true })).toBeVisible()
+  // Sessions have no tabs to close any more, so the fallback offers Home instead.
+  const home = page.getByRole("button", { name: "Home", exact: true })
+  await expect(home).toBeVisible()
+  await home.click()
+  await expect(page).not.toHaveURL(new RegExp(`/session/${childID}$`))
+  await expect(page.getByText("This session cannot be found")).toHaveCount(0)
   await expect(page.getByRole("heading", { name: taskDescription })).toHaveCount(0)
 })
 

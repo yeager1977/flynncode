@@ -39,7 +39,6 @@ export interface Settings {
     layoutTransitionEligible?: boolean
     agentVisibilityInitialized?: boolean
     newInterfaceNoticeDismissed?: boolean
-    shouldDisplayTabsToast?: boolean
   }
   appearance: {
     fontSize: number
@@ -88,14 +87,6 @@ export function isAppUpgrade(previous: string | undefined, current: string | und
   if (!previous || !current) return false
   const comparison = compareVersions(current, previous)
   return comparison !== undefined && comparison > 0
-}
-
-export function shouldDisplayTabsToast(
-  previous: string | undefined,
-  current: string | undefined,
-  existingInstall: boolean,
-) {
-  return isAppUpgrade(previous, current) || (!previous && existingInstall)
 }
 
 export function hasExistingWebState(settings: Promise<string> | string | null, previousVersion: string | undefined) {
@@ -338,17 +329,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
     })
 
     createEffect(() => {
-      if (!ready() || !launchState.classified) return
-      if (typeof store.general?.shouldDisplayTabsToast === "boolean") return
-      if (!launchState.previous && !layoutTransitionClassified()) return
-      setStore(
-        "general",
-        "shouldDisplayTabsToast",
-        shouldDisplayTabsToast(launchState.previous, platform.version, layoutTransitionEligible()),
-      )
-    })
-
-    createEffect(() => {
       if (!ready() || !oldInterfaceRetired()) return
       if (store.general?.newLayoutDesigns === true) return
       setStore("general", "newLayoutDesigns", true)
@@ -478,10 +458,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         newInterfaceNoticeVisible: createMemo(() => ready() && layoutTransition().notice),
         dismissNewInterfaceNotice() {
           setStore("general", "newInterfaceNoticeDismissed", true)
-        },
-        shouldDisplayTabsToast: withFallback(() => store.general?.shouldDisplayTabsToast, false),
-        dismissTabsToast() {
-          setStore("general", "shouldDisplayTabsToast", false)
         },
       },
       visibility: {

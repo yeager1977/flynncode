@@ -83,8 +83,8 @@ export function createResizeAnchor(input: { shouldAnchorBottom: () => boolean })
     }
     virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item) => {
       if (input.shouldAnchorBottom()) return false
-      const first = virtualizer.range?.startIndex
-      return first !== undefined && item.index < first
+      if (virtualizer.scrollOffset === null) return false
+      return isHiddenAboveViewport(item, virtualizer.scrollOffset, virtualizer.options.scrollMargin)
     }
   }
   return {
@@ -106,6 +106,14 @@ export function createResizeAnchor(input: { shouldAnchorBottom: () => boolean })
       if (state.frame !== undefined) cancelAnimationFrame(state.frame)
     },
   }
+}
+
+// True when a row lies wholly above what the reader can see, so a change to its size moves the rows in view and the
+// scroll position has to follow. The sticky title covers the top `margin` pixels of the viewport, so the first visible
+// position is `offset + margin`; a row that merely sits above the viewport edge but under the title still counts.
+// The row straddling that position is the one being read: its own growth is not a reason to scroll.
+export function isHiddenAboveViewport(item: { start: number; size: number }, offset: number, margin: number) {
+  return item.start + item.size <= offset + margin
 }
 
 // True when the virtualizer's own offset already sits at the end of its content. Uses virtual sizes only, so it

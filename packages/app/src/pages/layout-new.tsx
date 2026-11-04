@@ -4,9 +4,9 @@ import { DebugBar } from "@/components/debug-bar"
 import { DeepLinkListener } from "@/components/deep-link-listener"
 import { LayoutCommands } from "@/components/layout-commands"
 import { LayoutEvents } from "@/components/layout-events"
-import { TabsInfoPopup } from "@/components/help-button"
 import { QuickEntryOverlay } from "@/components/quick-entry"
 import { Titlebar, type TitlebarUpdate } from "@/components/titlebar"
+import { UsageMenu } from "@/components/usage-menu"
 import { usePlatform } from "@/context/platform"
 import { ActivityInboxButton } from "@/pages/dispatch/activity-inbox-button"
 import { setV2Toast, ToastRegion } from "@/utils/toast"
@@ -45,7 +45,12 @@ export default function NewLayout(props: ParentProps) {
       <Titlebar
         update={update}
         leading={<SidebarToggle />}
-        actions={<ActivityInboxButton />}
+        actions={
+          <>
+            <UsageMenu />
+            <ActivityInboxButton />
+          </>
+        }
         debugTools={
           import.meta.env.DEV
             ? { visible: state.debugTools, toggle: () => setState("debugTools", (value) => !value) }
@@ -59,7 +64,6 @@ export default function NewLayout(props: ParentProps) {
         </main>
       </div>
       {import.meta.env.DEV && state.debugTools && <DebugBar inline />}
-      <TabsInfoPopup />
       <ToastRegion v2 />
     </div>
   )

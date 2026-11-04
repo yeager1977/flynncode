@@ -1361,21 +1361,6 @@ export const dict = {
 
   "command.logs.export": "Eksportér logfiler",
 
-  "help.tabs.toast.ariaLabel": "Introduktion til faner. Organiser dit arbejde og dine aktive sessioner med faner",
-  "help.tabs.toast.dismiss": "Luk oplysninger om faner",
-  "help.tabs.title": "Introduktion til faner",
-  "help.tabs.description": "Organiser dit arbejde og dine aktive sessioner med faner",
-  "help.tabs.date": "14. juli",
-  "help.tabs.introduction": "Flynncode Desktop er nu bygget op omkring faner.",
-  "help.tabs.sessions":
-    "Start en ny session i en fane, eller åbn en eksisterende session fra et af dine projekter. Åbn en ny fane, når du går i gang med noget nyt, og luk den, når du er færdig.",
-  "help.tabs.organize":
-    "Når du holder nogle få faner åbne, er det nemmere at organisere dine aktive sessioner. Giv fanerne navne, der er nemme at huske, hvis du vil beholde dem.",
-  "help.tabs.home":
-    "Du finder alle dine sessioner og projekter på den nye startskærm. Når du vælger en session, åbnes den i en fane.",
-  "help.tabs.persistence": "Dine faner er stadig åbne, når du åbner appen igen.",
-  "help.tabs.worktrees":
-    "Det nye design understøtter endnu ikke Git Worktrees, men understøttelsen kommer snart. Hvis du foretrækker at fortsætte med det tidligere layout, kan du skifte mellem layoutene under Indstillinger. Bemærk, at det nye layout bliver permanent om nogle få uger.",
   "command.permissions.projectDefault": "Accept all for this project",
   "command.permissions.sessionOverride": "Override for this session",
   "common.discard": "Discard",

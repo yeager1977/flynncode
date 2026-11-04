@@ -1,6 +1,7 @@
 import { base64Encode } from "@flynncode/core/util/encode"
 import { expect, test, type Page } from "@playwright/test"
 import { mockOpenCodeServer } from "../utils/mock-server"
+import { installSseTransport } from "../utils/sse-transport"
 import { expectSessionTitle } from "../utils/waits"
 
 // Path-pattern todo: summary strips the path prefix and expect clause.
@@ -27,20 +28,16 @@ const activeTodos = [
 test.use({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" })
 
 test("summary/detail toggle: click opens detail without collapsing dock", async ({ page }) => {
-  const events: { directory: string; payload: Record<string, unknown> }[] = []
   const todos: typeof activeTodos = []
-
-  await setupMock(page, { events: () => events.splice(0, 1), todos: () => todos })
-  await page.goto(sessionHref())
-  await expectSessionTitle(page, sessionTitle)
+  const transport = await openSession(page, () => todos)
 
   const dock = page.locator('[data-component="session-todo-dock"]')
   await expect(dock).toHaveCount(0)
 
   // Inject busy status + todos via SSE
-  events.push(statusEvent("busy"))
+  await transport.send(statusEvent("busy"))
   todos.push(...activeTodos)
-  events.push(todoEvent(activeTodos))
+  await transport.send(todoEvent(activeTodos))
 
   await expect(dock).toBeVisible()
 
@@ -49,8 +46,9 @@ test("summary/detail toggle: click opens detail without collapsing dock", async 
   await expect(headerChevron).toHaveAttribute("data-collapsed", "false")
 
   // Kobalte Checkbox renders as role="group" with aria-label set to the status label key.
-  // The accessible name is now "Todo status: <status>" from session.todo.statusLabel.
-  const summaryGroup = dock.locator('[data-slot="session-todo-list"]').getByRole("group", { name: "Todo status: in_progress" })
+  // The accessible name is "Todo status: <status>" (session.todo.statusLabel) with the localized status
+  // (session.todo.status.in_progress is "In progress").
+  const summaryGroup = dock.locator('[data-slot="session-todo-list"]').getByRole("group", { name: "Todo status: In progress" })
   await expect(summaryGroup).toBeVisible()
   // Full path-heavy content must not appear anywhere in the dock
   await expect(dock.getByText(PATH_TODO_CONTENT)).toHaveCount(0)
@@ -71,12 +69,12 @@ test("summary/detail toggle: click opens detail without collapsing dock", async 
 
   // Full verbatim content is now visible in the detail panel
   await expect(dock.getByText(PATH_TODO_CONTENT)).toBeVisible()
-  // Expanded detail span must carry dir="auto" for correct bidi rendering of mixed-script content
-  // (e.g. LTR file paths in a Persian RTL context)
-  const detailSpan = dock.locator('span[dir="auto"]')
-  await expect(detailSpan).toBeVisible()
-  await expect(detailSpan).toHaveAttribute("dir", "auto")
-  await expect(detailSpan).toContainText(PATH_TODO_CONTENT)
+  // Expanded detail must carry dir="auto" for correct bidi rendering of mixed-script content
+  // (e.g. LTR file paths in a Persian RTL context). The dock isolates the direction on the detail container.
+  const detail = dock.locator('[data-slot="session-todo-output"]')
+  await expect(detail).toBeVisible()
+  await expect(detail).toHaveAttribute("dir", "auto")
+  await expect(detail).toContainText(PATH_TODO_CONTENT)
 
   // Toggle aria-label flips to Collapse
   await expect(detailToggle).toHaveAttribute("aria-label", "Collapse")
@@ -91,17 +89,13 @@ test("summary/detail toggle: click opens detail without collapsing dock", async 
 })
 
 test("summary/detail toggle: keyboard Enter opens detail without collapsing dock", async ({ page }) => {
-  const events: { directory: string; payload: Record<string, unknown> }[] = []
   const todos: typeof activeTodos = []
-
-  await setupMock(page, { events: () => events.splice(0, 1), todos: () => todos })
-  await page.goto(sessionHref())
-  await expectSessionTitle(page, sessionTitle)
+  const transport = await openSession(page, () => todos)
 
   const dock = page.locator('[data-component="session-todo-dock"]')
-  events.push(statusEvent("busy"))
+  await transport.send(statusEvent("busy"))
   todos.push(...activeTodos)
-  events.push(todoEvent(activeTodos))
+  await transport.send(todoEvent(activeTodos))
   await expect(dock).toBeVisible()
 
   const headerChevron = dock.locator('[data-action="session-todo-toggle-button"]')
@@ -129,17 +123,13 @@ test("summary/detail toggle: keyboard Enter opens detail without collapsing dock
 })
 
 test("collapsed preview shows concise summary not full path-heavy content", async ({ page }) => {
-  const events: { directory: string; payload: Record<string, unknown> }[] = []
   const todos: typeof activeTodos = []
-
-  await setupMock(page, { events: () => events.splice(0, 1), todos: () => todos })
-  await page.goto(sessionHref())
-  await expectSessionTitle(page, sessionTitle)
+  const transport = await openSession(page, () => todos)
 
   const dock = page.locator('[data-component="session-todo-dock"]')
-  events.push(statusEvent("busy"))
+  await transport.send(statusEvent("busy"))
   todos.push(...activeTodos)
-  events.push(todoEvent(activeTodos))
+  await transport.send(todoEvent(activeTodos))
   await expect(dock).toBeVisible()
 
   // Collapse the dock via the header chevron
@@ -158,10 +148,26 @@ test("collapsed preview shows concise summary not full path-heavy content", asyn
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
+const server = `http://${process.env.PLAYWRIGHT_SERVER_HOST ?? "127.0.0.1"}:${process.env.PLAYWRIGHT_SERVER_PORT ?? "4096"}`
+
+// A real server holds one event stream open. A stream that ended after every event would make the app reconnect and
+// reload the session over and over (each reconnect reloads the routed session), and the dock would keep re-rendering
+// and never hold still long enough to be clicked.
+async function openSession(page: Page, todos: (sessionID: string) => unknown[]) {
+  const transport = await installSseTransport<{ directory: string; payload: Record<string, unknown> }>(page, {
+    server,
+    retry: 20,
+  })
+  await setupMock(page, { todos })
+  await page.goto(sessionHref())
+  await transport.waitForConnection()
+  await expectSessionTitle(page, sessionTitle)
+  return transport
+}
+
 async function setupMock(
   page: Page,
   overrides: {
-    events?: () => unknown[]
     todos?: (sessionID: string) => unknown[]
   },
 ) {
@@ -205,36 +211,21 @@ async function setupMock(
     ],
     sessionStatus: { [sessionID]: { type: "busy" } },
     pageMessages: () => ({ items: [] }),
-    events: overrides.events,
-    eventRetry: 16,
     todos: overrides.todos ?? (() => []),
   })
-  await page.addInitScript(
-    ({ directory, dirBase64, server, sessionID }) => {
-      localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
-      localStorage.setItem(
-        "opencode.global.dat:server",
-        JSON.stringify({
-          projects: { local: [{ worktree: directory, expanded: true }] },
-          lastProject: { local: directory },
-        }),
-      )
-      localStorage.setItem(
-        "opencode.window.browser.dat:tabs",
-        JSON.stringify([{ type: "session", server, dirBase64, sessionId: sessionID }]),
-      )
-    },
-    {
-      directory,
-      dirBase64: base64Encode(directory),
-      server: `http://${process.env.PLAYWRIGHT_SERVER_HOST ?? "127.0.0.1"}:${process.env.PLAYWRIGHT_SERVER_PORT ?? "4096"}`,
-      sessionID,
-    },
-  )
+  await page.addInitScript((directory) => {
+    localStorage.setItem("settings.v3", JSON.stringify({ general: { newLayoutDesigns: true } }))
+    localStorage.setItem(
+      "opencode.global.dat:server",
+      JSON.stringify({
+        projects: { local: [{ worktree: directory, expanded: true }] },
+        lastProject: { local: directory },
+      }),
+    )
+  }, directory)
 }
 
 function sessionHref() {
-  const server = `http://${process.env.PLAYWRIGHT_SERVER_HOST ?? "127.0.0.1"}:${process.env.PLAYWRIGHT_SERVER_PORT ?? "4096"}`
   return `/server/${base64Encode(server)}/session/${sessionID}`
 }
 

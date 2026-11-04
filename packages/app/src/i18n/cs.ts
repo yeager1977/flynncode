@@ -554,21 +554,6 @@ export const dict = {
   "wsl.onboarding.desktopVersion": "desktop {{version}}",
   "wsl.onboarding.versionMismatch": "Nainstalovaná verze neodpovídá verzi aplikace pro stolní počítače.",
   "wsl.onboarding.adding": "Přidávání...",
-  "help.tabs.toast.ariaLabel": "Představujeme karty. Uspořádejte si práci a aktivní relace pomocí karet",
-  "help.tabs.toast.dismiss": "Zavřít informace o kartách",
-  "help.tabs.title": "Představujeme karty",
-  "help.tabs.description": "Uspořádejte si práci a aktivní relace pomocí karet",
-  "help.tabs.date": "14. července",
-  "help.tabs.introduction": "Flynncode Plocha je nyní postavena na kartách.",
-  "help.tabs.sessions":
-    "Začněte novou relaci na kartě nebo otevřete existující relaci z libovolného z vašich projektů. Když začínáte s něčím novým, otevřete novou kartu a po dokončení ji zavřete.",
-  "help.tabs.organize":
-    "Ponechání několika otevřených karet usnadňuje organizaci aktivních relací. Přejmenujte karty na něco zapamatovatelného, ​​pokud si je plánujete ponechat.",
-  "help.tabs.home":
-    "Všechny relace a projekty najdete na nové domovské obrazovce. Výběrem relace ji otevřete na kartě.",
-  "help.tabs.persistence": "Když aplikaci znovu otevřete, vaše karty jsou stále otevřené.",
-  "help.tabs.worktrees":
-    "Nový design zatím nepodporuje Git Worktrees, brzy bude k dispozici. Pokud tedy chcete pokračovat v používání předchozího rozložení, můžete mezi rozloženími přepínat v Nastavení. Jen mějte na paměti, že nové rozložení se za několik týdnů stane trvalým.",
   "server.row.noUsername": "žádné uživatelské jméno",
   "dialog.project.edit.title": "Upravit projekt",
   "dialog.project.edit.name": "Jméno",

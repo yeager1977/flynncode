@@ -607,20 +607,6 @@ export const dict = {
   "wsl.onboarding.versionMismatch": "Versi terinstal tidak cocok dengan versi aplikasi desktop.",
   "wsl.onboarding.adding": "Menambahkan...",
 
-  "help.tabs.toast.ariaLabel": "Memperkenalkan Tab. Atur pekerjaan dan sesi aktif Anda dengan tab",
-  "help.tabs.toast.dismiss": "Tutup informasi tentang Tab",
-  "help.tabs.title": "Memperkenalkan Tab",
-  "help.tabs.description": "Atur pekerjaan dan sesi aktif Anda dengan tab",
-  "help.tabs.date": "14 Juli",
-  "help.tabs.introduction": "Flynncode Desktop kini dirancang dengan tab sebagai pusatnya.",
-  "help.tabs.sessions":
-    "Mulai sesi baru di tab, atau buka sesi yang sudah ada dari proyek Anda. Buka tab baru saat Anda memulai sesuatu yang baru, lalu tutup setelah selesai.",
-  "help.tabs.organize":
-    "Membiarkan beberapa tab tetap terbuka memudahkan Anda mengatur sesi aktif. Ganti nama tab agar mudah diingat jika Anda berencana mempertahankannya.",
-  "help.tabs.home": "Semua sesi dan proyek Anda tersedia di layar Beranda baru. Memilih sesi akan membukanya di tab.",
-  "help.tabs.persistence": "Saat Anda membuka kembali aplikasi, tab Anda tetap terbuka.",
-  "help.tabs.worktrees":
-    "Desain baru belum mendukung Git Worktrees, tetapi dukungan tersebut akan segera hadir. Jika Anda ingin tetap menggunakan tata letak sebelumnya, Anda dapat beralih antartata letak di Pengaturan. Perlu diingat bahwa tata letak baru akan menjadi permanen dalam beberapa minggu.",
   "server.row.noUsername": "tanpa nama pengguna",
 
   "dialog.project.edit.title": "Sunting proyek",

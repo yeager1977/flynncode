@@ -554,21 +554,6 @@ export const dict = {
   "wsl.onboarding.desktopVersion": "darbvirsmas {{version}}",
   "wsl.onboarding.versionMismatch": "Instalētā versija neatbilst darbvirsmas lietotnes versijai.",
   "wsl.onboarding.adding": "Pievieno...",
-  "help.tabs.toast.ariaLabel": "Iepazīstinām ar cilnēm. Organizējiet darbu un aktīvās sesijas ar cilnēm",
-  "help.tabs.toast.dismiss": "Aizvērt cilņu informāciju",
-  "help.tabs.title": "Iepazīstinām ar cilnēm",
-  "help.tabs.description": "Organizējiet darbu un aktīvās sesijas ar cilnēm",
-  "help.tabs.date": "14. jūlijs",
-  "help.tabs.introduction": "Flynncode Desktop tagad balstās uz cilnēm.",
-  "help.tabs.sessions":
-    "Sāciet jaunu sesiju cilnē vai atveriet esošu sesiju no jebkura projekta. Atveriet jaunu cilni, uzsākot ko jaunu, un aizveriet to, kad esat pabeidzis.",
-  "help.tabs.organize":
-    "Dažas atvērtas cilnes atvieglo aktīvo sesiju pārvaldību. Ja plānojat tās paturēt, pārdēvējiet cilnes saprotamāk.",
-  "help.tabs.home":
-    "Visas sesijas un projektus atradīsiet jaunajā sākuma ekrānā. Izvēloties sesiju, tā tiks atvērta cilnē.",
-  "help.tabs.persistence": "Atverot lietotni no jauna, jūsu cilnes paliek atvērtas.",
-  "help.tabs.worktrees":
-    "Jaunais dizains vēl neatbalsta Git Worktrees, tas drīzumā būs pieejams. Ja vēlaties turpināt lietot iepriekšējo izkārtojumu, varat pārslēgties starp izkārtojumiem iestatījumos. Ņemiet vērā, ka jaunais izkārtojums pēc dažām nedēļām kļūs pastāvīgs.",
   "server.row.noUsername": "nav lietotājvārda",
   "dialog.project.edit.title": "Rediģēt projektu",
   "dialog.project.edit.name": "Nosaukums",

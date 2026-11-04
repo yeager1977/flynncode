@@ -10,6 +10,13 @@ const sessionID = "ses_request_docks"
 const title = "Request dock regression"
 
 test("shows a pending question dock", async ({ page }) => {
+  // A real server holds one event stream open. The mock's default stream ends after every delivery, and the app then
+  // reconnects and reloads the routed session each time, so the dock keeps re-animating and never holds still long
+  // enough to be clicked.
+  await installSseTransport(page, {
+    server: `http://${process.env.PLAYWRIGHT_SERVER_HOST ?? "127.0.0.1"}:${process.env.PLAYWRIGHT_SERVER_PORT ?? "4096"}`,
+    retry: 20,
+  })
   await mockServer(page, {
     questions: [
       {

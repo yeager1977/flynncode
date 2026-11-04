@@ -10,7 +10,8 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf
 describe("new layout activity entry points", () => {
   test("mounts the inbox button and quick entry overlay", () => {
     const source = read("../layout-new.tsx")
-    expect(source).toContain("actions={<ActivityInboxButton />}")
+    // The titlebar actions hold the usage menu and the inbox button, in that order.
+    expect(source).toMatch(/actions=\{\s*<>\s*<UsageMenu \/>\s*<ActivityInboxButton \/>\s*<\/>\s*\}/)
     expect(source).toContain("<QuickEntryOverlay />")
   })
 

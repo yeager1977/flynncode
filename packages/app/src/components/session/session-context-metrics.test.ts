@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Message } from "@flynncode/sdk/v2/client"
-import { getSessionContext } from "./session-context-metrics"
+import { getSessionContext, getSessionModelUsage } from "./session-context-metrics"
 
 const assistant = (
   id: string,
@@ -125,5 +125,123 @@ describe("getSessionContext", () => {
     })
 
     expect(ctx?.limit).toBe(1000)
+  })
+})
+
+describe("getSessionModelUsage", () => {
+  const providers = [
+    {
+      id: "openai",
+      name: "OpenAI",
+      models: { "gpt-5": { name: "GPT-5", limit: { context: 400_000 } } },
+    },
+    {
+      id: "ollama-cloud",
+      name: "Ollama.com",
+      models: { "glm-5": { name: "GLM-5", limit: { context: 200_000 } } },
+    },
+  ]
+
+  test("sums tokens and cost per provider and model, most recently used first", () => {
+    const messages = [
+      user("u1"),
+      assistant(
+        "a1",
+        { input: 10_000, output: 800, reasoning: 0, read: 2_000, write: 0 },
+        0.02,
+        "ollama-cloud",
+        "glm-5",
+      ),
+      user("u2"),
+      assistant(
+        "a2",
+        { input: 30_000, output: 2_000, reasoning: 1_000, read: 5_000, write: 0 },
+        0.3,
+        "openai",
+        "gpt-5",
+      ),
+      user("u3"),
+      assistant(
+        "a3",
+        { input: 62_000, output: 3_000, reasoning: 1_000, read: 14_000, write: 0 },
+        0.5,
+        "openai",
+        "gpt-5",
+      ),
+    ]
+
+    const usage = getSessionModelUsage(messages, providers)
+
+    expect(usage.map((entry) => `${entry.providerID}/${entry.modelID}`)).toEqual(["openai/gpt-5", "ollama-cloud/glm-5"])
+    expect(usage[0].tokens).toBe(38_000 + 80_000)
+    expect(usage[0].cost).toBeCloseTo(0.8)
+    expect(usage[1].tokens).toBe(12_800)
+    expect(usage[1].cost).toBeCloseTo(0.02)
+  })
+
+  test("ranks a model by its newest message, not by its first use", () => {
+    const messages = [
+      assistant("a1", { input: 100, output: 10, reasoning: 0, read: 0, write: 0 }, 0.1, "openai", "gpt-5"),
+      assistant("a2", { input: 100, output: 10, reasoning: 0, read: 0, write: 0 }, 0.1, "ollama-cloud", "glm-5"),
+      assistant("a3", { input: 100, output: 10, reasoning: 0, read: 0, write: 0 }, 0.1, "openai", "gpt-5"),
+    ]
+
+    expect(getSessionModelUsage(messages, providers).map((entry) => entry.modelID)).toEqual(["gpt-5", "glm-5"])
+  })
+
+  test("resolves labels and the context limit the way getSessionContext does", () => {
+    const messages = [
+      assistant("a1", { input: 400, output: 100, reasoning: 0, read: 0, write: 0 }, 0.5, "openai", "gpt-5"),
+    ]
+
+    const [entry] = getSessionModelUsage(messages, providers)
+    const ctx = getSessionContext(messages, providers)
+    if (!ctx) throw new Error("expected a session context")
+
+    expect(entry.providerLabel).toBe(ctx.providerLabel)
+    expect(entry.modelLabel).toBe(ctx.modelLabel)
+    expect(entry.limit).toBe(ctx.limit)
+    expect(entry.providerLabel).toBe("OpenAI")
+    expect(entry.modelLabel).toBe("GPT-5")
+    expect(entry.limit).toBe(400_000)
+  })
+
+  test("falls back to the raw ids for a model the providers do not list", () => {
+    const messages = [
+      assistant("a1", { input: 40, output: 10, reasoning: 0, read: 0, write: 0 }, 0.1, "gone", "old-model"),
+    ]
+
+    const [entry] = getSessionModelUsage(messages, providers)
+
+    expect(entry.providerLabel).toBe("gone")
+    expect(entry.modelLabel).toBe("old-model")
+    expect(entry.limit).toBeUndefined()
+  })
+
+  test("resolves a provider that is no longer connected through the lookup", () => {
+    const messages = [
+      assistant("a1", { input: 40, output: 10, reasoning: 0, read: 0, write: 0 }, 0.1, "openai", "gpt-5"),
+    ]
+
+    const [entry] = getSessionModelUsage(messages, [], (providerID) => providers.find((item) => item.id === providerID))
+
+    expect(entry.modelLabel).toBe("GPT-5")
+    expect(entry.limit).toBe(400_000)
+  })
+
+  test("skips user messages and assistant messages that have not reported tokens", () => {
+    const messages = [
+      user("u1"),
+      assistant("a1", { input: 100, output: 10, reasoning: 0, read: 0, write: 0 }, 0.1, "openai", "gpt-5"),
+      user("u2"),
+      assistant("a2", { input: 0, output: 0, reasoning: 0, read: 0, write: 0 }, 0, "ollama-cloud", "glm-5"),
+    ]
+
+    expect(getSessionModelUsage(messages, providers).map((entry) => entry.modelID)).toEqual(["gpt-5"])
+  })
+
+  test("is empty without messages", () => {
+    expect(getSessionModelUsage(undefined, undefined)).toEqual([])
+    expect(getSessionModelUsage([user("u1")], providers)).toEqual([])
   })
 })

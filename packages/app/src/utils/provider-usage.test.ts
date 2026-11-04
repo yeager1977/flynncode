@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { bindingWindow, formatResetTime, orderedWindows, usageEntries } from "./provider-usage"
+import { formatResetTime, orderedWindows, usageEntries } from "./provider-usage"
 
 describe("orderedWindows", () => {
   test("renders percent windows before count-only windows", () => {
@@ -21,23 +21,6 @@ describe("orderedWindows", () => {
   })
 })
 
-describe("bindingWindow", () => {
-  test("picks the reported percent closest to the limit", () => {
-    expect(
-      bindingWindow([
-        { id: "daily", percent: 60 },
-        { id: "weekly", percent: 10 },
-        { id: "requests", count: 5 },
-      ]),
-    ).toEqual({ id: "daily", percent: 60 })
-  })
-
-  test("is undefined when no window reports a percent", () => {
-    expect(bindingWindow([{ id: "requests", count: 5 }])).toBeUndefined()
-    expect(bindingWindow([])).toBeUndefined()
-  })
-})
-
 describe("usageEntries", () => {
   test("merges connected providers with usage reporters, router excluded, name sorted", () => {
     const entries = usageEntries({
@@ -55,13 +38,28 @@ describe("usageEntries", () => {
     expect(entries[2].windows).toEqual([{ id: "daily", percent: 10 }])
   })
 
-  test("keeps a session-engaged provider that is neither connected nor reporting", () => {
+  test("a connected provider that reports usage carries its windows", () => {
     const entries = usageEntries({
-      connected: [],
-      usage: undefined,
-      extraIDs: ["opencode"],
+      connected: [
+        { id: "ollama-cloud", name: "Ollama Cloud" },
+        { id: "openai", name: "OpenAI" },
+      ],
+      usage: {
+        "ollama-cloud": { windows: [{ id: "daily", count: 1423 }] },
+        anthropic: { windows: [{ id: "weekly", percent: 40 }] },
+      },
     })
-    expect(entries.map((entry) => entry.providerID)).toEqual(["opencode"])
+    expect(entries.map((entry) => entry.providerID)).toEqual(["anthropic", "ollama-cloud", "openai"])
+    expect(entries.find((entry) => entry.providerID === "ollama-cloud")?.windows).toEqual([
+      { id: "daily", count: 1423 },
+    ])
+    // Connected but not reporting: still listed, without windows.
+    expect(entries.find((entry) => entry.providerID === "openai")?.windows).toEqual([])
+  })
+
+  test("lists connected providers before any usage has loaded", () => {
+    const entries = usageEntries({ connected: [{ id: "openai", name: "OpenAI" }], usage: undefined })
+    expect(entries).toEqual([{ providerID: "openai", name: "OpenAI", windows: [] }])
   })
 })
 

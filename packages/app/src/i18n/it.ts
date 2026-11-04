@@ -481,21 +481,6 @@ export const dict = {
   "wsl.onboarding.desktopVersion": "desktop {{version}}",
   "wsl.onboarding.versionMismatch": "La versione installata non corrisponde alla versione dell'app desktop.",
   "wsl.onboarding.adding": "Aggiunta...",
-  "help.tabs.toast.ariaLabel": "Novità: le schede. Organizza il lavoro e le sessioni attive con le schede",
-  "help.tabs.toast.dismiss": "Ignora le informazioni sulle schede",
-  "help.tabs.title": "Novità: le schede",
-  "help.tabs.description": "Organizza il lavoro e le sessioni attive con le schede",
-  "help.tabs.date": "14 luglio",
-  "help.tabs.introduction": "Flynncode Desktop ora è incentrato sulle schede.",
-  "help.tabs.sessions":
-    "Avvia una nuova sessione in una scheda oppure apri una sessione esistente da uno dei tuoi progetti. Apri una nuova scheda quando inizi qualcosa di nuovo e chiudila quando hai finito.",
-  "help.tabs.organize":
-    "Tenere aperte alcune schede semplifica l'organizzazione delle sessioni attive. Se prevedi di conservarle, rinominale con un nome facile da ricordare.",
-  "help.tabs.home":
-    "Troverai tutte le sessioni e i progetti nella nuova schermata Home. Quando selezioni una sessione, questa si apre in una scheda.",
-  "help.tabs.persistence": "Quando riapri l'app, le schede sono ancora aperte.",
-  "help.tabs.worktrees":
-    "Il nuovo design non supporta ancora Git Worktrees, ma il supporto arriverà presto. Se preferisci continuare a utilizzare la disposizione precedente, puoi passare da una disposizione all'altra nelle Impostazioni. Tieni presente che la nuova disposizione diventerà permanente tra alcune settimane.",
   "server.row.noUsername": "nessun nome utente",
   "dialog.project.edit.title": "Modifica progetto",
   "dialog.project.edit.name": "Nome",

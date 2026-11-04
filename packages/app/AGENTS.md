@@ -18,6 +18,15 @@
 
 - Always prefer `createStore` over multiple `createSignal` calls
 
+## Suspense
+
+A flash, a blanked route or a session timeline that jumps back to the top almost always means a read entered `<Suspense>`. Every route renders under the one boundary in `src/pages/layout-new.tsx`. When a resource registered with it reloads, the whole route is detached, and the browser drops the scroll offset of the session timeline.
+
+- Never read a `@tanstack/solid-query` `query.data` (or any `createResource` value) in a memo, a JSX expression or any other render computation. The read registers a Suspense reader for good, so every later refetch, poll, invalidation or stale-time expiry blanks the route.
+- Read it inside a `createEffect` (user effects do not register) and mirror it into a store, or read only the status flags (`isSuccess`, `isFetching`, `isError`). Precedents: `src/hooks/use-provider-usage.ts` and `src/context/global-sync/provider-lookup.ts`.
+- Do not poll in the background. Fetch while the UI that shows the data is open.
+- Guard: `e2e/regression/session-timeline-scroll-refresh.spec.ts` advances a fake clock and fails if the timeline is ever detached.
+
 ## Localization
 
 - NEVER hardcode user-visible English strings in production code. ALWAYS use an i18n key for visible copy, placeholders, accessible labels, tooltips, menus, dialogs, toasts, empty states, and displayed errors.
