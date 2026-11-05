@@ -215,6 +215,40 @@ describe("util.flock", () => {
     expect(hit).toBe(true)
   }, 20_000)
 
+  test("takes over at once from a killed owner on the same host", async () => {
+    await using tmp = await tmpdir()
+    const dir = path.join(tmp.path, "locks")
+    const key = "flock:killed-owner"
+    const ready = path.join(tmp.path, "ready")
+    const proc = spawnWorker({
+      key,
+      dir,
+      ready,
+      holdMs: 20_000,
+      staleMs: 60_000,
+      timeoutMs: 30_000,
+    })
+
+    await wait(ready, 5_000)
+    await stopWorker(proc)
+
+    // Far shorter than staleMs: only the dead-owner check can get us in.
+    let hit = false
+    await Flock.withLock(
+      key,
+      async () => {
+        hit = true
+      },
+      {
+        dir,
+        staleMs: 60_000,
+        timeoutMs: 3_000,
+      },
+    )
+
+    expect(hit).toBe(true)
+  }, 20_000)
+
   test("breaks stale lock dirs when heartbeat is missing", async () => {
     await using tmp = await tmpdir()
     const dir = path.join(tmp.path, "locks")

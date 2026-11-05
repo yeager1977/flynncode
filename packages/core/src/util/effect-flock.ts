@@ -8,6 +8,7 @@ import { FSUtil } from "../fs-util"
 import { Global } from "../global"
 import { makeGlobalNode } from "../effect/app-node"
 import { Hash } from "./hash"
+import { processAlive } from "./flock"
 
 export namespace EffectFlock {
   // ---------------------------------------------------------------------------
@@ -147,7 +148,21 @@ export namespace EffectFlock {
         ensuredDirs.add(dir)
       })
 
+      // A same-host owner that has exited (killed mid-hold, e.g. on app restart)
+      // can never release or heartbeat again, so its lock is abandoned now
+      // rather than after STALE_MS. Other hosts' pids cannot be probed.
+      const ownerGone = Effect.fnUntraced(function* (metaPath: string) {
+        const meta = yield* fs.readFileString(metaPath).pipe(
+          Effect.map(Schema.decodeUnknownOption(LockMetaJson)),
+          Effect.orElseSucceed(() => Option.none()),
+        )
+        if (Option.isNone(meta)) return false
+        return meta.value.hostname === hostname && !processAlive(meta.value.pid)
+      })
+
       const isStale = Effect.fnUntraced(function* (lockDir: string, heartbeatPath: string, metaPath: string) {
+        if (yield* ownerGone(metaPath)) return true
+
         const now = wall()
 
         const hb = yield* safeStat(heartbeatPath)

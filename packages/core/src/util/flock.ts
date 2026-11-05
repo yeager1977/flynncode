@@ -5,6 +5,17 @@ import { mkdir, readFile, rm, stat, utimes, writeFile } from "fs/promises"
 import { Hash } from "./hash"
 import { Effect } from "effect"
 
+// Signal 0 probes for existence without delivering anything. EPERM means the
+// pid exists but belongs to another user, which still counts as alive.
+export function processAlive(pid: number) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "EPERM"
+  }
+}
+
 export type FlockGlobal = {
   state: string
 }
@@ -130,8 +141,22 @@ export namespace Flock {
     }
   }
 
+  // A same-host owner that has exited (killed mid-hold, e.g. on app restart)
+  // can never release or heartbeat again, so its lock is abandoned now rather
+  // than after staleMs. Other hosts' pids cannot be probed.
+  async function ownerGone(metaPath: string) {
+    const meta: unknown = await readFile(metaPath, "utf8")
+      .then((raw) => JSON.parse(raw))
+      .catch(() => undefined)
+    if (typeof meta !== "object" || meta === null) return false
+    if (!("pid" in meta) || typeof meta.pid !== "number") return false
+    if (!("hostname" in meta) || meta.hostname !== os.hostname()) return false
+    return !processAlive(meta.pid)
+  }
+
   async function stale(lockDir: string, heartbeatPath: string, metaPath: string, staleMs: number) {
     // Stale detection allows automatic recovery after crashed owners.
+    if (await ownerGone(metaPath)) return true
     const now = wall()
     const heartbeat = await stats(heartbeatPath)
     if (heartbeat) {

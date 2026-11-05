@@ -60,7 +60,7 @@ function wait(ms: number, signal?: AbortSignal) {
   })
 }
 
-function retryable(error: unknown, signal?: AbortSignal) {
+export function retryable(error: unknown, signal?: AbortSignal) {
   if (signal?.aborted) return false
   if (error instanceof ClientError) return error.reason === "Transport"
   if (!(error instanceof Error)) return false

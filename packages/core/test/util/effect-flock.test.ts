@@ -3,7 +3,7 @@ import { spawn } from "child_process"
 import fs from "fs/promises"
 import path from "path"
 import os from "os"
-import { Cause, Effect, Exit } from "effect"
+import { Cause, Effect, Exit, Fiber } from "effect"
 import { testEffect } from "../lib/effect"
 import { AppNodeBuilder } from "@flynncode/core/effect/app-node-builder"
 import { LayerNode } from "@flynncode/core/effect/layer-node"
@@ -85,6 +85,24 @@ async function stopWorker(proc: ReturnType<typeof spawnWorker>) {
     })
   })
   await closed
+}
+
+// A pid that just exited: the kernel will not hand it out again this quickly.
+async function deadPid() {
+  const proc = spawn(process.execPath, ["-e", "0"])
+  await new Promise((resolve) => proc.once("close", resolve))
+  return proc.pid!
+}
+
+// Mimics a lock left behind by a killed owner: fresh heartbeat, so only the
+// owner check can tell it is abandoned.
+async function plantLock(lockDir: string, pid: number) {
+  await fs.mkdir(lockDir, { recursive: true })
+  await fs.writeFile(path.join(lockDir, "heartbeat"), "")
+  await fs.writeFile(
+    path.join(lockDir, "meta.json"),
+    JSON.stringify({ token: "planted", pid, hostname: os.hostname(), createdAt: new Date().toISOString() }),
+  )
 }
 
 async function waitForFile(file: string, timeout = 3_000) {
@@ -251,6 +269,64 @@ describe("util.effect-flock", () => {
       )
       expect(hit).toBe(true)
       expect(yield* Effect.promise(() => exists(breaker))).toBe(false)
+      yield* Effect.promise(() => fs.rm(tmp, { recursive: true, force: true }))
+    }),
+  )
+
+  it.live(
+    "breaks a fresh lock whose same-host owner process is dead",
+    Effect.gen(function* () {
+      const flock = yield* EffectFlock.Service
+      const tmp = yield* Effect.promise(() => fs.mkdtemp(path.join(os.tmpdir(), "eflock-test-")))
+      const dir = path.join(tmp, "locks")
+      const key = "eflock:dead-owner"
+      const pid = yield* Effect.promise(() => deadPid())
+      yield* Effect.promise(() => plantLock(lock(dir, key), pid))
+
+      // Without the owner check this waits out the 60s stale window.
+      let hit = false
+      yield* flock.withLock(
+        Effect.sync(() => {
+          hit = true
+        }),
+        key,
+        dir,
+      )
+      expect(hit).toBe(true)
+      yield* Effect.promise(() => fs.rm(tmp, { recursive: true, force: true }))
+    }),
+  )
+
+  it.live(
+    "keeps a fresh lock whose owner process is alive",
+    Effect.gen(function* () {
+      const flock = yield* EffectFlock.Service
+      const tmp = yield* Effect.promise(() => fs.mkdtemp(path.join(os.tmpdir(), "eflock-test-")))
+      const dir = path.join(tmp, "locks")
+      const key = "eflock:live-owner"
+      const lockDir = lock(dir, key)
+      yield* Effect.promise(() => plantLock(lockDir, process.pid))
+
+      let hit = false
+      const fiber = yield* flock
+        .withLock(
+          Effect.sync(() => {
+            hit = true
+          }),
+          key,
+          dir,
+        )
+        .pipe(Effect.forkChild)
+      yield* Effect.sleep("1 second")
+      expect(hit).toBe(false)
+      expect((yield* Effect.promise(() => readJson<{ token: string }>(path.join(lockDir, "meta.json")))).token).toBe(
+        "planted",
+      )
+
+      // The owner lets go; the waiter then gets the lock.
+      yield* Effect.promise(() => fs.rm(lockDir, { recursive: true, force: true }))
+      yield* Fiber.join(fiber)
+      expect(hit).toBe(true)
       yield* Effect.promise(() => fs.rm(tmp, { recursive: true, force: true }))
     }),
   )

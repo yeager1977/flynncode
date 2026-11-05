@@ -58,6 +58,36 @@ describe("Npm.add", () => {
     expect(entry.entrypoint).toBeDefined()
   })
 
+  test("does not ask the registry again for a package it cannot resolve", async () => {
+    await using tmp = await tmpdir()
+    let requests = 0
+    // A packument with no versions or dist-tags, as npm serves an unpublished package.
+    using registry = Bun.serve({
+      port: 0,
+      fetch() {
+        requests++
+        return Response.json({ name: "fixture-gone", versions: {}, "dist-tags": {} })
+      },
+    })
+    const spec = "fixture-gone@latest"
+    const dir = path.join(tmp.path, "cache", "packages", Npm.sanitize(spec))
+    await fs.mkdir(dir, { recursive: true })
+    await Bun.write(path.join(dir, ".npmrc"), `registry=${registry.url}\n`)
+
+    const failures = await Effect.gen(function* () {
+      const npm = yield* Npm.Service
+      const first = yield* npm.add(spec).pipe(Effect.flip)
+      const seen = requests
+      const second = yield* npm.add(spec).pipe(Effect.flip)
+      return { first, second, seen }
+    }).pipe(Effect.scoped, Effect.provide(npmLayer(path.join(tmp.path, "cache"))), Effect.runPromise)
+
+    expect(failures.first._tag).toBe("NpmInstallFailedError")
+    expect(failures.second._tag).toBe("NpmInstallFailedError")
+    expect(failures.seen).toBeGreaterThan(0)
+    expect(requests).toBe(failures.seen)
+  })
+
   // The Desktop sidecar runs the server under Node, where import.meta.resolve cannot take a
   // parent URL. Exercise the real Node branch instead of the Bun one the test runner uses.
   test("resolves an importable file URL under Node", async () => {

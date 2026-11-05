@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { AssistantMessage, Message, UserMessage } from "@flynncode/sdk/v2"
-import { isTimelineReady, loadOlderTimeline, selectUserMessages, selectVisibleUserMessages } from "./model"
+import { isTimelineReady, loadOlderTimeline, selectUserMessages, selectVisibleUserMessages, syncTimeline } from "./model"
 
 const user = (id: string) => ({ id, role: "user" }) as UserMessage
 const assistant = (id: string) => ({ id, role: "assistant" }) as AssistantMessage
@@ -91,5 +91,62 @@ describe("timeline model", () => {
     ).rejects.toThrow("history failed")
 
     expect(restore).toBe(1)
+  })
+
+  test("retries a session load through a transport failure", async () => {
+    let calls = 0
+    const waits: number[] = []
+
+    await syncTimeline({
+      id: "ses_test",
+      sessionID: () => "ses_test",
+      sync: async () => {
+        calls += 1
+        if (calls < 3) throw new TypeError("Failed to fetch")
+      },
+      wait: async (ms) => {
+        waits.push(ms)
+      },
+    })
+
+    expect(calls).toBe(3)
+    expect(waits).toEqual([500, 1_000])
+  })
+
+  test("stops retrying once another session is selected", async () => {
+    let calls = 0
+    let selected = "ses_test"
+
+    await syncTimeline({
+      id: "ses_test",
+      sessionID: () => selected,
+      sync: async () => {
+        calls += 1
+        throw new TypeError("Failed to fetch")
+      },
+      wait: async () => {
+        selected = "ses_other"
+      },
+    })
+
+    expect(calls).toBe(1)
+  })
+
+  test("surfaces session load failures that are not transport errors", async () => {
+    let calls = 0
+
+    await expect(
+      syncTimeline({
+        id: "ses_test",
+        sessionID: () => "ses_test",
+        sync: async () => {
+          calls += 1
+          throw new Error("Session not found: ses_test")
+        },
+        wait: async () => {},
+      }),
+    ).rejects.toThrow("Session not found")
+
+    expect(calls).toBe(1)
   })
 })

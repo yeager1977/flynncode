@@ -49,6 +49,13 @@ export function sanitize(pkg: string) {
   return Array.from(pkg, (char) => (illegal.has(char) || char.charCodeAt(0) < 32 ? "_" : char)).join("")
 }
 
+// ETARGET: no version matches the spec (an unpublished package has no `latest`).
+// E404: the registry does not know the package at all.
+function isUnresolvable(cause: unknown) {
+  if (typeof cause !== "object" || cause === null || !("code" in cause)) return false
+  return cause.code === "ETARGET" || cause.code === "E404"
+}
+
 const resolveEntryPoint = (name: string, dir: string): EntryPoint => {
   let entrypoint: string | undefined
   try {
@@ -85,6 +92,11 @@ const layer = Layer.effect(
     const fs = yield* FileSystem.FileSystem
     const flock = yield* EffectFlock.Service
     const directory = (pkg: string) => path.join(global.cache, "packages", sanitize(pkg))
+    // The registry's definitive "no such package/version" answers, kept for the
+    // life of the process. Every instance bootstrap re-adds each configured
+    // plugin, so an unpublished one would otherwise cost a registry round trip
+    // (under the install lock) per project. Network failures are not cached.
+    const unresolvable = new Map<string, InstallFailedError>()
     const reify = (input: { dir: string; add?: string[] }) =>
       Effect.gen(function* () {
         yield* flock.acquire(`npm-install:${input.dir}`)
@@ -134,7 +146,16 @@ const layer = Layer.effect(
         return resolveEntryPoint(name, path.join(dir, "node_modules", name))
       }
 
-      const tree = yield* reify({ dir, add: [pkg] })
+      const known = unresolvable.get(pkg)
+      if (known) return yield* known
+
+      const tree = yield* reify({ dir, add: [pkg] }).pipe(
+        Effect.tapError((error) =>
+          Effect.sync(() => {
+            if (error instanceof InstallFailedError && isUnresolvable(error.cause)) unresolvable.set(pkg, error)
+          }),
+        ),
+      )
       const first = tree.edgesOut.values().next().value?.to
       if (!first) {
         const result = resolveEntryPoint(name, path.join(dir, "node_modules", name))

@@ -3,6 +3,7 @@ import { createMemo, createResource, onCleanup, untrack, type Accessor } from "s
 import { useServerSync } from "@/context/server-sync"
 import { useSync } from "@/context/sync"
 import { same } from "@/utils/same"
+import { retryable } from "@/utils/server-health"
 
 const emptyUserMessages: UserMessage[] = []
 const sessionFreshness = 15_000
@@ -15,6 +16,7 @@ export function createTimelineModel(input: {
   const sync = useSync()
   let refreshFrame: number | undefined
   let refreshTimer: number | undefined
+  let retryTimer: number | undefined
 
   const [resource] = createResource(
     () => input.sessionID(),
@@ -36,7 +38,15 @@ export function createTimelineModel(input: {
         }, 0)
       })
 
-      return sync().session.sync(id)
+      return syncTimeline({
+        id,
+        sessionID: input.sessionID,
+        sync: (sessionID) => sync().session.sync(sessionID),
+        wait: (ms) =>
+          new Promise((resolve) => {
+            retryTimer = window.setTimeout(resolve, ms)
+          }),
+      })
     },
   )
   const messages = createMemo(() => {
@@ -89,8 +99,10 @@ export function createTimelineModel(input: {
   function clearRefresh() {
     if (refreshFrame !== undefined) cancelAnimationFrame(refreshFrame)
     if (refreshTimer !== undefined) window.clearTimeout(refreshTimer)
+    if (retryTimer !== undefined) window.clearTimeout(retryTimer)
     refreshFrame = undefined
     refreshTimer = undefined
+    retryTimer = undefined
   }
 }
 
@@ -106,6 +118,29 @@ export function selectVisibleUserMessages(messages: UserMessage[], revertMessage
   if (!revertMessageID) return messages
   const boundary = messages.findIndex((message) => message.id === revertMessageID)
   return boundary < 0 ? messages : messages.slice(0, boundary)
+}
+
+// A transport failure means the server is restarting or briefly stalled, not
+// that the session is broken. The session page reads this load's resource, so a
+// rejection would replace the whole view with the fatal error page. Keep
+// retrying while the session stays selected; other failures (a missing session)
+// still reject.
+export function syncTimeline(
+  input: {
+    id: string
+    sessionID: Accessor<string | undefined>
+    sync: (sessionID: string) => Promise<void>
+    wait: (ms: number) => Promise<void>
+  },
+  attempt = 0,
+): Promise<void> {
+  return input.sync(input.id).catch((error: unknown) => {
+    if (!retryable(error)) throw error
+    return input.wait(Math.min(500 * 2 ** attempt, 5_000)).then(() => {
+      if (input.sessionID() !== input.id) return
+      return syncTimeline(input, attempt + 1)
+    })
+  })
 }
 
 export async function loadOlderTimeline(input: {
