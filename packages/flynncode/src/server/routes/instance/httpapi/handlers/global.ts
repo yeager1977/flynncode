@@ -86,7 +86,9 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     })
 
     const dispose = Effect.fn("GlobalHttpApi.dispose")(function* () {
-      yield* disposeAllInstancesAndEmitGlobalDisposed()
+      // Clients call this after connecting or disconnecting a provider so instances reboot with the new
+      // credentials. Instances with a running turn wait for idle instead of aborting the user's work.
+      yield* disposeAllInstancesAndEmitGlobalDisposed({ deferBusy: true })
       return true
     })
 
