@@ -14,7 +14,13 @@ import { useServerSync } from "@/context/server-sync"
 import { popularProviders } from "@/hooks/use-providers"
 import { Persist, persisted } from "@/utils/persist"
 import { showToast } from "@/utils/toast"
-import { rateLimitFromConfig, rateLimitToConfig, retryUnderFromInput, type OnLimit } from "./rate-limit-payload"
+import {
+  rateLimitFromConfig,
+  rateLimitToConfig,
+  retryUnderFromInput,
+  type OnLimit,
+  type RateLimitValue,
+} from "./rate-limit-payload"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import "./settings-v2.css"
@@ -196,14 +202,28 @@ const onLimitOptions: OnLimit[] = ["stop", "retry"]
 const RateLimitSection: Component = () => {
   const language = useLanguage()
   const serverSync = useServerSync()
+  const models = useModels()
   const [state, setState] = createStore({ saving: false })
 
   const value = createMemo(() => rateLimitFromConfig(serverSync().data.config))
+  const modelRef = (item: ModelItem) => `${item.provider.id}/${item.id}`
+  const modelName = (ref: string) => models.list().find((item) => modelRef(item) === ref)?.name ?? ref
+  const addable = createMemo(() =>
+    models
+      .list()
+      .filter((item) => !value().fallback.includes(modelRef(item)))
+      .toSorted((a, b) => a.provider.name.localeCompare(b.provider.name) || a.name.localeCompare(b.name)),
+  )
 
   // Resolves false only when the save was attempted and failed.
-  const save = async (target: { onLimit: OnLimit; retryUnder: number }) => {
+  const save = async (target: RateLimitValue) => {
     if (state.saving) return true
-    if (target.onLimit === value().onLimit && target.retryUnder === value().retryUnder) return true
+    if (
+      target.onLimit === value().onLimit &&
+      target.retryUnder === value().retryUnder &&
+      target.fallback.join("\n") === value().fallback.join("\n")
+    )
+      return true
     setState("saving", true)
     const ok = await serverSync()
       .updateConfig({ rate_limit: rateLimitToConfig(target) })
@@ -235,7 +255,7 @@ const RateLimitSection: Component = () => {
             placement="bottom-end"
             gutter={6}
             label={onLimitLabel}
-            onSelect={(choice) => choice !== null && void save({ onLimit: choice, retryUnder: value().retryUnder })}
+            onSelect={(choice) => choice !== null && void save({ ...value(), onLimit: choice })}
           />
         </SettingsRowV2>
         <SettingsRowV2
@@ -262,7 +282,7 @@ const RateLimitSection: Component = () => {
                 }
                 // A failed save leaves the saved value in place, so show it
                 // again instead of the rejected edit.
-                void save({ onLimit: value().onLimit, retryUnder: parsed }).then((saved) => {
+                void save({ ...value(), retryUnder: parsed }).then((saved) => {
                   if (!saved) input.value = String(value().retryUnder)
                 })
               }}
@@ -271,6 +291,45 @@ const RateLimitSection: Component = () => {
               autocomplete="off"
               autocapitalize="off"
               aria-label={language.t("settings.rateLimit.retryUnder.title")}
+            />
+          </div>
+        </SettingsRowV2>
+        <SettingsRowV2
+          title={language.t("settings.rateLimit.fallback.title")}
+          description={language.t("settings.rateLimit.fallback.description")}
+        >
+          <div class="flex w-full flex-col items-stretch gap-1 sm:w-[260px]">
+            <For each={value().fallback}>
+              {(ref) => (
+                <div class="flex items-center justify-between gap-2" data-component="settings-rate-limit-fallback-item">
+                  <span class="truncate" title={ref}>
+                    {modelName(ref)}
+                  </span>
+                  <IconButtonV2
+                    type="button"
+                    variant="ghost-muted"
+                    size="small"
+                    data-action="settings-rate-limit-fallback-remove"
+                    disabled={state.saving}
+                    icon={<IconV2 name="close" size="large" class="text-v2-icon-icon-muted" />}
+                    onClick={() => void save({ ...value(), fallback: value().fallback.filter((item) => item !== ref) })}
+                    aria-label={language.t("settings.rateLimit.fallback.remove", { model: modelName(ref) })}
+                  />
+                </div>
+              )}
+            </For>
+            <SelectV2
+              appearance="inline"
+              data-action="settings-rate-limit-fallback-add"
+              disabled={state.saving || addable().length === 0}
+              options={addable()}
+              value={modelRef}
+              label={(item) => item.name}
+              groupBy={(item) => item.provider.name}
+              placeholder={language.t("settings.rateLimit.fallback.add")}
+              placement="bottom-end"
+              gutter={6}
+              onSelect={(item) => item && void save({ ...value(), fallback: [...value().fallback, modelRef(item)] })}
             />
           </div>
         </SettingsRowV2>

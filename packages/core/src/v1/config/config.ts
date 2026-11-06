@@ -175,6 +175,10 @@ export const Info = Schema.Struct({
         description:
           "Seconds. With on_limit stop, still retry when the provider says the limit resets within this many seconds (default: 0)",
       }),
+      fallback: Schema.optional(Schema.Array(Schema.String)).annotate({
+        description:
+          "Models to switch to, in order, when a turn stops on a usage limit (provider/model). A limited model is skipped until its limit resets",
+      }),
     }),
   ).annotate({ description: "Behavior when a model hits a provider usage limit" }),
   username: Schema.optional(Schema.String).annotate({

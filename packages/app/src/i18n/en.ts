@@ -1896,6 +1896,11 @@ export const dict = {
   "settings.rateLimit.onLimit.retry": "Keep retrying",
   "settings.rateLimit.retryUnder.title": "Still retry limits shorter than",
   "settings.rateLimit.retryUnder.description": "Seconds. Limits that reset within this time are still retried",
+  "settings.rateLimit.fallback.title": "Fallback models",
+  "settings.rateLimit.fallback.description":
+    "When a turn stops on a usage limit, continue on the first of these that is not limited",
+  "settings.rateLimit.fallback.add": "Add model",
+  "settings.rateLimit.fallback.remove": "Remove {{model}}",
   "settings.rateLimit.toast.updateFailed.title": "Failed to update rate limit settings",
 
   "settings.permissions.action.allow": "Allow",
