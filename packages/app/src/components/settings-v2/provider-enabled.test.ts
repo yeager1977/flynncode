@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { providerRows, setProviderEnabled } from "./provider-enabled"
+import { providerRows, removeProviderPatch, setProviderEnabled } from "./provider-enabled"
 
 describe("setProviderEnabled", () => {
   test("adds one id and keeps the rest", () => {
@@ -28,5 +28,18 @@ describe("providerRows", () => {
       { id: "xai", name: "xAI", enabled: false },
       { id: "ollama-local", name: "ollama-local", enabled: false },
     ])
+  })
+})
+
+describe("removeProviderPatch", () => {
+  test("empties the provider entry and drops only its ban", () => {
+    expect(removeProviderPatch(["ollama-local", "meta", "xai"], "meta")).toEqual({
+      provider: { meta: {} },
+      disabled_providers: ["ollama-local", "xai"],
+    })
+  })
+
+  test("still empties the entry when the provider was not banned", () => {
+    expect(removeProviderPatch(["xai"], "meta")).toEqual({ provider: { meta: {} }, disabled_providers: ["xai"] })
   })
 })

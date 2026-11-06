@@ -1242,6 +1242,27 @@ for (const name of ["opencode.json", "opencode.jsonc"]) {
     ),
   )
 
+  it.effect(`an empty provider entry removes that provider from ${name} and keeps its siblings`, () =>
+    withGlobalConfig(
+      {
+        name,
+        config: {
+          username: "kept",
+          provider: { meta: { models: { muse: { name: "Muse" } } }, other: { options: { baseURL: "http://other" } } },
+        },
+      },
+      ({ dir }) =>
+        Effect.gen(function* () {
+          yield* Config.use.updateGlobal({ provider: { meta: {} } })
+
+          const file = path.join(dir, name)
+          const parsed = ConfigParse.jsonc(yield* FSUtil.use.readFileString(file), file) as { provider: object }
+          expect(Object.keys(parsed.provider)).toEqual(["other"])
+          expect(parsed).toMatchObject({ username: "kept" })
+        }),
+    ),
+  )
+
   it.effect(`a worktree patch replaces the whole subtree in ${name}`, () =>
     withGlobalConfig({ name, config: { worktree: { location: "trees", keep: 3 } } }, ({ dir }) =>
       Effect.gen(function* () {

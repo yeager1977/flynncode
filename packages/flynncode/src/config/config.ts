@@ -195,10 +195,15 @@ function mergeWholeSubtrees(base: Record<string, unknown>, patch: Record<string,
   // A provider entry is swapped as a whole subtree so removed headers, models,
   // and a cleared base URL persist, while sibling providers stay untouched.
   if (isRecord(patch.provider)) {
-    merged.provider = {
-      ...(isRecord(base.provider) ? base.provider : {}),
-      ...patch.provider,
-    }
+    const incoming = patch.provider
+    // An empty entry removes the provider: a merge patch can only add or update, so the
+    // settings page signals "delete this provider" with `{}` (same convention as worktree).
+    merged.provider = Object.fromEntries(
+      Object.entries({
+        ...(isRecord(base.provider) ? base.provider : {}),
+        ...incoming,
+      }).filter(([id]) => !isEmptyRecord(incoming[id])),
+    )
   }
   return merged
 }
@@ -280,9 +285,10 @@ function patchJsonc(input: string, patch: unknown, path: string[] = [], removeMc
     }
     // A provider entry is swapped as a whole subtree so removed headers, models,
     // and a cleared base URL persist, while sibling providers stay untouched.
+    // An empty entry deletes the provider.
     if (path.length === 0 && key === "provider" && isRecord(value)) {
       return Object.entries(value).reduce((current, [id, entry]) => {
-        const edits = modify(current, [key, id], entry, {
+        const edits = modify(current, [key, id], isEmptyRecord(entry) ? undefined : entry, {
           formattingOptions: {
             insertSpaces: true,
             tabSize: 2,

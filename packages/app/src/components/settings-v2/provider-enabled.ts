@@ -4,6 +4,12 @@ export function setProviderEnabled(disabled: readonly string[], providerID: stri
   return [...disabled, providerID]
 }
 
+// Config patch that deletes a provider defined in the config file: the server removes a provider whose
+// entry is empty, and a deleted provider no longer needs its disabled_providers ban.
+export function removeProviderPatch(disabled: readonly string[], providerID: string) {
+  return { provider: { [providerID]: {} }, disabled_providers: setProviderEnabled(disabled, providerID, true) }
+}
+
 export function providerRows(input: {
   connected: { id: string; name: string }[]
   disabled: readonly string[]

@@ -14,7 +14,7 @@ import { canEditProvider, isConfigCustomProvider } from "@/hooks/provider-connec
 import { DialogConnectProvider, useProviderConnectController } from "../dialog-connect-provider"
 import { DialogCustomProvider } from "../dialog-custom-provider"
 import { DialogEditProvider } from "../dialog-edit-provider"
-import { providerRows, setProviderEnabled } from "./provider-enabled"
+import { providerRows, removeProviderPatch, setProviderEnabled } from "./provider-enabled"
 import { SettingsListV2 } from "./parts/list"
 import "./settings-v2.css"
 
@@ -175,7 +175,34 @@ export const SettingsProvidersV2: Component<{
       })
   }
 
+  // A provider that exists only in the config file has no stored credential to clear and, once
+  // disabled, would otherwise stay listed forever, so Disconnect deletes its entry from the file.
+  const removeConfigProvider = async (providerID: string, name: string) => {
+    const before = serverSync().data.config
+    await serverSync()
+      .updateConfig(removeProviderPatch(before.disabled_providers ?? [], providerID))
+      .then(() => {
+        showToast({
+          variant: "success",
+          icon: "circle-check",
+          title: language.t("provider.disconnect.toast.disconnected.title", { provider: name }),
+          description: language.t("provider.disconnect.toast.disconnected.description", { provider: name }),
+        })
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err)
+        showToast({ title: language.t("common.requestFailed"), description: message })
+      })
+  }
+
   const disconnect = async (providerID: string, name: string) => {
+    if (protocol() === "v1" && rowSource(providerID) === "config" && !isConfigCustom(providerID)) {
+      await serverSdk()
+        .client.auth.remove({ providerID })
+        .catch(() => undefined)
+      await removeConfigProvider(providerID, name)
+      return
+    }
     if (isConfigCustom(providerID)) {
       await serverSdk()
         .client.auth.remove({ providerID })
