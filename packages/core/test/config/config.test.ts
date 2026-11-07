@@ -106,9 +106,6 @@ describe("Config", () => {
         retry_under: 30,
       })
       expect(decode({ rate_limit: { on_limit: "stop" } }).rate_limit).toEqual({ on_limit: "stop" })
-      expect(decode({ rate_limit: { fallback: ["anthropic/claude-opus-5-5"] } }).rate_limit).toEqual({
-        fallback: ["anthropic/claude-opus-5-5"],
-      })
       expect(decode({ rate_limit: {} }).rate_limit).toEqual({})
       expect(decode({}).rate_limit).toBeUndefined()
     }),

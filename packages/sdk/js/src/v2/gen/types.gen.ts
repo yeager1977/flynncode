@@ -2125,7 +2125,6 @@ export type Config = {
   rate_limit?: {
     on_limit?: "stop" | "retry"
     retry_under?: number
-    fallback?: Array<string>
   }
   username?: string
   mode?: {

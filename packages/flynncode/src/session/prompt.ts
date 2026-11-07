@@ -74,16 +74,12 @@ import { HooksContext } from "@/hooks/context"
 import { LLMEvent } from "@flynncode/llm"
 import { Memory } from "@/memory/memory"
 import { SessionMemoryCurate } from "./memory-curate"
-import { usageLimit } from "@flynncode/core/session/usage-limit"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
 
 const decodeMessageInfo = Schema.decodeUnknownExit(SessionV1.Info)
 const decodeMessagePart = Schema.decodeUnknownExit(SessionV1.Part)
-// How long a usage-limited model is skipped when the provider gives no reset time.
-const LIMIT_HOLD_MS = 5 * 60_000
-
 const MAX_MCP_RESOURCE_BLOB_BYTES = 10 * 1024 * 1024
 const SUPPORTED_MCP_RESOURCE_ATTACHMENT_MIMES = new Set([
   "application/pdf",
@@ -734,23 +730,6 @@ const layer = Layer.effect(
         })
       }
       return yield* Effect.die(err)
-    })
-
-    // Models that stopped a turn on a usage limit (`provider/model`), mapped to
-    // when the limit resets. Kept across turns so a limited model is skipped up
-    // front instead of spending a request to hit the same limit again.
-    const limitedUntil = new Map<string, number>()
-    const limited = (model: Provider.Model) => (limitedUntil.get(`${model.providerID}/${model.id}`) ?? 0) > Date.now()
-
-    // The first `rate_limit.fallback` model that is not limited and resolves.
-    // Entries that do not resolve (provider not connected, typo) are skipped.
-    const fallbackModel = Effect.fnUntraced(function* () {
-      const cfg = yield* config.get()
-      for (const entry of cfg.rate_limit?.fallback ?? []) {
-        const ref = Provider.parseModel(entry)
-        const exit = yield* provider.getModel(ref.providerID, ref.modelID).pipe(Effect.exit)
-        if (Exit.isSuccess(exit) && !limited(exit.value)) return exit.value
-      }
     })
 
     const currentModel = Effect.fnUntraced(function* (sessionID: SessionID) {
@@ -1446,15 +1425,7 @@ const layer = Layer.effect(
               history: msgs,
             }).pipe(Effect.ignore, Effect.forkIn(scope))
 
-          const chosen = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
-          const fallback = limited(chosen) ? yield* fallbackModel() : undefined
-          const model = fallback ?? chosen
-          if (fallback)
-            yield* Effect.logInfo("usage limit fallback", {
-              "session.id": sessionID,
-              from: `${chosen.providerID}/${chosen.id}`,
-              to: `${fallback.providerID}/${fallback.id}`,
-            })
+          const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
           const task = tasks.pop()
 
           if (task?.type === "subtask") {
@@ -1505,7 +1476,7 @@ const layer = Layer.effect(
             role: "assistant",
             mode: agent.name,
             agent: agent.name,
-            variant: fallback ? undefined : lastUser.model.variant,
+            variant: lastUser.model.variant,
             path: { cwd: ctx.directory, root: ctx.worktree },
             cost: 0,
             tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
@@ -1704,13 +1675,6 @@ const layer = Layer.effect(
             }
 
             if (result === "stop") {
-              // The limited turn stays in history with its error (history drops
-              // errored turns), and the next step reruns it on a fallback model.
-              const limit = usageLimit(handle.message.error)
-              if (limit) {
-                limitedUntil.set(`${model.providerID}/${model.id}`, limit.resetAt ?? Date.now() + LIMIT_HOLD_MS)
-                if (yield* fallbackModel()) return "continue" as const
-              }
               const newer = yield* hasNewerUser(sessionID, lastUser)
               if (!newer) {
                 yield* replyToPeer(lastUser)
