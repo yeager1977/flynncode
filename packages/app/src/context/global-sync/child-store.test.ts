@@ -17,6 +17,13 @@ const persist: typeof import("@/utils/persist").persisted = (_target, store) => 
 
 const child = () => createStore({} as State)
 const provider = { all: new Map(), connected: [], default: {} } satisfies NormalizedProviderListResponse
+const connectedGlobal = {
+  all: new Map([["anthropic", { id: "anthropic", name: "Anthropic", source: "api", env: [], options: {}, models: {} }]]),
+  connected: ["anthropic"],
+  default: {},
+} as unknown as NormalizedProviderListResponse
+// What the mocked per-directory provider query holds; undefined stands for a request that failed.
+let providersData: NormalizedProviderListResponse | undefined = provider
 
 const queryOptionsApi = {
   globalConfig: () => ({ queryKey: ["globalConfig"], queryFn: async () => ({}) }),
@@ -62,7 +69,7 @@ beforeAll(async () => {
           if (options().queryKey?.[1] === "path") throw new Error("pending path data read")
           if (options().queryKey?.[1] === "mcp") return options().enabled ? { demo: { status: "disabled" } } : undefined
           if (options().queryKey?.[1] === "lsp") return []
-          if (options().queryKey?.[1] === "providers") return provider
+          if (options().queryKey?.[1] === "providers") return providersData
           return undefined
         },
       }
@@ -270,6 +277,37 @@ describe("createChildStoreManager", () => {
       manager.child("/project", { bootstrap: false })
       expect(queries[0]?.().enabled).toBe(true)
     } finally {
+      dispose()
+    }
+  })
+
+  test("uses the server-wide provider list when the directory's own request failed", () => {
+    providersData = undefined
+    let manager: ReturnType<typeof createChildStoreManager> | undefined
+
+    const dispose = createOwner((owner) => {
+      manager = createChildStoreManager({
+        owner,
+        scope: ServerScope.local,
+        persist,
+        isBooting: () => false,
+        isLoadingSessions: () => false,
+        onBootstrap() {},
+        onMcp() {},
+        onDispose() {},
+        translate: (key) => key,
+        queryOptions: queryOptionsApi,
+        global: { provider: connectedGlobal, config: {}, configReady: true },
+      })
+    })
+
+    try {
+      if (!manager) throw new Error("manager required")
+      const [store] = manager.child("/project")
+      // An empty list here would send the model button to the "no paid provider" dialog.
+      expect(store.provider.connected).toEqual(["anthropic"])
+    } finally {
+      providersData = provider
       dispose()
     }
   })

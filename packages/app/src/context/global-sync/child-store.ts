@@ -213,7 +213,9 @@ export function createChildStoreManager(input: {
             get provider() {
               const EMPTY = { all: new Map(), connected: [], default: {} }
               if (providerQuery.isLoading) return EMPTY
-              if (providerQuery.data?.all.size === 0 && input.global.provider.all.size > 0) return input.global.provider
+              // A directory whose own request failed or came back empty shows the server-wide list. An empty one
+              // reads as "no provider connected" and sends the model button to the sign-up dialog.
+              if (!providerQuery.data?.all.size && input.global.provider.all.size > 0) return input.global.provider
               return providerQuery.data ?? EMPTY
             },
             config: {},
