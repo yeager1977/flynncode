@@ -1,6 +1,8 @@
 import type { Model } from "@flynncode/sdk/v2"
 import { describe, expect, test } from "bun:test"
+import path from "node:path"
 import { MusePlugin, fetchMetaModels } from "../../src/plugin/muse"
+import { tmpdir } from "../fixture/fixture"
 
 const catalogModel: Model = {
   id: "muse-spark-1.1",
@@ -68,5 +70,36 @@ describe("plugin.muse", () => {
     const plugin2 = await MusePlugin({} as never, {})
     const models2 = await plugin2.provider?.models?.(provider, {} as never)
     expect(Object.keys(models2 ?? {})).toEqual(["muse-spark-1.1"])
+  })
+
+  test("subscription method adopts the Muse CLI login once Meta accepts it", async () => {
+    await using tmp = await tmpdir()
+    const cliAuthPath = path.join(tmp.path, "auth.json")
+    await Bun.write(cliAuthPath, JSON.stringify({ providers: { meta: { api_key: "LLM|k", mechanism: "oauth" } } }))
+    const seen: Array<string | null> = []
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      seen.push(new Headers(init?.headers).get("authorization"))
+      return new Response(JSON.stringify({ data: [{ id: "muse-spark-1.1" }] }))
+    }) as unknown as typeof fetch
+    const plugin = await MusePlugin({} as never, { fetchImpl, cliAuthPath })
+    const method = plugin.auth?.methods[0]
+    if (method?.type !== "oauth") throw new Error("expected the subscription method first")
+    const result = await method.authorize()
+    if (result.method !== "auto") throw new Error("expected an automatic callback")
+    expect(await result.callback()).toEqual({ type: "success", key: "LLM|k" })
+    expect(seen).toEqual(["Bearer LLM|k"])
+  })
+
+  test("subscription method refuses a missing or rejected Muse CLI login", async () => {
+    await using tmp = await tmpdir()
+    const cliAuthPath = path.join(tmp.path, "auth.json")
+    const denied = (async () => new Response("denied", { status: 401 })) as unknown as typeof fetch
+    const plugin = await MusePlugin({} as never, { fetchImpl: denied, cliAuthPath })
+    const method = plugin.auth?.methods[0]
+    if (method?.type !== "oauth") throw new Error("expected the subscription method first")
+    await expect(method.authorize()).rejects.toThrow("No Muse CLI login found")
+
+    await Bun.write(cliAuthPath, JSON.stringify({ providers: { meta: { api_key: "LLM|stale" } } }))
+    await expect(method.authorize()).rejects.toThrow("Could not verify the Muse CLI login")
   })
 })

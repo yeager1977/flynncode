@@ -24,6 +24,20 @@ const CodexShape = Schema.Struct({
   }),
 })
 
+// Mirrors ~/.config/muse/auth.json (providers.meta.api_key, written by `muse login`).
+const MuseShape = Schema.Struct({
+  providers: Schema.Struct({
+    meta: Schema.Struct({ api_key: Schema.String }),
+  }),
+})
+
+/** The subscription key the Muse CLI's account login stores, or undefined when it holds none. */
+export function parseMuseAuth(raw: unknown) {
+  const decoded = Schema.decodeUnknownOption(MuseShape)(raw)
+  if (decoded._tag === "None") return undefined
+  return decoded.value.providers.meta.api_key || undefined
+}
+
 export function parseClaudeCredentials(raw: unknown): ImportedCredential | undefined {
   const decoded = Schema.decodeUnknownOption(ClaudeShape)(raw)
   if (decoded._tag === "None") return undefined

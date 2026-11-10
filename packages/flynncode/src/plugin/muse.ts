@@ -1,5 +1,9 @@
 import type { Model as ModelV2 } from "@flynncode/sdk/v2"
 import type { Hooks, PluginInput } from "@flynncode/plugin"
+import { parseMuseAuth } from "../auth/vendor-import"
+import { Filesystem } from "../util/filesystem"
+import os from "os"
+import path from "path"
 
 // Meta's OpenAI-compatible catalog endpoint. The vendored models.dev snapshot
 // lags new muse/meta releases (a muse account list grows between catalog
@@ -12,6 +16,8 @@ const FETCH_TIMEOUT_MS = 10_000
 export interface MuseOptions {
   modelsEndpoint?: string
   fetchImpl?: typeof fetch
+  // The Muse CLI's auth file; tests point this at a fixture.
+  cliAuthPath?: string
 }
 
 type MetaModelsBody = {
@@ -98,6 +104,45 @@ export async function MusePlugin(_input: PluginInput, options: MuseOptions = {})
         }
         return out
       },
+    },
+    auth: {
+      provider: "meta",
+      methods: [
+        {
+          // `muse login` leaves a subscription key on disk that Meta's API accepts as a bearer
+          // token, so the account login is adopted as-is instead of asking for a pasted key.
+          label: "Muse subscription (Muse CLI login)",
+          type: "oauth",
+          authorize: async () => {
+            const key = parseMuseAuth(
+              await Filesystem.readJson(
+                options.cliAuthPath ?? path.join(process.env.HOME ?? os.homedir(), ".config", "muse", "auth.json"),
+              ).catch(() => undefined),
+            )
+            if (!key) throw new Error("No Muse CLI login found. Run `muse login` in a terminal, then connect again.")
+            // A lapsed login leaves its old key on disk; confirm Meta still accepts it before storing it.
+            const live = await fetchMetaModels({
+              fetchImpl: fetchImpl(),
+              token: key,
+              modelsEndpoint: options.modelsEndpoint,
+            })
+            if (!live)
+              throw new Error(
+                "Could not verify the Muse CLI login with Meta. Run `muse login` in a terminal, then connect again.",
+              )
+            return {
+              url: "http://localhost/imported",
+              instructions: "Imported the Muse subscription login from the Muse CLI on this machine.",
+              method: "auto" as const,
+              callback: async () => ({ type: "success" as const, key }),
+            }
+          },
+        },
+        {
+          label: "Manually enter API Key",
+          type: "api",
+        },
+      ],
     },
   }
 }

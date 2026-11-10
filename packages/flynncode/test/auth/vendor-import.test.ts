@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { parseClaudeCredentials, parseCodexAuth, readEnvCredential } from "../../src/auth/vendor-import"
+import { parseClaudeCredentials, parseCodexAuth, parseMuseAuth, readEnvCredential } from "../../src/auth/vendor-import"
 
 describe("parseClaudeCredentials", () => {
   it("accepts Claude Code OAuth shape", () => {
@@ -50,6 +50,22 @@ describe("parseCodexAuth", () => {
   it("rejects garbage", () => {
     expect(parseCodexAuth({ tokens: { access_token: 7 } })).toBeUndefined()
     expect(parseCodexAuth({})).toBeUndefined()
+  })
+})
+
+describe("parseMuseAuth", () => {
+  it("reads the subscription key the Muse CLI login stores", () => {
+    expect(
+      parseMuseAuth({
+        schema_version: 1,
+        providers: { meta: { api_key: "LLM|k", access_token: "t", mechanism: "oauth", obtained_via: "device_code" } },
+      }),
+    ).toBe("LLM|k")
+  })
+  it("rejects a missing or empty key", () => {
+    expect(parseMuseAuth({ providers: { meta: { api_key: "" } } })).toBeUndefined()
+    expect(parseMuseAuth({ providers: { meta: { access_token: "t" } } })).toBeUndefined()
+    expect(parseMuseAuth({})).toBeUndefined()
   })
 })
 
