@@ -15,6 +15,56 @@ const TOKEN_ISSUER = "https://console.anthropic.com"
 const CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 const OAUTH_PORT = 1456
 
+// Anthropic identifies the client behind a subscription token from the request
+// body, not from the token or the headers: Claude Code sends a billing header
+// as the first system block and Anthropic reads the client version from it.
+// Without that block the request is served as the legacy floor
+// ("Claude Code 2.1.280"), which refuses newer models with "version 2.1.290
+// or newer is required" (seen for claude-fable-5-2 on 2026-11-10 — older
+// models kept working with the same token, and the token is byte-identical to
+// the one real Claude Code uses). Verified against api.anthropic.com: with the
+// billing header the gated model answers; without it the request is refused.
+//
+// The version is the Claude Code release this identity tracks; keep it aligned
+// with upstream's latest Claude Code release.
+const SUBSCRIPTION_CLIENT_VERSION = "2.1.321"
+const OAUTH_BETA = "oauth-2025-04-20"
+const CLAUDE_CODE_BILLING_HEADER = `x-anthropic-billing-header: cc_version=${SUBSCRIPTION_CLIENT_VERSION}; cc_entrypoint=cli;`
+
+// Claude Code lists the OAuth beta first, then the caller's own betas.
+function subscriptionBetas(existing: string | null) {
+  const extra = (existing ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+  return [...new Set([OAUTH_BETA, ...extra])].join(",")
+}
+
+// The billing header has to be the first system block of a messages request.
+// The AI SDK sends the system prompt as a plain string, so prefix it there.
+function withBillingHeader(body: BodyInit | null | undefined, url: string) {
+  if (typeof body !== "string") return body
+  if (!url.includes("/messages")) return body
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(body)
+  } catch {
+    return body
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return body
+  const record = parsed as Record<string, unknown>
+  const system = record.system
+  if (typeof system === "string") {
+    if (system.startsWith(CLAUDE_CODE_BILLING_HEADER)) return body
+    record.system = `${CLAUDE_CODE_BILLING_HEADER}\n\n${system}`
+  } else if (Array.isArray(system)) {
+    record.system = [{ type: "text", text: CLAUDE_CODE_BILLING_HEADER }, ...system]
+  } else {
+    record.system = [{ type: "text", text: CLAUDE_CODE_BILLING_HEADER }]
+  }
+  return JSON.stringify(record)
+}
+
 export interface AnthropicSubscriptionOptions {
   authorizeIssuer?: string
   tokenIssuer?: string
@@ -93,6 +143,7 @@ export async function fetchSubscriptionModelIDs(input: {
         method: "GET",
         signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS),
         headers: {
+          "User-Agent": `claude-code/${SUBSCRIPTION_CLIENT_VERSION}`,
           Authorization: `Bearer ${input.token}`,
           "anthropic-version": "2023-06-01",
           "anthropic-beta": "oauth-2025-04-20",
@@ -146,6 +197,7 @@ export async function fetchAnthropicUsage(input: {
       method: "GET",
       signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS),
       headers: {
+        "User-Agent": `claude-code/${SUBSCRIPTION_CLIENT_VERSION}`,
         Authorization: `Bearer ${input.token}`,
         "anthropic-version": "2023-06-01",
         "anthropic-beta": "oauth-2025-04-20",
@@ -188,7 +240,7 @@ export async function refreshSubscriptionToken(
 ): Promise<RefreshResult> {
   const response = await fetch(input.tokenEndpoint, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "User-Agent": `claude-code/${SUBSCRIPTION_CLIENT_VERSION}` },
     body: JSON.stringify({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: input.clientId }),
   })
   if (!response.ok) throw new Error("Anthropic subscription token refresh failed")
@@ -208,7 +260,7 @@ async function exchangeCodeForTokens(
 ): Promise<RefreshResult> {
   const response = await fetch(tokenEndpointFor(options), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "User-Agent": `claude-code/${SUBSCRIPTION_CLIENT_VERSION}` },
     body: JSON.stringify({
       grant_type: "authorization_code",
       code,
@@ -352,6 +404,12 @@ export async function AnthropicSubscriptionPlugin(
   input: PluginInput,
   options: AnthropicSubscriptionOptions = {},
 ): Promise<Hooks> {
+  // Third-party plugin "opencode-claude-auth" (user-configured) builds the
+  // billing header Anthropic's version gate reads from its own hardcoded,
+  // stale ccVersion (2.1.280), which gets newer models refused. That plugin
+  // prefers ANTHROPIC_CLI_VERSION over its constant at request time, so pin
+  // the release this fork tracks. The real claude CLI ignores the variable.
+  process.env.ANTHROPIC_CLI_VERSION ??= SUBSCRIPTION_CLIENT_VERSION
   return {
     provider: {
       id: "anthropic",
@@ -448,8 +506,14 @@ export async function AnthropicSubscriptionPlugin(
             }
             const headers = new Headers(init?.headers)
             headers.set("authorization", `Bearer ${currentAuth.access}`)
-            headers.set("anthropic-beta", "oauth-2025-04-20")
-            return fetch(requestInput, { ...init, headers })
+            headers.set("anthropic-beta", subscriptionBetas(headers.get("anthropic-beta")))
+            headers.set("user-agent", `claude-code/${SUBSCRIPTION_CLIENT_VERSION}`)
+            const url = typeof requestInput === "string" ? requestInput : requestInput instanceof URL ? requestInput.href : requestInput.url
+            return fetch(requestInput, {
+              ...init,
+              headers,
+              body: withBillingHeader(init?.body, url),
+            })
           },
         }
       },

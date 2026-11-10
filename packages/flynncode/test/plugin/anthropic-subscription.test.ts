@@ -157,11 +157,52 @@ describe("subscription plugin shape", () => {
       "Manually enter API Key",
     ])
   })
+
+  // Anthropic reads the client version from a billing header carried as the
+  // first system block; without it the request is served as the legacy floor
+  // ("Claude Code 2.1.280") and newer models are refused.
+  it("identifies the subscription client and bearer-auths its fetch wrapper", async () => {
+    const hooks = await AnthropicSubscriptionPlugin({} as never)
+    const getAuth = async () => ({
+      type: "oauth",
+      access: "tok",
+      refresh: "r",
+      expires: Date.now() + 60_000,
+    })
+    const wrapper = await hooks.auth?.loader!(getAuth as never, undefined as never)
+    // The wrapper delegates to the ambient fetch; this is the only way to
+    // observe the headers and body it rewrites.
+    const original = globalThis.fetch
+    const seen: { headers: Headers; body: unknown }[] = []
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      seen.push({ headers: new Headers(init?.headers), body: init?.body })
+      return new Response("{}", { status: 200 })
+    }) as typeof fetch
+    try {
+      await wrapper?.fetch("https://api.anthropic.com/v1/messages", {
+        headers: { "User-Agent": "opencode/1.18.34", "x-api-key": "dummy" },
+        body: JSON.stringify({ model: "claude-fable-5-2", system: "You are Flynncode." }),
+      })
+    } finally {
+      globalThis.fetch = original
+    }
+    const request = seen[0]
+    expect(request).toBeDefined()
+    expect(request!.headers.get("user-agent")).toMatch(/^claude-code\/\d+\.\d+\.\d+/)
+    expect(request!.headers.get("authorization")).toBe("Bearer tok")
+    expect(request!.headers.get("anthropic-beta")).toContain("oauth-2025-04-20")
+    expect(request!.headers.get("x-api-key")).toBeNull()
+    const body = JSON.parse(String(request!.body)) as { system: string }
+    expect(body.system).toMatch(/^x-anthropic-billing-header: cc_version=\d+\.\d+\.\d+; cc_entrypoint=cli;/)
+    expect(body.system).toContain("You are Flynncode.")
+  })
 })
 
 describe("subscription token refresh", () => {
-  it("exchanges refresh token against a stub endpoint", async () => {
-    const server = createServer((_req, res) => {
+  it("exchanges refresh token against a stub endpoint and presents the client identity", async () => {
+    const seen: string[] = []
+    const server = createServer((req, res) => {
+      seen.push(String(req.headers["user-agent"]))
       res.writeHead(200, { "Content-Type": "application/json" })
       res.end(JSON.stringify({ access_token: "stub-access", expires_in: 3600 }))
     })
@@ -173,6 +214,7 @@ describe("subscription token refresh", () => {
         clientId: "stub-client",
       })
       expect(tokens.access_token).toBe("stub-access")
+      expect(seen[0]).toMatch(/^claude-code\/\d+\.\d+\.\d+/)
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()))
     }
