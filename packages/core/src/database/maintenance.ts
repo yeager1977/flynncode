@@ -54,18 +54,7 @@ export const pruneIdleSessions = Effect.fn("DatabaseMaintenance.pruneIdleSession
   input: { now: number; idleMs?: number; chunk?: number },
 ) {
   const cutoff = input.now - (input.idleMs ?? IDLE_MS)
-  const candidates = yield* db.all<{ id: string }>(sql`
-    SELECT s.id FROM session s
-    JOIN event_sequence q ON q.aggregate_id = s.id
-    WHERE s.time_updated < ${cutoff}
-      AND q.owner_id IS NULL
-      AND NOT EXISTS (SELECT 1 FROM session_message m WHERE m.session_id = s.id)
-      AND NOT EXISTS (SELECT 1 FROM session_input i WHERE i.session_id = s.id AND i.promoted_seq IS NULL)
-      AND NOT EXISTS (SELECT 1 FROM message m WHERE m.session_id = s.id AND m.time_updated >= ${cutoff})
-      AND NOT EXISTS (SELECT 1 FROM part p WHERE p.session_id = s.id AND p.time_updated >= ${cutoff})
-      AND NOT EXISTS (SELECT 1 FROM event e WHERE e.aggregate_id = s.id AND e.type >= 'session.next.' AND e.type < 'session.next/')
-      AND EXISTS (SELECT 1 FROM event e WHERE e.aggregate_id = s.id AND e.type >= 'message.' AND e.type < 'message/')
-  `)
+  const candidates = yield* prunable(db, cutoff)
   const chunk = input.chunk ?? CHUNK
   const deleted = yield* Effect.forEach(candidates, (candidate) =>
     deleteChunked(
@@ -93,6 +82,23 @@ export const pruneIdleSessions = Effect.fn("DatabaseMaintenance.pruneIdleSession
     sessions: deleted.filter((count) => count > 0).length,
     events: deleted.reduce((sum, n) => sum + n, 0),
   }
+})
+
+// The sessions pruneIdleSessions deletes message events from, as of `cutoff`. Exported so a dry run measures exactly
+// what a pass would delete.
+export const prunable = Effect.fn("DatabaseMaintenance.prunable")(function* (db: Db, cutoff: number) {
+  return yield* db.all<{ id: string }>(sql`
+    SELECT s.id FROM session s
+    JOIN event_sequence q ON q.aggregate_id = s.id
+    WHERE s.time_updated < ${cutoff}
+      AND q.owner_id IS NULL
+      AND NOT EXISTS (SELECT 1 FROM session_message m WHERE m.session_id = s.id)
+      AND NOT EXISTS (SELECT 1 FROM session_input i WHERE i.session_id = s.id AND i.promoted_seq IS NULL)
+      AND NOT EXISTS (SELECT 1 FROM message m WHERE m.session_id = s.id AND m.time_updated >= ${cutoff})
+      AND NOT EXISTS (SELECT 1 FROM part p WHERE p.session_id = s.id AND p.time_updated >= ${cutoff})
+      AND NOT EXISTS (SELECT 1 FROM event e WHERE e.aggregate_id = s.id AND e.type >= 'session.next.' AND e.type < 'session.next/')
+      AND EXISTS (SELECT 1 FROM event e WHERE e.aggregate_id = s.id AND e.type >= 'message.' AND e.type < 'message/')
+  `)
 })
 
 // Session.remove deletes the session row, then its events; if it dies in

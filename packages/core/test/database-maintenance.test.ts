@@ -511,6 +511,27 @@ describe("DatabaseMaintenanceNode.pass", () => {
     expect(result.orphans).toEqual({ aggregates: 1, events: 3 })
     expect(result.freed).toBeGreaterThanOrEqual(0)
   })
+  test("OPENCODE_DB_EVENT_IDLE_DAYS shortens the idle window; unset or invalid keeps 7 days", async () => {
+    const previous = process.env["OPENCODE_DB_EVENT_IDLE_DAYS"]
+    const pruned = (days: string | undefined) =>
+      withDb((db) =>
+        Effect.gen(function* () {
+          if (days === undefined) delete process.env["OPENCODE_DB_EVENT_IDLE_DAYS"]
+          else process.env["OPENCODE_DB_EVENT_IDLE_DAYS"] = days
+          yield* seedSession(db, { id: "ses_two_days", updated: NOW - 2 * DAY, messages: 3 })
+          yield* seedSession(db, { id: "ses_today", updated: NOW - 1000, messages: 3 })
+          return (yield* DatabaseMaintenanceNode.pass(db, NOW).pipe(silent)).pruned
+        }),
+      )
+    const results = [await pruned(undefined), await pruned("1"), await pruned("zero")]
+    if (previous === undefined) delete process.env["OPENCODE_DB_EVENT_IDLE_DAYS"]
+    else process.env["OPENCODE_DB_EVENT_IDLE_DAYS"] = previous
+    expect(results).toEqual([
+      { candidates: 0, sessions: 0, events: 0 },
+      { candidates: 1, sessions: 1, events: 3 },
+      { candidates: 0, sessions: 0, events: 0 },
+    ])
+  })
   test("truncates the WAL after reclaiming pages", async () => {
     const result = await withDb((db, filename) =>
       Effect.gen(function* () {

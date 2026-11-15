@@ -11,7 +11,9 @@ type Db = Database.Interface["db"]
 
 export const pass = Effect.fn("DatabaseMaintenance.pass")(function* (db: Db, now: number) {
   const started = Date.now()
-  const pruned = yield* step("prune idle sessions", DatabaseMaintenance.pruneIdleSessions(db, { now }), {
+  const days = Flag.OPENCODE_DB_EVENT_IDLE_DAYS
+  const idleMs = days === undefined ? undefined : days * 24 * 60 * 60 * 1000
+  const pruned = yield* step("prune idle sessions", DatabaseMaintenance.pruneIdleSessions(db, { now, idleMs }), {
     candidates: 0,
     sessions: 0,
     events: 0,

@@ -24,6 +24,12 @@ export const Flag = {
   OPENCODE_ALWAYS_NOTIFY_UPDATE: truthy("OPENCODE_ALWAYS_NOTIFY_UPDATE"),
   OPENCODE_DISABLE_PRUNE: truthy("OPENCODE_DISABLE_PRUNE"),
   OPENCODE_DISABLE_DB_MAINTENANCE: truthy("OPENCODE_DISABLE_DB_MAINTENANCE"),
+  // Days a classic session stays idle before the hourly pass deletes its projected message events (7 when unset).
+  // Evaluated at access time so tests and the CLI can set it at runtime.
+  get OPENCODE_DB_EVENT_IDLE_DAYS() {
+    const days = Number(process.env["OPENCODE_DB_EVENT_IDLE_DAYS"])
+    return Number.isFinite(days) && days > 0 ? days : undefined
+  },
   OPENCODE_DISABLE_WORKTREE_CLEANUP: truthy("OPENCODE_DISABLE_WORKTREE_CLEANUP"),
   OPENCODE_DISABLE_TERMINAL_TITLE: truthy("OPENCODE_DISABLE_TERMINAL_TITLE"),
   OPENCODE_SHOW_TTFD: truthy("OPENCODE_SHOW_TTFD"),
