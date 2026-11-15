@@ -419,7 +419,11 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     translate: language.t,
     queryOptions: queryOptionsApi,
     global: {
-      provider: globalStore.provider,
+      // Read on every access: a value captured here is the empty list from before the server's own request
+      // finished, which would leave directories with no fallback.
+      get provider() {
+        return globalStore.provider
+      },
       get config() {
         return globalStore.config
       },
