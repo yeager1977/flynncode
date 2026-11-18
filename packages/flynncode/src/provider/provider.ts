@@ -279,6 +279,13 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         async getModel(sdk: any, modelID: string, _options?: Record<string, any>) {
           return sdk.responses(modelID)
         },
+        options: {
+          // /responses requests carry opencode's own identity (honest UA) and
+          // pass through the namespace-wrap fetch that keeps meta's
+          // subscription gating satisfied (see provider/meta.ts).
+          headers: { "User-Agent": `opencode/${InstallationVersion}` },
+          fetch: ProviderMeta.responsesFetch,
+        },
       }),
     xai: () =>
       Effect.succeed({
