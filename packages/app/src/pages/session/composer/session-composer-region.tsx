@@ -107,6 +107,7 @@ export function SessionComposerRegion(props: {
                 // The dock note speaks for the auto reviewer deferring to the
                 // human; the verdict rides on the pending request itself.
                 reviewerApproved={request.reviewer === "defer"}
+                reviewerDenied={request.reviewer === "deny"}
                 onModeChange={controller.state.setPermissionApprovalMode}
               />
             </div>

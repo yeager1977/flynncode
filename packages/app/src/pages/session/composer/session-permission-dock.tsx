@@ -39,6 +39,7 @@ export function SessionPermissionDock(props: {
   approvalMode?: ApprovalMode
   blockedBySandbox?: boolean
   reviewerApproved?: boolean
+  reviewerDenied?: boolean
   onModeChange?: (mode: ApprovalMode) => void
 }) {
   const language = useLanguage()
@@ -158,6 +159,13 @@ export function SessionPermissionDock(props: {
         <div data-slot="permission-row">
           <span data-slot="permission-spacer" aria-hidden="true" />
           <div data-slot="permission-hint">{language.t("approval.reviewerDeferred.note")}</div>
+        </div>
+      </Show>
+
+      <Show when={props.reviewerDenied === true}>
+        <div data-slot="permission-row">
+          <span data-slot="permission-spacer" aria-hidden="true" />
+          <div data-slot="permission-hint">{language.t("approval.reviewerDenied.note")}</div>
         </div>
       </Show>
 

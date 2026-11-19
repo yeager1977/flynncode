@@ -3,9 +3,9 @@ import { ButtonV2 } from "@flynncode/ui/v2/button-v2"
 import { Dialog, DialogFooter, DialogHeader, DialogTitleGroup } from "@flynncode/ui/v2/dialog-v2"
 import { DividerV2 } from "@flynncode/ui/v2/divider-v2"
 import { SelectV2 } from "@flynncode/ui/v2/select-v2"
-import { Show, createMemo, type Component } from "solid-js"
+import { For, Show, createMemo, type Component } from "solid-js"
 import { createStore } from "solid-js/store"
-import type { ApprovalMode, Config, SandboxMode } from "@flynncode/sdk/v2/client"
+import type { ApprovalMode, Config, PermissionActionConfig, SandboxMode } from "@flynncode/sdk/v2/client"
 import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
@@ -13,13 +13,34 @@ import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import "./settings-v2.css"
 
-type Policy = { approval: ApprovalMode; sandbox: SandboxMode }
+type Actions = { [key: string]: PermissionActionConfig | undefined }
+type Policy = { approval: ApprovalMode; sandbox: SandboxMode; actions: Actions }
 
 const approvalOptions: Array<Policy["approval"]> = ["manual", "accept-edits", "auto"]
+
+// Action permissions the panel edits: single ask/allow/deny decisions, not
+// pattern maps like read/edit/bash. An unset key writes nothing, leaving the
+// server's built-in defaults (worktree prompts, for example).
+const actionPermissions = [
+  "worktree",
+  "worktree_discard",
+  "archive",
+  "question",
+  "webfetch",
+  "websearch",
+  "doom_loop",
+  "github-triage",
+  "github-pr-search",
+] as const
 
 // The visible sandbox levels; full-access activates only through the explicit
 // danger confirmation below, never silently through the select.
 const sandboxChoices: Array<Exclude<Policy["sandbox"], "full-access">> = ["readonly", "workspace-write"]
+
+function actionValue(value: unknown): PermissionActionConfig | undefined {
+  if (value === "ask" || value === "allow" || value === "deny") return value
+  return undefined
+}
 
 export function policyFromConfig(config: Config | undefined): Policy {
   const permission = config?.permission
@@ -29,8 +50,15 @@ export function policyFromConfig(config: Config | undefined): Policy {
   // decoding default (packages/core/src/v1/config/permission.ts). Saving writes
   // those values back verbatim, so the UI's policy always equals what the
   // server resolves for every session.
-  if (typeof permission !== "object") return { approval: "manual", sandbox: "workspace-write" }
-  return { approval: approvalLevel(permission.approval), sandbox: sandboxLevel(permission.sandbox) }
+  if (typeof permission !== "object") return { approval: "manual", sandbox: "workspace-write", actions: {} }
+  const record = permission as Record<string, unknown>
+  const actions: Actions = {}
+  for (const key of actionPermissions) actions[key] = actionValue(record[key])
+  return {
+    approval: approvalLevel(record.approval as ApprovalMode | undefined),
+    sandbox: sandboxLevel(record.sandbox as SandboxMode | undefined),
+    actions,
+  }
 }
 
 function approvalLevel(value: ApprovalMode | undefined): ApprovalMode {
@@ -46,10 +74,16 @@ function sandboxLevel(value: SandboxMode | undefined): SandboxMode {
 // Config permission may be a bare action string ("allow"); converting it to the
 // equivalent `"*"` rule keeps the catch-all when policy keys are added. The
 // server replaces `permission` as a whole subtree at write sites, so the patch
-// carries the full current value — unrelated sibling keys never drop.
+// carries the full current value — unrelated sibling keys never drop. An unset
+// action key is deleted so a value saved earlier can return to the built-in
+// default without pinning "ask" forever.
 export function policyToConfig(current: Config["permission"], policy: Policy): NonNullable<Config["permission"]> {
-  const base = typeof current === "string" ? { "*": current } : { ...current }
-  return { ...base, approval: policy.approval, sandbox: policy.sandbox }
+  const base = (typeof current === "string" ? { "*": current } : { ...current }) as Record<string, unknown>
+  for (const key of actionPermissions) {
+    if (policy.actions[key]) base[key] = policy.actions[key]
+    else delete base[key]
+  }
+  return { ...base, approval: policy.approval, sandbox: policy.sandbox } as NonNullable<Config["permission"]>
 }
 
 export const SettingsPermissionsV2: Component = () => {
@@ -60,12 +94,18 @@ export const SettingsPermissionsV2: Component = () => {
 
   const policy = createMemo(() => policyFromConfig(serverSync().data.config))
 
+  const samePolicy = (a: Policy, b: Policy) => {
+    if (a.approval !== b.approval || a.sandbox !== b.sandbox) return false
+    if (!Object.is(Object.keys(a.actions).length, Object.keys(b.actions).length)) return false
+    return actionPermissions.every((key) => a.actions[key] === b.actions[key])
+  }
+
   const save = async (target: Policy) => {
     if (state.saving) return
     // Selecting the already-active value (e.g. the full-access entry shown in
     // the select while it is enabled) is a no-op, not a re-write.
     const current = policy()
-    if (current.approval === target.approval && current.sandbox === target.sandbox) return
+    if (samePolicy(current, target)) return
     setState("saving", true)
     const ok = await serverSync()
       .updateConfig({ permission: policyToConfig(serverSync().data.config.permission, target) })
@@ -76,8 +116,12 @@ export const SettingsPermissionsV2: Component = () => {
     showToast({ variant: "error", title: language.t("settings.permissions.toast.updateFailed.title") })
   }
 
-  const saveApproval = (approval: ApprovalMode) => void save({ approval, sandbox: policy().sandbox })
-  const saveSandbox = (sandbox: SandboxMode) => void save({ approval: policy().approval, sandbox })
+  const saveApproval = (approval: ApprovalMode) =>
+    void save({ approval, sandbox: policy().sandbox, actions: policy().actions })
+  const saveSandbox = (sandbox: SandboxMode) =>
+    void save({ approval: policy().approval, sandbox, actions: policy().actions })
+  const saveAction = (key: string, value: PermissionActionConfig | undefined) =>
+    void save({ approval: policy().approval, sandbox: policy().sandbox, actions: { ...policy().actions, [key]: value } })
 
   const confirmFullAccess = () => {
     void dialog.push(() => (
@@ -106,6 +150,17 @@ export const SettingsPermissionsV2: Component = () => {
       </Dialog>
     ))
   }
+
+  const actionChoices = ["unset", "ask", "allow", "deny"]
+
+  // "ask"/"allow"/"deny" reuse the existing action keys; only "unset" is new.
+  const actionChoiceLabel = (choice: string) =>
+    choice === "unset"
+      ? language.t("settings.permissions.action.unset")
+      : language.t(`settings.permissions.action.${choice}`)
+
+  const actionLabelKey = (permission: (typeof actionPermissions)[number], part: "label" | "description") =>
+    `settings.permissions.tool.${permission}.${part}`
 
   const sandboxOptions = createMemo<Policy["sandbox"][]>(() =>
     policy().sandbox === "full-access" ? [...sandboxChoices, "full-access"] : sandboxChoices,
@@ -175,6 +230,31 @@ export const SettingsPermissionsV2: Component = () => {
               {language.t("settings.permissions.fullAccess.button")}
             </ButtonV2>
           </SettingsRowV2>
+        </SettingsListV2>
+        <SettingsListV2>
+          <For each={actionPermissions}>
+            {(permission) => (
+              <SettingsRowV2
+              title={language.t(actionLabelKey(permission, "label"))}
+              description={language.t(actionLabelKey(permission, "description"))}
+            >
+              <SelectV2
+                appearance="inline"
+                data-action={`settings-permission-${permission}`}
+                disabled={state.saving}
+                options={actionChoices}
+                current={policy().actions[permission] ?? "unset"}
+                placement="bottom-end"
+                gutter={6}
+                label={actionChoiceLabel}
+                onSelect={(choice) =>
+                  choice !== null &&
+                  saveAction(permission, choice === "unset" ? undefined : (choice as PermissionActionConfig))
+                }
+              />
+            </SettingsRowV2>
+            )}
+          </For>
         </SettingsListV2>
         <Show when={policy().approval === "auto"}>
           <p class="text-text-weak">{language.t("settings.permissions.approval.auto.description")}</p>

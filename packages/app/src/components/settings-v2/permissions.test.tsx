@@ -44,4 +44,31 @@ describe("settings permissions page", () => {
   test("no label function returns a bare i18n key", () => {
     expect(source).not.toMatch(/return "settings\.permissions\./)
   })
+
+  test("action permission rows cover the single-decision keys", () => {
+    for (const key of [
+      "worktree",
+      "worktree_discard",
+      "archive",
+      "question",
+      "webfetch",
+      "websearch",
+      "doom_loop",
+      "github-triage",
+      "github-pr-search",
+    ]) {
+      expect(source).toContain(`"${key}"`)
+    }
+  })
+
+  test("action row labels come from the shared tool i18n keys", () => {
+    expect(source).toContain("settings.permissions.tool.${permission}.${part}")
+    expect(source).toContain('language.t("settings.permissions.action.unset")')
+  })
+
+  test("an unset action removes its config key instead of pinning ask", () => {
+    // policyToConfig deletes unset action keys so a saved value can return to
+    // the built-in default.
+    expect(source).toContain("delete base[key]")
+  })
 })
