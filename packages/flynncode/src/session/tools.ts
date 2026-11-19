@@ -253,10 +253,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           args: gated.args,
         })
     // approval "auto": the LLM auto-reviewer vets the request before the
-    // human prompt. allow approves without prompting, deny fails closed,
-    // defer or an absent reviewer service falls through to the normal
-    // prompt path. The verdict rides on the ask input so the
-    // permission.asked event can surface it to the dock.
+    // human prompt. allow approves without prompting; a deny verdict still
+    // prompts, but carries the verdict so the dock can say the auto-reviewer
+    // advised denying and the human decides. defer or an absent reviewer
+    // service falls through to the normal prompt path.
     const reviewer =
       asks &&
       staticApproval !== "allow" &&
@@ -272,15 +272,6 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             })
           : "defer"
         : undefined
-    if (reviewer === "deny") {
-      return yield* Effect.orDie(
-        Effect.fail(
-          new PermissionV1.DeniedError({
-            ruleset: ruleset.filter((rule) => Wildcard.match(req.permission, rule.permission)),
-          }),
-        ),
-      )
-    }
     return yield* permission
       .ask({
         ...req,

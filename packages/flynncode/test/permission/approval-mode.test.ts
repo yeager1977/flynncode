@@ -61,10 +61,10 @@ it.instance("auto approval prompts when no reviewer verdict is supplied", () =>
   }),
 )
 
-it.instance("auto approval fails closed on a reviewer deny", () =>
+it.instance("a reviewer deny reaches the human prompt as an overridable verdict", () =>
   Effect.gen(function* () {
     const permission = yield* Permission.Service
-    const exit = yield* permission
+    const fiber = yield* permission
       .ask({
         sessionID: SessionID.make("session_test"),
         permission: "bash",
@@ -75,12 +75,16 @@ it.instance("auto approval fails closed on a reviewer deny", () =>
         approval: "auto",
         reviewer: "deny",
       })
-      .pipe(Effect.exit)
-    expect(Exit.isFailure(exit)).toBe(true)
-    if (Exit.isFailure(exit)) {
-      expect(Cause.squash(exit.cause)).toBeInstanceOf(DeniedError)
-    }
-    expect((yield* permission.list()).length).toBe(0)
+      .pipe(Effect.forkScoped)
+    yield* pollWithTimeout(
+      permission.list().pipe(
+        Effect.map(
+          (pending) => (pending.length === 1 && pending[0]?.reviewer === "deny" ? (true as const) : undefined),
+        ),
+      ),
+      "a reviewer deny never prompted",
+    )
+    yield* Fiber.interrupt(fiber)
   }),
 )
 

@@ -176,16 +176,13 @@ const layer = Layer.effect(
       const AUTO_EDIT_PERMISSIONS = ["edit", "read", "glob", "grep", "list"]
       if (!ALWAYS_ASK.includes(request.permission)) {
         if (staticApproval === "allow" && !force) return
-        // approval "auto" approves only on an explicit LLM auto-reviewer allow
-        // verdict; the session tools gate (session/tools.ts) consults the
+        // approval "auto" approves silently on an explicit LLM auto-reviewer
+        // allow verdict; the session tools gate (session/tools.ts) consults the
         // reviewer and carries the verdict in `reviewer`. Direct callers
         // without a verdict and defer/failed reviews fall through to the
-        // human prompt, and a deny verdict that bypassed the gate fails closed.
-        if (approval === "auto" && request.reviewer === "deny") {
-          return yield* new PermissionV1.DeniedError({
-            ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),
-          })
-        }
+        // human prompt. A "deny" verdict also reaches the human: it rides on
+        // the pending request so the dock can say the auto-reviewer advised
+        // denying, and the human decides.
         if (approval === "auto" && request.reviewer === "allow") return
         if (approval === "accept-edits" && AUTO_EDIT_PERMISSIONS.includes(request.permission) && !force) return
       }

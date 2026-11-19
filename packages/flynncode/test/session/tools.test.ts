@@ -540,14 +540,12 @@ allowEnv.it.effect("auto approval lets the LLM reviewer approve without promptin
 )
 
 const denyEnv = autoLayer("deny")
-denyEnv.it.effect("auto approval fails closed when the LLM reviewer denies", () =>
+denyEnv.it.effect("a reviewer deny reaches the human prompt carrying the deny verdict", () =>
   Effect.gen(function* () {
     const exit = yield* runAsker()
-    expect(Exit.isFailure(exit)).toBe(true)
-    if (Exit.isFailure(exit)) {
-      expect(Cause.squash(exit.cause)).toBeInstanceOf(PermissionV1.DeniedError)
-    }
-    expect(denyEnv.asks.length).toBe(0)
+    expect(Exit.isSuccess(exit)).toBe(true)
+    expect(denyEnv.asks.length).toBe(1)
+    expect(denyEnv.asks[0]?.reviewer).toBe("deny")
   }),
 )
 
