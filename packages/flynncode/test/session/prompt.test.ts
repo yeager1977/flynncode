@@ -585,6 +585,33 @@ it.instance("loop calls LLM and returns assistant message", () =>
   }),
 )
 
+it.instance("unreachable session model persists an errored assistant message instead of dying", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({
+      title: "Retired model",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      model: { providerID: ProviderV2.ID.make("test"), modelID: ModelV2.ID.make("ghost-model") },
+      noReply: true,
+      parts: [{ type: "text", text: "hello" }],
+    })
+
+    const result = yield* prompt.loop({ sessionID: chat.id })
+    expect(result.info.role).toBe("assistant")
+    if (result.info.role !== "assistant") return
+    const data = result.info.error?.data
+    const message = data && typeof data === "object" && "message" in data ? data.message : ""
+    expect(message).toContain("Model not found: test/ghost-model")
+    expect(yield* llm.hits).toHaveLength(0)
+  }),
+)
+
 withMcpInstructions.instance(
   "loop includes MCP instructions in model system context",
   () =>

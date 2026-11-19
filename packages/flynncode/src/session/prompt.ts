@@ -1425,7 +1425,38 @@ const layer = Layer.effect(
               history: msgs,
             }).pipe(Effect.ignore, Effect.forkIn(scope))
 
-          const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
+          const resolved = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID).pipe(
+            Effect.exit,
+          )
+          if (Exit.isFailure(resolved)) {
+            const failure = Cause.squash(resolved.cause)
+            if (!Provider.ModelNotFoundError.isInstance(failure)) return yield* Effect.failCause(resolved.cause)
+            // The turn cannot start at all: the session's remembered model no
+            // longer resolves (e.g. the provider retired or disabled it). No
+            // assistant message exists yet, so dying here leaves the prompt
+            // looking like it silently did nothing — persist the errored
+            // assistant message the same way an in-turn failure would.
+            const now = Date.now()
+            yield* sessions.updateMessage({
+              id: MessageID.ascending(),
+              parentID: lastUser.id,
+              role: "assistant",
+              sessionID,
+              mode: lastUser.agent,
+              agent: lastUser.agent,
+              variant: lastUser.model.variant,
+              path: { cwd: ctx.directory, root: ctx.worktree },
+              cost: 0,
+              tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+              modelID: lastUser.model.modelID,
+              providerID: lastUser.model.providerID,
+              time: { created: now, completed: now },
+              finish: "error",
+              error: new NamedError.Unknown({ message: failure.message }).toObject(),
+            })
+            break
+          }
+          const model = resolved.value
           const task = tasks.pop()
 
           if (task?.type === "subtask") {
