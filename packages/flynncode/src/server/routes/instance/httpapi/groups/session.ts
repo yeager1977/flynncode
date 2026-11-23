@@ -20,7 +20,14 @@ import {
   WorkspaceRoutingQuery,
   WorkspaceRoutingQueryFields,
 } from "../middleware/workspace-routing"
-import { ApiNotFoundError, InvalidRequestError, PermissionNotFoundError, PromptBlockedError, SessionBusyError } from "../errors"
+import {
+  ApiNotFoundError,
+  InvalidRequestError,
+  PermissionNotFoundError,
+  PromptBlockedError,
+  SessionBusyError,
+  SessionTooLargeError,
+} from "../errors"
 import { described } from "./metadata"
 import { QueryBoolean } from "./query"
 import { ProviderV2 } from "@flynncode/core/provider"
@@ -189,7 +196,7 @@ export const SessionApi = HttpApi.make("session")
           params: { sessionID: SessionID },
           query: MessagesQuery,
           success: described(Schema.Array(SessionV1.WithParts), "List of messages"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError],
+          error: [HttpApiError.BadRequest, ApiNotFoundError, SessionTooLargeError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.messages",

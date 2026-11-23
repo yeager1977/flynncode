@@ -185,6 +185,17 @@ export class ApiNotFoundError extends Schema.ErrorClass<ApiNotFoundError>("NotFo
   { httpApiStatus: 404 },
 ) {}
 
+// An unpaged read of a session whose stored content is above the cap; the caller must page with `limit` and `before`.
+export class SessionTooLargeError extends Schema.ErrorClass<SessionTooLargeError>("SessionTooLargeError")(
+  {
+    name: Schema.Literal("SessionTooLargeError"),
+    data: Schema.Struct({
+      message: Schema.String,
+    }),
+  },
+  { httpApiStatus: 413 },
+) {}
+
 // A UserPromptSubmit hook blocked the prompt; `message` is the hook's reason.
 export class PromptBlockedError extends Schema.ErrorClass<PromptBlockedError>("PromptBlockedError")(
   {

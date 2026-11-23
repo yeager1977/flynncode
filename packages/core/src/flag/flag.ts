@@ -30,6 +30,13 @@ export const Flag = {
     const days = Number(process.env["OPENCODE_DB_EVENT_IDLE_DAYS"])
     return Number.isFinite(days) && days > 0 ? days : undefined
   },
+  // Stored bytes above which `GET /session/:id/message` refuses to return a whole session unpaged (64 MB when unset).
+  // A multi-hundred-MB session read in one response exhausts the sidecar heap, so clients must page with `limit`.
+  // Evaluated at access time so tests can set it at runtime.
+  get OPENCODE_SESSION_UNPAGED_MAX_BYTES() {
+    const bytes = Number(process.env["OPENCODE_SESSION_UNPAGED_MAX_BYTES"])
+    return Number.isFinite(bytes) && bytes > 0 ? bytes : 64 * 1024 * 1024
+  },
   OPENCODE_DISABLE_WORKTREE_CLEANUP: truthy("OPENCODE_DISABLE_WORKTREE_CLEANUP"),
   OPENCODE_DISABLE_TERMINAL_TITLE: truthy("OPENCODE_DISABLE_TERMINAL_TITLE"),
   OPENCODE_SHOW_TTFD: truthy("OPENCODE_SHOW_TTFD"),

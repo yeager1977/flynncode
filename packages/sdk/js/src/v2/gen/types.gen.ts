@@ -3575,6 +3575,13 @@ export type NotFoundError = {
   }
 }
 
+export type SessionTooLargeError = {
+  name: "SessionTooLargeError"
+  data: {
+    message: string
+  }
+}
+
 export type TextPartInput = {
   id?: string
   type: "text"
@@ -11733,6 +11740,10 @@ export type SessionMessagesErrors = {
    * NotFoundError
    */
   404: NotFoundError
+  /**
+   * SessionTooLargeError
+   */
+  413: SessionTooLargeError
 }
 
 export type SessionMessagesError = SessionMessagesErrors[keyof SessionMessagesErrors]

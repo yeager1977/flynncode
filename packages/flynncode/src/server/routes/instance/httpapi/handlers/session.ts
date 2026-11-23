@@ -1,3 +1,4 @@
+import { Flag } from "@flynncode/core/flag/flag"
 import { PermissionV1 } from "@flynncode/core/v1/permission"
 import { Agent } from "@/agent/agent"
 import { SessionV1 } from "@flynncode/core/v1/session"
@@ -46,7 +47,7 @@ import {
   SummarizePayload,
   UpdatePayload,
 } from "../groups/session"
-import { InvalidRequestError, PermissionNotFoundError, PromptBlockedError, notFound } from "../errors"
+import { InvalidRequestError, PermissionNotFoundError, PromptBlockedError, SessionTooLargeError, notFound } from "../errors"
 import * as SessionError from "./session-errors"
 
 // A UserPromptSubmit hook's block is a reason for the user, not a server
@@ -145,6 +146,16 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       }
       yield* requireSession(ctx.params.sessionID)
       if (ctx.query.limit === undefined || ctx.query.limit === 0) {
+        const stored = yield* MessageV2.storedBytes(ctx.params.sessionID)
+        if (stored > Flag.OPENCODE_SESSION_UNPAGED_MAX_BYTES) {
+          const mb = (bytes: number) => Math.round(bytes / (1024 * 1024))
+          return yield* new SessionTooLargeError({
+            name: "SessionTooLargeError",
+            data: {
+              message: `Session holds ${mb(stored)} MB, above the ${mb(Flag.OPENCODE_SESSION_UNPAGED_MAX_BYTES)} MB limit for reading it whole. Request it in pages with ?limit=<n>, then ?limit=<n>&before=<X-Next-Cursor>.`,
+            },
+          })
+        }
         return yield* SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID }))
       }
 

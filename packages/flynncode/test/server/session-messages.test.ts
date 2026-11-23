@@ -41,6 +41,22 @@ const withoutWatcher = <A, E, R>(effect: Effect.Effect<A, E, R>) => {
   )
 }
 
+// The unpaged-read cap is read from the environment at request time, so a tiny value exercises it without a huge session.
+const withUnpagedCap = <A, E, R>(bytes: number, effect: Effect.Effect<A, E, R>) =>
+  Effect.acquireUseRelease(
+    Effect.sync(() => {
+      const previous = process.env.OPENCODE_SESSION_UNPAGED_MAX_BYTES
+      process.env.OPENCODE_SESSION_UNPAGED_MAX_BYTES = String(bytes)
+      return previous
+    }),
+    () => effect,
+    (previous) =>
+      Effect.sync(() => {
+        if (previous === undefined) delete process.env.OPENCODE_SESSION_UNPAGED_MAX_BYTES
+        else process.env.OPENCODE_SESSION_UNPAGED_MAX_BYTES = previous
+      }),
+  )
+
 const sessionScoped = Effect.acquireRelease(SessionNs.use.create({}), (session) =>
   SessionNs.use.remove(session.id).pipe(Effect.ignore),
 )
@@ -49,6 +65,7 @@ const fill = Effect.fn("SessionMessagesTest.fill")(function* (
   sessionID: SessionID,
   count: number,
   time = (i: number) => Date.now() + i,
+  text = (i: number) => `m${i}`,
 ) {
   const session = yield* SessionNs.Service
   return yield* Effect.forEach(
@@ -70,7 +87,7 @@ const fill = Effect.fn("SessionMessagesTest.fill")(function* (
           sessionID,
           messageID: id,
           type: "text",
-          text: `m${i}`,
+          text: text(i),
         } satisfies SessionV1.TextPart)
         return id
       }),
@@ -122,6 +139,53 @@ describe("session messages endpoint", () => {
         const body = yield* json<SessionV1.WithParts[]>(res)
         expect(body.map((item) => item.info.id)).toEqual(ids)
       }),
+    ),
+    { git: true },
+  )
+
+  it.instance(
+    "refuses unpaged reads of a session above the cap but still serves pages",
+    withoutWatcher(
+      withUnpagedCap(
+        2_000,
+        Effect.gen(function* () {
+          const session = yield* sessionScoped
+          const ids = yield* fill(session.id, 3, undefined, () => "x".repeat(1_000))
+
+          const unpaged = yield* request(`/session/${session.id}/message`)
+          expect(unpaged.status).toBe(413)
+          const body = yield* json<{ name: string; data: { message: string } }>(unpaged)
+          expect(body.name).toBe("SessionTooLargeError")
+          expect(body.data.message).toContain("limit")
+
+          const zero = yield* request(`/session/${session.id}/message?limit=0`)
+          expect(zero.status).toBe(413)
+
+          const paged = yield* request(`/session/${session.id}/message?limit=2`)
+          expect(paged.status).toBe(200)
+          const pagedBody = yield* json<SessionV1.WithParts[]>(paged)
+          expect(pagedBody.map((item) => item.info.id)).toEqual(ids.slice(-2))
+        }),
+      ),
+    ),
+    { git: true },
+  )
+
+  it.instance(
+    "serves unpaged reads of a session under the cap",
+    withoutWatcher(
+      withUnpagedCap(
+        1_000_000,
+        Effect.gen(function* () {
+          const session = yield* sessionScoped
+          const ids = yield* fill(session.id, 3, undefined, () => "x".repeat(1_000))
+
+          const res = yield* request(`/session/${session.id}/message`)
+          expect(res.status).toBe(200)
+          const body = yield* json<SessionV1.WithParts[]>(res)
+          expect(body.map((item) => item.info.id)).toEqual(ids)
+        }),
+      ),
     ),
     { git: true },
   )
