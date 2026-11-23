@@ -114,16 +114,23 @@ export async function checkServerHealth(
 
 const pollMs = 10_000
 
+// The background poll checks every configured server for the life of the app, including ones that are
+// down. `failures` counts consecutive failed checks: a server that keeps failing is rechecked less often
+// (up to 30s), and a healthy one stays on the normal interval.
+export const healthPollDelay = (failures: number) => Math.min(pollMs * 2 ** Math.min(failures, 2), 30_000)
+
 export function useCheckServerHealth() {
   const platform = usePlatform()
   const fetcher = platform.fetch ?? globalThis.fetch
 
-  return (http: ServerConnection.HttpBase) => {
-    const key = cacheKey(http)
+  return (http: ServerConnection.HttpBase, opts?: Pick<CheckServerHealthOptions, "retryCount">) => {
+    // Calls with different retry counts must not share a cached result: the startup gate retries a server
+    // that is still starting, while the poll's next tick is its retry.
+    const key = `${cacheKey(http)}\n${opts?.retryCount ?? ""}`
     const hit = healthCache.get(key)
     const now = Date.now()
     if (hit && hit.fetch === fetcher && (!hit.done || now - hit.at < cacheMs)) return hit.promise
-    const promise = checkServerHealth(http, fetcher).finally(() => {
+    const promise = checkServerHealth(http, fetcher, opts).finally(() => {
       const next = healthCache.get(key)
       if (!next || next.promise !== promise) return
       next.done = true
@@ -145,13 +152,24 @@ export const useServerHealth = (servers: Accessor<ServerConnection.Any[]>, enabl
     }
     const list = servers()
     let dead = false
+    const failures: Record<string, number> = {}
+    const due: Record<string, number> = {}
 
     const refresh = async () => {
       const results: Record<string, ServerHealth> = {}
       await Promise.all(
         list.map(async (conn) => {
           const key = ServerConnection.key(conn)
-          const result = await checkServerHealth(conn.http)
+          // Ticks are pollMs apart, so a server is checked on the tick nearest its due time.
+          const previous = status[key]
+          if (previous && (due[key] ?? 0) - Date.now() > pollMs / 2) {
+            results[key] = previous
+            return
+          }
+          const startedAt = Date.now()
+          const result = await checkServerHealth(conn.http, { retryCount: 0 })
+          failures[key] = result.healthy ? 0 : (failures[key] ?? 0) + 1
+          due[key] = startedAt + healthPollDelay(failures[key])
           results[key] = result
           if (!dead) setStatus(key, result)
         }),

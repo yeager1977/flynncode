@@ -1,7 +1,28 @@
 import { describe, expect, test } from "bun:test"
-import { adaptServerEvent, coalesceServerEvents, enqueueServerEvent, resumeStreamAfterPageShow } from "./server-sdk"
+import {
+  adaptServerEvent,
+  coalesceServerEvents,
+  enqueueServerEvent,
+  resumeStreamAfterPageShow,
+  streamReconnectDelay,
+} from "./server-sdk"
 import type { OpenCodeEvent } from "@opencode-ai/client/promise"
 import type { Event } from "@flynncode/sdk/v2/client"
+
+describe("streamReconnectDelay", () => {
+  test("retries a healthy stream's first drop quickly", () => {
+    expect(streamReconnectDelay(0)).toBe(250)
+  })
+
+  test("backs off while a server keeps failing, so an unreachable one is not hammered", () => {
+    expect([1, 2, 3, 4, 5].map(streamReconnectDelay)).toEqual([500, 1000, 2000, 4000, 8000])
+  })
+
+  test("caps the wait so a server that returns is picked up within seconds", () => {
+    expect(streamReconnectDelay(6)).toBe(10_000)
+    expect(streamReconnectDelay(500)).toBe(10_000)
+  })
+})
 
 describe("resumeStreamAfterPageShow", () => {
   test("restarts a stream only after a back-forward cache restore", () => {

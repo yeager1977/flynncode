@@ -19,6 +19,13 @@ const isAbortError = (error: unknown) =>
   error !== null && typeof error === "object" && "name" in error && error.name === "AbortError"
 
 const isStreamClosed = (error: unknown, signal?: AbortSignal) => isAbortError(error) || signal?.aborted === true
+
+// Every configured server keeps an event stream open for the life of the app, including ones that are
+// down or unreachable. `failures` counts consecutive attempts that delivered no event: a server that
+// keeps failing waits longer each time instead of being redialed every 250ms, and the cap keeps a server
+// that comes back reachable within seconds. A stream that delivered events restarts from the fast delay.
+export const streamReconnectDelay = (failures: number) => Math.min(250 * 2 ** failures, 10_000)
+
 export type ServerEvent = Event & { current?: OpenCodeEvent }
 type QueuedServerEvent = { directory: string; payload: ServerEvent }
 type CurrentDelta = Extract<
@@ -218,7 +225,6 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
   type Queued = QueuedServerEvent
   const FLUSH_FRAME_MS = 16
   const STREAM_YIELD_MS = 8
-  const RECONNECT_DELAY_MS = 250
 
   let queue: Queued[] = []
   let buffer: Queued[] = []
@@ -265,8 +271,10 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
     const previous = run
     const current = (async () => {
       if (previous) await previous
+      let failures = 0
       // oxlint-disable-next-line no-unmodified-loop-condition -- `started` is set to false by stop() which also aborts; both flags are checked to allow graceful exit
       while (!abort.signal.aborted && started && generation === active) {
+        let delivered = false
         attempt = new AbortController()
         const onAbort = () => {
           attempt?.abort()
@@ -281,6 +289,7 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
           let yielded = Date.now()
           for await (const event of events) {
             streamErrorLogged = false
+            delivered = true
             const legacy = "payload" in event
             if (legacy && event.payload.type === "sync") continue
             const directory = legacy ? (event.directory ?? "global") : (event.location?.directory ?? "global")
@@ -294,11 +303,11 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
         } catch (error) {
           if (!isStreamClosed(error, attempt?.signal) && !streamErrorLogged) {
             streamErrorLogged = true
-            console.error("[global-sdk] event stream failed", {
-              url: server.http.url,
-              fetch: eventFetch ? "platform" : "webview",
+            // The desktop log file prints a nested object as "[object Object]", so the cause goes in the message.
+            console.error(
+              `[global-sdk] event stream failed for ${server.http.url} (${eventFetch ? "platform" : "webview"} fetch): ${error instanceof Error ? error.message : String(error)}`,
               error,
-            })
+            )
           }
         } finally {
           abort.signal.removeEventListener("abort", onAbort)
@@ -306,7 +315,10 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
         }
 
         if (abort.signal.aborted || !started || generation !== active) return
-        await wait(RECONNECT_DELAY_MS)
+        if (delivered) failures = 0
+        const delay = streamReconnectDelay(failures)
+        if (!delivered) failures++
+        await wait(delay)
       }
     })().finally(() => {
       if (run !== current) return

@@ -1,6 +1,31 @@
 import { describe, expect, test } from "bun:test"
 import type { ServerConnection } from "@/context/server"
-import { checkServerHealth } from "./server-health"
+import { checkServerHealth, healthPollDelay } from "./server-health"
+
+describe("healthPollDelay", () => {
+  test("rechecks a healthy server on the normal interval", () => {
+    expect(healthPollDelay(0)).toBe(10_000)
+  })
+
+  test("spaces out rechecks of a server that keeps failing, up to a cap", () => {
+    expect([1, 2, 3, 50].map(healthPollDelay)).toEqual([20_000, 30_000, 30_000, 30_000])
+  })
+})
+
+describe("checkServerHealth without retries", () => {
+  test("probes the V2 and V1 endpoints once each against an unreachable server", async () => {
+    const paths: string[] = []
+    const fetch = (async (input: RequestInfo | URL) => {
+      paths.push(new URL(input instanceof Request ? input.url : input.toString()).pathname)
+      throw new TypeError("fetch failed")
+    }) as unknown as typeof globalThis.fetch
+
+    const result = await checkServerHealth(server, fetch, { retryCount: 0 })
+
+    expect(paths).toEqual(["/api/health", "/global/health"])
+    expect(result).toEqual({ healthy: false })
+  })
+})
 
 const server: ServerConnection.HttpBase = {
   url: "http://localhost:4096",
