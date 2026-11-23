@@ -61,6 +61,7 @@ import { getOrCreateMobilePhonePassword } from "./mobile-password"
 import { generateRelayToken } from "./relay-publisher"
 import { getStore } from "./store"
 import { createMaintenanceRelay } from "./sidecar-maintenance"
+import { superviseSidecar } from "./sidecar-supervisor"
 import { createTray, destroyTray, trayActive } from "./tray"
 
 const APP_NAMES: Record<string, string> = {
@@ -475,19 +476,37 @@ const main = Effect.gen(function* () {
     }
 
     logger.log("spawning sidecar", { url })
+    // Same port and password on every restart, so the windows reconnect without a relaunch.
     const { listener, health, post } = yield* Effect.promise(() =>
-      spawnLocalServer(host, port, password, {
-        userDataPath: app.getPath("userData"),
-        compileCachePath: join(app.getPath("sessionData"), "Sidecar Code Cache"),
-        mobilePassword,
-        relay,
-        sync: readSyncStart(syncStore, hostname()),
-        onSyncMessage: (message) => machineSync.handleSidecarMessage(message),
-        onMaintenance: (progress) => maintenance.report(progress),
-        onStdout: (message) => writeLog("server", "stdout", { message }),
-        onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
-        onExit: (code) => writeLog("utility", "sidecar exited", { code }, "warn"),
-      }),
+      superviseSidecar(
+        (onExit) =>
+          spawnLocalServer(host, port, password, {
+            userDataPath: app.getPath("userData"),
+            compileCachePath: join(app.getPath("sessionData"), "Sidecar Code Cache"),
+            mobilePassword,
+            relay,
+            sync: readSyncStart(syncStore, hostname()),
+            onSyncMessage: (message) => machineSync.handleSidecarMessage(message),
+            onMaintenance: (progress) => maintenance.report(progress),
+            onStdout: (message) => writeLog("server", "stdout", { message }),
+            onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
+            onExit: (code) => {
+              writeLog("utility", "sidecar exited", { code }, "warn")
+              onExit(code)
+            },
+          }),
+        {
+          onRestart: (info) => writeLog("utility", "restarting sidecar", info, "warn"),
+          onRestartFailed: (error) =>
+            writeLog(
+              "utility",
+              "sidecar restart failed",
+              { message: error instanceof Error ? error.message : String(error) },
+              "error",
+            ),
+          onGiveUp: (info) => writeLog("utility", "sidecar will not be restarted", info, "error"),
+        },
+      ),
     )
     server = listener
     sidecar.post = post
