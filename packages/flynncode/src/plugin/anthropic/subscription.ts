@@ -6,14 +6,18 @@ import { Filesystem } from "../../util/filesystem"
 import os from "os"
 import path from "path"
 import { createServer } from "http"
+import type { AddressInfo } from "net"
 
-// Observed from Claude Code's public OAuth registration: authorization lives
-// on claude.ai while token exchange lives on console.anthropic.com. Both are
-// overridable so tests can point at a local stub listener.
-const AUTHORIZE_ISSUER = "https://claude.ai"
-const TOKEN_ISSUER = "https://console.anthropic.com"
+// Mirrors Claude Code 2.1.321's OAuth config (same public client id): the claude.ai sign-in authorizes at
+// claude.com and exchanges the code at platform.claude.com. Anthropic refuses redirect URIs outside the
+// client's registration ("Redirect URI ... is not supported by client", seen for
+// http://localhost:1456/auth/callback), and Claude Code redirects to a loopback
+// http://localhost:<random port>/callback, so this does too. Both URLs are overridable so tests can point
+// at a local stub listener.
+const AUTHORIZE_URL = "https://claude.com/cai/oauth/authorize"
+const TOKEN_ISSUER = "https://platform.claude.com"
 const CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-const OAUTH_PORT = 1456
+const CALLBACK_PATH = "/callback"
 
 // Anthropic identifies the client behind a subscription token from the request
 // body, not from the token or the headers: Claude Code sends a billing header
@@ -66,7 +70,7 @@ function withBillingHeader(body: BodyInit | null | undefined, url: string) {
 }
 
 export interface AnthropicSubscriptionOptions {
-  authorizeIssuer?: string
+  authorizeUrl?: string
   tokenIssuer?: string
   clientId?: string
   tokenEndpoint?: string
@@ -101,6 +105,7 @@ function base64UrlEncode(buffer: ArrayBuffer): string {
 const SUBSCRIPTION_MODELS = new Set([
   "claude-fable-5",
   "claude-fable-5-1",
+  "claude-fable-5-2",
   "claude-sonnet-5",
   "claude-sonnet-5-5",
   "claude-opus-5",
@@ -122,6 +127,8 @@ const MODELS_API_BASE_URL = "https://api.anthropic.com"
 // fallback covers transient errors.
 const MODELS_FETCH_TIMEOUT_MS = 5_000
 const MODELS_CACHE_TTL_MS = 5 * 60_000
+// How long a refresh token that Anthropic just refused is left alone.
+const RENEW_RETRY_MS = 5 * 60_000
 
 /**
  * Fetch the model ids the given OAuth token can actually use. Returns
@@ -240,10 +247,12 @@ export async function refreshSubscriptionToken(
 ): Promise<RefreshResult> {
   const response = await fetch(input.tokenEndpoint, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "User-Agent": `claude-code/${SUBSCRIPTION_CLIENT_VERSION}` },
+    // No `claude-code/<version>` User-Agent here: platform.claude.com answers it with HTTP 429 "Rate limited"
+    // (checked 2026-11-23; other agents get the normal 400), which broke sign-in and every token refresh.
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: input.clientId }),
   })
-  if (!response.ok) throw new Error("Anthropic subscription token refresh failed")
+  if (!response.ok) throw new Error(`Anthropic subscription token refresh failed (${response.status})`)
   return response.json()
 }
 
@@ -256,20 +265,24 @@ async function exchangeCodeForTokens(
   code: string,
   redirectUri: string,
   pkce: PkceCodes,
+  state: string,
   options: AnthropicSubscriptionOptions,
 ): Promise<RefreshResult> {
   const response = await fetch(tokenEndpointFor(options), {
     method: "POST",
-    headers: { "Content-Type": "application/json", "User-Agent": `claude-code/${SUBSCRIPTION_CLIENT_VERSION}` },
+    // Same as the refresh request: never send a `claude-code/<version>` User-Agent to the token endpoint (HTTP 429).
+    headers: { "Content-Type": "application/json" },
+    // Claude Code sends the state back with the exchange as well.
     body: JSON.stringify({
       grant_type: "authorization_code",
       code,
       redirect_uri: redirectUri,
       client_id: options.clientId ?? CLIENT_ID,
       code_verifier: pkce.verifier,
+      state,
     }),
   })
-  if (!response.ok) throw new Error("Anthropic subscription token exchange failed")
+  if (!response.ok) throw new Error(`Anthropic subscription token exchange failed (${response.status})`)
   return response.json()
 }
 
@@ -284,13 +297,14 @@ interface PendingOAuth {
 }
 
 let oauthServer: ReturnType<typeof createServer> | undefined
+let oauthRedirectUri: string | undefined
 let pendingOAuth: PendingOAuth | undefined
 
 async function startOAuthServer(): Promise<{ redirectUri: string }> {
-  if (oauthServer) return { redirectUri: `http://localhost:${OAUTH_PORT}/auth/callback` }
+  if (oauthServer && oauthRedirectUri) return { redirectUri: oauthRedirectUri }
   oauthServer = createServer((req, res) => {
-    const url = new URL(req.url || "/", `http://localhost:${OAUTH_PORT}`)
-    if (url.pathname === "/auth/callback") {
+    const url = new URL(req.url || "/", "http://localhost")
+    if (url.pathname === CALLBACK_PATH) {
       const code = url.searchParams.get("code")
       const state = url.searchParams.get("state")
       const error = url.searchParams.get("error")
@@ -317,7 +331,7 @@ async function startOAuthServer(): Promise<{ redirectUri: string }> {
       }
       const current = pendingOAuth
       pendingOAuth = undefined
-      exchangeCodeForTokens(code, `http://localhost:${OAUTH_PORT}/auth/callback`, current.pkce, current.options)
+      exchangeCodeForTokens(code, oauthRedirectUri!, current.pkce, current.state, current.options)
         .then((tokens) => current.resolve(tokens))
         .catch((err) => current.reject(err))
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
@@ -328,16 +342,18 @@ async function startOAuthServer(): Promise<{ redirectUri: string }> {
     res.end("Not found")
   })
   const server = oauthServer
-  // Loopback only: the callback carries an authorization code.
+  // Loopback only: the callback carries an authorization code. Port 0 lets the OS pick a free port, as
+  // Claude Code does, so a busy fixed port can never block sign-in.
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject)
-    server.listen(OAUTH_PORT, "127.0.0.1", () => resolve())
+    server.listen(0, "127.0.0.1", () => resolve())
   }).catch((error) => {
-    // A failed listen (port in use) must not leave a dead server cached.
+    // A failed listen must not leave a dead server cached.
     if (oauthServer === server) oauthServer = undefined
     throw error
   })
-  return { redirectUri: `http://localhost:${OAUTH_PORT}/auth/callback` }
+  oauthRedirectUri = `http://localhost:${(server.address() as AddressInfo).port}${CALLBACK_PATH}`
+  return { redirectUri: oauthRedirectUri }
 }
 
 // Keeps the server up while another attempt is still waiting on it, so a
@@ -346,6 +362,7 @@ function stopOAuthServer() {
   if (!oauthServer || pendingOAuth) return
   oauthServer.close(() => {})
   oauthServer = undefined
+  oauthRedirectUri = undefined
 }
 
 export function waitForOAuthCallback(
@@ -389,6 +406,7 @@ export function oauthState() {
 
 function buildAuthorizeUrl(redirectUri: string, pkce: PkceCodes, state: string, options: AnthropicSubscriptionOptions): string {
   const params = new URLSearchParams({
+    code: "true",
     response_type: "code",
     client_id: options.clientId ?? CLIENT_ID,
     redirect_uri: redirectUri,
@@ -397,7 +415,7 @@ function buildAuthorizeUrl(redirectUri: string, pkce: PkceCodes, state: string, 
     code_challenge_method: "S256",
     state,
   })
-  return `${options.authorizeIssuer ?? AUTHORIZE_ISSUER}/oauth/authorize?${params.toString()}`
+  return `${options.authorizeUrl ?? AUTHORIZE_URL}?${params.toString()}`
 }
 
 export async function AnthropicSubscriptionPlugin(
@@ -410,19 +428,65 @@ export async function AnthropicSubscriptionPlugin(
   // prefers ANTHROPIC_CLI_VERSION over its constant at request time, so pin
   // the release this fork tracks. The real claude CLI ignores the variable.
   process.env.ANTHROPIC_CLI_VERSION ??= SUBSCRIPTION_CLIENT_VERSION
+
+  // The model list, the usage meters and every request find the same expired access token, and a refresh
+  // token that has been rotated cannot be used twice, so only one refresh runs at a time. A refresh token
+  // that was just refused (revoked login) is not retried on every provider rebuild.
+  let renewing: Promise<{ access: string }> | undefined
+  let refused: { refresh: string; at: number } | undefined
+  const renew = (auth: { refresh: string }) => {
+    if (renewing) return renewing
+    if (refused?.refresh === auth.refresh && Date.now() - refused.at < RENEW_RETRY_MS) {
+      return Promise.reject(new Error("Anthropic subscription token refresh failed"))
+    }
+    renewing = refreshSubscriptionToken(auth.refresh, {
+      tokenEndpoint: tokenEndpointFor(options),
+      clientId: options.clientId ?? CLIENT_ID,
+    })
+      .then(async (tokens) => {
+        await input.client.auth.set({
+          path: { id: "anthropic" },
+          body: {
+            type: "oauth",
+            refresh: tokens.refresh_token ?? auth.refresh,
+            access: tokens.access_token,
+            expires: Date.now() + (tokens.expires_in ?? 3600) * 1000,
+          },
+        })
+        return { access: tokens.access_token }
+      })
+      .catch((error) => {
+        refused = { refresh: auth.refresh, at: Date.now() }
+        throw error
+      })
+      .finally(() => {
+        renewing = undefined
+      })
+    return renewing
+  }
+
   return {
     provider: {
       id: "anthropic",
       async models(provider, ctx) {
         const auth = ctx.auth
         if (auth?.type !== "oauth") return provider.models
-        // The stored access token may be stale at state-build time; only
-        // attempt discovery with a live one and fall back to the static
-        // lineup otherwise (the loader refreshes on first request anyway).
-        if (auth.access && auth.expires > Date.now()) {
+        // Access tokens last about an hour, so the stored one is usually stale when provider state is built.
+        // Refresh it first: without a live token discovery cannot run and the picker is stuck on the static
+        // lineup, which lags new releases.
+        const token =
+          auth.access && auth.expires > Date.now()
+            ? auth.access
+            : auth.refresh
+              ? await renew(auth).then(
+                  (renewed) => renewed.access,
+                  () => undefined,
+                )
+              : undefined
+        if (token) {
           const ids = await discoverSubscriptionModelIDs({
             fetchImpl: fetch,
-            token: auth.access,
+            token,
             apiBaseUrl: options.apiBaseUrl,
           })
           if (ids) return filterSubscriptionModels(provider.models, true, ids)
@@ -440,26 +504,13 @@ export async function AnthropicSubscriptionPlugin(
         }
         // Usage is display-only, but an expired token would hide the meters
         // indefinitely; refresh and persist it the same way the loader does.
-        const tokens = await refreshSubscriptionToken(auth.refresh, {
-          tokenEndpoint: tokenEndpointFor(options),
-          clientId: options.clientId ?? CLIENT_ID,
-        }).catch(() => undefined)
-        if (!tokens) return undefined
-        await input.client.auth.set({
-          path: { id: "anthropic" },
-          body: {
-            type: "oauth",
-            refresh: tokens.refresh_token ?? auth.refresh,
-            access: tokens.access_token,
-            expires: Date.now() + (tokens.expires_in ?? 3600) * 1000,
-          },
-        })
-        return fetchAnthropicUsage({ fetchImpl: fetch, token: tokens.access_token, apiBaseUrl: options.apiBaseUrl })
+        const renewed = await renew(auth).catch(() => undefined)
+        if (!renewed) return undefined
+        return fetchAnthropicUsage({ fetchImpl: fetch, token: renewed.access, apiBaseUrl: options.apiBaseUrl })
       },
       async loader(getAuth) {
         const auth = await getAuth()
         if (auth.type !== "oauth") return {}
-        let refreshPromise: Promise<{ access: string }> | undefined
         return {
           apiKey: OAUTH_DUMMY_KEY,
           async fetch(requestInput: RequestInfo | URL, init?: RequestInit) {
@@ -480,29 +531,7 @@ export async function AnthropicSubscriptionPlugin(
             const currentAuth = await getAuth()
             if (currentAuth.type !== "oauth") return fetch(requestInput, init)
             if (!currentAuth.access || currentAuth.expires < Date.now()) {
-              if (!refreshPromise) {
-                refreshPromise = refreshSubscriptionToken(currentAuth.refresh, {
-                  tokenEndpoint: tokenEndpointFor(options),
-                  clientId: options.clientId ?? CLIENT_ID,
-                })
-                  .then(async (tokens) => {
-                    await input.client.auth.set({
-                      path: { id: "anthropic" },
-                      body: {
-                        type: "oauth",
-                        refresh: tokens.refresh_token ?? currentAuth.refresh,
-                        access: tokens.access_token,
-                        expires: Date.now() + (tokens.expires_in ?? 3600) * 1000,
-                      },
-                    })
-                    return { access: tokens.access_token }
-                  })
-                  .finally(() => {
-                    refreshPromise = undefined
-                  })
-              }
-              const refreshed = await refreshPromise
-              currentAuth.access = refreshed.access
+              currentAuth.access = (await renew(currentAuth)).access
             }
             const headers = new Headers(init?.headers)
             headers.set("authorization", `Bearer ${currentAuth.access}`)
