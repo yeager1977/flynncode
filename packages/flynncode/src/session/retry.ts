@@ -41,6 +41,8 @@ const RETRYABLE_MESSAGE_PATTERNS = [
   /\btry again (?:later|in\b)|\b(?:currently|temporarily) at capacity\b/i,
 ]
 
+const CREDENTIAL_MESSAGE_PATTERN = /credentials?\b|unauthori[sz]ed|\bexpired\b|api[ _-]?key|\bsign[ -]?in\b|\blog[ -]?in\b/i
+
 function cap(ms: number) {
   return Math.min(ms, RETRY_MAX_DELAY)
 }
@@ -150,6 +152,9 @@ export function retryable(error: Err, provider: string) {
   if (typeof message !== "string") return undefined
   const lower = message.toLowerCase()
   if (lower.includes("too_many_requests")) return { message: "Too Many Requests" }
+  // "unavailable" and "exhausted" below also appear in credential errors ("credentials are unavailable or expired").
+  // Retrying those never helps and labelling them overload hides the real problem, so show them as they are.
+  if (CREDENTIAL_MESSAGE_PATTERN.test(message)) return undefined
   if (lower.includes("exhausted") || lower.includes("unavailable")) return { message: "Provider is overloaded" }
   if (matchesRetryableMessage(message)) return { message }
   return undefined

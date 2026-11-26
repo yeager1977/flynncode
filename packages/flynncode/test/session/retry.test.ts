@@ -316,6 +316,14 @@ describe("session.retry.retryable", () => {
     })
   })
 
+  test.each([
+    "Claude Code credentials are unavailable or expired. Run `claude` to refresh them.",
+    "OAuth token unavailable, please sign in again",
+    "API key exhausted or expired",
+  ])("does not retry or relabel credential errors as overload: %s", (message) => {
+    expect(SessionRetry.retryable(wrap(message), retryProvider)).toBeUndefined()
+  })
+
   test("matches retryable API response bodies", () => {
     const error = Schema.decodeUnknownSync(SessionV1.APIError.Schema)(
       new SessionV1.APIError({
